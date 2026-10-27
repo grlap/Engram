@@ -10,6 +10,7 @@ mod tests;
 
 const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("table", "work_catalog_fts"),
+    ("table", "work_note_fts"),
     ("index", "objects_work_evidence_gate_name"),
     ("index", "objects_work_event_work_id"),
     ("index", "objects_work_source_proposal_work"),
@@ -49,7 +50,10 @@ pub(in crate::storage) fn owns_schema_object(name: &str) -> bool {
 }
 
 pub(in crate::storage) fn is_rebuildable_schema_object(object_type: &str, name: &str) -> bool {
-    (object_type == "table" && super::super::is_fts_schema_object(name, "work_catalog_fts"))
+    (object_type == "table"
+        && ["work_catalog_fts", "work_note_fts"]
+            .iter()
+            .any(|table| super::super::is_fts_schema_object(name, table)))
         || REBUILDABLE_WORK_SCHEMA_OBJECTS.contains(&(object_type, name))
 }
 
@@ -489,6 +493,7 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
              ON work_session_state(project_id, updated_at_ms, session_id);",
     )?;
     super::observation::create_schema(connection)?;
+    super::note_index::create_schema(connection)?;
     connection.execute(
         "UPDATE work_schema_metadata SET schema_version = ?1 WHERE singleton = 1",
         [CURRENT_WORK_SCHEMA_VERSION],
@@ -610,8 +615,10 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_items(project_id, work_id);",
     )?;
     super::observation::create_schema(connection)?;
+    super::note_index::create_schema(connection)?;
     let mut restored_findings = rebuild_restored_projections_on(connection)?;
     restored_findings.extend(super::observation::rebuild(connection)?);
+    restored_findings.extend(super::note_index::rebuild_for_repair(connection)?);
     connection.execute("DELETE FROM work_catalog_fts", [])?;
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text)

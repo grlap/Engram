@@ -1,5 +1,126 @@
 //! Explicit measurements only; the copied store may contain private state.
 
+/// Input is an old-build export/import copy, never the operational database.
+/// Read the recorded CLI cutover, then time one all-items query.
+#[test]
+#[ignore = "acceptance measurement on an Engram export/import copy under target/tmp"]
+#[expect(
+    clippy::assertions_on_constants,
+    reason = "the manual acceptance measurement must refuse an unoptimized runner"
+)]
+fn note_index_copy_no_match_measurement() {
+    assert!(
+        !cfg!(debug_assertions),
+        "use the optimized measurement build"
+    );
+    let path = snapshot_path();
+    let project = ProjectId(std::env::var("ENGRAM_NOTE_SEARCH_PROJECT").unwrap());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let copy_home =
+        std::fs::canonicalize(std::env::var_os("ENGRAM_NOTE_SEARCH_HOME").unwrap()).unwrap();
+    assert!(copy_home.starts_with(root.join("target/tmp").canonicalize().unwrap()));
+    assert_eq!(
+        crate::project_database_path(&copy_home, &project)
+            .canonicalize()
+            .unwrap(),
+        path
+    );
+    let cutover: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(copy_home.join("cutover.json")).unwrap()).unwrap();
+    assert_eq!(
+        PathBuf::from(cutover["database"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        path
+    );
+    assert_eq!(cutover["before"]["ready"], false);
+    assert_eq!(cutover["before"]["code"], "projection_repair_required");
+    assert_eq!(cutover["repair"]["healthy"], true);
+    assert_eq!(cutover["repair"]["mode"], "note_search_index_build");
+    assert_eq!(cutover["repair"]["full_audit"], "not_run");
+    assert_eq!(cutover["after"]["ready"], true);
+    SqliteStore::readiness(&path, None).unwrap();
+    let before = file_digest(&path);
+    crate::canonical::reset_canonical_decode_count();
+    let store = SqliteStore::open_existing_read_only(&path).unwrap();
+    let admission_decodes = crate::canonical::canonical_decode_count();
+    let items: i64 = store
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_items WHERE project_id = ?1",
+            [project.0.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let notes: i64 = store
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_note_fts note
+        JOIN work_items item ON item.work_id = note.work_id WHERE item.project_id = ?1",
+            [project.0.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let service = crate::work_service::LocalWorkService::new(
+        path.clone(),
+        project.clone(),
+        "copy-measurement".into(),
+        crate::SessionId("note-index-copy-measurement".into()),
+        None,
+    );
+    let query = WorkCatalogQuery {
+        search: Some("note-index-absent-zqxjk-vbp".into()),
+        limit: 20,
+        ..WorkCatalogQuery::default()
+    };
+    cost::start();
+    let started = Instant::now();
+    let page =
+        crate::storage::search_budget::Request::new(tokio_util::sync::CancellationToken::new())
+            .run(|| Ok(service.work_catalog_page(&query, None, None, Utc::now())?))
+            .unwrap();
+    let elapsed = started.elapsed();
+    let counters = cost::finish();
+    drop(store);
+    let after = file_digest(&path);
+    println!(
+        "note-index copy acceptance: {}",
+        serde_json::json!({
+            "copy": path, "copy_sha256": before, "copy_bytes": std::fs::metadata(&path).unwrap().len(),
+            "project": project, "items": items, "indexed_note_records": notes,
+            "elapsed_us": elapsed.as_micros(), "cost": counters,
+            "outcome": if page.total == 0 { "no_match" } else { "matched" },
+            "matches": page.total, "read_admission_canonical_decodes": admission_decodes,
+            "database_unchanged": after == before,
+            "before_repair": "projection_repair_required", "after_repair": "ready_and_healthy",
+            "cutover": cutover,
+            "build": crate::build_identity::current(),
+            "coverage": "One all-lifecycle service catalog call, request allowance and read admission included; index freshly rebuilt from an old-build export/import copy. No live-store search, CLI startup, MCP scheduling or idle-host assertion."
+        })
+    );
+    assert_eq!(page.total, 0);
+    assert!(page.items.is_empty());
+    // The complete service call opens its own read-only connection. Policy
+    // admission is required; note search must add no canonical body decodes.
+    assert_eq!(
+        counters["total"]["canonical_decodes"],
+        serde_json::json!(admission_decodes)
+    );
+    assert_eq!(counters["total"]["note_index_visits"], 0);
+    assert_eq!(
+        counters["total"]["typed_work_object_decodes"]
+            .as_object()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(after, before);
+    assert!(
+        elapsed < std::time::Duration::from_secs(1),
+        "copy no-match target exceeded: {elapsed:?}"
+    );
+}
+
 #[test]
 #[ignore = "explicit supported-copy comparison; private store bytes stay under target/tmp"]
 fn note_search_supported_copy_calibration() {

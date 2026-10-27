@@ -48,6 +48,7 @@ enum OpenAttempt {
 }
 
 mod lock_wait;
+mod note_search_index;
 mod protocol_retry;
 mod restore_copy;
 mod store_copy;
@@ -354,30 +355,7 @@ impl SqliteStore {
     /// current and valid, repair cannot commit, or post-repair verification
     /// fails.
     pub fn repair_rebuildable_projections(path: &Path) -> Result<IntegrityReport, StoreError> {
-        if !path.is_file() {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "projection-repair target {} is not an existing file",
-                path.display()
-            )));
-        }
-        let connection = open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        connection.busy_timeout(Duration::from_secs(5))?;
-        connection.execute_batch(
-            "PRAGMA foreign_keys = ON;
-             PRAGMA synchronous = NORMAL;",
-        )?;
-        if !Self::sqlite_user_schema_exists(&connection)? {
-            return Err(StoreError::StoreNotInitialized);
-        }
-        if Self::current_core_durable_schema_issue(&connection)?.is_some() {
-            return Err(different_build_store_error());
-        }
-        work::preflight_schema(&connection, false)?;
-        Self::require_task_local_cursor_schema(&connection)?;
-        Self::preflight_host_path_policy(&connection, None)?;
-        Self::preflight_control_policy_schema(&connection).map_err(|error| {
-            Self::unreadable_active_rule_set_refusal(&connection).unwrap_or(error)
-        })?;
+        let connection = Self::open_projection_maintenance(path, false)?;
 
         let work_schema_version = work::schema_version(&connection)?;
         // Keep repair and exhaustive verification in one writer transaction.

@@ -34,7 +34,7 @@ impl Default for Limits {
             records: 100_000,
             bytes: 384 * 1024 * 1024,
             unit_bytes: 1024 * 1024,
-            elapsed: Duration::from_secs(60),
+            elapsed: Duration::from_secs(10),
         }
     }
 }
@@ -405,6 +405,7 @@ pub(crate) fn blob(
     Ok(bytes.to_vec())
 }
 
+#[cfg(test)]
 pub(crate) fn contains(
     connection: &Connection,
     text: &str,
@@ -414,6 +415,23 @@ pub(crate) fn contains(
         state.bytes(text.len())?;
     }
     let found = super::planning::normalize_work_catalog_key(text).contains(needle);
+    if let Some(state) = active(connection) {
+        state.check()?;
+    }
+    Ok(found)
+}
+
+/// Projection fields are normalized at write time. Charge their inspection
+/// without allocating another normalized copy on each search.
+pub(crate) fn contains_normalized(
+    connection: &Connection,
+    text: &str,
+    needle: &str,
+) -> Result<bool, StoreError> {
+    if let Some(state) = active(connection) {
+        state.bytes(text.len())?;
+    }
+    let found = text.contains(needle);
     if let Some(state) = active(connection) {
         state.check()?;
     }

@@ -15,13 +15,29 @@ pub(crate) mod landings;
 pub(crate) mod refusals;
 use refusals::{Phase, report_error, with_build};
 
+pub(crate) enum ProjectionMaintenance {
+    FullRepair,
+    NoteSearchIndex,
+}
+
+impl ProjectionMaintenance {
+    /// Clap has already made the two operator flags mutually exclusive.
+    pub(crate) fn selected(full_repair: bool, note_search_index: bool) -> Option<Self> {
+        if note_search_index {
+            Some(Self::NoteSearchIndex)
+        } else {
+            full_repair.then_some(Self::FullRepair)
+        }
+    }
+}
+
 pub(crate) fn doctor(
     database: &Path,
     identity: Option<HostPathPolicy>,
     project_id: &ProjectId,
     json: bool,
     recover_policy: bool,
-    repair_projections: bool,
+    projection_maintenance: Option<ProjectionMaintenance>,
     landing_repository: Option<&Path>,
 ) -> Result<()> {
     // Doctor examines an existing store and never creates one, in every mode
@@ -29,7 +45,7 @@ pub(crate) fn doctor(
     // a restore's staging file, has no store, and neither does a link that
     // leads nowhere. Policy recovery and projection repair refuse a missing
     // file in their own words.
-    if !recover_policy && !repair_projections && store_missing(database) {
+    if !recover_policy && projection_maintenance.is_none() && store_missing(database) {
         return refuse(
             database,
             project_id,
@@ -45,8 +61,15 @@ pub(crate) fn doctor(
     if recover_policy {
         return diagnose_policy_recovery(database, project_id, json);
     }
-    if repair_projections {
-        return repair_store_projections(database, project_id, json);
+    if let Some(mode) = projection_maintenance {
+        return match mode {
+            ProjectionMaintenance::FullRepair => {
+                repair_store_projections(database, project_id, json)
+            }
+            ProjectionMaintenance::NoteSearchIndex => {
+                build_note_search_index(database, project_id, json)
+            }
+        };
     }
     // The backup block stands beside the store's health in every outcome
     // and never changes it. It reads only the home's records and the store,
@@ -326,6 +349,24 @@ fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> R
         );
     }
     Ok(())
+}
+
+fn build_note_search_index(database: &Path, project_id: &ProjectId, json: bool) -> Result<()> {
+    let checked = match SqliteStore::build_note_search_index(database) {
+        Ok(checked) => checked,
+        Err(error) => {
+            return report_error(database, project_id, &error, json, Phase::ProjectionRepair);
+        }
+    };
+    refusals::emit(
+        &with_build(serde_json::json!({
+            "mode": "note_search_index_build", "scope": "work_note_fts",
+            "mutation_enabled": true, "project_id": project_id,
+            "database": canonical_database_path(database)?, "healthy": true,
+            "checked_note_records": checked, "full_audit": "not_run",
+        })),
+        json,
+    )
 }
 
 fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool) -> Result<()> {

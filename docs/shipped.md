@@ -7,6 +7,15 @@ this page does not inventory whichever binary is on a host's PATH. It excludes
 planned, target, and deferred capabilities; those belong in the
 [roadmap](roadmap.md), not in this table.
 
+Public note and gate search uses an incrementally maintained trigram index,
+with exact normalized field matching and the same first-note locators. For
+existing stores, `doctor --build-note-search-index` explicitly builds only the
+missing index, with consumers stopped, preserving other projections and memory
+advertisements. It verifies that index and strict schema admission, rather than
+running a full integrity audit; an existing or damaged target requires full
+projection repair. Ordinary opening remains strict. See the
+[operator commands](features/cli-and-mcp.md#host-and-operator-cli).
+
 Mutation admission refusals preserve session focus and staged delivery,
 including typed completion refusals. Successful verbs keep their navigation
 policy and disclose bindings captured in the actual focus transaction.

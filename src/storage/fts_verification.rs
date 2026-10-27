@@ -67,12 +67,19 @@ pub(super) fn fts_index_finding(
 #[cfg(test)]
 thread_local! {
     static FTS_CONTENT_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static FTS_CONTENT_SCANS_BY_QUERY: std::cell::RefCell<HashMap<String, usize>> = std::cell::RefCell::new(HashMap::new());
 }
 
 /// How many full-text content passes ran on this thread.
 #[cfg(test)]
 pub(crate) fn fts_content_scans() -> usize {
     FTS_CONTENT_SCANS.with(std::cell::Cell::get)
+}
+
+/// Distinguish an extra declared index from a repeated pass over one index.
+#[cfg(test)]
+pub(crate) fn fts_content_scans_for(sql: &str) -> usize {
+    FTS_CONTENT_SCANS_BY_QUERY.with(|counts| counts.borrow().get(sql).copied().unwrap_or(0))
 }
 
 /// A column's stored text, or `None` when the value is not valid text (NULL,
@@ -103,6 +110,10 @@ pub(super) fn fts_content<T>(
 ) -> Result<Result<FtsContent<T>, String>, StoreError> {
     #[cfg(test)]
     FTS_CONTENT_SCANS.with(|count| count.set(count.get() + 1));
+    #[cfg(test)]
+    FTS_CONTENT_SCANS_BY_QUERY.with(|counts| {
+        *counts.borrow_mut().entry(sql.to_owned()).or_default() += 1;
+    });
     let mut statement = match connection.prepare(sql) {
         Ok(statement) => statement,
         Err(error) => return corruption(error).map(Err),

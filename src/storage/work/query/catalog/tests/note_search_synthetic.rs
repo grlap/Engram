@@ -4,9 +4,10 @@ use crate::domain::{GateEvidenceRecord, SCHEMA_VERSION, WorkEvidence};
 use crate::storage::work::feeds::append_to_work_feeds;
 use std::time::Instant;
 
-/// Bulk-load typed immutable evidence, its native projection and dense feeds.
+/// Bulk-load typed immutable evidence, its projections and dense feeds.
 /// This avoids timing thousands of unrelated claim/root-contribution writes.
-/// The measured reader still validates canonical bytes and evidence bindings.
+/// The measured reader searches the same normalized public-note index that
+/// ordinary writers maintain; setup is outside the measured call.
 fn seed_history(store: &mut SqliteStore, items: usize, records: usize) -> (ProjectId, usize) {
     let project = ProjectId("synthetic-note-search".into());
     let mut subjects = Vec::new();
@@ -51,7 +52,7 @@ fn seed_history(store: &mut SqliteStore, items: usize, records: usize) -> (Proje
                 "INSERT INTO work_run_evidence (evidence_id, work_id, run_id) VALUES (?1, ?2, ?3)",
                 params![object.key().as_str(), item.work_id.0.to_string(), held.run_id.0.to_string()],
             ).unwrap();
-            append_to_work_feeds(
+            let positions = append_to_work_feeds(
                 &transaction,
                 &project,
                 item.root_id,
@@ -59,6 +60,13 @@ fn seed_history(store: &mut SqliteStore, items: usize, records: usize) -> (Proje
                 None,
                 "work_evidence",
                 &object,
+            )
+            .unwrap();
+            crate::storage::work::note_index::append_native(
+                &transaction,
+                &positions,
+                object.key(),
+                &crate::storage::work::note_index::NativeNote::Evidence(&evidence),
             )
             .unwrap();
         }
@@ -80,6 +88,11 @@ fn note_search_synthetic_history_measurement() {
     let started = Instant::now();
     let mut writer = SqliteStore::open(&database).unwrap();
     let (project, bytes) = seed_history(&mut writer, items, RECORDS);
+    let indexed: i64 = writer
+        .connection
+        .query_row("SELECT COUNT(*) FROM work_note_fts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(usize::try_from(indexed).unwrap(), items * RECORDS);
     let generation_us = started.elapsed().as_micros();
     drop(writer);
     let open_started = Instant::now();

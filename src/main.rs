@@ -31,7 +31,7 @@ mod test_support;
 
 use bin_support::{
     attribution::resolve_shell_work_attribution,
-    doctor::doctor,
+    doctor::{ProjectionMaintenance, doctor},
     graph::run_graph_from_cli,
     project::{ResolvedProject, resolve_project},
     store_lifecycle::{backup, initialize, restore},
@@ -155,11 +155,14 @@ enum Command {
         #[arg(long)]
         json: bool,
         /// Inspect a refused control-policy store without opening or mutating it.
-        #[arg(long, conflicts_with = "repair_projections")]
+        #[arg(long, conflicts_with_all = ["repair_projections", "build_note_search_index"])]
         recover_policy: bool,
         /// Explicitly rebuild declared projections and reset disposable memory advertisements.
         #[arg(long, conflicts_with = "recover_policy")]
         repair_projections: bool,
+        /// Build only the missing note search index, with consumers stopped.
+        #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections", "check_landings"])]
+        build_note_search_index: bool,
         /// Check every landing the seals record against a local git repository; never fetches.
         #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections"])]
         check_landings: bool,
@@ -1224,6 +1227,7 @@ async fn run_cli() -> Result<ExitCode> {
             json,
             recover_policy,
             repair_projections,
+            build_note_search_index,
             check_landings,
             repo,
         } => {
@@ -1243,7 +1247,7 @@ async fn run_cli() -> Result<ExitCode> {
                 &project_id,
                 json,
                 recover_policy,
-                repair_projections,
+                ProjectionMaintenance::selected(repair_projections, build_note_search_index),
                 repository.as_deref(),
             )?;
         }

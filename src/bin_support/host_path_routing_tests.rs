@@ -74,6 +74,7 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
                 json: false,
                 recover_policy: false,
                 repair_projections: false,
+                build_note_search_index: false,
                 check_landings: false,
                 repo: None,
             },

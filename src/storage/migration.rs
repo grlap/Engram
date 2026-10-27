@@ -267,7 +267,7 @@ struct SourceTable {
 
 /// The search indexes this build declares. Their rows are derived from the
 /// records they index, so export reports them and import rebuilds them.
-const SUPPORTED_SEARCH_INDEXES: &[&str] = &["object_fts", "work_catalog_fts"];
+const SUPPORTED_SEARCH_INDEXES: &[&str] = &["object_fts", "work_catalog_fts", "work_note_fts"];
 
 const SEARCH_INDEX: &str = "search index; import rebuilds it";
 const UNDECLARED_INDEX: &str =

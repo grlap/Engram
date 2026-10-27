@@ -1,13 +1,12 @@
-//! On-demand canonical note matching; no durable search projection.
-
-use std::collections::BTreeMap;
+//! Literal public-note matching from the incrementally maintained projection.
 
 use super::{
     DateTime, SqliteStore, StoreError, Utc, WorkCatalogQuery, normalize_work_catalog_key,
     parse_work_id, work_catalog_sql,
 };
-use crate::storage::work::record_windows::{WorkRecordContent, WorkRecordFamily, WorkRecordKind};
+use crate::storage::work::record_windows::WorkRecordFamily;
 use crate::storage::work::search_budget;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct WorkNoteSearchMatch {
@@ -37,7 +36,7 @@ fn select_eligible_ids(sql: &str) -> Result<String, StoreError> {
 }
 
 impl SqliteStore {
-    /// Caller holds the same read snapshot used by membership and page reads.
+    /// Caller holds the snapshot shared by matching, membership and page reads.
     pub(super) fn catalog_note_matches(
         &self,
         project: &crate::ProjectId,
@@ -55,67 +54,67 @@ impl SqliteStore {
         };
         #[cfg(test)]
         search_budget::pause(&self.connection)?;
-        // Discover the entire eligible set, never just this page or seek suffix.
+        // Complete eligible set, independent of page or seek suffix.
         let mut eligible = query.clone();
         eligible.search = None;
         eligible.after = None;
         eligible.after_priority = None;
         eligible.limit = 0;
-        let (sql, parameters) = work_catalog_sql(project, now, &eligible, false, None)?;
+        let (sql, mut parameters) = work_catalog_sql(project, now, &eligible, false, None)?;
         let selected = select_eligible_ids(&sql)?;
-        // A metadata-only item has no note bytes to search. Avoid loading its
-        // canonical item/events merely to establish an empty record window.
-        let sql = format!("SELECT work_id FROM ({selected}) eligible WHERE
-            EXISTS (SELECT 1 FROM work_run_evidence note WHERE note.work_id = eligible.work_id)
-            OR EXISTS (SELECT 1 FROM work_observations note WHERE note.work_id = eligible.work_id)
-            OR EXISTS (SELECT 1 FROM work_restored_evidence note WHERE note.work_id = eligible.work_id)
-            OR EXISTS (SELECT 1 FROM work_restored_records record WHERE record.work_id = eligible.work_id)
-            ORDER BY work_id");
+        // MATCH parsing is NUL-terminated; short/NUL literals use the same exact
+        // normalized projection fields instead. No canonical scan survives.
+        let candidates = if super::catalog_uses_fts(&search) {
+            parameters.push(rusqlite::types::Value::Text(
+                super::catalog_literal_fts_query(&search),
+            ));
+            format!("work_note_fts MATCH ?{} AND", parameters.len())
+        } else {
+            String::new()
+        };
+        let sql = format!("SELECT work_id, locator, family, fields_json FROM work_note_fts
+            WHERE {candidates} work_id IN ({selected})
+            ORDER BY CAST(layer AS INTEGER), CAST(generation AS INTEGER), CAST(position AS INTEGER)");
         let mut statement = self.connection.prepare(&sql)?;
-        let ids = statement
-            .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
-                search_budget::record_row(&self.connection, row)?;
-                row.get::<_, String>(0)
-            })?
-            .map(|row| parse_work_id(&row?))
-            .collect::<Result<Vec<_>, StoreError>>()?;
-        #[cfg(test)]
-        crate::storage::work::cost::sql("note_search_eligible", &statement);
-        for id in ids {
-            for entry in self.work_record_index(project, id, WorkRecordKind::NotesWithGates)? {
-                let WorkRecordContent::Note(note) =
-                    self.work_record_content_for_search(project, id, &entry)?
-                else {
-                    continue;
-                };
-                // Match public note text only, not JSON keys, identity, raw
-                // environment evidence, private scratch or history-only events.
-                let fields = std::iter::once(note.summary.as_str())
-                    .chain(note.refs.iter().map(String::as_str))
-                    .chain(note.gate.iter().flat_map(|gate| {
-                        std::iter::once(gate.name.as_str())
-                            .chain(gate.failed.iter().map(String::as_str))
-                    }));
-                let mut found = false;
-                for field in fields {
-                    if search_budget::contains(&self.connection, field, &search)? {
-                        found = true;
-                        break;
-                    }
-                }
-                if found {
-                    search_budget::record(&self.connection)?;
-                    matches.insert(
-                        id.0,
-                        WorkNoteSearchMatch {
-                            locator: entry.locator,
-                            family: entry.record_family,
-                        },
-                    );
+        let mut rows = statement.query(rusqlite::params_from_iter(parameters.iter()))?;
+        while let Some(row) = rows.next()? {
+            search_budget::record_row(&self.connection, row)?;
+            let id = parse_work_id(&row.get::<_, String>(0)?)?;
+            if matches.contains_key(&id.0) {
+                continue;
+            }
+            let fields: Vec<String> = serde_json::from_str(&row.get::<_, String>(3)?)?;
+            let mut found = false;
+            for field in fields {
+                if search_budget::contains_normalized(&self.connection, &field, &search)? {
+                    found = true;
                     break;
                 }
             }
+            if found {
+                let family = match row.get::<_, String>(2)?.as_str() {
+                    "notes" => WorkRecordFamily::Notes,
+                    "observations" => WorkRecordFamily::Observations,
+                    "gates" => WorkRecordFamily::Gates,
+                    _ => {
+                        return Err(StoreError::InvalidWorkProjection(
+                            "unknown note search family".into(),
+                        ));
+                    }
+                };
+                search_budget::record(&self.connection)?;
+                matches.insert(
+                    id.0,
+                    WorkNoteSearchMatch {
+                        locator: row.get(1)?,
+                        family,
+                    },
+                );
+            }
         }
+        drop(rows);
+        #[cfg(test)]
+        crate::storage::work::cost::sql("note_search_candidates", &statement);
         Ok(matches)
     }
 }
@@ -123,7 +122,6 @@ impl SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn note_search_selection_preserves_filters_and_refuses_a_lost_shape() {
         let sql = "WITH classified AS (SELECT work_id FROM work_items WHERE project_id = ?1) SELECT COUNT(*) FROM classified WHERE priority = ?2";
@@ -131,10 +129,9 @@ mod tests {
             select_eligible_ids(sql).unwrap(),
             "WITH classified AS (SELECT work_id FROM work_items WHERE project_id = ?1) SELECT work_id FROM classified WHERE priority = ?2"
         );
-        assert!(matches!(
-            select_eligible_ids("SELECT total FROM classified"),
-            Err(StoreError::InvalidWorkProjection(message))
-                if message == "note search query lost its classified count selection"
-        ));
+        assert!(
+            matches!(select_eligible_ids("SELECT total FROM classified"),
+            Err(StoreError::InvalidWorkProjection(message)) if message == "note search query lost its classified count selection")
+        );
     }
 }

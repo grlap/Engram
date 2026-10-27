@@ -45,6 +45,8 @@ struct Status {
     fullscan_steps: i32,
     sorts: i32,
     vm_steps: i32,
+    reprepares: i32,
+    runs: i32,
 }
 
 impl Status {
@@ -53,6 +55,8 @@ impl Status {
             fullscan_steps: statement.get_status(StatementStatus::FullscanStep),
             sorts: statement.get_status(StatementStatus::Sort),
             vm_steps: statement.get_status(StatementStatus::VmStep),
+            reprepares: statement.get_status(StatementStatus::RePrepare),
+            runs: statement.get_status(StatementStatus::Run),
         }
     }
 
@@ -63,13 +67,20 @@ impl Status {
             self.fullscan_steps,
             self.sorts,
             self.vm_steps,
+            self.reprepares,
+            self.runs,
             before.fullscan_steps,
             before.sorts,
             before.vm_steps,
+            before.reprepares,
+            before.runs,
         ]
         .iter()
         .any(|value| *value < 0)
         {
+            return None;
+        }
+        if self.reprepares < before.reprepares || self.runs < before.runs {
             return None;
         }
         Some(Counters {
@@ -80,13 +91,47 @@ impl Status {
             vm_steps: u64::try_from(self.vm_steps.checked_sub(before.vm_steps)?).ok()?,
         })
     }
+
+    fn continues_reprepare(self, before: Self) -> bool {
+        before.reprepares.checked_add(1) == Some(self.reprepares)
+            && before.runs.checked_add(1) == Some(self.runs)
+    }
 }
 
 #[derive(Default)]
 struct Capture {
     metrics: Metrics,
     pending: BTreeMap<usize, (Status, &'static str)>,
+    profiled: BTreeMap<usize, (Status, &'static str)>,
     invalid: bool,
+}
+
+impl Capture {
+    fn profile(&mut self, identity: usize, after: Status) {
+        let (before, category, continuation) =
+            if let Some((before, category)) = self.pending.remove(&identity) {
+                (before, category, false)
+            } else if let Some(&(before, category)) = self.profiled.get(&identity)
+                && after.continues_reprepare(before)
+            {
+                (before, category, true)
+            } else {
+                self.invalid = true;
+                return;
+            };
+        if let Some(mut delta) = after.since(before) {
+            // sqlite3_step retries SQLITE_SCHEMA after an automatic reprepare.
+            // SQLite suppresses the retry's STMT, but emits another PROFILE.
+            // Charge its additional work to the same invocation, not a second
+            // statement. An unmatched PROFILE without that proof still fails.
+            delta.statements = u64::from(!continuation);
+            self.metrics.total.add(delta);
+            self.metrics.by_kind.entry(category).or_default().add(delta);
+            self.profiled.insert(identity, (after, category));
+        } else {
+            self.invalid = true;
+        }
+    }
 }
 
 thread_local! {
@@ -188,8 +233,9 @@ pub(crate) fn observe(event: &TraceEvent<'_>) {
         };
         // rusqlite borrows sqlite3_sql's statement-owned UTF-8 buffer. Its
         // address distinguishes simultaneous identical SQL on different
-        // connections; no pointer is dereferenced or kept past PROFILE. An
-        // owned lossy conversion cannot supply that identity, so refuse it.
+        // connections. Only the numeric address is kept within this scope;
+        // no pointer is dereferenced. An owned lossy conversion cannot supply
+        // that identity, so refuse it.
         let sql = statement.sql();
         let Cow::Borrowed(sql) = sql else {
             capture.invalid = true;
@@ -203,6 +249,7 @@ pub(crate) fn observe(event: &TraceEvent<'_>) {
         }
         let identity = sql.as_ptr() as usize;
         if starting {
+            capture.profiled.remove(&identity);
             // Trigger subprograms emit more STMT events with the same parent
             // statement. Preserve its original baseline and count it once at
             // PROFILE; distinct nested statements retain independent entries.
@@ -210,20 +257,8 @@ pub(crate) fn observe(event: &TraceEvent<'_>) {
                 .pending
                 .entry(identity)
                 .or_insert_with(|| (Status::read(statement), kind(sql)));
-        } else if let Some((before, category)) = capture.pending.remove(&identity) {
-            if let Some(delta) = Status::read(statement).since(before) {
-                capture.metrics.total.add(delta);
-                capture
-                    .metrics
-                    .by_kind
-                    .entry(category)
-                    .or_default()
-                    .add(delta);
-            } else {
-                capture.invalid = true;
-            }
         } else {
-            capture.invalid = true;
+            capture.profile(identity, Status::read(statement));
         }
     });
 }

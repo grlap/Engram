@@ -3,6 +3,7 @@ use crate::WorkLifecycle;
 use crate::storage::work::test_support::*;
 use crate::storage::work::*;
 
+mod note_index;
 mod note_search_followups;
 mod note_search_measurement;
 mod note_search_synthetic;
@@ -130,7 +131,7 @@ fn note_search_finds_verification_text_and_excludes_identity_and_environment() {
 }
 
 #[test]
-fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
+fn note_search_cost_and_scope_use_eligible_projection_notes_only() {
     const ITEM_COUNT: usize = 32;
     const NOTES_PER_ITEM: usize = 2;
     let eligible_items = ITEM_COUNT / 2;
@@ -200,10 +201,7 @@ fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
     assert_eq!(total, eligible_items);
     assert_eq!(page.items.len(), eligible_items);
     assert!(page.items.iter().all(|row| row.work.labels == ["selected"]));
-    // Each eligible item is decoded once for its record index. The first
-    // generic note matches: its content and projection validation decode it
-    // twice. Each returned live claim contributes one canonical event read.
-    assert_note_scan_cost(&cost, eligible_items, eligible_items, page.items.len());
+    assert_note_index_cost(&cost);
     println!(
         "note-search representative fixture: 32 items, 64 notes, 16 eligible items, 32 eligible notes, {payload_bytes} eligible summary bytes; cost={cost}"
     );
@@ -225,29 +223,25 @@ fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
         excluded.items.is_empty(),
         "other-label notes do not enter the match set"
     );
-    // This negative control must visit both notes of every eligible item;
-    // excluded-label notes must never be decoded, even though one matches.
-    assert_note_scan_cost(
-        &negative_cost,
-        eligible_items,
-        eligible_items * NOTES_PER_ITEM,
-        0,
-    );
+    // An excluded-label candidate never enters membership; neither matching
+    // nor negative search decodes canonical note bodies.
+    assert_note_index_cost(&negative_cost);
+    assert_eq!(negative_cost["total"]["canonical_decodes"], 0);
     println!("note-search excluded-label negative control: cost={negative_cost}");
 }
 
-fn assert_note_scan_cost(cost: &serde_json::Value, items: usize, notes: usize, rows: usize) {
+fn assert_note_index_cost(cost: &serde_json::Value) {
     let total = &cost["total"];
-    assert_eq!(total["canonical_decodes"], items + 2 * notes + rows);
-    assert_eq!(total["work_item_decodes"], items + rows);
-    assert_eq!(
-        total["typed_work_object_decodes"]["work_evidence"],
-        2 * notes
+    assert!(
+        total["typed_work_object_decodes"]
+            .get("work_evidence")
+            .is_none(),
+        "zero decodes has no counter entry: {cost}"
     );
-    // SQL attribution names only the eligible-set query; it is not a count
+    // SQL attribution names only the candidate query; it is not a count
     // of every statement. Existing classified-query counters cover the
     // separate membership and page passes.
-    assert_eq!(total["sql"]["note_search_eligible"]["calls"], 1);
+    assert_eq!(total["sql"]["note_search_candidates"]["calls"], 1);
     assert_eq!(work_catalog_count_queries(), 1);
     assert_eq!(work_catalog_classified_queries(), 2);
 }
@@ -932,10 +926,10 @@ fn doctor_reads_the_catalog_text_once_whatever_the_item_count() {
         let before = crate::storage::fts_verification::fts_content_scans();
         let report = store.verify_all().expect("doctor");
         assert!(report.is_healthy(), "{report:?}");
-        // One pass for the work catalog and one for the memory index.
+        // One pass each for catalog, note text and memory indexes.
         assert_eq!(
             crate::storage::fts_verification::fts_content_scans() - before,
-            2,
+            3,
             "{count} items"
         );
     }

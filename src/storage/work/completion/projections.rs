@@ -502,6 +502,7 @@ impl SqliteStore {
         verify_completion_rows(connection, &completion_rows, &mut checked, &mut invalid)?;
         verify_work_feed_integrity(connection, &work_items, &mut checked, &mut invalid)?;
         verify_work_catalog_projections(connection, &mut checked, &mut invalid)?;
+        super::super::note_index::verify(connection, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
         verify_required_child_waiver_bindings(connection, &mut audit, &mut checked, &mut invalid)?;

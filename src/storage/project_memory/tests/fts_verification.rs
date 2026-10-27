@@ -63,15 +63,21 @@ fn doctor_reads_the_memory_index_once_whatever_the_memory_count() {
             .connection
             .pragma_update(None, "query_only", true)
             .unwrap();
-        let before = crate::storage::fts_verification::fts_content_scans();
+        let queries = [
+            "SELECT object_id, title, body FROM object_fts",
+            "SELECT work_id, search_text FROM work_catalog_fts",
+            "SELECT locator, work_id, family, layer, generation, position, fields_json, search_text FROM work_note_fts",
+        ];
+        let before = queries.map(crate::storage::fts_verification::fts_content_scans_for);
         let report = store.verify_all().expect("doctor");
         assert!(report.is_healthy(), "{report:?}");
-        // One pass for the memory index and one for the work catalog.
-        assert_eq!(
-            crate::storage::fts_verification::fts_content_scans() - before,
-            2,
-            "{count} memories"
-        );
+        for (query, before) in queries.into_iter().zip(before) {
+            assert_eq!(
+                crate::storage::fts_verification::fts_content_scans_for(query) - before,
+                1,
+                "{count} memories: {query}"
+            );
+        }
     }
 }
 

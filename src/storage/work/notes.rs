@@ -45,6 +45,34 @@ pub(crate) struct WorkNoteRecord {
     pub recorded_at: DateTime<Utc>,
 }
 
+/// The public text searched by the catalog, shared by incremental projection,
+/// canonical rebuild and the scan equivalence oracle. Field boundaries matter.
+pub(super) fn search_fields(
+    summary: &str,
+    refs: &[String],
+    gate: Option<(&str, &[String])>,
+) -> Vec<String> {
+    std::iter::once(summary)
+        .chain(refs.iter().map(String::as_str))
+        .chain(gate.into_iter().flat_map(|(name, failed)| {
+            std::iter::once(name).chain(failed.iter().map(String::as_str))
+        }))
+        .map(super::planning::normalize_work_catalog_key)
+        .collect()
+}
+
+impl WorkNoteRecord {
+    pub(super) fn search_fields(&self) -> Vec<String> {
+        search_fields(
+            &self.summary,
+            &self.refs,
+            self.gate
+                .as_ref()
+                .map(|gate| (gate.name.as_str(), gate.failed.as_slice())),
+        )
+    }
+}
+
 /// What the host recorded for one verification: its typed result and check
 /// kind, the source revision and workspace it ran on, and its producer observation's
 /// outcome. Read from the immutable records, never inferred from the summary,

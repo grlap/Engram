@@ -177,7 +177,7 @@ fn persist_work_observation_on(
     let object = CanonicalObject::mint(observation)?;
     SqliteStore::insert_object(transaction, "work_observation", &object)?;
     insert_projection(transaction, object.key(), observation)?;
-    append_to_work_feeds(
+    let positions = append_to_work_feeds(
         transaction,
         &observation.project_id,
         observation.root_id,
@@ -185,6 +185,12 @@ fn persist_work_observation_on(
         None,
         "work_observation",
         &object,
+    )?;
+    super::note_index::append_native(
+        transaction,
+        &positions,
+        object.key(),
+        &super::note_index::NativeNote::Observation(observation),
     )?;
     Ok(WorkNoteCapture {
         non_holder: true,

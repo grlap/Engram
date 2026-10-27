@@ -659,6 +659,7 @@ fn insert_task(
     SqliteStore::insert_object(connection, ORIGIN_KIND, &origin_object)?;
     connection.execute("INSERT INTO work_restored_records (work_id, generation_index, record_id) VALUES (?1, 0, ?2)",
         params![task.id.0.to_string(), object.key().as_str()])?;
+    super::note_index::append_inherited(connection, object.key(), &record)?;
     for prerequisite in &task.prerequisites {
         connection.execute("INSERT INTO work_prerequisites (work_id, prerequisite_id, event_id) VALUES (?1, ?2, ?3)",
             params![task.id.0.to_string(), prerequisite.0.to_string(), object.key().as_str()])?;

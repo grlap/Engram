@@ -327,7 +327,7 @@ fn append_restored_work_evidence_on(
             evidence.created_at.timestamp_millis(),
         ],
     )?;
-    append_to_work_feeds(
+    let positions = append_to_work_feeds(
         transaction,
         &item.project_id,
         item.root_id,
@@ -335,6 +335,12 @@ fn append_restored_work_evidence_on(
         None,
         "work_restored_evidence",
         &object,
+    )?;
+    super::note_index::append_native(
+        transaction,
+        &positions,
+        object.key(),
+        &super::note_index::NativeNote::Restored(&evidence),
     )?;
     Ok(object.key().clone())
 }
@@ -1636,7 +1642,7 @@ fn persist_work_evidence_on(
             run.run_id.0.to_string()
         ],
     )?;
-    append_to_work_feeds(
+    let positions = append_to_work_feeds(
         transaction,
         &item.project_id,
         item.root_id,
@@ -1644,6 +1650,12 @@ fn persist_work_evidence_on(
         None,
         "work_evidence",
         &object,
+    )?;
+    super::note_index::append_native(
+        transaction,
+        &positions,
+        object.key(),
+        &super::note_index::NativeNote::Evidence(evidence),
     )?;
     let root_execution = super::root_state::update(transaction, run.root_execution_id, |root| {
         let changed = expect_root_contributor(root, &claim.holder)
@@ -1868,7 +1880,7 @@ fn persist_post_completion_work_evidence_on(
             run.run_id.0.to_string()
         ],
     )?;
-    append_to_work_feeds(
+    let positions = append_to_work_feeds(
         transaction,
         &item.project_id,
         item.root_id,
@@ -1876,6 +1888,12 @@ fn persist_post_completion_work_evidence_on(
         None,
         "work_evidence",
         &object,
+    )?;
+    super::note_index::append_native(
+        transaction,
+        &positions,
+        object.key(),
+        &super::note_index::NativeNote::Evidence(evidence),
     )?;
     let root_execution = load_root_execution(transaction, run.root_execution_id)?;
     append_work_event(

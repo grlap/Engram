@@ -83,9 +83,24 @@ impl WorkRecordAddress {
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WorkRecordOrder {
-    layer: u8,
-    generation: usize,
-    position: i64,
+    pub(super) layer: u8,
+    pub(super) generation: usize,
+    pub(super) position: i64,
+}
+
+pub(super) fn inherited_note_family(note: &crate::WorkGraphSnapshotNote) -> WorkRecordFamily {
+    if note.gate.is_some() {
+        WorkRecordFamily::Gates
+    } else if note
+        .actor
+        .provenance_chain
+        .iter()
+        .any(crate::domain::is_non_holder_note_marker)
+    {
+        WorkRecordFamily::Observations
+    } else {
+        WorkRecordFamily::Notes
+    }
 }
 
 impl WorkRecordOrder {
@@ -121,7 +136,19 @@ pub(crate) enum WorkRecordContent {
     },
 }
 
-impl SqliteStore {
+/// Borrow the caller's existing snapshot or maintenance transaction. Both
+/// ordinary detail and projection derivation share these navigation owners.
+pub(super) struct WorkRecordReader<'a> {
+    connection: &'a rusqlite::Connection,
+}
+
+impl<'a> WorkRecordReader<'a> {
+    pub(super) fn new(connection: &'a rusqlite::Connection) -> Self {
+        Self { connection }
+    }
+}
+
+impl WorkRecordReader<'_> {
     /// The caller owns one read snapshot encompassing metadata and body reads.
     /// Native family classification probes stored JSON only for work evidence,
     /// the sole native kind that can carry a gate. Other kinds and restored
@@ -136,11 +163,11 @@ impl SqliteStore {
         work_id: WorkId,
         kind: WorkRecordKind,
     ) -> Result<Vec<WorkRecordIndex>, StoreError> {
-        if load_work_item(&self.connection, work_id)?.project_id != *project {
+        if load_work_item(self.connection, work_id)?.project_id != *project {
             return Err(invalid("record window cannot cross projects"));
         }
         let mut indexed = Vec::new();
-        let records = restored_records_for_item(&self.connection, work_id)?;
+        let records = restored_records_for_item(self.connection, work_id)?;
         let carried_disposals = crate::graph_snapshot::carried_disposal_layers(&records);
         for (record, carried_disposal) in records.into_iter().zip(carried_disposals) {
             // Use the verified stored identity, never re-freeze historical data.
@@ -169,22 +196,11 @@ impl SqliteStore {
             for (position, member) in members.into_iter().enumerate() {
                 #[cfg(test)]
                 super::cost::note_index_visit();
-                super::search_budget::record(&self.connection)?;
+                super::search_budget::record(self.connection)?;
                 let record_family = match member {
                     RestoredMember::Note(index) => {
                         let note = &record.history.notes[index - 1];
-                        if note.gate.is_some() {
-                            WorkRecordFamily::Gates
-                        } else if note
-                            .actor
-                            .provenance_chain
-                            .iter()
-                            .any(crate::domain::is_non_holder_note_marker)
-                        {
-                            WorkRecordFamily::Observations
-                        } else {
-                            WorkRecordFamily::Notes
-                        }
+                        inherited_note_family(note)
                     }
                     RestoredMember::Event(_) | RestoredMember::Completion => {
                         WorkRecordFamily::History
@@ -235,7 +251,7 @@ impl SqliteStore {
         while let Some(row) = rows.next()? {
             #[cfg(test)]
             super::cost::note_index_visit();
-            super::search_budget::record_row(&self.connection, row)?;
+            super::search_budget::record_row(self.connection, row)?;
             let position: Option<i64> = row.get(2)?;
             indexed.push(WorkRecordIndex {
                 record_family: match row.get::<_, String>(4)?.as_str() {
@@ -278,9 +294,9 @@ impl SqliteStore {
         self.work_record_content_with_verification_facts(project, work_id, index, true)
     }
 
-    /// Search needs public text only. Canonical projection/binding validation
+    /// Projection derivation needs public text only. Canonical binding validation
     /// still reads the producer; suppress only its second, display-facts read.
-    pub(crate) fn work_record_content_for_search(
+    pub(super) fn public_note_content(
         &self,
         project: &ProjectId,
         work_id: WorkId,
@@ -308,7 +324,7 @@ impl SqliteStore {
         }
         if index.family == "event" {
             let event: WorkEvent =
-                load_typed_work_object(&self.connection, &index.address.hash, "work_event")?;
+                load_typed_work_object(self.connection, &index.address.hash, "work_event")?;
             if event.work_id != work_id || event.project_id != *project {
                 return Err(invalid("history event belongs to another work item"));
             }
@@ -321,13 +337,43 @@ impl SqliteStore {
             ));
         }
         Ok(WorkRecordContent::Note(load_note(
-            &self.connection,
+            self.connection,
             work_id,
             &index.address.hash,
             &index.family,
             &index.object_kind,
             verification_facts,
         )?))
+    }
+}
+
+impl SqliteStore {
+    pub(crate) fn work_record_index(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        kind: WorkRecordKind,
+    ) -> Result<Vec<WorkRecordIndex>, StoreError> {
+        WorkRecordReader::new(&self.connection).work_record_index(project, work_id, kind)
+    }
+
+    pub(crate) fn work_record_content(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        index: &WorkRecordIndex,
+    ) -> Result<WorkRecordContent, StoreError> {
+        WorkRecordReader::new(&self.connection).work_record_content(project, work_id, index)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn work_record_content_for_search(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        index: &WorkRecordIndex,
+    ) -> Result<WorkRecordContent, StoreError> {
+        WorkRecordReader::new(&self.connection).public_note_content(project, work_id, index)
     }
 }
 

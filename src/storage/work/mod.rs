@@ -42,6 +42,7 @@ pub(crate) use import::validate_input as validate_work_import_input;
 pub(in crate::storage) use import::{
     native_source_notices_on, validate_restored_source_notices_on,
 };
+pub(in crate::storage) mod note_index;
 mod notes;
 pub(crate) use notes::validate_criterion_evidence_locator;
 mod observation;

@@ -1622,6 +1622,7 @@ fn insert_prepared_load_on(
                 object.key().as_str(),
             ],
         )?;
+        super::super::work::note_index::append_inherited(transaction, object.key(), record)?;
         newest_record.insert(record.work_id, object.key().clone());
     }
     for item in &prepared.document.body.items {
@@ -1739,27 +1740,29 @@ fn ensure_restore_catalog_slots_empty(
         .iter()
         .map(|item| item.work_id.0.to_string())
         .collect::<HashSet<_>>();
-    let mut statement = connection.prepare("SELECT work_id FROM work_catalog_fts")?;
-    let mut rows = statement.query([])?;
-    while let Some(row) = rows.next()? {
-        let work_id: String = row.get(0)?;
-        if incoming.contains(&work_id) {
-            // A real item in another project is an ID conflict, not damage
-            // that projection repair can resolve. Only the refusal path needs
-            // this indexed lookup; healthy restores retain one FTS pass.
-            let item_exists: bool = connection.query_row(
-                "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1)",
-                [work_id],
-                |row| row.get(0),
-            )?;
-            if !item_exists {
-                return Err(StoreError::InvalidWorkProjection(
-                    "destination work_catalog_fts projection contains an orphan row for an incoming work item; run `engram doctor --repair-projections` on the destination store before retrying".into(),
+    for table in ["work_catalog_fts", "work_note_fts"] {
+        let mut statement = connection.prepare(&format!("SELECT work_id FROM {table}"))?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let work_id: String = row.get(0)?;
+            if incoming.contains(&work_id) {
+                // A real item in another project is an ID conflict, not damage
+                // that projection repair can resolve. Only the refusal path needs
+                // this indexed lookup; healthy restores retain one FTS pass.
+                let item_exists: bool = connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1)",
+                    [work_id],
+                    |row| row.get(0),
+                )?;
+                if !item_exists {
+                    return Err(StoreError::InvalidWorkProjection(format!(
+                        "destination {table} projection contains an orphan row for an incoming work item; run `engram doctor --repair-projections` on the destination store before retrying"
+                    )));
+                }
+                return Err(corrupt(
+                    "snapshot work item already has a catalog FTS row in the destination",
                 ));
             }
-            return Err(corrupt(
-                "snapshot work item already has a catalog FTS row in the destination",
-            ));
         }
     }
     Ok(())

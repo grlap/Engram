@@ -676,27 +676,29 @@ fn orphan_fts_schema_issue(
     actual: &[SchemaDefinition],
     owner: SchemaOwner,
 ) -> Option<String> {
-    let table = match owner {
-        SchemaOwner::Core => "object_fts",
-        SchemaOwner::Work => "work_catalog_fts",
+    let tables: &[&str] = match owner {
+        SchemaOwner::Core => &["object_fts"],
+        SchemaOwner::Work => &["work_catalog_fts", "work_note_fts"],
     };
-    let shadow = actual.iter().find(|definition| {
-        definition.object_type == "table"
-            && definition.name != table
-            && is_fts_schema_object(&definition.name, table)
-    })?;
-    let recognized_parent = reference
-        .iter()
-        .find(|definition| definition.object_type == "table" && definition.name == table)
-        .is_some_and(|definition| actual.contains(definition));
-    if recognized_parent {
-        None
-    } else {
-        Some(format!(
-            "shadow table {} has no recognized FTS owner {table}",
-            shadow.name
-        ))
-    }
+    tables.iter().find_map(|table| {
+        let shadow = actual.iter().find(|definition| {
+            definition.object_type == "table"
+                && definition.name != *table
+                && is_fts_schema_object(&definition.name, table)
+        })?;
+        let recognized_parent = reference
+            .iter()
+            .find(|definition| definition.object_type == "table" && definition.name == *table)
+            .is_some_and(|definition| actual.contains(definition));
+        if recognized_parent {
+            None
+        } else {
+            Some(format!(
+                "shadow table {} has no recognized FTS owner {table}",
+                shadow.name
+            ))
+        }
+    })
 }
 
 pub(super) fn current_schema_definition_issue(

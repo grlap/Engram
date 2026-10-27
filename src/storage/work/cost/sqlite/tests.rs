@@ -254,3 +254,117 @@ fn statements_must_settle_inside_the_scope() {
     drop(rows);
     assert_eq!(start().finish().total, Counters::default());
 }
+
+#[test]
+fn first_empty_note_fts_write_is_fully_attributed_through_reprepare() {
+    let connection = Connection::open_in_memory().unwrap();
+    install(&connection);
+    crate::storage::work::note_index::create_schema(&connection).unwrap();
+    let scope = start();
+    connection
+        .execute(
+            "INSERT INTO work_note_fts
+             (locator, work_id, family, layer, generation, position, fields_json, search_text)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            [
+                "locator",
+                "work",
+                "notes",
+                "1",
+                "0",
+                "1",
+                "[]",
+                "public note",
+            ],
+        )
+        .unwrap();
+    let category = CURRENT.with_borrow(|current| {
+        current
+            .as_ref()
+            .unwrap()
+            .profiled
+            .values()
+            .find(|(status, _)| status.reprepares > 0)
+            .map(|(_, category)| *category)
+            .expect("first note insert automatically reprepares an internal statement")
+    });
+    let first = scope.finish();
+    assert!(first.total.vm_steps > 0);
+    assert!(first.by_kind[category].vm_steps > 0);
+    assert_eq!(start().finish().total, Counters::default());
+}
+
+#[test]
+fn reprepare_profiles_charge_both_deltas_and_other_unmatched_profiles_fail() {
+    let before = Status {
+        fullscan_steps: 1,
+        sorts: 1,
+        vm_steps: 10,
+        reprepares: 0,
+        runs: 0,
+    };
+    let first = Status {
+        fullscan_steps: 4,
+        sorts: 2,
+        vm_steps: 15,
+        runs: 1,
+        ..before
+    };
+    let retry = Status {
+        fullscan_steps: 9,
+        sorts: 4,
+        vm_steps: 25,
+        reprepares: 1,
+        runs: 2,
+    };
+    let observed_first = || {
+        let mut capture = Capture::default();
+        capture.pending.insert(1, (before, "replace"));
+        capture.profile(1, first);
+        capture
+    };
+    let mut capture = observed_first();
+    capture.profile(1, retry);
+    assert!(!capture.invalid);
+    assert_eq!(
+        capture.metrics.total,
+        Counters {
+            statements: 1,
+            fullscan_steps: 8,
+            sorts: 3,
+            vm_steps: 15,
+        }
+    );
+    assert_eq!(capture.metrics.total, capture.metrics.by_kind["replace"]);
+    for forged in [
+        first, // Another PROFILE without an automatic reprepare.
+        Status {
+            reprepares: 0,
+            ..retry
+        },
+        Status { runs: 1, ..retry },
+        Status {
+            vm_steps: 0,
+            ..retry
+        },
+        Status {
+            fullscan_steps: 0,
+            ..retry
+        },
+        Status { sorts: 0, ..retry },
+        Status {
+            vm_steps: -1,
+            ..retry
+        },
+    ] {
+        let mut invalid = observed_first();
+        let retained = invalid.metrics.total;
+        invalid.profile(1, forged);
+        assert!(invalid.invalid);
+        assert_eq!(invalid.metrics.total, retained);
+    }
+    let mut unknown = Capture::default();
+    unknown.profile(1, retry);
+    assert!(unknown.invalid);
+    assert_eq!(unknown.metrics.total, Counters::default());
+}

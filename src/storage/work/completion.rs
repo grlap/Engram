@@ -1448,6 +1448,7 @@ fn validate_obligation_resolution_projection(
 }
 
 struct TypedEvidenceProjection<'a> {
+    note: Option<&'a VerificationEvidence>,
     kind: WorkEvidenceKind,
     workspace_id: &'a str,
     source_revision: &'a str,
@@ -1476,6 +1477,7 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
         evidence.recorded_at,
         &object,
         &TypedEvidenceProjection {
+            note: Some(evidence),
             kind: WorkEvidenceKind::Verification,
             workspace_id: &evidence.source_basis.workspace_id,
             source_revision: &evidence.source_basis.source_revision,
@@ -1511,6 +1513,7 @@ pub(in crate::storage) fn append_control_environment_evidence_on(
         evidence.recorded_at,
         &object,
         &TypedEvidenceProjection {
+            note: None,
             kind: WorkEvidenceKind::Environment,
             workspace_id: &evidence.source_basis.workspace_id,
             source_revision: &evidence.source_basis.source_revision,
@@ -1592,7 +1595,7 @@ fn append_control_typed_evidence_on(
             projection.components_json.as_deref(),
         ],
     )?;
-    append_to_work_feeds(
+    let positions = append_to_work_feeds(
         transaction,
         &item.project_id,
         item.root_id,
@@ -1601,6 +1604,14 @@ fn append_control_typed_evidence_on(
         object_kind,
         object,
     )?;
+    if let Some(note) = projection.note {
+        super::note_index::append_native(
+            transaction,
+            &positions,
+            object.key(),
+            &super::note_index::NativeNote::Verification(note),
+        )?;
+    }
     // A late record on a finished run is audit only: it never becomes a
     // contributor or a contribution of the root, whose sealed accounting
     // already closed over the run.

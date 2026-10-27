@@ -1134,14 +1134,20 @@ Rules that matter:
   full `locator` and `family`; use `show REF --note LOCATOR` to read it.
   Counts, membership and pages share one snapshot and one transient note
   match set. A new matching item invalidates the continuation; another match
-  within an existing member does not. Search scans eligible canonical notes
-  on demand for each requested page and creates no durable search index.
+  within an existing member does not. Search uses a rebuildable trigram FTS5
+  note index, normalized incrementally in the same transaction as each write.
+  Candidates are verified literally against individual indexed public fields;
+  queries shorter than three characters or containing NUL scan those projection
+  fields only.
+  Search trusts this projection and does not validate canonical note records
+  or their producers. Explicit show/detail reads and doctor retain canonical
+  validation. Projection repair rebuilds and verifies the index from canonical
+  records; ordinary writes never trigger a full rebuild.
   Every storage catalog search, including a stateful `next` with search,
   shares a finite allowance for that scan: 10 million SQL progress steps
   (one-step callbacks, with clock polling every 1,024 steps), 100,000 visited
   index/result records, 384 MiB of cumulative charged work bytes, and a
-  sixty-second cooperative deadline. The 60 s value is temporary containment
-  until note search no longer decodes every note per call. Record visits count selected catalog and
+  ten-second cooperative deadline. Record visits count selected catalog and
   note-index entries, retained matches, relation and ancestor rows, handoff
   projections/events, evidence-binding projections, root headers/members and
   waiver entries. Repeated visits consume the same cumulative allowance,
@@ -1181,7 +1187,7 @@ Rules that matter:
   owner. A failed worker reports `search_worker_failed` without partial data.
   Native/filesystem stalls and
   the existing SQLite busy wait must return before a cooperative check can
-  run, so sixty seconds is not a hard response-time guarantee. The synchronous
+  run, so ten seconds is not a hard response-time guarantee. The synchronous
   query stops before returning a refusal. Non-search reads retain their
   existing limits, and existing stored oversized notes are not rewritten.
   Core `next` with search remains stateful: a refusal does not undo session
@@ -1873,6 +1879,24 @@ engram doctor --recover-policy [--json]
 # Explicitly rebuild declared projections and reset memory advertisements.
 # Ordinary open never performs this repair implicitly.
 engram doctor --repair-projections [--json]
+
+# One-time note-search index cutover, with consumers stopped. Builds only the
+# absent work_note_fts; other projections must already have current shapes.
+# Existing or damaged target objects require the full repair above.
+engram doctor --build-note-search-index [--json]
+```
+
+The note-index build uses one writer transaction and one prepared insertion
+statement, verifies the new index against canonical note text, and commits only
+after strict schema admission succeeds. It preserves every other projection,
+including memory advertisements. It does not run the full integrity audit:
+JSON reports `scope: "work_note_fts"` and `full_audit: "not_run"`. Ordinary open
+and readiness remain strict and never build the index implicitly. Stop store
+consumers for this one-time cutover and restart them after readiness succeeds.
+The existing full `--repair-projections` still rebuilds and verifies all declared
+projections when repair is needed.
+
+```bash
 
 # On request only: check each landing the seals record against a local git
 # repository (default: the project file's directory). Reads local objects and
@@ -2869,6 +2893,12 @@ from verified durable rows in one transaction, and then runs full integrity
 verification. It never recreates
 missing durable state or rewrites canonical objects.
 
+For the one-time addition of an absent public-note index,
+`doctor --build-note-search-index` instead builds and verifies only that index,
+preserving every other projection and advertisement. It refuses existing or
+damaged target objects and any other schema mismatch. It does not replace the
+full repair or full integrity audit.
+
 On a fresh store, plain `engram init` defaults to `turn_gated`;
 `--required-assurance` may instead select `advisory`, `turn_gated`, or
 `action_gated` for that first policy and requires `--authorized-by`;
@@ -3193,8 +3223,10 @@ Ready and catalog candidates are filtered and limited by maintained SQLite
 projections before their compact item rows are decoded. Assignment and label
 filters use NFC plus full Unicode case folding, and catalog text search uses a
 trigram index over the short reference, title, outcome, labels, and active
-blocker detail, augmented on demand by complete canonical note/gate text and
-refs in the same read snapshot. These views remain advisory; lifecycle mutations revalidate
+blocker detail, combined with complete public note/gate text and refs from the
+transactionally maintained note index in the same read snapshot. Search trusts
+that projection; explicit detail reads and doctor retain canonical validation,
+as described in the search contract above. These views remain advisory; lifecycle mutations revalidate
 their canonical work-event basis under the write lock.
 Core `next --search` includes canonical note and gate matches, but its catalog
 rows omit the match details. To find why an item matched, run

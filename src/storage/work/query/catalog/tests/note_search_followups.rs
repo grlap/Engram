@@ -2,7 +2,7 @@ use super::*;
 use crate::storage::work::record_windows::{WorkRecordContent, WorkRecordKind};
 
 #[test]
-fn note_search_verification_reads_producer_once_and_show_retains_facts() {
+fn note_search_trusts_projection_while_detail_and_doctor_validate_producer() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let work = store
         .create_work(
@@ -67,9 +67,11 @@ fn note_search_verification_reads_producer_once_and_show_retains_facts() {
         assert_eq!(page.items[0].work.work_id, work.work_id);
         assert_eq!(matches[&work.work_id.0].locator, entry.locator);
         assert_eq!(matches[&work.work_id.0].family, entry.record_family);
-        assert_eq!(
-            measured["total"]["typed_work_object_decodes"]["execution_observation"],
-            1
+        assert!(
+            measured["total"]["typed_work_object_decodes"]
+                .get("execution_observation")
+                .is_none(),
+            "zero decodes has no counter entry: {measured}"
         );
     }
     cost::start();
@@ -108,24 +110,32 @@ fn note_search_verification_reads_producer_once_and_show_retains_facts() {
             rusqlite::params![b"{}".as_slice(), verification.producer_observation.as_str()],
         )
         .unwrap();
-    assert!(
-        store
-            .query_work_catalog(
-                &work.project_id,
-                at(4),
-                &WorkCatalogQuery {
-                    search: Some("unrelated negative search".into()),
-                    limit: 10,
-                    ..WorkCatalogQuery::default()
-                }
-            )
-            .is_err(),
-        "search still validates the producer even when no note matches"
+    crate::canonical::reset_canonical_decode_count();
+    let negative = store
+        .query_work_catalog(
+            &work.project_id,
+            at(4),
+            &WorkCatalogQuery {
+                search: Some("unrelated negative search".into()),
+                limit: 10,
+                ..WorkCatalogQuery::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(negative.items.len(), 0);
+    assert_eq!(
+        crate::canonical::canonical_decode_count(),
+        0,
+        "projection-only no-match search does not validate canonical producers"
     );
     assert!(
         store
             .work_record_content(&work.project_id, work.work_id, entry)
             .is_err()
+    );
+    assert!(
+        !store.verify_all().unwrap().is_healthy(),
+        "doctor still detects canonical producer corruption"
     );
     store
         .connection

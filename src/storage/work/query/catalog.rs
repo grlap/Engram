@@ -311,6 +311,10 @@ fn catalog_literal_fts_query(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
+fn catalog_uses_fts(value: &str) -> bool {
+    value.chars().count() >= 3 && !value.contains('\0')
+}
+
 pub(super) fn ready_listing_order(query: &WorkCatalogQuery) -> bool {
     query.ready_priority_order
 }
@@ -474,16 +478,16 @@ fn work_catalog_sql(
         .map(normalize_work_catalog_key)
         .filter(|value| !value.is_empty())
     {
-        let search_characters = search.chars().count();
+        let use_fts = catalog_uses_fts(&search);
         let parameter = push_catalog_parameter(
             &mut parameters,
-            Value::Text(if search_characters >= 3 {
+            Value::Text(if use_fts {
                 catalog_literal_fts_query(&search)
             } else {
                 search
             }),
         );
-        let metadata_match = if search_characters >= 3 {
+        let metadata_match = if use_fts {
             format!(
                 "candidate.work_id IN (
                      SELECT work_id FROM work_catalog_fts
