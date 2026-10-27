@@ -147,18 +147,24 @@ their presence in a file alone does not prove delivery.
   store is ready, nothing needs stopping: replace the installed binary and
   keep the old one as a backup (a running Windows executable can be
   renamed aside); running processes keep the old build until they
-  restart. A store reporting `projection_repair_required` needs its
-  consumers stopped, `engram doctor --repair-projections` (or the narrower
-  one-time step the changeset documents) run with the new build, and the
-  consumers restarted on it. Under the standing approval the Merger (the
-  integration owner), not the coordinator, may commit and push such a
-  changeset and prepare its cutover; stopping and
-  restarting the consumers stays Greg's act at a moment the coordinators
-  agree, as for a TermAl restart, and the new build is installed only while
-  they are stopped. Until that cutover completes, the landing report tells
-  Greg that the installed build stays in place and that no consumer may be
-  restarted on a build made from the new master, and nothing builds from
-  that master into the installed path. A store reporting
+  restart. A store reporting `projection_repair_required` needs every
+  consumer still running the old build gone,
+  `engram doctor --repair-projections` (or the narrower one-time step the
+  changeset documents) run with the new build, and `readiness` with the new build
+  reporting every live store ready. Under the standing approval the Merger
+  (the integration owner), not the coordinator, may commit and push such a
+  changeset and carry out its cutover. Restarting TermAl stays Greg's only
+  act, at a moment the coordinators agree, as for any TermAl restart. Only
+  when the changeset's new build has been verified to refuse an unconverted
+  store without writing to it does the Merger install it immediately before
+  that restart, keeping the old one as a backup; otherwise both coordinators
+  agree that changeset's cutover plan before it lands. After the restart,
+  once no `engram` process started before the install is running, the Merger
+  runs that step on every live store. If the agreed restart is put off, the
+  Merger reinstalls the old build until the next agreed moment. Until that
+  cutover completes, the landing report tells Greg that the installed build
+  stays in place, and nothing else builds from that master into the
+  installed path. A store reporting
   `different_build_schema` (a durable schema change, or a projection the
   new build no longer declares) needs migration export and import too.
   Repair and migration interrupt sessions, so say so when presenting the
