@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { devNull } from "node:os";
 import { once } from "node:events";
@@ -38,19 +38,117 @@ function git(args, cwd) {
   return execFileSync("git", ["-c", "maintenance.auto=false", ...args], { cwd, encoding: "utf8" });
 }
 
+function fixtureFailureSnapshot({ runDir, binary }) {
+  const bounded = (text, limit) => text.length > limit ? `[truncated]\n${text.slice(-limit)}` : text;
+  const tail = (path, limit) => {
+    const fd = openSync(path, "r");
+    try {
+      const size = statSync(path).size;
+      const buffer = Buffer.alloc(Math.min(size, limit));
+      const length = readSync(fd, buffer, 0, buffer.length, Math.max(0, size - buffer.length));
+      return `${size > limit ? "[truncated]\n" : ""}${buffer.subarray(0, length).toString("utf8")}`;
+    } finally { closeSync(fd); }
+  };
+  const unavailable = (error) => error.code === "ENOENT" ? "absent" : `unavailable: ${error.message}`;
+  const resultsPath = join(runDir, "results.json");
+  let saved, results, executableInfo, output = "absent";
+  try {
+    saved = JSON.parse(tail(resultsPath, 65_536));
+    const outcome = ({ name, state, code, signal, error, command }) => ({ name, state,
+      code: code === undefined ? "unavailable" : code, signal: signal === undefined ? "unavailable" : signal, error, command });
+    results = JSON.stringify({ state: saved.state, exitCode: saved.exitCode, reason: saved.reason, error: saved.error,
+      preflight: saved.preflight?.map(outcome), stages: saved.stages?.map(outcome) });
+    const last = [...(saved.preflight ?? []), ...(saved.stages ?? [])].filter((entry) => entry.log).at(-1);
+    if (last) {
+      try { output = tail(logPath(runDir, last), 4096); } catch (error) { output = unavailable(error); }
+    }
+  } catch (error) { results = unavailable(error); }
+  try {
+    const info = statSync(binary);
+    executableInfo = JSON.stringify({ path: binary, bytes: info.size, mode: (info.mode & 0o777).toString(8) });
+  } catch (error) { executableInfo = `${binary}: ${unavailable(error)}`; }
+  return `Fixture child snapshot (captured before cleanup; inner paths are removed):\nresults: ${resultsPath}\n`
+    + `executable: ${executableInfo}\nchild results: ${bounded(results, 4096)}\nmerged stdout/stderr (last 4096 bytes):\n${output}`;
+}
+
 async function repository(callback, prefix = "engram-launcher-") {
   const root = fixtureHome(prefix);
+  let lastChild;
   try {
     git(["init", "--quiet", "--template="], root);
     assert.equal(git(["config", "--bool", "--get", "maintenance.auto"], root).trim(), "false");
     git(["config", "core.autocrlf", "false"], root);
     writeFileSync(join(root, "tracked.txt"), "baseline\n");
     git(["add", "tracked.txt"], root);
-    await callback(root);
+    // Track the invoked run explicitly: directory order does not identify it.
+    await callback(root, (runDir, binary) => { lastChild = { runDir, binary }; });
+  } catch (error) {
+    if (lastChild && error && typeof error === "object") {
+      try {
+        const snapshot = fixtureFailureSnapshot(lastChild);
+        const stack = error.stack;
+        error.message += `\n${snapshot}`;
+        // Node may already have materialized the assertion's original stack.
+        if (typeof stack === "string") error.stack = `${stack}\n${snapshot}`;
+      } catch { /* diagnostic capture must never replace the original failure */ }
+    }
+    throw error;
   } finally {
     removeFixtureHomes(root);
   }
 }
+
+for (const code of [0, 23]) {
+  test(`fixture failures report child diagnostics before cleanup (exit ${code})`, async () => {
+    const original = new assert.AssertionError({ message: "original fixture assertion", actual: "actual", expected: "expected", operator: "strictEqual" });
+    const cause = new Error("original cause");
+    original.cause = cause;
+    const stack = original.stack;
+    let home, resultsPath;
+    await assert.rejects(repository(async (root, observe) => {
+      home = root;
+      const runDir = createRun({ root, stages: [stage("child", `console.error('x'.repeat(6000) + ' stderr-tail-marker'); process.exitCode = ${code}`)] }, env);
+      resultsPath = join(runDir, "results.json");
+      observe(runDir, process.execPath);
+      await executeRun(runDir, env);
+      throw original;
+    }), (error) => {
+      assert.equal(error, original);
+      assert.equal(error.cause, cause);
+      assert.equal(error.actual, "actual");
+      assert.equal(error.expected, "expected");
+      assert.ok(error.stack.startsWith(stack));
+      assert.ok(error.stack.includes(`results: ${resultsPath}`));
+      assert.match(error.stack, /stderr-tail-marker/u);
+      assert.ok(error.message.includes(`results: ${resultsPath}`));
+      assert.ok(error.message.includes(`"code":${code}`));
+      assert.match(error.message, /"signal":null/u);
+      assert.match(error.message, /stderr-tail-marker/u);
+      assert.match(error.message, /\[truncated\]/u);
+      assert.match(error.message, /"bytes":\d+,"mode":"[0-7]+"/u);
+      assert.ok(error.message.length < 12_000);
+      return true;
+    });
+    assert.equal(existsSync(home), false, "the existing fixture cleanup still runs");
+  });
+}
+
+test("missing child diagnostics do not replace the fixture assertion", async () => {
+  const original = new assert.AssertionError({ message: "missing result assertion", actual: 1, expected: 2, operator: "strictEqual" });
+  let home;
+  await assert.rejects(repository(async (root, observe) => {
+    home = root;
+    observe(join(root, ".git", "missing-run"), join(root, "missing-executable"));
+    throw original;
+  }), (error) => {
+    assert.equal(error, original);
+    assert.match(error.message, /child results: absent/u);
+    assert.match(error.stack, /child results: absent/u);
+    assert.match(error.message, /missing-executable: absent/u);
+    return true;
+  });
+  assert.equal(existsSync(home), false);
+});
 
 describe("documentation link checker", () => {
   function checkFixture(context, sourceParts) {
@@ -918,17 +1016,27 @@ test("normalization limitations are platform-independent with a separate Windows
   assert.deepEqual(fingerprintLimitations("win32"), [NORMALIZATION_LIMITATION, WINDOWS_LIMITATION]);
 });
 
+function nodeFixtureExecutable(binary) {
+  if (process.platform === "darwin") {
+    // Homebrew's Node loads libnode relative to its original executable.
+    // A regular script keeps permission tests from chmod'ing installed Node.
+    const node = "'" + process.execPath.replaceAll("'", "'\\''") + "'";
+    writeFileSync(binary, `#!/bin/sh\nexec ${node} "$@"\n`);
+  } else copyFileSync(process.execPath, binary);
+  if (process.platform !== "win32") chmodSync(binary, 0o700);
+}
+
 test("bare executable names resolve through PATH and Windows shims refuse", async () => {
-  await repository(async (root) => {
+  await repository(async (root, observe) => {
     const bin = join(root, ".git", "fixture bin");
     mkdirSync(bin);
     const binary = join(bin, process.platform === "win32" ? "fixture-gate.exe" : "fixture-gate");
-    copyFileSync(process.execPath, binary);
-    if (process.platform !== "win32") chmodSync(binary, 0o700);
+    nodeFixtureExecutable(binary);
     const fixtureEnv = { ...env };
     for (const key of Object.keys(fixtureEnv)) if (key.toLowerCase() === "path") delete fixtureEnv[key];
     fixtureEnv.PATH = `${join(root, "absent-path-entry")}${delimiter}${bin}`;
     const runDir = createRun({ root, stages: [{ name: "path-command", command: "fixture-gate", args: ["-e", "console.log('resolved-binary')"] }] }, env);
+    observe(runDir, binary);
     const result = await executeRun(runDir, fixtureEnv);
     assert.equal(result.state, "passed");
     assert.equal(result.stages[0].command[0], binary);
@@ -936,12 +1044,14 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
     assert.notEqual(realpathSync.native(root), realpathSync.native(process.cwd()));
     const relativeEnv = { ...fixtureEnv, PATH: relative(root, bin) };
     const relativeRun = createRun({ root, stages: [{ name: "relative-path", command: "fixture-gate", args: ["-e", "console.log('relative-binary')"] }] }, env);
+    observe(relativeRun, binary);
     const relativeResult = await executeRun(relativeRun, relativeEnv);
     assert.equal(relativeResult.state, "passed");
     assert.equal(relativeResult.stages[0].command[0], binary);
     assert.equal(readFileSync(relativeResult.stages[0].log, "utf8"), "relative-binary\n");
     if (process.platform === "win32") {
       const quotedRun = createRun({ root, stages: [{ name: "quoted-path", command: "fixture-gate", args: ["-e", "console.log('quoted-binary')"] }] }, env);
+      observe(quotedRun, binary);
       const quotedResult = await executeRun(quotedRun, { ...fixtureEnv, PATH: `"${bin}"` });
       assert.equal(quotedResult.state, "passed");
       assert.equal(quotedResult.stages[0].command[0], binary);
@@ -950,6 +1060,7 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
         const shim = join(bin, `only-shim.${extension}`);
         writeFileSync(shim, "@echo must-not-run\r\n");
         const blocked = createRun({ root, stages: [{ name: "shim", command: shim, args: [] }] }, env);
+        observe(blocked, binary);
         const refused = await executeRun(blocked, fixtureEnv);
         assert.equal(refused.state, "failed");
         assert.equal(refused.stages[0].state, "unrun");
@@ -958,6 +1069,7 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
     } else {
       chmodSync(binary, 0o600);
       const blocked = createRun({ root, stages: [{ name: "permissions", command: "fixture-gate", args: [] }] }, env);
+      observe(blocked, binary);
       const refused = await executeRun(blocked, fixtureEnv);
       assert.equal(refused.state, "failed");
       assert.match(refused.error, /EACCES/u);
@@ -2654,14 +2766,13 @@ const complete = (executed, passed, failed, ignored, runners, filteredOut) =>
   ({ executed, passed, failed, ignored, runners, filteredOut, failures: failed });
 const cargoFrame = (text, marker = "     Running unittests src/lib.rs (target/debug/deps/fixture)") => `${marker}\n${text}`;
 
-function directCargoFixture(root) {
+function directCargoFixture(root, observe) {
   const bin = join(root, ".git", "cargo fixture");
   mkdirSync(bin);
   const binary = join(bin, process.platform === "win32" ? "cargo.exe" : "cargo");
-  // A native process with Cargo's command shape emits a retained transcript.
+  // An executable with Cargo's command shape emits a retained transcript.
   // Selection, execution, log parsing and record generation remain unmodified.
-  copyFileSync(process.execPath, binary);
-  if (process.platform !== "win32") chmodSync(binary, 0o700);
+  nodeFixtureExecutable(binary);
   for (const name of ["test", "+stable", "run", "nextest"]) writeFileSync(join(root, name),
     "process.stdout.write(process.env.FIXTURE_TRANSCRIPT); process.exitCode = Number(process.env.FIXTURE_EXIT);\n");
   const runnerEnv = { ...env };
@@ -2669,14 +2780,15 @@ function directCargoFixture(root) {
   runnerEnv.PATH = `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ""}`;
   return { binary, async run(text, { command = "cargo", args = ["test", "--lib", "fixture"], code = 0 } = {}) {
     const runDir = createRun({ root, stages: [{ name: "rust", kind: "test", command, args }] }, runnerEnv);
+    observe(runDir, binary);
     const result = await executeRun(runDir, { ...runnerEnv, FIXTURE_TRANSCRIPT: text, FIXTURE_EXIT: String(code) });
     return { result, record: parseRecord(machineRecord(result.plan, result)) };
   } };
 }
 
 test("direct Cargo execution selects outer frames for filtered counts, not generic wrappers", async () => {
-  await repository(async (root) => {
-    const fixture = directCargoFixture(root);
+  await repository(async (root, observe) => {
+    const fixture = directCargoFixture(root, observe);
     const text = cargoFrame(libtest(17, 0, 0, 2471)
       .replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n"),
     "     Running unittests src\\lib.rs (target\\debug\\deps\\fixture.exe)");
@@ -2705,8 +2817,8 @@ test("direct Cargo execution selects outer frames for filtered counts, not gener
 });
 
 test("direct Cargo execution preserves frame refusals, doctests and failure outcomes", async () => {
-  await repository(async (root) => {
-    const fixture = directCargoFixture(root);
+  await repository(async (root, observe) => {
+    const fixture = directCargoFixture(root, observe);
     const outer = libtest(3, 0, 0, 7);
     const frames = cargoFrame(outer) + cargoFrame(libtest(2, 0, 0, 4))
       + cargoFrame(libtest(1, 0, 0, 0).repeat(2), "   Doc-tests fixture");
