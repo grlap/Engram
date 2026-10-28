@@ -748,6 +748,7 @@ pub(super) fn verify_obligation_rows(
         .collect::<Result<Vec<_>, _>>()?;
     let mut projected_definitions = HashSet::new();
     let mut projected_resolutions = HashSet::new();
+    let mut reported_decode_failures = HashSet::new();
     for (stored_id, stored_definition) in obligation_rows {
         *checked += 1;
         let id = uuid::Uuid::parse_str(&stored_id)
@@ -768,11 +769,20 @@ pub(super) fn verify_obligation_rows(
             // cannot be decoded carries the reason, such as a member the
             // current format has no place for.
             let label = format!("work_obligation:{stored_id}");
-            let own_definition = ObjectId::from_stored(stored_definition).map(|definition| {
-                load_typed_work_object::<WorkObligation>(connection, &definition, "work_obligation")
-            });
+            let own_definition =
+                ObjectId::from_stored(stored_definition.clone()).map(|definition| {
+                    load_typed_work_object::<WorkObligation>(
+                        connection,
+                        &definition,
+                        "work_obligation",
+                    )
+                });
             invalid.push(if let Some(Err(error)) = own_definition {
-                decode_failure_label(label, &error)
+                let finding = decode_failure_label(label.clone(), &error);
+                if finding != label {
+                    reported_decode_failures.insert(stored_definition);
+                }
+                finding
             } else {
                 label
             });
@@ -791,6 +801,22 @@ pub(super) fn verify_obligation_rows(
             let hash = ObjectId::from_stored(stored_hash.clone());
             if hash.as_ref().is_none_or(|hash| !projected.contains(hash)) {
                 invalid.push(format!("{kind}:{stored_hash}:missing_projection"));
+                if kind == "work_obligation" && !reported_decode_failures.contains(&stored_hash) {
+                    // Successful audit facts already validated their definitions.
+                    // Decode other bodies, including orphans with invalid ids,
+                    // without repeating a definition's already reported reason.
+                    let bytes: Vec<u8> = connection.query_row(
+                        "SELECT canonical_json FROM objects WHERE object_id = ?1",
+                        [&stored_hash],
+                        |row| row.get(0),
+                    )?;
+                    if let Err(error) = CanonicalObject::decode_bytes::<WorkObligation>(&bytes) {
+                        invalid.push(decode_failure_label(
+                            format!("{kind}:{stored_hash}"),
+                            &error,
+                        ));
+                    }
+                }
             }
         }
     }

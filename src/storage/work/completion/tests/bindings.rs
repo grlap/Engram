@@ -1466,6 +1466,177 @@ fn a_stored_obligation_that_names_an_environment_is_refused_by_name() {
     }
 }
 
+#[test]
+fn a_stored_obligation_with_an_unknown_top_level_member_is_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-stored-unknown-member");
+    let run_id = work.active_run_id.expect("active run");
+    let supported = store
+        .work_run_obligations(run_id)
+        .expect("supported obligations");
+    assert_eq!(supported.len(), 1);
+    assert!(store.verify_all().expect("supported doctor").is_healthy());
+    let definition = &supported[0].definition_id;
+    let stored: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [definition.as_str()],
+            |row| row.get(0),
+        )
+        .expect("stored obligation");
+    let diagnostic = format!(
+        "work_obligation:{}:unknown field `unsupported_member`",
+        supported[0].obligation.obligation_id.0
+    );
+    let private_value = "synthetic-private-obligation-value";
+    for value in [serde_json::json!(private_value), serde_json::Value::Null] {
+        let mut obligation: serde_json::Value =
+            serde_json::from_slice(&stored).expect("obligation json");
+        obligation["unsupported_member"] = value;
+        store
+            .connection
+            .execute(
+                "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                rusqlite::params![
+                    serde_json::to_vec(&obligation).expect("obligation bytes"),
+                    definition.as_str()
+                ],
+            )
+            .expect("store an obligation with an unknown member");
+        let error = store
+            .work_run_obligations(run_id)
+            .expect_err("unknown top-level members are refused")
+            .to_string();
+        assert!(
+            error.contains("unknown field `unsupported_member`"),
+            "{error}"
+        );
+        assert!(!error.contains(private_value), "{error}");
+        let report = store
+            .verify_all()
+            .expect("doctor reports the unknown member");
+        assert!(!report.is_healthy(), "{report:?}");
+        assert!(
+            report
+                .invalid_work_records
+                .iter()
+                .any(|finding| finding.starts_with(&diagnostic)),
+            "{report:?}"
+        );
+        assert!(!format!("{report:?}").contains(private_value), "{report:?}");
+    }
+    store
+        .connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+            rusqlite::params![stored, definition.as_str()],
+        )
+        .expect("restore supported obligation");
+    assert_eq!(
+        store
+            .work_run_obligations(run_id)
+            .expect("supported obligations"),
+        supported
+    );
+    assert!(store.verify_all().expect("restored doctor").is_healthy());
+}
+
+#[test]
+fn doctor_names_unknown_members_on_orphan_obligation_definitions() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-orphan-obligation-member");
+    let run_id = work.active_run_id.expect("active run");
+    let supported = store
+        .work_run_obligations(run_id)
+        .expect("supported obligations");
+    assert!(store.verify_all().expect("supported doctor").is_healthy());
+    let stored: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [supported[0].definition_id.as_str()],
+            |row| row.get(0),
+        )
+        .expect("stored obligation");
+    let private_value = "synthetic-private-orphan-value";
+    for orphan in [
+        ObjectId::mint().to_string(),
+        "malformed-obligation-id".into(),
+    ] {
+        store
+            .connection
+            .execute(
+                "INSERT INTO objects(object_id, object_kind, canonical_json)
+                 VALUES (?1, 'work_obligation', ?2)",
+                rusqlite::params![orphan, stored],
+            )
+            .expect("store an orphan obligation");
+        let baseline = store.verify_all().expect("supported orphan doctor");
+        let missing_projection = format!("work_obligation:{orphan}:missing_projection");
+        let missing_feeds = format!("work_obligation:{orphan}:missing_work_feeds");
+        assert!(baseline.invalid_work_records.contains(&missing_projection));
+        assert!(baseline.invalid_work_records.contains(&missing_feeds));
+        let diagnostic = format!("work_obligation:{orphan}:unknown field `unsupported_member`");
+        for value in [serde_json::json!(private_value), serde_json::Value::Null] {
+            let mut obligation: serde_json::Value =
+                serde_json::from_slice(&stored).expect("obligation json");
+            obligation["unsupported_member"] = value;
+            store
+                .connection
+                .execute(
+                    "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                    rusqlite::params![
+                        serde_json::to_vec(&obligation).expect("obligation bytes"),
+                        orphan
+                    ],
+                )
+                .expect("store an orphan with an unknown member");
+            let report = store.verify_all().expect("orphan doctor");
+            assert!(!report.is_healthy(), "{report:?}");
+            assert!(report.invalid_work_records.contains(&missing_projection));
+            assert!(report.invalid_work_records.contains(&missing_feeds));
+            assert!(
+                report
+                    .invalid_work_records
+                    .iter()
+                    .any(|finding| finding.starts_with(&diagnostic)),
+                "{report:?}"
+            );
+            assert_eq!(report.checked_objects, baseline.checked_objects);
+            assert_eq!(report.checked_work_records, baseline.checked_work_records);
+            assert!(!format!("{report:?}").contains(private_value), "{report:?}");
+        }
+        store
+            .connection
+            .execute(
+                "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                rusqlite::params![stored, orphan],
+            )
+            .expect("restore supported orphan");
+        assert_eq!(
+            store
+                .verify_all()
+                .expect("restored orphan doctor")
+                .invalid_work_records,
+            baseline.invalid_work_records
+        );
+        store
+            .connection
+            .execute("DELETE FROM objects WHERE object_id = ?1", [&orphan])
+            .expect("remove synthetic orphan");
+    }
+    assert_eq!(
+        store
+            .work_run_obligations(run_id)
+            .expect("supported obligations"),
+        supported
+    );
+    assert!(store.verify_all().expect("supported doctor").is_healthy());
+}
+
 /// A replay receipt whose stored work item names an environment on a
 /// binding, with a value or as null, is refused when an exact resend replays
 /// it, naming the member; it is never replayed as the same item without its

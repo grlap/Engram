@@ -1022,6 +1022,7 @@ impl RequiredChildResolution {
 
 /// Immutable requirement opened by one exact run-bound execution fact.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkObligation {
     pub schema_version: u16,
     pub obligation_id: WorkObligationId,

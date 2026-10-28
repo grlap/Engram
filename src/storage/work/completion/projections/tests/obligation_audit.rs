@@ -194,7 +194,98 @@ fn obligation_audit_matches_one_shot_for_an_unmodeled_top_level_member() {
         reused.1.len(),
         baseline.0
     );
-    // This tests reuse equivalence, without pinning acceptance of an unmodeled
-    // field. A later decoder correction can reject it in both paths.
     assert_eq!(reused, baseline);
+    assert!(
+        reused
+            .1
+            .iter()
+            .any(|finding| finding.contains("unknown field `unsupported_member`")),
+        "{reused:?}"
+    );
+}
+
+#[test]
+fn obligation_audit_reports_each_undecodable_definition_once() {
+    let (store, runs) = fixture(2);
+    let records =
+        super::super::super::load_work_obligation_records_on(&store.connection, runs[0], None)
+            .unwrap();
+    assert_eq!(records.len(), 2);
+    let snapshot = store.connection.unchecked_transaction().unwrap();
+    let baseline = report(&store, true);
+    let checked_rows = || {
+        let mut checked = 0;
+        let mut invalid = Vec::new();
+        let mut obligations = ObligationAudit::new(&store.connection);
+        crate::storage::work::integrity::verify_obligation_rows(
+            &store.connection,
+            &mut obligations,
+            &mut checked,
+            &mut invalid,
+        )
+        .unwrap();
+        checked
+    };
+    let baseline_rows = checked_rows();
+    for (path, member) in [
+        ("$.unsupported_member", "unsupported_member"),
+        ("$.requirement.required_environment", "required_environment"),
+    ] {
+        for value in [Some("synthetic-private-value"), None] {
+            store
+                .connection
+                .execute_batch("SAVEPOINT named_decode")
+                .unwrap();
+            assert_eq!(
+                store.connection.execute(
+                    "UPDATE objects SET canonical_json = CAST(json_set(canonical_json, ?1, ?2) AS BLOB)
+                     WHERE object_id = ?3",
+                    rusqlite::params![path, value, records[0].definition_id.as_str()],
+                ).unwrap(),
+                1,
+            );
+            let bytes: Vec<u8> = store
+                .connection
+                .query_row(
+                    "SELECT canonical_json FROM objects WHERE object_id = ?1",
+                    [records[0].definition_id.as_str()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let error =
+                serde_json::from_slice::<crate::domain::WorkObligation>(&bytes).unwrap_err();
+            let actual = report(&store, true);
+            assert_eq!(actual, report(&store, false));
+            // Other audit phases can stop inspecting an undecodable record's
+            // dependants. This census still visits all of its own rows.
+            assert_eq!(checked_rows(), baseline_rows);
+            let named = actual
+                .1
+                .iter()
+                .filter(|finding| finding.contains("unknown field `"))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                named,
+                vec![format!(
+                    "work_obligation:{}:unknown field `{member}` at line {} column {}",
+                    records[0].obligation.obligation_id.0,
+                    error.line(),
+                    error.column(),
+                )],
+                "only the corrupt definition carries the named reason"
+            );
+            assert!(actual.1.contains(&format!(
+                "work_obligation:{}:missing_projection",
+                records[0].definition_id,
+            )));
+            assert!(!format!("{actual:?}").contains("synthetic-private-value"));
+            store
+                .connection
+                .execute_batch("ROLLBACK TO named_decode; RELEASE named_decode")
+                .unwrap();
+            assert_eq!(report(&store, true), baseline);
+        }
+    }
+    snapshot.rollback().unwrap();
 }
