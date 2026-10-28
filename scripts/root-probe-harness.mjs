@@ -17,6 +17,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -37,6 +38,7 @@ const binary = join(
 );
 const PROBE_MARK = "engram-path-probe";
 const BARRIER_PREFIX = ".watch-barrier-";
+const JOURNAL_DIAGNOSTIC_LIMIT = 16;
 // A host control process with closed stdin: it starts, resolves identity and
 // exits at end of input.
 const CONTROL_ARGS = ["control", "--actor-id", "probe", "--session-id", "probe-control"];
@@ -105,7 +107,21 @@ export class RootJournal extends EventEmitter {
     this.events = [];
     this.errors = [];
     this.nextIndex = 0;
+    this.recentCallbacks = [];
+    this.callbackCount = 0;
+    this.watchStartedAt = performance.now();
     this.watcher = watchFn(directory, { persistent: true }, (_type, name) => {
+      const filename = name == null ? name : String(name);
+      this.recentCallbacks.push({
+        eventType: String(_type).slice(0, 64),
+        filename: filename == null ? filename : filename.slice(0, 512),
+        filenameType: name === null ? "null" : Buffer.isBuffer(name) ? "Buffer" : typeof name,
+        filenameLength: filename == null ? 0 : filename.length,
+        callback: this.callbackCount++,
+        index: this.nextIndex,
+        sinceWatchMs: performance.now() - this.watchStartedAt,
+      });
+      if (this.recentCallbacks.length > JOURNAL_DIAGNOSTIC_LIMIT) this.recentCallbacks.shift();
       if (name == null || name === "") {
         this.errors.push(
           new Error("watcher filename missing or overflow (inconclusive)"),
@@ -156,11 +172,43 @@ export class RootJournal extends EventEmitter {
     }
   }
 
-  async waitFor(predicate, timeoutMs, label) {
+  timeoutDiagnostic(waitStartedAt, timeoutMs, barrier) {
+    const text = (value, limit = 512) => String(value).slice(0, limit);
+    let realDirectory;
+    try {
+      realDirectory = text(realpathSync(this.directory), 2048);
+    } catch (error) {
+      realDirectory = `unavailable: ${text(error)}`;
+    }
+    const now = performance.now();
+    return {
+      directory: text(this.directory, 2048),
+      realDirectory,
+      sinceWatchMs: now - this.watchStartedAt,
+      waitElapsedMs: now - waitStartedAt,
+      deadlineSinceWatchMs: waitStartedAt - this.watchStartedAt + timeoutMs,
+      timeoutMs,
+      cursor: this.nextIndex,
+      barrier: barrier && {
+        filename: text(barrier.filename),
+        path: text(barrier.path, 2048),
+        fromIndex: barrier.fromIndex,
+        writeStartedSinceWatchMs: barrier.writeStartedAt - this.watchStartedAt,
+        writeFinishedSinceWatchMs: barrier.writeFinishedAt - this.watchStartedAt,
+      },
+      callbacks: this.recentCallbacks,
+      omittedCallbacks: this.callbackCount - this.recentCallbacks.length,
+      errors: this.errors.slice(-JOURNAL_DIAGNOSTIC_LIMIT).map((error) => text(error)),
+      omittedErrors: Math.max(0, this.errors.length - JOURNAL_DIAGNOSTIC_LIMIT),
+    };
+  }
+
+  async waitFor(predicate, timeoutMs, label, barrier) {
     if (this.errors.length) {
       throw new Error(`${label}: preexisting watcher error: ${this.errors[0]}`);
     }
     if (predicate()) return;
+    const waitStartedAt = performance.now();
     await new Promise((resolvePromise, reject) => {
       let settled = false;
       const finish = (action) => {
@@ -180,9 +228,15 @@ export class RootJournal extends EventEmitter {
         if (predicate()) finish(() => resolvePromise());
       };
       const timer = setTimeout(() => {
-        finish(() =>
-          reject(new Error(`${label}: timed out waiting for journal event`)),
-        );
+        finish(() => {
+          let message = `${label}: timed out waiting for journal event`;
+          try {
+            message += `; journal=${JSON.stringify(this.timeoutDiagnostic(waitStartedAt, timeoutMs, barrier))}`;
+          } catch {
+            // Diagnostic failure must not hide the original timeout.
+          }
+          reject(new Error(message));
+        });
       }, timeoutMs);
       this.on("event", onEvent);
     });
@@ -191,7 +245,10 @@ export class RootJournal extends EventEmitter {
   async barrier(label) {
     const from = this.nextIndex;
     const filename = `${BARRIER_PREFIX}${label}`;
-    writeFileSync(join(this.directory, filename), label);
+    const path = join(this.directory, filename);
+    const writeStartedAt = performance.now();
+    writeFileSync(path, label);
+    const writeFinishedAt = performance.now();
     await this.waitFor(
       () =>
         this.events.some(
@@ -199,6 +256,7 @@ export class RootJournal extends EventEmitter {
         ),
       5000,
       `barrier ${label}`,
+      { filename, path, fromIndex: from, writeStartedAt, writeFinishedAt },
     );
     this.assertHealthy(`barrier ${label}`);
     return this.nextIndex;
@@ -1276,6 +1334,86 @@ export function registerRootProbeTests(test) {
       () => journal.waitFor(() => false, 40, "never"),
       /timed out waiting for journal event/u,
     );
+    assert.equal(journal.listenerCount("event"), 0);
+  });
+
+  test("root journal barrier timeout retains bounded unmatched callback diagnostics", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const dir = fixtureHome("rpj-diagnostic-", t);
+    let report;
+    const journal = new RootJournal(dir, {
+      watchFn: (_directory, _options, callback) => {
+        report = callback;
+        return silentWatch();
+      },
+    });
+    t.after(() => journal.close());
+    const waiting = journal.barrier("calibration-ready");
+    const refused = assert.rejects(waiting, (error) => {
+      assert.match(error.message, /^barrier calibration-ready: timed out waiting for journal event; journal=/u);
+      assert.ok(error.stack.includes("; journal="));
+      const diagnostic = JSON.parse(error.message.split("; journal=")[1]);
+      assert.equal(diagnostic.directory, dir);
+      assert.equal(diagnostic.realDirectory, realpathSync(dir));
+      assert.equal(diagnostic.barrier.filename, ".watch-barrier-calibration-ready");
+      assert.equal(diagnostic.barrier.path, join(dir, ".watch-barrier-calibration-ready"));
+      assert.equal(diagnostic.barrier.fromIndex, 0);
+      assert.equal(diagnostic.timeoutMs, 5000);
+      assert.ok(diagnostic.sinceWatchMs >= diagnostic.waitElapsedMs);
+      assert.ok(diagnostic.barrier.writeFinishedSinceWatchMs >= diagnostic.barrier.writeStartedSinceWatchMs);
+      assert.equal(diagnostic.cursor, 40);
+      assert.equal(diagnostic.callbacks.length, 16);
+      assert.equal(diagnostic.omittedCallbacks, 24);
+      assert.equal(diagnostic.callbacks[0].callback, 24);
+      assert.equal(diagnostic.callbacks.at(-1).eventType, "change");
+      assert.equal(diagnostic.callbacks.at(-1).filenameType, "string");
+      assert.equal(diagnostic.callbacks.at(-1).filename.length, 512);
+      assert.equal(diagnostic.callbacks.at(-1).filenameLength, "unexpected-39-".length + 1000);
+      assert.deepEqual(diagnostic.errors, []);
+      assert.ok(error.message.length < 20_000);
+      return true;
+    });
+    for (let index = 0; index < 40; index += 1) {
+      report(index % 2 ? "change" : "rename", `unexpected-${index}-${"x".repeat(1000)}`);
+    }
+    assert.equal(journal.events.length, 40, "diagnostic bounds do not trim the assertion journal");
+    t.mock.timers.tick(4999);
+    assert.equal(journal.listenerCount("event"), 1, "the original deadline is retained");
+    t.mock.timers.tick(1);
+    await refused;
+    assert.equal(journal.listenerCount("event"), 0);
+  });
+
+  test("root journal exact barrier success does not emit timeout diagnostics", async (t) => {
+    const dir = fixtureHome("rpj-seen-", t);
+    let report;
+    const journal = new RootJournal(dir, {
+      watchFn: (_directory, _options, callback) => {
+        report = callback;
+        return silentWatch();
+      },
+    });
+    t.after(() => journal.close());
+    t.mock.method(journal, "timeoutDiagnostic", () => assert.fail("success requested diagnostics"));
+    const waiting = journal.barrier("seen");
+    report("rename", ".watch-barrier-seen");
+    assert.equal(await waiting, 1);
+    assert.deepEqual(journal.events, [{ filename: ".watch-barrier-seen", index: 0 }]);
+    assert.equal(journal.listenerCount("event"), 0);
+  });
+
+  test("root journal diagnostic failure preserves the timeout and listener cleanup", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const dir = fixtureHome("rpj-diagnostic-error-", t);
+    const journal = new RootJournal(dir, { watchFn: () => silentWatch() });
+    t.after(() => journal.close());
+    t.mock.method(journal, "timeoutDiagnostic", () => { throw new Error("diagnostic unavailable"); });
+    const refused = assert.rejects(journal.waitFor(() => false, 40, "never"), (error) => {
+      assert.equal(error.message, "never: timed out waiting for journal event");
+      return true;
+    });
+    t.mock.timers.tick(40);
+    await refused;
     assert.equal(journal.listenerCount("event"), 0);
   });
 
