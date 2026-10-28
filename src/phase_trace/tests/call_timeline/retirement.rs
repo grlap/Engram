@@ -45,7 +45,7 @@ fn completed_cancel_cycles_do_not_exhaust_slots_in_either_order() {
                 assert_eq!(trace.pending.lock().unwrap().retained(), 0);
                 assert!(!trace.pending.lock().unwrap().disabled);
                 if cycle % 20 == 19 {
-                    trace.flush(Duration::from_secs(5));
+                    assert_flushed(&trace.lines, Duration::from_secs(5));
                 }
             }
             let rows = written(&trace, &captured);

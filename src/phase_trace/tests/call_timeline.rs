@@ -86,7 +86,7 @@ fn unknown_and_dispatched_cancels_do_not_consume_the_pool() {
 }
 
 fn stages(trace: &PhaseTrace, captured: &Captured) -> Vec<serde_json::Value> {
-    trace.flush(Duration::from_secs(5));
+    assert_flushed(&trace.lines, Duration::from_secs(5));
     captured
         .lines()
         .into_iter()

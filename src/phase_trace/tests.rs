@@ -506,7 +506,7 @@ fn every_record_ends_in_one_line_and_the_wait_is_bounded() {
     for id in 0..300 {
         settle(&trace, id, "note");
         if id % 50 == 49 {
-            trace.flush(Duration::from_secs(5));
+            assert_flushed(&trace.lines, Duration::from_secs(5));
         }
     }
     assert_eq!(trace.pending.lock().unwrap().retained(), MAX_PENDING);
