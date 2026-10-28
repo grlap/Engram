@@ -52,6 +52,7 @@ mod note_search_index;
 mod protocol_retry;
 mod restore_copy;
 mod store_copy;
+mod verification_applicability;
 use lock_wait::LockWait;
 use protocol_retry::{OpenPhase, ProtocolRetry};
 pub use restore_copy::{LiveAuthority, RestoreCopyReport, installed_sidecar_problem};
@@ -1263,6 +1264,7 @@ impl SqliteStore {
                  UNIQUE(session_id, operation, idempotency_key)
              ) STRICT;",
             )?;
+            connection.execute_batch(super::VERIFICATION_APPLICABILITY_DDL)?;
             #[cfg(test)]
             if fail_cold_schema_after_ddl() && !building_schema_reference() {
                 return Err(StoreError::InvalidControlProjection(
@@ -1918,6 +1920,7 @@ impl SqliteStore {
             )));
         }
         Self::rebuild_object_fts_from_heads_on(connection)?;
+        connection.execute_batch(super::VERIFICATION_APPLICABILITY_DDL)?;
         Self::rebuild_project_memory_state_on(connection)?;
         let mut checked = 0;
         let mut invalid = Vec::new();

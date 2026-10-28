@@ -18,6 +18,7 @@ use crate::storage::test_support::{TestControlBinding, bind_control_for};
 
 mod accounting;
 mod doctor;
+mod git_tree;
 mod matching;
 mod readers;
 mod refusals;
@@ -89,6 +90,7 @@ pub(super) fn content_change(from: &str, to: &str) -> ObservedSourceChange {
         },
         sighting: MeasuredSighting {
             source_basis: ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace-A".into(),
                 source_revision: to.into(),
                 source_root_generation: None,
@@ -409,6 +411,7 @@ fn an_observation_is_never_citable_evidence() {
     let mut input = inter_turn_change(&fixture, "uncitable");
     let mut check = passed_check("cargo-test");
     check.source_basis = Some(ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: "workspace-A".into(),
         source_revision: "rev-b".into(),
         source_root_generation: None,

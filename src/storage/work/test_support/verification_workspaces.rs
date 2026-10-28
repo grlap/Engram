@@ -18,6 +18,7 @@ pub(crate) fn verification_workspace_notes_fixture(
     let claim = claim(&mut store, &work, "runner", "workspace-claim", 2, 36_000);
     let plain = evidence(&mut store, &work, &claim, "runner", "plain", 3);
     let basis = |workspace: &str| ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: "A3".into(),
         source_root_generation: None,

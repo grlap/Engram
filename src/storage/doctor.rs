@@ -14,6 +14,36 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+fn verification_evidence_shape_failure(bytes: &[u8]) -> Option<String> {
+    serde_json::from_slice::<crate::domain::VerificationEvidence>(bytes)
+        .err()
+        .map(|error| super::undecodable_json_reason(&error))
+}
+
+pub(super) fn census_verification_evidence_on(
+    connection: &Connection,
+) -> Result<usize, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT object_id, canonical_json FROM objects WHERE object_kind = 'verification_evidence' ORDER BY object_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+    })?;
+    let mut checked = 0;
+    let mut invalid = Vec::new();
+    for row in rows {
+        let (id, bytes) = row?;
+        checked += 1;
+        if let Some(reason) = verification_evidence_shape_failure(&bytes) {
+            invalid.push(format!("verification_evidence:{id}:{reason}"));
+        }
+    }
+    if !invalid.is_empty() {
+        return Err(StoreError::InvalidControlProjection(invalid.join("; ")));
+    }
+    Ok(checked)
+}
+
 impl SqliteStore {
     /// Verifies stored records, audit bindings and mutable projections in one
     /// read transaction. Each record must carry a well-formed id and decode as
@@ -37,16 +67,27 @@ impl SqliteStore {
             return Ok(report);
         }
         let _origin_scope = super::work::task_sync::enter_origin_scope(&self.connection)?;
-        let mut statement = self
-            .connection
-            .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")?;
+        let mut statement = self.connection.prepare(
+            "SELECT object_id, canonical_json, object_kind FROM objects ORDER BY object_id",
+        )?;
         let rows = statement.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?;
 
         let mut report = IntegrityReport::default();
         for row in rows {
-            let (stored_hash, bytes) = row?;
+            let (stored_hash, bytes, kind) = row?;
+            if kind == "verification_evidence"
+                && let Some(reason) = verification_evidence_shape_failure(&bytes)
+            {
+                report
+                    .invalid_control_records
+                    .push(format!("verification_evidence:{stored_hash}:{reason}"));
+            }
             report.checked_objects += 1;
             let valid = ObjectId::from_stored(stored_hash.clone())
                 .is_some_and(|expected| CanonicalObject::stored(&expected, bytes).is_ok());

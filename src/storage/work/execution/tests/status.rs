@@ -89,6 +89,7 @@ fn status_correction_control_marker_is_refused() {
         &[],
         &[EnvironmentEvidenceInput {
             source_basis: ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "status-workspace".into(),
                 source_revision: "source-1".into(),
                 source_root_generation: None,
@@ -123,6 +124,7 @@ fn assert_non_note_evidence_is_not_status(
         binding: binding.clone(),
         session_id: binding_session(forged),
         source_basis: ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "status-workspace".into(),
             source_revision: "source-1".into(),
             source_root_generation: None,

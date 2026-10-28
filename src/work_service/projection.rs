@@ -408,7 +408,10 @@ pub(super) fn compact_mutation_receipt(
     let result = match receipt {
         serde_json::Value::Object(object) => {
             let allowed = [
+                "applicability",
+                "applicability_mismatch",
                 "attached",
+                "attribution_only",
                 "blocker_id",
                 "checkpoint",
                 "claim_id",
@@ -439,7 +442,12 @@ pub(super) fn compact_mutation_receipt(
                         && (value.is_string()
                             || value.is_number()
                             || value.is_boolean()
-                            || value.is_null())
+                            || value.is_null()
+                            || (key == "applicability"
+                                && serde_json::from_value::<
+                                    crate::domain::VerificationApplicability,
+                                >(value.clone())
+                                .is_ok()))
                 })
                 .map(|(key, value)| {
                     let value = value.as_str().map_or(value.clone(), |text| {
@@ -655,6 +663,7 @@ pub(super) fn work_evidence_summary(
                 failed_count: gate.failed.len(),
             });
             Ok(WorkEvidenceSummary {
+                applicability: None,
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
                 display_actor_kind: Some(evidence.actor.actor_kind.clone()),
@@ -681,6 +690,7 @@ pub(super) fn work_evidence_summary(
         WorkEvidenceKind::Verification => {
             let evidence = store.load_verification_evidence(evidence_id)?;
             Ok(WorkEvidenceSummary {
+                applicability: evidence.applicability,
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
                 display_actor_kind: Some(evidence.actor.actor_kind.clone()),
@@ -707,6 +717,7 @@ pub(super) fn work_evidence_summary(
         WorkEvidenceKind::Environment => {
             let evidence = store.load_environment_evidence(evidence_id)?;
             Ok(WorkEvidenceSummary {
+                applicability: None,
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
                 display_actor_kind: Some(evidence.actor.actor_kind.clone()),
@@ -744,6 +755,7 @@ pub(super) fn restored_work_evidence_summary(
         failed_count: gate.failed.len(),
     });
     Ok(WorkEvidenceSummary {
+        applicability: None,
         display_actor_id: Some(evidence.actor.actor_id.clone()),
         display_actor_session_id: evidence.actor.session_id.clone(),
         display_actor_kind: Some(evidence.actor.actor_kind.clone()),
@@ -773,6 +785,7 @@ pub(super) fn work_observation_summary(
     observation: &crate::domain::WorkObservation,
 ) -> WorkEvidenceSummary {
     WorkEvidenceSummary {
+        applicability: None,
         display_actor_id: Some(observation.actor.actor_id.clone()),
         display_actor_session_id: observation.actor.session_id.clone(),
         display_actor_kind: Some(observation.actor.actor_kind.clone()),

@@ -127,6 +127,8 @@ pub struct AcceptanceBindingSatisfaction {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AcceptanceBindingVerification {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applicability: Option<super::VerificationApplicability>,
     pub record: ObjectId,
     pub position: i64,
     pub check_kind: VerificationKind,

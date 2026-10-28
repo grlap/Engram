@@ -371,6 +371,7 @@ impl HostControlServer {
                     now,
                 )?)
                 .map_err(StoreError::Json)
+                .and_then(|value| self.with_verification_applicability(value))
             }
             HostControlRequest::SessionStatus { routing_token } => {
                 serde_json::to_value(self.store.control_status(
@@ -381,6 +382,7 @@ impl HostControlServer {
                     now,
                 )?)
                 .map_err(StoreError::Json)
+                .and_then(|value| self.with_verification_applicability(value))
             }
             HostControlRequest::TurnGrantRead {
                 routing_token,
@@ -821,6 +823,13 @@ impl HostControlServer {
     }
 
     /// The response to one parsed request.
+    fn with_verification_applicability(&self, mut value: Value) -> Result<Value, StoreError> {
+        if self.store.verification_git_tree_applicability_available()? {
+            value["verification_evidence_git_tree_applicability_v1"] = Value::Bool(true);
+        }
+        Ok(value)
+    }
+
     fn respond(&mut self, request: HostControlRequest) -> HostControlResponse {
         match self.handle(request) {
             Ok(result) => HostControlResponse::Ok { result },

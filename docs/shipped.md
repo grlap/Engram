@@ -7,6 +7,11 @@ this page does not inventory whichever binary is on a host's PATH. It excludes
 planned, target, and deferred capabilities; those belong in the
 [roadmap](roadmap.md), not in this table.
 
+Selected verification evidence can carry a
+[Git-tree applicability restriction](features/verification-applicability.md).
+Its declared rebuildable schema barrier requires the documented coordinated
+cutover before restricted evidence can be minted.
+
 Public note and gate search uses an incrementally maintained trigram index,
 with exact normalized field matching and the same first-note locators. For
 existing stores, `doctor --build-note-search-index` explicitly builds only the

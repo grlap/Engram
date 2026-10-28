@@ -420,6 +420,7 @@ impl RowReader<'_> {
             (producer, None)
         };
         Ok(AcceptanceBindingVerification {
+            applicability: evidence.applicability,
             record: id.clone(),
             position: self.position(id)?,
             check_kind: evidence.check_kind,

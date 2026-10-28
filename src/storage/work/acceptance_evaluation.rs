@@ -408,6 +408,10 @@ impl SqliteStore {
                 position: citation_position(&transaction, run_id, &stale.citation)?,
             };
             let mut cause = context.cause(match &stale.cause {
+                StaleCause::Applicability(
+                    crate::domain::VerificationEvidenceMismatch::GitTreeMissing,
+                ) => EvaluationCitationMismatch::GitTreeMissing,
+                StaleCause::Applicability(_) => EvaluationCitationMismatch::GitTreeMismatch,
                 StaleCause::OtherSource(_) | StaleCause::OtherNaming { .. } => {
                     EvaluationCitationMismatch::WrongSource
                 }
@@ -419,7 +423,7 @@ impl SqliteStore {
                     Some(basis.source_revision.clone())
                 }
                 StaleCause::MovedAfter { checked, .. } => Some(checked.clone()),
-                StaleCause::Unverifiable => None,
+                StaleCause::Unverifiable | StaleCause::Applicability(_) => None,
             };
             cause.judged_revision = judged.as_ref().map(|source| source.revision.clone());
             cause.producer_observation.clone_from(&stale.producer);
@@ -2018,7 +2022,7 @@ mod citable {
                 run_id,
                 judged,
                 cut,
-                [(criterion, std::slice::from_ref(&id))],
+                [(criterion, std::slice::from_ref(&id), true)],
                 root,
             )?
             .is_some()

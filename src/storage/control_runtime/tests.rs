@@ -108,6 +108,7 @@ fn environment_components_are_redactor_inspected_before_canonicalization() {
     };
     let input = EnvironmentEvidenceInput {
         source_basis: crate::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: components.workspace_id.clone(),
             source_revision: "revision-redaction".into(),
             source_root_generation: None,

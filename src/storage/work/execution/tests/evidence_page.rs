@@ -111,6 +111,7 @@ fn record_checked_environment(
     ));
     let check = turn(store, "check", vec![EffectClass::MutateLocal], 14);
     let basis = ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: "workspace-page".into(),
         source_revision: "content-revision-1".into(),
         source_root_generation: None,
@@ -141,6 +142,7 @@ fn record_checked_environment(
                 observed_at: Some(at(15)),
             }],
             &[VerificationEvidenceInput {
+                applicability: None,
                 producer_observation: ExecutionObservationReference::ObservationId {
                     observation_id: "test-command".into(),
                 },

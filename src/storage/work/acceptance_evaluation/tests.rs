@@ -18,6 +18,7 @@ mod mark_author;
 mod named_root;
 pub(crate) use named_root::{SealedSourceTransportFixture, sealed_source_transport_fixture};
 mod policy;
+use policy::{enable, policy};
 mod reroll;
 mod review;
 mod same_turn;
@@ -32,34 +33,6 @@ use crate::domain::{
     ControlWorkBinding, IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
     RecordGateEvidenceRequest, ResourceCoverage, ResourceSubject, ReviseWorkRequest, WorkClaim,
 };
-
-fn policy(modes: &[Mode], mechanical: MechanicalBasis, fresh: bool) -> AcceptanceEvaluationPolicy {
-    AcceptanceEvaluationPolicy {
-        allowed_modes: modes.to_vec(),
-        mechanical_basis: mechanical,
-        require_source_freshness: fresh,
-    }
-}
-
-fn enable(
-    store: &mut SqliteStore,
-    modes: &[Mode],
-    mechanical: MechanicalBasis,
-    fresh: bool,
-    key: &str,
-    second: i64,
-) -> crate::storage::AcceptanceEvaluationPolicyUpdateReceipt {
-    store
-        .set_acceptance_evaluation_policy(
-            &policy(modes, mechanical, fresh),
-            &actor("policy-admin"),
-            key,
-            None,
-            at(second),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("activate acceptance evaluation policy")
-}
 
 fn disable_obligation_rules(store: &mut SqliteStore, second: i64) {
     store
@@ -298,6 +271,7 @@ fn revise(
 /// Bound host control session that mints observed execution evidence on the
 /// holder's run, mirroring the host checkpoint protocol.
 struct HostSession {
+    applicability: Option<crate::domain::VerificationApplicability>,
     project_id: ProjectId,
     session_id: SessionId,
     connection_token: String,
@@ -361,6 +335,7 @@ impl HostSession {
             second,
         );
         let mut host = Self {
+            applicability: None,
             project_id: work.project_id.clone(),
             session_id,
             connection_token,
@@ -371,6 +346,7 @@ impl HostSession {
                 coverage: ResourceCoverage::Tree,
             },
             basis: ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace-evaluated".into(),
                 source_revision: "content-revision-1".into(),
                 source_root_generation: None,
@@ -480,6 +456,7 @@ impl HostSession {
                     source_changed: *source_changed,
                     reported_source_change: None,
                     source_basis: revision.map(|revision| ExecutionSourceBasis {
+                        git_tree: self.basis.git_tree.clone(),
                         workspace_id: self.basis.workspace_id.clone(),
                         source_revision: revision.into(),
                         source_root_generation: None,
@@ -532,6 +509,7 @@ impl HostSession {
             .into_iter()
             .collect();
         let verification = VerificationEvidenceInput {
+            applicability: None,
             producer_observation: ExecutionObservationReference::ObjectId {
                 object_id: producer.clone(),
             },
@@ -574,6 +552,7 @@ impl HostSession {
         };
         EnvironmentEvidenceInput {
             source_basis: ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: self.basis.workspace_id.clone(),
                 source_revision: revision.into(),
                 source_root_generation: None,

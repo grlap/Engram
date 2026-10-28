@@ -14,6 +14,7 @@ mod state;
 
 fn source(workspace: &str, generation: i64) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: "revision-B".into(),
         source_root_generation: Some(generation),
@@ -24,6 +25,7 @@ fn source(workspace: &str, generation: i64) -> ExecutionSourceBasis {
 /// A check's source before the claim named any root: no generation.
 fn unnamed(workspace: &str) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: "revision-B".into(),
         source_root_generation: None,
@@ -213,6 +215,7 @@ fn a_bound_evaluation_accepts_only_a_check_after_the_current_named_binding() {
 /// A source basis stating `generation` and `state` in workspace B.
 fn stated(generation: Option<i64>, state: Option<SourceRootState>) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: "workspace-B".into(),
         source_revision: "revision-B".into(),
         source_root_generation: generation,
@@ -590,6 +593,7 @@ fn a_named_root_binding_refuses_what_does_not_fit_its_claim() {
 
 fn workspace(workspace: &str, revision: &str, generation: Option<i64>) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: revision.into(),
         source_root_generation: generation,

@@ -65,6 +65,7 @@ pub(crate) fn source_recovery_transport_fixture(
             )
             .unwrap();
         host.basis = ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "C:/database is locked/源".into(),
             source_revision: "R1".into(),
             source_root_generation: Some(9),

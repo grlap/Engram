@@ -4,6 +4,7 @@
 //! one as stale, whichever way the binding's obligation was resolved.
 
 use super::*;
+mod git_tree;
 use crate::domain::{
     AcceptanceBinding, VerificationRequirement, WaiveWorkObligationRequest, WorkObligationState,
 };
@@ -644,6 +645,7 @@ mod citable {
             20,
         ));
         let target = ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-B".into(),
             source_revision: "revision-d".into(),
             source_root_generation: None,
@@ -1653,6 +1655,7 @@ pub(super) fn unadmitted_change(
                 },
                 sighting: MeasuredSighting {
                     source_basis: ExecutionSourceBasis {
+                        git_tree: None,
                         workspace_id: workspace,
                         source_revision: revision.into(),
                         source_root_generation: None,

@@ -384,6 +384,7 @@ fn named_root_and_source_observation_validation_charge_before_decode_and_keep_no
         "producer",
         3,
         crate::domain::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: event.workspace_id.clone(),
             source_revision: "revision".into(),
             source_root_generation: Some(1),

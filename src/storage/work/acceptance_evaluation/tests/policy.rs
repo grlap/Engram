@@ -2,6 +2,38 @@
 
 use super::*;
 
+pub(super) fn policy(
+    modes: &[Mode],
+    mechanical: MechanicalBasis,
+    fresh: bool,
+) -> AcceptanceEvaluationPolicy {
+    AcceptanceEvaluationPolicy {
+        allowed_modes: modes.to_vec(),
+        mechanical_basis: mechanical,
+        require_source_freshness: fresh,
+    }
+}
+
+pub(super) fn enable(
+    store: &mut SqliteStore,
+    modes: &[Mode],
+    mechanical: MechanicalBasis,
+    fresh: bool,
+    key: &str,
+    second: i64,
+) -> crate::storage::AcceptanceEvaluationPolicyUpdateReceipt {
+    store
+        .set_acceptance_evaluation_policy(
+            &policy(modes, mechanical, fresh),
+            &actor("policy-admin"),
+            key,
+            None,
+            at(second),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("activate acceptance evaluation policy")
+}
+
 // Boundary-matrix rows, the mode-membership and task-pin part only: B01's
 // refusal of `evaluate` under a policy that enables no evaluation (not its
 // self-asserted completion), B04's refusal of a mode the policy does not

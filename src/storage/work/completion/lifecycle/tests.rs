@@ -574,6 +574,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         let mut child_actor = actor("child-agent");
         child_actor.run_id = Some(child_run.run_id.0.to_string());
         let child_basis = ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-child".into(),
             source_revision: "required-child-revision".into(),
             source_root_generation: None,
@@ -633,6 +634,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
             let verification = append_control_verification_evidence_on(
                 &transaction,
                 &VerificationEvidence {
+                    applicability: None,
                     schema_version: SCHEMA_VERSION,
                     project_id: required.project_id.clone(),
                     binding: child_binding,

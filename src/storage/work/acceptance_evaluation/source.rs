@@ -131,6 +131,7 @@ pub(super) fn revision_seen_through(
 /// workspace it declared when it named one, or else the revision the run was
 /// last seen at through its cut.
 pub(super) struct JudgedSource {
+    pub(super) host_basis: Option<ExecutionSourceBasis>,
     pub(super) revision: String,
     pub(super) workspace: Option<String>,
     /// Whether the evaluation declared this source rather than taking the
@@ -160,8 +161,10 @@ pub(super) fn judged_source(
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
     root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<JudgedSource>, StoreError> {
-    Ok(match declared {
+    let host_basis = measured_source_at_on(connection, run_id, through, root)?;
+    let mut judged = match declared {
         Some(declared) => Some(JudgedSource {
+            host_basis: None,
             revision: declared.fingerprint.clone(),
             workspace: root
                 .map(|root| root.event.workspace_id.clone())
@@ -170,12 +173,33 @@ pub(super) fn judged_source(
         }),
         None => {
             revision_seen_through(connection, run_id, through, root)?.map(|revision| JudgedSource {
+                host_basis: None,
                 revision,
                 workspace: root.map(|root| root.event.workspace_id.clone()),
                 declared: false,
             })
         }
-    })
+    };
+    if let Some(judged) = &mut judged {
+        judged.host_basis = host_basis.filter(|basis| judged.checked_by(basis));
+    }
+    Ok(judged)
+}
+
+pub(super) fn measured_source_at_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+    root: Option<&NamedEvaluationRoot>,
+) -> Result<Option<ExecutionSourceBasis>, StoreError> {
+    if let Some(root) = root {
+        return Ok(named_root_sighting_on(connection, run_id, root, through)?
+            .and_then(|(_, observation)| observation.source_basis));
+    }
+    Ok(
+        super::super::feeds::newest_measured_source_basis_on(connection, run_id, None, through)?
+            .map(|(_, basis)| basis),
+    )
 }
 
 /// Resolve the source of a sealed evaluation using its original claim and
@@ -222,6 +246,7 @@ pub(in crate::storage::work) fn sealed_source_basis_on(
         Some(&root),
     )?
     .map(|judged| ExecutionSourceBasis {
+        git_tree: judged.host_basis.and_then(|basis| basis.git_tree),
         workspace_id: root.event.workspace_id,
         source_revision: judged.revision,
         source_root_generation: Some(root.event.generation),
@@ -424,12 +449,18 @@ pub(super) fn declared_not_contradicted(
 /// Each passing verdict's one-based criterion position and citations.
 pub(super) fn passing_citations(
     verdicts: &[CriterionVerdict],
-) -> impl Iterator<Item = (usize, &[ObjectId])> + '_ {
+) -> impl Iterator<Item = (usize, &[ObjectId], bool)> + '_ {
     verdicts
         .iter()
         .enumerate()
         .filter(|(_, verdict)| verdict.verdict == AcceptanceVerdict::Pass)
-        .map(|(index, verdict)| (index + 1, verdict.evidence.as_slice()))
+        .map(|(index, verdict)| {
+            (
+                index + 1,
+                verdict.evidence.as_slice(),
+                verdict.basis == crate::domain::AcceptanceBasis::Observed,
+            )
+        })
 }
 
 /// A citation of a pass on a bound criterion that does not show its check
@@ -442,6 +473,7 @@ pub(super) struct StaleCitation {
 }
 
 pub(super) enum StaleCause {
+    Applicability(crate::domain::VerificationEvidenceMismatch),
     /// The check ran on another source than the judged one.
     OtherSource(ExecutionSourceBasis),
     /// The check ran on the judged source, but not under the run's current
@@ -452,7 +484,10 @@ pub(super) enum StaleCause {
     },
     /// The check ran on the judged revision, but by the cut the run had moved
     /// away from it.
-    MovedAfter { checked: String, moved: Moved },
+    MovedAfter {
+        checked: String,
+        moved: Moved,
+    },
     /// The citation is not a passed check, or no judged source exists to
     /// match. A pass admitted here never reaches this: `bind_verdicts` admits
     /// only passed checks for a bound criterion, and each check's producer is
@@ -648,6 +683,10 @@ impl StaleCitation {
             ""
         };
         Ok(match (&self.cause, judged) {
+            (StaleCause::Applicability(mismatch), _) => format!(
+                "criterion {criterion} selected verification {citation} is non-qualifying ({}); run an applicable check on the judged source",
+                super::super::planning::encode_state(mismatch)?
+            ),
             (StaleCause::OtherNaming { checked, mismatch }, _) => format!(
                 "criterion {criterion} is bound to {kind} verification, and {citation} ran on the judged revision {}, but {}; run the check on the current source, then evaluate again citing it{declaration}",
                 checked.source_revision,
@@ -712,26 +751,58 @@ pub(super) fn stale_bound_citation<'a>(
     run_id: WorkRunId,
     judged: Option<&JudgedSource>,
     through: i64,
-    passes: impl IntoIterator<Item = (usize, &'a [ObjectId])>,
+    passes: impl IntoIterator<Item = (usize, &'a [ObjectId], bool)>,
     root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<StaleCitation>, StoreError> {
-    for (criterion, citations) in passes {
-        if !item
+    for (criterion, citations, observed) in passes {
+        let bound = item
             .acceptance_bindings
             .iter()
-            .any(|binding| binding.criterion == criterion)
-        {
-            continue;
-        }
+            .any(|binding| binding.criterion == criterion);
         for citation in citations {
+            let classified = classify_citation(connection, run_id, citation)?;
+            if !(bound
+                || observed
+                    && matches!(
+                        &classified,
+                        Some(Citation::VerificationPassed {
+                            applicability: Some(_),
+                            ..
+                        })
+                    ))
+            {
+                continue;
+            }
             let mut producer_observation = None;
-            let cause = match classify_citation(connection, run_id, citation)? {
+            let cause = match classified {
                 Some(Citation::VerificationPassed {
+                    applicability,
                     source_basis,
                     producer,
                     ..
                 }) => {
                     producer_observation = Some(producer.clone());
+                    if applicability.is_some() {
+                        let confirming = measured_source_at_on(connection, run_id, i64::MAX, root)?;
+                        let assessment = crate::control::check_verification_applicability(
+                            applicability.as_ref(),
+                            judged.and_then(|j| j.host_basis.as_ref()),
+                        )
+                        .and_then(|()| {
+                            crate::control::check_verification_applicability(
+                                applicability.as_ref(),
+                                confirming.as_ref(),
+                            )
+                        });
+                        if let Err(mismatch) = assessment {
+                            return Ok(Some(StaleCitation {
+                                criterion,
+                                citation: citation.clone(),
+                                producer: producer_observation,
+                                cause: StaleCause::Applicability(mismatch),
+                            }));
+                        }
+                    }
                     match judged {
                         Some(judged) if judged.checked_by(&source_basis) => {
                             let mismatch = match root {

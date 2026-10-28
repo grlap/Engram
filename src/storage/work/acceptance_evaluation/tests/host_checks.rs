@@ -86,6 +86,7 @@ impl HostSession {
                 observed_at: Some(at(second + 1)),
             });
             verifications.push(VerificationEvidenceInput {
+                applicability: self.applicability.clone(),
                 producer_observation: ExecutionObservationReference::ObservationId {
                     observation_id,
                 },
@@ -258,6 +259,7 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
         },
     ];
     let verifications = vec![VerificationEvidenceInput {
+        applicability: None,
         producer_observation: ExecutionObservationReference::ObservationId {
             observation_id: host.key("late-check"),
         },
@@ -746,6 +748,7 @@ mod resolution_writers {
                 observed_at: Some(at(second)),
             }],
             &[VerificationEvidenceInput {
+                applicability: None,
                 producer_observation: ExecutionObservationReference::ObservationId {
                     observation_id: key.into(),
                 },

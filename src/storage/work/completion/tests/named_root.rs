@@ -1,4 +1,5 @@
 use super::*;
+mod git_tree;
 use crate::domain::{
     AcceptanceBinding, ExecutionSourceBasis, NamedRootBindingKind, SourceRootState,
     VerificationKind, VerificationRequirement, VerificationResult,
@@ -7,6 +8,7 @@ use crate::storage::test_support::bind_control_for;
 
 fn basis(workspace: &str, revision: &str, generation: Option<i64>) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: revision.into(),
         source_root_generation: generation,

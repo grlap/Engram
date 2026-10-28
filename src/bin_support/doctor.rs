@@ -16,6 +16,7 @@ pub(crate) mod refusals;
 use refusals::{Phase, report_error, with_build};
 
 pub(crate) enum ProjectionMaintenance {
+    VerificationApplicabilityIndex,
     FullRepair,
     NoteSearchIndex,
 }
@@ -63,6 +64,30 @@ pub(crate) fn doctor(
     }
     if let Some(mode) = projection_maintenance {
         return match mode {
+            ProjectionMaintenance::VerificationApplicabilityIndex => {
+                let checked = match SqliteStore::build_verification_applicability_index(database) {
+                    Ok(checked) => checked,
+                    Err(error) => {
+                        return report_error(
+                            database,
+                            project_id,
+                            &error,
+                            json,
+                            Phase::ProjectionRepair,
+                        );
+                    }
+                };
+                refusals::emit(
+                    &with_build(serde_json::json!({
+                        "mode": "verification_applicability_index_build",
+                        "scope": "verification_evidence_census",
+                        "mutation_enabled": true, "project_id": project_id,
+                        "database": canonical_database_path(database)?, "healthy": true,
+                        "checked_verification_records": checked, "full_audit": "not_run",
+                    })),
+                    json,
+                )
+            }
             ProjectionMaintenance::FullRepair => {
                 repair_store_projections(database, project_id, json)
             }

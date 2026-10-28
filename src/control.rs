@@ -27,10 +27,32 @@ use crate::{
 
 const MAX_SHADOW_GRANT_TTL_SECONDS: i64 = 300;
 
+/// Whether this selected check applies to the actual judged sighting.
+///
+/// # Errors
+/// A missing or different tree leaves it attributed but non-qualifying.
+pub fn check_verification_applicability(
+    applicability: Option<&crate::domain::VerificationApplicability>,
+    judged: Option<&crate::domain::ExecutionSourceBasis>,
+) -> Result<(), VerificationEvidenceMismatch> {
+    let Some(crate::domain::VerificationApplicability::GitTree { tree }) = applicability else {
+        return Ok(());
+    };
+    let actual = judged
+        .and_then(|basis| basis.git_tree.as_ref())
+        .ok_or(VerificationEvidenceMismatch::GitTreeMissing)?;
+    if actual != tree {
+        return Err(VerificationEvidenceMismatch::GitTreeMismatch);
+    }
+    Ok(())
+}
+
 /// Immutable inputs for matching typed verification evidence at one exact
 /// dense run-feed cut.
 #[derive(Clone, Copy)]
 pub struct VerificationEvidenceMatchInput<'a> {
+    /// Relevant host-measured sighting at the cut, never a substituted producer.
+    pub judged_basis: Option<&'a crate::domain::ExecutionSourceBasis>,
     pub candidate_kind: WorkEvidenceKind,
     pub evidence: Option<&'a VerificationEvidence>,
     pub producer: Option<&'a ExecutionObservation>,
@@ -269,7 +291,8 @@ pub fn explain_verification_evidence(
     if !actor_matches || !times_are_monotone {
         return Err(plain(VerificationEvidenceMismatch::InvalidTime));
     }
-    Ok(())
+    check_verification_applicability(evidence.applicability.as_ref(), input.judged_basis)
+        .map_err(plain)
 }
 
 /// Rule id of the stock rule that asks for a passing test after each source
@@ -371,6 +394,7 @@ pub fn evaluate_obligation_rules(
 /// Complete immutable inputs for deciding what one evidence candidate does to
 /// an obligation at an exact dense run-feed cut.
 pub struct ObligationSatisfactionInput<'a> {
+    pub judged_basis: Option<&'a crate::domain::ExecutionSourceBasis>,
     pub evidence: &'a VerificationEvidence,
     pub producer: &'a ExecutionObservation,
     /// The newest source mutation at the cut with its run-feed position, or
@@ -490,6 +514,7 @@ pub fn explain_obligation_satisfaction(
     }
     if let Err((mismatch, decider)) =
         explain_verification_evidence(&VerificationEvidenceMatchInput {
+            judged_basis: input.judged_basis,
             candidate_kind: WorkEvidenceKind::Verification,
             evidence: Some(input.evidence),
             producer: Some(input.producer),
@@ -1544,6 +1569,7 @@ mod tests {
             reported_source_change: None,
             obligation_rule_set: hash("obligation rule set"),
             source_basis: Some(ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace-a".into(),
                 source_revision: "content-revision-1".into(),
                 source_root_generation: None,
@@ -1567,6 +1593,7 @@ mod tests {
             reported_source_change: None,
             obligation_rule_set: hash("obligation rule set"),
             source_basis: Some(ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),
                 source_root_generation: None,
@@ -1577,6 +1604,7 @@ mod tests {
             recorded_at: verification_time,
         };
         let evidence = VerificationEvidence {
+            applicability: None,
             schema_version: crate::domain::SCHEMA_VERSION,
             project_id,
             binding,
@@ -1614,6 +1642,7 @@ mod tests {
             check_fingerprint: Some(evidence.check_fingerprint.clone()),
         };
         let exact = VerificationEvidenceMatchInput {
+            judged_basis: None,
             candidate_kind: WorkEvidenceKind::Verification,
             evidence: Some(&evidence),
             producer: Some(&producer),
@@ -1664,6 +1693,7 @@ mod tests {
             .unwrap()
             .source_revision = "content-revision-2".into();
         let stale = VerificationEvidenceMatchInput {
+            judged_basis: None,
             candidate_kind: WorkEvidenceKind::Verification,
             evidence: Some(&evidence),
             producer: Some(&producer),
@@ -1703,6 +1733,7 @@ mod tests {
         };
         let cut = run_feed(5);
         let at_cut = ObligationSatisfactionInput {
+            judged_basis: None,
             evidence: &evidence,
             producer: &producer,
             latest_mutation: Some((&latest_mutation, 1)),

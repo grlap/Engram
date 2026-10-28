@@ -30,9 +30,11 @@ const ROOT: &str = "workspace-root";
 const HOLDER: &str = "runner";
 
 mod during_check;
+mod git_tree;
 
 fn basis(revision: &str, generation: i64) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: ROOT.into(),
         source_revision: revision.into(),
         source_root_generation: Some(generation),
@@ -43,6 +45,7 @@ fn basis(revision: &str, generation: i64) -> ExecutionSourceBasis {
 /// One held item of the changeset: its claim, its root's generation and its
 /// newest change under that root.
 struct Held {
+    git_tree: Option<crate::domain::GitTreeId>,
     work: WorkItem,
     claim: WorkClaim,
     generation: i64,
@@ -114,6 +117,7 @@ fn held_with(
     );
     let work = store.get_work_item(work.work_id).expect("item");
     Held {
+        git_tree: None,
         work,
         claim,
         generation,
@@ -223,6 +227,8 @@ fn check_with(
     unknown_change_between: bool,
 ) -> ObjectId {
     let binding = binding_of(store, held);
+    let mut source_basis = basis(revision, held.generation);
+    source_basis.git_tree.clone_from(&held.git_tree);
     let mut transaction = store
         .connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -238,7 +244,7 @@ fn check_with(
                     project_id: held.work.project_id.clone(),
                     binding: binding.clone(),
                     session_id: SessionId(HOLDER.into()),
-                    source_basis: basis(revision, held.generation),
+                    source_basis: source_basis.clone(),
                     environment_fingerprint: check_fingerprint("toolchain"),
                     components: None,
                     observed_at: at(second),
@@ -264,7 +270,7 @@ fn check_with(
             source_changed: false,
             reported_source_change: None,
             obligation_rule_set: active_rule_set_id(&transaction),
-            source_basis: Some(basis(revision, held.generation)),
+            source_basis: Some(source_basis.clone()),
             observed_at: Some(at(second)),
             actor: run_actor.clone(),
             recorded_at: at(second),
@@ -291,12 +297,16 @@ fn check_with(
     let verification = append_control_verification_evidence_on(
         &transaction,
         &VerificationEvidence {
+            applicability: source_basis
+                .git_tree
+                .clone()
+                .map(|tree| crate::domain::VerificationApplicability::GitTree { tree }),
             schema_version: SCHEMA_VERSION,
             project_id: held.work.project_id.clone(),
             binding,
             session_id: SessionId(HOLDER.into()),
             producer_observation: producer,
-            source_basis: basis(revision, held.generation),
+            source_basis,
             environment,
             check_kind: VerificationKind::Test,
             check_fingerprint: check_fingerprint("suite"),
@@ -1407,6 +1417,7 @@ fn a_stale_generation_or_an_unscoped_sighting_refuses() {
         "item-c-unscoped",
         22,
         Some(ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: ROOT.into(),
             source_revision: "R1".into(),
             source_root_generation: None,

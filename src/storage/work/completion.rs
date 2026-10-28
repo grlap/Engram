@@ -90,34 +90,8 @@ use named_root::{
     refuse_unresolved_named_root_changes_on, resolve_source_change_obligations_on,
 };
 
+pub(super) use named_root::named_root_at_cut_on;
 pub(super) use root_binding::{validate_seal_root_event, validate_stored_seal_root};
-
-/// A claim's bound named root at a cut, as a bind checks it: its workspace
-/// and generation, its newest sighting with that sighting's run position,
-/// and the position of any later change whose root is unknown.
-pub(super) struct NamedRootAtCut {
-    pub(super) workspace_id: String,
-    pub(super) generation: i64,
-    pub(super) latest_sighting: Option<(i64, crate::domain::SourceObservation)>,
-    pub(super) unknown_change_position: Option<i64>,
-}
-
-/// The claim's bound named root at `cut`, or `None` when it has none.
-pub(super) fn named_root_at_cut_on(
-    connection: &Connection,
-    run_id: WorkRunId,
-    claim_id: crate::domain::WorkClaimId,
-    cut: i64,
-) -> Result<Option<NamedRootAtCut>, StoreError> {
-    Ok(
-        named_root_context_on(connection, run_id, claim_id, cut)?.map(|root| NamedRootAtCut {
-            workspace_id: root.binding.workspace_id.clone(),
-            generation: root.binding.generation,
-            latest_sighting: root.latest_sighting,
-            unknown_change_position: root.unknown_change_position,
-        }),
-    )
-}
 
 pub(super) use child_barriers::{
     AncestorExecutionState, ancestors_admit_execution, blocking_ancestor_on, feed_head,
@@ -1470,6 +1444,18 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
     transaction: &Transaction<'_>,
     evidence: &VerificationEvidence,
 ) -> Result<ObjectId, StoreError> {
+    if evidence.applicability.is_some() {
+        SqliteStore::require_verification_applicability_on(transaction)?;
+        crate::control::check_verification_applicability(
+            evidence.applicability.as_ref(),
+            Some(&evidence.source_basis),
+        )
+        .map_err(|_| {
+            StoreError::InvalidControlSession(
+                "applicability.tree requires an equal producer source_basis.git_tree".into(),
+            )
+        })?;
+    }
     let object = CanonicalObject::mint(evidence)?;
     let result = encode_state(evidence.result)?;
     let evidence_id = append_control_typed_evidence_on(
@@ -1966,7 +1952,12 @@ fn bind_acceptance_to_obligations_on(
                     ),
                 });
             }
-            if root.is_some() || latest_mutation.is_some() {
+            if root.is_some() || latest_mutation.is_some() || evidence.applicability.is_some() {
+                let judged_basis = if evidence.applicability.is_some() {
+                    assessment::judged_basis_on(connection, run_id, root.as_ref(), cut.position)?
+                } else {
+                    None
+                };
                 let producer = load_typed_work_object::<ExecutionObservation>(
                     connection,
                     &evidence.producer_observation,
@@ -1995,6 +1986,7 @@ fn bind_acceptance_to_obligations_on(
                     measured
                         .as_ref()
                         .map(|(position, basis)| (basis, *position)),
+                    judged_basis.as_ref(),
                 )
                 .or_else(|| barrier.map(|mismatch| (mismatch, None)))
                 {
@@ -2084,10 +2076,17 @@ fn binding_freshness_mismatch(
     requirement: &crate::domain::VerificationRequirement,
     root: Option<&NamedRootContext>,
     measured_sighting: Option<(&crate::domain::ExecutionSourceBasis, i64)>,
+    judged_basis: Option<&crate::domain::ExecutionSourceBasis>,
 ) -> Option<(
     crate::domain::VerificationEvidenceMismatch,
     Option<crate::domain::StaleSourceDecider>,
 )> {
+    if let Err(mismatch) = crate::control::check_verification_applicability(
+        evidence.applicability.as_ref(),
+        judged_basis,
+    ) {
+        return Some((mismatch, None));
+    }
     if root.is_none()
         && let Some((mutation, mutation_position)) = mutation
         && (mutation.source_basis.is_none() || mutation.observed_at.is_none())
@@ -2098,6 +2097,7 @@ fn binding_freshness_mismatch(
         ));
     }
     crate::control::explain_verification_evidence(&crate::control::VerificationEvidenceMatchInput {
+        judged_basis,
         candidate_kind: crate::domain::WorkEvidenceKind::Verification,
         evidence: Some(evidence),
         producer: Some(producer),

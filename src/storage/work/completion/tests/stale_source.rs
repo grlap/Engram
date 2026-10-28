@@ -11,6 +11,7 @@ use crate::domain::{
 
 fn unbound(workspace: &str, revision: &str) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: revision.into(),
         source_root_generation: None,

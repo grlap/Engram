@@ -531,6 +531,7 @@ struct SchemaDefinition {
 // harmless reannouncement. `project_memory_state` is reconstructed from
 // verified project-memory versions and assertion events.
 const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[(&str, &str)] = &[
+    ("index", VERIFICATION_APPLICABILITY_INDEX),
     ("table", "object_fts"),
     ("index", "objects_memory_assertion_version"),
     ("index", "objects_project_memory_key"),
@@ -544,6 +545,9 @@ const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "control_changes_task_cursor"),
     ("index", "control_sessions_work_run"),
 ];
+
+const VERIFICATION_APPLICABILITY_INDEX: &str = "objects_verification_git_tree_applicability_v1";
+const VERIFICATION_APPLICABILITY_DDL: &str = "CREATE INDEX objects_verification_git_tree_applicability_v1 ON objects(object_id) WHERE object_kind = 'verification_evidence';";
 
 const DIFFERENT_BUILD_STORE_MESSAGE: &str = "the store schema is not recognized by this Engram build; use the Engram build that owns this store; this build cannot convert its schema";
 

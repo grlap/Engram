@@ -26,7 +26,9 @@ impl SqliteStore {
         Ok(connection)
     }
 
-    fn preflight_projection_maintenance(connection: &Connection) -> Result<(), StoreError> {
+    pub(super) fn preflight_projection_maintenance(
+        connection: &Connection,
+    ) -> Result<(), StoreError> {
         if !Self::sqlite_user_schema_exists(connection)? {
             return Err(StoreError::StoreNotInitialized);
         }

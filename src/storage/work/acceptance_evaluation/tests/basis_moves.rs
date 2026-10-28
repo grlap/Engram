@@ -1233,6 +1233,7 @@ fn report_detected(
                 source_changed: *source_changed,
                 reported_source_change: *detection,
                 source_basis: revision.map(|revision| ExecutionSourceBasis {
+                    git_tree: None,
                     workspace_id: host.basis.workspace_id.clone(),
                     source_revision: revision.into(),
                     source_root_generation: None,

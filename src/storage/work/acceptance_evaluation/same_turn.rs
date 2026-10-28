@@ -69,6 +69,18 @@ impl ExemptChecks {
             if check.result != VerificationResult::Passed || !on_declared(&check, declared, root) {
                 continue;
             }
+            if check.applicability.is_some() {
+                let judged =
+                    super::source::measured_source_at_on(connection, run_id, i64::MAX, root)?;
+                if crate::control::check_verification_applicability(
+                    check.applicability.as_ref(),
+                    judged.as_ref(),
+                )
+                .is_err()
+                {
+                    continue;
+                }
+            }
             if let Some(environment) = check.environment.clone() {
                 exempt.environments.insert(environment);
             }

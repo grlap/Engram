@@ -131,6 +131,7 @@ fn continuity_treats_typed_host_evidence_as_no_participation_of_its_own() {
         },
         session_id: replacement.clone(),
         source_basis: crate::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace".into(),
             source_revision: "revision-1".into(),
             source_root_generation: None,

@@ -49,6 +49,8 @@ pub enum EvaluationRootMismatch {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvaluationCitationMismatch {
+    GitTreeMissing,
+    GitTreeMismatch,
     NotOnRun,
     BeyondCut,
     ObservedBasisRequired,

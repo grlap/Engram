@@ -642,6 +642,7 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         reported_source_change: None,
         obligation_rule_set: ObjectId::from_canonical_bytes(b"obligation-rule-set"),
         source_basis: Some(crate::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-a".into(),
             source_revision: "revision-a".into(),
             source_root_generation: None,

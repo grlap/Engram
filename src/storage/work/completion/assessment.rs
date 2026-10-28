@@ -28,6 +28,64 @@ use crate::domain::{
     WorkRunId,
 };
 
+impl SqliteStore {
+    /// Assess only the restriction for an attributed attachment, never qualification.
+    ///
+    /// # Errors
+    /// Returns source/feed read errors without substituting the producer's basis.
+    pub fn verification_applicability_assessment(
+        &self,
+        evidence: &VerificationEvidence,
+    ) -> Result<Option<crate::domain::VerificationEvidenceMismatch>, StoreError> {
+        if evidence.applicability.is_none() {
+            return Ok(None);
+        }
+        if self.connection.is_autocommit() {
+            let snapshot = self.connection.unchecked_transaction()?;
+            let result = self.verification_applicability_assessment(evidence)?;
+            snapshot.commit()?;
+            return Ok(result);
+        }
+        let cut = current_run_feed_cut_on(&self.connection, evidence.binding.run_id)?;
+        let root = named_root_context_on(
+            &self.connection,
+            evidence.binding.run_id,
+            evidence.binding.claim_id,
+            cut.position,
+        )?;
+        let basis = judged_basis_on(
+            &self.connection,
+            evidence.binding.run_id,
+            root.as_ref(),
+            cut.position,
+        )?;
+        Ok(crate::control::check_verification_applicability(
+            evidence.applicability.as_ref(),
+            basis.as_ref(),
+        )
+        .err())
+    }
+}
+
+/// The newest measured sighting that decides the revision a check must carry
+pub(super) fn judged_basis_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    root: Option<&NamedRootContext>,
+    cut: i64,
+) -> Result<Option<ExecutionSourceBasis>, StoreError> {
+    if let Some(root) = root {
+        return Ok(root
+            .latest_sighting
+            .as_ref()
+            .and_then(|(_, sighting)| sighting.source_basis.clone()));
+    }
+    Ok(
+        super::super::feeds::newest_measured_source_basis_on(connection, run_id, None, cut)?
+            .map(|(_, basis)| basis),
+    )
+}
+
 /// The newest measured sighting that decides the revision a check must carry
 /// at `cut` when the latest change is an unadmitted record and no named root
 /// holds, in that change's workspace; `None` otherwise, and then the change
@@ -111,6 +169,7 @@ pub(super) fn stale_verification_source(
 /// Everything the satisfaction decision reads for one verification record at
 /// one cut, loaded once.
 pub(super) struct VerificationAtCut {
+    judged_basis: Option<ExecutionSourceBasis>,
     evidence: VerificationEvidence,
     producer: ExecutionObservation,
     evidence_position: i64,
@@ -154,7 +213,13 @@ impl VerificationAtCut {
             "execution_observation",
         )?;
         let producer_position = producer_position_on_run(connection, &evidence, evidence_position)?;
+        let judged_basis = if evidence.applicability.is_some() {
+            judged_basis_on(connection, run_id, root.as_ref(), cut.position)?
+        } else {
+            None
+        };
         Ok(Self {
+            judged_basis,
             evidence,
             producer,
             evidence_position,
@@ -200,6 +265,7 @@ impl VerificationAtCut {
         };
         let (mut assessment, decider) = explain_obligation_satisfaction(
             &ObligationSatisfactionInput {
+                judged_basis: self.judged_basis.as_ref(),
                 evidence: &self.evidence,
                 producer: &self.producer,
                 latest_mutation: self

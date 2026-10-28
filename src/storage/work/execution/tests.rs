@@ -367,6 +367,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             source_changed: true,
             reported_source_change: None,
             source_basis: Some(ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace-a".into(),
                 source_revision: "content-revision-1".into(),
                 source_root_generation: None,
@@ -382,6 +383,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             source_changed: false,
             reported_source_change: None,
             source_basis: Some(ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),
                 source_root_generation: None,
@@ -391,6 +393,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         },
     ];
     let mut verification_inputs = vec![VerificationEvidenceInput {
+        applicability: None,
         producer_observation: ExecutionObservationReference::ObservationId {
             observation_id: "verification-command-1".into(),
         },
@@ -411,6 +414,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         .clone();
     let mut environment_inputs = vec![EnvironmentEvidenceInput {
         source_basis: ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-b".into(),
             source_revision: "content-revision-1".into(),
             source_root_generation: None,
@@ -458,6 +462,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         },
     ]);
     let missing_producer = VerificationEvidenceInput {
+        applicability: None,
         producer_observation: ExecutionObservationReference::ObjectId {
             object_id: ObjectId::from_canonical_bytes(b"missing producer"),
         },
@@ -857,6 +862,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let observation_view =
         crate::domain::SourceObservation::admitted(observation_id.clone(), &observation);
     let verification_match = VerificationEvidenceMatchInput {
+        judged_basis: None,
         candidate_kind: WorkEvidenceKind::Verification,
         evidence: Some(&verification),
         producer: Some(&producer),

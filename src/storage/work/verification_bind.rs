@@ -55,6 +55,7 @@ struct Original {
 
 /// One validated target, ready to write.
 struct ValidTarget<'a> {
+    git_tree: Option<crate::domain::GitTreeId>,
     request: &'a VerificationBindTarget,
     item: WorkItem,
     generation: i64,
@@ -325,6 +326,13 @@ fn validate_original(
     // retired. A change of unknown place after the producer is one that
     // read already refuses (a change that carries no revision); it is named
     // here too so the root's own state says so without the read.
+    let applicable = crate::control::check_verification_applicability(
+        evidence.applicability.as_ref(),
+        root.as_ref()
+            .and_then(|root| root.latest_sighting.as_ref())
+            .and_then(|(_, sighting)| sighting.source_basis.as_ref()),
+    )
+    .is_ok();
     let root_current = root.is_some_and(|root| {
         root.workspace_id == evidence.source_basis.workspace_id
             && root.generation == generation
@@ -333,6 +341,7 @@ fn validate_original(
                 .is_none_or(|unknown| unknown < producer_position)
     });
     if !root_current
+        || !applicable
         || check_moved_on(
             transaction,
             evidence.binding.run_id,
@@ -487,6 +496,18 @@ fn validate_target<'a>(
     }) else {
         return refuse(Reason::SightingScopeDiffers, None, None);
     };
+    if let Some(original) = original
+        && let Err(mismatch) = crate::control::check_verification_applicability(
+            original.evidence.applicability.as_ref(),
+            Some(sighting_basis),
+        )
+    {
+        let reason = match mismatch {
+            crate::domain::VerificationEvidenceMismatch::GitTreeMissing => Reason::GitTreeMissing,
+            _ => Reason::GitTreeMismatch,
+        };
+        return refuse(reason, None, None);
+    }
     // Name the value that differs: the host's reading of the sighting, then
     // the sighting against the original's revision.
     if sighting_basis.source_revision != target.sighting.source_revision {
@@ -581,6 +602,7 @@ fn validate_target<'a>(
         Err(error) => return Err(error),
     }
     Ok(Ok(ValidTarget {
+        git_tree: sighting_basis.git_tree.clone(),
         request: target,
         item,
         generation: root.generation,
@@ -603,12 +625,14 @@ fn write_target(
     actor.session_id = Some(session_id.clone());
     actor.run_id = Some(binding.run_id.0.to_string());
     let evidence = VerificationEvidence {
+        applicability: source.applicability.clone(),
         schema_version: SCHEMA_VERSION,
         project_id: source.project_id.clone(),
         binding: binding.clone(),
         session_id: session_id.clone(),
         producer_observation: source.producer_observation.clone(),
         source_basis: ExecutionSourceBasis {
+            git_tree: target.git_tree.clone(),
             workspace_id: source.source_basis.workspace_id.clone(),
             source_revision: source.source_basis.source_revision.clone(),
             source_root_generation: Some(target.generation),

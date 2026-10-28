@@ -363,6 +363,7 @@ pub(super) fn host_verification_of(
         result,
         second,
         crate::domain::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: format!("workspace-{key}"),
             source_revision: source_revision.into(),
             source_root_generation: None,
@@ -441,6 +442,7 @@ pub(crate) fn verification_note_fixture(
         check,
         3,
         crate::domain::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-A".into(),
             source_revision: "A3".into(),
             source_root_generation: None,
@@ -481,6 +483,7 @@ pub(crate) fn unreported_move_fixture(
         36_000,
     );
     let unbound = |workspace: &str, revision: &str| crate::domain::ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: revision.into(),
         source_root_generation: None,
@@ -746,6 +749,7 @@ pub(crate) fn bound_verification_refusal_fixture(
         },
         second + 4,
         ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-newest-build".into(),
             source_revision: "revision-as-it-stands".into(),
             source_root_generation: None,
@@ -859,6 +863,7 @@ pub(crate) fn stale_deciding_refusal_fixture(
         )
         .expect("empty obligation rules");
     let basis = |workspace: &str, revision: &str| crate::domain::ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: workspace.into(),
         source_revision: revision.into(),
         source_root_generation: None,
@@ -1020,6 +1025,7 @@ pub(super) fn host_verification_with_outcome(
     let verification = super::completion::append_control_verification_evidence_on(
         &transaction,
         &VerificationEvidence {
+            applicability: None,
             schema_version: SCHEMA_VERSION,
             project_id: work.project_id.clone(),
             binding,
@@ -1109,6 +1115,36 @@ pub(super) fn host_verification_of_producer(
     source_basis: crate::domain::ExecutionSourceBasis,
     producer: ObjectId,
 ) -> ObjectId {
+    host_verification_of_producer_with_applicability(
+        transaction,
+        work,
+        claim,
+        holder,
+        key,
+        second,
+        recorded_second,
+        source_basis,
+        producer,
+        None,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture extends the existing native verification writer"
+)]
+pub(super) fn host_verification_of_producer_with_applicability(
+    transaction: &rusqlite::Transaction<'_>,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    second: i64,
+    recorded_second: i64,
+    source_basis: crate::domain::ExecutionSourceBasis,
+    producer: ObjectId,
+    applicability: Option<crate::domain::VerificationApplicability>,
+) -> ObjectId {
     use crate::domain::{ControlWorkBinding, VerificationEvidence};
     let run = super::query::load_work_run(transaction, claim.run_id).expect("claimed run");
     let mut run_actor = actor(holder);
@@ -1116,6 +1152,7 @@ pub(super) fn host_verification_of_producer(
     super::completion::append_control_verification_evidence_on(
         transaction,
         &VerificationEvidence {
+            applicability,
             schema_version: SCHEMA_VERSION,
             project_id: work.project_id.clone(),
             binding: ControlWorkBinding {
@@ -1231,6 +1268,7 @@ impl SqliteStore {
             key,
             second,
             Some(crate::domain::ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: format!("workspace-{key}"),
                 source_revision: source_revision.into(),
                 source_root_generation: None,
@@ -1334,6 +1372,7 @@ pub(super) fn source_mutation_detected(
         key,
         second,
         source_revision.map(|revision| crate::domain::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: format!("workspace-{key}"),
             source_revision: revision.into(),
             source_root_generation: None,

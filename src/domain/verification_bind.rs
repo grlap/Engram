@@ -193,6 +193,8 @@ pub struct VerificationBindTargetRefusal {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationBindTargetReason {
+    GitTreeMissing,
+    GitTreeMismatch,
     NotFound,
     DuplicateTarget,
     IsOriginalItem,
@@ -223,6 +225,8 @@ impl VerificationBindTargetReason {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::GitTreeMissing => "git_tree_missing",
+            Self::GitTreeMismatch => "git_tree_mismatch",
             Self::NotFound => "not_found",
             Self::DuplicateTarget => "duplicate_target",
             Self::IsOriginalItem => "is_original_item",

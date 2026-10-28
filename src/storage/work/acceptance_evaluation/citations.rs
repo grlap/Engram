@@ -12,6 +12,7 @@ use super::{
 
 pub(super) enum Citation {
     VerificationPassed {
+        applicability: Option<crate::domain::VerificationApplicability>,
         kind: crate::domain::VerificationKind,
         check_fingerprint: ObjectId,
         /// The source the check ran on.
@@ -227,6 +228,7 @@ pub(super) fn classify_citation(
             }
             if evidence.result == VerificationResult::Passed {
                 Citation::VerificationPassed {
+                    applicability: evidence.applicability,
                     kind: evidence.check_kind,
                     check_fingerprint: evidence.check_fingerprint,
                     source_basis: evidence.source_basis,

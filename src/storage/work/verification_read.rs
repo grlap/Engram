@@ -369,6 +369,7 @@ impl CandidateScan<'_> {
             (self.native_producer(id, position, &evidence)?, None)
         };
         Ok(AcceptanceBindingVerification {
+            applicability: evidence.applicability,
             record: id.clone(),
             position,
             check_kind: evidence.check_kind,
@@ -453,6 +454,7 @@ pub(super) fn bound_verification_read_on(
     let original: VerificationEvidence =
         load_typed_work_object(connection, &source.verification, "verification_evidence")?;
     if original.bound_from.is_some()
+        || original.applicability != evidence.applicability
         || original.project_id != *project_id
         || original.binding.work_id != source.work_id
         || original.binding.run_id != source.run_id
@@ -677,12 +679,14 @@ mod tests {
     /// at run-feed position `position`.
     fn row(position: i64, width: usize) -> AcceptanceBindingVerification {
         AcceptanceBindingVerification {
+            applicability: None,
             record: ObjectId::from_canonical_bytes(format!("record {position}").as_bytes()),
             position,
             check_kind: VerificationKind::Test,
             check_fingerprint: ObjectId::from_canonical_bytes(b"cargo test"),
             result: crate::domain::VerificationResult::Passed,
             source_basis: crate::domain::ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "w".repeat(width),
                 source_revision: "revision".into(),
                 source_root_generation: None,

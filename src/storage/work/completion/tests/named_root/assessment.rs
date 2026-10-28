@@ -71,6 +71,7 @@ fn record_check(
     append_control_verification_evidence_on(
         transaction,
         &VerificationEvidence {
+            applicability: None,
             schema_version: SCHEMA_VERSION,
             project_id: work.project_id.clone(),
             binding,
@@ -781,6 +782,7 @@ fn a_newer_root_sighting_decides_a_stale_check_and_is_named() {
     let check = append_control_verification_evidence_on(
         &transaction,
         &VerificationEvidence {
+            applicability: None,
             schema_version: SCHEMA_VERSION,
             project_id: work.project_id.clone(),
             binding: binding.clone(),

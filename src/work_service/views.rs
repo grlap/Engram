@@ -934,6 +934,8 @@ fn restored_history_is_empty(history: &RestoredHistoryView) -> bool {
 /// Compact agent-facing summary of one canonical run evidence object.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkEvidenceSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applicability: Option<crate::VerificationApplicability>,
     /// Complete canonical actor for display labels; the bounded rich field
     /// below must not be mistaken for a distinct producer's identity.
     #[serde(skip)]

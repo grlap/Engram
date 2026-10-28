@@ -444,6 +444,7 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
         let mut input = base.clone();
         let mut check = passed_check("checked");
         check.source_basis = Some(ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace\u{2066}A".into(),
             source_revision: "rev-b".into(),
             source_root_generation: None,
@@ -464,6 +465,7 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
         let mut input = base.clone();
         let mut second = passed_check("second");
         second.source_basis = Some(ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-a".into(),
             source_revision: "rev\u{200F}b".into(),
             source_root_generation: None,

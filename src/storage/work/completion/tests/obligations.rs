@@ -272,6 +272,7 @@ fn completion_seals_a_tested_source_change_as_the_exact_terminal_basis() {
     let mut run_actor = actor("runner");
     run_actor.run_id = Some(run.run_id.0.to_string());
     let source_basis = ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: "workspace-completion".into(),
         source_revision: "revision-after-mutation".into(),
         source_root_generation: None,
@@ -374,6 +375,7 @@ fn completion_seals_a_tested_source_change_as_the_exact_terminal_basis() {
         let hash = append_control_verification_evidence_on(
             &transaction,
             &VerificationEvidence {
+                applicability: None,
                 schema_version: SCHEMA_VERSION,
                 project_id: work.project_id.clone(),
                 binding: verification_observation.binding.clone(),
@@ -588,6 +590,7 @@ fn completion_refuses_more_than_the_bounded_environment_basis() {
                         binding: binding.clone(),
                         session_id: SessionId("runner".into()),
                         source_basis: ExecutionSourceBasis {
+                            git_tree: None,
                             workspace_id: components.workspace_id.clone(),
                             source_revision: "bounded-environment-revision".into(),
                             source_root_generation: None,
@@ -703,6 +706,7 @@ fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
                 reported_source_change: None,
                 obligation_rule_set: active_rule_set_id(&transaction),
                 source_basis: Some(ExecutionSourceBasis {
+                    git_tree: None,
                     workspace_id: "workspace-bounded".into(),
                     source_revision: format!("revision-{index}"),
                     source_root_generation: None,
@@ -790,6 +794,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .expect("protocol-obligation transaction");
         let source_basis = ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-protocol".into(),
             source_revision: "revision-protocol".into(),
             source_root_generation: None,
@@ -1064,6 +1069,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         append_control_verification_evidence_on(
             &transaction,
             &VerificationEvidence {
+                applicability: None,
                 schema_version: SCHEMA_VERSION,
                 project_id: work.project_id.clone(),
                 binding: binding.clone(),
@@ -1184,6 +1190,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         "test-after-basisless",
         false,
         Some(ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-a".into(),
             source_revision: "revision-a".into(),
             source_root_generation: None,
@@ -1202,6 +1209,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         append_control_verification_evidence_on(
             &transaction,
             &VerificationEvidence {
+                applicability: None,
                 schema_version: SCHEMA_VERSION,
                 project_id: work.project_id.clone(),
                 binding: binding.clone(),
@@ -1235,6 +1243,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         "based-mutation",
         true,
         Some(ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-b".into(),
             source_revision: "revision-b".into(),
             source_root_generation: None,
@@ -1262,6 +1271,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         append_control_verification_evidence_on(
             &transaction,
             &VerificationEvidence {
+                applicability: None,
                 schema_version: SCHEMA_VERSION,
                 project_id: work.project_id.clone(),
                 binding: binding.clone(),

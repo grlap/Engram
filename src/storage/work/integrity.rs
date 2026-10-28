@@ -323,6 +323,7 @@ pub(super) fn expected_verification_projection(
                 && original_position == Some(source.original_position)
                 && original.producer_observation == evidence.producer_observation
                 && original.check_kind == evidence.check_kind
+                && original.applicability == evidence.applicability
                 && original.check_fingerprint == evidence.check_fingerprint
                 && original.result == evidence.result
                 && original.completed_at == evidence.completed_at
@@ -379,6 +380,11 @@ pub(super) fn expected_verification_projection(
         evidence.bound_from.is_some() || producer.session_id == evidence.session_id;
     let bound = evidence.schema_version == SCHEMA_VERSION
         && original_matches
+        && crate::control::check_verification_applicability(
+            evidence.applicability.as_ref(),
+            Some(&check_basis),
+        )
+        .is_ok()
         && producer.project_id == evidence.project_id
         && producer.binding == check_binding
         && producer_session_matches
@@ -450,6 +456,12 @@ fn bound_sighting_matches(
                 && sighted.source_root_generation == basis.source_root_generation
                 && sighted.source_root_state == Some(crate::domain::SourceRootState::Named)
                 && sighted.source_revision == basis.source_revision
+                && sighted.git_tree == basis.git_tree
+                && crate::control::check_verification_applicability(
+                    evidence.applicability.as_ref(),
+                    Some(sighted),
+                )
+                .is_ok()
         })
         && root
             .unknown_change_position

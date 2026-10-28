@@ -207,6 +207,7 @@ fn a_change_outside_the_named_root_is_classified_against_the_root() {
         },
         sighting: MeasuredSighting {
             source_basis: ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace-B".into(),
                 source_revision: "rev-b".into(),
                 source_root_generation: None,
@@ -500,6 +501,7 @@ fn a_watcher_only_change_is_never_deduplicated() {
 fn no_reported_change_accounts_nothing_and_nested_checks_are_no_sightings() {
     let mut fixture = fixture();
     let nested = ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: "workspace-A".into(),
         source_revision: "rev-nested".into(),
         source_root_generation: None,
@@ -579,6 +581,7 @@ fn a_repeat_is_scoped_to_the_reports_workspace() {
             key,
             8,
             ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: workspace.into(),
                 source_revision: revision.into(),
                 source_root_generation: None,
@@ -636,6 +639,7 @@ fn a_watcher_only_change_breaks_a_workspace_scoped_repeat() {
         VerificationResult::Passed,
         10,
         ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-A".into(),
             source_revision: "rev-a".into(),
             source_root_generation: None,

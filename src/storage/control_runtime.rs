@@ -1373,6 +1373,7 @@ impl SqliteStore {
                             &source_basis,
                         )?;
                         let evidence = VerificationEvidence {
+                            applicability: input.applicability.clone(),
                             schema_version: SCHEMA_VERSION,
                             project_id: project_id.clone(),
                             binding: binding.clone(),

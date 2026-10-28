@@ -117,6 +117,8 @@ impl CitationContext<'_> {
             remedy: match mismatch {
                 EvaluationCitationMismatch::BeyondCut => EvaluationAdmissionRemedy::ReadCurrentCut,
                 EvaluationCitationMismatch::WrongSource
+                | EvaluationCitationMismatch::GitTreeMissing
+                | EvaluationCitationMismatch::GitTreeMismatch
                 | EvaluationCitationMismatch::SourceMovedAfterCheck
                 | EvaluationCitationMismatch::UnverifiableSource => {
                     EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate

@@ -1264,7 +1264,7 @@ impl CompletionLanding {
                 .bytes()
                 .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
         };
-        if !matches!(self.commit.len(), 40 | 64) || !lowercase_hex(&self.commit) {
+        if !super::verification_applicability::full_git_object_name(&self.commit) {
             return Err("landing commit must be 40 or 64 lowercase hex characters".into());
         }
         for (name, value) in [("remote", &self.remote), ("branch", &self.branch)] {

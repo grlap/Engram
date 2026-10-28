@@ -32,6 +32,7 @@ fn target_item(store: &mut SqliteStore) -> Held {
     let root = name_root(store, &work, &claim, 10, 4);
     let change = change(store, &work, &claim, "item-b-edit", "R0", 10, 5);
     Held {
+        git_tree: None,
         work: store.get_work_item(work.work_id).unwrap(),
         claim,
         generation: 10,
@@ -186,6 +187,7 @@ impl Fixture {
                     observed_at: Some(at(20)),
                 }],
                 &[VerificationEvidenceInput {
+                    applicability: None,
                     producer_observation: ExecutionObservationReference::ObservationId {
                         observation_id: "check-a-finished".into(),
                     },

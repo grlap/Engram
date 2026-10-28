@@ -1698,6 +1698,11 @@ fresh, passing per-criterion evaluation recorded by the evaluator the host ran.
 
 ## Host integration
 
+Selected checks may carry the typed
+[Git-tree applicability restriction](verification-applicability.md). Its
+active-store capability, refusal codes, attribution-only attachment, and
+coordinated schema-barrier cutover are part of the host-private contract.
+
 The [host checklist](../host-checklist.md) is the authoritative base-tier
 recipe, including the Claude Code hooks form; this section keeps the
 two-tier contract and the control-plane details. Integration has two tiers,

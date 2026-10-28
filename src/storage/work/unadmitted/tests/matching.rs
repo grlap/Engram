@@ -12,6 +12,7 @@ use crate::domain::{NamedRootBindingKind, SourceRootState, WorkObligationState};
 
 fn basis(revision: &str) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
+        git_tree: None,
         workspace_id: "workspace-A".into(),
         source_revision: revision.into(),
         source_root_generation: None,

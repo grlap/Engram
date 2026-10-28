@@ -164,6 +164,7 @@ fn the_largest_accepted_record_fits_the_observation_window() {
                 "c".repeat(MAX_OBSERVATION_LABEL_BYTES - 2)
             ));
             check.source_basis = Some(ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: workspace.clone(),
                 source_revision: "r".repeat(MAX_OBSERVED_SOURCE_BYTES),
                 source_root_generation: None,
@@ -180,6 +181,7 @@ fn the_largest_accepted_record_fits_the_observation_window() {
             workspace_id: workspace.clone(),
             sighting: MeasuredSighting {
                 source_basis: ExecutionSourceBasis {
+                    git_tree: None,
                     workspace_id: workspace,
                     source_revision: "s".repeat(MAX_OBSERVED_SOURCE_BYTES),
                     source_root_generation: None,
@@ -244,6 +246,7 @@ fn escape_heavy_records_fit_the_observation_window() {
                     "\u{1}".repeat(MAX_OBSERVATION_LABEL_BYTES - 2)
                 ));
                 check.source_basis = Some(ExecutionSourceBasis {
+                    git_tree: None,
                     workspace_id: workspace.clone(),
                     source_revision: "\"".repeat(MAX_OBSERVED_SOURCE_BYTES),
                     source_root_generation: None,
@@ -268,6 +271,7 @@ fn escape_heavy_records_fit_the_observation_window() {
                 workspace_id: workspace.clone(),
                 sighting: MeasuredSighting {
                     source_basis: ExecutionSourceBasis {
+                        git_tree: None,
                         workspace_id: workspace.clone(),
                         // Host source text refuses control characters, so
                         // its widest admitted escape is a quote.

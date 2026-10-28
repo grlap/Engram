@@ -84,6 +84,7 @@ fn task_sync_notes_exclude_each_stored_evidence_family_and_path_form() {
         },
         3,
         crate::domain::ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: environment_sentinel,
             source_revision: "fixture-cut".into(),
             source_root_generation: None,

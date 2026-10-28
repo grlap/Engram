@@ -625,6 +625,7 @@ fn a_page_fits_whole_rows_or_refuses() {
             VerificationResult::Passed,
             11,
             ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "w".repeat(workspace),
                 source_revision: "large-revision".into(),
                 source_root_generation: None,
@@ -1132,6 +1133,7 @@ mod candidates {
             },
             second,
             ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: workspace.map_or_else(|| format!("workspace-{key}"), str::to_owned),
                 source_revision: format!("revision-{key}"),
                 source_root_generation: None,

@@ -503,6 +503,7 @@ fn a_session_without_work_carries_no_state() {
     assert_eq!(control.status.work_binding, None);
     assert_eq!(control.status.named_root, None);
     let mut host = HostSession {
+        applicability: None,
         project_id: project_id.clone(),
         session_id,
         connection_token,
@@ -513,6 +514,7 @@ fn a_session_without_work_carries_no_state() {
             coverage: ResourceCoverage::Tree,
         },
         basis: ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: "workspace-observer".into(),
             source_revision: "content-revision-1".into(),
             source_root_generation: None,
@@ -802,6 +804,7 @@ fn observation(host: &HostSession, workspace: &str, revision: &str) -> Execution
         source_changed: false,
         reported_source_change: None,
         source_basis: Some(ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: workspace.into(),
             source_revision: revision.into(),
             source_root_generation: None,
@@ -820,6 +823,7 @@ fn environment(workspace: &str, component_workspace: &str) -> EnvironmentEvidenc
     };
     EnvironmentEvidenceInput {
         source_basis: ExecutionSourceBasis {
+            git_tree: None,
             workspace_id: workspace.into(),
             source_revision: "revision-B".into(),
             source_root_generation: None,

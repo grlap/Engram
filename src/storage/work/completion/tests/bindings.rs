@@ -1,4 +1,5 @@
 use super::*;
+mod git_tree;
 use crate::domain::{
     AcceptanceBinding, ReviseWorkRequest, VerificationRequirement, WorkPlanningAuthority,
 };
@@ -1321,6 +1322,7 @@ fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
             (&evidence, position(hash)),
             (&producer, position(&evidence.producer_observation)),
             &bound(1, VerificationKind::Build).requirement,
+            None,
             None,
             None,
         )

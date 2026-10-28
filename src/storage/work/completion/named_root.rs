@@ -12,6 +12,33 @@ use super::{
 };
 use crate::domain::SourceObservation;
 
+/// A claim's bound named root at a cut, as a bind checks it: its workspace
+/// and generation, its newest sighting with that sighting's run position,
+/// and the position of any later change whose root is unknown.
+pub(in crate::storage::work) struct NamedRootAtCut {
+    pub(in crate::storage::work) workspace_id: String,
+    pub(in crate::storage::work) generation: i64,
+    pub(in crate::storage::work) latest_sighting: Option<(i64, SourceObservation)>,
+    pub(in crate::storage::work) unknown_change_position: Option<i64>,
+}
+
+/// The claim's bound named root at `cut`, or `None` when it has none.
+pub(in crate::storage::work) fn named_root_at_cut_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    cut: i64,
+) -> Result<Option<NamedRootAtCut>, StoreError> {
+    Ok(
+        named_root_context_on(connection, run_id, claim_id, cut)?.map(|root| NamedRootAtCut {
+            workspace_id: root.binding.workspace_id.clone(),
+            generation: root.binding.generation,
+            latest_sighting: root.latest_sighting,
+            unknown_change_position: root.unknown_change_position,
+        }),
+    )
+}
+
 /// How the active root accounts for a source change that no check in the root
 /// verified. The class depends only on where and when the change was sighted,
 /// never on which rule opened its obligation.

@@ -31,6 +31,7 @@ mod test_support;
 
 use bin_support::{
     attribution::resolve_shell_work_attribution,
+    control::{control_assurance_name, warn_if_action_gated, warn_if_assurance_weakened},
     doctor::{ProjectionMaintenance, doctor},
     graph::run_graph_from_cli,
     project::{ResolvedProject, resolve_project},
@@ -163,6 +164,9 @@ enum Command {
         /// Build only the missing note search index, with consumers stopped.
         #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections", "check_landings"])]
         build_note_search_index: bool,
+        /// Establish the verification applicability barrier after older consumers exit.
+        #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections", "build_note_search_index", "check_landings"])]
+        build_verification_applicability_index: bool,
         /// Check every landing the seals record against a local git repository; never fetches.
         #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections"])]
         check_landings: bool,
@@ -311,32 +315,6 @@ impl From<ControlAssuranceArg> for ControlAssurance {
             ControlAssuranceArg::TurnGated => Self::TurnGated,
             ControlAssuranceArg::ActionGated => Self::ActionGated,
         }
-    }
-}
-
-fn control_assurance_name(value: ControlAssurance) -> &'static str {
-    match value {
-        ControlAssurance::Advisory => "advisory",
-        ControlAssurance::TurnGated => "turn_gated",
-        ControlAssurance::ActionGated => "action_gated",
-    }
-}
-
-fn warn_if_action_gated(value: ControlAssurance) {
-    if value == ControlAssurance::ActionGated {
-        eprintln!(
-            "CONTROL WARNING: no current V1 host can bind at action_gated; recover with `engram control-policy set-required-assurance turn_gated --authorized-by <actor> --idempotency-key <key>`"
-        );
-    }
-}
-
-fn warn_if_assurance_weakened(previous: ControlAssurance, current: ControlAssurance) {
-    if current < previous {
-        eprintln!(
-            "CONTROL WARNING: project required assurance was lowered from {} to {}; future sessions may mediate less of the agent execution path",
-            control_assurance_name(previous),
-            control_assurance_name(current)
-        );
     }
 }
 
@@ -1228,6 +1206,7 @@ async fn run_cli() -> Result<ExitCode> {
             recover_policy,
             repair_projections,
             build_note_search_index,
+            build_verification_applicability_index,
             check_landings,
             repo,
         } => {
@@ -1247,7 +1226,11 @@ async fn run_cli() -> Result<ExitCode> {
                 &project_id,
                 json,
                 recover_policy,
-                ProjectionMaintenance::selected(repair_projections, build_note_search_index),
+                if build_verification_applicability_index {
+                    Some(ProjectionMaintenance::VerificationApplicabilityIndex)
+                } else {
+                    ProjectionMaintenance::selected(repair_projections, build_note_search_index)
+                },
                 repository.as_deref(),
             )?;
         }

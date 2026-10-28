@@ -2,9 +2,35 @@
 //! opt-in phase trace.
 
 use anyhow::{Context as _, Result};
-use engram::{HostControlServer, HostPathPolicy, ProjectId, SessionId};
+use engram::{ControlAssurance, HostControlServer, HostPathPolicy, ProjectId, SessionId};
 use std::io::{self, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
+
+pub(crate) fn control_assurance_name(value: ControlAssurance) -> &'static str {
+    match value {
+        ControlAssurance::Advisory => "advisory",
+        ControlAssurance::TurnGated => "turn_gated",
+        ControlAssurance::ActionGated => "action_gated",
+    }
+}
+
+pub(crate) fn warn_if_action_gated(value: ControlAssurance) {
+    if value == ControlAssurance::ActionGated {
+        eprintln!(
+            "CONTROL WARNING: no current V1 host can bind at action_gated; recover with `engram control-policy set-required-assurance turn_gated --authorized-by <actor> --idempotency-key <key>`"
+        );
+    }
+}
+
+pub(crate) fn warn_if_assurance_weakened(previous: ControlAssurance, current: ControlAssurance) {
+    if current < previous {
+        eprintln!(
+            "CONTROL WARNING: project required assurance was lowered from {} to {}; future sessions may mediate less of the agent execution path",
+            control_assurance_name(previous),
+            control_assurance_name(current)
+        );
+    }
+}
 
 /// An opted-in control process's trace while it runs. Dropped on any
 /// return, it ends a startup still open as incomplete and closes the trace.

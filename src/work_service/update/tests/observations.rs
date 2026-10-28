@@ -781,6 +781,7 @@ fn host_turn_changing_source_detected(
             source_changed: true,
             reported_source_change,
             source_basis: Some(ExecutionSourceBasis {
+                git_tree: None,
                 workspace_id: "workspace".into(),
                 // As long as a host's content fingerprint.
                 source_revision: format!("content-v1:{key:0>64}"),

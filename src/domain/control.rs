@@ -482,6 +482,13 @@ impl SourceChangeDetection {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionSourceBasis {
+    /// Present only when the host's same capture measured a clean Git tree.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::verification_applicability::present_git_tree"
+    )]
+    pub git_tree: Option<super::GitTreeId>,
     pub workspace_id: String,
     pub source_revision: String,
     /// Host capture-time generation and state of this claim's named root.
@@ -617,6 +624,12 @@ pub enum VerificationResult {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct VerificationEvidenceInput {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::verification_applicability::present_applicability"
+    )]
+    pub applicability: Option<super::VerificationApplicability>,
     pub producer_observation: ExecutionObservationReference,
     pub check_kind: VerificationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -668,7 +681,14 @@ pub struct EnvironmentEvidenceInput {
 /// state. It is the only evidence kind that may satisfy a verification
 /// requirement.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerificationEvidence {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::verification_applicability::present_applicability"
+    )]
+    pub applicability: Option<super::VerificationApplicability>,
     pub schema_version: u16,
     pub project_id: ProjectId,
     pub binding: ControlWorkBinding,
@@ -826,6 +846,8 @@ pub enum WorkEvidenceKind {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationEvidenceMismatch {
+    GitTreeMissing,
+    GitTreeMismatch,
     WrongKind,
     CheckKindMismatch,
     WrongRun,

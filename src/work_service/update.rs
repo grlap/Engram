@@ -1035,10 +1035,22 @@ impl LocalWorkService {
                                 .into(),
                         ));
                     }
+                    let (applicability, assessment) = if evidence_kind
+                        == WorkEvidenceKind::Verification
+                    {
+                        let record = store.load_verification_evidence(&evidence)?;
+                        let assessment = store.verification_applicability_assessment(&record)?;
+                        (record.applicability, assessment)
+                    } else {
+                        (None, None)
+                    };
                     (
                         "evidence",
                         serde_json::json!({
                             "attached": true,
+                            "attribution_only": true,
+                            "applicability": applicability,
+                            "applicability_mismatch": assessment,
                             "evidence": evidence,
                             "evidence_kind": evidence_kind,
                         }),
