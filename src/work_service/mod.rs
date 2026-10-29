@@ -122,6 +122,7 @@ pub(crate) use projection::shed_work_next_focus;
 pub use status::WorkCurrentStatus;
 pub(crate) use status::shorten_status_previews;
 mod update;
+pub(crate) use update::committed::{CommittedMutation, WorkGateIntent};
 mod views;
 
 #[cfg(test)]
@@ -566,11 +567,11 @@ struct WorkProtocolIntent<'a, T> {
 }
 
 #[derive(Serialize)]
-struct WorkNoteIntent<'a> {
+pub(crate) struct WorkNoteIntent<'a> {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
-    status: bool,
-    summary: &'a str,
-    refs: &'a [String],
+    pub(crate) status: bool,
+    pub(crate) summary: &'a str,
+    pub(crate) refs: &'a [String],
 }
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]

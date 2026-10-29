@@ -1,6 +1,7 @@
 use super::*;
 use crate::domain::AppendRestoredWorkGateRequest;
 
+pub(super) mod committed;
 mod reject_retry;
 
 #[cfg(test)]
@@ -74,10 +75,7 @@ impl LocalWorkService {
 
     /// Like [`Self::work_gate`], but binds an explicit target through the same
     /// storage operation so concurrent focus changes cannot redirect evidence.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "gate routing keeps native retry and restored append-only authority paths together"
-    )]
+    #[cfg(test)]
     pub(crate) fn work_gate_on(
         &self,
         work_ref: Option<&str>,
@@ -86,6 +84,34 @@ impl LocalWorkService {
         evidence_ref: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
+        self.work_gate_with_commit_on(
+            work_ref,
+            &WorkGateIntent {
+                name,
+                failed,
+                evidence_ref,
+            },
+            now,
+            &mut None,
+        )
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "gate routing keeps native retry and restored append-only authority paths together"
+    )]
+    pub(crate) fn work_gate_with_commit_on(
+        &self,
+        work_ref: Option<&str>,
+        gate: &WorkGateIntent<'_>,
+        now: DateTime<Utc>,
+        committed: &mut Option<CommittedMutation>,
+    ) -> Result<WorkUpdateResult, StoreError> {
+        let WorkGateIntent {
+            name,
+            failed,
+            evidence_ref,
+        } = *gate;
         crate::domain::normalize_gate_evidence_input(name, failed, evidence_ref)
             .map_err(StoreError::InvalidWork)?;
         let mut store = self.lock_store_at(now)?;
@@ -117,6 +143,16 @@ impl LocalWorkService {
                 },
                 &DevelopmentNoopRedactor,
             )?;
+            CommittedMutation::capture(
+                committed,
+                "gate",
+                &work.short_ref,
+                &WorkNoteCapture {
+                    non_holder: false,
+                    evidence: evidence.clone(),
+                    checkpoint: None,
+                },
+            );
             let result = self.work_update_result(
                 &store,
                 "evidence",
@@ -124,6 +160,7 @@ impl LocalWorkService {
                 serde_json::to_value(&evidence)?,
                 now,
             )?;
+            CommittedMutation::phase(committed, "focus_selection");
             return self.focus_held_result(
                 &mut store,
                 target,
@@ -193,7 +230,9 @@ impl LocalWorkService {
         // or the immutable completed-seal basis inside the same transaction.
         if let Some(result) = attempt.result {
             let mut result: WorkUpdateResult = serde_json::from_value(result)?;
+            CommittedMutation::replay(committed, "gate", &result.receipt, &result.receipt, false)?;
             replayed_obligation_page(&store, Some(run_id), &mut result.obligation_page)?;
+            CommittedMutation::phase(committed, "focus_selection");
             return self.focus_held_result(
                 &mut store,
                 target,
@@ -202,6 +241,16 @@ impl LocalWorkService {
                 now,
             );
         }
+        CommittedMutation::capture(
+            committed,
+            "gate",
+            &work.short_ref,
+            &WorkNoteCapture {
+                non_holder: false,
+                evidence: attempt.evidence.clone(),
+                checkpoint: None,
+            },
+        );
         let result = self.work_update_result(
             &store,
             "evidence",
@@ -209,6 +258,7 @@ impl LocalWorkService {
             serde_json::to_value(&attempt.evidence)?,
             now,
         )?;
+        CommittedMutation::phase(committed, "protocol_result_recording");
         store.finish_work_protocol_attempt(
             &self.project_id,
             &self.session_id,
@@ -216,9 +266,11 @@ impl LocalWorkService {
             &attempt.idempotency_key,
             &result,
         )?;
+        CommittedMutation::phase(committed, "focus_selection");
         self.focus_held_result(&mut store, target, basis.claim.as_ref(), Ok(result), now)
     }
 
+    #[cfg(test)]
     pub(crate) fn work_note_on(
         &self,
         work_ref: Option<&str>,
@@ -229,6 +281,7 @@ impl LocalWorkService {
         self.work_note_with_status_on(work_ref, summary, refs, false, now)
     }
 
+    #[cfg(test)]
     pub(crate) fn work_note_with_status_on(
         &self,
         work_ref: Option<&str>,
@@ -237,9 +290,29 @@ impl LocalWorkService {
         status: bool,
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
+        self.work_note_with_commit_on(
+            work_ref,
+            &WorkNoteIntent {
+                status,
+                summary,
+                refs,
+            },
+            now,
+            &mut None,
+        )
+    }
+
+    pub(crate) fn work_note_with_commit_on(
+        &self,
+        work_ref: Option<&str>,
+        note: &WorkNoteIntent<'_>,
+        now: DateTime<Utc>,
+        committed: &mut Option<CommittedMutation>,
+    ) -> Result<WorkNoteResult, StoreError> {
+        let summary = note.summary;
         crate::storage::normalize_note_text(summary, crate::storage::refusal_labels::NOTE_SUMMARY)?;
         self.with_note_store_at(now, |store| {
-            self.capture_note_on(store, work_ref, summary, refs, status, now)
+            self.capture_note_on(store, work_ref, note, now, committed)
         })
     }
 
@@ -254,11 +327,15 @@ impl LocalWorkService {
         &self,
         store: &mut SqliteStore,
         work_ref: Option<&str>,
-        summary: &str,
-        refs: &[String],
-        status: bool,
+        note: &WorkNoteIntent<'_>,
         now: DateTime<Utc>,
+        committed: &mut Option<CommittedMutation>,
     ) -> Result<WorkNoteResult, StoreError> {
+        let WorkNoteIntent {
+            status,
+            summary,
+            refs,
+        } = *note;
         let target = self.resolve_target(store, work_ref)?;
         let basis = self.protocol_basis(store, true, false, target, now)?;
         // The store is already inside the note's admission window, so the
@@ -284,11 +361,19 @@ impl LocalWorkService {
         })?;
         if let Some(result) = attempt.result {
             let mut result: WorkNoteResult = serde_json::from_value(result)?;
+            CommittedMutation::replay(
+                committed,
+                "note",
+                &result.receipt,
+                &result.evidence,
+                result.non_holder,
+            )?;
             replayed_obligation_page(
                 store,
                 replayed_run_id(attempt.basis.as_ref(), &result.receipt),
                 &mut result.obligation_page,
             )?;
+            CommittedMutation::phase(committed, "focus_selection");
             return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         let basis_matches =
@@ -303,15 +388,12 @@ impl LocalWorkService {
                         "committed note has no durable attempt basis".into(),
                     )
                 })?)?;
-            let work_id = durable_basis
-                .focused_work
-                .map(|work| work.work_id)
-                .ok_or_else(|| {
-                    StoreError::InvalidWorkProjection(
-                        "committed note basis has no focused work".into(),
-                    )
-                })?;
-            let result = self.work_note_result(store, work_id, &capture, now)?;
+            let work = durable_basis.focused_work.ok_or_else(|| {
+                StoreError::InvalidWorkProjection("committed note basis has no focused work".into())
+            })?;
+            CommittedMutation::capture(committed, "note", &work.short_ref, &capture);
+            let result = self.work_note_result(store, work.work_id, &capture, now)?;
+            CommittedMutation::phase(committed, "protocol_result_recording");
             store.finish_work_protocol_attempt(
                 &self.project_id,
                 &self.session_id,
@@ -319,6 +401,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
+            CommittedMutation::phase(committed, "focus_selection");
             return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         // A restored late note committed before an interrupted response is
@@ -344,7 +427,9 @@ impl LocalWorkService {
                 evidence,
                 checkpoint: None,
             };
+            CommittedMutation::capture(committed, "note", &work.short_ref, &capture);
             let result = self.work_note_result(store, work.work_id, &capture, now)?;
+            CommittedMutation::phase(committed, "protocol_result_recording");
             store.finish_work_protocol_attempt(
                 &self.project_id,
                 &self.session_id,
@@ -352,6 +437,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
+            CommittedMutation::phase(committed, "focus_selection");
             return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         ensure_protocol_basis(basis_matches, protocol_operation, &raw_key, false)?;
@@ -383,7 +469,9 @@ impl LocalWorkService {
                 evidence,
                 checkpoint: None,
             };
+            CommittedMutation::capture(committed, "note", &work.short_ref, &capture);
             let result = self.work_note_result(store, work.work_id, &capture, now)?;
+            CommittedMutation::phase(committed, "protocol_result_recording");
             store.finish_work_protocol_attempt(
                 &self.project_id,
                 &self.session_id,
@@ -391,6 +479,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
+            CommittedMutation::phase(committed, "focus_selection");
             return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         let holds_live_claim = basis.claim.as_ref().is_some_and(|claim| {
@@ -439,7 +528,9 @@ impl LocalWorkService {
                 &DevelopmentNoopRedactor,
             )?
         };
+        CommittedMutation::capture(committed, "note", &work.short_ref, &capture);
         let result = self.work_note_result(store, work.work_id, &capture, now)?;
+        CommittedMutation::phase(committed, "protocol_result_recording");
         store.finish_work_protocol_attempt(
             &self.project_id,
             &self.session_id,
@@ -447,6 +538,7 @@ impl LocalWorkService {
             &raw_key,
             &result,
         )?;
+        CommittedMutation::phase(committed, "focus_selection");
         self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now)
     }
 

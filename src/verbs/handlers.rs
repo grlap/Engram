@@ -20,6 +20,7 @@ use super::{
 mod claims;
 mod completion_remedy;
 mod gates;
+mod notes;
 mod targets;
 mod update;
 pub(super) use completion_remedy::{EvaluationRemedy, completion_recovery_reminder};
@@ -522,7 +523,7 @@ impl AgentVerbs {
         self
     }
 
-    fn finish_mutation(&self, receipt: Receipt) -> Receipt {
+    pub(super) fn finish_mutation(&self, receipt: Receipt) -> Receipt {
         match &self.fit_effective_session {
             Some(session) => receipt.with_effective_session_id(session),
             None => receipt,
@@ -1547,64 +1548,6 @@ impl AgentVerbs {
             serde_json::to_value(receipt)?,
             false,
         )))
-    }
-
-    /// `note`: record an attributed observation; only a live holder also
-    /// checkpoints its execution. Non-holders need no claim on open work.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VerbError`] for empty text, invalid project/lifecycle binding,
-    /// or a stale holder authority basis.
-    pub fn note(&self, input: &NoteInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        self.service
-            .note_writer_admission_word(|| self.disclosing_focus(|| self.note_word(input, now)))
-    }
-
-    fn note_word(&self, input: &NoteInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let text = input.text.trim().to_owned();
-        if text.is_empty() {
-            return Err(StoreError::InvalidWork("note text must not be empty".into()).into());
-        }
-        let view = self.target_unfocused("note", input.work_ref.as_deref(), now)?;
-        let work_ref = view.status.work.short_ref.clone();
-        let target = view.status.work.work_id.0.to_string();
-        let refs = trimmed(&input.refs);
-        let result = if input.status {
-            self.service
-                .work_note_with_status_on(Some(&target), &text, &refs, true, now)
-        } else {
-            self.service.work_note_on(Some(&target), &text, &refs, now)
-        }
-        .map_err(|error| VerbError::at(error, &work_ref))?;
-        let after = self.refreshed(&view, now)?;
-        let mut guidance = self.guidance(&after, "note", now);
-        // Chosen from the recorded result, not from who holds the item now:
-        // a claim or a replay after the note cannot turn it into execution.
-        if result.non_holder && after.status.work.lifecycle == WorkLifecycle::Open {
-            observation_guidance(&mut guidance, &work_ref);
-        }
-        let value = super::mutation::NoteResult::from(&result);
-        let observation = if result.non_holder {
-            " (observation, no run credit)"
-        } else {
-            ""
-        };
-        let lines = vec![format!(
-            "noted on {work_ref} \"{}\"{observation}: {}{}",
-            short(&after.status.work.title),
-            short(&text),
-            held_suffix(self.holder(&after, now), now)
-        )];
-        Ok(self.finish_mutation(super::mutation::receipt(
-            &after,
-            "note",
-            value,
-            lines,
-            guidance,
-            self.holder(&after, now),
-            false,
-        )?))
     }
 
     /// `done`: complete the held item and disclose absent criterion evidence

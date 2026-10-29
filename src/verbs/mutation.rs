@@ -166,3 +166,66 @@ impl<'a> From<&'a crate::work_service::WorkNoteResult> for NoteResult<'a> {
         }
     }
 }
+
+impl super::AgentVerbs {
+    /// Only a core capture/replay can set `committed`. A later response failure
+    /// cannot undo it, and does not establish any current guidance or focus.
+    pub(super) fn committed_mutation(
+        &self,
+        word: impl FnOnce(
+            &mut Option<crate::work_service::CommittedMutation>,
+        ) -> Result<Receipt, VerbError>,
+    ) -> Result<Receipt, VerbError> {
+        let mut committed = None;
+        match word(&mut committed) {
+            Ok(receipt) => Ok(receipt),
+            Err(error) => {
+                let Some(committed) = committed else {
+                    return Err(error);
+                };
+                let readback = full_detail(
+                    &committed.work_ref,
+                    &format!(" --note {}", committed.evidence),
+                );
+                let class = match &error.error {
+                    crate::storage::StoreError::WorkWriterAdmissionRefused { reason, .. } => {
+                        reason.as_str()
+                    }
+                    error => crate::work_service::advisory_error_class(error),
+                };
+                let mut value = serde_json::json!({
+                    "operation": committed.operation,
+                    "work_ref": committed.work_ref,
+                    "outcome": "committed",
+                    "evidence": committed.evidence,
+                    "response_unavailable": {"phase": committed.phase, "error_class": class},
+                    "readback": readback,
+                });
+                if let Some(checkpoint) = committed.checkpoint {
+                    value["checkpoint"] = serde_json::json!(checkpoint);
+                }
+                if committed.non_holder {
+                    value["non_holder"] = serde_json::json!(true);
+                }
+                let lines = vec![
+                    format!(
+                        "{} committed on {}: {}",
+                        committed.operation, committed.work_ref, committed.evidence
+                    ),
+                    format!("{} unavailable ({class}); {readback}", committed.phase),
+                ];
+                Ok(self.finish_mutation(Receipt::assemble(
+                    lines,
+                    Guidance {
+                        reminders: vec![
+                            "the mutation committed; read its evidence before another write".into(),
+                        ],
+                        next: vec![readback],
+                    },
+                    value,
+                    false,
+                )))
+            }
+        }
+    }
+}

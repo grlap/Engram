@@ -16,10 +16,17 @@ impl AgentVerbs {
     /// text contains unsafe control/format characters, or this session does
     /// not hold the item.
     pub fn gate(&self, input: GateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        self.disclosing_focus(|| self.gate_word(input, now))
+        self.disclosing_focus(|| {
+            self.committed_mutation(|committed| self.gate_word(input, now, committed))
+        })
     }
 
-    fn gate_word(&self, input: GateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+    fn gate_word(
+        &self,
+        input: GateInput,
+        now: DateTime<Utc>,
+        committed: &mut Option<crate::work_service::CommittedMutation>,
+    ) -> Result<Receipt, VerbError> {
         let normalized = normalize_gate_input(&input)?;
         let GateInput {
             work_ref: target_ref,
@@ -36,19 +43,23 @@ impl AgentVerbs {
         })?;
         let work_ref = view.status.work.short_ref.clone();
         let passed = normalized.failed.is_empty();
-        let _result = self
+        let result = self
             .service
-            .work_gate_on(
+            .work_gate_with_commit_on(
                 Some(&view.status.work.work_id.0.to_string()),
-                &name,
-                &failed,
-                evidence_ref.as_deref(),
+                &crate::work_service::WorkGateIntent {
+                    name: &name,
+                    failed: &failed,
+                    evidence_ref: evidence_ref.as_deref(),
+                },
                 now,
+                committed,
             )
             .map_err(|error| VerbError::at(error, &work_ref))?;
+        crate::work_service::CommittedMutation::phase(committed, "receipt_enrichment");
         let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "gate", now);
-        let value = json!({"gate": {
+        let value = json!({"evidence": result.receipt.result, "gate": {
             "name": &normalized.name,
             "passed": passed,
             "failed_count": normalized.failed.len(),

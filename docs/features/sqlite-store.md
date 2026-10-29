@@ -250,7 +250,15 @@ Every busy, locked or not-autocommit work-mutation acquisition refusal carries
 its SQLite primary and extended codes, reason,
 elapsed acquisition time and available wait budget. Its certainty says only
 that this transaction did not start: earlier transactions of the word may
-already have committed, including the note itself. The available budget is the
+already have committed. Once a `note` or `gate` capture has committed, the
+agent word retains its exact evidence locator through response finalization.
+If result recording, guidance, focus selection or receipt enrichment then
+fails, it returns success with `outcome: committed`, the evidence locator,
+`response_unavailable` (phase and bounded error class), and an exact
+`engram work show REF --note LOCATOR` readback. It omits unavailable claim,
+obligation and focus assertions rather than substituting empty state. Core
+capture failures still return errors, and a registration or attempt alone
+never proves the requested mutation committed. The available budget is the
 remaining note window or the connection's ordinary timeout. Genuine SQLite
 lock text remains visible to relaying hosts. Replaying the same explicit note
 intent uses existing idempotency; a new call is not necessarily that intent.

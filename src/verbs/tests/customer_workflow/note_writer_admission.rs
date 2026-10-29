@@ -186,7 +186,7 @@ fn note_writer_admission_exhaustion_preserves_non_holder_focus_and_absence() {
 }
 
 #[test]
-fn note_writer_admission_failure_after_capture_does_not_replay_or_claim_absence() {
+fn note_writer_admission_failure_after_capture_returns_the_committed_note() {
     let (_directory, verbs, path, project) = fixture();
     let target = add(&verbs, "Post-capture contention", None, false, 0);
     let before = SqliteStore::open(&path)
@@ -196,7 +196,7 @@ fn note_writer_admission_failure_after_capture_does_not_replay_or_claim_absence(
     let blocker = rusqlite::Connection::open(&path).unwrap();
     let release = rusqlite::Connection::open(&path).unwrap();
     let mut acquisition = 0;
-    let error = with_writer_admission_test_policy(
+    let receipt = with_writer_admission_test_policy(
         Some(WallDuration::from_millis(30)),
         move || {
             acquisition += 1;
@@ -207,25 +207,46 @@ fn note_writer_admission_failure_after_capture_does_not_replay_or_claim_absence(
         },
         || verbs.note(&input(&target, "Already committed note"), at(1)),
     )
-    .unwrap_err();
-    assert!(matches!(
-        &error.error,
-        StoreError::WorkWriterAdmissionRefused {
-            reason: WorkWriterAdmissionReason::BusyBudgetExhausted,
-            ..
-        }
-    ));
+    .unwrap();
+    assert_eq!(receipt.value["outcome"], "committed");
     assert_eq!(
-        crate::store_error_value(&error.error)["error"]["details"]["certainty"],
-        "acquisition_not_started"
+        receipt.value["response_unavailable"]["phase"],
+        "protocol_result_recording"
+    );
+    assert_eq!(
+        receipt.value["response_unavailable"]["error_class"],
+        "busy_budget_exhausted"
+    );
+    assert!(receipt.value.get("obligations").is_none());
+    assert!(receipt.value.get("claim").is_none());
+    assert!(receipt.value.get("focus_change").is_none());
+    assert!(!receipt.owed);
+    assert_eq!(receipt.value["non_holder"], true);
+    let evidence = receipt.value["evidence"].as_str().unwrap().to_owned();
+    assert_eq!(
+        receipt.value["readback"],
+        format!("engram work show '{target}' --note {evidence}")
     );
     // Dropping the test policy closed the blocker and rolled back its lock.
     release.execute_batch("BEGIN IMMEDIATE; ROLLBACK").unwrap();
+    let recorded = verbs
+        .show_records(
+            &target,
+            &ShowInput {
+                note: Some(evidence.clone()),
+                ..ShowInput::default()
+            },
+            at(2),
+        )
+        .unwrap();
+    assert_eq!(recorded.value["note"]["locator"], evidence);
+    assert_eq!(recorded.value["note"]["summary"], "Already committed note");
     assert_eq!(count_notes(&verbs, &target, "Already committed note"), 1);
     let replay = verbs
         .note(&input(&target, "Already committed note"), at(1))
         .unwrap();
     assert!(replay.text().contains("observation, no run credit"));
+    assert_eq!(replay.value["evidence"], evidence);
     assert_eq!(count_notes(&verbs, &target, "Already committed note"), 1);
     assert!(
         SqliteStore::open(&path)
@@ -241,6 +262,77 @@ fn note_writer_admission_failure_after_capture_does_not_replay_or_claim_absence(
             .unwrap()
             .focused_work_id,
         before.focused_work_id
+    );
+}
+
+#[test]
+fn gate_writer_admission_failure_after_capture_returns_the_committed_gate() {
+    let (_directory, verbs, path, _) = fixture();
+    let target = add(&verbs, "Post-gate contention", None, false, 0);
+    claim(&verbs, &target, 1);
+    let blocker = rusqlite::Connection::open(&path).unwrap();
+    let mut acquisition = 0;
+    let gate = || GateInput {
+        work_ref: Some(target.clone()),
+        name: "Committed gate".into(),
+        failed: vec![],
+        evidence_ref: None,
+    };
+    let receipt = with_writer_admission_test_policy(
+        None,
+        move || {
+            acquisition += 1;
+            // Gate capture and its attempt commit together; result recording is second.
+            if acquisition == 2 {
+                blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+            }
+        },
+        || verbs.gate(gate(), at(2)),
+    )
+    .unwrap();
+    assert_eq!(receipt.value["outcome"], "committed");
+    assert_eq!(
+        receipt.value["response_unavailable"]["phase"],
+        "protocol_result_recording"
+    );
+    assert_eq!(
+        receipt.value["response_unavailable"]["error_class"],
+        "busy_budget_exhausted"
+    );
+    assert!(receipt.value.get("obligations").is_none());
+    assert!(receipt.value.get("claim").is_none());
+    let evidence = receipt.value["evidence"].as_str().unwrap().to_owned();
+    let detail = verbs
+        .show_records(
+            &target,
+            &ShowInput {
+                note: Some(evidence.clone()),
+                ..ShowInput::default()
+            },
+            at(3),
+        )
+        .unwrap();
+    assert_eq!(detail.value["note"]["locator"], evidence);
+    let repeated = verbs.gate(gate(), at(2)).unwrap();
+    assert_eq!(repeated.value["evidence"], evidence);
+    let notes = verbs
+        .show_records(
+            &target,
+            &ShowInput {
+                notes: true,
+                gates: true,
+                ..ShowInput::default()
+            },
+            at(3),
+        )
+        .unwrap();
+    assert_eq!(notes.value["notes"].as_array().unwrap().len(), 1);
+    assert!(
+        SqliteStore::open(&path)
+            .unwrap()
+            .verify_all()
+            .unwrap()
+            .is_healthy()
     );
 }
 
