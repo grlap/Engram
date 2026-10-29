@@ -92,6 +92,8 @@ pub(super) struct LoadStageTimings {
     pub(super) completed: [bool; 6],
     pub(super) total: std::time::Duration,
     pub(super) catalog_items: usize,
+    pub(super) item_insert_sql: Option<crate::storage::work_cost::sqlite::Metrics>,
+    capture_item_sql: bool,
     next_stage: usize,
     active: Option<LoadStage>,
 }
@@ -117,6 +119,21 @@ thread_local! {
 /// residual also includes destruction and error rollback outside named stages.
 #[cfg(test)]
 pub(super) fn capture_load_stages<T>(operation: impl FnOnce() -> T) -> (T, LoadStageTimings) {
+    capture_load_stages_with_sql(operation, false)
+}
+
+/// Opt-in SQL observation of only the physical item insertion loop. Existing
+/// timing samples do not start a SQL scope or change their tracing behavior.
+#[cfg(test)]
+pub(super) fn capture_load_item_sql<T>(operation: impl FnOnce() -> T) -> (T, LoadStageTimings) {
+    capture_load_stages_with_sql(operation, true)
+}
+
+#[cfg(test)]
+fn capture_load_stages_with_sql<T>(
+    operation: impl FnOnce() -> T,
+    capture_item_sql: bool,
+) -> (T, LoadStageTimings) {
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {
@@ -129,7 +146,10 @@ pub(super) fn capture_load_stages<T>(operation: impl FnOnce() -> T) -> (T, LoadS
     LOAD_STAGE_TIMINGS.with(|slot| {
         let mut slot = slot.borrow_mut();
         assert!(slot.is_none(), "nested load timing capture");
-        *slot = Some(LoadStageTimings::default());
+        *slot = Some(LoadStageTimings {
+            capture_item_sql,
+            ..LoadStageTimings::default()
+        });
     });
     let reset = Reset;
     let started = std::time::Instant::now();
@@ -287,6 +307,39 @@ struct PreparedLoad {
     body_object: CanonicalObject,
     records: Vec<(RestoredRecord, CanonicalObject)>,
     preview: WorkGraphSnapshotLoadPreview,
+    item_insert_order: Option<Vec<usize>>,
+}
+
+/// Plan physical writes only after the existing validation has succeeded.
+/// With no supersession references, ancestors first keeps deferred item FKs
+/// satisfied throughout insertion and avoids SQLite's reverse-reference scans.
+/// Supersession can form valid FK insertion cycles with optional parent edges;
+/// those snapshots retain their entire original order and deferred behavior.
+fn validated_item_insert_order(
+    items: &[crate::WorkGraphSnapshotItem],
+    by_id: &HashMap<WorkId, &crate::WorkGraphSnapshotItem>,
+) -> Result<Option<Vec<usize>>, StoreError> {
+    if items.iter().any(|item| item.superseded_by.is_some()) {
+        return Ok(None);
+    }
+    let mut by_depth: [Vec<usize>; super::super::work::MAX_WORK_DEPTH as usize + 1] =
+        std::array::from_fn(|_| Vec::new());
+    for (index, item) in items.iter().enumerate() {
+        let mut depth = 0;
+        let mut parent = item.parent_id;
+        while let Some(id) = parent {
+            depth += 1;
+            if depth >= by_depth.len() {
+                return Err(corrupt("parent hierarchy exceeds the work depth limit"));
+            }
+            parent = by_id
+                .get(&id)
+                .ok_or_else(|| corrupt("dangling parent"))?
+                .parent_id;
+        }
+        by_depth[depth].push(index);
+    }
+    Ok(Some(by_depth.into_iter().flatten().collect()))
 }
 
 pub(super) fn validate_generated_snapshot_document(
@@ -415,6 +468,7 @@ fn prepare_load(
     validate_sources(&document, &records, &indexes)?;
     validate_lifecycle_proofs(&document, &records, &mut indexes)?;
     validate_memories(&document)?;
+    let item_insert_order = validated_item_insert_order(&document.body.items, &indexes.items)?;
 
     let mut lifecycle_counts = WorkGraphSnapshotLifecycleCounts::default();
     for item in &document.body.items {
@@ -471,6 +525,7 @@ fn prepare_load(
         body_object,
         records,
         preview,
+        item_insert_order,
     })
 }
 
@@ -1549,7 +1604,19 @@ fn insert_prepared_load_on(
         let object = CanonicalObject::identified(&source.hash, &source.canonical_json)?;
         SqliteStore::insert_object(transaction, "work_source_snapshot", &object)?;
     }
-    for snapshot in &prepared.document.body.items {
+    #[cfg(test)]
+    let item_sql_scope = LOAD_STAGE_TIMINGS.with_borrow(|timings| {
+        timings
+            .as_ref()
+            .filter(|timings| timings.capture_item_sql)
+            .map(|_| crate::storage::work_cost::sqlite::start())
+    });
+    for position in 0..prepared.document.body.items.len() {
+        let index = prepared
+            .item_insert_order
+            .as_ref()
+            .map_or(position, |order| order[position]);
+        let snapshot = &prepared.document.body.items[index];
         let item = WorkItem {
             external_ref: snapshot.external_ref.clone(),
             schema_version: crate::schema::SCHEMA_VERSION,
@@ -1608,6 +1675,13 @@ fn insert_prepared_load_on(
                 serde_json::to_vec(&item)?,
             ],
         )?;
+    }
+    #[cfg(test)]
+    if let Some(scope) = item_sql_scope {
+        let metrics = scope.finish();
+        LOAD_STAGE_TIMINGS.with_borrow_mut(|timings| {
+            timings.as_mut().unwrap().item_insert_sql = Some(metrics);
+        });
     }
     let mut newest_record = HashMap::<WorkId, ObjectId>::new();
     for (record, object) in &prepared.records {

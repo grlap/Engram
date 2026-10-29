@@ -7,6 +7,8 @@ use crate::{
     WorkGraphSnapshotItem, WorkGraphSnapshotRecordPayload, WorkGraphSnapshotSectionCounts, WorkId,
 };
 
+mod insertion_cost;
+
 const CONTAINER_LIMIT: usize = 128 * 1024 * 1024;
 const VALIDATION_BUDGET: Duration = Duration::from_secs(120);
 
@@ -114,8 +116,6 @@ fn build_document(
 ) -> WorkGraphSnapshotDocument {
     assert!(item_count > 0);
     assert!(records_per_item > 0);
-    let template_item = template.body.items[0].clone();
-    let template_record = template.body.records[0].clone();
     let mut ids = Vec::with_capacity(item_count);
     let mut unique = std::collections::HashSet::with_capacity(item_count);
     let mut unique_refs = std::collections::HashSet::with_capacity(item_count);
@@ -126,6 +126,30 @@ fn build_document(
             ids.push(id);
         }
     }
+
+    build_document_with_ids(
+        template,
+        &ids,
+        shape,
+        records_per_item,
+        events_per_record,
+        bind_digest,
+    )
+}
+
+fn build_document_with_ids(
+    template: &WorkGraphSnapshotDocument,
+    ids: &[WorkId],
+    shape: ForestShape,
+    records_per_item: usize,
+    events_per_record: usize,
+    bind_digest: bool,
+) -> WorkGraphSnapshotDocument {
+    let item_count = ids.len();
+    assert!(item_count > 0);
+    assert!(records_per_item > 0);
+    let template_item = template.body.items[0].clone();
+    let template_record = template.body.records[0].clone();
 
     let mut items = Vec::with_capacity(item_count);
     let mut records = Vec::with_capacity(item_count.saturating_mul(records_per_item));

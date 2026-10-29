@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Test review input fingerprinting and completion launcher
         run: node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
       - name: Check documentation links
