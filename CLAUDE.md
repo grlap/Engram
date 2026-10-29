@@ -225,7 +225,7 @@ their presence in a file alone does not prove delivery.
   that fingerprint still verifies, the tree id of the complete frozen input,
   including any untracked files it contains. The commit's parent is the master
   commit the input was frozen on, its tree is that recorded tree id, and its
-  message names the fingerprint and nothing else. The commit is created
+  message follows the "Commit messages" section. The commit is created
   detached, and no local branch adopts it. Engram::Merger pushes only that
   commit, to origin, with the explicit refspec
   `<commit>:refs/heads/test/<item>-<fingerprint8>`: never master or another
@@ -282,6 +282,12 @@ their presence in a file alone does not prove delivery.
 - Implementers claim their own Engram items and complete them with the
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.
+
+### Commit messages
+Use a short imperative subject naming the concrete change and its purpose or observable effect. It must make sense without opening a hash or tracker item. An optional type/scope prefix or work reference may appear in the subject; a hash, fingerprint, work ref or vague "updates" alone is not a subject. A combined landing describes its actual combined changes. Merge/revert messages identify the change they merge or revert.
+Add a body only when it explains a non-obvious reason or constraint. Work references belong in the subject, not the body. Keep gate run ids and validation results on the work item and in its retained evidence; do not require a future gate result in a commit created before that gate.
+Remote test-ref commits use the same meaningful subject and include the complete review-freeze fingerprint in a body trailer: `Review-Freeze: <fingerprint>`. The test-ref name, recorded tree identity and all other review/gate/landing requirements stay unchanged.
+This rule is prospective: do not amend, rebase or force-push existing history or repeat a review/gate just to change a message. It adds no formatting gate and grants no new Git authority.
 
 ### Cross-project feedback
 
