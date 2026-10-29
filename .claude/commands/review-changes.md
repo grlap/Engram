@@ -110,8 +110,8 @@ A changeset whose every changed path is a `.md` file (docs, AGENTS.md,
 CLAUDE.md, skills, commands) runs the link check and a byte comparison of
 AGENTS.md and CLAUDE.md instead of the full batch (Greg, 2026-09-26): no
 build step or test reads Markdown except the link checker. Run each through
-the launcher, so that its input fingerprint is checked at completion as for
-the full gate and can be compared with the saved review freeze:
+the launcher, so that its automatic input fingerprint is checked at completion
+as for the full gate. Review identity uses the separate Git tree id in section 3:
 
 ```bash
 node scripts/test-launcher.mjs focused -- node scripts/check-doc-links.mjs
@@ -131,17 +131,20 @@ correction checks never replace landing validation.
 
 ### Gate and review in parallel
 
-Run the foreground launcher under the host's background execution (for example
-a background shell task that reports when it exits), then freeze the review
-input (section 3) and spawn both reviewers (section 4) on the same input while
-the gate runs (Greg, 2026-09-26). The launcher refuses `--detach` without a
+Fully stage and freeze the review input (section 3) before starting the
+foreground launcher under the host's background execution (for example
+a background shell task that reports when it exits). Spawn both reviewers
+(section 4) on the same input while the gate runs (Greg, 2026-09-26).
+The launcher refuses `--detach` without a
 different session to notify, so `--detach --notify PARENT_SESSION` is only for
 a bounded worker that delivers completion to the parent. The yield or blocking
 wait described below comes under section 5, only after the reviewers are
 spawned. A host without background execution cannot overlap them: it runs the
-gate first, then sections 3 and 4. For the same tree, the gate's
-`expectedFingerprint` and the review freeze print the same value. A failed
-gate discards the reviews of that input. When a review finding will change the
+gate after section 3, then section 4. The launcher's automatic before/after
+fingerprint is unchanged and is separate from the review's Git tree id; never
+compare those values for equality. Validation and review cover the same
+unchanged input. A failed gate discards the reviews of that input.
+When a review finding will change the
 input while the gate still runs, the gate's result can no longer be used: the
 parent stops or discards it and starts the next round on the corrected input.
 It notes which stages finished and on which fingerprint, and does not record
@@ -174,9 +177,10 @@ and manifest path. Foreground and detached launch receipts print it for this
 purpose, before waiting for completion.
 Do not recover the comparison value from the run's files at completion.
 Hold source and index unchanged during execution. At completion, and before
-reusing recovered results, require the existing freeze script's `--check` to
-exit zero with stdout exactly the parent-held literal plus LF. A mismatch or
-missing independently retained identity is an evidence gap, not a current pass.
+reusing recovered results, require the launcher's automatic before/after
+fingerprints to equal the parent-held `expectedFingerprint` and repeat
+section 3's applicable Git identity checks. A mismatch or missing independently
+retained identity is an evidence gap, not a current pass.
 These boundary checks do not prove the absence of transient
 edits; a known intervening edit invalidates the run. This gate-input snapshot
 is separate from the review freeze in section 3, although both cover the same
@@ -246,43 +250,51 @@ action); "the suite failed" alone is not a report.
 
 ## 3. Freeze the review input
 
-Run:
+Ordinary review inputs use Git identity. The parent stages every intended
+path, requires an empty `git diff` and no untracked files, then runs
+`git write-tree` once to record the complete index tree id. Record the root,
+base commit, HEAD, changed paths and tree id on the item and in the brief.
+Do this before starting validation; hold source and index unchanged through
+validation and review.
+
+At the start and end of each review, the reviewer runs these read-only commands
+separately, replacing `TREE` with the parent's recorded tree id:
 
 ```bash
-node scripts/review-freeze-fingerprint.mjs --write .git/engram-review-freeze.json
+git diff --cached --quiet TREE
+git diff --quiet
+git ls-files --others --exclude-standard
 ```
 
-Keep the fingerprint printed by this successful `--write` in the parent's
-review record, independently of the manifest file. Pass that exact value and
-the manifest's absolute path to both reviewers, and to the optional third
-review when commissioned, as review context. Retain the value until fan-in: a
-later run or another session can overwrite the manifest. Do not replace this
-saved value with a fingerprint read back from that file.
+Both diffs must exit zero, and the untracked listing must exit zero with no
+output. Also confirm HEAD equals the parent's recorded HEAD. Report the tree id
+and `index == TREE, clean` at both boundaries. Reviewers never run
+`git write-tree`, which writes Git objects; only the parent does that.
 
-The snapshot records the canonical Git worktree root and covers HEAD, the
-index, Git-normalized tracked worktree changes, and untracked file contents.
-Git clean/eol conversion can erase tracked-byte differences; this is not
-raw-byte coverage or proof against transient edits. The freeze CLI reports
-this normalization limitation on stderr on every platform, separately from
-the exact fingerprint on stdout. A check from
-another worktree or repository refuses with both roots before comparing
-content fingerprints. Running from a subdirectory still checks the whole
-worktree. A manifest without a root is refused; create a new freeze.
+For a committed input, the parent records its commit and commit tree id.
+At both boundaries each reviewer confirms HEAD equals that commit, reports its
+tree id using `git show -s --format=%T COMMIT`, and requires empty output from
+`git status --porcelain --untracked-files=all`. Commands must exit zero, and the
+tree id must equal the parent's recorded id. Review the change against the
+supplied base even though the checkout is clean.
 
-Git index executable modes and symlink targets are covered on Windows too.
-Untracked executable-mode changes and filesystem symlink properties remain
-unverified on Windows; the checker reports that limitation on stderr, separate
-from its fingerprint on stdout. Their filesystem tests run on other platforms.
-The newline-filename test is also skipped on Windows because those names are
-not valid there. These skips are not evidence of full Windows coverage.
+Git identity does not replace reading the complete change or prove the absence
+of transient edits. A known intervening source or index edit invalidates the
+affected result. Git normalization is not raw-byte equality.
 
-Keep the manifest outside review input. The relative `.git` path above must
-be used from the main worktree root, not a subdirectory. In a linked worktree,
-`.git` is a file. From any worktree or subdirectory, resolve the manifest with
-`git rev-parse --path-format=absolute --git-path engram-review-freeze.json` and
-pass that absolute path to both `--write` and `--check`. Use an absolute path
-to this script too when invoking it from a subdirectory. The invocation's
-working directory still selects which worktree is checked.
+Review identity capture and the compiled host freeze checker are optional,
+limited to a change whose correctness depends on bytes or filesystem properties
+that ordinary Git identity normalizes or does not track: EOL-sensitive files
+under an `.gitattributes` EOL or filter rule, executable bits, symlink targets,
+or nested repositories/submodules. Record the affected paths, concrete
+correctness dependency and reason on the item before using capture. Record the
+method, comparison value and actual coverage limits; a Git-normalized
+fingerprint is not raw-byte proof. Do not require capture or the compiled
+checker in the ordinary flow.
+
+The launcher's automatic input capture and before/after fingerprints remain
+unchanged, as do the remote test-ref and gate-record requirements. Keep its
+fingerprint separate from the review's Git tree id.
 
 ## 4. Spawn the two reviewers
 
@@ -300,9 +312,11 @@ the same way, with its own title, and gets the same prompt.
 
 Give each a multi-line prompt. Its first line tells the reviewer to read
 `.claude/commands/review-code.md` in the worktree and follow it. The rest
-gives the review context: the item, the input (files and HEAD), the
-manifest's absolute path and the saved fingerprint, and what changed since the
-previous round. Do not put that context after `/review-code` on one line:
+gives the review context: the item, root, base commit, HEAD or input commit,
+changed paths, recorded Git tree id, required start/end checks from section 3,
+and what changed since the previous round. Include capture evidence only for
+a recorded section 3 exception. Do not put that context after `/review-code`
+on one line:
 TermAl expands a one-line slash command from the command file, which has no
 arguments slot, so everything after the command is dropped.
 
@@ -330,32 +344,22 @@ until TermAl resumes the parent with the pair's fan-in prompt.
 
 ## 6. Verify the freeze and collect results
 
-Accept reviewer output only once the gate has finished and passed, and its
-input fingerprint at completion equals the saved review-freeze fingerprint.
+Accept reviewer output only once the gate has finished and passed on the same
+unchanged input tree, with its automatic before/after fingerprints matching
+the parent-held launcher value.
 For a changeset touching only `.md` files, that means once the link and
 identity checks passed on that tree. When the reviews arrive first, verify
 the freeze as below. They may be read, and a justified finding may start the
 next round at once, but a clean review counts only once the gate has passed
-on the same fingerprint.
+on that same input.
 
-Before accepting reviewer output, run:
-
-```bash
-node scripts/review-freeze-fingerprint.mjs --check .git/engram-review-freeze.json
-```
-
-Accept the check only when it exits zero and stdout is exactly the fingerprint
-saved from this parent's own `--write`, followed by one newline. Never obtain
-the comparison value from the manifest at check time. If the independently
-saved value is lost, restart from the gates and create a new freeze and review.
-A limitation notice on stderr is separate from that success output. On any
-nonzero exit or unexpected stdout, do not
-accept reviewer output. For a worktree mismatch, rerun the check from the
-frozen worktree with its saved manifest. For an invalid or missing manifest,
-create a new freeze through this workflow, restarting from the gates. If it
-reports content drift, restart from the gates too: the reviewers did not
-inspect the current input. Do not overwrite a failed check's manifest merely
-to accept an earlier review.
+Before accepting reviewer output, the parent repeats section 3's applicable
+Git comparisons against its saved identity and requires both reviewers' start
+and end results to match. Missing identity evidence or a mismatch is a gap,
+not a review of the current input. Investigate it; if input changed, renew the
+affected validation and review on the corrected input. Do not replace a saved
+tree id merely to accept an earlier result. Optional capture is used only for
+section 3's recorded exceptions, never as an ordinary prerequisite.
 
 Fetch both structured result packets using `termal_get_session_result`, and
 the optional third review's once it has returned. Validated structured
@@ -400,9 +404,9 @@ Deduplicate overlapping findings and tracker suggestions.
 
 When the reviewed change touches authority text — the text whose change
 conditions (a), (b) and (c) of the Authority and Git section of AGENTS.md and
-CLAUDE.md cover — the parent sends the final frozen change (the diff of its
-tracked files and the content of each untracked file), the input fingerprint
-its checks recorded, and the list of recorded messages that word each changed
+CLAUDE.md cover — the parent sends the final frozen change against its recorded
+base, the review Git identity, the separate launcher results and fingerprints,
+and the list of recorded messages that word each changed
 passage of authority text to the auditing coordinator by TermAl mailbox. The
 parent also sends the auditing coordinator the recorded message that carried
 each changed passage's final wording to Greg before the landing. The change
@@ -413,21 +417,13 @@ Before judging the authority passages, the auditing coordinator confirms
 that the supplied authority diff matches a diff read from the frozen worktree
 against the same recorded base commit, including each added authority file
 and its placement. With the holder's confirmation that no check is carried
-in that root, the coordinator runs the compiled host freeze checker before
-and after reading that diff and those files from the same worktree. Use the
-canonical root, the absolute manifest path and the parent's fingerprint
-retained independently of the manifest. Record the checker and freeze
-protocol version, base commit, root, manifest, independent fingerprint and
-both results with the audit. For Engram schema 1, the compiled checker is
-`termal review-freeze-check ROOT MANIFEST EXPECTED_SHA256`, matching
-`scripts/review-freeze-fingerprint.mjs --check`; both checks must exit zero
-with stdout exactly the independent fingerprint plus one LF. For another
-project's freeze protocol, name its matching compiled checker and compare
-its documented success output exactly. Retain stderr separately, including
-coverage limits. A missing or mismatched check does not pass, even when no
-content change is apparent: investigate it rather than dismissing it as Git
-stat-cache noise. The checks cover their declared Git normalization and
-platform scope, not raw bytes or the absence of transient edits.
+in that root, the coordinator verifies section 3's applicable Git identity
+before and after reading that diff and those files from the same input.
+Record the base commit, root, tree id, input commit where applicable, and both
+identity results with the audit. Capture and the compiled checker are optional
+only under section 3's recorded raw-byte exceptions. A missing or mismatched
+identity does not pass: investigate it. Boundary checks do not establish source
+coverage or the absence of transient edits.
 
 Only when the auditing coordinator cannot read the worktree, record that
 access gap and retain the exact supplied authority diff, each added authority
@@ -445,9 +441,9 @@ apply before landing; the fallback grants no additional authority.
 
 When an audited authority change is carried onto a new base, the auditing
 coordinator repeats the identity part above in full on the carried input: the
-diff read from the new frozen worktree against its base, the compiled checker
-before and after that reading, and the passage script. It records a new audit
-for that input. When the authority diff, its placement and its context are
+diff read from the new frozen worktree against its base, section 3's applicable
+Git identity before and after that reading, and the passage script. It records
+a new audit for that input. When the authority diff, its placement and its context are
 byte-identical to the audited ones, the new audit may cite the earlier
 wording judgment and its concurrence and notice records instead of
 gathering them again; any difference means a full audit.
@@ -464,7 +460,7 @@ recorded on the item, runs a script that looks for each added or altered
 passage in those sentences, as an exact string after whitespace normalisation
 and with Markdown list and quote markers at line starts removed, and judges
 for each removed passage whether a recorded concurrence names it as removed.
-The auditing coordinator notes on the item the input fingerprint, which
+The auditing coordinator notes on the item the review Git identity, which
 recorded message governs each changed passage, which recorded message carried
 each passage's final wording to Greg before the landing, the script's result
 for each added or altered passage and the judgement for each removed one. The
@@ -496,12 +492,12 @@ A clean carry satisfies all of the following:
 1. The latest required review round has no outstanding in-scope Medium or
    higher finding and meets the standing approval's remaining review
    conditions. Full results, coverage and finding disposition are available.
-2. Record the reviewed and current bases, roots, manifests and fingerprints,
-   all package paths, statuses and modes, the pre-image and post-image blob
+2. Record the reviewed and current bases, roots and Git tree ids, any optional
+   section 3 capture, all package paths, statuses and modes, the pre-image and post-image blob
    ids on each side, and the paths changed between bases. Read the reviewed
-   side while its freeze verifies before and after the read, or from a staged
-   diff or tree id recorded while that freeze verified. Verify the final
-   carried freeze before and after reading the proof. Inputs are fully staged,
+   side from its recorded tree or while section 3's applicable Git identity
+   verifies before and after the read. Verify the final carried input's Git
+   identity before and after reading the proof. Inputs are fully staged,
    without unstaged or untracked changes. Compute paths without rename
    detection. Prove each package's unchanged contribution by either:
    - equal pre-image and post-image blob ids, statuses and modes; or

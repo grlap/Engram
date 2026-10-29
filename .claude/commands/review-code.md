@@ -52,13 +52,36 @@ commands run, not a Codex reviewer's shell:
   check. When byte identity matters, compare a per-file hash of both sides.
 
 Untracked files do not appear in `git diff`; inspect their contents directly
-when relevant. If nothing changed, report that and stop.
+when relevant. If nothing changed and no committed input was supplied, report
+that and stop. For a supplied committed input, read its complete change against
+the supplied base, including added files, even though the checkout is clean.
+
+For a frozen input, follow the Git identity checks in
+[/review-changes section 3](review-changes.md#3-freeze-the-review-input).
+The parent stages the input and records `TREE` with `git write-tree`;
+reviewers never run that writing command. At the start and end, run separately:
+
+```bash
+git diff --cached --quiet TREE
+git diff --quiet
+git ls-files --others --exclude-standard
+```
+
+Require zero exit statuses and an empty untracked listing; confirm the supplied
+HEAD and report the tree id and `index == TREE, clean` at both boundaries.
+For a committed input, confirm HEAD equals the supplied commit, report its
+tree id with `git show -s --format=%T COMMIT`, and require empty output from
+`git status --porcelain --untracked-files=all`, with zero exit statuses.
+Both boundary tree ids must match the parent's recorded id. Raw capture and
+the compiled host freeze checker are optional only for the concrete raw-byte
+exceptions recorded under section 3; neither is an ordinary review prerequisite.
 
 If Git inspection is still refused and you cannot see some or all of the diff,
 say so under Coverage in the result. Name what you could not see and how you
-reviewed it instead, for example by reading the changed files. A passing
-freeze check shows only that the input did not change after it was frozen; it
-does not show you what changed, so it never replaces reading the diff.
+reviewed it instead, for example by reading the changed files. Matching boundary
+identities do not show what changed or exclude transient edits, so they never
+replace reading the diff. Report a refused identity command as an access gap;
+do not invent a successful comparison or replace it with mandatory raw capture.
 
 ## 2. Load reviewer lenses
 
@@ -109,6 +132,7 @@ Return one consolidated review:
 ## Coverage
 - How the diff was seen (the Git commands that ran), or which changes could
   not be seen and how they were reviewed instead.
+- The supplied Git tree id and the independent start/end identity results.
 
 ## Actionable
 ### Critical / High
