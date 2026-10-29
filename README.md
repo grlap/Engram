@@ -14,6 +14,38 @@ cloud service is required.
 This is prerelease software. We use it as the only writable tracker for two
 projects: Engram itself and the TermAl agent host.
 
+## Current status — 2026-10-29
+
+Recent changes on master:
+
+- Selected verification evidence can be restricted to the host-measured Git
+  tree it verified; a missing or different tree cannot qualify it (`56f84d7`).
+- Graph restore inserts parents before children when the snapshot has no
+  supersession references, avoiding deferred foreign-key scans. Snapshots
+  with supersession retain their original insertion order (`6ebcc62`).
+- The repository pins Node 24.14.0, consumed by review-freeze CI (`6ebcc62`),
+  and ordinary reviews use Git tree identity, with raw-byte checks reserved
+  for changes that need them (`0ec2e14`).
+- A known-committed note or gate stays successful if later response work
+  fails, returning its evidence locator and readback while disclosing the
+  unavailable response details (`9f4a1c7`).
+
+The dogfood stores completed the verification-applicability cutover. The
+Engram project is using gated model turns after a reported steady-state
+canary pass; its sampled evidence does not prove an uninterrupted sequence.
+The TermAl projects remain off pending a host settings-reset fix and their
+own release observation. This is a dated deployment checkpoint, not a claim
+that every host or project has enabled control.
+
+Repository landing validation can run on a second trusted Windows host or
+the Mac for an exact test ref under the same-tree evidence rules; Windows-only
+changes still need Windows coverage. See the [current inventory and
+limits](docs/shipped.md) and [next steps](docs/roadmap.md).
+
+End-to-end Git task exchange and reconciliation remain planned. Explicit
+local planning-text export/import and preparation already ship; they do not
+transfer private scratch, live claims or execution authority.
+
 ## What you can do
 
 - Create tasks with acceptance criteria, dependencies, and child tasks.

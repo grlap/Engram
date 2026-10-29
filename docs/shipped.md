@@ -3,9 +3,34 @@
 This page inventories behavior implemented in this source tree, developed and
 installed from master. Add or update rows with the change that implements the
 behavior. An installed executable may temporarily lag this source revision;
-this page does not inventory whichever binary is on a host's PATH. It excludes
-planned, target, and deferred capabilities; those belong in the
+the source-tree inventory does not describe whichever binary is on a host's
+PATH. A separately dated deployment checkpoint below records the reported
+operational state. The capability table excludes planned, target, and
+deferred capabilities; those belong in the
 [roadmap](roadmap.md), not in this table.
+
+## Deployment checkpoint — 2026-10-29
+
+The dogfood host completed the verification-applicability barrier and
+readiness checks on all six live stores after the coordinated restart.
+This is an operational checkpoint for those stores, not automatic conversion
+of other installations.
+
+Gated model turns are on for the Engram project. The coordinators recorded a
+steady-state canary pass: 27 observed gated turns, including 10 during a full
+gate. The host samples were bounded, so consecutive coverage was inferred,
+not proven. The initial settings transition stalled; the remaining host
+settings-reset defect holds enablement of the TermAl projects and their
+release observation. This does not declare a completed rollout or integrated
+pilot.
+
+Repository validation accepts full gates from a second trusted Windows host
+or the Mac on an exact test ref under the same-tree and recorded-evidence
+requirements. Windows-only changes still require Windows coverage. Remote
+test execution does not transfer the canonical store or live execution
+authority. See the existing [landing rules](../AGENTS.md#authority-and-git).
+
+## Source-tree capabilities
 
 Selected verification evidence can carry a
 [Git-tree applicability restriction](features/verification-applicability.md).
@@ -38,6 +63,9 @@ mismatch suggests a capturing build or supported migration. See
 
 | Surface | Implemented behavior | Contract |
 | --- | --- | --- |
+| Parent-first graph restore | After validating the snapshot, the loader inserts work items in stable parent-depth order when no item has a supersession reference. Any supersession reference keeps the entire snapshot's original insertion order and deferred foreign-key behavior. Canonical bytes, ids and planning/history content are unchanged. This removes the measured deferred-FK scan mechanism for the no-supersession fixtures; it is not a universal restore-time guarantee. | [Work-graph snapshot](features/work-graph-snapshot.md) |
+| Development Node pin | The root `.nvmrc` pins Node 24.14.0, and review-freeze CI reads that file for its three-OS matrix. This selects the repository tooling version; it neither changes an already-running process nor claims every workflow installs Node. | [Version pin](../.nvmrc), [CI workflow](../.github/workflows/review-freeze.yml) |
+| Ordinary review identity | The review procedures use the complete staged Git tree, expected HEAD, clean tracked files and no untracked input, checked by reviewers at start and end. Committed inputs use their commit/tree and clean status. Raw-byte capture is optional for a recorded correctness dependency that Git identity cannot cover; the launcher's automatic input fingerprints remain separate. | [Review freeze](../.claude/commands/review-changes.md#3-freeze-the-review-input) |
 | HTTPS Git process infrastructure | Library-only typed configured-target observation, explicit retained-commit fetch and non-force push. The shared service checks read-only/current opt-in admission first. Windows kill-on-close jobs, cancellation, deadlines and bounded concurrent pipes own Git and credential descendants; supported credential helper names are pinned without interactive prompts or raw stderr diagnostics. SSH and other platforms refuse. No exchange CLI, import ledger, merge workflow, remote-outcome recovery, SQLite change or real-network authentication assurance. The suspended-spawn/assignment gap is disclosed. | [HTTPS runner](features/task-planning-text.md#explicit-https-process-runner) |
 | Task-sync opt-in | Engram-owned per-project setting beside the host-local store, shared across worktrees. CLI `task-sync status`, `enable --user-instruction TEXT`, and `disable`, plus the separate MCP configuration tool `task_sync_settings`, report observed state. Default off; invalid/unreadable input is unknown. Attributed setters use atomic whole-file replacement with last writer wins and may replace malformed configuration. Status creates nothing and opens no SQLite. New preparation/export/import/materialization operations check the setting before capture or writes; already admitted pending operations may finish after opt-out. Enabling alone publishes no shared files. | [Project opt-in](features/task-planning-text.md#project-opt-in-setting) |
 | Prepared task materialization | Explicit CLI `task-sync setup-materialize` and shared `LocalWorkService` publish one selected A intent/B1 raw candidate after repository and whole-candidate disclosure admission. Private raw sources, physical ownership and no-replace file links support recovery and exact repeat; only declared setup edits and canonical shared project/tasks paths change. Existing private `.engram` contents are preserved. A pre-journal attempt is never adopted or deleted: its refusal gives the retained attempt path and the manual preserve, relocate, unchanged-basis repeated preparation and fresh-materialization procedure. No SQLite capture, Git index/branch/configuration change, commit, network relay or worktree enrollment. Same-filesystem hard links are required; Windows/ReFS identity limits are disclosed. | [Materialization](features/task-planning-text.md#materializing-a-selected-preparation) |

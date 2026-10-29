@@ -26,45 +26,56 @@ first task. The pilot itself, installing for a colleague and observing real
 work, has not started. This path is independent of TermAl and promises no
 unattended operation, off-host durability or completed team rollout.
 
-**Engram + TermAl: technical qualification is still open.** Engram owns
-durable work, evidence and deterministic control decisions; TermAl owns
-session supervision, prompt dispatch, wake delivery and runtime recovery.
-The table records the state at the 2026-10-08 checkpoint; owner reports and
-validation evidence are kept in the work tracker. **Needed before an
-integrated pilot** means the outcome must be delivered and proven on the
-running host before Engram + TermAl is installed for a colleague.
+**Engram + TermAl: partial operational rollout, 2026-10-29.** Engram
+provides durable work, evidence and deterministic control decisions; the
+host provides session supervision, dispatch and recovery. The shared
+verification-applicability cutover is complete on the dogfood stores. Gated
+model turns are on for the Engram project after the coordinators' reported
+steady-state canary pass. Its bounded samples make consecutive coverage an
+inference, not a proof.
 
-| Area | Status | What remains | Owner |
-| --- | --- | --- | --- |
-| Engram-alone setup | Delivered and installed | Nothing technical; installing for a colleague is the pilot step. | Engram |
-| Engram fixes of 2026-10-08: search in note bodies, evaluation-ID alias removal, documentation cleanup and a test-fixture race | Landed and installed | Nothing; supporting fixes, not prerequisites for either path. | Engram |
-| Root-session causal diagnostics (SEV0) | In progress, in review | Needed before an integrated pilot. A held root continuation must keep a bounded, redacted record of its original failure and show it on the session card; the scope is diagnostics only. Final review, full gate and landing are outstanding. | TermAl runtime |
-| Recovery of held control operations | Narrowed to proven causes | Broad automatic recovery is not being built: each future observed stop gets its own fix for its proven cause, using the diagnostics above. The earlier recovery foundation is parked, and an existing admission retry still lacks its live proof. | TermAl runtime; [Engram recovery contract](features/behavioral-control-plane.md#failure-and-recovery-behavior) |
-| Declared test commands with TRX results | Landed and installed; not yet proven on the running host | Technical qualification: activation on the running host, then live PASS, FAIL and UNKNOWN, including a missing result file, for a declared `dotnet test` command. Needed before an integrated pilot for a .NET team that relies on host-recorded test evidence. | TermAl runner |
-| Real C# evidence | Open | Technical qualification: real xUnit-on-VSTest TRX output from Phoenix, and correctly recorded passing and deliberately failing runs in a scratch repository. Needed before an integrated pilot for a .NET team that relies on host-recorded test evidence. NUnit, MSTest and Microsoft.Testing.Platform are separate follow-ups. | Phoenix owner with TermAl; Engram records the evidence |
-| Source basis for repositories with submodules | Design accepted; implementation not started | Needed only when a pilot relies on host-recorded test evidence in a repository with submodules, such as Phoenix; not blocking otherwise. Until then only the scratch repository can earn that evidence. Git filters and LFS stay outside this design. | TermAl source accounting |
-| Typed Build outcomes | Landed and installed; not yet proven on the running host | Matters only when the chosen workflow relies on host-recorded Build evidence. | TermAl build producer |
-| Runtime safety requirements | Open | Second-host exclusion in the same directory, Stop and crash behavior on the current build, and ownership of child processes for profiles that admit them. Needed before an integrated pilot. | TermAl runtime |
-| Optional Git task sync | Design selected; not implemented | No Git task transport ships; neither pilot path needs it. | Engram design, with TermAl consultation |
+The initial enable transition stalled on a slow host settings reset. The
+TermAl projects remain off until that defect is fixed, followed by their
+own enablement and release observation. A successful Engram canary does not
+close those steps or establish an integrated pilot. The earlier October 8
+host-qualification table is retired rather than presented as current status.
 
-The integrated path to a pilot: land the diagnostics; fix each observed stop
-for its proven cause without losing or duplicating a prompt; activate the
-landed fixes on the running host through the
-[coordinated cutover](host-checklist.md#before-upgrading-cut-over-each-store);
-complete the technical qualification the chosen workflow needs; then install
-Engram + TermAl for a colleague and observe real work. A .NET team that
-relies on host-recorded test evidence needs the declared test commands and
-real C# evidence qualified, plus the submodule basis if its repository has
-submodules; a workflow without host-recorded checks does not. Recovery must
-preserve the original authority, retained head, Stop and pause state, and
-diagnostics grant no retry authority. The statuses above waive none of the
-runtime safety requirements.
+| Area | Delivered | What remains |
+| --- | --- | --- |
+| Git-tree applicability | Selected restricted checks qualify only against the same measured Git tree; the dogfood schema-barrier cutover completed. | Other installations still follow the documented [cutover](features/verification-applicability.md). |
+| Graph restore and tooling | Parent-first work-item insertion for snapshots without supersession, the Node 24.14.0 pin and ordinary Git review identity are on master. | No universal restore deadline or arbitrary-supersession optimization is claimed. |
+| Note and gate responses | A known-committed capture returns success with its exact evidence and readback if later response work fails. | Core capture failures still return errors; this is not a general unknown-outcome or lost-transport guarantee. |
+| Remote landing gates | Exact-test-ref full gates on a second trusted Windows host or the Mac carry the same landing weight under the existing tree and evidence requirements. | Windows-only changes still need a Windows gate; a component check is not a full landing gate. |
+| Engram project gated turns | Enabled; a steady-state canary pass was recorded. | Continue observing actual admission and recovery failures; this is not a blanket host-safety guarantee. |
+| TermAl project gated turns | Not enabled. | Fix the settings-reset defect, then enable and complete the release observation. |
+| Optional Git task sync | Explicit local planning-text export/import, opt-in, informational activity and prepared materialization ship. | Automated Git exchange and reconciliation remain planned; private scratch and runtime authority stay host-local. |
 
-Technical qualification for .NET covers xUnit on VSTest with TRX first. Other
-frameworks and result formats, optional coverage of every harness, unrelated
-refactoring and the wider unattended-operation backlog do not block a
-supervised pilot. A pilot relies on host-recorded evidence only from
-harnesses that have passed their qualification.
+The next integrated-pilot steps are to finish the host rollout, qualify the
+evidence producers the chosen workflow actually uses, and then install for
+a colleague and observe real work. A .NET workflow that relies on
+host-recorded checks still needs its real runner/results and any submodule
+source basis qualified; this page does not infer their current host status
+from Engram's component tests. Qualification starts with xUnit on VSTest
+with TRX; NUnit, MSTest and Microsoft.Testing.Platform are separate
+follow-ups. A supervised advisory workflow need not adopt every
+host-recorded check.
+
+The integrated pilot also requires host runtime-safety evidence: second-host
+exclusion in the same directory, Stop and crash behavior on the current
+build, child-process ownership for profiles that admit children, and
+root-session causal diagnostics. A held root continuation must retain a
+bounded, redacted record of its original failure and show it on the session
+card. Each observed stop needs a fix for its proven cause without losing or
+duplicating a prompt. Recovery must preserve the original authority,
+retained head, and Stop and pause state; diagnostics grant no retry
+authority. The host owner tracks the current evidence for these
+requirements. This checkpoint waives none of them and does not assert that
+they have been met.
+
+See the [shipped inventory](shipped.md) for source-tree behavior. External
+publication, report assembly, real redaction/attestation and per-action
+gates remain deferred as listed below. No completed team rollout or
+unattended-operation promise follows from this checkpoint.
 
 ## V1 — close the loop
 
@@ -77,11 +88,12 @@ Engram's advisory and turn-gated primitives are implemented. The broader
 replay-proven turn-refusal set and the degraded-envelope matrix remain V1
 targets in the control plane's
 [delivery sequence](features/behavioral-control-plane.md#delivery-sequence).
-They stay disabled until that sequence's phase 1 core prerequisites hold,
-and those are still incomplete.
-The current integration work validates the implemented primitives' use by
-the host, including failure diagnostics and fixes for observed stops;
-passing Engram protocol tests does not close that host work.
+Those broader targets stay disabled until the delivery sequence's Phase 1
+prerequisites hold, which remain incomplete. The Engram-project canary
+covers only the implemented turn-gated primitives.
+The remaining integration work concerns the host's wider rollout, evidence
+qualification and fixes for observed stops; passing Engram protocol tests
+does not close that host work.
 Action gates remain designed and deferred:
 see [action gates](features/action-gates.md#when-to-build-it).
 
@@ -153,9 +165,10 @@ Optional report assembly remains deferred.
   [optional Git task sync](features/git-task-sync.md) is the selected design
   for task exchange on the code branch with external agent merge. It
   supersedes the prior sequential `portable` handoff proposal for this
-  workflow, and is not implemented. Concurrent cross-host coordination
-  remains deferred; neither is an available durability mode or needed for
-  either pilot path.
+  workflow. Explicit local planning-text operations ship; automated Git
+  exchange and reconciliation do not. Concurrent cross-host execution
+  coordination also remains deferred; neither planned workflow is an
+  available durability mode or needed for either pilot path.
 
 The local-work acceptance test is operational and running: this repository
 and one migrated project use Engram as their only writable local tracker,
