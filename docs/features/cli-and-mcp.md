@@ -2861,6 +2861,40 @@ authority mediation, and action-outcome reconciliation are unavailable. V1's
 development no-op redactor provides no secret or PII protection.
 Doctor audits recorded state and reports the configured assurance requirement;
 it does not verify that every caller is mediated by a host.
+
+So that silence cannot pass for enforcement, doctor also prints one
+`Control activity:` line, and `control.activity` in JSON. Each value is a
+time, or `never` when the store has recorded none:
+- the last session activity: the largest update time of any control
+  session, which is a bind or any later change to that session, because the
+  store keeps no separate bind time;
+- the last turn begun and the last turn settled, each the largest recorded
+  time;
+- the last turn evaluation, the creation time of the most recently appended
+  evaluation;
+- the begin times of the oldest and newest open turns, begun and not settled;
+- the latest work recorded, which is when the most recently appended record
+  of the project's work feed was stored, to the second.
+
+When the policy requires at least `turn_gated`, `control.mediation_warnings`
+and stderr report two things:
+- work recorded more than 10 minutes after the last turn activity, or with no
+  turn ever, unless a turn is open and younger than 60 minutes;
+- any turn that has stayed open for 60 minutes or more.
+
+These two limits are one constant pair in the code. `control.mediation_limits`
+and a stderr line always state them, whether or not a warning fired. The times
+come from rows the store already keeps, through bounded reads in one snapshot
+that scan no work history. Only doctor reads them; `init` and `control-policy
+show` do not. When a recorded time cannot be read, doctor keeps the rest of its
+control report: `control.activity` is null, `control.activity_error` names the
+value, and stderr says that unmediated work cannot be reported. The times
+describe recorded activity, so they cannot prove that every mutation was
+mediated, and a young open turn in one session can mask another session's
+unmediated work. The store records nothing while a turn runs, so a healthy
+long turn and a wedged one look alike until the 60-minute limit. Readiness
+reports none of this.
+
 `engram doctor --json` performs the same checks and keeps those warnings on
 stderr while emitting a machine-readable report on stdout. Its `project_id`
 and canonical absolute `database` path give a host the stable pair used to key

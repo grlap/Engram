@@ -37,6 +37,98 @@ fn diagnosis(home: &Path) -> Value {
     serde_json::from_slice(&success(home, &["doctor", "--json"]).stdout).unwrap()
 }
 
+// Doctor shows when the control plane last acted and the limits it judges
+// by, and warns when a policy that requires mediated turns has work but no
+// turn at all.
+#[test]
+fn doctor_reports_control_activity_and_work_without_a_mediated_turn() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let home = directory.path();
+    success(
+        home,
+        &[
+            "init",
+            "--required-assurance",
+            "turn_gated",
+            "--authorized-by",
+            "doctor-activity-operator",
+        ],
+    );
+    let quiet = success(home, &["doctor", "--json"]);
+    let report: Value = serde_json::from_slice(&quiet.stdout).unwrap();
+    assert_eq!(report["control"]["required_assurance"], "turn_gated");
+    assert_eq!(
+        report["control"]["activity"]["latest_work_recorded"],
+        Value::Null
+    );
+    assert_eq!(
+        report["control"]["activity"]["last_session_activity_basis"],
+        "session_update"
+    );
+    assert_eq!(report["control"]["mediation_warnings"], json!([]));
+    assert_eq!(
+        report["control"]["mediation_limits"],
+        json!({ "grace_seconds": 600, "open_turn_limit_seconds": 3600 })
+    );
+    let quiet_stderr = String::from_utf8(quiet.stderr).unwrap();
+    assert!(
+        quiet_stderr.contains("doctor warns about work recorded more than 10 minutes after the last turn activity and about turns open 60 minutes or more"),
+        "{quiet_stderr}"
+    );
+    assert!(
+        !quiet_stderr.contains("MEDIATION WARNING"),
+        "{quiet_stderr}"
+    );
+
+    success(
+        home,
+        &[
+            "work",
+            "--actor-id",
+            "doctor-activity",
+            "--session-id",
+            "doctor-activity-session",
+            "add",
+            "Work no turn mediated",
+        ],
+    );
+    let warned = success(home, &["doctor", "--json"]);
+    let report: Value = serde_json::from_slice(&warned.stdout).unwrap();
+    let activity = &report["control"]["activity"];
+    assert!(activity["latest_work_recorded"].is_string(), "{activity}");
+    assert_eq!(activity["last_turn_begun"], Value::Null);
+    let warnings = report["control"]["mediation_warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings[0]["code"], "work_without_control_activity");
+    assert_eq!(warnings[0]["last_turn_activity"], Value::Null);
+    assert_eq!(
+        warnings[0]["work_recorded"],
+        activity["latest_work_recorded"]
+    );
+    let warned_stderr = String::from_utf8(warned.stderr).unwrap();
+    assert!(
+        warned_stderr.contains(
+            "MEDIATION WARNING: the policy requires mediated turns, but work was recorded at"
+        ) && warned_stderr.contains("with no control turn ever recorded"),
+        "{warned_stderr}"
+    );
+
+    let text = success(home, &["doctor"]);
+    let stdout = String::from_utf8(text.stdout).unwrap();
+    assert!(
+        stdout.contains("Control activity: last session activity=never")
+            && stdout.contains("last turn begun=never")
+            && !stdout.contains("latest work recorded=never"),
+        "{stdout}"
+    );
+    assert!(
+        String::from_utf8(text.stderr)
+            .unwrap()
+            .contains("MEDIATION WARNING"),
+        "the text report warns on stderr too"
+    );
+}
+
 // A host selects an evaluator mode the store will admit, so doctor names the
 // active evaluation policy in the JSON it reads and in the operator text.
 #[test]

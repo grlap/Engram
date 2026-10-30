@@ -2,6 +2,11 @@
 
 mod acceptance_binding_read;
 mod acceptance_verification_read;
+mod control_activity;
+pub use control_activity::{
+    ControlActivity, MEDIATION_GRACE, MediationReport, MediationWarning, OPEN_TURN_LIMIT,
+    mediation_warnings,
+};
 mod control_grant_read;
 mod control_inspection;
 mod control_runtime;

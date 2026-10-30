@@ -122,7 +122,7 @@ pub(crate) fn doctor(
         json_report.value["backup"] = backup.json()?;
         println!("{}", serde_json::to_string_pretty(&json_report.value)?);
         match &json_report.control {
-            Some(control) => emit_control_limitations(control),
+            Some(control) => emit_control_limitations(control, json_report.mediation.as_ref()),
             None => emit_unavailable_control_diagnostics_limitations(),
         }
         if let Some(failure) = json_report.failure {
@@ -178,6 +178,8 @@ pub(crate) fn doctor(
         control.issued_turns,
         control.begun_turns,
     );
+    let mediation = read_mediation(&store);
+    println!("{}", mediation_line(&mediation));
     println!(
         "{}",
         acceptance_evaluation_line(&control.acceptance_evaluation)
@@ -200,7 +202,7 @@ pub(crate) fn doctor(
         ),
     }
     print!("{}", backup.text());
-    emit_control_limitations(&control);
+    emit_control_limitations(&control, Some(&mediation));
     Ok(())
 }
 
@@ -437,7 +439,19 @@ fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool)
 struct DoctorJsonReport {
     value: serde_json::Value,
     control: Option<engram::storage::ControlDiagnostics>,
+    mediation: Option<MediationOutcome>,
     failure: Option<String>,
+}
+
+/// The mediation activity doctor read, or why it could not read it. An
+/// unreadable activity time is reported on its own and never discards the
+/// control policy diagnostics beside it.
+type MediationOutcome = std::result::Result<engram::storage::MediationReport, String>;
+
+fn read_mediation(store: &SqliteStore) -> MediationOutcome {
+    store
+        .mediation_activity_at(chrono::Utc::now())
+        .map_err(|error| error.to_string())
 }
 
 fn verified_project_head(
@@ -506,17 +520,20 @@ fn assemble_doctor_json_report(
         return Ok(DoctorJsonReport {
             value,
             control: None,
+            mediation: None,
             failure: Some(format!("control diagnostics failed: {error}")),
         });
     }
     let stored_path_policy = store.stored_host_path_policy()?;
     let canonical_database = canonical_database_path(database)?;
-    let (control, control_value, control_error) = match control {
+    let (control, control_value, control_error, mediation) = match control {
         Ok(control) => {
-            let value = control_diagnostics_json(&control);
-            (Some(control), value, None)
+            let mut value = control_diagnostics_json(&control);
+            let mediation = read_mediation(store);
+            add_mediation_json(&mut value, &mediation);
+            (Some(control), value, None, Some(mediation))
         }
-        Err(error) => (None, serde_json::Value::Null, Some(error.to_string())),
+        Err(error) => (None, serde_json::Value::Null, Some(error.to_string()), None),
     };
     let graph_snapshot_disclosures = if report.invalid_graph_snapshot_audits.is_empty() {
         let (total, items) = store
@@ -596,6 +613,7 @@ fn assemble_doctor_json_report(
     Ok(DoctorJsonReport {
         value,
         control,
+        mediation,
         failure,
     })
 }
@@ -645,6 +663,136 @@ fn control_diagnostics_json(control: &engram::storage::ControlDiagnostics) -> se
     value["issued"] = control.issued_turns.into();
     value["begun"] = control.begun_turns.into();
     value
+}
+
+/// Adds the mediation activity beside the control diagnostics. The limits
+/// are always present, whether or not a warning fired.
+fn add_mediation_json(control: &mut serde_json::Value, mediation: &MediationOutcome) {
+    control["mediation_limits"] = serde_json::json!({
+        "grace_seconds": engram::storage::MEDIATION_GRACE.num_seconds(),
+        "open_turn_limit_seconds": engram::storage::OPEN_TURN_LIMIT.num_seconds(),
+    });
+    match mediation {
+        Ok(report) => {
+            control["activity"] = control_activity_json(&report.activity);
+            control["mediation_warnings"] =
+                report.warnings.iter().map(mediation_warning_json).collect();
+        }
+        Err(error) => {
+            control["activity"] = serde_json::Value::Null;
+            control["activity_error"] = error.clone().into();
+            control["mediation_warnings"] = serde_json::Value::Null;
+        }
+    }
+}
+
+fn mediation_line(mediation: &MediationOutcome) -> String {
+    match mediation {
+        Ok(report) => control_activity_line(&report.activity),
+        Err(error) => format!("Control activity: unavailable: {error}"),
+    }
+}
+
+fn activity_time(time: Option<chrono::DateTime<chrono::Utc>>) -> String {
+    time.map_or_else(
+        || "never".to_owned(),
+        |time| time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    )
+}
+
+fn activity_time_json(time: Option<chrono::DateTime<chrono::Utc>>) -> serde_json::Value {
+    time.map_or(serde_json::Value::Null, |time| {
+        time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            .into()
+    })
+}
+
+fn control_activity_line(activity: &engram::storage::ControlActivity) -> String {
+    let open_turns = match (
+        activity.oldest_open_turn_begun,
+        activity.newest_open_turn_begun,
+    ) {
+        (Some(oldest), Some(newest)) if oldest != newest => format!(
+            "oldest since {}, newest since {}",
+            activity_time(Some(oldest)),
+            activity_time(Some(newest))
+        ),
+        (Some(begun), _) => format!("since {}", activity_time(Some(begun))),
+        _ => "none".to_owned(),
+    };
+    format!(
+        "Control activity: last session activity={} (a bind or any later session change; bind times are not recorded separately) last turn begun={} last turn settled={} last turn evaluation={} open turns={}; latest work recorded={}",
+        activity_time(activity.last_session_activity),
+        activity_time(activity.last_turn_begun),
+        activity_time(activity.last_turn_settled),
+        activity_time(activity.last_turn_evaluation),
+        open_turns,
+        activity_time(activity.latest_work_recorded),
+    )
+}
+
+fn control_activity_json(activity: &engram::storage::ControlActivity) -> serde_json::Value {
+    serde_json::json!({
+        "last_session_activity": activity_time_json(activity.last_session_activity),
+        "last_session_activity_basis": "session_update",
+        "last_turn_begun": activity_time_json(activity.last_turn_begun),
+        "last_turn_settled": activity_time_json(activity.last_turn_settled),
+        "last_turn_evaluation": activity_time_json(activity.last_turn_evaluation),
+        "oldest_open_turn_begun": activity_time_json(activity.oldest_open_turn_begun),
+        "newest_open_turn_begun": activity_time_json(activity.newest_open_turn_begun),
+        "latest_work_recorded": activity_time_json(activity.latest_work_recorded),
+    })
+}
+
+fn mediation_warning_json(warning: &engram::storage::MediationWarning) -> serde_json::Value {
+    match warning {
+        engram::storage::MediationWarning::WorkWithoutControlActivity {
+            work_recorded,
+            last_turn_activity,
+        } => serde_json::json!({
+            "code": "work_without_control_activity",
+            "work_recorded": activity_time_json(Some(*work_recorded)),
+            "last_turn_activity": activity_time_json(*last_turn_activity),
+            "grace_seconds": engram::storage::MEDIATION_GRACE.num_seconds(),
+        }),
+        engram::storage::MediationWarning::OpenTurnWithoutCompletion { begun } => {
+            serde_json::json!({
+                "code": "open_turn_without_completion",
+                "begun": activity_time_json(Some(*begun)),
+                "limit_seconds": engram::storage::OPEN_TURN_LIMIT.num_seconds(),
+            })
+        }
+    }
+}
+
+fn mediation_warning_text(warning: &engram::storage::MediationWarning) -> String {
+    match warning {
+        engram::storage::MediationWarning::WorkWithoutControlActivity {
+            work_recorded,
+            last_turn_activity,
+        } => {
+            let since = last_turn_activity.map_or_else(
+                || "with no control turn ever recorded".to_owned(),
+                |last| {
+                    format!(
+                        "with no control turn since {} (more than {} minutes earlier)",
+                        activity_time(Some(last)),
+                        engram::storage::MEDIATION_GRACE.num_minutes(),
+                    )
+                },
+            );
+            format!(
+                "MEDIATION WARNING: the policy requires mediated turns, but work was recorded at {} {since}, and no open turn is younger than {} minutes",
+                activity_time(Some(*work_recorded)),
+                engram::storage::OPEN_TURN_LIMIT.num_minutes(),
+            )
+        }
+        engram::storage::MediationWarning::OpenTurnWithoutCompletion { begun } => format!(
+            "MEDIATION WARNING: open turn since {} without completion (older than {} minutes)",
+            activity_time(Some(*begun)),
+            engram::storage::OPEN_TURN_LIMIT.num_minutes(),
+        ),
+    }
 }
 
 fn corruption_findings(value: &serde_json::Value) -> serde_json::Value {
@@ -720,8 +868,30 @@ fn path_without_windows_verbatim_prefix(path: &Path) -> String {
     path.display().to_string()
 }
 
-fn emit_control_limitations(control: &engram::storage::ControlDiagnostics) {
+fn emit_control_limitations(
+    control: &engram::storage::ControlDiagnostics,
+    mediation: Option<&MediationOutcome>,
+) {
     warn_if_action_gated(control.required_assurance);
+    match mediation {
+        Some(Ok(report)) => {
+            for warning in &report.warnings {
+                eprintln!("{}", mediation_warning_text(warning));
+            }
+        }
+        Some(Err(error)) => {
+            eprintln!(
+                "CONTROL LIMITATION: control activity is unavailable, so unmediated work cannot be reported: {error}"
+            );
+        }
+        None => {}
+    }
+    eprintln!(
+        "CONTROL LIMITATION: under a policy that requires mediated turns, doctor warns about work recorded more than {} minutes after the last turn activity and about turns open {} minutes or more; activity times describe recorded control rows and do not prove that each work mutation was mediated, and an open turn younger than {} minutes in one session can mask another session's unmediated work",
+        engram::storage::MEDIATION_GRACE.num_minutes(),
+        engram::storage::OPEN_TURN_LIMIT.num_minutes(),
+        engram::storage::OPEN_TURN_LIMIT.num_minutes(),
+    );
     if !control.action_gating_available {
         eprintln!(
             "CONTROL LIMITATION: action gating is unavailable; unsupported effects fail closed: {:?}",
@@ -755,6 +925,79 @@ fn emit_redactor_limitation() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_activity_prints_each_time_or_never_and_names_the_session_basis() {
+        use chrono::TimeZone;
+        let begun = chrono::Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let activity = engram::storage::ControlActivity {
+            last_session_activity: None,
+            last_turn_begun: Some(begun),
+            last_turn_settled: None,
+            last_turn_evaluation: Some(begun),
+            oldest_open_turn_begun: Some(begun),
+            newest_open_turn_begun: Some(begun),
+            latest_work_recorded: None,
+        };
+        assert_eq!(
+            control_activity_line(&activity),
+            "Control activity: last session activity=never (a bind or any later session change; bind times are not recorded separately) last turn begun=2023-11-14T22:13:20.000Z last turn settled=never last turn evaluation=2023-11-14T22:13:20.000Z open turns=since 2023-11-14T22:13:20.000Z; latest work recorded=never"
+        );
+        let json = control_activity_json(&activity);
+        assert_eq!(json["last_session_activity"], serde_json::Value::Null);
+        assert_eq!(json["last_session_activity_basis"], "session_update");
+        assert_eq!(json["last_turn_begun"], "2023-11-14T22:13:20.000Z");
+        assert_eq!(json["newest_open_turn_begun"], "2023-11-14T22:13:20.000Z");
+
+        let warnings = [
+            engram::storage::MediationWarning::WorkWithoutControlActivity {
+                work_recorded: begun,
+                last_turn_activity: None,
+            },
+            engram::storage::MediationWarning::OpenTurnWithoutCompletion { begun },
+        ];
+        assert_eq!(
+            mediation_warning_json(&warnings[0]),
+            serde_json::json!({
+                "code": "work_without_control_activity",
+                "work_recorded": "2023-11-14T22:13:20.000Z",
+                "last_turn_activity": null,
+                "grace_seconds": engram::storage::MEDIATION_GRACE.num_seconds(),
+            })
+        );
+        assert_eq!(
+            mediation_warning_json(&warnings[1])["code"],
+            "open_turn_without_completion"
+        );
+        assert!(
+            mediation_warning_text(&warnings[0]).contains("with no control turn ever recorded")
+        );
+        assert!(
+            mediation_warning_text(&warnings[1])
+                .starts_with("MEDIATION WARNING: open turn since 2023-11-14T22:13:20.000Z")
+        );
+
+        let mut unreadable = serde_json::json!({ "policy": "kept" });
+        add_mediation_json(&mut unreadable, &Err("a stored time is unreadable".into()));
+        assert_eq!(
+            unreadable,
+            serde_json::json!({
+                "policy": "kept",
+                "mediation_limits": {
+                    "grace_seconds": engram::storage::MEDIATION_GRACE.num_seconds(),
+                    "open_turn_limit_seconds": engram::storage::OPEN_TURN_LIMIT.num_seconds(),
+                },
+                "activity": null,
+                "activity_error": "a stored time is unreadable",
+                "mediation_warnings": null,
+            }),
+            "an unreadable time keeps the policy and still states the limits"
+        );
+        assert_eq!(
+            mediation_line(&Err("a stored time is unreadable".into())),
+            "Control activity: unavailable: a stored time is unreadable"
+        );
+    }
 
     #[test]
     fn a_store_outside_the_home_layout_says_its_backup_was_not_read() {
