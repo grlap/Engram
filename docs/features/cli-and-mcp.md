@@ -3553,6 +3553,12 @@ the same fact into another status ledger.
 
 `engram control` is a long-lived stdio process. It accepts one JSON object per
 line and returns one `{ "status": "ok", "result": ... }` or typed error line.
+An open or connection-resume failure consumes at most one bounded first frame
+without dispatching it, replies with terminal `control_startup_busy` or
+`control_startup_refused`, and exits nonzero. The host must evict that worker;
+only busy permits bounded safe re-admission. Neither code proves that startup
+made no durable changes. See [Terminal startup failures](behavioral-control-plane.md#terminal-startup-failures)
+for the exact frames, input bounds and reader-first deployment requirement.
 The runtime session and asserted actor are fixed by process arguments:
 `--actor-id`, `--session-id`, and the optional `--actor-context` (or
 `ENGRAM_ACTOR_CONTEXT`) that the work words and the MCP server also accept. A

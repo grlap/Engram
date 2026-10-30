@@ -248,7 +248,8 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 - Prerelease: an upgrade can require a store migration; backups are the
   operator's job. Day-to-day use is on Windows. Under our landing rules,
   a full gate on an exact, reviewed test ref can count equally from Mac or
-  Windows once recognized by the evaluating host and bound to the same tree.
+  Windows once the integration owner records its run facts on the item for
+  that same tree.
   Windows-only code or tests still need the relevant Windows gate; CI also
   tests Linux and macOS.
 - Size, observed 2026-10-19 UTC: the Engram store is about 982 MB plus a
@@ -277,8 +278,9 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 > candidate.
 > The runner fetches into its own clone and worktree and runs the standard
 > launcher. Its tree must match the recorded input tree, its fingerprint
-> must remain unchanged through the run, and its result must be imported as
-> a recognized check bound to that tree on the evaluating and landing host.
+> must remain unchanged through the run, and the integration owner records
+> on the item the run id, host, commit, tree id and the launcher's before and
+> after fingerprints from that run's results.
 > Until then it is evidence only; a focused run does not replace the full
 > gate. A qualifying remote gate covers only a landing with that same tree.
 > Other review, evaluation, acceptance and installation conditions still apply.

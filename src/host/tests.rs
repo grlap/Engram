@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use super::*;
 mod diagnostics;
+mod startup;
 mod store_busy;
 mod verification_applicability;
 

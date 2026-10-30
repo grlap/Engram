@@ -125,15 +125,23 @@ nothing).
 
 The machine section uses black ceramic and chrome, cyan and magenta optical
 lighting, bold filled and outlined capitals, circuit traces and console
-instrumentation. Plate V is an original synthetic intelligence portrait,
+instrumentation. A denser grid, subtle scanlines, vertical telemetry rails,
+angular panel frames, targeting brackets, and slow light sweeps extend the
+cyberpunk instrumentation across all four signals. The rails disappear on
+narrower screens, and every new animation follows the shared motion controls.
+Plate V is an original synthetic intelligence portrait,
 generated with the built-in image tool and stored as a lazy-loaded 1254-pixel
 WebP. Its exact prompt is in
 [synthetic-agent.prompt.txt](../website/assets/synthetic-agent.prompt.txt).
 The portrait contains no text; captions and decorative HUD labels remain HTML.
-The compact machine HTML annotations and captions intentionally use a smaller
-0.5–0.6875rem scale (8–11px at the default browser font size), distinct from
-the manuscript labels. These rem sizes still follow browser text preferences;
-larger text can make a signal grow beyond one viewport.
+The rail and gauge telemetry is CSS-generated decoration, hidden from assistive
+technology. The chamfered command keys and HUD tiles, and the connect panel's
+copy button and code block, draw their focus rings inside the element so the
+clipped corners never hide them. The compact machine HTML annotations and
+captions intentionally use a smaller 0.5–0.6875rem scale (8–11px at the
+default browser font size), distinct from the manuscript labels. These rem
+sizes still follow browser text preferences; larger text can make a signal grow
+beyond one viewport.
 The fourteen words form a command matrix lit by group, recovery uses a
 circular instrument, and limits use a hazard-striped panel beside the
 connection snippet. Recovery copy distinguishes retained notes from authority
@@ -165,8 +173,10 @@ motion and reload with JavaScript disabled. Check for horizontal overflow,
 content obscured by the fixed navigation, failed assets, and console errors.
 At the manuscript/machine boundary, check that the header, footer, and page
 index flip themes as the boundary folio crosses the viewport midpoint in both
-directions, that the core's float, scan line, rings, gauge arc, and status
-pulses stop with the motion control, that the boot-log lines reveal in order,
+directions, that the core's float, scan line, rings, gauge arc, status
+pulses, neon flicker, panel light sweeps and tile pulses stop with the motion
+control, that keyboard focus rings stay fully visible on the command keys, HUD
+tiles and connect panel, that the boot-log lines reveal in order,
 and that every signal fits a 900px-tall window at desktop widths of 1001px
 and wider, with default text size, without the title block covering content.
 Narrower screens and enlarged text use growing folios and native scrolling.

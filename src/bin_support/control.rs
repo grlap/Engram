@@ -96,6 +96,16 @@ pub(crate) fn serve_control(
             if let Some(trace) = trace {
                 trace.startup_finished(Some(engram::host::store_error_code(&error)));
             }
+            let response = HostControlServer::serve_startup_failure(
+                &error,
+                BufReader::new(io::stdin().lock()),
+                BufWriter::new(io::stdout().lock()),
+            );
+            if let Err(transport) = response {
+                return Err(error).context(format!(
+                    "failed to start Engram host-control service; startup response failed: {transport}"
+                ));
+            }
             return Err(error).context("failed to start Engram host-control service");
         }
     };

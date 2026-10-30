@@ -12,6 +12,8 @@ use crate::{
     },
 };
 
+mod startup;
+
 #[test]
 fn unresolved_path_identity_refuses_evaluation_without_writes_but_admits_logical_intents() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();

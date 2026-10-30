@@ -236,6 +236,61 @@ pub struct HostControlServer {
 }
 
 impl HostControlServer {
+    /// Answers at most one bounded frame after startup has failed, without
+    /// decoding or dispatching its operation. The caller must then exit with
+    /// a failure status and retain the original diagnostic on stderr.
+    ///
+    /// These codes are terminal startup refusals, never live-server errors.
+    /// They do not imply that earlier startup work made no durable changes.
+    /// The embedding host bounds the wait for input with its request deadline.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error on transport failure or oversized input. Empty
+    /// EOF produces no response; bounded partial EOF still produces a refusal.
+    pub fn serve_startup_failure(
+        error: &StoreError,
+        mut reader: impl BufRead,
+        mut writer: impl Write,
+    ) -> std::io::Result<()> {
+        match read_control_frame_with_policy(&mut reader, OversizedFramePolicy::Stop)? {
+            None => return Ok(()),
+            Some(Err(())) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "host control startup frame exceeds the maximum size",
+                ));
+            }
+            Some(Ok(_)) => {}
+        }
+        let (code, message) = if matches!(
+            error,
+            StoreError::Sqlite(error)
+                if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy)
+        ) {
+            (
+                "control_startup_busy",
+                "Engram control startup could not acquire the store.",
+            )
+        } else {
+            (
+                "control_startup_refused",
+                "Engram control startup was refused; inspect the startup diagnostic.",
+            )
+        };
+        let response = HostControlResponse::Error {
+            error: HostControlErrorBody {
+                code,
+                message: message.into(),
+                reason: None,
+                details: None,
+            },
+        };
+        serde_json::to_writer(&mut writer, &response)?;
+        writer.write_all(b"\n")?;
+        writer.flush()
+    }
+
     /// Adds a bounded diagnostic sink selected by the process's explicit home.
     #[must_use]
     pub fn with_diagnostics(mut self, sink: crate::diagnostics::Diagnostics) -> Self {
@@ -959,6 +1014,19 @@ fn frame_operation(frame: &[u8]) -> Option<String> {
 }
 
 fn read_control_frame(reader: &mut impl BufRead) -> std::io::Result<Option<Result<Vec<u8>, ()>>> {
+    read_control_frame_with_policy(reader, OversizedFramePolicy::Drain)
+}
+
+#[derive(Clone, Copy)]
+enum OversizedFramePolicy {
+    Drain,
+    Stop,
+}
+
+fn read_control_frame_with_policy(
+    reader: &mut impl BufRead,
+    policy: OversizedFramePolicy,
+) -> std::io::Result<Option<Result<Vec<u8>, ()>>> {
     let mut frame = Vec::new();
     loop {
         let available = reader.fill_buf()?;
@@ -969,6 +1037,16 @@ fn read_control_frame(reader: &mut impl BufRead) -> std::io::Result<Option<Resul
                 Ok(Some(Ok(frame)))
             };
         }
+        // A failed startup cannot recover another frame. Stop after the
+        // first excess byte rather than draining an arbitrarily long line.
+        let available = match policy {
+            OversizedFramePolicy::Drain => available,
+            OversizedFramePolicy::Stop => {
+                &available[..available
+                    .len()
+                    .min(MAX_HOST_CONTROL_FRAME_BYTES + 1 - frame.len())]
+            }
+        };
         let newline = available.iter().position(|byte| *byte == b'\n');
         let consumed = newline.map_or(available.len(), |position| position + 1);
         let oversized = frame.len().saturating_add(consumed) > MAX_HOST_CONTROL_FRAME_BYTES;
@@ -977,7 +1055,7 @@ fn read_control_frame(reader: &mut impl BufRead) -> std::io::Result<Option<Resul
         }
         reader.consume(consumed);
         if oversized {
-            if newline.is_none() {
+            if newline.is_none() && matches!(policy, OversizedFramePolicy::Drain) {
                 drain_control_frame(reader)?;
             }
             return Ok(Some(Err(())));

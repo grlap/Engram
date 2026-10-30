@@ -3609,6 +3609,82 @@ function withTimeout(promise, ms, label) {
   ]);
 }
 
+test("failed control startup answers one frame, exits, and never dispatches mutations", async (t) => {
+  const home = fixtureHome("engram-control-startup-", t);
+  let writer;
+  let lifecycle;
+  let failure;
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
+    assert.equal(built.status, 0, built.stderr);
+    const initialized = spawnSync(binary, ["--home", home, "init"], { cwd: root, encoding: "utf8" });
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const database = join(home, "projects", fingerprint(projectId), "engram.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    const snapshot = () => {
+      const connection = new DatabaseSync(database);
+      try {
+        return ["control_connections", "control_sessions", "control_turn_grants"].map((table) =>
+          connection.prepare(`SELECT * FROM ${table}`).all(),
+        );
+      } finally { connection.close(); }
+    };
+    const args = ["--home", home, "control", "--actor-id", "startup-agent", "--session-id", "startup-session"];
+    const frame = JSON.stringify({ operation: "session_bind", external_ref: "dummy:STARTUP",
+      title: "Must not bind", assurance: "turn_gated", mediated_effects: ["observe"],
+      capability_map_revision: 1, idempotency_key: "startup-mutation" }) + "\n";
+    const assertRefusal = (result, code, message) => {
+      assert.equal(result.signal, null);
+      assert.notEqual(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim().split("\n").length, 1);
+      assert.deepEqual(JSON.parse(result.stdout), { status: "error", error: { code, message } });
+      assert.match(result.stderr, /failed to start Engram host-control service/);
+    };
+    const before = snapshot();
+    writer = await holdSqliteWriter(database, home);
+    const busy = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: frame + frame, timeout: 15000 });
+    assert.equal(busy.error, undefined);
+    assertRefusal(busy, "control_startup_busy", "Engram control startup could not acquire the store.");
+    await writer.close();
+    writer = undefined;
+    assert.deepEqual(snapshot(), before);
+
+    executeSql(database, "DROP INDEX work_items_ready");
+    for (const input of [frame + frame, "malformed\n", "partial"]) {
+      const refused = spawnSync(binary, args, { cwd: root, encoding: "utf8", input, timeout: 15000 });
+      assert.equal(refused.error, undefined);
+      assertRefusal(refused, "control_startup_refused", "Engram control startup was refused; inspect the startup diagnostic.");
+      assert.deepEqual(snapshot(), before);
+    }
+    const empty = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: "", timeout: 15000 });
+    assert.equal(empty.error, undefined);
+    assert.notEqual(empty.status, 0);
+    assert.equal(empty.stdout, "");
+
+    // Keep stdin open after oversized, newline-free input: draining would
+    // wait forever. Closing it only in finally must not be needed for exit.
+    const child = spawn(binary, args, { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    lifecycle = new FixtureChild(child, "failed startup control server", () => stderr);
+    registerFixtureChild(home, lifecycle);
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdin.write("x".repeat(256 * 1024 + 1));
+    await withTimeout(lifecycle.closed, 5000, "oversize failed startup without EOF");
+    assert.equal(lifecycle.signalCode, null);
+    assert.notEqual(lifecycle.exitCode, 0, stderr);
+    assert.equal(stdout, "");
+    assert.match(stderr, /startup frame exceeds/);
+    assert.deepEqual(snapshot(), before);
+  } catch (error) {
+    failure = error;
+  } finally {
+    lifecycle?.killIfRunning();
+    await finishFixture(failure, [writer, lifecycle], () => removeFixtureHomes(home));
+  }
+});
+
 test("an opted-in control process whose stderr nobody drains answers every frame and still exits", async (t) => {
   const engramHome = fixtureHome("engram-control-undrained-", t);
   let child;

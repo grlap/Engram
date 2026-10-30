@@ -1617,6 +1617,40 @@ connection generation so a still-running predecessor is fenced. Begun grants
 stay open until reported and are discoverable through session status; no
 payload is redelivered.
 
+### Terminal startup failures
+
+An open or connection-resume failure answers at most the first bounded,
+nonempty input frame with one flushed JSON line, then exits nonzero. There
+is no unsolicited startup handshake. The frame is consumed but its operation
+is not dispatched, including a mutating request. A malformed bounded frame
+or a bounded partial frame ending at EOF receives the same refusal. Empty
+EOF, a read error or an oversized first frame produces no response; startup
+stops at the size bound without draining the rest of the line. Healthy
+servers retain their existing oversized-frame drain and continue behavior.
+
+The envelope has exactly `status` and `error`; `error` has exactly `code`
+and `message`. The two reserved terminal codes and fixed messages are:
+
+```json
+{"status":"error","error":{"code":"control_startup_busy","message":"Engram control startup could not acquire the store."}}
+{"status":"error","error":{"code":"control_startup_refused","message":"Engram control startup was refused; inspect the startup diagnostic."}}
+```
+
+Only a typed SQLite `DatabaseBusy` error selects `control_startup_busy`.
+Other startup errors select `control_startup_refused`; their original
+diagnostic stays on stderr. These codes are never emitted by a live server.
+The normal SQLite wait remains bounded at five seconds. The host bounds the
+wait for the first input frame with its request deadline.
+
+The host must evict the process after either code. Busy permits bounded
+re-admission through status and rebind; refused fails closed. Neither code
+means the process never started or that nothing mutated: earlier startup
+work may already have committed. Do not reopen blindly around connection
+generation rotation or replay a request whose execution is uncertain.
+Ordinary `storage_error` replies from a healthy server remain nonterminal
+request failures. The host reader must support these terminal codes before
+the producer build reaches its control processes.
+
 ### Exact grant evidence
 
 The host-only `turn_grant_read` request takes `routing_token` and an exact

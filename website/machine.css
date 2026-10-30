@@ -794,7 +794,7 @@ html:not(.js-motion) .gauge .arc {
   color: var(--key);
   font: 10px var(--mono);
 }
-.folio-machine-limits {
+.folio-machine.folio-machine-limits {
   background-color: #0b070d;
 }
 html[data-theme="machine"] .brand {
@@ -809,6 +809,185 @@ html[data-theme="machine"] .header-cta {
 html[data-theme="machine"] .page-grain {
   opacity: .12;
   background: repeating-linear-gradient(transparent 0 3px, #89d9ef13 3px 4px);
+}
+.folio-machine {
+  background:
+    radial-gradient(ellipse at 88% 44%, #a623692e, transparent 52%),
+    radial-gradient(ellipse at 60% 28%, #11647a30, transparent 54%),
+    linear-gradient(180deg, transparent 62%, #5ef2ff08),
+    repeating-linear-gradient(0deg, transparent 0 3px, #89d9ef05 3px 4px),
+    linear-gradient(#71b8d00b 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, #71b8d00b 1px, transparent 1px) 0 0 / 48px 48px,
+    #06070a;
+}
+html[data-theme="machine"] .site-header::after,
+html[data-theme="machine"] .folio-footer::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--neon), var(--hot), transparent);
+  opacity: .45;
+}
+html[data-theme="machine"] .folio-footer::after {
+  inset: -1px 0 auto;
+}
+.folio-machine .hud-grid {
+  position: relative;
+}
+.folio-machine .hud-grid::before,
+.folio-machine .hud-grid::after {
+  position: absolute;
+  top: -70px;
+  bottom: -52px;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: 16px;
+  border-block: 1px solid #5ef2ff24;
+  background: linear-gradient(180deg, transparent, #5ef2ff0b 25% 75%, transparent);
+  color: #5ef2ff91;
+  font: .5625rem var(--mono);
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px #5ef2ff55;
+  writing-mode: vertical-rl;
+  pointer-events: none;
+}
+.folio-machine .hud-grid::before {
+  content: "ENGRAM // LOCAL NODE // TRACE ACTIVE" / "";
+  left: -62px;
+}
+.folio-machine .hud-grid::after {
+  content: "RUST // SQLITE // CLI + MCP" / "";
+  right: -62px;
+  transform: rotate(180deg);
+}
+.folio-machine .cyber-display .neon {
+  text-shadow: 1px 0 #ff64aa55, -1px 0 #5ef2ff55, 0 0 28px #5ef2ff38;
+  animation: neon-flicker 8s ease-in-out infinite;
+  animation-play-state: var(--motion-state);
+}
+.term,
+.connect-panel,
+.limits-panel {
+  position: relative;
+  isolation: isolate;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+}
+.term::before,
+.connect-panel::before,
+.limits-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--neon), var(--neon)) right 12px top / 42px 1px no-repeat,
+    linear-gradient(var(--neon), var(--neon)) right top / 1px 12px no-repeat,
+    linear-gradient(var(--hot), var(--hot)) left 12px bottom / 30px 1px no-repeat;
+  opacity: .7;
+}
+.term::after,
+.connect-panel::after,
+.limits-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, #5ef2ff08 46%, #5ef2ff38 50%, transparent 56%);
+  transform: translateX(-120%);
+  animation: panel-scan 9s linear infinite;
+  animation-play-state: var(--motion-state);
+}
+.key,
+.hud-tile {
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+/* The chamfered clip-paths would cut away an outset focus ring, so these
+   focus targets draw it inside their own box instead. */
+.key:focus-visible,
+.hud-tile:focus-visible,
+.connect-panel .copy-button:focus-visible,
+.connect-panel pre:focus-visible {
+  outline-offset: -4px;
+}
+.key:focus-visible {
+  outline-offset: -6px;
+}
+.key {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 5px, #5ef2ff04 5px 6px),
+    linear-gradient(135deg, #18232dcc, #080c12ee 70%);
+}
+.hud-tile {
+  position: relative;
+}
+.hud-tile::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 4px;
+  height: 4px;
+  background: var(--hot);
+  box-shadow: 0 0 8px var(--hot);
+  animation: pulse 2.4s ease-in-out infinite;
+  animation-play-state: var(--motion-state);
+}
+.gauge-figure::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border: 1px solid #5ef2ff18;
+  clip-path: polygon(0 0, 28px 0, 28px 1px, 1px 1px, 1px 28px, 0 28px, 0 100%, 100% 100%, 100% 0);
+  pointer-events: none;
+}
+.gauge-figure::after {
+  content: "TRACE LOCK // LOCAL" / "";
+  position: absolute;
+  right: 0;
+  bottom: -4px;
+  color: var(--neon);
+  font: .5625rem var(--mono);
+  letter-spacing: 1.4px;
+}
+.signal-strip {
+  position: relative;
+}
+.signal-strip::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 90px;
+  height: 1px;
+  background: var(--hot);
+  box-shadow: 0 0 10px var(--hot);
+}
+.core-stage::after {
+  content: "";
+  position: absolute;
+  inset: 5%;
+  pointer-events: none;
+  opacity: .45;
+  background:
+    linear-gradient(var(--hot), var(--hot)) left top / 28px 1px no-repeat,
+    linear-gradient(var(--hot), var(--hot)) left top / 1px 28px no-repeat,
+    linear-gradient(var(--neon), var(--neon)) right bottom / 28px 1px no-repeat,
+    linear-gradient(var(--neon), var(--neon)) right bottom / 1px 28px no-repeat;
+}
+@keyframes neon-flicker {
+  0%, 91%, 94%, 100% { opacity: 1; }
+  92% { opacity: .82; }
+  93% { opacity: .94; }
+}
+@keyframes panel-scan {
+  0%, 22% { transform: translateX(-120%); }
+  62%, 100% { transform: translateX(120%); }
 }
 @keyframes pulse {
   0%,
@@ -947,8 +1126,17 @@ html[data-theme="machine"] .page-grain {
   .folio-machine {
     --content-width: calc(100% - 100px);
   }
+  .folio-machine .hud-grid::before,
+  .folio-machine .hud-grid::after {
+    display: none;
+  }
   h2.cyber-display {
     font-size: clamp(34px, 4.1vw, 50px);
+  }
+}
+@media (max-width: 760px) {
+  .gauge-figure::after {
+    display: none;
   }
 }
 @media (min-width: 761px) and (max-width: 1000px) {
