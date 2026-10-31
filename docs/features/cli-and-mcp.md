@@ -3654,6 +3654,13 @@ invocation failed to commit, that a grant has not already expired, or that
 its turn never began. Preserve prior uncertainty and exact replay or
 reconciliation; stale authority stays held.
 
+`redaction_refused` answers a request whose text the pre-write redactor
+refused. It is definitive: the invocation recorded nothing, and the same
+payload is refused again, so a host does not replay it unchanged. Its message
+carries the redactor's own reason, to which Engram adds none of the refused
+text. The shipped development redactor never refuses, so no host request
+produces this code today.
+
 `control_request_expired` can be returned by every control operation:
 `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
 `turn_checkpoint`, `named_root_bind`, `execution_observe`, `verification_bind`
@@ -3879,6 +3886,56 @@ gateway, or native host integration around every declared material tool. If a
 shell or network path remains unmediated, the session must not claim
 `action_gated` assurance. See the
 [control-plane host contract](behavioral-control-plane.md#host-integration-contract).
+
+#### Identifiers and fingerprints on the turn channel
+
+Every identifier or fingerprint that crosses the turn channel, in a request,
+a result or an error's `details`, has one class, and its field names the
+class. A host reads the class from the field, never from the value's length:
+a record id stored before ids were minted and a SHA-256 fingerprint are both
+64 lowercase hex digits, and only the field tells them apart. A host keeps one
+validator per class and returns every identifier exactly as it received it.
+It never pads, truncates, rehashes or relinks one, and never parses a token.
+A fingerprint compares content and is never used as an id. Engram's tests
+check every host receipt they produce against this table, and fail on a value
+shaped like an identifier in a field the table does not list. Request fields
+are listed here too; their producers' admission checks them.
+
+| Class | Fields | Form | Minted by | Compared | Scope |
+| --- | --- | --- | --- | --- | --- |
+| Record id | `checkpoint`, `last_checkpoint`, `execution_observations`, `verification_evidence`, `environment_evidence`, `event`, `latest_event`, `binding_event`, `current_binding`, `claim_epoch_event`, `observation`, `opened_obligations`, `original` in a `verification_bind` request or receipt, `verification`, `sighting`, `record`, `records`, `definition`, `triggering_observation`, `producer_observation`, `resolution`, `satisfied_by`, `environment`, `evidence`, `evidence_basis`, `evaluation`, `supersedes`, `named_root_binding`, `root_binding`, `completion_seal`, `required_child_seals`, `policy`, `previous_policy`, `obligation_rule_set`, `rule_set`, `authority`, `replacement_decision`, `producer`, `record_id`, `object_id`, `source_change` where it names a record (a `repeat` accounting), `operation` in a registered verification receipt (beside `verifications`), and a memory's `version` in a historical delivery packet | 32 lowercase hex digits for a record stored now; 64 for a record stored before ids were minted, kept as stored | Engram, when it stores the record | Exact string equality | The project's store; a run's records belong to that run |
+| Typed identity | `task_id`, `root_execution_id`, `work_id`, `run_id`, `run`, `claim_id`, `obligation_id`, `root_id`, `memory_id`, and an actor context's `run_id` when Engram records the actor (a bind's `binder`, a registered run) | A lowercase, hyphenated UUID. Engram always sends this form; on a request it also parses other UUID spellings, which a host must not rely on | Engram | Exact equality | The project's store; a run, claim or obligation within its work |
+| Work reference | `work_ref` | `w-` and 12 lowercase hex digits. A refused `verification_bind` target whose item is not found, or belongs to another project, carries the requested work id instead. On a request, a short reference or a work id | Engram | Exact string equality | The project's store |
+| Engram token | `routing_token`, `grant_id`, `open_grant_id`, `superseded_grant_id`, `delivery_token`, `delivery_tokens` | Opaque non-blank text, returned unchanged and never parsed (today a UUID, which is not a promise). `turn_grant_read` echoes the requested `grant_id` as sent | Engram | Exact string equality | A routing token: the session on its control connection; a grant: the session that evaluated it |
+| Host fingerprint | `intent_fingerprint`, `action_fingerprint`, `environment_fingerprint`, `check_fingerprint` | A host sends the 64-digit lowercase SHA-256 of canonical bytes. Engram today also admits 32 lowercase hex digits and returns the value unchanged wherever it echoes it (a grant's basis, a check's `check_fingerprint`, which is its producer's `action_fingerprint`) | The host | Exact equality of content, never as an id | None: equal content has equal fingerprints anywhere |
+| Content fingerprint | `content_digest`, `work_revision_hash`, `accepted_work_revision_hash`, `packet_hash` | The 64-digit lowercase SHA-256 of canonical bytes | Engram | Exact equality of content, never as an id | None: equal content has equal fingerprints anywhere |
+| Rule id | `rule_id`, `obligations_satisfied` | Non-empty text equal to its own trim, at most 128 bytes: a built-in rule's id (`source_mutation_requires_test`, or `acceptance_criterion_requires_verification:` and a criterion number) or one an operator's obligation rule set names | Engram for its built-in rules; the operator for a rule set it installs | Exact string equality; a rule's identity is its `rule_id` with its `rule_version` | The obligation rule set the active policy selects |
+| Host source value | `source_revision`, `workspace_id`, a named root sighting's `revision` | Non-empty host text equal to its own trim (no leading or trailing whitespace), at most 512 bytes, without control or bidirectional-formatting characters. TermAl sends `content-v1:` and 64 hex digits as a revision; for a registered run Engram writes `git-commit:` or `git-tree:` and the Git object | The host | Exact string equality; Engram never parses or recomputes it. It names what the host measured, not which source a check or an evaluation saw: that is the Git commit or tree | The workspace the host measured |
+| Git tree | `git_tree`, `tree` | 40 or 64 lowercase hex digits, as Git spells the tree | The host | Exact string equality; Engram never normalizes it | The workspace the host measured |
+| Git commit | `commit`, `base_commit` | 40 lowercase hex digits, the only form registered verification admits | The host | Exact string equality; Engram never resolves or normalizes it | The repository the host measured |
+| Host id | `session_id`, `initiating_session_id`, `observing_session`, `holder`, `owning_session_id`, `host_run_id`, `request_identity`, `operation_key`, `idempotency_key`, `request_key`, `directive_id`, `observation_id`, `host_check_id`, `host_turn_ref`, `host_evidence_ref`, `external_ref` | Non-empty host text, kept unchanged and never parsed; inner whitespace is allowed. Each must equal its own trim (no leading or trailing whitespace), except a session id, which is checked for length only; `external_ref` and the `session_bind` key, which Engram trims; and the keys of `named_root_bind`, `turn_evaluate`, `turn_begin` and `turn_checkpoint`, with the `request_key` and `directive_id` built from them, which are kept as sent. A session id is at most 64 bytes; `owning_session_id` is text of at most 512. `host_run_id` starts with `test-`, and it and `request_identity` are at most 128 bytes; `operation_key` is exactly `termal-run:` and the host run id. An `idempotency_key` is at most 128 bytes on `execution_observe` and 512 on `verification_bind`; `session_bind` trims it, the other operations keep it as sent. `request_key` is the `turn_evaluate` key, and `directive_id` is that key, a colon and the directive's code. `observation_id` is at most 256 bytes, `host_check_id` and `host_turn_ref` 128, `host_evidence_ref` 2048 | The host: a session id by its host integration, a host run id and request identity by its test runs, a key by its idempotent caller; Engram builds `directive_id` from the host's key | Exact string equality | A session id: the host and its sessions; a host run id or request identity: that host's runs; a key: one operation's retries |
+| Host text | `project_id`, `actor_id`, `agent_id`, `namespace`, `stage`, a provenance link's `source` and `reference`, and an actor context's `run_id` when the host asserts the actor (`causality.claimed_actor`) | Non-empty text, compared exactly and never parsed; its form is whatever the host or its configuration gives | The host, or for `project_id` the project marker | Exact string equality | The project, or the assertion it is part of |
+| Counter or cursor | `position`, `fence`, `revision` as a number, `generation`, `epoch`, cuts, criterion positions, `after`, `continuation` | A number, or opaque continuation text Engram issues | Engram | Within its own feed, run or page only | The feed, run or read it came from |
+
+A refused target of `verification_bind` carries `expected` and `actual`
+values whose class depends on its `reason`:
+- for `run_not_active` and `root_execution_moved`, typed identities;
+- for `sighting_not_newest`, record ids;
+- for `workspace_differs` and `sighting_revision_differs`, host source values;
+- for every other reason, a counter, other host text or a time.
+
+In that refusal, `original` and `request` are reason codes, such as
+`claim_not_held`, not record ids. In a historical delivery packet, a memory's
+`authority` is a label, such as `firm`, not a record id. Such a packet, replayed on a `turn_evaluate`
+retry of a grant issued before deliveries ended, carries stored memory records in its change
+objects; they come back as stored, and their own fields, such as `parents` or a source snapshot's
+`fingerprint`, are outside this table.
+
+A feed position names its feed as `{"kind", "id"}`. For `root_work` and
+`run_execution`, the `id` is a typed identity; for `project`, it is the
+project's asserted text.
+
+A local receipt carries no authority on another host.
 
 ### Host configuration
 

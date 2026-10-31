@@ -239,7 +239,7 @@ fn host_binds(
     key: &str,
     second: i64,
 ) -> Result<crate::domain::NamedRootBindingReceipt, StoreError> {
-    store.bind_named_root(
+    let bound = store.bind_named_root(
         &host.project_id,
         &host.session_id,
         &host.connection_token,
@@ -255,7 +255,11 @@ fn host_binds(
         &mut actor(&host.session_id.0),
         key,
         at(second),
-    )
+    );
+    if let Ok(receipt) = &bound {
+        crate::host::id_contract::assert_host_ids(receipt);
+    }
+    bound
 }
 
 /// A focus move captures the target's live claim and its bound named root in

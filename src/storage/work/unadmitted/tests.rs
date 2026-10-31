@@ -148,7 +148,7 @@ pub(super) fn observe(
     observer.actor_kind = crate::work_service::WORD_ACTOR_KIND.into();
     observer.run_id = Some(fixture.binding.run_id.0.to_string());
     let host = &fixture.host;
-    fixture.store.record_unadmitted_execution_observation(
+    let recorded = fixture.store.record_unadmitted_execution_observation(
         &fixture.work.project_id,
         &host.status.session_id,
         &host.connection_token,
@@ -156,7 +156,11 @@ pub(super) fn observe(
         &observer,
         input,
         at(second),
-    )
+    );
+    if let Ok(receipt) = &recorded {
+        crate::host::id_contract::assert_host_ids(receipt);
+    }
+    recorded
 }
 
 pub(super) fn count(store: &SqliteStore, sql: &str) -> i64 {
@@ -400,6 +404,29 @@ fn an_unadmitted_turn_keeps_every_check_uncredited_and_its_asserted_cause_apart(
         ),
         0
     );
+}
+
+/// Host keys, refs and asserted text keep whatever form the host gives them,
+/// even one shaped like an identifier, and the receipt still holds to the
+/// host identifier contract (`observe` checks it).
+#[test]
+fn host_keys_and_refs_shaped_like_identifiers_hold_the_contract() {
+    let mut fixture = fixture();
+    let shaped = crate::domain::WorkId::new().0.to_string();
+    let mut claimed_actor = actor("runner");
+    claimed_actor.run_id = Some("f".repeat(32));
+    let mut input = inter_turn_change(&fixture, &shaped);
+    input.occurrence = ObservedOccurrence::UnadmittedTurn {
+        host_turn_ref: shaped.clone(),
+        source_change: None,
+        observed_checks: vec![passed_check(&shaped)],
+    };
+    input.causality = ObservationCausality::HostAssertion {
+        claimed_actor: Box::new(claimed_actor),
+        basis: "terminal ownership".into(),
+    };
+    let receipt = observe(&mut fixture, input, 7).expect("recorded");
+    assert_eq!(receipt.observed_checks[0].host_check_id, shaped);
 }
 
 // Even a passed check reported with its source and an artifact reference

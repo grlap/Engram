@@ -1867,3 +1867,47 @@ fn set_required_control_assurance_preserves_an_exact_64_byte_actor_session() {
         Some(session.as_str())
     );
 }
+
+/// A pre-write redaction refusal answers the host wire with its own code, not
+/// the generic storage error. Its message names the redactor's reason, never
+/// the refused prose, and the refused write recorded nothing.
+#[test]
+fn a_redaction_refusal_has_its_own_host_code_and_records_nothing() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let footprint = |store: &SqliteStore| -> (i64, String) {
+        let objects = store
+            .connection
+            .query_row("SELECT COUNT(*) FROM objects", [], |row| row.get(0))
+            .expect("count objects");
+        let policy = store
+            .connection
+            .query_row(
+                "SELECT policy_id FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active policy");
+        (objects, policy)
+    };
+    let before = footprint(&store);
+    let mut refused_actor = actor("policy-admin");
+    refused_actor.reason = "captured reject-me prose".into();
+    let error = store
+        .set_required_control_assurance(
+            ControlAssurance::Advisory,
+            &refused_actor,
+            "policy-redaction-code",
+            None,
+            now,
+            &SentinelRedactor,
+        )
+        .expect_err("the sentinel refuses the attribution");
+    assert!(
+        matches!(error, StoreError::RedactionRefused(_)),
+        "{error:?}"
+    );
+    assert_eq!(crate::host::store_error_code(&error), "redaction_refused");
+    assert!(!error.to_string().contains("reject-me"), "{error}");
+    assert_eq!(footprint(&store), before);
+}

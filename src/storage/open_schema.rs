@@ -1863,9 +1863,7 @@ impl SqliteStore {
             && rule_set.rules.len() <= MAX_RULES
             && rule_set.rules.iter().all(|definition| {
                 let id = definition.rule.rule_id.as_str();
-                !id.is_empty()
-                    && id.len() <= 128
-                    && id.trim() == id
+                crate::domain::BuiltinObligationRuleRef::admits_rule_id(id)
                     && definition.rule.rule_version > 0
                     && !matches!(
                         definition.trigger,

@@ -7,7 +7,9 @@ pub trait Redactor {
     ///
     /// # Errors
     ///
-    /// Returns a human-readable refusal when capture must fail closed.
+    /// Returns a human-readable refusal when capture must fail closed. The
+    /// refusal travels to hosts and agents, so it names the reason without
+    /// quoting the inspected prose.
     fn inspect(&self, prose: &str) -> Result<(), String>;
 
     /// Stable description surfaced by diagnostics and receipts.

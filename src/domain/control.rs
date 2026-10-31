@@ -788,6 +788,15 @@ pub struct BuiltinObligationRuleRef {
     pub rule_version: u16,
 }
 
+impl BuiltinObligationRuleRef {
+    /// Whether `rule_id` is a rule id an obligation rule set admits:
+    /// non-empty, at most 128 bytes, and equal to its own trim.
+    #[must_use]
+    pub fn admits_rule_id(rule_id: &str) -> bool {
+        !rule_id.is_empty() && rule_id.len() <= 128 && rule_id.trim() == rule_id
+    }
+}
+
 /// Closed trigger vocabulary understood by the immutable V1 obligation rules.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

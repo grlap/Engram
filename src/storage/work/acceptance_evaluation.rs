@@ -343,12 +343,24 @@ impl SqliteStore {
                 });
             }
         }
+        let git_input = source::registered_git_evaluation_on(
+            &transaction,
+            run_id,
+            cut,
+            request.source_basis.as_ref(),
+            request
+                .verdicts
+                .iter()
+                .filter(|verdict| verdict.verdict == AcceptanceVerdict::Pass)
+                .flat_map(|verdict| &verdict.evidence),
+        )?;
         if let Some(BasisMoveFinding { moved, observation }) = basis_moved_after(
             &transaction,
             run_id,
             cut,
             request.source_basis.as_ref(),
             named_root.as_ref(),
+            git_input,
         )? {
             let unadmitted_change = observation
                 .as_ref()
@@ -381,16 +393,7 @@ impl SqliteStore {
             request.source_basis.as_ref(),
             named_root.as_ref(),
         )?;
-        require_named_root_judged_source(
-            &transaction,
-            run_id,
-            cut,
-            named_root.as_ref(),
-            judged.as_ref(),
-            item.work_id,
-            request.source_basis.as_ref(),
-        )?;
-        if let Some(stale) = stale_bound_citation(
+        let stale = stale_bound_citation(
             &transaction,
             &item,
             run_id,
@@ -398,7 +401,25 @@ impl SqliteStore {
             cut,
             passing_citations(&verdicts),
             named_root.as_ref(),
-        )? {
+        )?;
+        // A registered citation without a Git declaration needs the exact
+        // declaration remedy, not the legacy missing-sighting remedy.
+        if !git_input
+            && !stale
+                .as_ref()
+                .is_some_and(|stale| matches!(stale.cause, StaleCause::RegisteredGit { .. }))
+        {
+            require_named_root_judged_source(
+                &transaction,
+                run_id,
+                cut,
+                named_root.as_ref(),
+                judged.as_ref(),
+                item.work_id,
+                request.source_basis.as_ref(),
+            )?;
+        }
+        if let Some(stale) = stale {
             let context = CitationContext {
                 item: &item,
                 run_id,
@@ -412,14 +433,16 @@ impl SqliteStore {
                     crate::domain::VerificationEvidenceMismatch::GitTreeMissing,
                 ) => EvaluationCitationMismatch::GitTreeMissing,
                 StaleCause::Applicability(_) => EvaluationCitationMismatch::GitTreeMismatch,
-                StaleCause::OtherSource(_) | StaleCause::OtherNaming { .. } => {
-                    EvaluationCitationMismatch::WrongSource
-                }
+                StaleCause::RegisteredGit { .. }
+                | StaleCause::OtherSource(_)
+                | StaleCause::OtherNaming { .. } => EvaluationCitationMismatch::WrongSource,
                 StaleCause::MovedAfter { .. } => EvaluationCitationMismatch::SourceMovedAfterCheck,
                 StaleCause::Unverifiable => EvaluationCitationMismatch::UnverifiableSource,
             });
             cause.checked_revision = match &stale.cause {
-                StaleCause::OtherSource(basis) | StaleCause::OtherNaming { checked: basis, .. } => {
+                StaleCause::RegisteredGit { checked: basis, .. }
+                | StaleCause::OtherSource(basis)
+                | StaleCause::OtherNaming { checked: basis, .. } => {
                     Some(basis.source_revision.clone())
                 }
                 StaleCause::MovedAfter { checked, .. } => Some(checked.clone()),
@@ -1434,6 +1457,7 @@ fn basis_moved_after(
     position: i64,
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
     root: Option<&NamedEvaluationRoot>,
+    git_input: bool,
 ) -> Result<Option<BasisMoveFinding>, StoreError> {
     let judged_source = judged_source(connection, run_id, position, declared, root)?;
     let judged = judged_source.as_ref().map(|judged| judged.revision.clone());
@@ -1503,6 +1527,11 @@ fn basis_moved_after(
                     continue;
                 }
                 if !observation.source_changed {
+                    // A quiet content sighting does not replace a judged
+                    // Git input. Actual changes still cross the cut below.
+                    if git_input {
+                        continue;
+                    }
                     // The newest sighting decides where the source is.
                     if let (Some(judged_at), Some(sighting)) =
                         (judged.as_deref(), observation.source_basis.as_ref())
@@ -1515,7 +1544,7 @@ fn basis_moved_after(
                 // An unadmitted change is a barrier the evaluation's checks
                 // did not follow, whatever revision it reports: it may describe
                 // the source from before them.
-                if !observation.admitted || !judged_revision(declared, &observation) {
+                if git_input || !observation.admitted || !judged_revision(declared, &observation) {
                     return Ok(Some(BasisMoveFinding {
                         moved: EvaluationBasisMove::SourceChanged,
                         observation: Some(name(at, &observation)),
@@ -1578,12 +1607,20 @@ fn staleness_named(
         return Ok((Some(reason), StaleRecoveryContext::default()));
     }
     let evaluated_root = named_root_at_on(connection, run_id, record.evaluated_cut.position)?;
+    let git_input = source::registered_git_evaluation_on(
+        connection,
+        run_id,
+        record.evaluated_cut.position,
+        record.source_basis.as_ref(),
+        passing_citations(&record.verdicts).flat_map(|(_, citations, _)| citations),
+    )?;
     if let Some(finding) = basis_moved_after(
         connection,
         run_id,
         record.evaluated_cut.position,
         record.source_basis.as_ref(),
         evaluated_root.as_ref(),
+        git_input,
     )? {
         // An accounted change the host observed without admission is named
         // as such: the content need not have changed for it to void the
@@ -1731,6 +1768,13 @@ fn staleness_after_move(
     source: SourceCheck<'_>,
     evaluated_root: Option<&NamedEvaluationRoot>,
 ) -> Result<(Option<AcceptanceStaleReason>, StaleRecoveryContext), StoreError> {
+    let git_input = source::registered_git_evaluation_on(
+        connection,
+        run_id,
+        record.evaluated_cut.position,
+        record.source_basis.as_ref(),
+        passing_citations(&record.verdicts).flat_map(|(_, citations, _)| citations),
+    )?;
     let mut source_context = crate::domain::AcceptanceSourceRecoveryCause {
         mismatch: crate::domain::AcceptanceSourceMismatch::EvaluationSourceBasisMissing,
         remedy: crate::domain::AcceptanceSourceRemedy::EvaluateCurrentSource,
@@ -1769,7 +1813,8 @@ fn staleness_after_move(
         record.source_basis.as_ref(),
         evaluated_root,
     )?;
-    if let Some(root) = evaluated_root
+    if !git_input
+        && let Some(root) = evaluated_root
         && let RootSource::Unconfirmed { reported } = assess_named_root_source(
             connection,
             run_id,
@@ -1823,7 +1868,7 @@ fn staleness_after_move(
             StaleRecoveryContext::default(),
         ));
     }
-    if policy.require_source_freshness {
+    if policy.require_source_freshness || git_input {
         let evaluated = record
             .source_basis
             .as_ref()

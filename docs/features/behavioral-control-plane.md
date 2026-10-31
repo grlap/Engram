@@ -1442,6 +1442,12 @@ pass.
   authorizes rebinding, a fresh evaluation or begin, prompt delivery, or
   release of stale authority. See the
   [shipped channel contract](cli-and-mcp.md#shipped-host-private-turn-channel).
+- `redaction_refused` answers a request whose text the pre-write redactor
+  refused. It is a definitive refusal: nothing was recorded, and the same
+  payload is refused again, so a host does not replay it unchanged. Its
+  message carries the redactor's own reason, to which Engram adds none of
+  the refused text. The shipped development redactor never refuses, so no
+  host request produces this code today.
 - A replacement host process recovers from the durable session and grant
   rows: opening a new connection reads the stored session and its grants, as
   above. Binding a session emits no event, and the checkpoint change index is

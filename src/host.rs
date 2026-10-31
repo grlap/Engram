@@ -1267,6 +1267,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
             "control_projection_invalid"
         }
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
+        StoreError::RedactionRefused(_) => "redaction_refused",
         StoreError::ProjectMemoryExists(_) => "memory_exists",
         StoreError::ProjectMemoryRevisionConflict { .. } => "memory_revision_conflict",
         StoreError::ProjectMemoryRevisionNotFound { .. } => "memory_revision_not_found",
@@ -1301,7 +1302,6 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidStoredKey(_)
         | StoreError::NoteIdempotencyConflict(_)
         | StoreError::EmptyNote
-        | StoreError::RedactionRefused(_)
         | StoreError::InvalidMemoryProjection(_)
         | StoreError::InvalidTaskProjection(_)
         | StoreError::NoActiveTask(_)
@@ -1337,5 +1337,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod id_contract;
 #[cfg(test)]
 mod tests;

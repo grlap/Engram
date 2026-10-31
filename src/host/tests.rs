@@ -75,11 +75,14 @@ fn turn_grant_read_round_trips_on_the_host_channel() {
         bound["capabilities"],
         serde_json::json!(["verification_record_v1"])
     );
+    // A 32-digit intent fingerprint, which Engram admits today, comes back
+    // unchanged in the grant and still holds to the identifier contract.
+    let intent = ObjectId::mint().as_str().to_owned();
     let decision = server
         .handle(HostControlRequest::TurnEvaluate {
             routing_token: routing.into(),
             idempotency_key: "evaluate".into(),
-            intent_fingerprint: ObjectId::from_canonical_bytes(b"evaluate").as_str().into(),
+            intent_fingerprint: intent.clone(),
             purpose: None,
             requested_effects: vec![EffectClass::Observe],
             resource_intents: vec![],
@@ -93,6 +96,7 @@ fn turn_grant_read_round_trips_on_the_host_channel() {
         request(" "),
         serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":7}),
         serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":"missing","idempotency_key":"extra"}),
+        serde_json::json!({"operation":"session_status","routing_token":routing}),
     ];
     let mut input = Vec::new();
     for frame in &frames {
@@ -106,6 +110,11 @@ fn turn_grant_read_round_trips_on_the_host_channel() {
         .filter(|b| !b.is_empty())
         .map(|line| serde_json::from_slice::<Value>(line).unwrap())
         .collect::<Vec<_>>();
+    for response in [&bound, &decision, &replies[0], &replies[1], &replies[5]] {
+        id_contract::assert_host_ids(response);
+    }
+    assert_eq!(decision["grant"]["basis"]["intent_fingerprint"], intent);
+    assert_eq!(replies[5]["status"], "ok");
     assert_eq!(replies[0]["status"], "ok");
     assert_eq!(
         replies[0]["result"],

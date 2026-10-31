@@ -20,7 +20,7 @@ fn read_at(
     run_id: WorkRunId,
     after: Option<&str>,
 ) -> Result<AcceptanceBindingPage, StoreError> {
-    store.read_acceptance_bindings(
+    let page = store.read_acceptance_bindings(
         &host.project_id,
         &host.session_id,
         &host.connection_token,
@@ -31,7 +31,11 @@ fn read_at(
             run_id,
             after,
         },
-    )
+    );
+    if let Ok(page) = &page {
+        crate::host::id_contract::assert_host_ids(page);
+    }
+    page
 }
 
 fn read(
@@ -1022,7 +1026,7 @@ mod candidates {
         criterion: usize,
         after: Option<&str>,
     ) -> Result<AcceptanceVerificationPage, StoreError> {
-        store.read_acceptance_verifications(
+        let page = store.read_acceptance_verifications(
             &host.project_id,
             &host.session_id,
             &host.connection_token,
@@ -1035,7 +1039,11 @@ mod candidates {
                 criterion,
                 after,
             },
-        )
+        );
+        if let Ok(page) = &page {
+            crate::host::id_contract::assert_host_ids(page);
+        }
+        page
     }
 
     /// Reads `criterion` at `run_cut` on the item's active run.

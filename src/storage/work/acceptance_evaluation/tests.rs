@@ -303,7 +303,7 @@ fn bind_host_control(
     };
     let mut host_actor = actor(&claim.holder.0);
     host_actor.run_id = Some(run.run_id.0.to_string());
-    store
+    let bound = store
         .bind_control_session_with_work(
             &work.project_id,
             "local-work:acceptance-evaluation",
@@ -318,7 +318,9 @@ fn bind_host_control(
             key,
             at(second),
         )
-        .expect("bind control session to the claim")
+        .expect("bind control session to the claim");
+    crate::host::id_contract::assert_host_ids(&bound);
+    bound
 }
 
 impl HostSession {
@@ -409,6 +411,7 @@ impl HostSession {
                 at(second),
             )
             .expect("evaluate host turn");
+        crate::host::id_contract::assert_host_ids(&decision);
         let ControlTurnDecision::Grant { grant } = decision else {
             panic!("host turn must grant: {decision:?}");
         };
@@ -421,21 +424,20 @@ impl HostSession {
             .as_ref()
             .map(|delivery| vec![delivery.page.delivery_token.clone()])
             .unwrap_or_default();
-        assert!(matches!(
-            store
-                .begin_control_turn(
-                    &self.project_id,
-                    &self.session_id,
-                    &self.connection_token,
-                    &self.routing_token,
-                    &grant.grant_id,
-                    &tokens,
-                    &self.key("begin"),
-                    at(second),
-                )
-                .expect("begin host turn"),
-            ControlTurnBeginDecision::Begin { .. }
-        ));
+        let begun = store
+            .begin_control_turn(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &self.routing_token,
+                &grant.grant_id,
+                &tokens,
+                &self.key("begin"),
+                at(second),
+            )
+            .expect("begin host turn");
+        crate::host::id_contract::assert_host_ids(&begun);
+        assert!(matches!(begun, ControlTurnBeginDecision::Begin { .. }));
     }
 
     /// One mutation turn reporting exactly `reports`, in order: whether the

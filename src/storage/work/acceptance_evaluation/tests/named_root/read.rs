@@ -37,14 +37,18 @@ fn read(
     run_id: WorkRunId,
     claim_id: WorkClaimId,
 ) -> Result<NamedRootRead, StoreError> {
-    store.read_named_root(
+    let read = store.read_named_root(
         &host.project_id,
         &host.session_id,
         &host.connection_token,
         &host.routing_token,
         run_id,
         claim_id,
-    )
+    );
+    if let Ok(read) = &read {
+        crate::host::id_contract::assert_host_ids(read);
+    }
+    read
 }
 
 fn read_claim(store: &SqliteStore, host: &HostSession, claim: &WorkClaim) -> NamedRootRead {
@@ -741,6 +745,7 @@ fn sighting_read(
     assert_eq!(read.schema_version, NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION);
     assert_eq!(read.work_id, work.work_id);
     assert_eq!(read.run_id, run_id);
+    crate::host::id_contract::assert_host_ids(&read);
     read
 }
 

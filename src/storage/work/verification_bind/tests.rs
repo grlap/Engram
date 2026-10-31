@@ -377,6 +377,15 @@ fn bind(
         at(second),
     )
     .expect("bind");
+    // What the host reads: the receipt, or the refusal as the error's details.
+    match &outcome {
+        VerificationBindOutcome::Bound(receipt) => {
+            crate::host::id_contract::assert_host_ids(receipt);
+        }
+        VerificationBindOutcome::Refused(refusal) => {
+            crate::host::id_contract::assert_host_ids(refusal);
+        }
+    }
     if matches!(outcome, VerificationBindOutcome::Bound(_)) {
         transaction.commit().expect("commit bind");
     }
@@ -501,6 +510,52 @@ fn a_check_binds_to_two_items_on_one_root_with_distinct_generations() {
     assert!(report.is_healthy(), "{report:?}");
 }
 
+/// An operator's obligation rule set names its own rules. A bind that
+/// satisfies such a rule returns the operator's rule id, and the receipt
+/// still holds to the host identifier contract (`bind` checks it).
+#[test]
+fn a_bind_returns_the_operator_rule_id_it_satisfies() {
+    const OPERATOR_RULE: &str = "operator requires a test";
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    store
+        .set_obligation_rule_set(
+            &crate::domain::ObligationRuleSet {
+                schema_version: crate::domain::OBLIGATION_RULE_SET_SCHEMA_VERSION,
+                rules: vec![crate::domain::ObligationRuleDefinition {
+                    rule: crate::domain::BuiltinObligationRuleRef {
+                        rule_id: OPERATOR_RULE.into(),
+                        rule_version: 1,
+                    },
+                    trigger: crate::domain::BuiltinObligationTrigger::SourceChanged,
+                    requirement: VerificationRequirement {
+                        check_kind: VerificationKind::Test,
+                        check_fingerprint: None,
+                    },
+                }],
+            },
+            &actor("obligation-rule-admin"),
+            "operator-rules",
+            None,
+            at(1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("operator rule set");
+    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
+    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
+    let original = native_check(&mut store, &a, "R1", 20);
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
+    let VerificationBindOutcome::Bound(receipt) = bind(&mut store, &input, 30) else {
+        panic!("the bind is refused")
+    };
+    assert!(
+        receipt.bound[0]
+            .obligations_satisfied
+            .iter()
+            .any(|rule| rule == OPERATOR_RULE),
+        "{receipt:?}"
+    );
+}
+
 /// A batch with one valid and one invalid target is refused whole: the
 /// refusal names the invalid one and nothing is written for either.
 #[test]
@@ -561,6 +616,17 @@ fn every_target_refusal_is_typed_and_writes_nothing() {
             "original item",
             vec![target(&store, &a, "R1", vec![])],
             Reason::IsOriginalItem,
+        ),
+        // No item has the work id, so the refusal names the work id itself
+        // as its work reference.
+        (
+            "not found",
+            vec![{
+                let mut unknown = target(&store, &b, "R1", vec![]);
+                unknown.binding.work_id = crate::domain::WorkId::new();
+                unknown
+            }],
+            Reason::NotFound,
         ),
         (
             "criterion out of range",
@@ -818,7 +884,7 @@ fn bind_through_host(
     input: &VerificationBindInput,
     second: i64,
 ) -> Result<VerificationBindReceipt, StoreError> {
-    store.bind_verification(
+    let bound = store.bind_verification(
         &crate::domain::ProjectId("project-a".into()),
         &host.status.session_id,
         &host.connection_token,
@@ -826,7 +892,15 @@ fn bind_through_host(
         &actor(HOLDER),
         input,
         at(second),
-    )
+    );
+    match &bound {
+        Ok(receipt) => crate::host::id_contract::assert_host_ids(receipt),
+        Err(StoreError::VerificationBindRefused(refusal)) => {
+            crate::host::id_contract::assert_host_ids(refusal);
+        }
+        Err(_) => {}
+    }
+    bound
 }
 
 fn release(store: &mut SqliteStore, held: &Held, second: i64) {

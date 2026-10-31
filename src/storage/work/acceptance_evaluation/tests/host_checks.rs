@@ -128,6 +128,7 @@ impl HostSession {
                 at(second + 2),
             )
             .expect("checkpoint host turn with evidence");
+        crate::host::id_contract::assert_host_ids(&checkpointed);
         let ControlTurnCheckpointDecision::Checkpointed { receipt } = checkpointed else {
             panic!("host turn must checkpoint: {checkpointed:?}");
         };
