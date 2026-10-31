@@ -488,6 +488,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::ControlSessionNotBound(_)
         | StoreError::ControlSessionTokenMismatch(_)
         | StoreError::ControlConnectionSuperseded(_)
+        | StoreError::ControlConnectionIdentityUnavailable(_)
         | StoreError::ControlSessionBindConflict(_)
         | StoreError::ControlTurnIdempotencyConflict(_)
         | StoreError::ControlOperationIdempotencyConflict { .. }

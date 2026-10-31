@@ -1,7 +1,7 @@
 //! The operator `doctor` word: integrity, control, host-path, and graph
 //! snapshot audit rendering plus projection repair.
 
-use std::{fs, path::Path};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use engram::{HostPathPolicy, ProjectId, SqliteStore, describe_host_path_policy};
@@ -845,27 +845,16 @@ fn bounded_doctor_snapshot_text(text: &str) -> String {
     format!("{}{suffix}", &text[..end])
 }
 
+/// The database path as readiness and doctor report it, through the shared
+/// store path formatter a serving control connection would also use, should
+/// it ever be able to prove which file it opened.
 pub(crate) fn canonical_database_path(database: &Path) -> Result<String> {
-    let canonical = fs::canonicalize(database)
-        .with_context(|| format!("failed to canonicalize {}", database.display()))?;
-    Ok(path_without_windows_verbatim_prefix(&canonical))
+    engram::storage::canonical_store_path(database)
+        .with_context(|| format!("failed to canonicalize {}", database.display()))
 }
 
-#[cfg(windows)]
 fn path_without_windows_verbatim_prefix(path: &Path) -> String {
-    let path = path.to_string_lossy();
-    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
-        rest.to_owned()
-    } else {
-        path.into_owned()
-    }
-}
-
-#[cfg(not(windows))]
-fn path_without_windows_verbatim_prefix(path: &Path) -> String {
-    path.display().to_string()
+    engram::storage::store_path_text(path)
 }
 
 fn emit_control_limitations(
@@ -925,6 +914,7 @@ fn emit_redactor_limitation() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn control_activity_prints_each_time_or_never_and_names_the_session_basis() {

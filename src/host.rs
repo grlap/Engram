@@ -46,6 +46,12 @@ pub enum HostControlRequest {
     SessionStatus {
         routing_token: String,
     },
+    /// Asks which store this serving connection opened. It needs no routing
+    /// token, grant or bind and writes nothing to the store. It refuses a
+    /// superseded connection, and otherwise always refuses with
+    /// `control_connection_identity_unavailable`: no platform can yet prove
+    /// which file the connection holds, so it never returns a path.
+    ControlConnectionRead {},
     TurnGrantRead {
         routing_token: String,
         grant_id: String,
@@ -178,6 +184,7 @@ impl HostControlRequest {
         match self {
             Self::SessionBind { .. } => "session_bind",
             Self::SessionStatus { .. } => "session_status",
+            Self::ControlConnectionRead {} => "control_connection_read",
             Self::TurnGrantRead { .. } => "turn_grant_read",
             Self::NamedRootBind { .. } => "named_root_bind",
             Self::NamedRootRead { .. } => "named_root_read",
@@ -503,6 +510,7 @@ impl HostControlServer {
                 .map_err(StoreError::Json)
                 .and_then(|value| self.with_verification_applicability(value))
             }
+            HostControlRequest::ControlConnectionRead {} => self.control_connection_read(),
             HostControlRequest::TurnGrantRead {
                 routing_token,
                 grant_id,
@@ -941,6 +949,20 @@ impl HostControlServer {
         }
     }
 
+    /// Which store this serving connection opened. It first checks, on one
+    /// read snapshot, that the connection is still the session's current one.
+    /// No platform can yet prove that the file at the store's path is the
+    /// file SQLite holds: a path observed around the open can be redirected
+    /// during it. So it then always refuses, rather than return a path that
+    /// might name another file. It writes nothing to the store.
+    fn control_connection_read(&self) -> Result<Value, StoreError> {
+        self.store
+            .verify_current_control_connection(&self.session_id, &self.connection_token)?;
+        Err(StoreError::ControlConnectionIdentityUnavailable(
+            "no platform can yet prove which file this connection opened".to_owned(),
+        ))
+    }
+
     /// The response to one parsed request.
     fn with_verification_applicability(&self, mut value: Value) -> Result<Value, StoreError> {
         value["capabilities"] = serde_json::json!(["verification_record_v1"]);
@@ -1210,6 +1232,9 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
         StoreError::ControlSessionTokenMismatch(_) => "control_session_token_mismatch",
         StoreError::ControlConnectionSuperseded(_) => "control_connection_superseded",
+        StoreError::ControlConnectionIdentityUnavailable(_) => {
+            "control_connection_identity_unavailable"
+        }
         StoreError::ControlSessionBindConflict(_) => "control_session_bind_conflict",
         StoreError::ControlTurnIdempotencyConflict(_) => "turn_idempotency_conflict",
         StoreError::ControlOperationIdempotencyConflict { .. } => {

@@ -45,6 +45,8 @@ mod schema_diagnostics;
 mod sqlite_path;
 pub use sqlite_path::{open_sqlite_file, validate_sqlite_file_path};
 mod registered_verification;
+mod store_file;
+pub use store_file::{canonical_store_path, store_path_text};
 mod task_memory;
 mod transaction_timing;
 mod unadmitted_observation;
@@ -1444,6 +1446,10 @@ pub enum StoreError {
     ControlSessionTokenMismatch(String),
     #[error("host control connection for session {0:?} was superseded")]
     ControlConnectionSuperseded(String),
+    /// The serving connection cannot prove which store file it holds open,
+    /// which no platform can yet do, so it shows no path. Never a match.
+    #[error("the control connection cannot show which store it opened: {0}")]
+    ControlConnectionIdentityUnavailable(String),
     #[error("control session bind key {0:?} was reused for a different intent")]
     ControlSessionBindConflict(String),
     #[error("turn request key {0:?} was reused for a different intent")]

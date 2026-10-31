@@ -1654,11 +1654,11 @@ durable control sessions, optional exact `WorkRun` claim bindings,
 persisted turn decisions and short-lived grants that carry no delivery page,
 begin-time rechecks, canonical execution observations, and canonical checkpoint
 events. A separate `engram control` JSON-lines process
-implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
-`turn_checkpoint`, `turn_grant_read`, `named_root_bind`, `named_root_read`,
-`named_root_sighting_read`, `execution_observe`, `acceptance_binding_read`,
-`acceptance_verification_read` and `verification_bind`; none is exposed through
-agent-facing MCP. Exact retry
+implements `session_bind`, `session_status`, `control_connection_read`,
+`turn_evaluate`, `turn_begin`, `turn_checkpoint`, `turn_grant_read`,
+`named_root_bind`, `named_root_read`, `named_root_sighting_read`,
+`execution_observe`, `acceptance_binding_read`, `acceptance_verification_read`
+and `verification_bind`; none is exposed through agent-facing MCP. Exact retry
 evidence survives process restart. When the host reopens a session's
 connection, its unbegun authority is invalidated, and a `turn_open` session
 whose unbegun grant this expired, with no begun turn, returns to `ready`; an
@@ -1666,6 +1666,41 @@ exited session stays exited. Each open rotates an internal
 connection generation so a still-running predecessor is fenced. Begun grants
 stay open until reported and are discoverable through session status; no
 payload is redelivered.
+
+### Reading which store a control connection serves
+
+`control_connection_read` takes no fields: `{"operation":"control_connection_read"}`.
+The serving process answers it itself, for its own current connection, from
+the moment its store is open and its connection resumed, before any
+`session_bind` and with no routing token or grant.
+
+The read is a fail-closed contract. It would return the main database file
+SQLite has open, as `database_path`, with the `project_id` and `session_id`
+the process was started with, only where that file can be proved to be the
+one at the reported path. No platform qualifies today. A path observed just
+before and just after SQLite opens it can be redirected during the open,
+through a renamed file, a symbolic link or a directory junction, and no safe
+interface exposes the file SQLite holds. So on every platform the read
+refuses with `control_connection_identity_unavailable`, and never returns a
+path that might name another file. Should a sound proof exist, the answer's
+`database_path` will be canonicalized and spelled exactly as
+`engram readiness --json` and `engram doctor` spell a database path
+(symbolic links and junctions resolved; on Windows without the `\\?\` prefix,
+`\\?\UNC\server\share` becoming `\\server\share`), never taken from the
+process's arguments, home or configuration.
+
+The connection check comes first: a connection a newer one for the same
+session has superseded refuses with `control_connection_superseded`. Other
+storage and deadline errors keep their codes. A host treats every refusal and
+a malformed reply as unproven identity, never as a match, so its recovery
+fails closed. The read locks nothing, and every later operation keeps its own
+connection check, so the fencing above is unchanged: an older connection's
+operation that committed before the newer connection resumed stands, and
+none commits after.
+
+The read writes nothing to the store: one read snapshot, no write lock, no
+grant expiry. Like every operation, it may write the usual host-private
+diagnostics for a refusal or a slow reply.
 
 ### Terminal startup failures
 

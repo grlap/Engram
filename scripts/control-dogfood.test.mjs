@@ -957,6 +957,23 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     advisory = undefined;
 
     client = new ControlClient(engramHome, "host-a");
+    // Before any bind, the serving child answers the store read itself. No
+    // platform can yet prove the opened file is the one at the store's path,
+    // so it refuses with its typed code and never returns a path.
+    const readStore = async (connection) => {
+      const reply = await connection.request({ operation: "control_connection_read" });
+      assert.equal(reply.status, "error", JSON.stringify(reply));
+      assert.equal(reply.error.code, "control_connection_identity_unavailable");
+      assert.equal(reply.result, undefined, JSON.stringify(reply));
+      return reply.error.code;
+    };
+    const storeProof = await readStore(client);
+    const fieldRefused = await client.request({
+      operation: "control_connection_read",
+      routing_token: "unneeded",
+    });
+    assert.equal(fieldRefused.status, "error");
+    assert.equal(fieldRefused.error.code, "invalid_request");
     const binding = ok(
       await client.request({
         operation: "session_bind",
@@ -985,6 +1002,12 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     });
     assert.equal(superseded.status, "error");
     assert.equal(superseded.error.code, "control_connection_superseded");
+    // The resumed successor refuses alike; the predecessor is refused as
+    // superseded, by the connection check that comes first.
+    assert.equal(await readStore(successor), storeProof);
+    const supersededRead = await client.request({ operation: "control_connection_read" });
+    assert.equal(supersededRead.status, "error");
+    assert.equal(supersededRead.error.code, "control_connection_superseded");
     await client.close();
     client = successor;
     successor = undefined;
