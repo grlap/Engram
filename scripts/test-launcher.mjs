@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
+import { captureFingerprint, classifyInputChange, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
 import { requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registrationLine } from "./test-run-registration.mjs";
 
@@ -812,9 +812,36 @@ function inputDrift(message, root) {
     + (detail.length > diagnosticLimit ? "\n[status truncated]" : "")));
 }
 
-function currentFingerprint(root) {
-  try { return captureFingerprint(root).fingerprint; }
+function currentCapture(root) {
+  try { return captureFingerprint(root); }
   catch (error) { throw because("fingerprint-check-failed", error); }
+}
+
+// The most new paths results.json lists; the admitted and after-run captures
+// are saved beside it in full.
+const NEW_PATHS_LISTED = 200;
+
+// After every stage passed, an after-run input that differs only by new
+// untracked, non-ignored paths is reported as that, not as an input change.
+// The run still fails: the paths are listed for the integration owner, who
+// decides whether they are non-input debris. Any other difference, and any
+// difference after a failed stage, stays an input change. The baseline is the
+// capture this process took and checked against the expected fingerprint just
+// before the stages ran, never a file a stage could rewrite.
+function afterRunDrift(runDir, result, before, after, root) {
+  const passed = result.stages.length > 0 && result.stages.every((stage) => stageState(stage) === "passed");
+  const admitted = before?.fingerprint === result.expectedFingerprint;
+  const change = passed && admitted ? classifyInputChange(before, after) : { outcome: "input-changed" };
+  if (change.outcome !== "new-untracked-only") {
+    return inputDrift("input drift: results do not validate the current source", root);
+  }
+  save(join(runDir, "admitted-input.json"), before);
+  save(join(runDir, "after-input.json"), after);
+  const listed = change.newPaths.slice(0, NEW_PATHS_LISTED);
+  result.inputCheck = { outcome: "new-untracked-only", newPaths: listed,
+    totalNewPaths: change.newPaths.length, omittedPaths: change.newPaths.length - listed.length,
+    admittedInput: join(runDir, "admitted-input.json"), afterInput: join(runDir, "after-input.json") };
+  return because("new-untracked-only", new Error(`every stage passed; the input changed only by ${change.newPaths.length} new untracked path(s), listed in results.json inputCheck; whether they are non-input debris is the integration owner's call`));
 }
 
 function validateNotification(request, env) {
@@ -936,7 +963,8 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
         await probe(`cargo-${index}`, cargo, args);
       }
     }
-    const before = currentFingerprint(request.root);
+    const admittedInput = currentCapture(request.root);
+    const before = admittedInput.fingerprint;
     if (before !== request.expectedFingerprint) throw inputDrift("input drift before execution; no stages run", request.root);
     result.expectedFingerprint = request.expectedFingerprint;
     result.before = before;
@@ -970,8 +998,9 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       save(resultPath, result);
       if (entry.state === "failed") break;
     }
-    result.after = currentFingerprint(request.root);
-    if (result.after !== result.expectedFingerprint) throw inputDrift("input drift: results do not validate the current source", request.root);
+    const after = currentCapture(request.root);
+    result.after = after.fingerprint;
+    if (result.after !== result.expectedFingerprint) throw afterRunDrift(runDir, result, admittedInput, after, request.root);
     result.state = result.stages.every((stage) => stage.state === "passed") ? "passed" : "failed";
     result.exitCode = result.stages.find((stage) => stage.state === "failed")?.code || (result.state === "passed" ? 0 : 1);
   } catch (error) {
@@ -1035,7 +1064,7 @@ export function runLiveness(result, now = Date.now()) {
   return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
 }
 
-const completionReasons = new Set(["input-capture-failed", "request-publication-failed", "input-changed", "fingerprint-check-failed", "preflight-failed",
+const completionReasons = new Set(["input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
   "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed",
   "stop-request-invalid", "stop-request-unreadable"]);
 const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
@@ -1055,6 +1084,18 @@ function stateCounts(entries, state) {
   for (const entry of entries) counts[state(entry)] += 1;
   return counts;
 }
+// A failed run whose stages all passed and whose input changed only by new
+// untracked paths, as the run itself recorded it.
+function newUntrackedOnly(result) {
+  const check = result.inputCheck;
+  return result.reason === "new-untracked-only" && check?.outcome === "new-untracked-only"
+    && Number.isSafeInteger(check.totalNewPaths) && check.totalNewPaths > 0
+    && Number.isSafeInteger(check.omittedPaths) && check.omittedPaths >= 0
+    && Array.isArray(check.newPaths) && check.newPaths.length + check.omittedPaths === check.totalNewPaths
+    && Array.isArray(result.stages) && result.stages.length > 0
+    && result.stages.every((entry) => entry !== null && typeof entry === "object" && stageState(entry) === "passed");
+}
+
 function completionInput(request, result) {
   const values = [request.expectedFingerprint, result.expectedFingerprint, result.before, result.after];
   const known = values.filter((value) => typeof value === "string" && value.length > 0);
@@ -1095,7 +1136,7 @@ export function completionMetadata(request, result, now = Date.now()) {
       ? interruptedStage.name : stage;
   const exit = Number.isInteger(result.exitCode) ? result.exitCode : null;
   const inputUnverified = verdict === "UNKNOWN" && terminal && liveness === "passed" && input.comparison === "unknown";
-  const reason = input.comparison === "mismatch" ? "input-changed"
+  const reason = input.comparison === "mismatch" ? newUntrackedOnly(result) ? "new-untracked-only" : "input-changed"
     : inputUnverified ? "input-unverified"
       : result.reason === "stopped" ? "stopped" : inferredInterruption ? "heartbeat-stale" : interrupted ? "interrupted" : completionReasons.has(result.reason) ? result.reason
       : verdict === "PASS" ? "completed" : !terminal ? "no-terminal-result" : failed ? "stage-failed" : "launcher-error";
@@ -1104,7 +1145,7 @@ export function completionMetadata(request, result, now = Date.now()) {
       : !terminal ? { reason: "no-terminal-result" }
       : failed ? { reason: "stage-failed", stage, exit: Number.isInteger(failed.code) ? failed.code : null }
         : { reason: "runner-failed", exit,
-          ...(liveness === "passed" ? { basis: input.comparison === "mismatch" ? "input-changed" : "contradictory-result" } : {}) };
+          ...(liveness === "passed" ? { basis: input.comparison === "mismatch" ? reason : "contradictory-result" } : {}) };
   return { verdict, terminal, exit, reason, input, elapsed, blocker,
     stages: stateCounts(stages, stageState),
     stageDetails: stages.map((entry) => {
@@ -1131,6 +1172,10 @@ function renderCompletion(runDir, request, result, now) {
     `input: ${metadata.input.comparison}; expectedFingerprint=${metadata.input.expected}; boundary comparison only, not host check credit`];
   const registration = registrationLine(result.registration ?? request.registration);
   if (registration) lines.push(registration);
+  if (metadata.reason === "new-untracked-only") {
+    const check = result.inputCheck;
+    lines.push(`input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=${check.totalNewPaths} listed=${check.newPaths.length} omitted=${check.omittedPaths}; the paths are in results.json inputCheck; the integration owner records what they are before a full gate counts`);
+  }
   if (["stage", "startup", "between-stages", "finishing"].includes(result.recovered?.phase)) {
     const stage = typeof result.recovered.stage === "string" && recordToken.test(result.recovered.stage)
       ? result.recovered.stage : null;

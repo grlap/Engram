@@ -11,14 +11,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { fixtureHome, removeFixtureHomes, removeFixturePath, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import test, { after } from "node:test";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
 import { fileURLToPath } from "node:url";
 
-import { captureFingerprint, runCli } from "./review-freeze-fingerprint.mjs";
+import { captureFingerprint, classifyInputChange, defaultGlobalFiles, runCli } from "./review-freeze-fingerprint.mjs";
 
 function run(program, args, cwd) {
   // Fixture Git writes must not start maintenance that outlives cleanup.
@@ -328,6 +328,289 @@ test("untracked contents are length-delimited and reviewable", () => {
     assert.notEqual(second.fingerprint, first.fingerprint);
     assert.equal(first.untracked[0].path, unusualName);
   });
+});
+
+test("only new untracked paths, with nothing else changed, classify apart from an input change", () => {
+  withRepository((root) => {
+    writeFileSync(join(root, "existing.txt"), "existing\n");
+    const before = captureFingerprint(root);
+    assert.deepEqual(classifyInputChange(before, captureFingerprint(root)), { outcome: "unchanged", newPaths: [] });
+
+    writeFileSync(join(root, "debris.log"), "made by a test\n");
+    const debris = captureFingerprint(root);
+    assert.notEqual(debris.fingerprint, before.fingerprint);
+    assert.deepEqual(classifyInputChange(before, debris), { outcome: "new-untracked-only", newPaths: ["debris.log"] });
+    // The per-part digests leave the aggregate as it was computed before:
+    // the same input captured twice gives the same fingerprint.
+    assert.equal(captureFingerprint(root).fingerprint, debris.fingerprint);
+    // A capture without the per-part digests never qualifies.
+    const { components: _omitted, ...older } = before;
+    assert.equal(classifyInputChange(older, debris).outcome, "input-changed");
+
+    const changes = [
+      () => writeFileSync(join(root, "existing.txt"), "rewritten\n"),
+      () => unlinkSync(join(root, "existing.txt")),
+      () => writeFileSync(join(root, "tracked.txt"), "unstaged\n"),
+      () => { writeFileSync(join(root, "tracked.txt"), "staged\n"); run("git", ["add", "tracked.txt"], root); },
+    ];
+    for (const change of changes) {
+      run("git", ["reset", "--quiet", "--hard"], root);
+      writeFileSync(join(root, "existing.txt"), "existing\n");
+      change();
+      assert.equal(classifyInputChange(before, captureFingerprint(root)).outcome, "input-changed", String(change));
+    }
+  });
+});
+
+// Git reads its global configuration and its default excludes file through
+// these variables; the fixture points them at files it owns, so the user's
+// own settings take no part.
+function withIsolatedGlobalGit(outside, callback) {
+  const names = ["XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"];
+  const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const xdg = join(outside, "xdg");
+  mkdirSync(join(xdg, "git"), { recursive: true });
+  writeFileSync(join(outside, "global.gitconfig"), "");
+  Object.assign(process.env, {
+    XDG_CONFIG_HOME: xdg, GIT_CONFIG_GLOBAL: join(outside, "global.gitconfig"), GIT_CONFIG_NOSYSTEM: "1",
+  });
+  try {
+    return callback(join(xdg, "git", "ignore"));
+  } finally {
+    for (const name of names) {
+      if (saved[name] === undefined) delete process.env[name];
+      else process.env[name] = saved[name];
+    }
+  }
+}
+
+const infoExclude = (root) => run("git", ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"], root).trim();
+const untrackedPaths = (capture) => capture.untracked.map((entry) => entry.path);
+
+test("a changed ignore rule outside the tracked tree is an input change, never new debris", () => {
+  const scenarios = [
+    ["the configured global excludes file's content", (root, outside) => {
+      writeFileSync(join(outside, "excludes"), "secret.log\n");
+      run("git", ["config", "core.excludesFile", join(outside, "excludes")], root);
+      writeFileSync(join(root, "secret.log"), "already here\n");
+    }, (_root, outside) => writeFileSync(join(outside, "excludes"), "")],
+    ["the core.excludesFile setting", (root, outside) => {
+      writeFileSync(join(outside, "excludes"), "secret.log\n");
+      run("git", ["config", "core.excludesFile", join(outside, "excludes")], root);
+      writeFileSync(join(root, "secret.log"), "already here\n");
+    }, (root, outside) => run("git", ["config", "core.excludesFile", join(outside, "other")], root)],
+    ["core.excludesFile set empty, which turns Git's default file off", (root, _outside, defaultFile) => {
+      writeFileSync(defaultFile, "secret.log\n");
+      writeFileSync(join(root, "secret.log"), "already here\n");
+    }, (root) => run("git", ["config", "core.excludesFile", ""], root)],
+    ["an ignored .gitignore's content", (root) => {
+      writeFileSync(infoExclude(root), ".gitignore\n");
+      writeFileSync(join(root, ".gitignore"), "secret.log\n");
+      writeFileSync(join(root, "secret.log"), "already here\n");
+    }, (root) => writeFileSync(join(root, ".gitignore"), "")],
+    ["a new ignored .gitignore", (root) => {
+      writeFileSync(infoExclude(root), ".gitignore\nsecret.log\n");
+      writeFileSync(join(root, "secret.log"), "already here\n");
+    }, (root) => writeFileSync(join(root, ".gitignore"), "!secret.log\n")],
+    ["a new visible .gitignore", (root) => {
+      writeFileSync(join(root, ".gitignore"), "secret.log\n");
+      run("git", ["add", ".gitignore"], root);
+      run("git", ["commit", "--quiet", "-m", "ignore"], root);
+      mkdirSync(join(root, "sub"));
+      writeFileSync(join(root, "sub", "secret.log"), "already here\n");
+    }, (root) => writeFileSync(join(root, "sub", ".gitignore"), "!secret.log\n")],
+    ["an ignored .gitignore inside an untracked directory", (root) => {
+      writeFileSync(infoExclude(root), ".gitignore\n");
+      mkdirSync(join(root, "sub"));
+      writeFileSync(join(root, "sub", ".gitignore"), "secret.log\n");
+      writeFileSync(join(root, "sub", "secret.log"), "already here\n");
+    }, (root) => writeFileSync(join(root, "sub", ".gitignore"), "")],
+    ["core.ignoreCase turned off", (root) => {
+      writeFileSync(infoExclude(root), "SECRET.LOG\n");
+      run("git", ["config", "core.ignoreCase", "true"], root);
+      writeFileSync(join(root, "secret.log"), "already here\n");
+    }, (root) => run("git", ["config", "core.ignoreCase", "false"], root)],
+  ];
+  for (const [label, setup, change] of scenarios) {
+    withRepository((root) => {
+      const outside = join(dirname(root), "outside");
+      mkdirSync(outside, { recursive: true });
+      withIsolatedGlobalGit(outside, (defaultFile) => {
+        setup(root, outside, defaultFile);
+        const before = captureFingerprint(root);
+        assert.ok(!untrackedPaths(before).some((path) => path.endsWith("secret.log")), `${label}: the file starts hidden`);
+        writeFileSync(join(root, "debris.txt"), "made by a test\n");
+        assert.equal(classifyInputChange(before, captureFingerprint(root)).outcome, "new-untracked-only", `${label}: debris alone`);
+
+        change(root, outside, defaultFile);
+        const after = captureFingerprint(root);
+        assert.ok(untrackedPaths(after).some((path) => path.endsWith("secret.log")), `${label}: the change reveals the file`);
+        assert.equal(classifyInputChange(before, after).outcome, "input-changed", label);
+      });
+    });
+  }
+});
+
+test("a new path that was ignored before is an input change even when every rule source is unchanged", () => {
+  withRepository((root) => {
+    writeFileSync(infoExclude(root), "SECRET.LOG\n");
+    run("git", ["config", "core.ignoreCase", "true"], root);
+    writeFileSync(join(root, "secret.log"), "already here\n");
+    const before = captureFingerprint(root);
+    assert.ok(before.ignored.includes("secret.log"));
+    run("git", ["config", "core.ignoreCase", "false"], root);
+    const after = captureFingerprint(root);
+    // The setting is not a rule source; only the ignored-before rule tells.
+    assert.equal(after.components.ruleSources, before.components.ruleSources);
+    assert.deepEqual(untrackedPaths(after), ["secret.log"]);
+    assert.equal(classifyInputChange(before, after).outcome, "input-changed");
+  });
+});
+
+test("a new path at or inside a path ignored before never counts as new, whatever its case", () => {
+  withRepository((root) => {
+    const before = captureFingerprint(root);
+    mkdirSync(join(root, "cache"));
+    writeFileSync(join(root, "cache", "made.txt"), "made by a test\n");
+    writeFileSync(join(root, "debris.txt"), "made by a test\n");
+    const after = captureFingerprint(root);
+    assert.deepEqual(classifyInputChange(before, after), { outcome: "new-untracked-only", newPaths: ["cache/made.txt", "debris.txt"] });
+    const ignoredBefore = (...ignored) => ({ ...before, ignored });
+    for (const ignored of [["cache/"], ["CACHE/"], ["debris.txt"], ["Debris.TXT"]]) {
+      assert.equal(classifyInputChange(ignoredBefore(...ignored), after).outcome, "input-changed", String(ignored));
+    }
+    for (const ignored of [["cache"], ["cache/other.txt"], ["cach/"], ["debris"]]) {
+      assert.equal(classifyInputChange(ignoredBefore(...ignored), after).outcome, "new-untracked-only", String(ignored));
+    }
+    // A capture without the ignored listing never qualifies.
+    const { ignored: _omitted, ...unlisted } = before;
+    assert.equal(classifyInputChange(unlisted, after).outcome, "input-changed");
+    assert.equal(classifyInputChange({ ...before, ignored: null }, after).outcome, "input-changed");
+  });
+});
+
+test("a new path ignored before under another Unicode composition never counts as new", () => {
+  withRepository((root) => {
+    const before = captureFingerprint(root);
+    writeFileSync(join(root, "debris.txt"), "made by a test\n");
+    const after = captureFingerprint(root);
+    const composed = "café.log";
+    const decomposed = "café.log";
+    const withNew = (path) => ({ ...after, untracked: [...after.untracked, { ...after.untracked[0], path }] });
+    for (const [ignored, path] of [[composed, decomposed], [decomposed, composed], [`${composed.toUpperCase()}`, decomposed]]) {
+      assert.equal(classifyInputChange({ ...before, ignored: [ignored] }, withNew(path)).outcome, "input-changed",
+        `${JSON.stringify(ignored)} before, ${JSON.stringify(path)} after`);
+    }
+    assert.equal(classifyInputChange({ ...before, ignored: ["other.log"] }, withNew(decomposed)).outcome, "new-untracked-only");
+  });
+});
+
+test("a capture not in this module's complete shape is never compared, even with an equal fingerprint", () => {
+  withRepository((root) => {
+    writeFileSync(join(root, "existing.txt"), "existing\n");
+    const before = captureFingerprint(root);
+    writeFileSync(join(root, "debris.txt"), "made by a test\n");
+    const after = captureFingerprint(root);
+    assert.equal(classifyInputChange(before, after).outcome, "new-untracked-only");
+    assert.equal(classifyInputChange(before, before).outcome, "unchanged");
+    const without = (capture, key) => {
+      const { [key]: _omitted, ...rest } = capture;
+      return rest;
+    };
+    const malformed = [
+      ["no head", (capture) => without(capture, "head")],
+      ["a malformed head", (capture) => ({ ...capture, head: "not-an-object-id" })],
+      ["no schema version", (capture) => without(capture, "schemaVersion")],
+      ["another schema version", (capture) => ({ ...capture, schemaVersion: 2 })],
+      ["an empty root", (capture) => ({ ...capture, root: "" })],
+      ["a duplicate untracked path", (capture) => ({ ...capture, untracked: [...capture.untracked, ...capture.untracked] })],
+      ["an empty untracked path", (capture) => ({ ...capture, untracked: [...capture.untracked, { ...capture.untracked[0], path: "" }] })],
+      ["a duplicate ignored path", (capture) => ({ ...capture, ignored: ["x/", "x/"] })],
+    ];
+    for (const [label, spoil] of malformed) {
+      // Spoiling both sides alike must not make them compare equal.
+      assert.equal(classifyInputChange(spoil(before), spoil(after)).outcome, "input-changed", `${label} on both sides`);
+      assert.equal(classifyInputChange(spoil(before), spoil(before)).outcome, "input-changed", `${label}, equal fingerprints`);
+    }
+    assert.equal(classifyInputChange({ fingerprint: "x" }, { fingerprint: "x" }).outcome, "input-changed");
+    // An unborn HEAD is a complete capture, recorded as null.
+    assert.equal(classifyInputChange({ ...before, head: null }, { ...after, head: null }).outcome, "new-untracked-only");
+  });
+});
+
+test("a changed attribute rule outside the tracked tree is an input change, never new debris", () => {
+  const infoAttributes = (root) => run("git", ["rev-parse", "--path-format=absolute", "--git-path", "info/attributes"], root).trim();
+  const changes = [
+    ["a new untracked .gitattributes", (root) => writeFileSync(join(root, ".gitattributes"), "tracked.txt text\n")],
+    ["a new ignored .gitattributes", (root) => writeFileSync(join(root, ".gitattributes"), "tracked.txt text\n"),
+      (root) => writeFileSync(infoExclude(root), ".gitattributes\n")],
+    ["info/attributes", (root) => {
+      mkdirSync(dirname(infoAttributes(root)), { recursive: true });
+      writeFileSync(infoAttributes(root), "tracked.txt text\n");
+    }],
+    ["the core.attributesFile setting", (root, outside) => run("git", ["config", "core.attributesFile", join(outside, "attributes")], root)],
+    ["core.attributesFile set empty", (root) => run("git", ["config", "core.attributesFile", ""], root)],
+    ["Git's default attributes file", (_root, _outside, defaultAttributes) => writeFileSync(defaultAttributes, "tracked.txt text\n")],
+  ];
+  for (const [label, change, setup = () => {}] of changes) {
+    withRepository((root) => {
+      const outside = join(dirname(root), "outside");
+      mkdirSync(outside, { recursive: true });
+      withIsolatedGlobalGit(outside, (defaultIgnore) => {
+        setup(root);
+        const before = captureFingerprint(root);
+        writeFileSync(join(root, "debris.txt"), "made by a test\n");
+        assert.equal(classifyInputChange(before, captureFingerprint(root)).outcome, "new-untracked-only", `${label}: debris alone`);
+        change(root, outside, join(dirname(defaultIgnore), "attributes"));
+        assert.equal(classifyInputChange(before, captureFingerprint(root)).outcome, "input-changed", label);
+      });
+    });
+  }
+});
+
+test("a capture whose rule sources could not be read never qualifies", () => {
+  withRepository((root) => {
+    const before = captureFingerprint(root);
+    writeFileSync(join(root, "debris.txt"), "made by a test\n");
+    const after = captureFingerprint(root);
+    assert.equal(classifyInputChange(before, after).outcome, "new-untracked-only");
+    const unread = (capture) => ({ ...capture, components: { ...capture.components, ruleSources: null } });
+    assert.equal(classifyInputChange(unread(before), after).outcome, "input-changed");
+    assert.equal(classifyInputChange(before, unread(after)).outcome, "input-changed");
+
+    // A source that exists but cannot be read as a file never qualifies.
+    // Depending on the Git build, Git itself refuses it, so the capture
+    // fails (which the launcher reports as fingerprint-check-failed), or Git
+    // accepts it and the capture's own read gives no digest.
+    if (existsSync(infoExclude(root))) unlinkSync(infoExclude(root));
+    mkdirSync(infoExclude(root), { recursive: true });
+    let unreadable;
+    try {
+      unreadable = captureFingerprint(root);
+    } catch (error) {
+      assert.match(String(error?.message ?? error), /exclude|git /iu);
+      return;
+    }
+    assert.equal(unreadable.components.ruleSources, null);
+    assert.equal(classifyInputChange(before, unreadable).outcome, "input-changed");
+  });
+});
+
+test("Git's default global files are looked for wherever Git would look", () => {
+  const home = resolve("home-a");
+  const profile = resolve("home-b");
+  const xdg = resolve("xdg");
+  for (const name of ["ignore", "attributes"]) {
+    const file = (base, ...parts) => resolve(base, ...parts, "git", name);
+    assert.deepEqual(defaultGlobalFiles(name, { XDG_CONFIG_HOME: xdg, HOME: home }), [file(xdg)]);
+    assert.deepEqual(defaultGlobalFiles(name, { HOME: home, USERPROFILE: profile }), [file(home, ".config")]);
+    // Without HOME, Git for Windows takes HOMEDRIVE+HOMEPATH, else USERPROFILE.
+    const drive = { HOMEDRIVE: dirname(home), HOMEPATH: sep + basename(home) };
+    assert.deepEqual(defaultGlobalFiles(name, { ...drive, USERPROFILE: profile }),
+      [file(home, ".config"), file(profile, ".config")]);
+    assert.deepEqual(defaultGlobalFiles(name, { ...drive, USERPROFILE: home }), [file(home, ".config")]);
+    assert.deepEqual(defaultGlobalFiles(name, {}), []);
+  }
 });
 
 test(

@@ -598,6 +598,41 @@ executor's machine record. A known fingerprint mismatch or contradictory
 saved success never renders PASS. These boundary comparisons cannot detect
 transient edits or establish host test credit.
 
+One mismatch has its own reason. When every stage passed and the input
+captured after the run differs from the one the launcher admitted just before
+the stages ran only by new untracked, non-ignored paths, with HEAD, the staged
+and unstaged tracked content and every path untracked before unchanged, the
+run still fails, with reason `new-untracked-only` instead of `input-changed`.
+Its summary adds an `input-change:` line saying that every stage passed and
+only new untracked paths appeared, with their count. `results.json` lists them
+under `inputCheck` (at most 200, with the total and the number left out), and
+`admitted-input.json` and `after-input.json` beside it keep the complete
+captures from before and after the stages. Whether those paths are non-input
+debris is the integration owner's recorded call under the standing approval's
+gate clause; the launcher grants nothing for them. The comparison is against
+the input the launcher captured and checked just before the stages ran, held
+in memory, never against `input.json`, which a stage could rewrite. Any other
+difference, a difference after a failed stage, and a capture that lacks the
+per-part data stay `input-changed`.
+
+A new path must not have been there before: one that was ignored at the
+admitted capture, or lies inside a directory that was, keeps the run
+`input-changed`, whatever made it visible (an ignore rule, `core.ignoreCase`,
+`core.precomposeUnicode` or anything else). Paths are compared without case
+and after Unicode composition, so a spelling difference never makes an old
+path look new. A new untracked path inside a directory whose contents were
+all ignored is therefore an input change too. A change during the run to
+these ignore and attribute sources is an input change as well:
+`.git/info/exclude` and `.git/info/attributes`, the global files
+(`core.excludesFile` and `core.attributesFile`, including setting one empty,
+or Git's default when unset), and any `.gitignore` or `.gitattributes` that is
+not tracked, whether visible or itself ignored, including a new one. Tracked
+rule files are covered by the tracked content. Tracked content is compared as
+the fingerprint sees it, after Git normalization; other settings that change
+that normalization, such as the system-wide attributes file or
+`core.autocrlf`, fall under the fingerprint's normalization limitation, as
+they do for a run whose input is unchanged.
+
 Supply optional `--item TEXT` and paired `--next-owner SESSION --next-action
 TEXT` before the command separator. The item is an opaque display string;
 the transition names its next owner and exact pending action. Both flags are
@@ -873,7 +908,9 @@ tests.
   A failed completion notification changes the process's exit status, not the
   record. `reason` is given when the run did not pass: `stage-failed`,
   `stage-interrupted`, `preflight-failed`, `spawn-failed`, `input-changed`,
-  `fingerprint-check-failed`, or `launcher-error` for any other refusal. A
+  `new-untracked-only` (every stage passed and the input changed only by new
+  untracked paths, as above), `fingerprint-check-failed`, or
+  `launcher-error` for any other refusal. A
   prerequisite probe that fails or cannot be started, and a stage's command
   that cannot be found, are `preflight-failed`: every command is looked up
   before any stage runs, so every stage is `skipped`. `spawn-failed` is a

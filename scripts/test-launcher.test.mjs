@@ -1560,6 +1560,135 @@ test("source drift during execution cannot be reported as a passing run", async 
   });
 });
 
+describe("an input that changed only by new untracked paths after every stage passed", () => {
+  const writes = (...files) => files.map(([path, text]) =>
+    `require('node:fs').writeFileSync(${JSON.stringify(path)}, ${JSON.stringify(text)});`).join(" ");
+  const run = async (root, source, setup = () => {}) => {
+    setup(root);
+    const runDir = await createRun({ root, stages: [stage("makes-files", source)] }, env);
+    return { runDir, result: await executeRun(runDir, env) };
+  };
+
+  test("an unchanged input passes with its fingerprint matched", async () => {
+    await repository(async (root) => {
+      const { runDir, result } = await run(root, "");
+      assert.equal(result.state, "passed");
+      assert.equal(result.after, result.before);
+      assert.equal(result.inputCheck, undefined);
+      assert.match(await summarize(runDir), /^input: matched;/mu);
+    });
+  });
+
+  test("new untracked paths alone are reported as such, not as a pass or an input change", async () => {
+    await repository(async (root) => {
+      const { runDir, result } = await run(root, writes(["debris-a.log", "a\n"], ["debris-b.log", "b\n"]));
+      assert.equal(result.state, "failed");
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.reason, "new-untracked-only");
+      assert.notEqual(result.after, result.before);
+      assert.deepEqual(result.stages.map(({ state, code }) => [state, code]), [["passed", 0]]);
+      assert.deepEqual(result.inputCheck, { outcome: "new-untracked-only", newPaths: ["debris-a.log", "debris-b.log"],
+        totalNewPaths: 2, omittedPaths: 0, admittedInput: join(runDir, "admitted-input.json"),
+        afterInput: join(runDir, "after-input.json") });
+      assert.equal(json(join(runDir, "admitted-input.json")).fingerprint, result.before);
+      assert.equal(json(join(runDir, "after-input.json")).fingerprint, result.after);
+      const summary = await summarize(runDir);
+      assert.match(summary, /^FAIL .* exit=1$/mu);
+      assert.match(summary, /^reason: new-untracked-only$/mu);
+      assert.match(summary, /^input: mismatch;/mu);
+      assert.match(summary, /^input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=2 listed=2 omitted=0;/mu);
+      const request = json(join(runDir, "request.json"));
+      assert.deepEqual(completionMetadata(request, result).blocker, { reason: "runner-failed", exit: 1 });
+      // A result that claims a pass names the same classification as its reason.
+      assert.equal(completionMetadata(request, { ...result, state: "passed" }).blocker.basis, "new-untracked-only");
+      assert.match(machineRecord(json(join(runDir, "request.json")), result), / overall=failed scope=focused stages=1 reason=new-untracked-only$/mu);
+    });
+  });
+
+  test("more new untracked paths than the listing holds are counted, with the rest left out", async () => {
+    await repository(async (root) => {
+      const source = "for (let i = 0; i < 201; i += 1) require('node:fs').writeFileSync('debris-' + String(i).padStart(3, '0') + '.log', 'x');";
+      const { runDir, result } = await run(root, source);
+      assert.equal(result.reason, "new-untracked-only");
+      assert.equal(result.inputCheck.totalNewPaths, 201);
+      assert.equal(result.inputCheck.newPaths.length, 200);
+      assert.equal(result.inputCheck.omittedPaths, 1);
+      assert.equal(result.inputCheck.newPaths[0], "debris-000.log");
+      assert.equal(result.inputCheck.newPaths.at(-1), "debris-199.log");
+      // The complete captures still hold every path.
+      assert.equal(json(join(runDir, "after-input.json")).untracked.length, 201);
+      assert.match(await summarize(runDir), /^input-change: new-untracked-only; .* total=201 listed=200 omitted=1;/mu);
+    });
+  });
+
+  for (const [what, source, setup] of [
+    ["a changed tracked file", writes(["debris.log", "x\n"], ["tracked.txt", "changed\n"])],
+    ["a changed staged index", `${writes(["debris.log", "x\n"])} require('node:child_process').execFileSync('git', ['update-index', '--chmod=+x', 'tracked.txt']);`],
+    ["a changed pre-existing untracked file", writes(["debris.log", "x\n"], ["existing.txt", "rewritten\n"]),
+      (root) => writeFileSync(join(root, "existing.txt"), "existing\n")],
+    ["a pre-existing ignored file made visible by an exclude change",
+      `${writes(["debris.log", "x\n"])} require('node:fs').writeFileSync('.git/info/exclude', '');`,
+      (root) => {
+        mkdirSync(join(root, ".git", "info"), { recursive: true });
+        writeFileSync(join(root, ".git", "info", "exclude"), "secret.log\n");
+        writeFileSync(join(root, "secret.log"), "already here\n");
+      }],
+    ["a moved HEAD",`${writes(["debris.log", "x\n"])} require('node:child_process').execFileSync('git', ['-c', 'user.name=Engram Test', '-c', 'user.email=engram-test@example.invalid', '-c', 'maintenance.auto=false', 'commit', '--quiet', '--allow-empty', '-m', 'moved']);`],
+  ]) {
+    test(`new untracked paths beside ${what} are an input change`, async () => {
+      await repository(async (root) => {
+        const { runDir, result } = await run(root, source, setup);
+        assert.equal(result.reason, "input-changed");
+        assert.equal(result.inputCheck, undefined);
+        assert.match(result.error, /^input drift: results do not validate the current source\n/u);
+        const request = json(join(runDir, "request.json"));
+        assert.deepEqual(completionMetadata(request, result).blocker, { reason: "runner-failed", exit: 1 });
+        assert.equal(completionMetadata(request, { ...result, state: "passed" }).blocker.basis, "input-changed");
+      });
+    });
+  }
+
+  test("new ignored paths leave the input matched", async () => {
+    await repository(async (root) => {
+      const { result } = await run(root, writes(["ignored.log", "x\n"]), (fixture) => {
+        writeFileSync(join(fixture, ".gitignore"), "ignored.log\n");
+        git(["add", ".gitignore"], fixture);
+      });
+      assert.equal(result.state, "passed");
+      assert.equal(result.after, result.before);
+    });
+  });
+
+  test("new untracked paths after a failed stage stay an input change", async () => {
+    await repository(async (root) => {
+      const { result } = await run(root, `${writes(["debris.log", "x\n"])} process.exitCode = 3;`);
+      assert.equal(result.reason, "input-changed");
+      assert.deepEqual(result.stages.map(({ state }) => state), ["failed"]);
+      assert.equal(result.inputCheck, undefined);
+    });
+  });
+
+  test("a stage that rewrites the saved input capture cannot make a tracked change look like debris", async () => {
+    // The stage edits a tracked file, saves a capture of that edited state as
+    // the run's input.json, then adds a new file. Measured against the saved
+    // file, only the new file would differ; measured against the input the
+    // run admitted, the tracked file changed too.
+    const fingerprintModule = pathToFileURL(fileURLToPath(new URL("./review-freeze-fingerprint.mjs", import.meta.url))).href;
+    const source = "const fs = require('node:fs'), path = require('node:path');"
+      + " const runs = require('node:child_process').execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'review-runs'], { encoding: 'utf8' }).trim();"
+      + " const run = path.join(runs, fs.readdirSync(runs).find((name) => name.startsWith('test-')));"
+      + ` fs.writeFileSync('tracked.txt', 'changed\\n'); import(${JSON.stringify(fingerprintModule)}).then((m) => {`
+      + " fs.writeFileSync(path.join(run, 'input.json'), JSON.stringify(m.captureFingerprint('.')));"
+      + " fs.writeFileSync('debris.log', 'x\\n'); });";
+    await repository(async (root) => {
+      const { runDir, result } = await run(root, source);
+      assert.equal(json(join(runDir, "input.json")).untracked.length, 0, "the stage replaced the saved capture");
+      assert.equal(result.reason, "input-changed");
+      assert.equal(result.inputCheck, undefined);
+    });
+  });
+});
+
 test("an incomplete run is never a pass and cannot notify a successful completion", async () => {
   await repository(async (root) => {
     const runDir = await createRun({ root, stages: [stage("not-started")], notifyTo: "fixture-parent" }, env);

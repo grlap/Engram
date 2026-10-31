@@ -149,7 +149,9 @@ spawned. A host without background execution cannot overlap them: it runs the
 gate after section 3, then section 4. The launcher's automatic before/after
 fingerprint is unchanged and is separate from the review's Git tree id; never
 compare those values for equality. Validation and review cover the same
-unchanged input. A failed gate discards the reviews of that input.
+unchanged input. A failed gate discards the reviews of that input; a
+`new-untracked-only` outcome the integration owner records under this
+section's exception does not.
 When a review finding will change the
 input while the gate still runs, the gate's result can no longer be used: the
 parent stops or discards it and starts the next round on the corrected input.
@@ -186,7 +188,13 @@ Hold source and index unchanged during execution. At completion, and before
 reusing recovered results, require the launcher's automatic before/after
 fingerprints to equal the parent-held `expectedFingerprint` and repeat
 section 3's applicable Git identity checks. A mismatch or missing independently
-retained identity is an evidence gap, not a current pass.
+retained identity is an evidence gap, not a current pass. The one exception is a
+full gate whose launcher reason is `new-untracked-only`: under the standing
+approval's gate clause it counts only once the integration owner records on the
+item what the new paths contain and why they are non-input debris, and the
+committed tree excludes them. Its before fingerprint must still equal the
+parent-held value and section 3's identity checks must still pass; only the new
+untracked paths may differ.
 These boundary checks do not prove the absence of transient
 edits; a known intervening edit invalidates the run. This gate-input snapshot
 is separate from the review freeze in section 3, although both cover the same
@@ -222,7 +230,9 @@ it a pass. Rerun for a concrete correction, changed input, or stated diagnostic
 question, never merely to chase green. These execution rules do not remove any
 required gate or weaken assertions and failure investigation below.
 
-On any failure, the reviews of that input no longer count. A failed gate is
+On any failure other than a `new-untracked-only` outcome the integration
+owner records under this section's exception, the reviews of that input no
+longer count. A failed gate is
 an investigation, never a stop: classify every failing test or check in this
 same turn.
 Record every executed gate on the focused open item you hold: `engram work
@@ -369,7 +379,8 @@ Call `termal_resume_after_delegations` with the pair's delegation ids and
 fan-in never leads to section 6 by itself. Report the wait id and child
 session ids, then end the turn.
 The gate's completion may resume the parent first; handle it under section
-2. On a gate failure the reviews of that input no longer count: cancel the
+2. On a gate failure other than a `new-untracked-only` outcome recorded under
+section 2's exception, the reviews of that input no longer count: cancel the
 running reviewers or discard their results. Do not continue to section 6
 until TermAl resumes the parent with the pair's fan-in prompt.
 
@@ -377,7 +388,8 @@ until TermAl resumes the parent with the pair's fan-in prompt.
 
 Accept reviewer output only once the gate has finished and passed on the same
 unchanged input tree, with its automatic before/after fingerprints matching
-the parent-held launcher value.
+the parent-held launcher value, or with the `new-untracked-only` exception of
+section 2.
 For a changeset touching only `.md` files, that means once the link and
 identity checks passed on that tree. When the reviews arrive first, verify
 the freeze as below. They may be read, and a justified finding may start the
@@ -565,7 +577,8 @@ of the full integration tree.
 Adoption carries no gate, Markdown check, readiness or acceptance evaluation.
 Run the required full gate, or the applicable Markdown-only checks, on the
 exact final integration tree, or in the candidate lane on the exact final
-integration commit, with matching input fingerprints before and after. A
+integration commit, with matching input fingerprints before and after, or with
+the `new-untracked-only` exception of section 2. A
 missing or failing check is not a pass. Diagnose a failure through its
 existing owner; a resulting content correction needs the Coder's required
 review before READY and applicable validation of the new final input. Adding

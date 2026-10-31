@@ -77,9 +77,14 @@ their presence in a file alone does not prove delivery.
   asking (commit it on master, or fast-forward master to its gated candidate
   commit), push and install it as described below, and report the landed
   commit to Greg afterwards:
-  - the full gate passes on the exact commit being landed (for the
-    staged-tree lane, the exact tree being committed), its input
-    fingerprint checks at completion, and nothing was edited since; a
+  - the full gate's required checks pass on the exact commit being landed
+    (for the staged-tree lane, the exact tree being committed); its
+    completion input check confirms either unchanged input, or unchanged
+    HEAD, staged index and tracked content with only newly created
+    untracked, non-ignored paths and no changed pre-existing untracked
+    input. In the latter case the integration owner records on the item
+    what those paths contain and why they are non-input debris; the
+    committed tree excludes them. No input has changed since the run; a
     changeset touching only `.md` files instead passes the link check and
     the AGENTS/CLAUDE identity check on that tree, each with its input
     fingerprint checked at completion;
@@ -456,7 +461,8 @@ The launcher has two modes, for two different jobs:
   in context; diagnostics require explicit bounded inspection. It runs on
   the frozen tree that is to be committed, or on the candidate commit to
   be landed, beside that tree's reviews; for any changeset with a non-`.md`
-  path, only its pass counts toward landing.
+  path, only its pass, or its `new-untracked-only` outcome under the standing
+  approval's gate clause, counts toward landing.
 - **Fast correction check:** `node scripts/test-launcher.mjs focused --
   COMMAND ARGS...` runs one command, typically the tests that cover what a
   fix touched, such as `focused -- cargo test --lib planning::detach`. Run
@@ -523,9 +529,12 @@ work gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
 opaque-reference` for bounded failure evidence. For a late gate on completed
 work, any project-bound session records it once with `engram work gate NAME
 --work-ref REF ...`, without claiming or reopening the item. Bare `gate NAME`
-always means pass; when a failed check has no test id, use the check command or
-check name as its `--failed` label. A failed gate is an investigation, never a
-stop. For every failing test or check, classify the cause and act in the same
+always means pass; A full gate with the `new-untracked-only` outcome is
+recorded as a pass only by the integration owner, after its disposition note,
+with `--ref` naming the run; when a failed check has no test id, use the check
+command or check name as its `--failed` label. A failed gate is an
+investigation, never a stop. For every failing test or check, classify the
+cause and act in the same
 session:
 
 - **Test or environment defect** (wrong assertion, stale fixture, host
@@ -641,7 +650,9 @@ waiting to integrate its documentation does not postpone it.
 Review scheduling:
 
 - Run the full gate and both reviews in parallel on the same frozen input. A
-  failed gate discards those reviews.
+  failed gate discards those reviews; a full gate whose `new-untracked-only`
+  outcome the integration owner records under the standing approval's gate
+  clause does not.
 - A changeset touching only `.md` files skips the full gate, as Required
   Quality Gates describes; both reviewers still review it.
 - Before coding an item, run a design review with Engram::Fable and a
