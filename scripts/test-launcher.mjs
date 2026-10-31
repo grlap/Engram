@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
 import { requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
+import { registerTestRun, confirmDetachedRegistration, registrationLine } from "./test-run-registration.mjs";
 
 const script = fileURLToPath(import.meta.url);
 const repository = resolve(dirname(script), "..");
@@ -41,9 +42,9 @@ function validateLaunchMetadata({ item, nextTransition }) {
 // Saved once before admission, for every completion projection. The execution
 // request remains separate; stages may rewrite it without changing this intent.
 function publishCompletionRequest(runDir, request) {
-  const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo } = request;
+  const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration } = request;
   save(join(runDir, "completion.request.json"), {
-    runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo,
+    runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration,
   });
 }
 function publishLaunchRequest(runDir, request) {
@@ -90,6 +91,17 @@ function heartbeatEveryMs(env) {
     throw usageFailure("ENGRAM_LAUNCHER_HEARTBEAT_MS must be an integer from 1000 to 600000");
   }
   return value;
+}
+
+// A reader holding results.json open can make one save fail on Windows;
+// the next beat retries, and a missed beat never fails the run.
+function startHeartbeat(path, result, everyMs) {
+  const timer = setInterval(() => {
+    result.heartbeat.at = new Date().toISOString();
+    try { save(path, result); } catch { /* retried on the next beat */ }
+  }, everyMs);
+  timer.unref();
+  return timer;
 }
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 function readResults(runDir) {
@@ -652,8 +664,8 @@ catch {
   return started ? { state: "alive", created: `ps:${started}` } : unknown("unreadable process start time");
 }
 
-export function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false,
-  item, nextTransition }, env = process.env) {
+export async function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false,
+  item, nextTransition }, env = process.env, registrationOptions = {}) {
   validateLaunchMetadata({ item, nextTransition });
   const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
@@ -664,13 +676,24 @@ export function createRun({ root = repository, stages, notifyTo, requiredBinaryE
   const runDir = join(git.stdout.trim(), runId);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
-    owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
+    creatorPid: process.pid, owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
     ...(full && detached && process.platform === "win32" ? { stopProtocol } : {}),
     ...(item !== undefined ? { item } : {}), ...(nextTransition !== undefined ? { nextTransition: { ...nextTransition } } : {}) };
   // A worker that never starts leaves this first heartbeat to go stale.
-  save(join(runDir, "results.json"), { runId, state: "running", started: request.started,
+  const initial = { runId, state: "running", started: request.started,
     heartbeat: { at: request.started, everyMs }, limitations: fingerprintLimitations(),
-    stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root })) });
+    stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root })) };
+  save(join(runDir, "results.json"), initial);
+  // The host stamps registration before this launcher reads its input. Its
+  // carried-check watcher ordering depends on that boundary, not wall time.
+  const registrationHeartbeat = startHeartbeat(join(runDir, "results.json"), initial, everyMs);
+  try {
+    save(join(runDir, "request.json"), request);
+    request.registration = await registerTestRun(request, runDir, env, registrationOptions);
+    initial.registration = request.registration;
+    initial.heartbeat.at = new Date().toISOString();
+    save(join(runDir, "results.json"), initial);
+  } finally { clearInterval(registrationHeartbeat); }
   try {
     const input = captureFingerprint(root);
     save(join(runDir, "input.json"), input);
@@ -877,14 +900,13 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     Object.assign(result, { pid: process.pid, owner: request.owner, preflight: [], clearedToolchainOverrides, executor,
       heartbeat: { at: new Date().toISOString(), everyMs } });
     save(resultPath, result);
-    // Beat on a timer, not only at stage boundaries, so a long stage stays
-    // visibly alive. A reader holding results.json open can make one save fail
-    // on Windows; the next beat retries, and a missed beat never fails the run.
-    heartbeat = setInterval(() => {
+    // The same timer covers a slow host confirmation and long stages.
+    heartbeat = startHeartbeat(resultPath, result, everyMs);
+    if (request.detached === true) {
+      result.registration = await confirmDetachedRegistration(request, runDir, env);
       result.heartbeat.at = new Date().toISOString();
-      try { save(resultPath, result); } catch { /* retried on the next beat */ }
-    }, everyMs);
-    heartbeat.unref();
+      save(resultPath, result);
+    }
     await ready();
     control?.check();
     if (!Array.isArray(request.stages) || request.stages.length === 0) throw new Error("at least one stage is required");
@@ -1107,6 +1129,8 @@ function renderCompletion(runDir, request, result, now) {
     ...["stages", "preflight"].map((kind) => `${kind}: ${Object.entries(metadata[kind]).map(([name, count]) => `${name}=${count}`).join(" ")}`),
     `elapsed: ms=${metadata.elapsed.ms} basis=${metadata.elapsed.basis}`,
     `input: ${metadata.input.comparison}; expectedFingerprint=${metadata.input.expected}; boundary comparison only, not host check credit`];
+  const registration = registrationLine(result.registration ?? request.registration);
+  if (registration) lines.push(registration);
   if (["stage", "startup", "between-stages", "finishing"].includes(result.recovered?.phase)) {
     const stage = typeof result.recovered.stage === "string" && recordToken.test(result.recovered.stage)
       ? result.recovered.stage : null;
@@ -1313,7 +1337,9 @@ export async function notifyRun(runDir, env = process.env, send = runCommand, la
 
 function startupReceipt(runDir, pid, completion) {
   const request = readJson(join(runDir, "request.json"));
-  return `STARTED ${runDir}\npid=${pid} completion=${completion}\nmanifest=${join(runDir, "input.json")}\nexpectedFingerprint=${request.expectedFingerprint}\n`;
+  const registration = registrationLine(readJson(join(runDir, "results.json")).registration ?? request.registration);
+  return `STARTED ${runDir}\npid=${pid} completion=${completion}\nmanifest=${join(runDir, "input.json")}\nexpectedFingerprint=${request.expectedFingerprint}\n`
+    + (registration ? `${registration}\n` : "");
 }
 
 async function finish(runDir, { foregroundReceipt = false, workerHandshake = false } = {}) {
@@ -1499,7 +1525,7 @@ async function main(args) {
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
   const stages = mode === "full" ? requiredStages()
     : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
-  const runDir = createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition });
+  const runDir = await createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition });
   if (!detach) { await finish(runDir, { foregroundReceipt: true }); return; }
   try { await startDetached(runDir); }
   catch (error) { throw Object.assign(error, { runDir,

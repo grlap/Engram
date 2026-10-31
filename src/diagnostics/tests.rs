@@ -16,7 +16,7 @@ pub(crate) const RECORD_DRAIN: Duration = Duration::from_secs(30);
 pub(crate) fn drain(sink: &Diagnostics) {
     assert!(
         sink.flush(RECORD_DRAIN),
-        "diagnostic records did not drain within {RECORD_DRAIN:?}: {sink:#?}"
+        "diagnostic drain or sink failed within the {RECORD_DRAIN:?} allowance: {sink:#?}"
     );
 }
 

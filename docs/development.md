@@ -452,6 +452,22 @@ path and expected fingerprint before waiting for completion. Foreground mode
 prints this after execution admission and before running stages, so the parent
 can retain recovery details while using its host's process-completion wait.
 
+Under TermAl, both full and focused runs register through the host's existing
+test-run endpoint before capturing the input fingerprint. The initiating session
+owns the registration; a different `--notify` recipient does not change its
+project. Registration and a detached worker's confirmation share an eight-second
+budget. Outside TermAl, or when that handshake is unavailable or unconfirmed,
+the command still executes and retains its ordinary result and notification
+retry behavior.
+
+`results.json`, the launch receipt, `summary` and the notification disclose the
+registration disposition. Only `registered` with `native-wait=ready` supports
+the native test-run wait. `registered-but-not-indexed` means durable registration
+was confirmed but the host index was not; use `--notify` for that run, as for
+`untracked` or `unconfirmed`. An ambiguous reply stays unconfirmed even if the
+host indexes the run later. Registration, indexing, completion delivery and
+host check credit are separate; a registration receipt promises no credit.
+
 For an existing root worker delivering completion to a different coordinator:
 
 ```bash

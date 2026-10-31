@@ -735,7 +735,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     // inserts, the journals and the published link. Deleting it first would let
     // SQLite create the replacement at 0644 subject to umask.
     let staged = Staged::reserve(staged_path)?;
-    drop(SqliteStore::open_unresolved(&staged.path)?);
+    drop(SqliteStore::open_private_unresolved(&staged.path)?);
     let mut connection = super::open_sqlite_file(&staged.path, rusqlite::OpenFlags::default())?;
     connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;")?;
     let transaction = connection.transaction()?;
@@ -1057,7 +1057,7 @@ fn restore_sequences(
 /// never reaches a published store where that retry would fail. Nothing is
 /// supplied or rewritten on a page's behalf.
 fn admit_pending_deliveries(path: &Path) -> Result<u64, MigrationError> {
-    let store = SqliteStore::open_unresolved(path)?;
+    let store = SqliteStore::open_private_unresolved(path)?;
     let pending: Vec<(String, String)> = store
         .connection
         .prepare(

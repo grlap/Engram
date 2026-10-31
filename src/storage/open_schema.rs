@@ -49,11 +49,15 @@ enum OpenAttempt {
 
 mod lock_wait;
 mod note_search_index;
+mod open_guard;
 mod protocol_retry;
 mod restore_copy;
 mod store_copy;
 mod verification_applicability;
 use lock_wait::LockWait;
+use open_guard::OpenGuard;
+#[cfg(test)]
+pub(crate) use open_guard::overlap as open_lock_overlap;
 use protocol_retry::{OpenPhase, ProtocolRetry};
 pub use restore_copy::{LiveAuthority, RestoreCopyReport, installed_sidecar_problem};
 pub(crate) use store_copy::CopyProbePoint;
@@ -467,7 +471,7 @@ impl SqliteStore {
         // so the copy verifies and restores through read-only opens later.
         // Closing that connection folds and removes its log; any sidecar left
         // behind is empty and must not travel with the copy.
-        if let Err(error) = Self::open_with_host_path_identity(&staged, None) {
+        if let Err(error) = Self::open_private_unresolved(&staged) {
             let _ = remove_store_files(&staged);
             return Err(error);
         }
@@ -691,6 +695,22 @@ impl SqliteStore {
         Self::open_path_with_identity(path.as_ref(), identity, ProtocolRetry::Never)
     }
 
+    /// Opens a store file only this process can reach, such as a staged
+    /// copy or import under a name it just made up, as
+    /// [`Self::open_unresolved`] does but without the store's open lock: no
+    /// other opener can race it, and a lock file would be left beside a file
+    /// that is about to be published or removed.
+    pub(crate) fn open_private_unresolved(path: &Path) -> Result<Self, StoreError> {
+        let connection = open_sqlite_file(path, rusqlite::OpenFlags::default())?;
+        Self::from_connection_with_lock_wait(
+            connection,
+            None,
+            None,
+            LockWait::Timeout(Duration::from_secs(5)),
+            ProtocolRetry::Once,
+        )
+    }
+
     fn open_path_with_identity(
         path: &Path,
         identity: Option<HostPathPolicy>,
@@ -699,6 +719,9 @@ impl SqliteStore {
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionOpen,
         );
+        let lock_wait = LockWait::Timeout(Duration::from_secs(5));
+        // Before SQLite opens the file: see `open_guard`.
+        let mut guard = OpenGuard::acquire(path, lock_wait)?;
         let connection = open_sqlite_file(path, rusqlite::OpenFlags::default())?;
         // A traced control process notes when each BEGIN IMMEDIATE and
         // COMMIT starts and how long it ran, from its first statement on.
@@ -709,13 +732,7 @@ impl SqliteStore {
                 Some(crate::phase_trace::control::sql_event),
             );
         }
-        Self::from_connection_with_lock_wait(
-            connection,
-            identity,
-            None,
-            LockWait::Timeout(Duration::from_secs(5)),
-            retry,
-        )
+        Self::admit(connection, identity, None, lock_wait, retry, &mut guard)
     }
 
     /// The filesystem identity this opener resolved, if any.
@@ -800,14 +817,19 @@ impl SqliteStore {
             ));
         }
         let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
+        let lock_wait = LockWait::Timeout(Duration::from_secs(5));
+        let mut guard = OpenGuard::acquire(path.as_ref(), lock_wait)?;
         let connection = open_sqlite_file(path.as_ref(), rusqlite::OpenFlags::default())?;
-        Self::from_connection(
+        Self::admit(
             connection,
             identity,
             Some(&InitialControlPolicy {
                 required_assurance,
                 authorized_by,
             }),
+            lock_wait,
+            ProtocolRetry::Once,
+            &mut guard,
         )
     }
 
@@ -873,11 +895,32 @@ impl SqliteStore {
     /// SQLite's locking-protocol refusal also starts again from the top, once
     /// when `retry` allows it; the two allowances are separate.
     fn from_connection_with_lock_wait(
+        connection: Connection,
+        host_path_policy: Option<HostPathPolicy>,
+        initial_control_policy: Option<&InitialControlPolicy>,
+        lock_wait: LockWait,
+        retry: ProtocolRetry,
+    ) -> Result<Self, StoreError> {
+        Self::admit(
+            connection,
+            host_path_policy,
+            initial_control_policy,
+            lock_wait,
+            retry,
+            &mut OpenGuard::none(),
+        )
+    }
+
+    /// [`Self::from_connection_with_lock_wait`] for a writable open that
+    /// holds its store's open lock in `guard`; the open releases it once the
+    /// store is in write-ahead-log mode and initialized.
+    fn admit(
         mut connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<&InitialControlPolicy>,
         lock_wait: LockWait,
         retry: ProtocolRetry,
+        guard: &mut OpenGuard,
     ) -> Result<Self, StoreError> {
         #[cfg(test)]
         super::copy_trace::admission_entered();
@@ -892,13 +935,15 @@ impl SqliteStore {
                 host_path_policy,
                 initial_control_policy,
                 lock_wait,
+                guard,
             );
             #[cfg(test)]
             if let Err(error) = &attempt {
                 super::copy_trace::mark(|| {
                     format!(
-                        "open: admission error produced: {}",
-                        super::copy_trace::store_error(error)
+                        "open: admission error produced: {} (in {})",
+                        super::copy_trace::store_error(error),
+                        phase.label()
                     )
                 });
             }
@@ -951,6 +996,7 @@ impl SqliteStore {
         host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<&InitialControlPolicy>,
         lock_wait: LockWait,
+        guard: &mut OpenGuard,
     ) -> Result<OpenAttempt, StoreError> {
         use crate::phase_trace::control::{ControlPhase, enter};
         enter(ControlPhase::SchemaCheck);
@@ -1019,6 +1065,11 @@ impl SqliteStore {
         )?;
         if !read_only {
             Self::use_write_ahead_log(connection, phase, lock_wait)?;
+        }
+        if core_schema_complete {
+            // In write-ahead-log mode with its schema: the rest of the open
+            // waits on SQLite's own locks, not on other openers.
+            guard.release();
         }
         if !read_only && !core_schema_complete {
             #[cfg(test)]
@@ -1316,6 +1367,7 @@ impl SqliteStore {
                 ));
             }
             connection.execute_batch("COMMIT;")?;
+            guard.release();
             protocol_retry::enter_phase(phase, OpenPhase::StoreSetup)?;
         }
         let work_schema_version = work::schema_version(connection)?;
@@ -1349,6 +1401,13 @@ impl SqliteStore {
                 Err(rusqlite::Error::SqliteFailure(error, message))
                     if error.code == rusqlite::ErrorCode::DatabaseBusy =>
                 {
+                    #[cfg(test)]
+                    super::copy_trace::mark(|| {
+                        format!(
+                            "open: journal switch busy (mode {mode}, extended {})",
+                            error.extended_code
+                        )
+                    });
                     match lock_wait.retry_pause(limit, std::time::Instant::now()) {
                         Some(pause) => std::thread::sleep(pause),
                         None => return Err(rusqlite::Error::SqliteFailure(error, message).into()),

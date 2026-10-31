@@ -1,5 +1,6 @@
-//! Several first opens of a new store at once: each decides the store is new
-//! before it takes the write lock, and exactly one initializes it.
+//! Several first opens of a new store at once: they take the store's open
+//! lock in turn, exactly one initializes it, and the others open it as
+//! initialized.
 
 use std::sync::Arc;
 
@@ -15,9 +16,8 @@ fn count(connection: &Connection, sql: &str) -> i64 {
         .expect("count rows")
 }
 
-/// Opens `database` from `openers` threads, every one held after it has
-/// decided the store is new and before it takes the write lock, so all of
-/// them decide before any initializes.
+/// Opens `database` from `openers` threads, every one held just before it
+/// takes the store's open lock, so all of them race for it at once.
 fn open_together(database: &std::path::Path, openers: usize) -> Vec<Result<(), StoreError>> {
     let gate = ColdOpenGate::new(openers);
     std::thread::scope(|scope| {
@@ -37,9 +37,10 @@ fn open_together(database: &std::path::Path, openers: usize) -> Vec<Result<(), S
     })
 }
 
-/// Two and three openers that all decided the store was new: every open
-/// succeeds, the store holds one initial policy, and its work schema came
-/// with it.
+/// Two and three openers of a new store at once: every open succeeds, no two
+/// of them switch it to write-ahead logging or initialize it at the same
+/// time, the store holds one initial policy, and its work schema came with
+/// it.
 #[test]
 fn first_opens_of_a_new_store_together_all_succeed() {
     for openers in [2, 3] {
@@ -48,6 +49,11 @@ fn first_opens_of_a_new_store_together_all_succeed() {
         for result in open_together(&database, openers) {
             result.unwrap_or_else(|error| panic!("{openers} openers: {error}"));
         }
+        assert_eq!(
+            crate::storage::open_lock_overlap::of(&database),
+            (1, 0),
+            "{openers} openers held the open lock one at a time, and none holds it now"
+        );
         let raw = Connection::open(&database).expect("inspect store");
         assert_eq!(
             count(&raw, "SELECT COUNT(*) FROM control_policy_versions"),

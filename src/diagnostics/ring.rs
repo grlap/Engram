@@ -21,6 +21,30 @@ pub(super) struct Ring {
     home: PathBuf,
 }
 
+// Closing alone can leave the lock held by a descriptor inherited between
+// fork and exec. Release the completed critical section explicitly instead.
+struct AppendLock {
+    file: File,
+    unlock_on_drop: bool,
+}
+
+impl AppendLock {
+    fn release(mut self) -> io::Result<()> {
+        self.unlock_on_drop = false;
+        self.file.unlock()
+    }
+}
+
+impl Drop for AppendLock {
+    fn drop(&mut self) {
+        if self.unlock_on_drop {
+            // Error exits preserve their original error; unwind cleanup must
+            // not panic. Closing remains the fallback if unlock itself fails.
+            let _ = self.file.unlock();
+        }
+    }
+}
+
 impl Ring {
     pub(super) fn new(home: &Path) -> Self {
         Self {
@@ -35,6 +59,12 @@ impl Ring {
 
 impl Sink for Ring {
     fn append(&self, line: &[u8]) -> io::Result<()> {
+        self.append_observing_lock(line, |_| {})
+    }
+}
+
+impl Ring {
+    fn append_observing_lock(&self, line: &[u8], acquired: impl FnOnce(&File)) -> io::Result<()> {
         if line.len() > super::MAX_RECORD_BYTES {
             return Err(io::ErrorKind::InvalidData.into());
         }
@@ -53,12 +83,17 @@ impl Sink for Ring {
             }
             Err(error) => return Err(error),
         };
-        let lock = open(&directory, "engram.lock", false)?;
-        lock.try_lock().map_err(|error| match error {
+        let lock_file = open(&directory, "engram.lock", false)?;
+        lock_file.try_lock().map_err(|error| match error {
             fs::TryLockError::WouldBlock => io::Error::from(io::ErrorKind::WouldBlock),
             fs::TryLockError::Error(error) => error,
         })?;
-        if lock.metadata()?.len() != 0 {
+        let lock = AppendLock {
+            file: lock_file,
+            unlock_on_drop: true,
+        };
+        acquired(&lock.file);
+        if lock.file.metadata()?.len() != 0 {
             return Err(io::ErrorKind::InvalidData.into());
         }
         for index in 0..FILES {
@@ -98,8 +133,69 @@ impl Sink for Ring {
             return Err(error);
         }
         drop(file);
-        drop(lock);
-        Ok(())
+        lock.release()
+    }
+}
+
+#[cfg(all(test, unix))]
+mod lock_lifetime_tests {
+    use super::{File, Ring, fs, io};
+    use std::cell::RefCell;
+
+    #[test]
+    fn append_releases_lock_while_a_duplicate_descriptor_remains_open() {
+        for outcome in ["success", "metadata", "layout", "unwind"] {
+            let home = crate::test_support::temp_home().unwrap();
+            let directory = home.path().join("diagnostics");
+            fs::create_dir(&directory).unwrap();
+            if outcome == "metadata" {
+                fs::write(directory.join("engram.lock"), b"invalid lock bytes").unwrap();
+            } else if outcome == "layout" {
+                fs::create_dir(directory.join("engram-1.jsonl")).unwrap();
+            }
+            let duplicate = RefCell::new(None);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                Ring::new(home.path()).append_observing_lock(b"{}\n", |lock| {
+                    *duplicate.borrow_mut() = Some(lock.try_clone().unwrap());
+                    let contender = File::options()
+                        .read(true)
+                        .write(true)
+                        .open(directory.join("engram.lock"))
+                        .unwrap();
+                    assert!(matches!(
+                        contender.try_lock(),
+                        Err(fs::TryLockError::WouldBlock)
+                    ));
+                    assert_ne!(outcome, "unwind", "injected unwind after acquisition");
+                })
+            }));
+            match outcome {
+                "success" => result.unwrap().unwrap(),
+                "metadata" => assert_eq!(
+                    result.unwrap().unwrap_err().kind(),
+                    io::ErrorKind::InvalidData
+                ),
+                "layout" => assert_eq!(
+                    result.unwrap().unwrap_err().kind(),
+                    io::ErrorKind::InvalidInput
+                ),
+                "unwind" => assert!(result.is_err()),
+                _ => unreachable!(),
+            }
+            // A distinct open description must acquire even while the duplicate
+            // of the completed append's description remains alive.
+            assert!(duplicate.borrow().is_some());
+            let contender = File::options()
+                .read(true)
+                .write(true)
+                .open(directory.join("engram.lock"))
+                .unwrap();
+            contender
+                .try_lock()
+                .unwrap_or_else(|error| panic!("lock retained after {outcome}: {error}"));
+            contender.unlock().unwrap();
+            drop(duplicate.into_inner());
+        }
     }
 }
 

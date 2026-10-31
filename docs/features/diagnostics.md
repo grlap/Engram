@@ -205,7 +205,10 @@ The home-wide ring owns four files of at most 1 MiB each and one fixed empty
 Each producer has a queue of at most 256 fixed events; request tracking is
 also bounded. A dedicated writer performs serialization, destination creation,
 nonblocking OS lock acquisition, append, rotation and flush. Cooperating
-processes never interleave records. Owned destinations are opened without
+processes never interleave records. The writer explicitly unlocks after the
+append's protected file operations, including cleanup on error or unwind.
+Successful unlock releases the lock even if a child inherited a duplicate
+descriptor before executing another program. Owned destinations are opened without
 following symbolic links or junctions; hard links are not refused. Unexpected
 layouts are refused, and a bounded torn final
 record is removed under the same lock before appending.

@@ -214,11 +214,42 @@ The first-class work schema stores the current build marker declared in
 store created by a different build without mutation.
 Open reads all of its preflight probes from one snapshot. A new store's core
 schema, initial control policy and work schema commit in one transaction, so
-no opener ever sees part of a store. Several first openers of one new file may
-all find it new: each checks again under the write lock, and one that finds
-the store initialized meanwhile starts its open again once, against that
-store. The switch to write-ahead logging, which SQLite refuses at once while
-another opener holds a lock, is retried within the busy timeout.
+no opener ever sees part of a store. A writable open takes an exclusive lock
+on a sidecar file beside the store, `<store>.open-lock`, before SQLite opens
+the store file. The lock holds across threads and processes, and the open
+gives it up as soon as the store is in write-ahead-log mode with its schema,
+before the rest of its setup. So only one opener at a time switches a new
+store to write-ahead logging and initializes it. For a store that already
+has both, the open holds the lock through its preflight probes, so writable
+opens of one store are briefly serialized. When several openers switch and
+initialize a new store at once,
+SQLite on Windows can refuse every one of them with its locking-protocol
+error, twice. Another opener waits for the lock within the open's
+five-second lock wait, then refuses as a busy store, safe to open again.
+The open releases the lock explicitly, and the sidecar file holds no data
+and is never removed. The sidecar is named after the file the store's path
+resolves to, so a link to the store or to its directory names the same one.
+A link at the store's own name is followed even before its target exists,
+so the name does not change when SQLite creates the store through it. A
+hard link names another sidecar. A sidecar this process may only read is
+locked through a read-only handle. Where no sidecar can be had, in a
+directory that does not exist, that is a file or that cannot be written, or
+the file system cannot lock it, or cannot lock it through a read-only
+handle, the open goes ahead without the lock. A path SQLite would refuse is
+refused before any sidecar is made, and a path that names a directory,
+which SQLite refuses to open as a store, takes no lock and gets no sidecar
+beside it. Neither does a filename that starts with `file:`, which SQLite
+reads as a URI naming another file; on Windows a store's filename is always
+an absolute native path, never a URI. Read-only opens, readiness, store
+copies, the backup's staged copy and migration staging take no lock. A
+build without this lock does not take it, so an older build's open is not
+kept apart.
+Read-only opens can still meet SQLite's locking-protocol refusal when they
+start just as another opener switches a new store to write-ahead logging.
+An opener that still finds the
+store initialized under the write lock starts its open again once, against
+that store. The switch to write-ahead logging, which SQLite refuses at once
+while another connection holds a lock, is retried within the busy timeout.
 SQLite's locking-protocol refusal (`SQLITE_PROTOCOL`), which it returns after
 about ten seconds of failing to begin a read on the write-ahead log, ends an
 open attempt: the open rolls back the transaction the attempt had open and

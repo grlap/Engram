@@ -28,16 +28,38 @@ fn focused_ref(database: &std::path::Path, project: &ProjectId, session: &str) -
         .map(|work_id| store.get_work_item(work_id).unwrap().short_ref)
 }
 
-// The first three words on a store nothing has opened run at once through one
-// shared session, as an MCP server runs them, each held after it has decided
-// the store is new: all three succeed, each with its own item.
-#[test]
-fn concurrent_first_adds_on_a_new_store_all_succeed() {
-    let directory = crate::test_support::temp_home().expect("temp directory");
-    let database = directory.path().join("work.sqlite3");
+/// What one opener of a first add came back with: its item's ref, its
+/// error, or its panic, with the trace of its open.
+struct FirstAdd {
+    title: &'static str,
+    outcome: Result<Result<serde_json::Value, String>, String>,
+    trace: Vec<String>,
+}
+
+impl std::fmt::Display for FirstAdd {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.outcome {
+            Ok(Ok(work_ref)) => write!(formatter, "{}: added {work_ref}", self.title)?,
+            Ok(Err(error)) => write!(formatter, "{}: refused: {error}", self.title)?,
+            Err(panic) => write!(formatter, "{}: panicked: {panic}", self.title)?,
+        }
+        for step in &self.trace {
+            write!(formatter, "\n    {step}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Runs the first three words on a store nothing has opened at once through
+/// one shared session, as an MCP server runs them, each held just before it
+/// takes the store's open lock so all three race for it. Every opener's
+/// outcome comes back, whichever failed first: a gate that times out says
+/// only that someone did not arrive, and the one that did not is the one
+/// that explains why.
+fn concurrent_first_adds(database: &std::path::Path) -> Vec<FirstAdd> {
     let session = SessionId("agent".into());
     let service = Arc::new(LocalWorkService::new(
-        database.clone(),
+        database.to_path_buf(),
         ProjectId("first-words".into()),
         "agent".into(),
         session.clone(),
@@ -54,31 +76,73 @@ fn concurrent_first_adds_on_a_new_store_all_succeed() {
             );
             let gate = Arc::clone(&gate);
             std::thread::spawn(move || {
+                crate::storage::copy_trace::start();
                 crate::storage::hold_cold_open_at(gate);
-                words
-                    .add(
-                        AddInput {
-                            title: title.into(),
-                            ..AddInput::default()
-                        },
-                        at(1),
-                    )
-                    .map(|receipt| receipt.value["work"]["short_ref"].clone())
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    words
+                        .add(
+                            AddInput {
+                                title: title.into(),
+                                ..AddInput::default()
+                            },
+                            at(1),
+                        )
+                        .map(|receipt| receipt.value["work"]["short_ref"].clone())
+                        .map_err(|error| error.to_string())
+                }))
+                .map_err(|panic| panic_text(panic.as_ref()));
+                FirstAdd {
+                    title,
+                    outcome,
+                    trace: crate::storage::copy_trace::take(),
+                }
             })
         })
         .collect::<Vec<_>>();
-    let mut refs = handles
+    handles
         .into_iter()
-        .map(|handle| {
-            handle
-                .join()
-                .expect("add thread")
-                .unwrap_or_else(|error| panic!("a first add failed: {error}"))
+        .map(|handle| handle.join().expect("an add thread returns its outcome"))
+        .collect()
+}
+
+fn panic_text(panic: &(dyn std::any::Any + Send)) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(ToString::to_string)
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".into())
+}
+
+// The first three words on a new store, raced for its open lock: all three
+// succeed, each with its own item, and they held the lock in turn. A failure
+// names every opener's outcome and the trace of its open.
+#[test]
+fn concurrent_first_adds_on_a_new_store_all_succeed() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.sqlite3");
+    let adds = concurrent_first_adds(&database);
+    let report = adds
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut refs = adds
+        .iter()
+        .map(|add| match &add.outcome {
+            Ok(Ok(work_ref)) => work_ref.clone(),
+            _ => panic!("a first add did not succeed:\n{report}"),
         })
         .collect::<Vec<_>>();
     refs.sort_by_key(ToString::to_string);
     refs.dedup();
-    assert_eq!(refs.len(), 3, "three distinct items: {refs:?}");
+    assert_eq!(refs.len(), 3, "three distinct items:\n{report}");
+    // The openers took the store's open lock in turn: none switched the new
+    // store to write-ahead logging while another did.
+    assert_eq!(
+        crate::storage::open_lock_overlap::of(&database),
+        (1, 0),
+        "{report}"
+    );
 }
 
 // Two adds run at once through one shared session, as an MCP server runs

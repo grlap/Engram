@@ -4,11 +4,13 @@ import { chmodSync, closeSync, constants, copyFileSync, existsSync, lstatSync, m
 import { randomUUID } from "node:crypto";
 import { devNull } from "node:os";
 import { once } from "node:events";
+import { createServer } from "node:http";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import test, { after, describe } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import { requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
+import { registerTestRun, confirmDetachedRegistration } from "./test-run-registration.mjs";
 import {
   commandKind, completionMetadata, countTests, createRun, diagnostics, executable, executeRun, fileProbes, inspectFailure, machineRecord, notifyRun,
   processHost, processIdentity, recoverRun, renameWithRetry, requiredStages, sameCreation, selectsTests, startDetached, summarize,
@@ -20,18 +22,261 @@ const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
 // This test file runs in its own Node test process. Isolate both explicit Git
 // children and in-process fingerprint calls from developer configuration.
-for (const key of Object.keys(process.env)) if (key.toUpperCase().startsWith("GIT_")) delete process.env[key];
+for (const key of Object.keys(process.env)) if ((key.toUpperCase().startsWith("GIT_") || key.toUpperCase().startsWith("TERMAL_"))) delete process.env[key];
 // Restore the fixture ceiling the scrub removed: Git in a fixture never climbs
 // out into this checkout.
 Object.assign(process.env, { GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : devNull,
   GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0", GIT_CEILING_DIRECTORIES: fixtureRoot });
 const env = { ...process.env, TERMAL_SESSION_ID: "fixture-owner", TERMAL_CLI: process.execPath };
 const launcher = fileURLToPath(new URL("./test-launcher.mjs", import.meta.url));
-const launcherSupportFiles = ["review-freeze-fingerprint.mjs", "launcher-stop.mjs", "launcher-process-job.ps1", "launcher-process-job.cs"];
+const launcherSupportFiles = ["test-run-registration.mjs", "review-freeze-fingerprint.mjs", "launcher-stop.mjs", "launcher-process-job.ps1", "launcher-process-job.cs"];
 const launcherFixtureFiles = ["test-launcher.mjs", ...launcherSupportFiles];
 const stage = (name, source = "") => ({ name, command: process.execPath, args: ["-e", source] });
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 const logPath = (runDir, entry) => isAbsolute(entry.log) ? entry.log : join(runDir, entry.log);
+
+const registrationAck = (request) => ({ contract: "termal-durable-test-run-registration", version: 1,
+  runId: request.runId, registered: true });
+const registrationQuery = (request, runDir, source = "index") => ({ source, run: {
+  runId: request.runId, ownerSessionId: request.owner, initiatingSessionId: request.owner,
+  registrationState: "registered", trackingDurability: "durable", trackingProvenances: ["launcherRegistered"],
+  creatorPid: request.creatorPid, startedAt: request.started, detached: request.detached,
+  runDir, worktree: request.root,
+} });
+const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
+const registrationEnv = { ...env, TERMAL_BASE_URL: "http://127.0.0.1:1" };
+
+test("registration covers all launch modes before fingerprint capture through the supported HTTP contract", async () => {
+  await repository(async (root) => {
+    const requests = new Map(), calls = [], errors = [];
+    const server = createServer(async (incoming, outgoing) => {
+      try {
+        calls.push([incoming.method, incoming.url]);
+        let body;
+        if (incoming.method === "POST") {
+          const chunks = [];
+          for await (const chunk of incoming) chunks.push(chunk);
+          body = JSON.parse(Buffer.concat(chunks));
+          assert.deepEqual(Object.keys(body).sort(), ["runDirectory", "runId"]);
+          const request = json(join(body.runDirectory, "request.json"));
+          assert.equal(request.runId, body.runId);
+          assert.equal(request.creatorPid, process.pid);
+          assert.equal(request.owner, env.TERMAL_SESSION_ID);
+          assert.equal(existsSync(join(body.runDirectory, "input.json")), false);
+          assert.equal(request.expectedFingerprint, undefined);
+          // The capture must include a source change made during registration.
+          writeFileSync(join(root, "tracked.txt"), `${request.runId}\n`);
+          requests.set(request.runId, { request, directory: body.runDirectory });
+          outgoing.end(JSON.stringify(registrationAck(request)));
+        } else {
+          const found = requests.get(incoming.url.split("/").at(-1));
+          assert.ok(found);
+          outgoing.end(JSON.stringify(registrationQuery(found.request, found.directory)));
+        }
+      } catch (error) { errors.push(error); outgoing.statusCode = 500; outgoing.end("{}"); }
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const hostEnv = { ...env, TERMAL_BASE_URL: `http://127.0.0.1:${server.address().port}` };
+    try {
+      for (const full of [false, true]) for (const detached of [false, true]) {
+        const runDir = await createRun({ root, full, detached, notifyTo: "fixture-parent",
+          stages: [stage("once", "console.log('ok 1 - registration fixture')")] }, hostEnv);
+        const request = json(join(runDir, "request.json"));
+        assert.equal(request.registration.state, "registered");
+        assert.equal(request.registration.nativeWaitReady, true);
+        assert.equal(json(join(runDir, "results.json")).registration.state, "registered");
+        assert.equal(json(join(runDir, "input.json")).fingerprint, request.expectedFingerprint);
+        assert.equal(calls.at(-2)[1], `/api/sessions/${env.TERMAL_SESSION_ID}/test-runs`);
+        assert.equal(calls.at(-1)[1], `/api/test-runs/${request.runId}`);
+        if (!full) {
+          const before = calls.length;
+          const result = await executeRun(runDir, hostEnv);
+          assert.equal(result.state, "passed");
+          assert.equal(result.before, request.expectedFingerprint);
+          assert.equal(result.after, result.before);
+          assert.equal(calls.length, before + (detached ? 1 : 0));
+          assert.match(await summarize(runDir), /registration: registered; native-wait=ready; not host check credit/u);
+        }
+      }
+      assert.deepEqual(errors, []);
+    } finally { await new Promise((done) => { server.close(done); server.closeAllConnections(); }); }
+  });
+});
+
+test("registration fallback preserves stage execution, terminal results and notification retry intent", async () => {
+  await repository(async (root) => {
+    const attempts = [];
+    const runDir = await createRun({ root, detached: true, notifyTo: "fixture-parent",
+      stages: [stage("once", "require('node:fs').appendFileSync('.git/registration-count', 'once')")] },
+    registrationEnv, { fetch: async (_url, options) => {
+      attempts.push(options.body);
+      throw Object.assign(new Error("lost response"), { cause: { code: "EPIPE" } });
+    } });
+    assert.equal(attempts.length, 2);
+    assert.equal(attempts[0], attempts[1]);
+    const result = await executeRun(runDir, registrationEnv);
+    assert.equal(result.state, "passed");
+    assert.equal(result.registration.state, "unconfirmed");
+    assert.equal(readFileSync(join(root, ".git", "registration-count"), "utf8"), "once");
+    const summary = await summarize(runDir);
+    assert.match(summary, /registration: unconfirmed; native-wait=unavailable; use --notify/u);
+    const sends = [];
+    const send = async (_command, args) => {
+      sends.push({ key: args[args.indexOf("--idempotency-key") + 1],
+        message: readFileSync(args[args.indexOf("--message-file") + 1], "utf8") });
+      return { code: sends.length === 1 ? 1 : 0 };
+    };
+    await assert.rejects(notifyRun(runDir, registrationEnv, send));
+    await notifyRun(runDir, registrationEnv, send);
+    assert.equal(sends.length, 2);
+    assert.deepEqual(sends[0], sends[1]);
+    assert.equal(sends[0].message, summary);
+    assert.equal(readFileSync(join(root, ".git", "registration-count"), "utf8"), "once");
+  });
+});
+
+test("registration refuses malformed or unavailable context locally without a host call", async () => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner" };
+    const forbidden = { fetch: () => assert.fail("no host call for unavailable context") };
+    assert.equal((await registerTestRun(request, root, {}, forbidden)).state, "untracked");
+    for (const context of [{ TERMAL_SESSION_ID: "fixture-owner" }, { ...registrationEnv, TERMAL_BASE_URL: "file:///x" },
+      { ...registrationEnv, TERMAL_BASE_URL: "http://user:secret@localhost" },
+      { ...registrationEnv, TERMAL_SESSION_ID: "wrong-owner" }]) {
+      assert.equal((await registerTestRun(request, root, context, forbidden)).state, "unconfirmed");
+    }
+  });
+});
+
+test("registration never replays a definitive redirect or a refused connection and preserves fallback execution", async () => {
+  await repository(async (root) => {
+    const calls = [];
+    const server = createServer((request, reply) => {
+      calls.push([request.method, request.url]);
+      reply.writeHead(307, { location: "/unexpected-target" });
+      reply.end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const hostEnv = { ...env, TERMAL_BASE_URL: `http://127.0.0.1:${server.address().port}` };
+    try {
+      const runDir = await createRun({ root, stages: [stage("once",
+        "require('node:fs').appendFileSync('.git/redirect-count', 'once')")] }, hostEnv);
+      const request = json(join(runDir, "request.json"));
+      assert.deepEqual(calls, [["POST", `/api/sessions/${env.TERMAL_SESSION_ID}/test-runs`]]);
+      assert.equal(request.registration.state, "unconfirmed");
+      assert.equal(request.registration.reason, "registration-refused");
+      assert.equal((await executeRun(runDir, hostEnv)).state, "passed");
+      assert.equal(readFileSync(join(root, ".git", "redirect-count"), "utf8"), "once");
+      let refusedCalls = 0;
+      const result = await registerTestRun(request, runDir, hostEnv, { fetch: async () => {
+        refusedCalls++;
+        throw Object.assign(new Error("connection refused"), { cause: { code: "ECONNREFUSED" } });
+      } });
+      assert.equal(refusedCalls, 1);
+      assert.equal(result.state, "unconfirmed");
+    } finally { await new Promise((done) => { server.close(done); server.closeAllConnections(); }); }
+  });
+});
+
+test("registration and detached confirmation keep short-cadence heartbeats fresh", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: Date.now() });
+  await repository(async (root) => {
+    const hostEnv = { ...registrationEnv, ENGRAM_LAUNCHER_HEARTBEAT_MS: "1000" };
+    let request, directory;
+    const fetch = async (_url, options) => {
+      if (options.method === "POST") {
+        directory = JSON.parse(options.body).runDirectory;
+        request = json(join(directory, "request.json"));
+        const before = Date.parse(json(join(directory, "results.json")).heartbeat.at);
+        t.mock.timers.tick(4000);
+        assert.equal(Date.parse(json(join(directory, "results.json")).heartbeat.at), before + 4000);
+        assert.match(await summarize(directory), /^RUNNING /u);
+        return response(registrationAck(request));
+      }
+      return response(registrationQuery(request, directory));
+    };
+    const runDir = await createRun({ root, detached: true, stages: [stage("once")] }, hostEnv, { fetch });
+    t.mock.method(globalThis, "fetch", async () => {
+      const before = Date.parse(json(join(runDir, "results.json")).heartbeat.at);
+      t.mock.timers.tick(4000);
+      assert.equal(Date.parse(json(join(runDir, "results.json")).heartbeat.at), before + 4000);
+      assert.match(await summarize(runDir), /^RUNNING /u);
+      return response(registrationQuery(request, runDir));
+    });
+    const result = await executeRun(runDir, hostEnv);
+    assert.equal(result.state, "passed");
+    assert.equal(result.registration.state, "registered");
+    const terminal = readFileSync(join(runDir, "results.json"));
+    t.mock.timers.tick(4000);
+    assert.deepEqual(readFileSync(join(runDir, "results.json")), terminal, "the timer stops before terminal completion");
+  });
+});
+
+test("registration distinguishes durable registration from indexing and keeps ambiguous fallback sticky", async () => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    const fetch = async (_url, options) => response(options.method === "POST"
+      ? registrationAck(request) : registrationQuery(request, root, "registration"));
+    request.registration = await registerTestRun(request, root, registrationEnv, { fetch });
+    assert.equal(request.registration.state, "registered-but-not-indexed");
+    assert.equal(request.registration.nativeWaitReady, false);
+    const indexed = async () => response(registrationQuery(request, root));
+    assert.equal((await confirmDetachedRegistration(request, root, registrationEnv, { fetch: indexed })).nativeWaitReady, false);
+    request.registration = { state: "unconfirmed", nativeWaitReady: false };
+    assert.deepEqual(await confirmDetachedRegistration(request, root, registrationEnv,
+      { fetch: () => assert.fail("ambiguous registration cannot be promoted by a late query") }), request.registration);
+  });
+});
+
+test("registration validates exact replies, retries only ambiguous transport, and bounds stalled requests and bodies", async () => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    for (const reply of [() => response({}, 503), () => response({ ...registrationAck(request), runId: "other" }),
+      () => new Response("{"), () => new Response("x".repeat(65_537))]) {
+      let calls = 0;
+      const result = await registerTestRun(request, root, registrationEnv, { fetch: async () => { calls++; return reply(); } });
+      assert.equal(result.state, "unconfirmed");
+      assert.equal(calls, 1);
+    }
+    for (const change of [{ ownerSessionId: "other" }, { creatorPid: -1 }, { trackingDurability: "volatile" },
+      { runDir: join(root, "missing") }, { detached: false }]) {
+      const result = await registerTestRun(request, root, registrationEnv, { fetch: async (_url, options) => {
+        const query = registrationQuery(request, root);
+        Object.assign(query.run, change);
+        return response(options.method === "POST" ? registrationAck(request) : query);
+      } });
+      assert.equal(result.state, "unconfirmed");
+    }
+    let calls = 0;
+    const reset = Object.assign(new Error("reset"), { cause: { code: "ECONNRESET" } });
+    const fetch = async (_url, options) => {
+      calls++;
+      if (calls === 1 || calls === 3) throw reset;
+      return response(options.method === "POST" ? registrationAck(request) : registrationQuery(request, root));
+    };
+    request.registration = await registerTestRun(request, root, registrationEnv, { fetch });
+    assert.equal(request.registration.state, "registered");
+    assert.equal(calls, 4);
+    request.stages.push(stage("changed"));
+    assert.equal((await confirmDetachedRegistration(request, root, registrationEnv,
+      { fetch: () => assert.fail("changed worker request cannot reuse registration") })).state, "unconfirmed");
+    for (const stalledBody of [false, true]) {
+      let signal;
+      const result = await registerTestRun(request, root, registrationEnv, { budgetMs: 10,
+        fetch: async (_url, options) => {
+          signal = options.signal;
+          return stalledBody ? new Response(new ReadableStream({ start() {} })) : await new Promise(() => {});
+        } });
+      assert.equal(result.state, "unconfirmed");
+      assert.equal(result.reason, "registration-timeout");
+      assert.equal(signal.aborted, true);
+    }
+  });
+});
 
 function git(args, cwd) {
   // Fixture Git writes must not start maintenance that outlives cleanup.
@@ -107,7 +352,7 @@ for (const code of [0, 23]) {
     let home, resultsPath;
     await assert.rejects(repository(async (root, observe) => {
       home = root;
-      const runDir = createRun({ root, stages: [stage("child", `console.error('x'.repeat(6000) + ' stderr-tail-marker'); process.exitCode = ${code}`)] }, env);
+      const runDir = await createRun({ root, stages: [stage("child", `console.error('x'.repeat(6000) + ' stderr-tail-marker'); process.exitCode = ${code}`)] }, env);
       resultsPath = join(runDir, "results.json");
       observe(runDir, process.execPath);
       await executeRun(runDir, env);
@@ -319,7 +564,7 @@ for (const platform of ["win32", "linux"]) {
       await repository(async (root) => {
         const fixture = rustWrapperFixture(root, platform);
         const stages = requiredStages(platform).slice(3, 7);
-        const runDir = createRun({ root, full: true, stages }, fixture.env);
+        const runDir = await createRun({ root, full: true, stages }, fixture.env);
         const snapshot = join(root, ".git", "phase-snapshot.json");
         const result = await executeRun(runDir, { ...fixture.env,
           PHASE_RESULTS: join(runDir, "results.json"), PHASE_SNAPSHOT: snapshot });
@@ -343,7 +588,7 @@ for (const platform of ["win32", "linux"]) {
 
 test("clean pass retains logs and summarizes without passing-test lists", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("clean", "console.log('ok 1 - passing-marker')")] }, env);
+    const runDir = await createRun({ root, stages: [stage("clean", "console.log('ok 1 - passing-marker')")] }, env);
     assert.match(relative(join(realpathSync.native(root), ".git", "review-runs"), runDir), /^test-[^\\/]+$/u);
     assert.ok(existsSync(join(runDir, "request.json")));
     assert.equal(json(join(runDir, "results.json")).state, "running");
@@ -384,7 +629,7 @@ test("passing rows interleaved with a failure do not discard its detail", async 
   await repository(async (root) => {
     const output = ["thread 'fixture' panicked at test.rs:1", "ok 1 - unrelated passing-name",
       "  left: 1", " ✓ another passing-name", " right: 2", "  at test.rs:1:2"].join("\n");
-    const runDir = createRun({ root, stages: [stage("interleaved",
+    const runDir = await createRun({ root, stages: [stage("interleaved",
       `console.error(${JSON.stringify(output)}); process.exitCode = 7`)] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.exitCode, 7);
@@ -397,7 +642,7 @@ test("passing rows interleaved with a failure do not discard its detail", async 
 test("nonzero exit is preserved and later stages remain unrun", async () => {
   await repository(async (root) => {
     const marker = join(root, ".git", "should-not-run");
-    const runDir = createRun({ root, stages: [
+    const runDir = await createRun({ root, stages: [
       stage("failure", "console.error('error: deliberate fixture failure'); process.exit(23)"),
       stage("later", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`),
     ] }, env);
@@ -415,7 +660,7 @@ test("nonzero exit is preserved and later stages remain unrun", async () => {
 
 test("failed exits with only passing output retain exit and log, not passing lists", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("interrupted",
+    const runDir = await createRun({ root, stages: [stage("interrupted",
       "console.log('ok 1 - passing-marker'); console.log('test pass_marker ... ok'); process.exitCode = 23")] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.exitCode, 23);
@@ -431,7 +676,7 @@ test("failed exits with only passing output retain exit and log, not passing lis
 test("exclusive execution admission cannot rerun or overwrite a completed run", async () => {
   await repository(async (root) => {
     const counter = join(root, ".git", "counter");
-    const runDir = createRun({ root, stages: [stage("once",
+    const runDir = await createRun({ root, stages: [stage("once",
       `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`)] }, env);
     assert.equal((await executeRun(runDir, env)).state, "passed");
     const saved = readFileSync(join(runDir, "results.json"), "utf8");
@@ -444,7 +689,7 @@ test("exclusive execution admission cannot rerun or overwrite a completed run", 
 test("unrecognized failures preserve the bounded tail and fallback explanation", async () => {
   await repository(async (root) => {
     for (const output of ["opaque unsuccessful outcome\n", `${"x".repeat(2800)}\nopaque final context\n`]) {
-      const runDir = createRun({ root, stages: [stage("opaque",
+      const runDir = await createRun({ root, stages: [stage("opaque",
         `process.stdout.write(${JSON.stringify(output)}); process.exitCode = 19`)] }, env);
       const result = await executeRun(runDir, env);
       assert.equal(result.exitCode, 19);
@@ -466,7 +711,7 @@ test("detached parent emits exact recovery receipt and child completes once", as
       if (!fs.readFileSync(file, 'utf8').startsWith('PASS ')) process.exitCode = 9;
     `);
     const counter = join(root, ".git", "count");
-    const runDir = createRun({ root, detached: true, notifyTo: "fixture-parent", stages: [stage("once",
+    const runDir = await createRun({ root, detached: true, notifyTo: "fixture-parent", stages: [stage("once",
       `require('node:assert/strict').equal(process.cwd(), ${JSON.stringify(root)}); require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`)] }, env);
     assert.equal(json(join(runDir, "results.json")).stages[0].cwd, root);
     let receipt = "";
@@ -625,7 +870,7 @@ for (const earlyExit of [false, true]) test(earlyExit
 test("inherited toolchain overrides are cleared for repository selection", async () => {
   await repository(async (root) => {
     writeFileSync(join(root, "rust-toolchain.toml"), '[toolchain]\nchannel = "1.90.0"\n');
-    const runDir = createRun({ root, stages: [stage("environment",
+    const runDir = await createRun({ root, stages: [stage("environment",
       "console.log(process.env.RUSTUP_TOOLCHAIN ?? 'repository-selected')")] }, env);
     const result = await executeRun(runDir, { ...env, RUSTUP_TOOLCHAIN: "wrong-inherited-channel" });
     assert.equal(result.state, "passed");
@@ -722,7 +967,7 @@ test("invalid foreground and detached notification setup refuses before creating
 // Exercise the real child entrypoint and IPC admission, never the live mailbox.
 test("detached parent rejects failed admission after child closure without a receipt", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, detached: true, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, detached: true, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
     writeFileSync(join(runDir, "results.json"), "{");
     let receipt = "";
     await assert.rejects(startDetached(runDir, env, (text) => { receipt += text; }),
@@ -790,7 +1035,7 @@ test("CLI Git run-directory failure gives safe repository guidance without artif
 test("worker startup errors are terminal and never acknowledge readiness", async () => {
   await repository(async (root) => {
     for (const file of ["request.json", "results.json"]) {
-      const runDir = createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
+      const runDir = await createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
       writeFileSync(join(runDir, file), "{");
       const { code, messages } = await worker(runDir);
       assert.equal(code, 1);
@@ -812,7 +1057,7 @@ test("worker startup errors are terminal and never acknowledge readiness", async
 
 test("worker ready handshake follows admission and duplicate startup preserves results", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("clean")] }, env);
+    const runDir = await createRun({ root, stages: [stage("clean")] }, env);
     const immutable = ["request.json", "completion.request.json", "input.json"].map((name) =>
       [name, readFileSync(join(runDir, name))]);
     writeFileSync(join(runDir, "launcher.log"), "admitted owner's existing log\n", { flag: "wx" });
@@ -848,7 +1093,7 @@ test("escaping worker exception and cause stay in artifacts without changing res
   await repository(async (root) => {
     const local = copyLauncher(root, injectWorkerException);
     git(["add", "scripts"], root);
-    const runDir = createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
     const original = readFileSync(join(runDir, "results.json"));
     const failed = await worker(runDir, local);
     assert.equal(failed.code, 1);
@@ -902,7 +1147,7 @@ test("worker diagnostic write refusal reports missing artifact without masking d
       return changed;
     });
     git(["add", "scripts"], root);
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     writeFileSync(join(runDir, "execution.lock"), "owner's lock\n", { flag: "wx" });
     const ownerFiles = readdirSync(runDir).map((name) => [name, readFileSync(join(runDir, name))]);
     const failed = await worker(runDir, local);
@@ -938,7 +1183,7 @@ test("worker missing or file-valued run directory never creates a fallback artif
 
 test("warnings stay in artifacts without entering completion or converting success to failure", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("warning", "console.error('warning: fixture caution')")] }, env);
+    const runDir = await createRun({ root, stages: [stage("warning", "console.error('warning: fixture caution')")] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "passed");
     assert.equal(result.exitCode, 0);
@@ -950,7 +1195,7 @@ test("warnings stay in artifacts without entering completion or converting succe
 test("failure diagnostics take priority over earlier warning-heavy passing stages", async () => {
   await repository(async (root) => {
     const warnings = "warning: earlier caution " + "w".repeat(3000);
-    const runDir = createRun({ root, stages: [
+    const runDir = await createRun({ root, stages: [
       ...[1, 2, 3].map((index) => stage(`noisy-${index}`, `console.error(${JSON.stringify(warnings)})`)),
       stage("broken", "console.error('error: essential failure detail'); process.exitCode = 17"),
     ] }, env);
@@ -968,7 +1213,7 @@ test("failure diagnostics take priority over earlier warning-heavy passing stage
 
 test("an error within a failed stage precedes that stage's long warning excerpt", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("mixed",
+    const runDir = await createRun({ root, stages: [stage("mixed",
       `console.error('warning: ' + 'w'.repeat(3000)); console.error('error: essential failure after warning'); process.exitCode = 11`)] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.exitCode, 11);
@@ -1002,7 +1247,7 @@ test("successful Node warning headers remain visible without passing names", asy
       `# (node:${process.pid}) [CUSTOM] MaxListenersExceededWarning: fixture listeners`,
     ];
     const output = [...warnings, "ok 1 - ExperimentalWarning passing name", " ✓ DeprecationWarning passing name"].join("\n");
-    const runDir = createRun({ root, stages: [stage("node-warnings", `console.error(${JSON.stringify(output)})`)] }, env);
+    const runDir = await createRun({ root, stages: [stage("node-warnings", `console.error(${JSON.stringify(output)})`)] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.exitCode, 0);
     assert.equal(result.stages[0].diagnostics.text, `${warnings.join("\n")}\n`);
@@ -1035,7 +1280,7 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
     const fixtureEnv = { ...env };
     for (const key of Object.keys(fixtureEnv)) if (key.toLowerCase() === "path") delete fixtureEnv[key];
     fixtureEnv.PATH = `${join(root, "absent-path-entry")}${delimiter}${bin}`;
-    const runDir = createRun({ root, stages: [{ name: "path-command", command: "fixture-gate", args: ["-e", "console.log('resolved-binary')"] }] }, env);
+    const runDir = await createRun({ root, stages: [{ name: "path-command", command: "fixture-gate", args: ["-e", "console.log('resolved-binary')"] }] }, env);
     observe(runDir, binary);
     const result = await executeRun(runDir, fixtureEnv);
     assert.equal(result.state, "passed");
@@ -1043,14 +1288,14 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
     assert.equal(readFileSync(result.stages[0].log, "utf8"), "resolved-binary\n");
     assert.notEqual(realpathSync.native(root), realpathSync.native(process.cwd()));
     const relativeEnv = { ...fixtureEnv, PATH: relative(root, bin) };
-    const relativeRun = createRun({ root, stages: [{ name: "relative-path", command: "fixture-gate", args: ["-e", "console.log('relative-binary')"] }] }, env);
+    const relativeRun = await createRun({ root, stages: [{ name: "relative-path", command: "fixture-gate", args: ["-e", "console.log('relative-binary')"] }] }, env);
     observe(relativeRun, binary);
     const relativeResult = await executeRun(relativeRun, relativeEnv);
     assert.equal(relativeResult.state, "passed");
     assert.equal(relativeResult.stages[0].command[0], binary);
     assert.equal(readFileSync(relativeResult.stages[0].log, "utf8"), "relative-binary\n");
     if (process.platform === "win32") {
-      const quotedRun = createRun({ root, stages: [{ name: "quoted-path", command: "fixture-gate", args: ["-e", "console.log('quoted-binary')"] }] }, env);
+      const quotedRun = await createRun({ root, stages: [{ name: "quoted-path", command: "fixture-gate", args: ["-e", "console.log('quoted-binary')"] }] }, env);
       observe(quotedRun, binary);
       const quotedResult = await executeRun(quotedRun, { ...fixtureEnv, PATH: `"${bin}"` });
       assert.equal(quotedResult.state, "passed");
@@ -1059,7 +1304,7 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
       for (const extension of ["cmd", "bat"]) {
         const shim = join(bin, `only-shim.${extension}`);
         writeFileSync(shim, "@echo must-not-run\r\n");
-        const blocked = createRun({ root, stages: [{ name: "shim", command: shim, args: [] }] }, env);
+        const blocked = await createRun({ root, stages: [{ name: "shim", command: shim, args: [] }] }, env);
         observe(blocked, binary);
         const refused = await executeRun(blocked, fixtureEnv);
         assert.equal(refused.state, "failed");
@@ -1068,7 +1313,7 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
       }
     } else {
       chmodSync(binary, 0o600);
-      const blocked = createRun({ root, stages: [{ name: "permissions", command: "fixture-gate", args: [] }] }, env);
+      const blocked = await createRun({ root, stages: [{ name: "permissions", command: "fixture-gate", args: [] }] }, env);
       observe(blocked, binary);
       const refused = await executeRun(blocked, fixtureEnv);
       assert.equal(refused.state, "failed");
@@ -1169,7 +1414,7 @@ test("Rust zero-failure totals and TAP passing names are not failure diagnostics
       "test next_success ... ok",
       "test result: ok. 50 passed; 0 failed; 0 ignored",
     ].join("\n");
-    const runDir = createRun({ root, stages: [stage("rust-report", `console.log(${JSON.stringify(source)})`)] }, env);
+    const runDir = await createRun({ root, stages: [stage("rust-report", `console.log(${JSON.stringify(source)})`)] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "passed");
     assert.equal(result.stages[0].diagnostics.text, "warning: actual compiler caution\n");
@@ -1179,7 +1424,7 @@ test("Rust zero-failure totals and TAP passing names are not failure diagnostics
 
 test("missing command preflight prevents every stage from running", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [
+    const runDir = await createRun({ root, stages: [
       stage("would-pass"),
       { name: "missing", command: join(root, "missing-executable"), args: [] },
     ] }, env);
@@ -1197,7 +1442,7 @@ test("passing Vitest rows cannot consume diagnostics before a genuine later fail
       ` \u001b[32m✓\u001b[39m fixture.test.ts > handles error and warning passing-marker-${index} 2ms`);
     const failure = [" FAIL fixture.test.ts > real failure", "Error: actual failure marker", "  at fixture.test.ts:5:7"];
     const source = [...passing, ...failure, " ✓ fixture.test.ts > another passing-marker 1ms"].join("\n");
-    const runDir = createRun({ root, stages: [stage("vitest-report",
+    const runDir = await createRun({ root, stages: [stage("vitest-report",
       `console.log(${JSON.stringify(source)}); process.exitCode = 1`)] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.exitCode, 1);
@@ -1211,7 +1456,7 @@ test("passing Vitest rows cannot consume diagnostics before a genuine later fail
 test("explicit binary prerequisites fail before running stages", async () => {
   await repository(async (root) => {
     const fixtureEnv = { ...env, ENGRAM_LAUNCHER_FIXTURE_BIN: join(root, "missing-binary") };
-    const runDir = createRun({ root, stages: [stage("unused")], requiredBinaryEnv: ["ENGRAM_LAUNCHER_FIXTURE_BIN"] }, fixtureEnv);
+    const runDir = await createRun({ root, stages: [stage("unused")], requiredBinaryEnv: ["ENGRAM_LAUNCHER_FIXTURE_BIN"] }, fixtureEnv);
     const result = await executeRun(runDir, fixtureEnv);
     assert.equal(result.state, "failed");
     assert.equal(result.stages[0].state, "unrun");
@@ -1222,7 +1467,7 @@ test("explicit binary prerequisites fail before running stages", async () => {
 test("a successful binary prerequisite is recorded before stages and CLI summary agrees", async () => {
   await repository(async (root) => {
     const fixtureEnv = { ...env, ENGRAM_LAUNCHER_FIXTURE_BIN: process.execPath };
-    const runDir = createRun({ root, stages: [stage("clean")],
+    const runDir = await createRun({ root, stages: [stage("clean")],
       requiredBinaryEnv: ["ENGRAM_LAUNCHER_FIXTURE_BIN"] }, fixtureEnv);
     const result = await executeRun(runDir, fixtureEnv);
     assert.equal(result.state, "passed");
@@ -1239,7 +1484,7 @@ test("a successful binary prerequisite is recorded before stages and CLI summary
 
 test("summary of a silent failing preflight retains its exit and log header", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     // Rendering fixture, not claimed execution evidence. A silent failed
     // probe needs a header even when there is no diagnostic body to render.
     const result = json(join(runDir, "results.json"));
@@ -1258,7 +1503,7 @@ test("summary of a silent failing preflight retains its exit and log header", as
 
 test("runtime spawn exceptions persist terminal failure and leave later stages unrun", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [
+    const runDir = await createRun({ root, stages: [
       { name: "invalid-argument", command: process.execPath, args: ["\0"] }, stage("later"),
     ] }, env);
     const result = await executeRun(runDir, env);
@@ -1275,7 +1520,7 @@ test("runtime spawn exceptions persist terminal failure and leave later stages u
 
 test("large diagnostic output is bounded in results while the complete log survives", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("large",
+    const runDir = await createRun({ root, stages: [stage("large",
       "require('node:fs').writeSync(2, 'error: ' + 'x'.repeat(2 * 1024 * 1024) + '\\nTAIL-MARKER\\n'); process.exitCode = 4") ] }, env);
     const result = await executeRun(runDir, env);
     const entry = result.stages[0];
@@ -1293,7 +1538,7 @@ test("large diagnostic output is bounded in results while the complete log survi
 
 test("source drift before execution refuses to run the captured input", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     writeFileSync(join(root, "tracked.txt"), "changed after capture\n");
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "failed");
@@ -1305,7 +1550,7 @@ test("source drift before execution refuses to run the captured input", async ()
 
 test("source drift during execution cannot be reported as a passing run", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("changes-source",
+    const runDir = await createRun({ root, stages: [stage("changes-source",
       "require('node:fs').writeFileSync('tracked.txt', 'changed during execution\\n')")] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "failed");
@@ -1317,7 +1562,7 @@ test("source drift during execution cannot be reported as a passing run", async 
 
 test("an incomplete run is never a pass and cannot notify a successful completion", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("not-started")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, stages: [stage("not-started")], notifyTo: "fixture-parent" }, env);
     const created = Date.parse(json(join(runDir, "results.json")).heartbeat.at);
     assert.match(await summarize(runDir, { now: created }), /^RUNNING .* exit=unknown$/mu);
     assert.match(await summarize(runDir, { now: created + 3_600_000 }), /^INTERRUPTED .* exit=unknown$/mu);
@@ -1329,10 +1574,10 @@ test("an incomplete run is never a pass and cannot notify a successful completio
 
 test("liveness comes from the heartbeat, never from a process at the recorded pid", async () => {
   await repository(async (root) => {
-    assert.throws(() => createRun({ root, stages: [stage("refused")] },
+    await assert.rejects(() => createRun({ root, stages: [stage("refused")] },
       { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "5" }), /ENGRAM_LAUNCHER_HEARTBEAT_MS/u);
     assert.equal(existsSync(join(root, ".git", "review-runs")), false, "an invalid cadence refuses before creating a run");
-    const runDir = createRun({ root, stages: [stage("never-started")] },
+    const runDir = await createRun({ root, stages: [stage("never-started")] },
       { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "1000" });
     const path = join(runDir, "results.json");
     const created = json(path);
@@ -1352,7 +1597,7 @@ test("liveness comes from the heartbeat, never from a process at the recorded pi
 test("a recorded cadence outside the setting's bounds falls back to the worker's own", async () => {
   await repository(async (root) => {
     for (const recorded of [5, 10 ** 12]) {
-      const runDir = createRun({ root, stages: [stage("clean")] }, env);
+      const runDir = await createRun({ root, stages: [stage("clean")] }, env);
       const path = join(runDir, "results.json");
       writeFileSync(path, JSON.stringify({ ...json(path), heartbeat: { at: new Date().toISOString(), everyMs: recorded } }));
       const result = await executeRun(runDir, { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "2000" });
@@ -1461,7 +1706,7 @@ test("a killed launcher's run reads as interrupted once its heartbeat stops", { 
 test("admitted display metadata survives rewritten requests and an unpublished notification retry", async () => {
   await repository(async (root) => {
     const counter = join(root, ".git", "execution-count");
-    const runDir = createRun({ root, notifyTo: "fixture-parent", item: "original item",
+    const runDir = await createRun({ root, notifyTo: "fixture-parent", item: "original item",
       nextTransition: { owner: "fixture-next", action: "Original pending action." },
       stages: [stage("rewrite", `const fs = require('node:fs'), path = require('node:path');
         const runs = path.join('.git', 'review-runs');
@@ -1501,7 +1746,7 @@ test("admitted display metadata survives rewritten requests and an unpublished n
 
 test("stale-heartbeat sign-off names the running stage and distinguishes inferred interruption", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("active")], nextTransition: { owner: "fixture-next", action: "Recover the result." } }, env);
+    const runDir = await createRun({ root, stages: [stage("active")], nextTransition: { owner: "fixture-next", action: "Recover the result." } }, env);
     const result = json(join(runDir, "results.json"));
     const at = Date.parse(result.heartbeat.at);
     result.stages[0].state = "running";
@@ -1517,7 +1762,7 @@ test("stale-heartbeat sign-off names the running stage and distinguishes inferre
 
 test("CLI recover distinguishes lock, mismatched result and unpublished executor without writes", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     const original = json(join(runDir, "results.json"));
     // A live pid with an impossible old creation time is deterministically a
     // later process. Never depend on a terminated pid remaining unallocated.
@@ -1679,7 +1924,7 @@ test("CLI safe failures retain startup locators, notification retry and inspecti
       assert.ok(inspected.stderr.includes(reason), inspected.stderr);
       assert.doesNotMatch(inspected.stderr, /request-or-runtime-failed|SyntaxError|stack/u);
     }
-    const noResult = createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
+    const noResult = await createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
     const early = spawnSync(process.execPath, [launcher, "notify", noResult], { cwd: root, env, encoding: "utf8", windowsHide: true });
     assert.equal(early.status, 1);
     assert.match(early.stderr, /cannot notify before terminal results are saved/u);
@@ -1698,12 +1943,12 @@ test("launch metadata validation refuses before any run is created", async () =>
       { nextTransition: { owner: "-option", action: "continue" } },
       { item: "" }, { item: "界".repeat(86) }, { item: "line\rline" },
     ]) {
-      assert.throws(() => createRun({ root, stages: [stage("unused")], ...invalid }, env), /requires/u);
+      await assert.rejects(() => createRun({ root, stages: [stage("unused")], ...invalid }, env), /requires/u);
       assert.equal(existsSync(runs), false);
     }
     const item = "  verify release  ";
     const nextTransition = { owner: "fixture-owner", action: "  inspect \"quoted\" path\\name\u0085\u2028\u2029  " };
-    const runDir = createRun({ root, stages: [stage("clean")], item, nextTransition }, env);
+    const runDir = await createRun({ root, stages: [stage("clean")], item, nextTransition }, env);
     const requestBytes = readFileSync(join(runDir, "request.json"));
     await executeRun(runDir, env);
     assert.deepEqual(readFileSync(join(runDir, "request.json")), requestBytes, "launcher never republishes the launch request during execution");
@@ -1759,7 +2004,7 @@ test("CLI metadata flags preserve command arguments and refuse invalid pairs wit
 test("sign-off carries exact transition metadata for pass, failure, interruption and input mismatch", async () => {
   await repository(async (root) => {
     const nextTransition = { owner: "fixture-owner", action: "Review the frozen input and consolidate the pair." };
-    const runDir = createRun({ root, stages: [stage("first"), stage("later")], item: "release validation", nextTransition }, env);
+    const runDir = await createRun({ root, stages: [stage("first"), stage("later")], item: "release validation", nextTransition }, env);
     const request = json(join(runDir, "request.json"));
     const fingerprint = request.expectedFingerprint;
     const passed = { runId: basename(runDir), state: "passed", exitCode: 0,
@@ -1814,7 +2059,7 @@ test("sign-off carries exact transition metadata for pass, failure, interruption
 
 test("completion output ignores arbitrary saved prose and does not open stage logs", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("broken")], notifyTo: "fixture-parent",
+    const runDir = await createRun({ root, stages: [stage("broken")], notifyTo: "fixture-parent",
       nextTransition: { owner: "fixture-owner", action: "Inspect the failure." } }, env);
     const result = await executeRun(runDir, env);
     const marker = "NEVER-INJECT-DIAGNOSTIC-TEXT";
@@ -1849,7 +2094,7 @@ test("completion output ignores arbitrary saved prose and does not open stage lo
 
 test("explicit failure inspection has an exact bound, selector and no side effects", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("failure", "console.error('error: ' + 'x'.repeat(4000));process.exitCode=2"), stage("later")] }, env);
+    const runDir = await createRun({ root, stages: [stage("failure", "console.error('error: ' + 'x'.repeat(4000));process.exitCode=2"), stage("later")] }, env);
     await executeRun(runDir, env);
     const before = directoryBytes(runDir);
     const output = await inspectFailure(runDir, "failure", 37);
@@ -1864,7 +2109,7 @@ test("explicit failure inspection has an exact bound, selector and no side effec
 
 test("explicit failure inspection accepts projected failures without changing saved stages", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("focused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("focused")] }, env);
     const original = json(join(runDir, "results.json"));
     const marker = `private-inspection-${randomUUID()}`;
     assert.equal(runDir.includes(marker), false);
@@ -1902,7 +2147,7 @@ test("explicit failure inspection accepts projected failures without changing sa
 test("notification follows durable completion and retries the same payload without rerunning tests", async () => {
   await repository(async (root) => {
     const counter = join(root, ".git", "execution-count");
-    const runDir = createRun({ root, stages: [stage("count-once",
+    const runDir = await createRun({ root, stages: [stage("count-once",
       `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`)], notifyTo: "fixture-parent" }, env);
     await executeRun(runDir, env);
     const resultBytes = readFileSync(join(runDir, "results.json"), "utf8");
@@ -1931,7 +2176,7 @@ test("notification follows durable completion and retries the same payload witho
 test("notification delivers one frozen sign-off to distinct owners with stable separate keys", async () => {
   await repository(async (root) => {
     const counter = join(root, ".git", "execution-count");
-    const runDir = createRun({ root, notifyTo: "fixture-parent",
+    const runDir = await createRun({ root, notifyTo: "fixture-parent",
       nextTransition: { owner: "fixture-next", action: "Inspect this exact result." },
       stages: [stage("count-once", `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`)] }, env);
     await executeRun(runDir, env);
@@ -1968,7 +2213,7 @@ test("notification delivers one frozen sign-off to distinct owners with stable s
 test("notification suppresses a next-owner self-send and a repeated target", async () => {
   await repository(async (root) => {
     for (const owner of [env.TERMAL_SESSION_ID, "fixture-parent"]) {
-      const runDir = createRun({ root, notifyTo: "fixture-parent", nextTransition: { owner, action: "Continue." },
+      const runDir = await createRun({ root, notifyTo: "fixture-parent", nextTransition: { owner, action: "Continue." },
         stages: [stage("clean")] }, env);
       await executeRun(runDir, env);
       const calls = [];
@@ -1983,7 +2228,7 @@ test("notification suppresses a next-owner self-send and a repeated target", asy
 
 test("notification publication ignores interrupted temporary bytes and freezes one complete body", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("clean")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, stages: [stage("clean")], notifyTo: "fixture-parent" }, env);
     await executeRun(runDir, env);
     const expected = await summarize(runDir, { compact: true });
     const abandoned = `notification.message.txt.${randomUUID()}.tmp`;
@@ -2004,7 +2249,7 @@ test("notification publication ignores interrupted temporary bytes and freezes o
 
 test("summary never renders a shared runner or stage error", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("broken")] }, env);
+    const runDir = await createRun({ root, stages: [stage("broken")] }, env);
     const result = json(join(runDir, "results.json"));
     const error = "fixture shared failure detail";
     Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 1, error });
@@ -2019,7 +2264,7 @@ test("summary never renders a shared runner or stage error", async () => {
 
 test("all default summaries are metadata-only and preserve boundary evidence", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: requiredStages(), notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, stages: requiredStages(), notifyTo: "fixture-parent" }, env);
     const result = json(join(runDir, "results.json"));
     const fingerprint = json(join(runDir, "input.json")).fingerprint;
     Object.assign(result, { state: "passed", ended: new Date().toISOString(), exitCode: 0,
@@ -2049,7 +2294,7 @@ test("all default summaries are metadata-only and preserve boundary evidence", a
 
 test("focused completion puts its exact stage line after the unchanged verdict and results", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("focused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("focused")] }, env);
     const markers = Object.fromEntries(["untrusted-log", "injected-result", "private-diagnostic"].map((name) =>
       [name, `${name}-${randomUUID()}`]));
     for (const marker of Object.values(markers)) assert.equal(runDir.includes(marker), false);
@@ -2080,7 +2325,7 @@ test("focused completion puts its exact stage line after the unchanged verdict a
 
 test("stage completion lines close malformed metadata and preserve nonterminal states", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("focused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("focused")] }, env);
     const markers = Object.fromEntries(["private-malformed", "escape", "injected-name", "injected-state", "private-locator"].map((name) =>
       [name, `${name}-${randomUUID()}`]));
     for (const marker of Object.values(markers)) assert.equal(runDir.includes(marker), false);
@@ -2119,7 +2364,7 @@ test("stage completion lines close malformed metadata and preserve nonterminal s
 
 test("saved passed stages normalize contradictions and preserve higher-priority states", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("focused")],
+    const runDir = await createRun({ root, stages: [stage("focused")],
       nextTransition: { owner: "fixture-owner", action: "Inspect the saved result." } }, env);
     const request = json(join(runDir, "request.json"));
     const original = json(join(runDir, "results.json"));
@@ -2172,7 +2417,7 @@ test("saved passed stages normalize contradictions and preserve higher-priority 
 test("larger saved runs keep all stage completion lines in order", async () => {
   await repository(async (root) => {
     const stages = Array.from({ length: 35 }, (_, index) => stage(`stage-${index}`));
-    const runDir = createRun({ root, stages }, env);
+    const runDir = await createRun({ root, stages }, env);
     const result = json(join(runDir, "results.json"));
     for (const entry of result.stages) Object.assign(entry, { state: "passed", code: 0 });
     const lines = (await summarize(runDir, { result })).split("\n");
@@ -2183,7 +2428,7 @@ test("larger saved runs keep all stage completion lines in order", async () => {
 
 test("failure completion retains numeric states and omits all warning and failure prose", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("warning"), stage("failure"), stage("later")] }, env);
+    const runDir = await createRun({ root, stages: [stage("warning"), stage("failure"), stage("later")] }, env);
     const result = json(join(runDir, "results.json"));
     Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 23,
       clearedToolchainOverrides: ["RUSTUP_TOOLCHAIN"] });
@@ -2211,7 +2456,7 @@ test("failure completion retains numeric states and omits all warning and failur
 
 test("exceptional saved success cannot hide an interruption or inject prose", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("exception"), stage("fallback"), stage("count")] }, env);
+    const runDir = await createRun({ root, stages: [stage("exception"), stage("fallback"), stage("count")] }, env);
     const result = json(join(runDir, "results.json"));
     const shared = "shared runner and stage error";
     Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 1, error: shared,
@@ -2238,7 +2483,7 @@ test("exceptional saved success cannot hide an interruption or inject prose", as
 
 test("compact summaries preserve running, interrupted, recovered and unknown outcomes and input mismatches", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unfinished"), stage("later")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unfinished"), stage("later")] }, env);
     const result = json(join(runDir, "results.json"));
     const at = Date.now();
     Object.assign(result, { heartbeat: { at: new Date(at).toISOString(), everyMs: 1000 } });
@@ -2278,7 +2523,7 @@ test("retained failure stays in the artifact and requires explicit inspection", 
     // Sanitized from a real durable repair-gate notification; identities and
     // fingerprints come from this fixture, not from the historical run.
     const diagnostic = "test doctor_cli_refusals_are_json_and_leave_the_store_unchanged ... FAILED\n\nfailures:\n\n---- doctor_cli_refusals_are_json_and_leave_the_store_unchanged stdout ----\n\nthread 'doctor_cli_refusals_are_json_and_leave_the_store_unchanged' (79612) panicked at tests\\diagnostics_cli.rs:673:17:\nassertion `left == right` failed\n  left: Array [String(\"indexes\"), String(\"triggers\"), String(\"fts\"), String(\"derived_tables\")]\n right: Array [String(\"indexes\"), String(\"triggers\"), String(\"fts\")]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nfailures:\n    doctor_cli_refusals_are_json_and_leave_the_store_unchanged\n\ntest result: FAILED. 25 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.46s\n\nerror: test failed, to rerun pass `--test diagnostics_cli`\nTemp audit: run=<fixture scratch>; before=0 after=0; new=0; remaining=0";
-    const runDir = createRun({ root, stages: requiredStages() }, env);
+    const runDir = await createRun({ root, stages: requiredStages() }, env);
     const result = json(join(runDir, "results.json"));
     const fingerprint = json(join(runDir, "input.json")).fingerprint;
     Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 101,
@@ -2307,7 +2552,7 @@ test("retained failure stays in the artifact and requires explicit inspection", 
 test("pre-existing detailed notification retries keep frozen bytes, identity and results", async () => {
   await repository(async (root) => {
     const counter = join(root, ".git", "execution-count");
-    const runDir = createRun({ root, stages: [stage("clean",
+    const runDir = await createRun({ root, stages: [stage("clean",
       `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'ran')`)], notifyTo: "fixture-parent" }, env);
     await executeRun(runDir, env);
     const saved = readFileSync(join(runDir, "results.json"));
@@ -2340,12 +2585,12 @@ test("pre-existing detailed notification retries keep frozen bytes, identity and
 
 test("self-send and changed notification sender are rejected before invoking transport", async () => {
   await repository(async (root) => {
-    const selfRun = createRun({ root, stages: [stage("unused")], notifyTo: "fixture-owner" }, env);
+    const selfRun = await createRun({ root, stages: [stage("unused")], notifyTo: "fixture-owner" }, env);
     const selfResult = await executeRun(selfRun, env);
     assert.equal(selfResult.state, "failed");
     assert.equal(selfResult.stages[0].state, "unrun");
     assert.match(selfResult.error, /self|same|sender/iu);
-    const runDir = createRun({ root, stages: [stage("clean")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, stages: [stage("clean")], notifyTo: "fixture-parent" }, env);
     await executeRun(runDir, env);
     let sent = false;
     const send = async () => { sent = true; return { code: 0 }; };
@@ -2753,7 +2998,7 @@ const nodeSummary = (mark, { tests, pass, fail = 0, cancelled = 0, skipped = 0, 
 const printing = (name, kind, text, exit = 0) => ({ name, kind, command: process.execPath,
   args: ["-e", `process.stdout.write(${JSON.stringify(text)}); process.exitCode = ${exit}`] });
 async function recordOf(root, stages, options = {}) {
-  const runDir = createRun({ root, stages, ...options }, env);
+  const runDir = await createRun({ root, stages, ...options }, env);
   const result = await executeRun(runDir, env);
   return { runDir, result, record: parseRecord(machineRecord(result.plan, result)) };
 }
@@ -2779,7 +3024,7 @@ function directCargoFixture(root, observe) {
   for (const key of Object.keys(runnerEnv)) if (key.toLowerCase() === "path") delete runnerEnv[key];
   runnerEnv.PATH = `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ""}`;
   return { binary, async run(text, { command = "cargo", args = ["test", "--lib", "fixture"], code = 0 } = {}) {
-    const runDir = createRun({ root, stages: [{ name: "rust", kind: "test", command, args }] }, runnerEnv);
+    const runDir = await createRun({ root, stages: [{ name: "rust", kind: "test", command, args }] }, runnerEnv);
     observe(runDir, binary);
     const result = await executeRun(runDir, { ...runnerEnv, FIXTURE_TRANSCRIPT: text, FIXTURE_EXIT: String(code) });
     return { result, record: parseRecord(machineRecord(result.plan, result)) };
@@ -3389,7 +3634,7 @@ test("filtered says whether the command line or a runner selected a part of the 
   ]) assert.equal(selectsTests(command, args), selects, `${command} ${args.join(" ")}`);
   await repository(async (root) => {
     // Known from the request alone, so a stage that never ran still says it.
-    const runDir = createRun({ root, stages: [
+    const runDir = await createRun({ root, stages: [
       { name: "absent", kind: "test", command: join(root, "no-such-cargo", "cargo"), args: ["test", "--lib", "name"] },
     ] }, env);
     const executed = await executeRun(runDir, env);
@@ -3462,13 +3707,13 @@ test("a command that cannot be found or spawned leaves stages without an exit an
     assert.deepEqual(unspawnable.record.stages.map(({ state, exit, why }) => [state, exit, why]),
       [["failed", "none", "not-run"], ["skipped", "none", undefined]]);
 
-    const prerequisite = createRun({ root, stages: [printing("unused", "test", "")], requiredBinaryEnv: ["ENGRAM_LAUNCHER_ABSENT_BIN"] }, env);
+    const prerequisite = await createRun({ root, stages: [printing("unused", "test", "")], requiredBinaryEnv: ["ENGRAM_LAUNCHER_ABSENT_BIN"] }, env);
     const refused = await executeRun(prerequisite, env);
     assert.equal(parseRecord(machineRecord(refused.plan, refused)).reason, "preflight-failed");
 
     // A toolchain the full gate cannot find is a failed prerequisite, not a stage.
     const unstartable = { ...env, ENGRAM_LAUNCHER_FIXTURE_BIN: process.execPath, PATH: "", Path: "" };
-    const probed = createRun({ root, stages: [printing("unused", "test", "")], full: true }, env);
+    const probed = await createRun({ root, stages: [printing("unused", "test", "")], full: true }, env);
     const stopped = await executeRun(probed, unstartable);
     const probedRecord = parseRecord(machineRecord(stopped.plan, stopped));
     assert.equal(probedRecord.reason, "preflight-failed");
@@ -3483,7 +3728,7 @@ test("any other refusal and a fingerprint that cannot be checked each have their
     assert.equal(duplicated.record.reason, "launcher-error");
     assert.deepEqual(duplicated.record.stages.map(({ state }) => state), ["skipped", "skipped"]);
 
-    const misnamed = createRun({ root, stages: [printing("Upper_Case", "test", "")] }, env);
+    const misnamed = await createRun({ root, stages: [printing("Upper_Case", "test", "")] }, env);
     const refused = await executeRun(misnamed, env);
     assert.match(refused.error, /lowercase letters, digits and hyphens/u);
     assert.equal(machineRecord(refused.plan, refused), "",
@@ -3534,7 +3779,7 @@ test("a run in a linked worktree lives under that worktree's Git directory and p
     git(["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "baseline"], root);
     const linked = join(root, "linked");
     git(["worktree", "add", "--quiet", linked], root);
-    const runDir = createRun({ root: linked, stages: [printing("unit", "test", libtest(2, 0, 1, 0))] }, env);
+    const runDir = await createRun({ root: linked, stages: [printing("unit", "test", libtest(2, 0, 1, 0))] }, env);
     assert.match(runDir.replaceAll("\\", "/"), /\/\.git\/worktrees\/linked\/review-runs\/test-[0-9a-f-]+$/u, runDir);
     const result = await executeRun(runDir, env);
     const record = parseRecord(machineRecord(result.plan, result));
@@ -3553,7 +3798,7 @@ test("a stage whose log cannot be read keeps its exit, gives no count and does n
       process.stdout.write(${JSON.stringify(libtest(2, 0, 0, 0))});
       const runs = path.join('.git', 'review-runs');
       for (const run of fs.readdirSync(runs)) fs.rmSync(path.join(runs, run, 'gone.log'), { force: true });`;
-    const runDir = createRun({ root, stages: [{ name: "gone", kind: "test", command: process.execPath, args: ["-e", deleting] },
+    const runDir = await createRun({ root, stages: [{ name: "gone", kind: "test", command: process.execPath, args: ["-e", deleting] },
       printing("after", "test", libtest(1, 0, 0, 0))] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(existsSync(join(runDir, "gone.log")), false, "the stage removed its log");
@@ -3581,7 +3826,7 @@ test("skipped", { skip: true }, () => {});
     for (const full of [false, true]) {
       const stages = [{ name: "node-tests", kind: "test", command: process.execPath,
         args: ["--test", "--test-reporter=tap", "provenance.test.mjs"] }];
-      const runDir = createRun({ root, full, stages }, runnerEnv);
+      const runDir = await createRun({ root, full, stages }, runnerEnv);
       const result = await executeRun(runDir, runnerEnv);
       assert.equal(result.state, "passed", JSON.stringify(result));
       assert.equal(json(join(runDir, "request.json")).full, full);
@@ -3663,7 +3908,7 @@ test("focused Node provenance preserves mode, counts and native outcomes", async
 
 test("detached launch refuses a foreground request without changing it", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, notifyTo: "fixture-parent", stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, notifyTo: "fixture-parent", stages: [stage("unused")] }, env);
     assert.equal(json(join(runDir, "request.json")).detached, false);
     const before = directoryBytes(runDir);
     await assert.rejects(startDetached(runDir, env), /requires a run created with detached: true/u);
@@ -3878,7 +4123,7 @@ test("a process the query may not open is still identified", { skip: process.pla
 
 test("the executor publishes its process id and creation time before it reports ready", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("clean")] }, env);
+    const runDir = await createRun({ root, stages: [stage("clean")] }, env);
     let published;
     const result = await executeRun(runDir, env, () => { published = json(join(runDir, "results.json")).executor; });
     assert.equal(result.state, "passed");
@@ -3892,7 +4137,7 @@ test("the executor publishes its process id and creation time before it reports 
 
 test("recover refuses, changing no file, a run whose executor is alive, unknown, unpublished or locked", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("first"), stage("second")] }, env);
+    const runDir = await createRun({ root, stages: [stage("first"), stage("second")] }, env);
     const refuses = async (identify, pattern, label) => {
       const before = directoryBytes(runDir);
       await assert.rejects(recoverRun(runDir, { host: fixtureHost, identify }), (error) => error.refused === true && pattern.test(error.message), label);
@@ -3962,7 +4207,7 @@ test("recover refuses, changing no file, a run whose executor is alive, unknown,
 test("recover writes the interrupted result TermAl's launcher writes and leaves a terminal run as it is", async () => {
   await repository(async (root) => {
     const recover = async (stages, identify = () => ({ state: "gone" })) => {
-      const runDir = createRun({ root, stages: stages.map(({ name }) => stage(name)) }, env);
+      const runDir = await createRun({ root, stages: stages.map(({ name }) => stage(name)) }, env);
       rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost }, stages }));
       const outcome = await recoverRun(runDir, { host: fixtureHost, identify, now: () => new Date("2026-09-30T01:00:00.000Z") });
       return { runDir, ...outcome };
@@ -4017,7 +4262,7 @@ test("recover writes the interrupted result TermAl's launcher writes and leaves 
     assert.match(await summarize(finishing.runDir), /^recovery: phase=finishing stage=null$/mu);
 
     for (const state of ["passed", "failed"]) {
-      const terminal = createRun({ root, stages: [stage("only")] }, env);
+      const terminal = await createRun({ root, stages: [stage("only")] }, env);
       rewriteResults(terminal, (result) => ({ ...result, state, exitCode: state === "passed" ? 0 : 1, ended: "e" }));
       const bytes = directoryBytes(terminal);
       assert.equal((await recoverRun(terminal, { host: fixtureHost, identify: () => assert.fail("not asked") })).settled, false);
@@ -4029,7 +4274,7 @@ test("recover writes the interrupted result TermAl's launcher writes and leaves 
 test("a launcher that finishes while recover asks about it keeps its own result", async () => {
   await repository(async (root) => {
     const running = { name: "only", state: "running", started: "s", command: ["node"], log: "only.log" };
-    const runDir = createRun({ root, stages: [stage("only")] }, env);
+    const runDir = await createRun({ root, stages: [stage("only")] }, env);
     rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost }, stages: [running] }));
     // The executor saves its terminal result and ends between recover's
     // first reading and the system's answer that it is gone.
@@ -4047,7 +4292,7 @@ test("a launcher that finishes while recover asks about it keeps its own result"
 
 test("a recovery whose write fails releases the lock and leaves the run as it was", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("only")] }, env);
+    const runDir = await createRun({ root, stages: [stage("only")] }, env);
     rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost },
       stages: [{ name: "only", state: "running" }] }));
     const before = directoryBytes(runDir);
@@ -4060,7 +4305,7 @@ test("a recovery whose write fails releases the lock and leaves the run as it wa
 
 test("a second recovery started while the first holds the lock refuses", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("only")] }, env);
+    const runDir = await createRun({ root, stages: [stage("only")] }, env);
     rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost },
       stages: [{ name: "only", state: "running" }] }));
     // The second recovery starts while the first holds the lock, just before
@@ -4118,7 +4363,7 @@ test("a launcher stopped during a Rust scale phase preserves the prior result wi
       assert.equal((await broker.next())[0], "listening");
       const stages = requiredStages().slice(3, 7).map((entry, index) => ({ ...entry, command: process.execPath,
         args: ["-e", index === 1 ? broker.parked : "console.log('running 1 test'); console.log('test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s')"] }));
-      const runDir = createRun({ root, full: true, stages }, env);
+      const runDir = await createRun({ root, full: true, stages }, env);
       child = spawn(process.execPath, [launcher, "_run", runDir], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
       completion = once(child, "close");
       const parked = await Promise.race([broker.next(), completion.then(([code]) => [`launcher ended (${code})`])]);
@@ -4168,7 +4413,7 @@ test("recover refuses a living launcher whose heartbeat has gone stale, changing
     let child, completion;
     try {
       assert.equal((await broker.next())[0], "listening");
-      const runDir = createRun({ root, stages: [{ name: "parked", command: process.execPath, args: ["-e", broker.parked] }] },
+      const runDir = await createRun({ root, stages: [{ name: "parked", command: process.execPath, args: ["-e", broker.parked] }] },
         { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "600000" });
       child = spawn(process.execPath, [launcher, "_run", runDir], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
       completion = once(child, "close");
@@ -4204,11 +4449,11 @@ test("stop addresses this worktree's run id, refuses unsupported runs, and retai
     const ask = (runId, actor = "operator-a", reason = "superseded input") => requestStop(runId, { root, actor, reason });
     await assert.rejects(ask("../outside"), /run id/u);
     await assert.rejects(ask(`test-${randomUUID()}`), /does not exist/u);
-    const unsupported = createRun({ root, stages: [stage("unused")] }, env);
+    const unsupported = await createRun({ root, stages: [stage("unused")] }, env);
     const before = directoryBytes(unsupported);
     await assert.rejects(ask(basename(unsupported)), /no owned Windows job/u);
     assert.deepEqual(directoryBytes(unsupported), before);
-    const runDir = createRun({ root, full: true, detached: true, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("unused")] }, env);
     // Protocol publication is tested on every OS, without launching a process.
     const path = join(runDir, "request.json");
     writeFileSync(path, JSON.stringify({ ...json(path), stopProtocol }));
@@ -4236,7 +4481,7 @@ for (const [caseName, malformed] of [
 ]) {
   test(`malformed stop request ${caseName} has a named terminal completion reason`, async () => {
     await repository(async (root) => {
-      const runDir = createRun({ root, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
+      const runDir = await createRun({ root, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
       const requestPath = join(runDir, "request.json");
       writeFileSync(requestPath, JSON.stringify({ ...json(requestPath), stopProtocol }));
       writeFileSync(join(runDir, "stop.request.json"), malformed);
@@ -4254,7 +4499,7 @@ for (const [caseName, malformed] of [
 
 test("unreadable stop requests have a named terminal completion reason", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
     const requestPath = join(runDir, "request.json");
     writeFileSync(requestPath, JSON.stringify({ ...json(requestPath), stopProtocol }));
     mkdirSync(join(runDir, "stop.request.json"));
@@ -4316,7 +4561,7 @@ test("final stop check settles a transient request before terminal commitment", 
 
 test("published stop intents warn after bounded temporary cleanup retries", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, full: true, detached: true, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("unused")] }, env);
     const requestPath = join(runDir, "request.json");
     writeFileSync(requestPath, JSON.stringify({ ...json(requestPath), stopProtocol }));
     let temporaryAttempts = 0;
@@ -4340,7 +4585,7 @@ test("published stop intents warn after bounded temporary cleanup retries", asyn
 
 test("stop and terminal commitment share a lock, so a completed run is never signalled", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, full: true, detached: true, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("unused")] }, env);
     const path = join(runDir, "request.json");
     writeFileSync(path, JSON.stringify({ ...json(path), stopProtocol }));
     let pending;
@@ -4355,7 +4600,7 @@ test("stop and terminal commitment share a lock, so a completed run is never sig
 
 test("stop lock removal retries transient refusals without losing an action's result", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     let calls = 0;
     const result = await withStopLock(runDir, () => "committed", { remove(path) {
       calls++;
@@ -4376,7 +4621,7 @@ test("stop lock removal retries transient refusals without losing an action's re
 
 for (const code of ["EPERM", "EACCES", "EBUSY"]) test(`stop lock retries ${code} acquisition and still saves its terminal action`, async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     let attempts = 0, commits = 0;
     await withStopLock(runDir, () => {
       commits++;
@@ -4395,7 +4640,7 @@ for (const code of ["EPERM", "EACCES", "EBUSY"]) test(`stop lock retries ${code}
 
 test("a leftover stop lock cannot discard a terminal result or its notification", { timeout: 20_000 }, async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, full: true, detached: true, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
     const path = join(runDir, "request.json");
     writeFileSync(path, JSON.stringify({ ...json(path), stopProtocol }));
     await requestStop(basename(runDir), { root, actor: "operator", reason: "superseded" });
@@ -4418,7 +4663,7 @@ test("a leftover stop lock cannot discard a terminal result or its notification"
 
 test("stopped completion keeps the interrupted wire vocabulary and notification retry payload", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("rust"), stage("later")], notifyTo: "fixture-parent" }, env);
+    const runDir = await createRun({ root, stages: [stage("rust"), stage("later")], notifyTo: "fixture-parent" }, env);
     const request = json(join(runDir, "request.json"));
     const result = { ...json(join(runDir, "results.json")), state: "failed", exitCode: 1, interrupted: true,
       reason: "stopped", error: "stopped by operator: fixture-owner: superseded", ended: new Date().toISOString(),
@@ -4476,7 +4721,7 @@ if (process.platform === "win32") for (const active of ["cargo-check", "rust", "
           const body = fs.readFileSync(message, 'utf8');
           if (!body.startsWith('INTERRUPTED ')) process.exitCode = 9;
         `);
-        const runDir = createRun({ root, full: true, detached: true, notifyTo: "fixture-parent",
+        const runDir = await createRun({ root, full: true, detached: true, notifyTo: "fixture-parent",
           stages: [stage("first"), stage(active, tree), stage("later", "throw Error('must not run')")] }, env);
         child = spawn(process.execPath, [local, "_run", runDir], { cwd: root, env, windowsHide: true, stdio: "ignore" });
         completion = once(child, "close");
@@ -4533,7 +4778,7 @@ if (process.platform === "win32") test("a job cleans a detached descendant after
       const parentSource = `const child = require('node:child_process').spawn(process.execPath,
         ['-e', ${JSON.stringify(childSource)}], { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
         child.on('message', () => process.exit(0));`;
-      const runDir = createRun({ root, full: true, detached: true, stages: [stage("parent-exit")] }, env);
+      const runDir = await createRun({ root, full: true, detached: true, stages: [stage("parent-exit")] }, env);
       control = stopController(runDir, json(join(runDir, "request.json")));
       pending = runJobCommand(process.execPath, ["-e", parentSource], { cwd: root, env, runDir, control,
         log: join(runDir, "parent-exit.log"),
@@ -4552,7 +4797,7 @@ if (process.platform === "win32") test("a job cleans a detached descendant after
 
 if (process.platform === "win32") test("a retained stop before admission starts no preflight or stage", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, full: true, detached: true, stages: [stage("never")] }, env);
+    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("never")] }, env);
     await requestStop(basename(runDir), { root, actor: "fixture-owner", reason: "superseded before spawn" });
     const result = await executeRun(runDir, env);
     assert.deepEqual([result.state, result.interrupted, result.reason], ["failed", true, "stopped"]);
@@ -4567,7 +4812,7 @@ if (process.platform === "win32") test("a retained stop before admission starts 
 async function containedFixture(root, transform = (source) => source, source = "") {
   const local = copyLauncher(root, transform);
   const module = await import(pathToFileURL(local).href);
-  const runDir = module.createRun({ root, stages: [stage("contained", source)] }, env);
+  const runDir = await module.createRun({ root, stages: [stage("contained", source)] }, env);
   const path = join(runDir, "request.json");
   writeFileSync(path, JSON.stringify({ ...json(path), stopProtocol }));
   return { module, runDir, scripts: dirname(local) };
@@ -4631,7 +4876,7 @@ if (process.platform === "win32") test("helper compilation failure is definite s
     const local = copyLauncher(root);
     writeFileSync(join(root, "scripts", "launcher-process-job.cs"), "invalid C# fixture");
     const module = await import(pathToFileURL(local).href);
-    const runDir = module.createRun({ root, stages: [stage("contained")] }, env);
+    const runDir = await module.createRun({ root, stages: [stage("contained")] }, env);
     const path = join(runDir, "request.json");
     writeFileSync(path, JSON.stringify({ ...json(path), stopProtocol }));
     const result = await module.executeRun(runDir, env);
@@ -4658,7 +4903,7 @@ if (process.platform === "win32") test("native cleanup confirmation returns an u
     assert.ok(changed.includes("active = accounting.ActiveProcesses + 1;"));
     writeFileSync(path, changed);
     const module = await import(pathToFileURL(local).href);
-    const runDir = module.createRun({ root, stages: [stage("contained")] }, env);
+    const runDir = await module.createRun({ root, stages: [stage("contained")] }, env);
     const requestPath = join(runDir, "request.json");
     writeFileSync(requestPath, JSON.stringify({ ...json(requestPath), stopProtocol }));
     const result = await module.executeRun(runDir, env);
@@ -4682,7 +4927,7 @@ ${proof === "unconfirmed" ? "[IO.File]::WriteAllText($request.receipt, '{\"ExitC
 exit 1
 `);
       const module = await import(pathToFileURL(local).href);
-      const runDir = module.createRun({ root, stages: [stage("contained")], notifyTo: "fixture-parent" }, env);
+      const runDir = await module.createRun({ root, stages: [stage("contained")], notifyTo: "fixture-parent" }, env);
       const path = join(runDir, "request.json");
       writeFileSync(path, JSON.stringify({ ...json(path), stopProtocol }));
       const result = await module.executeRun(runDir, env);
@@ -4710,7 +4955,7 @@ if (process.platform === "win32") for (const policy of ["Restricted", "AllSigned
     assert.notEqual(restricted, source);
     writeFileSync(path, restricted);
     const module = await import(pathToFileURL(path).href);
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     const control = stopController(runDir, json(join(runDir, "request.json")));
     const childEnv = { ...env, TEMP: root, TMP: root, PSModulePath: "fixture-original-modules" };
     const log = join(runDir, "environment.log");
@@ -4730,7 +4975,7 @@ if (process.platform === "win32") for (const policy of ["Restricted", "AllSigned
 
 if (process.platform === "win32") test("a missing helper executable reports startup failure without a possible workload", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const runDir = await createRun({ root, stages: [stage("unused")] }, env);
     const control = stopController(runDir, json(join(runDir, "request.json")));
     try {
       await assert.rejects(runJobCommand(process.execPath, [], { cwd: root, env, runDir, control,
@@ -4756,7 +5001,7 @@ if (process.platform === "win32") for (const ancestor of ["target", "target/tmp"
       // the owning checkout's target/ as required for every test artifact.
       const destination = fixtureHome("launcher-junction-destination-");
       const link = join(root, ...ancestor.split("/"));
-      const runDir = createRun({ root, stages: [stage("unused")] }, env);
+      const runDir = await createRun({ root, stages: [stage("unused")] }, env);
       const control = stopController(runDir, json(join(runDir, "request.json")));
       const log = join(runDir, "linked-scratch.log");
       try {

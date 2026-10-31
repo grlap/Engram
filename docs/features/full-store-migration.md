@@ -204,7 +204,8 @@ converts with the last build that could.
    with its `-wal` and `-shm` files**: they hold committed data until the next
    checkpoint and belong to that file alone. Put the new file in its place
    with nothing of the old one beside it; SQLite applies whatever log it
-   finds at a database's name to that database.
+   finds at a database's name to that database. The store's `.open-lock`
+   file holds no data and may stay where it is.
 5. Start the consumers again.
 
 Current work claims, grants and delivery state retain their identities. The

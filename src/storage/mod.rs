@@ -34,6 +34,8 @@ mod objects_tasks;
 mod open_schema;
 #[cfg(test)]
 pub(crate) use open_schema::CopyProbePoint;
+#[cfg(test)]
+pub(crate) use open_schema::open_lock_overlap;
 pub use open_schema::{
     CopyInterrupt, LiveAuthority, RestoreCopyReport, VerifiedStoreCopy, installed_sidecar_problem,
 };
@@ -1917,6 +1919,8 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     static BETWEEN_WORK_SCHEMA_PROBES: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         const { std::cell::RefCell::new(None) };
+    static BEFORE_OPEN_LOCK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
     static FAIL_COLD_SCHEMA_BEFORE_COMMIT: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -1932,13 +1936,10 @@ pub(crate) fn before_cold_lock(action: impl FnOnce() + 'static) {
     BEFORE_COLD_LOCK.with(|slot| *slot.borrow_mut() = Some(Box::new(action)));
 }
 
-/// A point where several openers of a new store wait for each other after
-/// deciding the store is new. Waiting is bounded, so an opener that fails
-/// before arriving turns into a failed test rather than a hung one. The bound
-/// outlasts what an open may spend before arriving: SQLite spends about ten
-/// seconds before its locking-protocol refusal, and an ordinary open meets
-/// it at most twice, so a shorter bound would fail the test while the open
-/// was still recovering.
+/// A point where several writable openers of a new store wait for each
+/// other just before each takes the store's open lock, so they all race for
+/// it at once. Waiting is bounded, so an opener that fails before arriving
+/// turns into a failed test rather than a hung one.
 #[cfg(test)]
 pub(crate) struct ColdOpenGate {
     arrived: std::sync::Mutex<usize>,
@@ -1966,21 +1967,35 @@ impl ColdOpenGate {
                 *arrived < self.expected
             })
             .expect("cold-open gate");
+        let reached = *arrived;
         drop(arrived);
         // An opener that never arrived means the race was not staged; the
         // test must fail rather than pass without it.
         assert!(
             !waited.timed_out(),
-            "not every opener reached the cold-open gate"
+            "not every opener reached the cold-open gate: {reached} of {}",
+            self.expected
         );
     }
 }
 
-/// Makes this thread's next open of a new store wait at `gate` at that
-/// point, so tests can hold several openers there together.
+/// Makes this thread's next writable open wait at `gate` just before it
+/// takes the store's open lock, so tests can release several openers into
+/// that lock together.
 #[cfg(test)]
 pub(crate) fn hold_cold_open_at(gate: std::sync::Arc<ColdOpenGate>) {
-    before_cold_lock(move || gate.arrive());
+    BEFORE_OPEN_LOCK.with(|slot| *slot.borrow_mut() = Some(Box::new(move || gate.arrive())));
+}
+
+/// Runs this thread's held action, if any, where a writable open is about
+/// to take its store's open lock.
+#[cfg(test)]
+pub(crate) fn before_open_lock() {
+    if let Some(action) = BEFORE_OPEN_LOCK.with(|slot| slot.borrow_mut().take()) {
+        copy_trace::mark(|| "open: cold-open gate reached".into());
+        action();
+        copy_trace::mark(|| "open: cold-open gate passed".into());
+    }
 }
 
 /// Runs `action` once, on this thread's next open of a store without a work
