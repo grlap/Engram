@@ -304,7 +304,11 @@ respects `.gitignore`. Record the base commit, the candidate commit and its
 tree id on the item and in the brief before validation starts. Focused checks
 and reviews may run on such a commit. The final full gate runs on a clean
 checkout of a single candidate commit whose parent is the current master, and
-the landing is exactly that commit.
+the landing is exactly that commit. When the integration owner commits a
+candidate under the test-refs bullet in AGENTS.md and CLAUDE.md and pushes it
+as a test ref, the only push a candidate receives, a full gate run by the
+standard launcher on that ref is this final full gate, and it gates only the
+fast-forward of master to that same commit.
 
 The integration owner lands a candidate only by fast-forwarding master to
 exactly that gated commit, when the standing approval's conditions hold, and

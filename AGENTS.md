@@ -268,8 +268,15 @@ their presence in a file alone does not prove delivery.
   owner has recorded on the item the run id, host, commit, tree id and the
   launcher's before and after fingerprints from that run's results; it gates
   only a landing whose master commit has that tree id, and until then it is
-  evidence
-  only. A change that touches Windows-only code or tests also needs the
+  evidence only. A test-ref commit is also a candidate commit for the
+  candidate-commits bullet's fast-forward landing: its push under this bullet
+  is the only push such a candidate receives, and that bullet's "never pushed"
+  still governs every other candidate. A full gate run on its test ref is then
+  the candidate's final full gate and gates only fast-forwarding master to that
+  same commit, so the test-ref commit and the landed commit are identical.
+  Another commit with the same tree, such as a fresh candidate on a moved
+  master, is gated afresh as that bullet describes. A change that touches
+  Windows-only code or tests also needs the
   relevant gate on Windows. In this remote flow, reviews finish before the
   push and the gate runs on the pushed ref, so review and gate never run in
   parallel on an unpublished candidate; a failed remote gate sends the input
