@@ -298,6 +298,15 @@ reports the selection. Removed names and values
 are recorded in `results.json` as `clearedToolchainOverrides`. To intentionally
 use another toolchain for a focused check,
 pass it explicitly, e.g. `focused -- cargo +nightly test ...`.
+On Windows, the launcher sets `PSModuleAnalysisCachePath` to a full filename
+under the worktree's `target/tmp/launcher-powershell/<run-id>/` before starting
+PowerShell. Identity queries, ordinary stages and the detached full-run job
+helper receive that setting, replacing inherited spellings case-insensitively.
+Queries outside an executing run use their own query scratch directory.
+The cache stays enabled; AppData, HOME and the caller's environment are unchanged.
+A linked or non-directory cache path refuses any Windows run before PowerShell
+starts, retaining its saved registration and planned unrun stages. Contained
+runs report `helper-start-failed`; other runs report `launcher-error`.
 Full mode probes Cargo components; both modes check required executables before
 expensive stages. For a focused external
 integration requiring a supplied binary, add `--require-binary-env VARIABLE`
@@ -540,7 +549,7 @@ The inbox PowerShell helper uses fixed inline command text, with paths and
 arguments passed as data, so loading it does not require changing execution
 policy for script files. A policy that forbids compilation can still refuse
 startup. Compiler scratch uses the worktree's `target/tmp/launcher-jobs/` and
-is removed after helper exit; the workload receives the original stage
+is removed after helper exit; the workload receives the prepared stage
 environment, including its TEMP, TMP and PSModulePath.
 
 Stop-lock removal retries transient file-sharing refusals. A worker that cannot

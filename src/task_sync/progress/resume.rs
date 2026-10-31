@@ -73,7 +73,9 @@ pub(crate) fn resume_pending(
             "prepare lock is a reparse point"
         );
     }
-    lock.try_lock()
+    // Held to the end of this recovery and released by an explicit unlock, so
+    // a child process another thread starts cannot keep it held after drop.
+    let _lock = crate::task_sync::file_lock::HeldLock::try_acquire(lock)
         .map_err(|error| invalid(format!("pending preparation busy: {error}")))?;
     let names = progress.names(3)?;
     let name = names

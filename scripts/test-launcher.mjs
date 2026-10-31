@@ -9,7 +9,7 @@ import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:pa
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { captureFingerprint, classifyInputChange, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
-import { requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
+import { powerShellEnvironment, requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registrationLine } from "./test-run-registration.mjs";
 
 const script = fileURLToPath(import.meta.url);
@@ -518,14 +518,18 @@ const identityQueryMs = 15_000;
 
 // Where macOS keeps ps.
 const systemPs = "/bin/ps";
+const identityScratchKey = `identity-${randomUUID()}`;
 
 // The system calls processIdentity makes; tests replace them.
 export const systemProbes = {
-  powershell(script, env = process.env) {
+  powershell(script, env = process.env, { root = repository, key = identityScratchKey } = {}) {
     const executable = systemPowerShell(env);
     if (!executable) return { error: new Error("SystemRoot names no Windows directory") };
+    let childEnv;
+    try { childEnv = powerShellEnvironment(root, key, env); }
+    catch (error) { return { error }; }
     return spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", script],
-      { encoding: "utf8", windowsHide: true, timeout: identityQueryMs });
+      { encoding: "utf8", windowsHide: true, timeout: identityQueryMs, env: childEnv });
   },
   // Signal 0 only asks whether the process exists; nothing is sent to it.
   exists(pid) {
@@ -606,7 +610,8 @@ export function sameCreation(recorded, found) {
 // that tells it from a later process given the same id; gone, only when the
 // system says no such process exists; or unknown when the query cannot say.
 // It only asks: it never opens, waits on or signals the process.
-export function processIdentity(pid, { platform = process.platform, probes = systemProbes } = {}) {
+export function processIdentity(pid, { platform = process.platform, probes = systemProbes, env,
+  root = repository, cacheKey = identityScratchKey } = {}) {
   const gone = { state: "gone" };
   const unknown = (why) => ({ state: "unknown", why });
   const failed = (query) => query.error ? query.error.message
@@ -628,7 +633,7 @@ catch {
     if ($found.Count -eq 0) { 'gone' } else { 'coarse ' + $found[0]['CreationDate'] }
   } catch { 'unknown ' + $_.Exception.GetType().Name }
 }`;
-    const query = probes.powershell(script);
+    const query = probes.powershell(script, env, { root, key: cacheKey });
     if (query.error || query.signal || query.status !== 0) return unknown(`process query failed: ${failed(query)}`);
     const answer = query.stdout.trim();
     if (answer === "gone") return gone;
@@ -883,7 +888,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     return outcome;
   };
   // Let Rustup read the repository's toolchain file, not an inherited override.
-  const childEnv = { ...env };
+  let childEnv = { ...env };
   const clearedToolchainOverrides = [];
   for (const key of Object.keys(childEnv)) if (key.toUpperCase() === "RUSTUP_TOOLCHAIN") {
     clearedToolchainOverrides.push({ name: key, value: childEnv[key] });
@@ -901,7 +906,6 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   };
   try {
     request = readJson(join(runDir, "request.json"));
-    if (request.stopProtocol === stopProtocol) control = stopController(runDir, request);
     // What the record says of each stage is what was read here, before any
     // stage ran: a stage can write to the run directory.
     const plan = { full: request.full === true, stages: (request.stages ?? []).map(({ kind, selects, command, args }) =>
@@ -913,13 +917,16 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     result = saved;
     result.plan = plan;
     if (result.state === "failed") { control?.close(); return result; }
+    if (request.stopProtocol === stopProtocol) control = stopController(runDir, request);
+    try { childEnv = powerShellEnvironment(request.root, basename(runDir), childEnv); }
+    catch (error) { throw because(control ? "helper-start-failed" : "launcher-error", error); }
     // The cadence createRun recorded, held to the same bounds as the setting;
     // anything else falls back to this worker's own setting.
     const recorded = result.heartbeat?.everyMs;
     const everyMs = validHeartbeatEveryMs(recorded) ? recorded : heartbeatEveryMs(env);
     // Who executes the run, as recover later asks the system for it: the id
     // alone could by then name another process.
-    const self = processIdentity(process.pid);
+    const self = processIdentity(process.pid, { env: childEnv, root: request.root, cacheKey: basename(runDir) });
     const executor = self.state === "alive" && !self.coarse
       ? { pid: process.pid, created: self.created, host: processHost() }
       : { pid: process.pid, created: null, host: processHost(), unidentified: self.coarse

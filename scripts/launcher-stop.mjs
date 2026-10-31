@@ -157,16 +157,19 @@ export function stopController(runDir, request, { readIntent = readStopIntent, r
 
 // Walk each component before creating the next one. A pre-existing junction
 // must be refused before recursive mkdir or the compiler can follow it.
-function checkScratchAncestors(cwd, scratch, create) {
+function checkScratchAncestors(cwd, scratch, create, directory = "launcher-jobs") {
   const root = realpathSync(cwd);
   let current = root;
-  for (const name of ["target", "tmp", "launcher-jobs", basename(scratch)]) {
+  for (const name of ["target", "tmp", directory, basename(scratch)]) {
     const path = join(current, name);
     let entry;
     try { entry = lstatSync(path); }
     catch (error) {
       if (!create || error.code !== "ENOENT") throw error;
-      mkdirSync(path); // the existing parent was checked on the preceding step
+      // Another launcher or Cargo may have created this component since lstat.
+      // Inspect that entry below just as strictly as one we created ourselves.
+      try { mkdirSync(path); }
+      catch (creationError) { if (creationError.code !== "EEXIST") throw creationError; }
       entry = lstatSync(path);
     }
     if (entry.isSymbolicLink() || !entry.isDirectory()) throw new Error(`compiler scratch ancestor is a link or not a directory: ${path}`);
@@ -179,6 +182,26 @@ function checkScratchAncestors(cwd, scratch, create) {
   if (current.toLowerCase() !== scratch.toLowerCase()) throw new Error("compiler scratch root is not canonical");
 }
 
+// PowerShell can write its module cache before the workload starts. Pin it
+// before spawning either the identity query or the job supervisor, without
+// changing the caller's AppData, profile, or process environment.
+export function powerShellEnvironment(cwd, key, env) {
+  const childEnv = { ...env };
+  if (process.platform !== "win32") return childEnv;
+  if (!/^[a-z0-9][a-z0-9-]*$/u.test(key)) throw new Error("invalid PowerShell scratch key");
+  const scratch = join(realpathSync(cwd), "target", "tmp", "launcher-powershell", key);
+  checkScratchAncestors(cwd, scratch, true, "launcher-powershell");
+  checkScratchAncestors(cwd, scratch, false, "launcher-powershell");
+  const cache = join(scratch, "ModuleAnalysisCache");
+  try {
+    const entry = lstatSync(cache);
+    if (entry.isSymbolicLink() || !entry.isFile()) throw new Error("PowerShell cache must be a regular file");
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  for (const name of Object.keys(childEnv)) if (name.toUpperCase() === "PSMODULEANALYSISCACHEPATH") delete childEnv[name];
+  childEnv.PSModuleAnalysisCachePath = cache;
+  return childEnv;
+}
+
 // No raw taskkill, parent-PID snapshots or recovered IDs. The living supervisor
 // owns a kernel job handle from before the first workload instruction.
 export async function runJobCommand(command, args, { cwd, env, log, runDir, control, powerShell }) {
@@ -188,9 +211,6 @@ export async function runJobCommand(command, args, { cwd, env, log, runDir, cont
   const scratch = resolve(cwd, "target", "tmp", "launcher-jobs", randomUUID());
   const helper = fileURLToPath(new URL("./launcher-process-job.ps1", import.meta.url));
   const source = fileURLToPath(new URL("./launcher-process-job.cs", import.meta.url));
-  const spec = Buffer.from(JSON.stringify({ command, args, cwd, receipt, source,
-    environment: Object.entries(env).filter(([, value]) => value !== undefined).map(([name, value]) => `${name}=${value}`) })).toString("base64");
-  const helperEnv = Object.fromEntries(Object.entries(env).filter(([name]) => !["TEMP", "TMP"].includes(name.toUpperCase())));
   // Fixed code only. Paths and payload are data in the helper environment, not
   // interpolated shell text; inline commands also work under Restricted/AllSigned.
   const bootstrap = "& ([ScriptBlock]::Create([IO.File]::ReadAllText($env:ENGRAM_LAUNCHER_JOB_HELPER))) -Spec $env:ENGRAM_LAUNCHER_JOB_SPEC";
@@ -198,6 +218,10 @@ export async function runJobCommand(command, args, { cwd, env, log, runDir, cont
   let supervisorStarted = false;
   let unregister = () => {};
   try {
+    const childEnv = powerShellEnvironment(cwd, basename(runDir), env);
+    const spec = Buffer.from(JSON.stringify({ command, args, cwd, receipt, source,
+      environment: Object.entries(childEnv).filter(([, value]) => value !== undefined).map(([name, value]) => `${name}=${value}`) })).toString("base64");
+    const helperEnv = Object.fromEntries(Object.entries(childEnv).filter(([name]) => !["TEMP", "TMP"].includes(name.toUpperCase())));
     checkScratchAncestors(cwd, scratch, true);
     checkScratchAncestors(cwd, scratch, false); // verify created location before helper startup
     fd = openSync(log, "wx", 0o600);

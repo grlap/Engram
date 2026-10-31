@@ -8,6 +8,7 @@ use std::{
 use anyhow::{Result, ensure};
 
 use super::{Attribution, Basis, Intent, Receipt, files::Directory};
+use crate::task_sync::file_lock::HeldLock;
 
 const FORMAT: &str = "engram-task-sync-setup-v1";
 const LOCK: &[u8] = b"engram-task-sync-setup-lock-v1\n";
@@ -68,7 +69,7 @@ pub(super) fn record(basis: Basis, attribution: Attribution) -> Result<Receipt> 
     Ok(receipt(path, intent.operation, false))
 }
 
-fn acquire_lock(bound: &Directory) -> Result<std::fs::File> {
+fn acquire_lock(bound: &Directory) -> Result<HeldLock> {
     let lock_name = Path::new("engram-task-sync-setup.lock");
     match bound.dir().symlink_metadata(lock_name) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -94,22 +95,23 @@ fn acquire_lock(bound: &Directory) -> Result<std::fs::File> {
     acquire_existing_lock(bound)
 }
 
-pub(super) fn acquire_existing_lock(bound: &Directory) -> Result<std::fs::File> {
+pub(super) fn acquire_existing_lock(bound: &Directory) -> Result<HeldLock> {
     let lock_name = Path::new("engram-task-sync-setup.lock");
     // Windows byte-range locks can prevent a contended read. Acquire first and
     // validate ownership on that same handle without changing its bytes.
-    let file = bound.open_file(lock_name, true, false)?;
-    file.try_lock()
+    // Released by an explicit unlock when dropped; see `HeldLock`.
+    let held = HeldLock::try_acquire(bound.open_file(lock_name, true, false)?)
         .map_err(|error| anyhow::anyhow!("setup preparation busy: {error}"))?;
     let mut actual = Vec::new();
-    file.try_clone()?
+    held.file()
+        .try_clone()?
         .take(LOCK.len() as u64 + 1)
         .read_to_end(&mut actual)?;
     ensure!(
         actual == LOCK,
         "unowned setup lock path or changed lock; preserve it"
     );
-    Ok(file)
+    Ok(held)
 }
 
 pub(super) fn read(bound: &Directory, operation: uuid::Uuid) -> Result<Intent> {

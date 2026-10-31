@@ -9,7 +9,7 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } fro
 import test, { after, describe } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
-import { requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
+import { powerShellEnvironment, requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration } from "./test-run-registration.mjs";
 import {
   commandKind, completionMetadata, countTests, createRun, diagnostics, executable, executeRun, fileProbes, inspectFailure, machineRecord, notifyRun,
@@ -323,8 +323,11 @@ async function repository(callback, prefix = "engram-launcher-") {
     git(["init", "--quiet", "--template="], root);
     assert.equal(git(["config", "--bool", "--get", "maintenance.auto"], root).trim(), "false");
     git(["config", "core.autocrlf", "false"], root);
+    // Match the product's existing scratch contract; a cache outside target/
+    // must still appear in the fixture's ordinary Git status.
+    copyFileSync(join(dirname(launcher), "..", ".gitignore"), join(root, ".gitignore"));
     writeFileSync(join(root, "tracked.txt"), "baseline\n");
-    git(["add", "tracked.txt"], root);
+    git(["add", "tracked.txt", ".gitignore"], root);
     // Track the invoked run explicitly: directory order does not identify it.
     await callback(root, (runDir, binary) => { lastChild = { runDir, binary }; });
   } catch (error) {
@@ -1010,6 +1013,138 @@ function copyLauncher(root, transform = (source) => source) {
   return local;
 }
 
+test("Windows PowerShell cache stays pinned through identity, ordinary and contained stages",
+  { skip: process.platform !== "win32", timeout: 120_000 }, async () => {
+    await repository(async (root) => {
+      const local = copyLauncher(root);
+      const helper = join(root, "scripts", "launcher-process-job.ps1");
+      const source = readFileSync(helper, "utf8");
+      writeFileSync(helper, source.replace("$ErrorActionPreference = 'Stop'",
+        "$ErrorActionPreference = 'Stop'\n[Console]::WriteLine('fixture-helper-cache:' + $env:PSModuleAnalysisCachePath)"));
+      git(["add", "scripts"], root);
+      const baseline = git(["status", "--porcelain", "--untracked-files=all"], root);
+      const module = await import(pathToFileURL(local).href);
+      const realQuery = module.systemProbes.powershell;
+      let identityEnv;
+      module.systemProbes.powershell = (script, childEnv, context) => {
+        identityEnv = childEnv;
+        return realQuery(script, childEnv, context);
+      };
+      const powerShell = join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+      // Neither spelling is allowed to leak into the child. This checks the
+      // cache-pinning contract, not an attribution of the historical writer.
+      const inherited = { ...env, PSMODULEANALYSISCACHEPATH: "Microsoft/Windows/PowerShell/ModuleAnalysisCache",
+        psmoduleanalysiscachepath: "relative-cache" };
+      const original = { ...inherited };
+      const script = `$ErrorActionPreference = 'Stop'
+Import-Module Microsoft.PowerShell.Management -Force
+$cache = $env:PSModuleAnalysisCachePath
+if (![IO.Path]::IsPathRooted($cache)) { throw 'cache is not pinned' }
+[Console]::WriteLine('fixture-stage-cache:' + (@{ cache = $cache; cwd = [IO.Directory]::GetCurrentDirectory() } | ConvertTo-Json -Compress))`;
+      for (const contained of [false, true]) {
+        const runDir = await module.createRun({ root, full: contained, detached: contained,
+          stages: [{ name: "powershell", command: powerShell, args: ["-NoProfile", "-NonInteractive", "-Command", script] }] }, inherited);
+        const result = await module.executeRun(runDir, inherited);
+        assert.equal(result.state, "passed", result.error);
+        assert.equal(result.stages[0].code, 0);
+        assert.equal(result.before, json(join(runDir, "request.json")).expectedFingerprint);
+        assert.equal(result.after, result.before);
+        const log = readFileSync(logPath(runDir, result.stages[0]), "utf8");
+        const line = log.split(/\r?\n/u).find((value) => value.startsWith("fixture-stage-cache:"));
+        assert.ok(line, "a real PowerShell workload executed");
+        const report = JSON.parse(line.slice("fixture-stage-cache:".length));
+        assert.equal(isAbsolute(report.cache), true);
+        assert.equal(relative(realpathSync(root), report.cache).split(/[\\/]/u)[0], "target");
+        assert.ok(report.cache.includes(basename(runDir)), "each run owns its cache path");
+        assert.equal(realpathSync(report.cwd), realpathSync(root));
+        assert.equal(identityEnv.PSModuleAnalysisCachePath, report.cache, "the first identity query uses the same environment");
+        assert.equal(Object.keys(identityEnv).filter((name) => name.toUpperCase() === "PSMODULEANALYSISCACHEPATH").length, 1);
+        // PowerShell does not promise a cache write for this invocation. The
+        // contract asserted here is pinning; inspect any real write after exit.
+        if (existsSync(report.cache)) assert.equal(statSync(report.cache).isFile(), true);
+        if (contained) assert.ok(log.includes(`fixture-helper-cache:${report.cache}`), "the full-only supervisor is pinned too");
+        assert.equal(git(["ls-files", "--others", "--exclude-standard"], root), "");
+        assert.equal(git(["status", "--porcelain", "--untracked-files=all"], root), baseline);
+      }
+      assert.deepEqual(inherited, original, "no caller or global environment mutation");
+    });
+  });
+
+test("Windows PowerShell cache refuses linked scratch before writing outside its root",
+  { skip: process.platform !== "win32" }, (t) => {
+    const root = fixtureHome("cache-root-", t), outside = fixtureHome("cache-outside-", t);
+    mkdirSync(join(root, "target", "tmp"), { recursive: true });
+    const link = join(root, "target", "tmp", "launcher-powershell");
+    symlinkSync(outside, link, "junction");
+    try {
+      assert.throws(() => powerShellEnvironment(root, "fixture-cache", env), /link|escaped/u);
+      assert.deepEqual(readdirSync(outside), []);
+    } finally { unlinkSync(link); }
+  });
+
+test("Windows PowerShell cache accepts scratch created concurrently",
+  { skip: process.platform !== "win32" }, async () => {
+    await repository(async (root) => {
+      copyLauncher(root);
+      const support = join(root, "scripts", "launcher-stop.mjs");
+      const source = readFileSync(support, "utf8");
+      // Deterministically model another creator winning after the failed
+      // lstat: a real directory exists when mkdir reports EEXIST.
+      const changed = source.replace("mkdirSync(path);",
+        "mkdirSync(path); fixtureCreated.push(path); throw Object.assign(new Error('fixture concurrent creation'), { code: 'EEXIST' });");
+      assert.notEqual(changed, source, "the copied helper must inject the mkdir race");
+      writeFileSync(support, `${changed}\nexport const fixtureCreated = [];\n`);
+      const module = await import(pathToFileURL(support).href);
+      const childEnv = module.powerShellEnvironment(root, "racing-cache", env);
+      const scratch = join(realpathSync(root), "target", "tmp", "launcher-powershell", "racing-cache");
+      assert.equal(childEnv.PSModuleAnalysisCachePath, join(scratch, "ModuleAnalysisCache"));
+      assert.deepEqual(module.fixtureCreated, [join(realpathSync(root), "target"), join(realpathSync(root), "target", "tmp"),
+        dirname(scratch), scratch]);
+      assert.equal(lstatSync(scratch).isDirectory(), true);
+      assert.deepEqual(module.powerShellEnvironment(root, "racing-cache", env), childEnv);
+    });
+  });
+
+test("Windows cache startup refusals retain saved results and unrun stages",
+  { skip: process.platform !== "win32" }, async () => {
+    for (const contained of [false, true]) for (const fault of ["target", "target/tmp", "cache-directory", "cache-file"]) {
+      await repository(async (root) => {
+        const outside = fixtureHome("cache-startup-outside-");
+        const runDir = await createRun({ root, full: contained, detached: contained,
+          stages: [stage("first", "require('node:fs').writeFileSync('should-not-run', '')"), stage("second")] }, env);
+        const initial = json(join(runDir, "results.json"));
+        const cache = join(root, "target", "tmp", "launcher-powershell", basename(runDir), "ModuleAnalysisCache");
+        const link = fault === "cache-file" ? null : join(root, ...(fault === "cache-directory"
+          ? ["target", "tmp", "launcher-powershell"] : fault.split("/")));
+        try {
+          if (link) {
+            mkdirSync(dirname(link), { recursive: true });
+            symlinkSync(outside, link, "junction");
+          } else mkdirSync(cache, { recursive: true });
+          let ready = false;
+          const result = await executeRun(runDir, env, () => { ready = true; });
+          assert.equal(result.state, "failed");
+          assert.equal(result.exitCode, 1);
+          assert.equal(result.reason, contained ? "helper-start-failed" : "launcher-error");
+          assert.match(result.error, /scratch ancestor is a link|cache must be a regular file/u);
+          assert.deepEqual(result.stages, initial.stages);
+          assert.equal(result.started, initial.started);
+          assert.deepEqual(result.registration, initial.registration);
+          assert.deepEqual(result.heartbeat, initial.heartbeat);
+          assert.deepEqual(json(join(runDir, "results.json")), JSON.parse(JSON.stringify(result)));
+          assert.equal(result.processCleanup, undefined, "no supervisor was started");
+          assert.equal(ready, false);
+          assert.equal(existsSync(join(root, "should-not-run")), false);
+          assert.deepEqual(readdirSync(outside), []);
+        } finally {
+          // Unlink only this known junction before fixture cleanup recurses.
+          if (link && existsSync(link) && lstatSync(link).isSymbolicLink()) unlinkSync(link);
+          await removeFixturePath(outside);
+        }
+      });
+    }
+  });
+
 const workerException = "fixture private escaping worker exception";
 const workerCause = "fixture private worker cause";
 function injectWorkerException(source) {
@@ -1544,7 +1679,8 @@ test("source drift before execution refuses to run the captured input", async ()
     assert.equal(result.state, "failed");
     assert.equal(result.stages[0].state, "unrun");
     assert.match(result.error, /^input drift before execution; no stages run\n/u);
-    assert.match(result.error, /Current Git status.*\nAM tracked\.txt/u);
+    assert.match(result.error, /^Current Git status.*$/mu);
+    assert.match(result.error, /^AM tracked\.txt$/mu);
   });
 });
 
@@ -1556,7 +1692,8 @@ test("source drift during execution cannot be reported as a passing run", async 
     assert.equal(result.state, "failed");
     assert.notEqual(result.exitCode, 0);
     assert.match(result.error, /^input drift: results do not validate the current source\n/u);
-    assert.match(result.error, /Current Git status.*\nAM tracked\.txt/u);
+    assert.match(result.error, /^Current Git status.*$/mu);
+    assert.match(result.error, /^AM tracked\.txt$/mu);
   });
 });
 
