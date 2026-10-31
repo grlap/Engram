@@ -141,6 +141,7 @@ pub fn explain_verification_evidence(
     if evidence.check_kind != input.requirement.check_kind {
         return Err(plain(VerificationEvidenceMismatch::CheckKindMismatch));
     }
+    let registered_git = producer.registered_git_basis(evidence).is_some();
     let mutation = input
         .latest_mutation
         .map(|(latest_mutation, position)| {
@@ -178,7 +179,7 @@ pub fn explain_verification_evidence(
         }
     };
     let same_run = producer_matches
-        && mutation.is_none_or(|(latest_mutation, _, _, _)| {
+        && input.latest_mutation.is_none_or(|(latest_mutation, _)| {
             evidence.project_id == latest_mutation.project_id
                 && evidence.binding.root_execution_id == latest_mutation.binding.root_execution_id
                 && evidence.binding.work_id == latest_mutation.binding.work_id
@@ -207,7 +208,7 @@ pub fn explain_verification_evidence(
         {
             return Err(stale(StaleSourceDecider::RootBinding));
         }
-        if let Some((sighting, _)) = root.latest_sighting {
+        if !registered_git && let Some((sighting, _)) = root.latest_sighting {
             let basis = sighting
                 .source_basis
                 .as_ref()
@@ -238,7 +239,7 @@ pub fn explain_verification_evidence(
         if !latest_mutation.source_changed {
             return Err(stale(StaleSourceDecider::LatestChange));
         }
-        if !revision_from_root {
+        if !registered_git && !revision_from_root {
             match measured {
                 Some((sighting, _))
                     if evidence.source_basis.source_revision != sighting.source_revision =>
@@ -295,6 +296,15 @@ pub fn explain_verification_evidence(
         && producer.recorded_at >= evidence.completed_at;
     if !actor_matches || !times_are_monotone {
         return Err(plain(VerificationEvidenceMismatch::InvalidTime));
+    }
+    if registered_git {
+        // Obligation reconstruction has no judged input: it validates the
+        // producer's recorded input. Admission and evaluated completion supply
+        // the separately declared input to compare against it.
+        let judged = input.judged_basis.unwrap_or(&evidence.source_basis);
+        if producer.matches_registered_git_input(evidence, &judged.source_revision) != Some(true) {
+            return Err(stale(StaleSourceDecider::LatestChange));
+        }
     }
     check_verification_applicability(evidence.applicability.as_ref(), input.judged_basis)
         .map_err(plain)
@@ -471,6 +481,14 @@ pub fn explain_obligation_satisfaction(
     input: &ObligationSatisfactionInput<'_>,
     obligation: &WorkObligation,
 ) -> (ObligationAssessment, Option<StaleSourceDecider>) {
+    let registered_git = input
+        .producer
+        .verification_facts()
+        .registered_git_basis(input.evidence)
+        .is_some();
+    let git_source_rule = registered_git
+        && (acceptance_binding_criterion(&obligation.rule).is_some()
+            || is_stock_source_change_obligation(&obligation.rule, &obligation.requirement));
     let expected_feed = crate::domain::FeedId::RunExecution(input.evidence.binding.run_id);
     if input.evaluated_cut.feed != expected_feed
         || obligation.run_id != input.evidence.binding.run_id
@@ -506,7 +524,8 @@ pub fn explain_obligation_satisfaction(
     // Under a named root a check of the root's newest sighting stands for the
     // source as it is, so it can account for a change the root holds from
     // before its binding too.
-    if input.latest_mutation.is_none()
+    if !git_source_rule
+        && input.latest_mutation.is_none()
         && !input.named_root.is_some_and(|root| {
             root.unknown_change_position.is_some() || root.latest_sighting.is_some()
         })

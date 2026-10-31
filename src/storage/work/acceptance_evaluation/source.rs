@@ -150,6 +150,37 @@ impl JudgedSource {
     }
 }
 
+/// Recover the new evaluation lane from its immutable cited producer and
+/// explicit Git declaration. Old records need no marker or conversion.
+pub(super) fn registered_git_evaluation_on<'a>(
+    connection: &Connection,
+    run_id: WorkRunId,
+    cut: i64,
+    declared: Option<&crate::domain::AcceptanceSourceBasis>,
+    citations: impl IntoIterator<Item = &'a ObjectId>,
+) -> Result<bool, StoreError> {
+    if !declared.is_some_and(|basis| crate::domain::is_git_input_revision(&basis.fingerprint)) {
+        return Ok(false);
+    }
+    for citation in citations {
+        if citation_position(connection, run_id, citation)?.is_none_or(|position| position > cut)
+            || !matches!(
+                classify_citation(connection, run_id, citation)?,
+                Some(Citation::VerificationPassed { .. })
+            )
+        {
+            continue;
+        }
+        let evidence: crate::domain::VerificationEvidence =
+            load_typed_work_object(connection, citation, "verification_evidence")?;
+        let producer = super::super::load_verification_producer_on(connection, &evidence)?;
+        if producer.registered_git_basis(&evidence).is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// The source the evaluation cut at `through` judged, or `None` when it
 /// declared none and the run carries no revision through the cut. A
 /// declaration always wins: an older sighting never stands in for the tree
@@ -474,6 +505,11 @@ pub(super) struct StaleCitation {
 
 pub(super) enum StaleCause {
     Applicability(crate::domain::VerificationEvidenceMismatch),
+    /// A registered check needs its exact Git declaration and current root.
+    RegisteredGit {
+        checked: ExecutionSourceBasis,
+        naming: Option<NamingMismatch>,
+    },
     /// The check ran on another source than the judged one.
     OtherSource(ExecutionSourceBasis),
     /// The check ran on the judged source, but not under the run's current
@@ -648,6 +684,9 @@ fn naming_mismatch(
 
 /// How the run left the revision a check ran on.
 pub(super) enum Moved {
+    /// An actual admitted change that the check did not follow, by position
+    /// or observed time, even if the terminal result arrived afterwards.
+    Mutation(String),
     /// Its newest sighting after the check is at this other revision.
     To(String),
     /// It reported a change that carries no revision, which may have moved
@@ -681,6 +720,17 @@ impl StaleCitation {
             ""
         };
         Ok(match (&self.cause, judged) {
+            (StaleCause::RegisteredGit { checked, naming }, _) => match naming {
+                Some(mismatch) => format!(
+                    "criterion {criterion} selected registered verification {citation} ran on {}, but {}; run a check under the current named root, then evaluate again declaring that check's exact git-commit:<full commit> or git-tree:<full tree> input with --source-fingerprint",
+                    checked.source_revision,
+                    mismatch.describe(),
+                ),
+                None => format!(
+                    "criterion {criterion} selected registered verification {citation} ran on {} in workspace {}; declare that exact Git input with --source-fingerprint {} if it is the input being judged, otherwise run a check on the intended input and cite it with its exact Git declaration",
+                    checked.source_revision, checked.workspace_id, checked.source_revision,
+                ),
+            },
             (StaleCause::Applicability(mismatch), _) => format!(
                 "criterion {criterion} selected verification {citation} is non-qualifying ({}); run an applicable check on the judged source",
                 super::super::planning::encode_state(mismatch)?
@@ -711,6 +761,9 @@ impl StaleCitation {
             }
             (StaleCause::MovedAfter { checked, moved }, _) => {
                 let moved = match moved {
+                    Moved::Mutation(label) => {
+                        format!("recorded source change {label}, which the check did not follow,")
+                    }
                     Moved::To(seen) => format!("was last seen at revision {seen}"),
                     Moved::Unrevised => "reported a source change without a revision".to_owned(),
                     Moved::Unadmitted(label) => {
@@ -719,8 +772,13 @@ impl StaleCitation {
                         )
                     }
                 };
+                let selected = if kind.is_empty() {
+                    format!("criterion {criterion} selected verification {citation}")
+                } else {
+                    format!("criterion {criterion} is bound to {kind} verification, and {citation}")
+                };
                 format!(
-                    "criterion {criterion} is bound to {kind} verification, and {citation} ran on source revision {checked}, but the run {moved} after it, before evidence basis {cut}; run the check on the current source, then evaluate again citing it"
+                    "{selected} ran on source revision {checked}, but the run {moved} after it, before evidence basis {cut}; run the check on the current source, then evaluate again citing it"
                 )
             }
             _ => format!(
@@ -759,7 +817,19 @@ pub(super) fn stale_bound_citation<'a>(
             .any(|binding| binding.criterion == criterion);
         for citation in citations {
             let classified = classify_citation(connection, run_id, citation)?;
-            if !(bound
+            let registered = if matches!(&classified, Some(Citation::VerificationPassed { .. })) {
+                let evidence: crate::domain::VerificationEvidence =
+                    load_typed_work_object(connection, citation, "verification_evidence")?;
+                let producer = super::super::load_verification_producer_on(connection, &evidence)?;
+                producer
+                    .registered_git_basis(&evidence)
+                    .is_some()
+                    .then_some((evidence, producer))
+            } else {
+                None
+            };
+            if !(registered.is_some()
+                || bound
                 || observed
                     && matches!(
                         &classified,
@@ -769,6 +839,64 @@ pub(super) fn stale_bound_citation<'a>(
                         })
                     ))
             {
+                continue;
+            }
+            if let Some((evidence, producer)) = registered {
+                let naming = match root {
+                    Some(root) => naming_mismatch(
+                        connection,
+                        run_id,
+                        citation,
+                        &evidence.producer_observation,
+                        &evidence.source_basis,
+                        root,
+                    )?,
+                    None => None,
+                };
+                let cause = if let Some(mismatch) = naming {
+                    Some(StaleCause::RegisteredGit {
+                        checked: evidence.source_basis.clone(),
+                        naming: Some(mismatch),
+                    })
+                } else if judged.is_some_and(|judged| {
+                    judged.declared
+                        && producer.matches_registered_git_input(&evidence, &judged.revision)
+                            == Some(true)
+                        && judged.workspace.as_ref().is_none_or(|workspace| {
+                            workspace == &evidence.source_basis.workspace_id
+                        })
+                }) {
+                    None
+                } else {
+                    Some(StaleCause::RegisteredGit {
+                        checked: evidence.source_basis.clone(),
+                        naming: None,
+                    })
+                };
+                let cause = match cause {
+                    Some(cause) => Some(cause),
+                    None => moved_after_check(
+                        connection,
+                        run_id,
+                        citation,
+                        &evidence.producer_observation,
+                        CitationSource::RegisteredGit,
+                        through,
+                        root,
+                    )?
+                    .map(|moved| StaleCause::MovedAfter {
+                        checked: evidence.source_basis.source_revision.clone(),
+                        moved,
+                    }),
+                };
+                if let Some(cause) = cause {
+                    return Ok(Some(StaleCitation {
+                        criterion,
+                        citation: citation.clone(),
+                        producer: Some(evidence.producer_observation),
+                        cause,
+                    }));
+                }
                 continue;
             }
             let mut producer_observation = None;
@@ -824,7 +952,7 @@ pub(super) fn stale_bound_citation<'a>(
                                     run_id,
                                     citation,
                                     &producer,
-                                    &source_basis.source_revision,
+                                    CitationSource::Observed(&source_basis.source_revision),
                                     through,
                                     root,
                                 )? {
@@ -873,7 +1001,7 @@ pub(in crate::storage::work) fn check_moved_on(
         run_id,
         citation,
         producer,
-        checked,
+        CitationSource::Observed(checked),
         through,
         root.as_ref(),
     )?
@@ -892,20 +1020,27 @@ fn is_bound(connection: &Connection, citation: &ObjectId) -> Result<bool, StoreE
     .is_some())
 }
 
-/// Whether the run left `checked`, the revision `producer` ran the check
+#[derive(Clone, Copy)]
+enum CitationSource<'a> {
+    Observed(&'a str),
+    RegisteredGit,
+}
+
+/// Whether the run left the revision `producer` ran the check
 /// `citation` on, between that check and `through`, inclusive, read as F3
 /// reads the source after a cut. The newest source record there that
 /// carries a revision decides where the source is, whatever change it
 /// reports: the revision fingerprints the full content, so a move and its
 /// revert leave the check standing. A reported change that carries no
 /// revision may have moved the source anywhere, and no later sighting
-/// clears it. `None` when the source is still where the check ran.
+/// clears it. Registered Git input instead retains only actual mutation
+/// time and position floors. `None` when the check still qualifies.
 fn moved_after_check(
     connection: &Connection,
     run_id: WorkRunId,
     citation: &ObjectId,
     producer: &ObjectId,
-    checked: &str,
+    source: CitationSource<'_>,
     through: i64,
     root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<Moved>, StoreError> {
@@ -938,6 +1073,18 @@ fn moved_after_check(
     )? {
         return Ok(Some(Moved::Unadmitted(change.label)));
     }
+    let checked = match source {
+        CitationSource::Observed(checked) => checked,
+        CitationSource::RegisteredGit => {
+            return registered_mutation_after_check(
+                connection,
+                &check,
+                (ran, recorded),
+                through,
+                root,
+            );
+        }
+    };
     let run = run_id.0.to_string();
     let (revision, workspace, generation, state) = (
         source_basis_sql("source_revision"),
@@ -993,6 +1140,46 @@ fn moved_after_check(
         )
         .optional()?;
     Ok(newest.filter(|revision| revision != checked).map(Moved::To))
+}
+
+/// Actual mutations under a registered check's root, including those whose
+/// feed entry predates a late-delivered terminal result. Quiet sightings
+/// carry no mutation floor; their content revision is not a Git identity.
+fn registered_mutation_after_check(
+    connection: &Connection,
+    check: &super::VerificationEvidence,
+    (ran, recorded): (i64, i64),
+    through: i64,
+    root: Option<&NamedEvaluationRoot>,
+) -> Result<Option<Moved>, StoreError> {
+    let changes = connection
+        .prepare(&format!(
+            "SELECT entry.position, entry.object_id FROM work_feed_entries entry
+         JOIN objects object ON object.object_id = entry.object_id
+         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+           AND entry.position <= ?2 AND {SOURCE_RECORD_SQL} AND {SOURCE_CHANGED_SQL}
+         ORDER BY entry.position"
+        ))?
+        .query_map(
+            params![check.binding.run_id.0.to_string(), through],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (position, stored) in changes {
+        let id =
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+        let Some(change) = super::source_observation_if_accounted_on(connection, &id)? else {
+            continue;
+        };
+        if !off_named_root(root, &change)
+            && (ran <= position
+                || recorded <= position
+                || check.run_time() < change.observed_at.unwrap_or(change.recorded_at))
+        {
+            return Ok(Some(Moved::Mutation(change.label)));
+        }
+    }
+    Ok(None)
 }
 
 /// When the run's latest change at `through` is an unadmitted record with a

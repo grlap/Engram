@@ -275,7 +275,10 @@ measures the source, the policy can require more:
   judged with `--source-fingerprint F` on `evaluate`, and `done` must present
   the same `F`, measured by the host at completion. A record without one
   never matches. `F` is the host's own source revision; another form, such as
-  a Git commit id, voids the evaluation at the host's next sighting.
+  a Git commit id, voids the evaluation at the host's next sighting. This
+  sighting rule applies to legacy observation evidence; [registered Git-input
+  evidence](docs/features/acceptance-evaluation.md#registered-git-input-evidence)
+  instead uses the check's exact `git-commit:` or `git-tree:` declaration.
 
 Revising the criteria or bindings a failing evaluation judged does not clear
 the failure. After the executor's own revision, the next evaluation must name

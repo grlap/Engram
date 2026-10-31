@@ -39,6 +39,12 @@ reusing canonical verification and exact-intent settlement. Host emission
 requires the connected producer's capability advertisement; registration alone
 is not credit. See the [host protocol](features/behavioral-control-plane.md#registered-launcher-verification-without-a-turn).
 
+Evaluation and completion can consume native registered checks by their exact
+declared [Git input](features/acceptance-evaluation.md#registered-git-input-evidence),
+without a named-root sighting. Commit identity and staged-tree identity stay
+distinct; failed results and association checks still hold. Historical evidence
+and cross-item binding retain their existing contracts.
+
 Selected verification evidence can carry a
 [Git-tree applicability restriction](features/verification-applicability.md).
 Its declared rebuildable schema barrier requires the documented coordinated

@@ -174,6 +174,44 @@ pub struct VerificationProducerFacts {
     pub recorded_at: DateTime<Utc>,
 }
 
+/// Recognize a declared Git input without resolving commits to trees.
+#[must_use]
+pub fn is_git_input_revision(revision: &str) -> bool {
+    revision.strip_prefix("git-commit:").is_some_and(|commit| {
+        commit.len() == 40 && super::verification_applicability::full_git_object_name(commit)
+    }) || revision
+        .strip_prefix("git-tree:")
+        .is_some_and(super::verification_applicability::full_git_object_name)
+}
+
+impl VerificationProducerFacts {
+    /// Only the registered-run reader supplies an aggregate outcome. Legacy
+    /// observations and cross-item bindings retain their original contract.
+    #[must_use]
+    pub fn registered_git_basis(
+        &self,
+        evidence: &super::VerificationEvidence,
+    ) -> Option<&super::ExecutionSourceBasis> {
+        self.source_basis.as_ref().filter(|basis| {
+            self.run_outcome.is_some()
+                && evidence.bound_from.is_none()
+                && is_git_input_revision(&basis.source_revision)
+        })
+    }
+
+    /// The common input decision for registered evidence. A revision string
+    /// alone never supplies producer provenance or repairs a dirty run.
+    #[must_use]
+    pub fn matches_registered_git_input(
+        &self,
+        evidence: &super::VerificationEvidence,
+        judged: &str,
+    ) -> Option<bool> {
+        self.registered_git_basis(evidence)
+            .map(|basis| basis == &evidence.source_basis && basis.source_revision == judged)
+    }
+}
+
 /// A verification producer supplies facts without requiring turn authority.
 pub trait VerificationProducer {
     fn verification_facts(&self) -> VerificationProducerFacts;

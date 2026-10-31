@@ -3,6 +3,8 @@ use super::*;
 use crate::DevelopmentNoopRedactor;
 use crate::domain::*;
 
+mod git_input;
+
 struct Fixture {
     store: SqliteStore,
     project: ProjectId,
@@ -25,18 +27,38 @@ fn fixture_in(store: SqliteStore, assurance: crate::ControlAssurance, offset: i6
 }
 
 fn fixture_with_root(
-    mut store: SqliteStore,
+    store: SqliteStore,
     assurance: crate::ControlAssurance,
     offset: i64,
     pin_root: bool,
 ) -> Fixture {
+    fixture_with_create_and_root(
+        store,
+        assurance,
+        offset,
+        &root_request("project-a", "registered-work", 1 + offset),
+        pin_root,
+    )
+}
+
+fn fixture_with_create(
+    store: SqliteStore,
+    assurance: crate::ControlAssurance,
+    offset: i64,
+    create: &crate::domain::CreateWorkRequest,
+) -> Fixture {
+    fixture_with_create_and_root(store, assurance, offset, create, true)
+}
+
+fn fixture_with_create_and_root(
+    mut store: SqliteStore,
+    assurance: crate::ControlAssurance,
+    offset: i64,
+    create: &crate::domain::CreateWorkRequest,
+    pin_root: bool,
+) -> Fixture {
     let at = |second| at(second + offset);
-    let work = store
-        .create_work(
-            &root_request("project-a", "registered-work", 1 + offset),
-            &DevelopmentNoopRedactor,
-        )
-        .unwrap();
+    let work = store.create_work(create, &DevelopmentNoopRedactor).unwrap();
     let claim = claim(&mut store, &work, "runner", "claim", 2 + offset, 3600);
     let work = store.get_work_item(work.work_id).unwrap();
     let session = SessionId("runner".into());

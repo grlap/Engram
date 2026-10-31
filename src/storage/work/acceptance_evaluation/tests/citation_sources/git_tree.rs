@@ -9,6 +9,51 @@ fn set_tree(host: &mut HostSession, tree: Option<char>, restrict: bool) {
 }
 
 #[test]
+fn registered_git_input_does_not_relabel_legacy_content_evidence() {
+    let (mut fixture, work, _, mut host) = bound_fixture("legacy-content-git-declaration", true);
+    host.basis.source_revision = format!(
+        "content-v1:{}",
+        ObjectId::from_canonical_bytes(b"legacy source")
+    );
+    let check = one_check(host.checkpoint(
+        &mut fixture.store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        20,
+    ));
+    let basis = declared(&host.basis.source_revision, Some(&host.basis.workspace_id));
+    let valid = evaluation(
+        &fixture.store,
+        &work,
+        std::slice::from_ref(&check),
+        &fixture.evidence,
+        Some(basis),
+        30,
+    );
+    let mut wrong = valid.clone();
+    wrong.source_basis.as_mut().unwrap().fingerprint = format!(
+        "git-commit:{}",
+        &ObjectId::from_canonical_bytes(b"commit").as_str()[..40]
+    );
+    let before = test_database_shape_snapshot(&fixture.store.connection).unwrap();
+    assert!(record(&mut fixture.store, &wrong).is_err());
+    assert_eq!(
+        test_database_shape_snapshot(&fixture.store.connection).unwrap(),
+        before
+    );
+    record(&mut fixture.store, &valid).unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .load_verification_evidence(&check)
+            .unwrap()
+            .source_basis
+            .source_revision,
+        host.basis.source_revision
+    );
+}
+
+#[test]
 fn git_tree_evaluation_checks_every_selected_citation_and_keeps_unused_history_inert() {
     for missing in [false, true] {
         let (mut fixture, work, _, mut host) = bound_fixture("tree-evaluation", false);

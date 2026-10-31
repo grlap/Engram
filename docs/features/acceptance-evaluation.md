@@ -52,6 +52,36 @@ model itself.
   source-diagnostic status; a seal without an evaluation has no evaluated
   source to compare.
 
+## Registered Git-input evidence
+
+A native, item-bound check from the
+[registered launcher producer](behavioral-control-plane.md#registered-launcher-verification-without-a-turn)
+can support an evaluation without a named-root sighting, including when gated
+control is off. The evaluator declares `source_basis.fingerprint` as
+`git-commit:<full commit>` or `git-tree:<full tree>` for the staged lane.
+Each selected registered check must match that exact input. Different commits
+never become interchangeable because their trees match; a staged input's base
+commit is provenance, not its identity. Completion presents the same declared
+input, even when the optional source-freshness policy is off.
+
+For this path, Git input replaces the sighting and content-freshness
+prerequisites described in R3, R5 and F3 below. Work/run/claim/root scope,
+root rebinding, failed aggregate results, required check kinds, evidence cuts,
+mutation/trigger time and position floors, policy, independence and citation
+closure still apply. A result delivered after a change cannot test that change
+if the check completed before it. Dirty input before a
+run is refused and a later commit cannot rehabilitate it. Cross-item binding
+keeps its separate existing sighting contract.
+
+The path is inferred from a genuine registered producer and the explicit Git
+declaration, never from a revision string alone. Legacy observations,
+content-based evidence, evaluations and completed seals remain stored as they
+were. An open evaluation already carrying those registered/Git facts remains
+usable while the input matches; otherwise one fresh evaluation is needed.
+Exact retries keep their original intent and receipt; completed seals stay frozen.
+Without an evaluation policy, completion may omit a source declaration and use
+the check's recorded input; any declaration it does supply must match exactly.
+
 ## Later source observations after completion
 
 Completion is final when `done` seals the evaluation. A later host report does
@@ -378,7 +408,9 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   and a new evaluation cites the rerun; a declaration in another form than
   the host's source revision, such as a Git commit id, matches no check and
   is corrected instead, which the refusal names only when the evaluation
-  declared a source. Completion applies the same rule again (F8).
+  declared a source. Completion applies the same rule again (F8). These
+  sighting comparisons describe legacy observation evidence; registered checks
+  use the exact Git declaration in [Registered Git-input evidence](#registered-git-input-evidence).
 
   A wrong-source citation refusal first lists up to four full ids of existing
   citable verification records, newest first through the submitted evidence
@@ -588,7 +620,9 @@ stale reason named.
   implementer gains nothing from it: it can re-read and submit at the new cut
   in any case. Under a named root, an evaluation that declared its revision
   is fresh only while the root's newest sighting, through the run feed's head,
-  is at that revision (R3b).
+  is at that revision (R3b). Registered checks instead follow
+  [Registered Git-input evidence](#registered-git-input-evidence), where the
+  exact `git-commit:` or `git-tree:` declaration replaces this sighting rule.
 - **F4 source fingerprint.** When policy `require_source_freshness` is on, the
   completion attempt presents a `source_fingerprint` measured by the host at
   completion time (`done --source-fingerprint F`) that equals
@@ -1001,7 +1035,10 @@ evaluator read through, and `LOCATOR` a note/gate locator from `show --notes
 evaluator judged (F3); a value in another form, such as a Git commit id, voids
 the evaluation at the host's next sighting of the source, and a pass on a
 bound criterion declared that way is refused at once, since no check ran at
-that revision (R5). `--supersedes RECORD_ID` names the carried failing
+that revision (R5). This describes legacy observation evidence; for registered
+checks use the exact `git-commit:` or `git-tree:` declaration described in
+[Registered Git-input evidence](#registered-git-input-evidence).
+`--supersedes RECORD_ID` names the carried failing
 evaluation (R11), by the id `show` prints in
 `acceptance_evaluation.carried_failure` (`evaluation`, `revised_by`,
 `judged_revision`, `failing`, `supersedes_required`); `show --full` adds the
