@@ -1795,7 +1795,7 @@ fn validate_source_root_basis_on(
     Ok(())
 }
 
-fn validate_typed_evidence_refs(refs: &[String]) -> Result<(), StoreError> {
+pub(super) fn validate_typed_evidence_refs(refs: &[String]) -> Result<(), StoreError> {
     if refs.len() > MAX_TYPED_EVIDENCE_REFS {
         return Err(StoreError::InvalidControlSession(format!(
             "typed evidence accepts at most {MAX_TYPED_EVIDENCE_REFS} references"

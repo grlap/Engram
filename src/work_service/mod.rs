@@ -1630,6 +1630,32 @@ fn agent_change_object(
                 created_at: observation.recorded_at,
             }))
         }
+        "registered_host_run" => {
+            let producer = serde_json::from_value::<crate::domain::RegisteredHostRun>(object)?;
+            let binding = &producer.request.registration.binding;
+            let item = store.get_work_item(binding.work_id)?;
+            if &producer.project_id != project_id || item.project_id != *project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "registered host run is bound outside its project".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: producer.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(binding.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(binding.work_revision),
+                change_kind: "registered_host_run".into(),
+                summary: compact_text(&format!(
+                    "host-asserted registered run {:?}; input={}",
+                    producer.request.run.outcome,
+                    producer.request.input.revision()
+                )),
+                actor_id: Some(compact_text(&producer.actor.actor_id)),
+                actor_context: projected_actor_context(&producer.actor),
+                created_at: producer.recorded_at,
+            }))
+        }
         "verification_evidence" => {
             let evidence = serde_json::from_value::<VerificationEvidence>(object)?;
             let item = store.get_work_item(evidence.binding.work_id)?;

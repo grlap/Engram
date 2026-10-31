@@ -826,6 +826,9 @@ impl SqliteStore {
             // Lease and host-waiver operation names below are historical receipts
             // only. Import retains them; no current host operation produces them.
             && match stored.operation.as_str() {
+                "verification_record" => super::registered_verification::row_matches(
+                    connection, &stored.session_id, intent.clone(), result,
+                )?,
                 "turn_begin" | "turn_checkpoint" | "lease_acquire" | "obligation_waive" => result
                     .get("decision")
                     .and_then(serde_json::Value::as_str)

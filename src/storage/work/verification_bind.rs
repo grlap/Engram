@@ -24,8 +24,8 @@ use super::query::{load_work_claim_optional, load_work_item, load_work_run};
 use crate::ObjectId;
 use crate::domain::{
     ActorContext, BoundCriterionEligibility, BoundVerificationSource, BoundVerificationTarget,
-    ExecutionObservation, ExecutionOutcome, ExecutionSourceBasis, MAX_VERIFICATION_BIND_TARGETS,
-    ProjectId, SCHEMA_VERSION, SessionId, SourceRootState, VerificationBindInput,
+    ExecutionOutcome, ExecutionSourceBasis, MAX_VERIFICATION_BIND_TARGETS, ProjectId,
+    SCHEMA_VERSION, SessionId, SourceRootState, VerificationBindInput,
     VerificationBindOriginalRefusal, VerificationBindReceipt, VerificationBindRefusal,
     VerificationBindRequestRefusal, VerificationBindTarget, VerificationBindTargetReason,
     VerificationBindTargetRefusal, VerificationEvidence, VerificationResult, WorkClaimState,
@@ -267,12 +267,12 @@ fn validate_original(
     if evidence.result != VerificationResult::Passed {
         return Ok(Err(Refused::NotPassed));
     }
-    let producer: ExecutionObservation = load_typed_work_object(
-        transaction,
-        &evidence.producer_observation,
-        "execution_observation",
-    )?;
-    if producer.outcome != ExecutionOutcome::Succeeded {
+    let producer = super::load_verification_producer_on(transaction, &evidence)?;
+    if producer.outcome != ExecutionOutcome::Succeeded
+        || producer
+            .run_outcome
+            .is_some_and(|outcome| outcome != ExecutionOutcome::Succeeded)
+    {
         return Ok(Err(Refused::ProducerNotSucceeded));
     }
     let Some(generation) = evidence

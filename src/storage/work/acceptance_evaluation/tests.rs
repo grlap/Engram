@@ -30,8 +30,9 @@ use super::super::test_support::*;
 use super::*;
 use crate::domain::{
     AcceptanceEvaluationMode as Mode, AcceptanceSourceBasis, CompletionSeal, ControlSessionBinding,
-    ControlWorkBinding, IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
-    RecordGateEvidenceRequest, ResourceCoverage, ResourceSubject, ReviseWorkRequest, WorkClaim,
+    ControlWorkBinding, ExecutionObservation, IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION,
+    ObligationRuleSet, RecordGateEvidenceRequest, ResourceCoverage, ResourceSubject,
+    ReviseWorkRequest, WorkClaim,
 };
 
 fn disable_obligation_rules(store: &mut SqliteStore, second: i64) {

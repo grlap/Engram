@@ -32,6 +32,13 @@ authority. See the existing [landing rules](../AGENTS.md#authority-and-git).
 
 ## Source-tree capabilities
 
+Registered launcher terminal results can enter typed verification through the
+private `verification_record` producer without a turn grant, with control ON
+or OFF. It preserves registration scope, Git input and real stage outcomes,
+reusing canonical verification and exact-intent settlement. Host emission
+requires the connected producer's capability advertisement; registration alone
+is not credit. See the [host protocol](features/behavioral-control-plane.md#registered-launcher-verification-without-a-turn).
+
 Selected verification evidence can carry a
 [Git-tree applicability restriction](features/verification-applicability.md).
 Its declared rebuildable schema barrier requires the documented coordinated

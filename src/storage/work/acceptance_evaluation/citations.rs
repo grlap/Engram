@@ -226,7 +226,12 @@ pub(super) fn classify_citation(
                     "verification evidence {hash} projection result disagrees with its canonical record"
                 )));
             }
-            if evidence.result == VerificationResult::Passed {
+            let producer = super::super::load_verification_producer_on(connection, &evidence)?;
+            if evidence.result == VerificationResult::Passed
+                && producer
+                    .run_outcome
+                    .is_none_or(|outcome| outcome == crate::domain::ExecutionOutcome::Succeeded)
+            {
                 Citation::VerificationPassed {
                     applicability: evidence.applicability,
                     kind: evidence.check_kind,
@@ -350,4 +355,56 @@ pub(super) fn gate_superseded_after(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod registered_tests {
+    use super::*;
+
+    #[test]
+    fn registered_verification_observed_admission_rejects_failed_aggregate() {
+        use crate::domain::{AcceptanceEvaluationPolicy, RegisteredVerificationOutcome};
+        use crate::storage::work::registered_verification::registered_verification_case;
+        for outcome in [
+            RegisteredVerificationOutcome::Passed,
+            RegisteredVerificationOutcome::Failed,
+            RegisteredVerificationOutcome::Indeterminate,
+        ] {
+            let (store, receipt) = registered_verification_case(outcome);
+            let id = receipt.verifications[0].record_id.clone();
+            let evidence: VerificationEvidence =
+                load_typed_work_object(&store.connection, &id, "verification_evidence").unwrap();
+            let item = store.get_work_item(evidence.binding.work_id).unwrap();
+            let input = CriterionVerdictInput {
+                criterion: 1,
+                verdict: AcceptanceVerdict::Pass,
+                basis: AcceptanceBasis::Observed,
+                rationale: "observed test".into(),
+                evidence: vec![id],
+            };
+            let policy = AcceptanceEvaluationPolicy {
+                allowed_modes: vec![],
+                mechanical_basis: MechanicalBasis::Observed,
+                require_source_freshness: false,
+            };
+            let before = crate::storage::test_database_shape_snapshot(&store.connection).unwrap();
+            let result = bind_verdicts(
+                &store.connection,
+                &item,
+                evidence.binding.run_id,
+                &policy,
+                i64::MAX,
+                &[input],
+            );
+            assert_eq!(
+                result.is_ok(),
+                outcome == RegisteredVerificationOutcome::Passed,
+                "{outcome:?}: {result:?}"
+            );
+            assert_eq!(
+                crate::storage::test_database_shape_snapshot(&store.connection).unwrap(),
+                before
+            );
+        }
+    }
 }

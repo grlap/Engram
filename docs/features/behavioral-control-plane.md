@@ -205,6 +205,56 @@ under that authority and its live root-run work claim. Joining or
 changing the roster during `completion_pending` requires an attributed abort
 and a new synchronization cut.
 
+### Registered launcher verification without a turn
+
+The private `verification_record` operation records terminal results of a
+durably registered launcher run with control ON or OFF. It issues no grant,
+begins no turn and creates no execution observation. Registration is
+**asserted by the host, not independently proven**. The host calls only for
+its durable registrations, never an unregistered command or an artifact found
+later. Engram validates the connection's project/session and the pinned current
+work revision, claim, fence and named root; later focus cannot retarget a result.
+
+`session_bind` and `session_status` advertise `verification_record_v1` in
+`result.capabilities`. Missing means unsupported: retain the result without
+sending. Install the producer before enabling host emission. Old builds refuse
+the unknown operation without writing; an installed binary's identity does not
+establish support in a connected process still running an older build.
+
+```text
+operation_key: termal-run:<host_run_id>
+registration: {host_run_id, request_identity, registered_at,
+  initiating_session_id, owning_session_id?, binding, root}
+root: {workspace_id, generation, state: named}
+input: {kind: commit, commit} | {kind: staged_tree, tree, base_commit}
+run: {mode, command, started_at, finished_at, outcome}
+checks: [{stage, check_kind, command, check_fingerprint, started_at?,
+  completed_at?, outcome, summary?, refs?, counts?}]
+post_run: {outcome, clean_before, clean_after, dirty_paths?, disposition?}
+```
+
+The request also carries the existing routing token. Ordinary input names its
+full commit; staged input names its exact tree, with base commit as provenance.
+Only input clean before and after execution is admitted here. A dirty-input
+disposition does not waive this rule or change landing requirements.
+
+An immutable `registered_host_run` preserves the aggregate and individual stage
+results. Completed checks enter canonical verification with that producer,
+using existing feeds and the matcher. Unrun stages mint no verification. An
+interrupted stage without a known completion time stays indeterminate in the
+producer and mints none. A passing stage cannot turn a failed run into a passed
+gate. Old grant-backed producers retain their meaning. This operation does not
+replace evaluation admission rules.
+
+The receipt is `{operation, producer, verifications: [{stage, record_id}],
+run_outcome}`, without a fabricated checkpoint id. The host persists one exact
+request and retries the same body/key after an unknown transport outcome or
+restart, never rerunning the test for settlement. Accepted exact replay returns
+the original ids even after claim movement. Changed intent conflicts. A new
+submission against a moved association returns `verification_record_refused`
+with `details.field` and `details.reason`, recording nothing; the host retains
+it as not credited, without changing the key or substituting a later claim.
+
 ### 2. Evaluate a turn
 
 `turn_evaluate(TurnIntent) -> ControlDecision` is called before a prompt is

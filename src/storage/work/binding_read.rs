@@ -23,9 +23,8 @@ use crate::domain::{
     AcceptanceBindingReadBasis, AcceptanceBindingReadBinding,
     AcceptanceBindingReadRefusal as Refusal, AcceptanceBindingResolution,
     AcceptanceBindingResolutionKind, AcceptanceBindingRow, AcceptanceBindingSatisfaction,
-    AcceptanceBindingVerification, ExecutionObservation, FeedId, FeedPosition, ProjectId,
-    VerificationEvidence, WorkId, WorkItem, WorkObligationResolution, WorkObligationState,
-    WorkRunId,
+    AcceptanceBindingVerification, FeedId, FeedPosition, ProjectId, VerificationEvidence, WorkId,
+    WorkItem, WorkObligationResolution, WorkObligationState, WorkRunId,
 };
 use crate::storage::StoreError;
 
@@ -403,8 +402,7 @@ impl RowReader<'_> {
             (producer, Some(bound))
         } else {
             let producer_id = &evidence.producer_observation;
-            let producer: ExecutionObservation =
-                load_typed_work_object(self.connection, producer_id, "execution_observation")?;
+            let producer = super::load_verification_producer_on(self.connection, &evidence)?;
             if producer.project_id != self.basis.project_id
                 || producer.binding.run_id != self.basis.run_id
             {

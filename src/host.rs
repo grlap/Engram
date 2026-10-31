@@ -160,6 +160,15 @@ pub enum HostControlRequest {
         measurement: crate::domain::BindMeasurement,
         targets: Vec<crate::domain::VerificationBindTarget>,
     },
+    VerificationRecord {
+        routing_token: String,
+        operation_key: String,
+        registration: Box<crate::domain::RegisteredVerificationAssociation>,
+        input: crate::domain::RegisteredVerificationInput,
+        run: crate::domain::RegisteredVerificationRun,
+        checks: Vec<crate::domain::RegisteredVerificationCheck>,
+        post_run: crate::domain::RegisteredVerificationPostRun,
+    },
 }
 
 impl HostControlRequest {
@@ -180,6 +189,7 @@ impl HostControlRequest {
             Self::ExecutionObserve { .. } => "execution_observe",
             Self::TurnCheckpoint { .. } => "turn_checkpoint",
             Self::VerificationBind { .. } => "verification_bind",
+            Self::VerificationRecord { .. } => "verification_record",
         }
     }
 }
@@ -214,6 +224,9 @@ fn store_error_reason(error: &StoreError) -> Option<crate::storage::NamedRootRea
 /// The typed parts of `error` a host reads as data, when it has them.
 fn store_error_details(error: &StoreError) -> Option<Value> {
     match error {
+        StoreError::RegisteredVerificationRefused { field, reason } => {
+            Some(serde_json::json!({"field": field, "reason": reason}))
+        }
         StoreError::VerificationBindRefused(refusal) => serde_json::to_value(refusal).ok(),
         _ => None,
     }
@@ -236,6 +249,29 @@ pub struct HostControlServer {
 }
 
 impl HostControlServer {
+    #[cfg(test)]
+    pub(crate) fn from_test_store(
+        store: SqliteStore,
+        project_id: ProjectId,
+        session_id: SessionId,
+        connection_token: String,
+    ) -> Self {
+        Self {
+            store,
+            diagnostic_store: crate::diagnostics::Fingerprint::store(Path::new(":memory:")),
+            project_id,
+            actor_id: "runner".into(),
+            session_id,
+            connection_token,
+            source_skill: None,
+            actor_context: None,
+            actor_context_normalized: false,
+            diagnostics: None,
+            diagnostic_frame: None,
+            diagnostic_sequence: 0,
+        }
+    }
+
     /// Answers at most one bounded frame after startup has failed, without
     /// decoding or dispatching its operation. The caller must then exit with
     /// a failure status and retain the original diagnostic on stderr.
@@ -398,6 +434,34 @@ impl HostControlServer {
         let _budget = crate::storage::ControlRequestScope::ensure()?;
         let now = Utc::now();
         match request {
+            HostControlRequest::VerificationRecord {
+                routing_token,
+                operation_key,
+                registration,
+                input,
+                run,
+                checks,
+                post_run,
+            } => {
+                let actor = self.actor("verification_record", "record a registered host run");
+                serde_json::to_value(self.store.record_registered_verification(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.connection_token,
+                    &routing_token,
+                    &actor,
+                    &crate::domain::RegisteredVerificationRequest {
+                        operation_key,
+                        registration: *registration,
+                        input,
+                        run,
+                        checks,
+                        post_run,
+                    },
+                    now,
+                )?)
+                .map_err(StoreError::Json)
+            }
             HostControlRequest::SessionBind {
                 external_ref,
                 title,
@@ -879,6 +943,7 @@ impl HostControlServer {
 
     /// The response to one parsed request.
     fn with_verification_applicability(&self, mut value: Value) -> Result<Value, StoreError> {
+        value["capabilities"] = serde_json::json!(["verification_record_v1"]);
         if self.store.verification_git_tree_applicability_available()? {
             value["verification_evidence_git_tree_applicability_v1"] = Value::Bool(true);
         }
@@ -1122,6 +1187,7 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
 #[must_use]
 pub fn store_error_code(error: &StoreError) -> &'static str {
     match error {
+        StoreError::RegisteredVerificationRefused { .. } => "verification_record_refused",
         StoreError::ControlStoreBusy { .. } => "control_store_busy",
         StoreError::ControlRequestExpired => "control_request_expired",
         StoreError::SearchBudgetExhausted { .. } => "search_budget_exhausted",

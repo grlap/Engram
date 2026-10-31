@@ -22,10 +22,9 @@ use crate::control::{
     acceptance_binding_criterion, explain_obligation_satisfaction,
 };
 use crate::domain::{
-    BuiltinObligationRuleRef, ExecutionObservation, ExecutionSourceBasis, FeedPosition,
-    SourceObservation, StaleSourceDecider, StaleVerificationSource, VerificationEvidence,
-    VerificationKind, WorkId, WorkObligation, WorkObligationId, WorkObligationResolution,
-    WorkRunId,
+    BuiltinObligationRuleRef, ExecutionSourceBasis, FeedPosition, SourceObservation,
+    StaleSourceDecider, StaleVerificationSource, VerificationEvidence, VerificationKind, WorkId,
+    WorkObligation, WorkObligationId, WorkObligationResolution, WorkRunId,
 };
 
 impl SqliteStore {
@@ -171,7 +170,7 @@ pub(super) fn stale_verification_source(
 pub(super) struct VerificationAtCut {
     judged_basis: Option<ExecutionSourceBasis>,
     evidence: VerificationEvidence,
-    producer: ExecutionObservation,
+    producer: crate::domain::VerificationProducerFacts,
     evidence_position: i64,
     producer_position: i64,
     cut: FeedPosition,
@@ -207,11 +206,7 @@ impl VerificationAtCut {
             root.as_ref(),
             cut.position,
         )?;
-        let producer = load_typed_work_object::<ExecutionObservation>(
-            connection,
-            &evidence.producer_observation,
-            "execution_observation",
-        )?;
+        let producer = super::super::load_verification_producer_on(connection, &evidence)?;
         let producer_position = producer_position_on_run(connection, &evidence, evidence_position)?;
         let judged_basis = if evidence.applicability.is_some() {
             judged_basis_on(connection, run_id, root.as_ref(), cut.position)?

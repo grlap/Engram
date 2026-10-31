@@ -44,6 +44,7 @@ mod project_memory;
 mod schema_diagnostics;
 mod sqlite_path;
 pub use sqlite_path::{open_sqlite_file, validate_sqlite_file_path};
+mod registered_verification;
 mod task_memory;
 mod transaction_timing;
 mod unadmitted_observation;
@@ -1259,6 +1260,8 @@ pub(crate) const CONTROL_STORE_BUSY_MESSAGE: &str = concat!(
 /// Errors at the immutable storage boundary.
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("registered verification refused ({field}): {reason}")]
+    RegisteredVerificationRefused { field: String, reason: String },
     #[error("could not read {} ({utf16_length} UTF-16 units): {source}", .path.display())]
     StoreFileIo {
         path: PathBuf,

@@ -97,6 +97,10 @@ pub(in crate::storage) use unadmitted::{
     unadmitted_observation_is_consistent_on,
 };
 mod verification_bind;
+mod verification_producer;
+pub(in crate::storage) use verification_producer::load_verification_producer_on;
+mod registered_verification;
+pub(in crate::storage) use registered_verification::record_registered_verification_on;
 #[cfg(test)]
 pub(crate) use verification_bind::bound_assessment_fixture;
 pub(in crate::storage) use verification_bind::{

@@ -27,13 +27,13 @@ use crate::domain::{
     AcceptanceBasis, AcceptanceBinding, AcceptanceEvaluation, AcceptanceEvaluationMode,
     AcceptanceEvaluationPolicy, AcceptanceResult, AcceptanceStaleReason, AcceptanceVerdict,
     ActorContext, AssuranceLevel, CarriedFailure, CarriedFailureReviser, CarriedFailureVerdict,
-    CompletionSeal, CriterionVerdict, CriterionVerdictInput, ExecutionObservation,
-    ExecutionSourceBasis, FeedId, MAX_ACCEPTANCE_EVALUATION_BYTES,
-    MAX_ACCEPTANCE_SOURCE_BASIS_BYTES, MAX_ACCEPTANCE_VERDICT_CITATIONS,
-    MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis, NamedRootBindingEvent, NamedRootBindingKind,
-    ProjectId, ProvenanceRelation, RecordAcceptanceEvaluationRequest, SourceObservation,
-    SourceRootState, VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence,
-    WorkLifecycle, WorkObligation, WorkPlanningAuthority, WorkTransition,
+    CompletionSeal, CriterionVerdict, CriterionVerdictInput, ExecutionSourceBasis, FeedId,
+    MAX_ACCEPTANCE_EVALUATION_BYTES, MAX_ACCEPTANCE_SOURCE_BASIS_BYTES,
+    MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis,
+    NamedRootBindingEvent, NamedRootBindingKind, ProjectId, ProvenanceRelation,
+    RecordAcceptanceEvaluationRequest, SourceObservation, SourceRootState, VerificationEvidence,
+    VerificationResult, WorkEvent, WorkEvidence, WorkLifecycle, WorkObligation,
+    WorkPlanningAuthority, WorkTransition,
 };
 use crate::memory::Redactor;
 use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};

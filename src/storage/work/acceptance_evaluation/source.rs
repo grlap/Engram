@@ -6,9 +6,9 @@
 
 use super::{
     AcceptanceVerdict, Citation, Connection, CriterionVerdict, EvaluationRootMismatch,
-    ExecutionObservation, ExecutionSourceBasis, NamedRootBindingEvent, NamedRootBindingKind,
-    ObjectId, OptionalExtension, SourceObservation, SourceRootState, StoreError, WorkId, WorkItem,
-    WorkRunId, admission, citation_position, classify_citation, latest_named_root_binding_on,
+    ExecutionSourceBasis, NamedRootBindingEvent, NamedRootBindingKind, ObjectId, OptionalExtension,
+    SourceObservation, SourceRootState, StoreError, WorkId, WorkItem, WorkRunId, admission,
+    citation_position, classify_citation, latest_named_root_binding_on,
     latest_named_root_sighting_on, load_typed_work_object, load_work_claim_optional, params,
 };
 use crate::domain::{
@@ -613,12 +613,10 @@ fn naming_mismatch(
     // this run, stands for the check here.
     let bound = is_bound(connection, citation)?;
     if !bound {
-        let producer_basis = load_typed_work_object::<ExecutionObservation>(
-            connection,
-            producer,
-            "execution_observation",
-        )?
-        .source_basis;
+        let evidence: crate::domain::VerificationEvidence =
+            load_typed_work_object(connection, citation, "verification_evidence")?;
+        let producer_basis =
+            super::super::load_verification_producer_on(connection, &evidence)?.source_basis;
         let Some(producer_basis) = producer_basis else {
             return Ok(Some(NamingMismatch::ProducerUnsourced));
         };

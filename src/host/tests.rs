@@ -70,6 +70,10 @@ fn turn_grant_read_round_trips_on_the_host_channel() {
         })
         .unwrap();
     let routing = bound["routing_token"].as_str().unwrap();
+    assert_eq!(
+        bound["capabilities"],
+        serde_json::json!(["verification_record_v1"])
+    );
     let decision = server
         .handle(HostControlRequest::TurnEvaluate {
             routing_token: routing.into(),

@@ -20,9 +20,9 @@ use crate::domain::{
     ACCEPTANCE_VERIFICATION_READ_PAGE_BYTES, ACCEPTANCE_VERIFICATION_READ_PAGE_ROWS,
     AcceptanceBindingProducer, AcceptanceBindingReadBasis, AcceptanceBindingVerification,
     AcceptanceBoundVerification, AcceptanceVerificationPage,
-    AcceptanceVerificationReadRefusal as Refusal, BoundVerificationSource, ExecutionObservation,
-    ProjectId, RootExecutionId, VerificationEvidence, VerificationRequirement, WorkEvidenceKind,
-    WorkId, WorkRunId,
+    AcceptanceVerificationReadRefusal as Refusal, BoundVerificationSource, ProjectId,
+    RootExecutionId, VerificationEvidence, VerificationRequirement, WorkEvidenceKind, WorkId,
+    WorkRunId,
 };
 use crate::storage::StoreError;
 
@@ -389,8 +389,7 @@ impl CandidateScan<'_> {
         evidence: &VerificationEvidence,
     ) -> Result<AcceptanceBindingProducer, StoreError> {
         let producer_id = &evidence.producer_observation;
-        let producer: ExecutionObservation =
-            load_typed_work_object(self.connection, producer_id, "execution_observation")?;
+        let producer = super::load_verification_producer_on(self.connection, evidence)?;
         if producer.project_id != self.basis.project_id
             || producer.binding.run_id != self.basis.run_id
             || producer.binding.work_id != self.basis.work_id
@@ -426,7 +425,13 @@ impl CandidateScan<'_> {
             )
             .optional()?;
         match entry {
-            Some((at, kind)) if kind == "execution_observation" && 0 < at && at < position => {
+            Some((at, kind))
+                if matches!(
+                    kind.as_str(),
+                    "execution_observation" | "registered_host_run"
+                ) && 0 < at
+                    && at < position =>
+            {
                 Ok(at)
             }
             Some((at, kind)) => Err(damaged(format!(
@@ -474,8 +479,7 @@ pub(super) fn bound_verification_read_on(
         )));
     }
     let producer_id = &evidence.producer_observation;
-    let producer: ExecutionObservation =
-        load_typed_work_object(connection, producer_id, "execution_observation")?;
+    let producer = super::load_verification_producer_on(connection, evidence)?;
     if producer.project_id != *project_id
         || producer.binding.run_id != source.run_id
         || producer.binding.work_id != source.work_id
@@ -492,7 +496,7 @@ pub(super) fn bound_verification_read_on(
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()?;
-    let Some((producer_position, "execution_observation")) = producer_entry
+    let Some((producer_position, "execution_observation" | "registered_host_run")) = producer_entry
         .as_ref()
         .map(|(position, kind)| (*position, kind.as_str()))
     else {

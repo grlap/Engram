@@ -1958,11 +1958,7 @@ fn bind_acceptance_to_obligations_on(
                 } else {
                     None
                 };
-                let producer = load_typed_work_object::<ExecutionObservation>(
-                    connection,
-                    &evidence.producer_observation,
-                    "execution_observation",
-                )?;
+                let producer = super::load_verification_producer_on(connection, &evidence)?;
                 let producer_position =
                     assessment::producer_position_on_run(connection, &evidence, position)?;
                 // The floors of every unadmitted change on the run hold too,
@@ -2072,7 +2068,7 @@ fn bind_acceptance_to_obligations_on(
 fn binding_freshness_mismatch(
     mutation: Option<(&crate::domain::SourceObservation, i64)>,
     (evidence, evidence_position): (&VerificationEvidence, i64),
-    (producer, producer_position): (&ExecutionObservation, i64),
+    (producer, producer_position): (&dyn crate::domain::VerificationProducer, i64),
     requirement: &crate::domain::VerificationRequirement,
     root: Option<&NamedRootContext>,
     measured_sighting: Option<(&crate::domain::ExecutionSourceBasis, i64)>,

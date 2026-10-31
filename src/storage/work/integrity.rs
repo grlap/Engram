@@ -291,11 +291,7 @@ pub(super) fn expected_verification_projection(
         evidence_id,
         "verification_evidence",
     )?;
-    let producer = load_typed_work_object::<ExecutionObservation>(
-        connection,
-        &evidence.producer_observation,
-        "execution_observation",
-    )?;
+    let producer = super::load_verification_producer_on(connection, &evidence)?;
     // The check ran under the original's binding and basis. A bound record
     // carries the original's facts unchanged and its own run, generation,
     // binder and binding time; it is checked against its original here.
@@ -1115,6 +1111,38 @@ pub(super) fn verify_work_feed_integrity(
             continue;
         }
         let expected = match entry_kind.as_str() {
+            "registered_host_run" => object
+                .decode::<crate::domain::RegisteredHostRun>()
+                .ok()
+                .filter(|producer| {
+                    producer.schema_version == SCHEMA_VERSION
+                        && producer.session_id
+                            == producer.request.registration.initiating_session_id
+                        && producer.actor.session_id.as_ref() == Some(&producer.session_id)
+                        && producer.actor.run_id.as_deref()
+                            == Some(
+                                producer
+                                    .request
+                                    .registration
+                                    .binding
+                                    .run_id
+                                    .0
+                                    .to_string()
+                                    .as_str(),
+                            )
+                        && super::registered_verification::validate_request(
+                            &producer.request,
+                            producer.recorded_at,
+                        )
+                        .is_ok()
+                })
+                .and_then(|producer| {
+                    expected_feeds_for_work(
+                        work_items,
+                        producer.request.registration.binding.work_id,
+                        Some(producer.request.registration.binding.run_id),
+                    )
+                }),
             "work_event" => object
                 .decode::<WorkEvent>()
                 .ok()
@@ -1363,7 +1391,7 @@ pub(super) fn verify_work_feed_integrity(
            ON entry.object_id = object.object_id
          WHERE object.object_kind IN (
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
-              'verification_evidence', 'environment_evidence', 'named_root_binding',
+              'verification_evidence', 'environment_evidence', 'named_root_binding', 'registered_host_run',
              'work_obligation', 'work_obligation_resolution', 'unadmitted_execution_observation',
              'task_sync_import_planning'
          )

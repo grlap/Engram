@@ -45,6 +45,9 @@ impl Frame {
             | HostControlRequest::VerificationBind {
                 idempotency_key, ..
             } => (Some(idempotency_key), None),
+            HostControlRequest::VerificationRecord { operation_key, .. } => {
+                (Some(operation_key), None)
+            }
             HostControlRequest::TurnBegin {
                 idempotency_key,
                 grant_id,

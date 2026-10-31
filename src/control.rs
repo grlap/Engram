@@ -14,13 +14,13 @@ use crate::{
     domain::{
         BuiltinObligationRuleRef, BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ContextPacket,
         ControlAssurance, ControlDirective, ControlRefusalCode, DirectiveSatisfaction,
-        DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
-        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
-        ObservedTurnDecision, ParticipantMembership, SessionPhase, SourceObservation,
-        SourceRootState, StaleSourceDecider, TaskDelta, TurnBeginDecision, TurnBeginSnapshot,
-        TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-        TurnGrantBasis, TurnGrantState, VerificationEvidence, VerificationEvidenceMismatch,
-        VerificationRequirement, VerificationResult, WorkEvidenceKind, WorkObligation,
+        DirectiveTarget, EffectClass, IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION,
+        ObligationRuleDefinition, ObligationRuleSet, ObservedTurnDecision, ParticipantMembership,
+        SessionPhase, SourceObservation, SourceRootState, StaleSourceDecider, TaskDelta,
+        TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot,
+        TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState, VerificationEvidence,
+        VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
+        WorkEvidenceKind, WorkObligation,
     },
     storage::StoreError,
 };
@@ -55,7 +55,7 @@ pub struct VerificationEvidenceMatchInput<'a> {
     pub judged_basis: Option<&'a crate::domain::ExecutionSourceBasis>,
     pub candidate_kind: WorkEvidenceKind,
     pub evidence: Option<&'a VerificationEvidence>,
-    pub producer: Option<&'a ExecutionObservation>,
+    pub producer: Option<&'a dyn crate::domain::VerificationProducer>,
     /// The newest source mutation the run observed at the cut, with its
     /// run-feed position, or `None` when the run observed no mutation: then
     /// the verification is of the run's source as it stands, and the checks
@@ -136,7 +136,8 @@ pub fn explain_verification_evidence(
         .ok_or(plain(VerificationEvidenceMismatch::WrongKind))?;
     let producer = input
         .producer
-        .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
+        .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?
+        .verification_facts();
     if evidence.check_kind != input.requirement.check_kind {
         return Err(plain(VerificationEvidenceMismatch::CheckKindMismatch));
     }
@@ -262,7 +263,11 @@ pub fn explain_verification_evidence(
             VerificationEvidenceMismatch::CheckFingerprintMismatch,
         ));
     }
-    if evidence.result != VerificationResult::Passed {
+    if evidence.result != VerificationResult::Passed
+        || producer
+            .run_outcome
+            .is_some_and(|outcome| outcome != crate::domain::ExecutionOutcome::Succeeded)
+    {
         return Err(plain(VerificationEvidenceMismatch::ResultNotPassed));
     }
     if mutation.is_some_and(|(latest_mutation, latest_mutation_position, _, _)| {
@@ -396,7 +401,7 @@ pub fn evaluate_obligation_rules(
 pub struct ObligationSatisfactionInput<'a> {
     pub judged_basis: Option<&'a crate::domain::ExecutionSourceBasis>,
     pub evidence: &'a VerificationEvidence,
-    pub producer: &'a ExecutionObservation,
+    pub producer: &'a dyn crate::domain::VerificationProducer,
     /// The newest source mutation at the cut with its run-feed position, or
     /// `None` when the run observed none. A builtin rule is triggered by a
     /// mutation and is never satisfied without one; a binding's obligation

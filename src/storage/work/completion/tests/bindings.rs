@@ -4,6 +4,51 @@ use crate::domain::{
     AcceptanceBinding, ReviseWorkRequest, VerificationRequirement, WorkPlanningAuthority,
 };
 
+#[test]
+fn registered_verification_completion_matcher_keeps_aggregate_failure() {
+    use crate::domain::{RegisteredVerificationOutcome, VerificationEvidenceMismatch};
+    use crate::storage::work::feeds::{load_typed_work_object, run_feed_position_for_object_on};
+    use crate::storage::work::registered_verification::registered_verification_case;
+    for outcome in [
+        RegisteredVerificationOutcome::Passed,
+        RegisteredVerificationOutcome::Failed,
+    ] {
+        // A failed overall run may contain an individually passing stage.
+        let (store, receipt) = registered_verification_case(outcome);
+        let id = &receipt.verifications[0].record_id;
+        let evidence: VerificationEvidence =
+            load_typed_work_object(&store.connection, id, "verification_evidence").unwrap();
+        let producer =
+            crate::storage::work::load_verification_producer_on(&store.connection, &evidence)
+                .unwrap();
+        let position = |id| {
+            run_feed_position_for_object_on(&store.connection, evidence.binding.run_id, id)
+                .unwrap()
+                .position
+        };
+        let mismatch = super::super::binding_freshness_mismatch(
+            None,
+            (&evidence, position(id)),
+            (&producer, position(&receipt.producer)),
+            &VerificationRequirement {
+                check_kind: VerificationKind::Test,
+                check_fingerprint: None,
+            },
+            None,
+            None,
+            None,
+        );
+        if outcome == RegisteredVerificationOutcome::Passed {
+            assert_eq!(mismatch, None);
+        } else {
+            assert_eq!(
+                mismatch,
+                Some((VerificationEvidenceMismatch::ResultNotPassed, None))
+            );
+        }
+    }
+}
+
 fn bound(criterion: usize, kind: VerificationKind) -> AcceptanceBinding {
     AcceptanceBinding {
         criterion,

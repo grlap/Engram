@@ -8,9 +8,8 @@ use super::execution::work_evidence_kind_on;
 use super::feeds::load_typed_work_object;
 use crate::argument_names::Twin;
 use crate::domain::{
-    ActorContext, EnvironmentEvidence, ExecutionObservation, ExecutionOutcome, GateEvidenceRecord,
-    VerificationEvidence, VerificationKind, VerificationResult, WorkEvidence, WorkEvidenceKind,
-    WorkId, WorkObservation,
+    ActorContext, EnvironmentEvidence, ExecutionOutcome, GateEvidenceRecord, VerificationEvidence,
+    VerificationKind, VerificationResult, WorkEvidence, WorkEvidenceKind, WorkId, WorkObservation,
 };
 use crate::{ObjectId, RestoredWorkEvidence};
 
@@ -137,11 +136,7 @@ pub(super) fn load_note(
             let evidence: VerificationEvidence = load_typed_work_object(connection, hash, kind)?;
             work_evidence_kind_on(connection, evidence.binding.run_id, hash)?;
             let verification = if verification_facts {
-                let producer: ExecutionObservation = load_typed_work_object(
-                    connection,
-                    &evidence.producer_observation,
-                    "execution_observation",
-                )?;
+                let producer = super::load_verification_producer_on(connection, &evidence)?;
                 Some(VerificationFacts {
                     result: evidence.result,
                     check_kind: evidence.check_kind,
