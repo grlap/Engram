@@ -70,12 +70,15 @@ their presence in a file alone does not prove delivery.
 
 - Never commit, push, rebase, or force-push without explicit user
   permission. Read-only Git inspection is always allowed. The standing
-  approval below is such permission for commit, push and install only; it
-  never covers a rebase, force-push or history rewrite.
-- Standing approval: once all of these hold, commit
-  the changeset without asking, push and install it as described below,
-  and report the landed commit to Greg afterwards:
-  - the full gate passes on the exact tree being committed, its input
+  approval below is such permission for commit, push and install only, and
+  the candidate-commits bullet for a candidate commit only; neither covers a
+  rebase, force-push or history rewrite.
+- Standing approval: once all of these hold, land the changeset without
+  asking (commit it on master, or fast-forward master to its gated candidate
+  commit), push and install it as described below, and report the landed
+  commit to Greg afterwards:
+  - the full gate passes on the exact commit being landed (for the
+    staged-tree lane, the exact tree being committed), its input
     fingerprint checks at completion, and nothing was edited since; a
     changeset touching only `.md` files instead passes the link check and
     the AGENTS/CLAUDE identity check on that tree, each with its input
@@ -116,7 +119,7 @@ their presence in a file alone does not prove delivery.
     remote observation is not one of these. The landing then makes it
     true, and the item completes only after a post-landing evaluation
     passes it;
-  - before committing, the changeset was judged as the next rule
+  - before landing, the changeset was judged as the next rule
     describes, and `readiness` with the new build reported every live
     store ready, or reported `projection_repair_required` with the cutover
     the next rule describes planned for that store.
@@ -125,13 +128,28 @@ their presence in a file alone does not prove delivery.
   problem outside the changeset's scope, filed as an independent root with
   provenance, does not block landing.
 
-  Otherwise stop and ask Greg before committing: when a store needs
+  Otherwise stop and ask Greg before landing: when a store needs
   migration, a criterion cannot be met or is
   disputed, the changeset goes beyond its items' scope, a rebase,
   force-push or history rewrite is needed, or one of the two reviews the
   review condition requires is unavailable and no stand-in under the review
   condition above has reviewed the same frozen tree (an unavailable review
   is not a clean review).
+- Candidate commits (Greg, 2026-10-31: 'zatwierdzam opcje B', 'idzmy na
+  prostsa opcja B / zatwierdzam'). So that focused checks, reviews and the
+  full gate run on a clean commit, a writable session may commit its change
+  on its own feature branch or detached worktree, never on master and never
+  pushed. A candidate commit is not a landing and grants no push, install or
+  restart. The final full gate runs on a clean checkout of a single
+  candidate commit whose parent is the current master. The integration
+  owner lands it only by fast-forwarding master to exactly that gated
+  commit, when the standing approval's conditions above hold. If master has
+  moved, the change is committed afresh as a new candidate whose parent is
+  the current master, and gated again. A candidate that fails is superseded
+  by a new candidate commit, never amended, rebased or force-pushed. Each
+  new candidate is committed on a new branch or a detached HEAD at the
+  current master, and the earlier candidate is left as it is. The
+  staged-tree lane remains available.
 - Greg's word "commit" for a presented changeset also authorizes pushing
   it and installing its build. `readiness` checks only schema
   and policy admission, so first judge the changeset itself. When it
@@ -183,9 +201,10 @@ their presence in a file alone does not prove delivery.
   Greg's recorded word on that widening, verbatim with its source, by any
   route; recording his words, narrowing, or clarifying needs only (a), (b)
   and (c). No other approval is asked.
-- Outside the standing approval's conditions above, a commit or push needs
-  Greg's own word in the acting session. Outside the standing approval, a
-  word relayed by another session never carries a commit or push. The
+- Outside the standing approval's conditions above and the candidate-commits
+  bullet, a commit or push needs Greg's own word in the acting session.
+  Outside the standing approval and the candidate-commits bullet, a word
+  relayed by another session never carries a commit or push. The
   standing approval grants no restart, deploy or global-configuration
   authority; those acts are Greg's and need his explicit word.
   A landing under it installs the binary built from the exact gated tree:
@@ -435,9 +454,9 @@ The launcher has two modes, for two different jobs:
 - **Full landing validation:** `node scripts/test-launcher.mjs full` runs
   this whole sequence, with full logs on disk and metadata-only completion
   in context; diagnostics require explicit bounded inspection. It runs on
-  the frozen tree that is to be committed,
-  beside that tree's reviews; for any changeset with a non-`.md` path,
-  only its pass counts toward landing.
+  the frozen tree that is to be committed, or on the candidate commit to
+  be landed, beside that tree's reviews; for any changeset with a non-`.md`
+  path, only its pass counts toward landing.
 - **Fast correction check:** `node scripts/test-launcher.mjs focused --
   COMMAND ARGS...` runs one command, typically the tests that cover what a
   fix touched, such as `focused -- cargo test --lib planning::detach`. Run
@@ -737,4 +756,5 @@ engram work forget KEY
 At session end: run the checks applicable to the changed files, update your
 Engram items (`note`, `done`), and report changed files and validation. Commit or
 push only on Greg's explicit word or under the standing approval in
-Authority and Git.
+Authority and Git, or, for a candidate commit only, under its
+candidate-commits bullet.

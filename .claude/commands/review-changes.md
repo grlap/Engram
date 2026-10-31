@@ -19,7 +19,8 @@ runner as described below; it does not become a reviewer or validation owner.
 
 **Never commit, push, rebase, or sync remotes without explicit user
 authority.** That is Greg's word or, for commit, push and install only, the
-standing approval in AGENTS.md "Authority and Git".
+standing approval in AGENTS.md "Authority and Git", or, for a candidate
+commit only, its candidate-commits bullet.
 
 This workflow requires TermAl MCP delegation tools. Obtain the review pair —
 at most two reviews that count, from different vendors: spawn one Codex and
@@ -82,7 +83,11 @@ git diff --cached --name-only
 git ls-files --others --exclude-standard
 ```
 
-If there are no changes, report that and stop.
+For a candidate commit (section 3), the target is that commit's change against
+its base, and the checkout is clean. Confirm instead that
+`git status --porcelain --untracked-files=all` prints nothing and list the
+change with `git diff --name-only BASE COMMIT`. Otherwise, if there are no
+changes, report that and stop.
 
 ## 2. Run parent-owned gates
 
@@ -131,9 +136,10 @@ correction checks never replace landing validation.
 
 ### Gate and review in parallel
 
-Fully stage and freeze the review input (section 3) before starting the
-foreground launcher under the host's background execution (for example
-a background shell task that reports when it exits). Spawn both reviewers
+Fully stage and freeze the review input (section 3), or make the candidate
+commit and record its identity, before starting the foreground launcher
+under the host's background execution (for example a background shell task
+that reports when it exits). Spawn both reviewers
 (section 4) on the same input while the gate runs (Greg, 2026-09-26).
 The launcher refuses `--detach` without a
 different session to notify, so `--detach --notify PARENT_SESSION` is only for
@@ -278,6 +284,31 @@ tree id using `git show -s --format=%T COMMIT`, and requires empty output from
 tree id must equal the parent's recorded id. Review the change against the
 supplied base even though the checkout is clean.
 
+A candidate commit, under the candidate-commits rule in the Authority and Git
+section of AGENTS.md and CLAUDE.md, is such a committed input. The parent
+commits its change on its own feature branch or detached worktree, never on
+master and never pushed, and follows the "Commit messages" section, because a
+fast-forward keeps that commit in master's history. Its freeze identity is the
+commit plus an empty `git status --porcelain --untracked-files=all`, which
+respects `.gitignore`. Record the base commit, the candidate commit and its
+tree id on the item and in the brief before validation starts. Focused checks
+and reviews may run on such a commit. The final full gate runs on a clean
+checkout of a single candidate commit whose parent is the current master, and
+the landing is exactly that commit.
+
+The integration owner lands a candidate only by fast-forwarding master to
+exactly that gated commit, when the standing approval's conditions hold, and
+pushing it without force. If master has moved, the change is committed afresh
+as a new candidate whose parent is the current master, which is frozen and
+gated as its own input; section 6a decides whether the earlier reviews carry
+over. Several complete READY packages may be integrated as one integration
+commit on the integration owner's own worktree, whose parent is the current
+master, gated as its own input. A candidate that fails is superseded by a new
+candidate commit, never amended, rebased or force-pushed. Each new candidate is
+committed on a new branch or a detached HEAD at the current master, and the
+earlier candidate is left as it is. The staged-tree lane above remains
+available.
+
 Git identity does not replace reading the complete change or prove the absence
 of transient edits. A known intervening source or index edit invalidates the
 affected result. Git normalization is not raw-byte equality.
@@ -410,7 +441,7 @@ and the list of recorded messages that word each changed
 passage of authority text to the auditing coordinator by TermAl mailbox. The
 parent also sends the auditing coordinator the recorded message that carried
 each changed passage's final wording to Greg before the landing. The change
-is neither committed nor pushed before the audit of that input is
+is neither landed nor pushed before the audit of that input is
 recorded on the item as passed.
 
 Before judging the authority passages, the auditing coordinator confirms
@@ -498,8 +529,9 @@ A clean carry satisfies all of the following:
    side from its recorded tree or while section 3's applicable Git identity
    verifies before and after the read. Verify the final carried input's Git
    identity before and after reading the proof. Inputs are fully staged,
-   without unstaged or untracked changes. Compute paths without rename
-   detection. Prove each package's unchanged contribution by either:
+   or committed as section 3 describes, without unstaged or untracked
+   changes. Compute paths without rename detection. Prove each package's
+   unchanged contribution by either:
    - equal pre-image and post-image blob ids, statuses and modes; or
    - for regular text files, a recorded three-way blob/hunk proof that applies
      the reviewed changes without conflict or manual edits and preserves
@@ -532,9 +564,10 @@ of the full integration tree.
 
 Adoption carries no gate, Markdown check, readiness or acceptance evaluation.
 Run the required full gate, or the applicable Markdown-only checks, on the
-exact final integration tree, with matching input fingerprints before and
-after. A missing or failing check is not a pass. Diagnose a failure through
-its existing owner; a resulting content correction needs the Coder's required
+exact final integration tree, or in the candidate lane on the exact final
+integration commit, with matching input fingerprints before and after. A
+missing or failing check is not a pass. Diagnose a failure through its
+existing owner; a resulting content correction needs the Coder's required
 review before READY and applicable validation of the new final input. Adding
 review evidence alone does not invalidate a check on identical final input.
 Across successive carries, prove unchanged contributions from the reviewed

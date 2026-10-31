@@ -1025,17 +1025,18 @@ briefs explain.
 
 Conservative by default: **no commits or pushes without explicit
 authorization**, which is Greg's word or, for commit, push and install, the
-standing approval in [AGENTS.md](../AGENTS.md#authority-and-git). Without
-either, at handoff report changed files, validation performed, and proposed
-next commands, then wait.
+standing approval in [AGENTS.md](../AGENTS.md#authority-and-git), or, for a
+candidate commit only, its candidate-commits bullet. Without any of these, at
+handoff report changed files, validation performed, and proposed next
+commands, then wait.
 
 ## Review cadence
 
 Changes are reviewed through the delegated review workflow (two independent
 review passes from different vendors, Codex and Claude, with at most one Kimi
-stand-in, for an unavailable Codex or Claude, over staged, unstaged, and
-untracked changes)
-before any commit is proposed. Review findings that warrant follow-up work
+stand-in, for an unavailable Codex or Claude, over the frozen input, which is
+staged, unstaged and untracked changes or a candidate commit) before any
+landing is proposed. Review findings that warrant follow-up work
 become Engram items, not inline TODOs.
 
 ## Documentation conventions
