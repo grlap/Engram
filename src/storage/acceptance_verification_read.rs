@@ -18,19 +18,17 @@ impl SqliteStore {
     /// continuation does not hold or one row does not fit a page; and other
     /// [`StoreError`] values when a record fails its canonical association or
     /// cannot be read.
-    pub(crate) fn read_acceptance_verifications(
+    pub(crate) fn read_acceptance_verifications<'a>(
         &self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        routing_token: &str,
+        authority: impl Into<super::HostSessionAuthority<'a>>,
         request: &super::VerificationReadRequest<'_>,
     ) -> Result<AcceptanceVerificationPage, StoreError> {
+        let authority = authority.into();
         work::on_one_snapshot(&self.connection, |connection| {
-            Self::verify_control_connection(connection, session_id, connection_token)?;
-            let session = Self::load_control_session_on(connection, session_id)?
-                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-            Self::verify_control_session(&session, project_id, routing_token)?;
+            let _ = authority.verify_on(connection, project_id, session_id, connection_token)?;
             work::read_acceptance_verifications_on(connection, project_id, request)
         })
     }

@@ -29,6 +29,7 @@ fn a_malformed_or_oversized_request_is_refused_whole() {
     let mut fixture = fixture();
     let base = inter_turn_change(&fixture, "malformed");
     let turn_with = |checks: Vec<ObservedCheck>| ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "turn".into(),
         source_change: None,
         observed_checks: checks,
@@ -472,6 +473,7 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
             source_root_state: None,
         });
         input.occurrence = ObservedOccurrence::UnadmittedTurn {
+            outcome: None,
             host_turn_ref: "turn".into(),
             source_change: None,
             observed_checks: vec![passed_check("first"), second],

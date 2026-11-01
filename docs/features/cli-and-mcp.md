@@ -1930,6 +1930,7 @@ engram mcp \
   --actor-context 'model=opus-4.1;reasoning=high' \
   --source-skill engram-repo
 engram control \
+  --work-session \
   --actor-id codex \
   --session-id session-unique-id \
   --source-skill engram-repo
@@ -3564,10 +3565,33 @@ The runtime session and asserted actor are fixed by process arguments:
 `ENGRAM_ACTOR_CONTEXT`) that the work words and the MCP server also accept. A
 host passes one context to every channel of a session; the control connection
 normalizes it the same way and records it on its attribution, never on the
-principal. The shipped operations are:
+principal.
+
+With `--work-session`, the process serves ordinary association and evidence.
+Startup rotates the existing connection fence without expiring or changing
+retained control grants or session phase. `work_session_read` takes only
+`{"operation":"work_session_read"}` and returns the fixed `project_id`,
+`session_id`, `work_session: true` and capabilities `host_work_v1` and
+`verification_record_v1`. It also returns
+`verification_evidence_git_tree_applicability_v1: true` only when the serving
+connection observes the exact current applicability barrier. This read writes
+nothing and requires no control bind or status.
+
+The ordinary route accepts the named-root, acceptance-read, observation and
+verification operations listed below, with their existing payloads and
+receipts. Omit `routing_token`; a supplied string is accepted but conveys no
+ordinary authority, and null is refused. Work, claim, source and connection
+fences still apply. Turn bind/status/evaluate/begin/checkpoint are unavailable
+on this route. Without `--work-session`, the legacy turn channel remains
+available during the coordinated consumer transition. Both routes share one
+connection fence per session, so an old sidecar must exit before its ordinary
+replacement opens. See [Ordinary host work and evidence](behavioral-control-plane.md#ordinary-host-work-and-evidence).
+
+The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
+| `work_session_read` | None. Read ordinary route identity and evidence capabilities, including the conditional git-tree applicability advertisement. |
 | `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`; an exact retry of the latest bind key returns the current status instead. Binding creates no task or join event. Its result carries the session status. |
 | `session_status` | Read current phase, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and, for a work-bound session, the claim's `named_root` state |
 | `control_connection_read` | None. Takes no fields. Read which store this serving connection opened. A fail-closed contract: no platform can yet prove the opened file, so it refuses with `control_connection_identity_unavailable` after checking the connection is current; see [Reading which store a control connection serves](behavioral-control-plane.md#reading-which-store-a-control-connection-serves) |
@@ -3587,7 +3611,7 @@ The `named_root` state, `none`, `bound` or `unbound_by_release`, is the
 authoritative read a host uses to decide when to name a root again; see
 [Bind a named source root](behavioral-control-plane.md#5a-bind-a-named-source-root).
 
-The bind response supplies the `routing_token` used on later calls. A grant
+On the legacy channel, the bind response supplies the `routing_token` used on later calls. A grant
 carries no delivery page, and there are no recovery turns: the work context an
 agent sees comes from `next`, which keeps its own staged delivery. A new
 bind that succeeds leaves the session `ready`, so it may request a turn at once;

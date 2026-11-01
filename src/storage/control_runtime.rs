@@ -35,12 +35,12 @@ impl SqliteStore {
         clippy::too_many_arguments,
         reason = "the host binding keeps routing, claim, source and retry inputs explicit"
     )]
-    pub(crate) fn bind_named_root(
+    pub(crate) fn bind_named_root<'a>(
         &mut self,
         project_id: &crate::domain::ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        routing_token: &str,
+        authority: impl Into<super::HostSessionAuthority<'a>>,
         claim_id: crate::domain::WorkClaimId,
         claim_fence: i64,
         workspace_id: &str,
@@ -52,6 +52,7 @@ impl SqliteStore {
         idempotency_key: &str,
         now: DateTime<Utc>,
     ) -> Result<NamedRootBindingReceipt, StoreError> {
+        let authority = authority.into();
         if workspace_id.trim().is_empty()
             || workspace_id.trim() != workspace_id
             || workspace_id.len() > 512
@@ -79,17 +80,23 @@ impl SqliteStore {
         let work_schema_version = self.work_schema_version;
         control_lifecycle_transaction(&mut self.connection, |transaction| {
             work::require_work_schema_version(transaction, work_schema_version)?;
-            Self::verify_control_connection(transaction, session_id, connection_token)?;
-            let session = Self::load_control_session_on(transaction, session_id)?
-                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-            Self::verify_control_session(&session, project_id, routing_token)?;
-            if let Some(replay) = Self::replay_control_operation(
+            let phase =
+                authority.verify_on(transaction, project_id, session_id, connection_token)?;
+            if let Some(replay) = Self::replay_host_operation::<NamedRootBindingReceipt>(
                 transaction,
+                project_id,
                 session_id,
                 "named_root_bind",
                 idempotency_key,
                 intent.key(),
             )? {
+                let event: NamedRootBindingEvent =
+                    work::load_typed_work_object(transaction, &replay.event, "named_root_binding")?;
+                if event.project_id != *project_id || event.session_id != *session_id {
+                    return Err(StoreError::NamedRootBindingRefused(
+                        "named-root retry belongs to another project or session".into(),
+                    ));
+                }
                 return Ok(replay);
             }
             // Only a new name carries new host text: ending a root repeats the
@@ -104,8 +111,7 @@ impl SqliteStore {
                     "workspace_id holds a control or bidirectional formatting character".into(),
                 ));
             }
-            if session.phase == SessionPhase::Exited
-                || actor.session_id.as_ref() != Some(session_id)
+            if phase == Some(SessionPhase::Exited) || actor.session_id.as_ref() != Some(session_id)
             {
                 return Err(StoreError::NamedRootBindingRefused(
                     "named-root binding requires an active host session".into(),
@@ -183,6 +189,28 @@ impl SqliteStore {
                         "named-root claim crosses its project or run".into(),
                     ));
                 }
+                if matches!(authority, super::HostSessionAuthority::Work) {
+                    work::validate_control_work_binding_on(
+                        transaction,
+                        project_id,
+                        session_id,
+                        &ControlWorkBinding {
+                            root_execution_id: run.root_execution_id,
+                            work_id: item.work_id,
+                            run_id,
+                            work_revision: item.revision,
+                            claim_id,
+                            claim_fence,
+                        },
+                        now,
+                    )
+                    .map_err(|error| match error {
+                        StoreError::ControlWorkBindingStale { .. } => {
+                            StoreError::NamedRootBindingRefused(error.to_string())
+                        }
+                        other => other,
+                    })?;
+                }
                 (item.work_id, run_id, run.root_execution_id)
             };
             let previous =
@@ -230,8 +258,9 @@ impl SqliteStore {
                 generation,
                 kind,
             };
-            Self::persist_control_operation(
+            authority.persist(
                 transaction,
+                project_id,
                 session_id,
                 "named_root_bind",
                 idempotency_key,
@@ -589,15 +618,7 @@ impl SqliteStore {
     ) -> Result<String, StoreError> {
         crate::storage::admit_session_id(session_id)?;
         control_lifecycle_transaction(&mut self.connection, |transaction| {
-            let connection_token = uuid::Uuid::now_v7().to_string();
-            transaction.execute(
-                "INSERT INTO control_connections (session_id, connection_token, opened_at_ms)
-                 VALUES (?1, ?2, ?3)
-                 ON CONFLICT(session_id) DO UPDATE SET
-                     connection_token = excluded.connection_token,
-                     opened_at_ms = excluded.opened_at_ms",
-                params![session_id.0, connection_token, now.timestamp_millis()],
-            )?;
+            let connection_token = Self::rotate_host_connection_on(transaction, session_id, now)?;
             let Some(session) = Self::load_control_session_on(transaction, session_id)? else {
                 return Ok(connection_token);
             };

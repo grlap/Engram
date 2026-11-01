@@ -29,6 +29,7 @@ impl Fixture {
             actor_id: "busy-host".into(),
             session_id,
             connection_token,
+            work_session: false,
             source_skill: None,
             actor_context: None,
             actor_context_normalized: false,

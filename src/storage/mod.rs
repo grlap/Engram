@@ -16,6 +16,8 @@ pub(crate) use transaction_timing::control::now as control_diagnostic_now;
 pub(crate) use transaction_timing::control::test_clock as control_diagnostic_test_clock;
 pub(crate) use transaction_timing::control::{ControlDiagnosticScope, ControlWriteTiming};
 mod control_support;
+mod host_session;
+pub(crate) use host_session::HostSessionAuthority;
 mod doctor;
 mod fts_verification;
 pub(crate) mod graph_snapshot;

@@ -511,6 +511,7 @@ fn no_reported_change_accounts_nothing_and_nested_checks_are_no_sightings() {
     let mut check = passed_check("cargo-test");
     check.source_basis = Some(nested.clone());
     turn.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "turn-1".into(),
         source_change: None,
         observed_checks: vec![check.clone()],

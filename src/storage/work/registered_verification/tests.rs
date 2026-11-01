@@ -4,6 +4,7 @@ use crate::DevelopmentNoopRedactor;
 use crate::domain::*;
 
 mod git_input;
+mod work_session;
 
 struct Fixture {
     store: SqliteStore,
@@ -51,11 +52,22 @@ fn fixture_with_create(
 }
 
 fn fixture_with_create_and_root(
+    store: SqliteStore,
+    assurance: crate::ControlAssurance,
+    offset: i64,
+    create: &crate::domain::CreateWorkRequest,
+    pin_root: bool,
+) -> Fixture {
+    fixture_with_context(store, assurance, offset, create, pin_root, true)
+}
+
+fn fixture_with_context(
     mut store: SqliteStore,
     assurance: crate::ControlAssurance,
     offset: i64,
     create: &crate::domain::CreateWorkRequest,
     pin_root: bool,
+    control: bool,
 ) -> Fixture {
     let at = |second| at(second + offset);
     let work = store.create_work(create, &DevelopmentNoopRedactor).unwrap();
@@ -63,29 +75,43 @@ fn fixture_with_create_and_root(
     let work = store.get_work_item(work.work_id).unwrap();
     let session = SessionId("runner".into());
     let project = work.project_id.clone();
-    let connection = store.resume_control_connection(&session, at(3)).unwrap();
-    let bound = store
-        .bind_control_session(
-            &project,
-            "registered-host",
-            "Registered run host",
-            &session,
-            &connection,
-            &actor("runner"),
-            assurance,
-            &[crate::EffectClass::Observe],
-            1,
-            "bind",
-            at(3),
-        )
-        .unwrap();
+    let connection = if control {
+        store.resume_control_connection(&session, at(3))
+    } else {
+        store.resume_work_connection(&session, at(3))
+    }
+    .unwrap();
+    let routing = if control {
+        store
+            .bind_control_session(
+                &project,
+                "registered-host",
+                "Registered run host",
+                &session,
+                &connection,
+                &actor("runner"),
+                assurance,
+                &[crate::EffectClass::Observe],
+                1,
+                "bind",
+                at(3),
+            )
+            .unwrap()
+            .routing_token
+    } else {
+        String::new()
+    };
     if pin_root {
         store
             .bind_named_root(
                 &project,
                 &session,
                 &connection,
-                &bound.routing_token,
+                if control {
+                    crate::storage::HostSessionAuthority::Control(&routing)
+                } else {
+                    crate::storage::HostSessionAuthority::Work
+                },
                 claim.claim_id,
                 claim.fence,
                 "workspace-a",
@@ -156,7 +182,7 @@ fn fixture_with_create_and_root(
         project,
         session,
         connection,
-        routing: bound.routing_token,
+        routing,
         request,
     }
 }
@@ -447,6 +473,7 @@ fn registered_verification_emits_host_wire_fixtures() {
         f.project,
         f.session,
         f.connection,
+        false,
     );
     let input = format!("{request}\n{refused}\n{failed}\n");
     let mut output = Vec::new();

@@ -13,6 +13,7 @@ fn record_both_kinds(fixture: &mut Fixture) -> ExecutionObservationReceipt {
     observe(fixture, change, 7).expect("inter-turn change");
     let mut turn = inter_turn_change(fixture, "doctor-turn");
     turn.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "turn-9".into(),
         source_change: Some(content_change("rev-b", "rev-c")),
         observed_checks: vec![passed_check("cargo-test")],
@@ -227,6 +228,7 @@ fn record_accounted_kinds(fixture: &mut Fixture) -> ExecutionObservationReceipt 
     observe_accounted(fixture, "doctor-repeat", "rev-x", "rev-b", 8).expect("repeat");
     let mut quiet = accounted(fixture, "doctor-quiet", "rev-a", "rev-b");
     quiet.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "turn-quiet".into(),
         source_change: None,
         observed_checks: vec![passed_check("cargo-test")],

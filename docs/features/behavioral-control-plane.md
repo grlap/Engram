@@ -11,7 +11,57 @@
 > [execution pipeline](execution-pipeline.md), and the
 > [turn gate assessment](turn-gate-assessment.md) of what is used today.
 
-This brief specifies the **target V1 architecture**. Engram is not complete
+## Ordinary host work and evidence
+
+`engram control --work-session --actor-id ACTOR --session-id SESSION` serves
+ordinary host association and evidence over the existing JSON-lines channel.
+The project, asserted actor and session are fixed by the process arguments.
+Startup rotates the existing connection fence without reading or changing
+retained control sessions, grants, decisions or unknown operation results.
+
+`work_session_read` takes no fields beyond `operation` and returns
+`project_id`, `session_id`, `work_session: true` and capabilities
+`host_work_v1` and `verification_record_v1`. It writes nothing. No
+`session_bind`, status, grant or turn admission is needed.
+It also advertises `verification_evidence_git_tree_applicability_v1: true`
+only while the serving connection observes the exact current
+[git-tree applicability barrier](verification-applicability.md#schema-barrier-and-cutover).
+Missing or malformed advertisement grants no restricted verification credit.
+
+This channel accepts `named_root_bind`, `named_root_read`,
+`named_root_sighting_read`, `acceptance_binding_read`,
+`acceptance_verification_read`, `execution_observe`, `verification_record`
+and `verification_bind` with their existing payloads and receipts. Omit
+`routing_token`; a string supplied by a transitioning consumer is accepted
+but is not ordinary work authority. `null` is not a token. Current
+connection fencing, project/work/run/claim association, source validation,
+exact operation retries and evidence eligibility still apply. Fresh root
+naming requires the actual live holder and fence; historical root ending
+and observation retain their existing historical rules.
+
+Observed checks remain facts without test credit. Registered native runs
+still use `verification_record` and its existing eligibility checks to
+produce verification evidence. Ordinary work words and acceptance evaluation
+retain their work authority and evidence requirements. Nothing here grants
+filesystem, tool or external-action authority.
+
+The ordinary channel refuses turn admission and checkpoint operations.
+The legacy control channel remains available during the coordinated host
+transition; its startup and turn semantics below are unchanged. A consumer
+must switch to the ordinary channel before those legacy operations retire.
+Historical records remain readable and are never replayed by opening the
+ordinary channel.
+
+New ordinary operation receipts use the existing work-operation result store,
+scoped by project, session and caller key, retaining the frozen intent and the
+unchanged external receipt. Exact retry also reads earlier control receipts;
+it never moves or rewrites them. Doctor and migration import validate the
+same canonical receipt associations. Existing rows and schemas need no
+conversion for this additive route.
+
+## Legacy control design and protocol
+
+The following sections specify the earlier **target V1 architecture**. Engram is not complete
 when it merely offers coordination tools that a coding
 agent may choose to call. It must be the decision authority for the execution
 protocol around an active task: whether a turn may begin, which capabilities
@@ -954,7 +1004,7 @@ and credits nothing. Its request carries:
   `named_root_read` reports them at that cut;
 - `observed_interval`: `from` and `through`, the window actually observed;
 - `occurrence`, tagged by `kind`: `unadmitted_turn` (`host_turn_ref`,
-  `source_change` or `null`, and `observed_checks`, at most 16),
+  optional `outcome`, `source_change` or `null`, and `observed_checks`, at most 16),
   `inter_turn_change` (`source_change`), or `observed_check`
   (`host_turn_ref` and one `check`);
 - `causality`: `{"kind": "unknown"}` or `{"kind": "host_assertion",
@@ -962,6 +1012,14 @@ and credits nothing. Its request carries:
 - `policy_basis`: `{"mode": "audit_only"}`, or `account_if_eligible` with the
   project's current `project_policy_epoch`, `policy` and
   `obligation_rule_set`.
+
+Only `unadmitted_turn` accepts `outcome`: `succeeded`, `failed`, `cancelled`
+or `unknown`, as reported by the host's terminal lifecycle owner. Explicit
+Stop cancellation is `cancelled`; an exit without a known terminal result
+is `unknown`. Omission remains omission in stored history and readback;
+it is never inferred to mean success or replaced with `unknown`. Null and
+unrecognized values are refused. This fact is provider-neutral and conveys
+neither a begun turn nor admission, settlement or verification credit.
 
 A `source_change` is tagged by `detection`: `content_comparison` with a
 `baseline` (`workspace_id`, `source_revision`, `observed_at`) and a

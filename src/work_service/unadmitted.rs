@@ -59,12 +59,23 @@ pub(crate) fn occurrence_words(occurrence: &RecordedOccurrence) -> String {
         )
     };
     match occurrence {
-        RecordedOccurrence::UnadmittedTurn { source_change, .. } => format!(
-            "a turn seen without admission, not a begun turn; {}",
-            source_change
-                .as_ref()
-                .map_or_else(|| "no source change reported".to_owned(), change)
-        ),
+        RecordedOccurrence::UnadmittedTurn {
+            source_change,
+            outcome,
+            ..
+        } => {
+            let mut words = format!(
+                "a turn seen without admission, not a begun turn; {}",
+                source_change
+                    .as_ref()
+                    .map_or_else(|| "no source change reported".to_owned(), change)
+            );
+            if let Some(outcome) = outcome {
+                words.push_str("; host-reported outcome: ");
+                words.push_str(outcome.as_str());
+            }
+            words
+        }
         RecordedOccurrence::InterTurnChange { source_change } => {
             format!("a change between turns; {}", change(source_change))
         }

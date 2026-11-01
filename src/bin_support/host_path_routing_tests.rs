@@ -84,6 +84,7 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
             "control",
             true,
             Command::Control {
+                work_session: false,
                 actor_id: "host".into(),
                 session_id: "session".into(),
                 actor_context: None,

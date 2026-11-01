@@ -13,6 +13,7 @@ fn recorded_store() -> (crate::test_support::TempHome, std::path::PathBuf, Fixtu
     observe(&mut fixture, change, 7).expect("inter-turn change");
     let mut turn = inter_turn_change(&fixture, "reader-turn");
     turn.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "turn-9".into(),
         source_change: None,
         observed_checks: vec![passed_check("cargo-test")],
@@ -176,6 +177,7 @@ fn the_largest_accepted_record_fits_the_observation_window() {
         .collect();
     let mut input = inter_turn_change(&fixture, "largest");
     input.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "t".repeat(MAX_OBSERVATION_LABEL_BYTES),
         source_change: Some(ObservedSourceChange::AssumedMissingBaseline {
             workspace_id: workspace.clone(),
@@ -266,6 +268,7 @@ fn escape_heavy_records_fit_the_observation_window() {
         );
         let mut input = inter_turn_change(&fixture, key);
         input.occurrence = ObservedOccurrence::UnadmittedTurn {
+            outcome: None,
             host_turn_ref: "turn".into(),
             source_change: Some(ObservedSourceChange::AssumedMissingBaseline {
                 workspace_id: workspace.clone(),

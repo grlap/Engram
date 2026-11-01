@@ -39,20 +39,18 @@ impl SqliteStore {
     /// the claim does not belong to it, or it belongs to another project; and
     /// other [`StoreError`] values when a record fails its canonical
     /// association or cannot be read. A refusal is never a named-root state.
-    pub(crate) fn read_named_root(
+    pub(crate) fn read_named_root<'a>(
         &self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        routing_token: &str,
+        authority: impl Into<super::HostSessionAuthority<'a>>,
         run_id: WorkRunId,
         claim_id: WorkClaimId,
     ) -> Result<NamedRootRead, StoreError> {
+        let authority = authority.into();
         work::on_one_snapshot(&self.connection, |connection| {
-            Self::verify_control_connection(connection, session_id, connection_token)?;
-            let session = Self::load_control_session_on(connection, session_id)?
-                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-            Self::verify_control_session(&session, project_id, routing_token)?;
+            let _ = authority.verify_on(connection, project_id, session_id, connection_token)?;
             read_named_root_on(connection, project_id, run_id, claim_id)
         })
     }

@@ -59,6 +59,7 @@ pub(crate) fn serve_control(
     actor_context: Option<String>,
     source_skill: Option<String>,
     trace: Option<&std::sync::Arc<engram::phase_trace::control::ControlTrace>>,
+    work_session: bool,
 ) -> Result<()> {
     let diagnostics = engram::diagnostics::Diagnostics::start(
         home,
@@ -74,7 +75,12 @@ pub(crate) fn serve_control(
         }
         return Err(error.into());
     }
-    let opened = HostControlServer::open_with_host_path_identity(
+    let open = if work_session {
+        HostControlServer::open_work_session_with_host_path_identity
+    } else {
+        HostControlServer::open_with_host_path_identity
+    };
+    let opened = open(
         database,
         identity,
         project_id,

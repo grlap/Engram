@@ -118,6 +118,18 @@ later discrepancy instead of restoring over new work.
 
 ## Base tier — advisory
 
+For host source association and evidence, use
+`engram control --work-session` with the same project, actor and session as
+the agent's ordinary work channel. Use `work_session_read` to identify the
+channel and its capabilities, then the existing named-root, acceptance-read,
+execution-observation and registered-verification operations without
+`routing_token`. No control bind, status, Evaluate, Begin or checkpoint is
+needed. This keeps work/source authority and eligible native test credit;
+it does not convert ad-hoc observed checks into verification. See the
+[ordinary host contract](features/behavioral-control-plane.md#ordinary-host-work-and-evidence).
+Old control records and unknown outcomes remain separate history, never a
+prerequisite to ordinary dispatch or a reason to replay an old operation.
+
 Use [`engram readiness --json`](features/host-readiness.md) for fast, scoped
 Verify/Save checks on an existing store. Keep `doctor --json` behind a separate
 Full Audit action, with its own result. A readiness pass neither certifies the

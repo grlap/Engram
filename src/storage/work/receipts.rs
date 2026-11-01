@@ -54,6 +54,10 @@ pub(super) enum Receipt {
 
 /// Core operations and the receipt each stores in `work_operation_results`.
 const CORE_RECEIPTS: &[(&str, Receipt)] = &[
+    ("host_named_root_bind", HOST),
+    ("host_execution_observe", HOST),
+    ("host_verification_record", HOST),
+    ("host_verification_bind", HOST),
     ("accept_work_handoff", Receipt::Decoded(decode::<WorkClaim>)),
     ("add_work_blocker", Receipt::Decoded(decode::<WorkBlocker>)),
     (
@@ -169,6 +173,7 @@ const PROTOCOL_RESULTS: &[(&str, Receipt)] = &[
 
 const UPDATE: Receipt = Receipt::Decoded(decode::<WorkUpdateResult>);
 const HANDOFF: Receipt = Receipt::Decoded(decode::<WorkHandoffResult>);
+const HOST: Receipt = Receipt::Decoded(decode::<super::super::host_session::WorkHostReceipt>);
 
 /// Why a stored receipt is reported: its operation is registered nowhere.
 const UNREGISTERED: &str = "an operation this build does not register";
@@ -263,7 +268,7 @@ pub(super) fn verify_work_operation_results(
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
     let mut statement = connection.prepare(
-        "SELECT operation, idempotency_key, result_json FROM work_operation_results
+        "SELECT operation, idempotency_key, result_json, request_hash FROM work_operation_results
          ORDER BY operation, idempotency_key",
     )?;
     let mut rows = statement.query([])?;
@@ -271,12 +276,25 @@ pub(super) fn verify_work_operation_results(
         *checked += 1;
         let operation: String = row.get(0)?;
         let key: String = row.get(1)?;
-        let reason = if find(CORE_RECEIPTS, &operation).is_none() {
+        let mut reason = if find(CORE_RECEIPTS, &operation).is_none() {
             Some(UNREGISTERED.to_owned())
         } else {
             let receipt: Vec<u8> = row.get(2)?;
             problem(CORE_RECEIPTS, &operation, Some(&receipt))
         };
+        if reason.is_none() && operation.starts_with("host_") {
+            let receipt: Vec<u8> = row.get(2)?;
+            let request_hash: String = row.get(3)?;
+            if let Err(error) = super::super::host_session::verify_work_receipt_on(
+                connection,
+                &operation,
+                &key,
+                &request_hash,
+                &receipt,
+            ) {
+                reason = Some(error.to_string());
+            }
+        }
         if let Some(reason) = reason {
             invalid.push(format!("work_operation_result:{operation}:{key}:{reason}"));
         }

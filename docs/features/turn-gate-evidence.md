@@ -1,5 +1,10 @@
 # Turn gate evidence
 
+The measurements and call sites below are historical evidence, not a current
+requirement to gate prompts. The
+[ordinary host channel](behavioral-control-plane.md#ordinary-host-work-and-evidence)
+records evidence without admission and preserves these historical records.
+
 > The one-page summary is the [turn gate assessment](turn-gate-assessment.md).
 > Normative reference: [spec §2.7](../spec.md#27-execution-control).
 > Related briefs: [behavioral control plane](behavioral-control-plane.md),

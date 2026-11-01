@@ -1884,3 +1884,81 @@ fn a_native_record_keeps_its_canonical_bytes() {
         bytes
     );
 }
+
+#[test]
+fn work_session_binds_native_credit_without_control_routing_or_admission() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let exported = directory.path().join("export.json");
+    let destination = directory.path().join("imported.db");
+    let mut store = SqliteStore::open(&source).unwrap();
+    let a = held(&mut store, "ordinary-a", HOLDER, 9, "R1", 2);
+    let b = held(&mut store, "ordinary-b", HOLDER, 10, "R1", 4);
+    let original = native_check(&mut store, &a, "R1", 20);
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
+    let session = SessionId(HOLDER.into());
+    let token = store.resume_work_connection(&session, at(25)).unwrap();
+    let before_grants: i64 = store
+        .connection
+        .query_row("SELECT count(*) FROM control_turn_grants", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let first = store
+        .bind_verification(
+            &a.work.project_id,
+            &session,
+            &token,
+            crate::storage::HostSessionAuthority::Work,
+            &actor(HOLDER),
+            &input,
+            at(30),
+        )
+        .unwrap();
+    assert_eq!(first.bound.len(), 1);
+    let rows = evidence_rows(&store);
+    let replay = store
+        .bind_verification(
+            &a.work.project_id,
+            &session,
+            &token,
+            crate::storage::HostSessionAuthority::Work,
+            &actor(HOLDER),
+            &input,
+            at(31),
+        )
+        .unwrap();
+    assert!(replay.replayed);
+    assert_eq!(replay.bound, first.bound);
+    assert_eq!(evidence_rows(&store), rows);
+    let after_grants: i64 = store
+        .connection
+        .query_row("SELECT count(*) FROM control_turn_grants", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(after_grants, before_grants);
+    let report = store.verify_all().unwrap();
+    assert!(report.is_healthy(), "{report:?}");
+    drop(store);
+    crate::storage::migration::export_json(&source, &exported).unwrap();
+    crate::storage::migration::import_json(&exported, &destination).unwrap();
+    let mut store = SqliteStore::open(&destination).unwrap();
+    let token = store.resume_work_connection(&session, at(32)).unwrap();
+    let replay = store
+        .bind_verification(
+            &a.work.project_id,
+            &session,
+            &token,
+            crate::storage::HostSessionAuthority::Work,
+            &actor(HOLDER),
+            &input,
+            at(33),
+        )
+        .unwrap();
+    assert!(replay.replayed);
+    assert_eq!(replay.bound, first.bound);
+    assert_eq!(evidence_rows(&store), rows);
+    let report = store.verify_all().unwrap();
+    assert!(report.is_healthy(), "{report:?}");
+}

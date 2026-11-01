@@ -6,6 +6,7 @@ mod diagnostics;
 mod startup;
 mod store_busy;
 mod verification_applicability;
+mod work_session;
 
 #[test]
 fn pending_handoff_preserves_host_and_agent_error_classifications() {
@@ -52,6 +53,7 @@ fn turn_grant_read_round_trips_on_the_host_channel() {
         actor_id: "host-test".into(),
         session_id,
         connection_token,
+        work_session: false,
         source_skill: None,
         actor_context: None,
         actor_context_normalized: false,
@@ -312,6 +314,7 @@ fn oversized_control_frame_is_rejected_and_drained() {
         actor_id: "frame-agent".into(),
         session_id: SessionId("frame-session".into()),
         connection_token: "frame-connection".into(),
+        work_session: false,
         source_skill: None,
         actor_context: None,
         actor_context_normalized: false,

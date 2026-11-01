@@ -154,15 +154,50 @@ pub struct ObservedCheck {
     pub host_evidence_ref: Option<String>,
 }
 
+/// A terminal turn outcome reported by the host, never admission or settlement.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservedTurnOutcome {
+    Succeeded,
+    Failed,
+    Cancelled,
+    Unknown,
+}
+
+impl ObservedTurnOutcome {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+fn reported_outcome<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ObservedTurnOutcome>, D::Error> {
+    ObservedTurnOutcome::deserialize(deserializer).map(Some)
+}
+
 /// What a host observed, as it sends it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ObservedOccurrence {
-    /// Execution seen without an admitted begin; not a successful or
-    /// completed turn. `source_change: null` means only that no change is
+    /// Execution seen without an admitted begin; not a begun or checkpointed
+    /// turn. `source_change: null` means only that no change is
     /// reported, never that the source is unchanged.
     UnadmittedTurn {
         host_turn_ref: String,
+        /// Omitted means not reported, distinct from an explicit unknown.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "reported_outcome"
+        )]
+        outcome: Option<ObservedTurnOutcome>,
         source_change: Option<ObservedSourceChange>,
         observed_checks: Vec<ObservedCheck>,
     },
@@ -196,6 +231,12 @@ pub struct RecordedObservedCheck {
 pub enum RecordedOccurrence {
     UnadmittedTurn {
         host_turn_ref: String,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "reported_outcome"
+        )]
+        outcome: Option<ObservedTurnOutcome>,
         source_change: Option<ObservedSourceChange>,
         observed_checks: Vec<RecordedObservedCheck>,
     },
@@ -219,10 +260,12 @@ impl RecordedOccurrence {
         match occurrence {
             ObservedOccurrence::UnadmittedTurn {
                 host_turn_ref,
+                outcome,
                 source_change,
                 observed_checks,
             } => Self::UnadmittedTurn {
                 host_turn_ref,
+                outcome,
                 source_change,
                 observed_checks: observed_checks.into_iter().map(recorded).collect(),
             },
@@ -245,10 +288,12 @@ impl RecordedOccurrence {
         match self {
             Self::UnadmittedTurn {
                 host_turn_ref,
+                outcome,
                 source_change,
                 observed_checks,
             } => ObservedOccurrence::UnadmittedTurn {
                 host_turn_ref: host_turn_ref.clone(),
+                outcome: *outcome,
                 source_change: source_change.clone(),
                 observed_checks: observed_checks
                     .iter()
@@ -715,6 +760,7 @@ fn validate_observed_facts(
                 host_turn_ref,
                 source_change,
                 observed_checks,
+                ..
             } => {
                 bounded_label(host_turn_ref, "host_turn_ref")?;
                 if let Some(change) = source_change {

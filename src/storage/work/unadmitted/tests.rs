@@ -23,6 +23,104 @@ mod matching;
 mod readers;
 mod refusals;
 mod request_budget;
+mod work_session;
+
+#[test]
+fn work_session_turn_wire_is_provider_neutral_and_keeps_observed_checks_uncredited() {
+    // All six host harnesses use the same flattened occurrence protocol.
+    // This checks consumer context/shape, not each provider's live capture.
+    for provider in ["Claude", "Codex", "Cursor", "Gemini", "OpenCode", "Kimi"] {
+        let mut f = fixture();
+        let session = SessionId(format!("ordinary-{provider}"));
+        let token = f.store.resume_work_connection(&session, at(3)).unwrap();
+        let mut input = inter_turn_change(&f, "ordinary-turn");
+        input.occurrence = ObservedOccurrence::UnadmittedTurn {
+            outcome: None,
+            host_turn_ref: format!("runtime-turn-{}", uuid::Uuid::new_v4()),
+            source_change: Some(content_change("rev-a", "rev-b")),
+            observed_checks: vec![passed_check("native-check")],
+        };
+        let mut wire = serde_json::to_value(input).unwrap();
+        wire["operation"] = serde_json::json!("execution_observe");
+        assert!(wire.get("observation").is_none());
+        assert!(wire.get("routing_token").is_none());
+        let mut server = crate::HostControlServer::from_test_store(
+            f.store,
+            f.work.project_id,
+            session.clone(),
+            token,
+            true,
+        )
+        .with_actor_context(Some(format!("agent={provider}")));
+        let first = server
+            .handle(serde_json::from_value(wire.clone()).unwrap())
+            .unwrap();
+        let receipt: ExecutionObservationReceipt = serde_json::from_value(first.clone()).unwrap();
+        assert_eq!(receipt.observing_session, session);
+        assert_eq!(receipt.observed_checks.len(), 1);
+        assert_eq!(
+            receipt.observed_checks[0].credit,
+            ObservedCheckCredit::Uncredited
+        );
+        assert_eq!(
+            server
+                .handle(serde_json::from_value(wire).unwrap())
+                .unwrap(),
+            first
+        );
+    }
+}
+
+#[test]
+fn work_session_records_observations_without_a_control_binding_or_turn() {
+    let mut f = fixture();
+    let session = SessionId("ordinary-observer".into());
+    let token = f.store.resume_work_connection(&session, at(3)).unwrap();
+    let input = inter_turn_change(&f, "ordinary-change");
+    let mut observer = actor(&session.0);
+    observer.run_id = Some(f.binding.run_id.0.to_string());
+    let before = footprint(&f.store);
+    let first = f
+        .store
+        .record_unadmitted_execution_observation(
+            &f.work.project_id,
+            &session,
+            &token,
+            crate::storage::HostSessionAuthority::Work,
+            &observer,
+            input.clone(),
+            at(7),
+        )
+        .unwrap();
+    let after = footprint(&f.store);
+    assert_eq!(after[3], before[3], "observing never issues a grant");
+    assert_eq!(
+        f.store
+            .record_unadmitted_execution_observation(
+                &f.work.project_id,
+                &session,
+                &token,
+                crate::storage::HostSessionAuthority::Work,
+                &observer,
+                input,
+                at(8),
+            )
+            .unwrap(),
+        first
+    );
+    assert_eq!(
+        footprint(&f.store),
+        after,
+        "exact retry creates no duplicate facts"
+    );
+    assert_eq!(
+        count(
+            &f.store,
+            "SELECT COUNT(*) FROM control_sessions WHERE session_id = 'ordinary-observer'"
+        ),
+        0
+    );
+}
 
 pub(super) struct Fixture {
     pub(super) store: SqliteStore,
@@ -348,6 +446,7 @@ fn an_unadmitted_turn_keeps_every_check_uncredited_and_its_asserted_cause_apart(
     claimed_actor.reason = "the host saw the runner's terminal".into();
     let mut input = inter_turn_change(&fixture, "turn-1");
     input.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "termal-turn-17".into(),
         source_change: None,
         observed_checks: vec![passed_check("cargo-test"), {
@@ -417,6 +516,7 @@ fn host_keys_and_refs_shaped_like_identifiers_hold_the_contract() {
     claimed_actor.run_id = Some("f".repeat(32));
     let mut input = inter_turn_change(&fixture, &shaped);
     input.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: shaped.clone(),
         source_change: None,
         observed_checks: vec![passed_check(&shaped)],
@@ -445,6 +545,7 @@ fn an_observation_is_never_citable_evidence() {
         source_root_state: None,
     });
     input.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
         host_turn_ref: "turn-3".into(),
         source_change: None,
         observed_checks: vec![check],

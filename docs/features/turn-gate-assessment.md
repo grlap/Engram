@@ -1,5 +1,11 @@
 # Turn gate assessment
 
+This is a historical assessment of the September deployment, not the current
+host integration contract. Ordinary host association and evidence use the
+[work-session channel](behavioral-control-plane.md#ordinary-host-work-and-evidence)
+without turn admission. The legacy channel remains available only for the
+coordinated consumer transition; this assessment does not authorize enabling it.
+
 > Normative reference: [spec §2.7](../spec.md#27-execution-control). Call
 > sites, line references, history and the full explanations are in the
 > [turn gate evidence](turn-gate-evidence.md). Related:

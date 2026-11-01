@@ -103,25 +103,24 @@ impl SqliteStore {
         clippy::too_many_arguments,
         reason = "the host record keeps routing, attribution, request and time explicit"
     )]
-    pub(crate) fn bind_verification(
+    pub(crate) fn bind_verification<'a>(
         &mut self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        routing_token: &str,
+        authority: impl Into<super::HostSessionAuthority<'a>>,
         binder: &ActorContext,
         input: &VerificationBindInput,
         now: DateTime<Utc>,
     ) -> Result<VerificationBindReceipt, StoreError> {
+        let authority = authority.into();
         let intent =
             CanonicalObject::freeze(&VerificationBindIntent::new(project_id, session_id, input))?;
         control_lifecycle_transaction(&mut self.connection, |transaction| {
-            Self::verify_control_connection(transaction, session_id, connection_token)?;
-            let session = Self::load_control_session_on(transaction, session_id)?
-                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-            Self::verify_control_session(&session, project_id, routing_token)?;
-            if let Some(mut replay) = Self::replay_control_operation::<VerificationBindReceipt>(
+            let _ = authority.verify_on(transaction, project_id, session_id, connection_token)?;
+            if let Some(mut replay) = Self::replay_host_operation::<VerificationBindReceipt>(
                 transaction,
+                project_id,
                 session_id,
                 VERIFICATION_BIND_OPERATION,
                 &input.idempotency_key,
@@ -139,8 +138,9 @@ impl SqliteStore {
                 now,
             )? {
                 work::VerificationBindOutcome::Bound(receipt) => {
-                    Self::persist_control_operation(
+                    authority.persist(
                         transaction,
+                        project_id,
                         session_id,
                         VERIFICATION_BIND_OPERATION,
                         &input.idempotency_key,

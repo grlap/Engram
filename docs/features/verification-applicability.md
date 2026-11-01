@@ -47,7 +47,7 @@ does not retire connections that are already open.
 
 The new build refuses ordinary open without the barrier as
 `projection_repair_required`. Only the exact current schema definition counts.
-Successful `session_bind` and `session_status` results advertise
+Successful `session_bind`, `session_status` and `work_session_read` results advertise
 `verification_evidence_git_tree_applicability_v1: true` only while that
 definition exists. The advertisement is specific to the active connection;
 an absent, false, malformed or unknown advertisement grants no restricted

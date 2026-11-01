@@ -811,7 +811,7 @@ impl SqliteStore {
         )
     }
 
-    fn verify_control_operation(
+    pub(super) fn verify_control_operation(
         connection: &Connection,
         stored: &StoredControlOperation,
     ) -> Result<(), StoreError> {

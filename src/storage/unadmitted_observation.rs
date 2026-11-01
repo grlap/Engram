@@ -187,30 +187,39 @@ impl SqliteStore {
         clippy::too_many_arguments,
         reason = "the host record keeps routing, attribution, request and time explicit"
     )]
-    pub(crate) fn record_unadmitted_execution_observation(
+    pub(crate) fn record_unadmitted_execution_observation<'a>(
         &mut self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        routing_token: &str,
+        authority: impl Into<super::HostSessionAuthority<'a>>,
         observer: &ActorContext,
         input: ExecutionObserveInput,
         now: DateTime<Utc>,
     ) -> Result<ExecutionObservationReceipt, StoreError> {
+        let authority = authority.into();
         let intent = CanonicalObject::freeze(&ExecutionObserveIntent::of(session_id, &input))?;
         control_lifecycle_transaction(&mut self.connection, |transaction| {
-            Self::verify_control_connection(transaction, session_id, connection_token)?;
-            let session = Self::load_control_session_on(transaction, session_id)?
-                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-            Self::verify_control_session(&session, project_id, routing_token)?;
+            let _ = authority.verify_on(transaction, project_id, session_id, connection_token)?;
             // A committed record replays before anything mutable is consulted.
-            if let Some(replay) = Self::replay_control_operation(
+            if let Some(replay) = Self::replay_host_operation::<ExecutionObservationReceipt>(
                 transaction,
+                project_id,
                 session_id,
                 EXECUTION_OBSERVE_OPERATION,
                 &input.idempotency_key,
                 intent.key(),
             )? {
+                let recorded: UnadmittedExecutionObservation = work::load_typed_work_object(
+                    transaction,
+                    &replay.observation,
+                    "unadmitted_execution_observation",
+                )?;
+                if recorded.project_id != *project_id {
+                    return Err(StoreError::ExecutionObservationBasisMismatch(
+                        "observation retry belongs to another project".into(),
+                    ));
+                }
                 return Ok(replay);
             }
             input
@@ -316,8 +325,9 @@ impl SqliteStore {
                     "the receipt would exceed {MAX_EXECUTION_OBSERVE_RESULT_BYTES} bytes; nothing was recorded"
                 )));
             }
-            Self::persist_control_operation(
+            authority.persist(
                 transaction,
+                project_id,
                 session_id,
                 EXECUTION_OBSERVE_OPERATION,
                 &idempotency_key,

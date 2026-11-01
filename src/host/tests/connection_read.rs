@@ -118,6 +118,7 @@ fn a_temporary_or_in_memory_store_is_refused() {
         actor_id: "host-test".into(),
         session_id,
         connection_token,
+        work_session: false,
         source_skill: None,
         actor_context: None,
         actor_context_normalized: false,

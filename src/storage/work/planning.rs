@@ -1381,7 +1381,7 @@ pub(super) fn apply_folder_disposal_on(
     Ok(item)
 }
 
-pub(super) fn persist_operation_result<T: Serialize>(
+pub(in crate::storage) fn persist_operation_result<T: Serialize>(
     transaction: &Transaction<'_>,
     operation: &str,
     key: &str,

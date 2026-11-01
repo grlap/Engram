@@ -47,6 +47,7 @@ mod notes;
 pub(crate) use notes::validate_criterion_evidence_locator;
 mod observation;
 mod planning;
+pub(in crate::storage) use planning::persist_operation_result;
 #[cfg(test)]
 pub(crate) use planning::plan_validations;
 pub(in crate::storage) use planning::validate_control_work_binding_in_scope;

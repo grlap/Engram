@@ -240,6 +240,9 @@ enum Command {
     },
     /// Serve the host-private behavioral-control protocol as JSON Lines.
     Control {
+        /// Serve ordinary work evidence and association without turn admission.
+        #[arg(long)]
+        work_session: bool,
         /// Actor identity asserted by the host integration.
         #[arg(long)]
         actor_id: String,
@@ -1295,6 +1298,7 @@ async fn run_cli() -> Result<ExitCode> {
             .await?;
         }
         Command::Control {
+            work_session,
             actor_id,
             session_id,
             actor_context,
@@ -1309,6 +1313,7 @@ async fn run_cli() -> Result<ExitCode> {
             actor_context,
             source_skill,
             control_trace.as_ref().map(|startup| &startup.0),
+            work_session,
         )?,
         Command::Work {
             actor_id,

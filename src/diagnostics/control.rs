@@ -59,7 +59,8 @@ impl Frame {
                 ..
             } => (Some(idempotency_key), Some(grant_id)),
             HostControlRequest::TurnGrantRead { grant_id, .. } => (None, Some(grant_id)),
-            HostControlRequest::SessionStatus { .. }
+            HostControlRequest::WorkSessionRead {}
+            | HostControlRequest::SessionStatus { .. }
             | HostControlRequest::ControlConnectionRead {}
             | HostControlRequest::NamedRootRead { .. }
             | HostControlRequest::NamedRootSightingRead { .. }

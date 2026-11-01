@@ -82,16 +82,17 @@ impl SqliteStore {
         clippy::too_many_arguments,
         reason = "routing and asserted producer context stay explicit"
     )]
-    pub(crate) fn record_registered_verification(
+    pub(crate) fn record_registered_verification<'a>(
         &mut self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        routing_token: &str,
+        authority: impl Into<super::HostSessionAuthority<'a>>,
         actor: &ActorContext,
         request: &RegisteredVerificationRequest,
         now: DateTime<Utc>,
     ) -> Result<RegisteredVerificationReceipt, StoreError> {
+        let authority = authority.into();
         let intent = CanonicalObject::freeze(&Intent {
             control_schema_version: crate::CONTROL_SCHEMA_VERSION,
             session_id: session_id.clone(),
@@ -100,12 +101,10 @@ impl SqliteStore {
             request: request.clone(),
         })?;
         super::control_runtime::control_lifecycle_transaction(&mut self.connection, |tx| {
-            Self::verify_control_connection(tx, session_id, connection_token)?;
-            let session = Self::load_control_session_on(tx, session_id)?
-                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-            Self::verify_control_session(&session, project_id, routing_token)?;
-            if let Some(receipt) = Self::replay_control_operation(
+            let _ = authority.verify_on(tx, project_id, session_id, connection_token)?;
+            if let Some(receipt) = Self::replay_host_operation(
                 tx,
+                project_id,
                 session_id,
                 "verification_record",
                 &request.operation_key,
@@ -116,8 +115,9 @@ impl SqliteStore {
             let receipt = super::work::record_registered_verification_on(
                 tx, project_id, session_id, actor, request, now,
             )?;
-            Self::persist_control_operation(
+            authority.persist(
                 tx,
+                project_id,
                 session_id,
                 "verification_record",
                 &request.operation_key,

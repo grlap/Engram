@@ -33,6 +33,8 @@ const MAX_HOST_CONTROL_ERROR_DETAIL_BYTES: usize = 384;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HostControlRequest {
+    /// Read the ordinary host channel context and supported evidence protocol.
+    WorkSessionRead {},
     SessionBind {
         external_ref: String,
         title: String,
@@ -57,6 +59,7 @@ pub enum HostControlRequest {
         grant_id: String,
     },
     NamedRootBind {
+        #[serde(default)]
         routing_token: String,
         claim_id: WorkClaimId,
         claim_fence: i64,
@@ -71,6 +74,7 @@ pub enum HostControlRequest {
     /// Reads one claim's named-root lifecycle on its run, for any run and
     /// claim of the project; it writes nothing and needs no live holder.
     NamedRootRead {
+        #[serde(default)]
         routing_token: String,
         run_id: WorkRunId,
         claim_id: WorkClaimId,
@@ -89,6 +93,7 @@ pub enum HostControlRequest {
     /// acceptance criterion: the first page captures the run's feed head as
     /// its cut, and `after` continues at that cut. It writes nothing.
     AcceptanceBindingRead {
+        #[serde(default)]
         routing_token: String,
         work_id: crate::WorkId,
         expected_work_revision: i64,
@@ -101,6 +106,7 @@ pub enum HostControlRequest {
     /// `run_cut`, which must be the run's feed head; `after` continues at
     /// that cut. It computes no freshness and writes nothing.
     AcceptanceVerificationRead {
+        #[serde(default)]
         routing_token: String,
         work_id: crate::WorkId,
         expected_work_revision: i64,
@@ -135,6 +141,7 @@ pub enum HostControlRequest {
     /// such a turn. It records a fact, never a grant, a begin or a turn
     /// result.
     ExecutionObserve {
+        #[serde(default)]
         routing_token: String,
         idempotency_key: String,
         binding: Box<ControlWorkBinding>,
@@ -160,6 +167,7 @@ pub enum HostControlRequest {
     /// named roots hold the same content: one record per target, all or
     /// nothing. It creates no observation, turn or focus change.
     VerificationBind {
+        #[serde(default)]
         routing_token: String,
         idempotency_key: String,
         original: crate::ObjectId,
@@ -167,6 +175,7 @@ pub enum HostControlRequest {
         targets: Vec<crate::domain::VerificationBindTarget>,
     },
     VerificationRecord {
+        #[serde(default)]
         routing_token: String,
         operation_key: String,
         registration: Box<crate::domain::RegisteredVerificationAssociation>,
@@ -182,6 +191,7 @@ impl HostControlRequest {
     #[must_use]
     pub const fn operation(&self) -> &'static str {
         match self {
+            Self::WorkSessionRead {} => "work_session_read",
             Self::SessionBind { .. } => "session_bind",
             Self::SessionStatus { .. } => "session_status",
             Self::ControlConnectionRead {} => "control_connection_read",
@@ -247,6 +257,7 @@ pub struct HostControlServer {
     actor_id: String,
     session_id: SessionId,
     connection_token: String,
+    work_session: bool,
     source_skill: Option<String>,
     actor_context: Option<String>,
     actor_context_normalized: bool,
@@ -262,6 +273,7 @@ impl HostControlServer {
         project_id: ProjectId,
         session_id: SessionId,
         connection_token: String,
+        work_session: bool,
     ) -> Self {
         Self {
             store,
@@ -270,6 +282,7 @@ impl HostControlServer {
             actor_id: "runner".into(),
             session_id,
             connection_token,
+            work_session,
             source_skill: None,
             actor_context: None,
             actor_context_normalized: false,
@@ -404,13 +417,61 @@ impl HostControlServer {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Result<Self, StoreError> {
+        Self::open_host_session(
+            database,
+            identity,
+            project_id,
+            actor_id,
+            session_id,
+            source_skill,
+            false,
+        )
+    }
+
+    /// Opens the ordinary host evidence channel without control admission.
+    /// Retained control phases, grants and unknown results are untouched.
+    ///
+    /// # Errors
+    /// Returns a storage error when the store or connection fence cannot be opened.
+    pub fn open_work_session_with_host_path_identity(
+        database: impl AsRef<Path>,
+        identity: Option<HostPathPolicy>,
+        project_id: ProjectId,
+        actor_id: String,
+        session_id: SessionId,
+        source_skill: Option<String>,
+    ) -> Result<Self, StoreError> {
+        Self::open_host_session(
+            database,
+            identity,
+            project_id,
+            actor_id,
+            session_id,
+            source_skill,
+            true,
+        )
+    }
+
+    fn open_host_session(
+        database: impl AsRef<Path>,
+        identity: Option<HostPathPolicy>,
+        project_id: ProjectId,
+        actor_id: String,
+        session_id: SessionId,
+        source_skill: Option<String>,
+        work_session: bool,
+    ) -> Result<Self, StoreError> {
         crate::storage::admit_session_id(&session_id)?;
         let diagnostic_store = crate::diagnostics::Fingerprint::store(database.as_ref());
         let mut store = SqliteStore::open_for_control_host(database, identity)?;
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionResume,
         );
-        let connection_token = store.resume_control_connection(&session_id, Utc::now())?;
+        let connection_token = if work_session {
+            store.resume_work_connection(&session_id, Utc::now())?
+        } else {
+            store.resume_control_connection(&session_id, Utc::now())?
+        };
         Ok(Self {
             store,
             diagnostic_store,
@@ -418,6 +479,7 @@ impl HostControlServer {
             actor_id,
             session_id,
             connection_token,
+            work_session,
             source_skill,
             actor_context: None,
             actor_context_normalized: false,
@@ -439,8 +501,36 @@ impl HostControlServer {
     )]
     pub fn handle(&mut self, request: HostControlRequest) -> Result<Value, StoreError> {
         let _budget = crate::storage::ControlRequestScope::ensure()?;
+        if self.work_session
+            && !matches!(
+                &request,
+                HostControlRequest::WorkSessionRead {}
+                    | HostControlRequest::NamedRootBind { .. }
+                    | HostControlRequest::NamedRootRead { .. }
+                    | HostControlRequest::NamedRootSightingRead { .. }
+                    | HostControlRequest::AcceptanceBindingRead { .. }
+                    | HostControlRequest::AcceptanceVerificationRead { .. }
+                    | HostControlRequest::ExecutionObserve { .. }
+                    | HostControlRequest::VerificationRecord { .. }
+                    | HostControlRequest::VerificationBind { .. }
+                    | HostControlRequest::ControlConnectionRead {}
+            )
+        {
+            return Err(StoreError::InvalidControlSession(
+                "turn admission is unavailable on an ordinary work-session channel".into(),
+            ));
+        }
         let now = Utc::now();
         match request {
+            HostControlRequest::WorkSessionRead {} => {
+                self.store
+                    .verify_current_control_connection(&self.session_id, &self.connection_token)?;
+                self.with_verification_applicability(serde_json::json!({
+                    "project_id": self.project_id,
+                    "session_id": self.session_id,
+                    "work_session": self.work_session,
+                }))
+            }
             HostControlRequest::VerificationRecord {
                 routing_token,
                 operation_key,
@@ -455,7 +545,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    &routing_token,
+                    authority(self.work_session, &routing_token),
                     &actor,
                     &crate::domain::RegisteredVerificationRequest {
                         operation_key,
@@ -538,7 +628,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    &routing_token,
+                    authority(self.work_session, &routing_token),
                     claim_id,
                     claim_fence,
                     &workspace_id,
@@ -560,7 +650,7 @@ impl HostControlServer {
                 &self.project_id,
                 &self.session_id,
                 &self.connection_token,
-                &routing_token,
+                authority(self.work_session, &routing_token),
                 run_id,
                 claim_id,
             )?)
@@ -586,7 +676,7 @@ impl HostControlServer {
                 &self.project_id,
                 &self.session_id,
                 &self.connection_token,
-                &routing_token,
+                authority(self.work_session, &routing_token),
                 &crate::storage::BindingReadRequest {
                     work_id,
                     expected_work_revision,
@@ -607,7 +697,7 @@ impl HostControlServer {
                 &self.project_id,
                 &self.session_id,
                 &self.connection_token,
-                &routing_token,
+                authority(self.work_session, &routing_token),
                 &crate::storage::VerificationReadRequest {
                     work_id,
                     expected_work_revision,
@@ -702,7 +792,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    &routing_token,
+                    authority(self.work_session, &routing_token),
                     &observer,
                     crate::domain::ExecutionObserveInput {
                         idempotency_key,
@@ -765,7 +855,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    &routing_token,
+                    authority(self.work_session, &routing_token),
                     &binder,
                     &crate::domain::VerificationBindInput {
                         idempotency_key,
@@ -965,7 +1055,11 @@ impl HostControlServer {
 
     /// The response to one parsed request.
     fn with_verification_applicability(&self, mut value: Value) -> Result<Value, StoreError> {
-        value["capabilities"] = serde_json::json!(["verification_record_v1"]);
+        value["capabilities"] = if self.work_session {
+            serde_json::json!(["host_work_v1", "verification_record_v1"])
+        } else {
+            serde_json::json!(["verification_record_v1"])
+        };
         if self.store.verification_git_tree_applicability_available()? {
             value["verification_evidence_git_tree_applicability_v1"] = Value::Bool(true);
         }
@@ -1341,3 +1435,11 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
 pub(crate) mod id_contract;
 #[cfg(test)]
 mod tests;
+
+fn authority(work_session: bool, routing: &str) -> crate::storage::HostSessionAuthority<'_> {
+    if work_session {
+        crate::storage::HostSessionAuthority::Work
+    } else {
+        crate::storage::HostSessionAuthority::Control(routing)
+    }
+}
