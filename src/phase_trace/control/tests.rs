@@ -51,6 +51,24 @@ fn traced(timing: ProgressTiming) -> (Arc<ControlTrace>, Captured) {
     )
 }
 
+// This test drives the ordinary progress scheduler only after the actual
+// statement starts, so slow startup cannot spend its ten progress records.
+fn traced_without_monitor() -> (Arc<ControlTrace>, Captured) {
+    let captured = Captured::default();
+    let trace = Arc::new(ControlTrace {
+        lines: LineWriter::new(Box::new(captured.clone()), 1_024, "control-test-trace"),
+        pid: std::process::id(),
+        timing: FAST,
+        state: Mutex::new(State {
+            slot: None,
+            next_seq: 1,
+            stopped: false,
+        }),
+        changed: Condvar::new(),
+    });
+    (trace, captured)
+}
+
 fn open_server(database: &std::path::Path) -> HostControlServer {
     HostControlServer::open(
         database,
@@ -231,22 +249,66 @@ fn a_contending_writer_raises_begin_immediate_at_startup() {
     blocker
         .execute_batch("BEGIN IMMEDIATE")
         .expect("hold the write lock");
-    let held = Duration::from_millis(1_000);
-    let releaser = std::thread::spawn(move || {
-        std::thread::sleep(held);
-        blocker.execute_batch("COMMIT").expect("release the lock");
-    });
-    let (trace, captured) = traced(FAST);
+    let (trace, captured) = traced_without_monitor();
     trace.install();
-    let server = open_server(&database);
-    trace.startup_finished(None);
-    releaser.join().expect("releaser");
-    drop(server);
+    let waiting = Arc::clone(&trace);
+    let releaser = std::thread::spawn(move || -> Result<(), String> {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            let emitted = {
+                let mut state = waiting.state.lock().expect("trace state");
+                let Some(slot) = state.slot.as_mut() else {
+                    return Err("startup ended before the contended BEGIN was observed".into());
+                };
+                if slot.startup
+                    && slot.seq == 0
+                    && slot.phase == ControlPhase::ConnectionResume
+                    && matches!(slot.statement, Some((Statement::BeginImmediate, _)))
+                    && let Some(line) = waiting.due_progress(slot, Instant::now())
+                {
+                    // Match the monitor's ordering, without waiting for its
+                    // asynchronous writer or holding state during SQLite I/O.
+                    waiting.lines.emit(line);
+                    true
+                } else {
+                    false
+                }
+            };
+            if emitted {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err("timed out waiting for the contended BEGIN".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        blocker
+            .execute_batch("COMMIT")
+            .map_err(|error| format!("release the lock: {error}"))
+    });
+
+    // Exceed the old fixed hold and the autonomous progress budget before
+    // opening, as a slow schema startup can do on a loaded host.
+    std::thread::sleep(Duration::from_millis(1_000));
+    let server = HostControlServer::open(
+        &database,
+        ProjectId("control-trace".into()),
+        "agent".into(),
+        SessionId("control-trace-session".into()),
+        None,
+    );
+    trace.startup_finished(server.as_ref().err().map(crate::host::store_error_code));
+    let thread_result = releaser.join();
 
     let lines = written(&trace, &captured);
+    thread_result
+        .expect("releaser")
+        .unwrap_or_else(|error| panic!("{error}: {lines:?}"));
+    drop(server.expect("control server"));
     let startup = terminal(&lines, 0);
-    // The lock is held a second from before startup; the resume waits for
-    // most of it, however slowly the store opens on a loaded host.
+    // Release follows the observed BEGIN, so schema startup cannot consume
+    // the interval that must be measured as connection-resume contention.
     assert!(
         startup["begin_immediate"]["max_ms"].as_f64() >= Some(250.0),
         "{startup}"

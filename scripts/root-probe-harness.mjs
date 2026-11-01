@@ -101,7 +101,12 @@ function assertResolvedDoctorPolicy(output) {
 }
 
 export class RootJournal extends EventEmitter {
-  constructor(directory, { watchFn = watch } = {}) {
+  constructor(directory, {
+    watchFn = watch,
+    startupWrite = writeFileSync,
+    startupRemove = rmSync,
+    startupNow = () => performance.now(),
+  } = {}) {
     super();
     this.directory = directory;
     this.events = [];
@@ -109,6 +114,9 @@ export class RootJournal extends EventEmitter {
     this.nextIndex = 0;
     this.recentCallbacks = [];
     this.callbackCount = 0;
+    this.startupWrite = startupWrite;
+    this.startupRemove = startupRemove;
+    this.startupNow = startupNow;
     this.watchStartedAt = performance.now();
     this.watcher = watchFn(directory, { persistent: true }, (_type, name) => {
       const filename = name == null ? name : String(name);
@@ -141,6 +149,105 @@ export class RootJournal extends EventEmitter {
 
   cursor() {
     return this.nextIndex;
+  }
+
+  start() {
+    this.startup ??= this.startHandshake();
+    return this.startup;
+  }
+
+  // fs.watch returning does not prove that Darwin's asynchronously registered
+  // FSEvents stream can deliver an event yet. Establish delivery with our own
+  // traffic under ONE startup deadline, before calibration or measured work.
+  // This never retries a calibration, barrier, command or failed assertion.
+  async startHandshake() {
+    this.assertHealthy("before journal startup");
+    const filename = `${BARRIER_PREFIX}startup`;
+    const path = join(this.directory, filename);
+    const from = this.cursor();
+    const startedAt = performance.now();
+    const deadline = this.startupNow() + 5000;
+    let owned = false;
+    let writes = 0;
+    let failure;
+    try {
+      await new Promise((resolveStartup, reject) => {
+        let settled = false;
+        let timeout;
+        let writer;
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          clearInterval(writer);
+          this.off("event", onEvent);
+          this.watcher.off("close", onClose);
+          if (error) reject(error);
+          else resolveStartup();
+        };
+        const expired = () => {
+          let message = "journal startup: timed out waiting for its primary watcher callback";
+          try {
+            message += `; journal=${JSON.stringify({
+              ...this.timeoutDiagnostic(startedAt, 5000),
+              startup: { filename, fromIndex: from, writes },
+            })}`;
+          } catch {
+            // Diagnostics must not replace the original failure.
+          }
+          finish(new Error(message));
+        };
+        const onEvent = () => {
+          if (this.errors.length) {
+            finish(new Error(`journal startup: watcher inconclusive: ${this.errors[0]}`));
+          } else if (this.startupNow() >= deadline) {
+            expired();
+          } else if (this.events.some((event) => event.index >= from && event.filename === filename)) {
+            finish();
+          }
+        };
+        const onClose = () => {
+          const error = new Error("watcher closed during journal startup");
+          this.errors.push(error);
+          finish(error);
+        };
+        const pulse = () => {
+          if (settled) return;
+          if (this.startupNow() >= deadline) {
+            expired();
+            return;
+          }
+          try {
+            // Acquire ownership exclusively. A collision is a failure, never
+            // permission to overwrite or remove an unexpected existing file.
+            this.startupWrite(path, String(writes), { flag: owned ? "r+" : "wx" });
+            owned = true;
+            writes += 1;
+          } catch (error) {
+            this.errors.push(error);
+            finish(error);
+          }
+        };
+        this.on("event", onEvent);
+        this.watcher.once("close", onClose);
+        timeout = setTimeout(expired, 5000);
+        writer = setInterval(pulse, 25);
+        pulse();
+      });
+      this.assertHealthy("journal startup");
+    } catch (error) {
+      failure = error;
+    }
+    const cleanupErrors = [];
+    if (owned) {
+      try {
+        this.startupRemove(path);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (failure) throwWithCleanup(failure, cleanupErrors);
+    if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "journal startup cleanup failed");
   }
 
   probeEvents(fromIndex, untilIndex) {
@@ -635,9 +742,10 @@ export async function withOwnedStore(t, prefix, body, deps = {}) {
   return result;
 }
 
-async function withJournal(projectDir, body) {
-  const journal = new RootJournal(projectDir);
+async function withJournal(projectDir, body, { createJournal = (directory) => new RootJournal(directory) } = {}) {
+  const journal = createJournal(projectDir);
   try {
+    await journal.start();
     const result = await body(journal);
     journal.assertHealthy("final journal");
     return result;
@@ -1031,6 +1139,35 @@ function silentWatch() {
   return watcher;
 }
 
+function fakeJournalStartup(t, { onWrite, onRemove } = {}) {
+  const directory = fixtureHome("rpj-startup-", t);
+  const watcher = silentWatch();
+  let callback;
+  let now = 0;
+  const writes = [];
+  const removals = [];
+  const journal = new RootJournal(directory, {
+    watchFn: (_directory, _options, report) => {
+      callback = report;
+      return watcher;
+    },
+    startupWrite: (path, payload, options) => {
+      writes.push({ path, payload, options });
+      if (onWrite) onWrite({ path, payload, options, report: callback, writes });
+      else writeFileSync(path, payload, options);
+    },
+    startupRemove: (path) => {
+      removals.push(path);
+      if (onRemove) onRemove(path);
+      else rmSync(path);
+    },
+    startupNow: () => now,
+  });
+  t.after(() => journal.close());
+  return { directory, journal, watcher, writes, removals,
+    report: (...args) => callback(...args), setNow: (value) => { now = value; } };
+}
+
 function fakeAclReader(t, { killCloses = true, endCloses = true } = {}) {
   const directory = fixtureHome("rpj-reader-", t);
   const child = new EventEmitter();
@@ -1066,6 +1203,163 @@ function fakeAclReader(t, { killCloses = true, endCloses = true } = {}) {
 const drainAclEvents = () => new Promise((resolveDrain) => setImmediate(resolveDrain));
 
 export function registerRootProbeTests(test) {
+  test("journal startup observes delayed primary delivery and cleans its marker before the body", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+    const fixture = fakeJournalStartup(t);
+    const { journal, writes, removals, directory } = fixture;
+    // A previous callback and unrelated traffic do not establish startup.
+    fixture.report("rename", ".watch-barrier-startup");
+    let bodies = 0;
+    const running = withJournal(directory, () => {
+      bodies += 1;
+      assert.deepEqual(removals, [writes[0].path]);
+      assert.equal(existsSync(writes[0].path), false);
+    }, { createJournal: () => journal });
+    assert.equal(writes.length, 1); // Registration has not caught this write.
+    assert.equal(bodies, 0);
+    fixture.report("rename", "unrelated");
+    t.mock.timers.tick(25);
+    assert.equal(writes.length, 2);
+    assert.equal(bodies, 0);
+    fixture.report("change", basename(writes[1].path));
+    await running;
+    assert.equal(bodies, 1);
+    assert.equal(journal.probeEvents(0, journal.cursor()).length, 0);
+    assert.deepEqual(journal.foreignEvents(2, journal.cursor(), ".engram-project"), []);
+    const count = writes.length;
+    t.mock.timers.tick(10000);
+    assert.equal(writes.length, count);
+    assert.equal(journal.listenerCount("event"), 0);
+    assert.equal(fixture.watcher.listenerCount("close"), 0);
+  });
+
+  test("deaf journal startup has one deadline and a failed start cannot restart writes", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+    const fixture = fakeJournalStartup(t);
+    const started = fixture.journal.start();
+    const refused = assert.rejects(started, /journal startup: timed out/u);
+    t.mock.timers.tick(4999);
+    assert.ok(fixture.writes.length > 1);
+    assert.equal(fixture.journal.listenerCount("event"), 1);
+    t.mock.timers.tick(1);
+    await refused;
+    assert.equal(fixture.journal.start(), started);
+    await assert.rejects(fixture.journal.start(), /journal startup: timed out/u);
+    const count = fixture.writes.length;
+    t.mock.timers.tick(10000);
+    assert.equal(fixture.writes.length, count);
+    assert.equal(fixture.journal.listenerCount("event"), 0);
+    assert.equal(fixture.watcher.listenerCount("close"), 0);
+    assert.equal(fixture.removals.length, 1);
+  });
+
+  test("a callback at the startup deadline cannot rescue a delayed timeout handler", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+    const fixture = fakeJournalStartup(t);
+    const refused = assert.rejects(fixture.journal.start(), /journal startup: timed out/u);
+    // The monotonic deadline expired, although the timer queue has not run.
+    fixture.setNow(5000);
+    fixture.report("change", basename(fixture.writes[0].path));
+    await refused;
+    assert.equal(fixture.removals.length, 1);
+    t.mock.timers.tick(10000);
+    assert.equal(fixture.writes.length, 1);
+  });
+
+  test("synchronous startup delivery stops the writer but cannot satisfy a later one-shot barrier", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+    const fixture = fakeJournalStartup(t, {
+      onWrite: ({ path, payload, options, report }) => {
+        writeFileSync(path, payload, options);
+        report("rename", basename(path));
+      },
+    });
+    const started = fixture.journal.start();
+    assert.equal(fixture.journal.start(), started);
+    await started;
+    assert.equal(fixture.removals.length, 1);
+    const barrier = assert.rejects(fixture.journal.barrier("calibration-ready"), /barrier calibration-ready: timed out/u);
+    t.mock.timers.tick(4999);
+    assert.equal(fixture.journal.listenerCount("event"), 1);
+    t.mock.timers.tick(1);
+    await barrier;
+    assert.equal(fixture.writes.length, 1);
+    assert.equal(fixture.journal.listenerCount("event"), 0);
+  });
+
+  test("journal startup refuses null names and closure and cleans all wait resources", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+    for (const event of ["null filename", "close", "error"]) {
+      const fixture = fakeJournalStartup(t);
+      const refused = assert.rejects(fixture.journal.start(), /filename missing|closed during|watcher inconclusive/u);
+      if (event === "null filename") fixture.report("rename", null);
+      else if (event === "close") fixture.watcher.emit("close");
+      else fixture.watcher.emit("error", new Error("native delivery failed"));
+      await refused;
+      assert.equal(fixture.removals.length, 1);
+      assert.equal(fixture.journal.listenerCount("event"), 0);
+      assert.equal(fixture.watcher.listenerCount("close"), 0);
+      t.mock.timers.tick(10000);
+      assert.equal(fixture.writes.length, 1);
+    }
+  });
+
+  test("startup write and cleanup failures preserve both causes and never enter the body", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+    const writeFailure = new Error("startup write refused");
+    const cleanupFailure = new Error("startup removal refused");
+    const fixture = fakeJournalStartup(t, {
+      onWrite: ({ path, payload, options, writes }) => {
+        if (writes.length > 1) throw writeFailure;
+        writeFileSync(path, payload, options);
+      },
+      onRemove: () => { throw cleanupFailure; },
+    });
+    const refused = assert.rejects(withJournal(fixture.directory, () => assert.fail("body entered"), {
+      createJournal: () => fixture.journal,
+    }), (error) => {
+      assert.ok(error instanceof AggregateError);
+      assert.deepEqual(error.errors, [writeFailure, cleanupFailure]);
+      return true;
+    });
+    t.mock.timers.tick(25);
+    await refused;
+    assert.equal(fixture.journal.errors[0], writeFailure);
+    assert.equal(fixture.journal.listenerCount("event"), 0);
+    t.mock.timers.tick(10000);
+    assert.equal(fixture.writes.length, 2);
+  });
+
+  test("startup refuses an existing marker without overwriting or deleting it", async (t) => {
+    const fixture = fakeJournalStartup(t);
+    const path = join(fixture.directory, ".watch-barrier-startup");
+    writeFileSync(path, "not owned by startup");
+    await assert.rejects(fixture.journal.start(), { code: "EEXIST" });
+    assert.equal(readFileSync(path, "utf8"), "not owned by startup");
+    assert.deepEqual(fixture.removals, []);
+    assert.equal(fixture.journal.listenerCount("event"), 0);
+    assert.equal(fixture.watcher.listenerCount("close"), 0);
+  });
+
+  test("startup cleanup failure prevents the body even after the primary callback", async (t) => {
+    const cleanupFailure = new Error("startup cleanup refused");
+    const fixture = fakeJournalStartup(t, {
+      onWrite: ({ path, payload, options, report }) => {
+        writeFileSync(path, payload, options);
+        report("rename", basename(path));
+      },
+      onRemove: () => { throw cleanupFailure; },
+    });
+    await assert.rejects(withJournal(fixture.directory, () => assert.fail("body entered"), {
+      createJournal: () => fixture.journal,
+    }), (error) => {
+      assert.ok(error instanceof AggregateError);
+      assert.deepEqual(error.errors, [cleanupFailure]);
+      return true;
+    });
+    assert.equal(fixture.removals.length, 1);
+  });
+
   test("ACL reader separates delayed startup from each read and reuses one process", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const fixture = fakeAclReader(t);
