@@ -142,6 +142,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(offer);
         }
+        super::super::task_sync::reconciliation::refuse_held_on(&transaction, request.work_id)?;
         expire_handoff_offers(
             &transaction,
             request.run_id,
@@ -305,6 +306,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(claim);
         }
+        super::super::task_sync::reconciliation::refuse_held_on(&transaction, request.work_id)?;
         let offer_row: Option<(Option<String>, Vec<u8>)> = transaction
             .query_row(
                 "SELECT offer_object_id, offer_json FROM work_handoff_offers

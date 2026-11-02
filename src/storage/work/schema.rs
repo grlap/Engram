@@ -9,10 +9,16 @@ use crate::{CanonicalObject, ObjectId, RestoredRecord, RestoredWorkEvidence};
 mod tests;
 
 const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
+    ("table", "work_task_sync_reconciliation_active"),
+    ("index", "work_task_sync_reconciliation_active_hold"),
+    ("index", "work_task_sync_reconciliation_holds_by_hold"),
+    ("trigger", "work_reconciliation_active_no_update"),
+    ("trigger", "work_reconciliation_active_guard_delete"),
     ("table", "work_catalog_fts"),
     ("table", "work_note_fts"),
     ("index", "objects_work_evidence_gate_name"),
     ("index", "objects_work_event_work_id"),
+    ("index", "objects_task_sync_reconciliation_scope"),
     ("index", "objects_work_source_proposal_work"),
     ("index", "objects_work_source_key"),
     ("index", "work_items_source_snapshot"),
@@ -43,10 +49,18 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "work_restored_evidence_gate"),
     ("index", "work_session_state_retention"),
     ("trigger", "work_feed_entries_require_work_id"),
+    ("table", "work_project_feed_tasks"),
+    ("index", "work_feed_entries_planning"),
+    ("index", "work_project_feed_tasks_task"),
+    ("table", "work_task_sync_baseline"),
+    ("index", "work_task_sync_baseline_retired"),
+    ("table", "work_task_sync_baseline_heads"),
 ];
 
 pub(in crate::storage) fn owns_schema_object(name: &str) -> bool {
-    name.starts_with("work_") || name.starts_with("objects_work_")
+    name.starts_with("work_")
+        || name.starts_with("objects_work_")
+        || name == "objects_task_sync_reconciliation_scope"
 }
 
 pub(in crate::storage) fn is_rebuildable_schema_object(object_type: &str, name: &str) -> bool {
@@ -263,7 +277,19 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
              CHECK(claim_fence_head >= 0)
          ) STRICT;
          CREATE UNIQUE INDEX IF NOT EXISTS work_run_active
-             ON work_runs(work_id) WHERE state != 'completed' AND state != 'cancelled';
+             ON work_runs(work_id) WHERE state != 'completed' AND state != 'cancelled'
+                 AND state != 'superseded_by_import';
+         CREATE TABLE IF NOT EXISTS work_task_sync_import_heads (
+             project_id TEXT NOT NULL,
+             work_id TEXT NOT NULL REFERENCES work_items(work_id),
+             head_id TEXT NOT NULL REFERENCES objects(object_id),
+             PRIMARY KEY(project_id, work_id)
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS work_task_sync_reconciliation_holds (
+             run_id TEXT PRIMARY KEY REFERENCES work_runs(run_id),
+             hold_id TEXT NOT NULL REFERENCES objects(object_id),
+             resolution_id TEXT REFERENCES objects(object_id)
+         ) STRICT;
          CREATE TABLE IF NOT EXISTS work_claims (
              run_id TEXT PRIMARY KEY REFERENCES work_runs(run_id),
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
@@ -427,6 +453,13 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
+         CREATE INDEX IF NOT EXISTS objects_task_sync_reconciliation_scope
+             ON objects(object_kind,
+                 CASE WHEN object_kind='task_sync_reconciliation_hold'
+                      THEN json_extract(canonical_json, '$.project_id')
+                      ELSE json_extract(canonical_json, '$.binding') END,
+                 json_extract(canonical_json, '$.transition.prepared'))
+             WHERE object_kind IN ('task_sync_reconciliation_hold', 'task_sync_exchange_event');
          CREATE INDEX IF NOT EXISTS objects_work_evidence_gate_name
              ON objects(
                  json_extract(canonical_json, '$.run_id'),
@@ -493,7 +526,10 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
              ON work_session_state(project_id, updated_at_ms, session_id);",
     )?;
     super::observation::create_schema(connection)?;
+    super::task_sync::reconciliation::active::create_schema(connection)?;
     super::note_index::create_schema(connection)?;
+    super::feed_tasks::create_schema(connection)?;
+    super::task_sync::baseline::create_schema(connection)?;
     connection.execute(
         "UPDATE work_schema_metadata SET schema_version = ?1 WHERE singleton = 1",
         [CURRENT_WORK_SCHEMA_VERSION],
@@ -529,7 +565,8 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
          CREATE UNIQUE INDEX IF NOT EXISTS work_root_execution_active
              ON work_root_executions(root_id) WHERE state = 'active';
          CREATE UNIQUE INDEX IF NOT EXISTS work_run_active
-             ON work_runs(work_id) WHERE state != 'completed' AND state != 'cancelled';
+             ON work_runs(work_id) WHERE state != 'completed' AND state != 'cancelled'
+                 AND state != 'superseded_by_import';
          CREATE INDEX IF NOT EXISTS work_claims_live
              ON work_claims(work_id, state, expires_at_ms);
          CREATE INDEX IF NOT EXISTS work_claims_holder_live
@@ -587,6 +624,13 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
+         CREATE INDEX IF NOT EXISTS objects_task_sync_reconciliation_scope
+             ON objects(object_kind,
+                 CASE WHEN object_kind='task_sync_reconciliation_hold'
+                      THEN json_extract(canonical_json, '$.project_id')
+                      ELSE json_extract(canonical_json, '$.binding') END,
+                 json_extract(canonical_json, '$.transition.prepared'))
+             WHERE object_kind IN ('task_sync_reconciliation_hold', 'task_sync_exchange_event');
          CREATE INDEX IF NOT EXISTS objects_work_evidence_gate_name
              ON objects(
                  json_extract(canonical_json, '$.run_id'),
@@ -615,10 +659,16 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_items(project_id, work_id);",
     )?;
     super::observation::create_schema(connection)?;
+    super::task_sync::reconciliation::active::create_schema(connection)?;
     super::note_index::create_schema(connection)?;
+    super::feed_tasks::create_schema(connection)?;
+    super::task_sync::baseline::create_schema(connection)?;
     let mut restored_findings = rebuild_restored_projections_on(connection)?;
+    super::task_sync::reconciliation::active::rebuild(connection)?;
     restored_findings.extend(super::observation::rebuild(connection)?);
     restored_findings.extend(super::note_index::rebuild_for_repair(connection)?);
+    restored_findings.extend(super::feed_tasks::rebuild(connection)?);
+    restored_findings.extend(super::task_sync::baseline::rebuild(connection)?);
     connection.execute("DELETE FROM work_catalog_fts", [])?;
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text)

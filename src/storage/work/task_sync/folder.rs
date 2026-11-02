@@ -1,19 +1,20 @@
 //! Durable, project-scoped baselines for a human-resolved task folder.
 
 use chrono::{DateTime, Utc};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use rusqlite::params;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
+use super::baseline::{self, Baseline, TaskSyncImportPlanning};
 use super::{
     TaskSyncImportResult, import_task_tree_on_with_profile, invalid, validate_task_sync_actor,
 };
 use crate::{
-    ActorContext, CanonicalObject, ObjectId, ProjectId,
+    ActorContext, CanonicalObject, ObjectId, ProjectId, WorkId,
     storage::{SqliteStore, StoreError},
     task_sync::{
-        TaskSyncRefusal, TaskTree,
+        TaskDocument, TaskSyncRefusal, TaskTree,
         folder_plan::{self, DeltaPlan},
         progress::{ExportProfile, documents_fingerprint},
     },
@@ -21,19 +22,6 @@ use crate::{
 
 pub(crate) const IMPORT_PLANNING_KIND: &str = "task_sync_import_planning";
 const APPLY_OPERATION: &str = "apply_task_sync_folder";
-
-/// The complete shared inventory selected by a successful folder application.
-/// The record deliberately contains no transport, claim, or local runtime state.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct TaskSyncImportPlanning {
-    project_id: ProjectId,
-    tree: TaskTree,
-    inventory_fingerprint: String,
-    export_basis: String,
-    profile: ExportProfile,
-    created_at: DateTime<Utc>,
-}
 
 /// Caller-selected folder input. The export basis is the destination-local
 /// comparison captured before the human resolves a Git merge.
@@ -144,18 +132,32 @@ pub(super) fn apply_task_sync_folder_on(
         return Ok(result);
     }
     validate_task_sync_actor(request.actor)?;
-    let baseline = latest_planning(transaction, request.project)?;
+    let baseline = baseline::load(transaction, request.project)?;
     // Only the note selection is shared; each host keeps its own alias.
     if baseline
         .as_ref()
-        .is_some_and(|baseline| baseline.profile.include_notes != request.profile.include_notes)
+        .is_some_and(|baseline| baseline.head.include_notes != request.profile.include_notes)
     {
         return Err(TaskSyncRefusal::DivergentPlanning
             .invalid("task folder import note selection differs from its complete baseline"));
     }
     let current = folder_export_on(transaction, request.project, request.profile)?;
+    let selected = current
+        .tree
+        .tasks
+        .iter()
+        .map(|task| task.id)
+        .chain(
+            baseline
+                .iter()
+                .flat_map(|baseline| baseline.tree.tasks.iter().map(|task| task.id)),
+        )
+        .collect::<HashSet<_>>();
+    super::reconciliation::validate_current_heads_on(transaction, request.project, selected)
+        .map_err(super::origin::classify_binding)?;
+
     if let Some(baseline) = &baseline
-        && baseline.export_basis == request.export_basis
+        && baseline.head.export_basis == request.export_basis
         && baseline.tree.folder_documents()? == request.tree.folder_documents()?
         && current.tree.folder_documents()? == baseline.tree.folder_documents()?
     {
@@ -210,7 +212,7 @@ pub(super) fn apply_task_sync_folder_on(
     )?;
     // Only a destination with no baseline reaches this import, and it always
     // records the folder as its first one.
-    record_planning(transaction, request)?;
+    record_planning(transaction, request, None)?;
     result.changed = true;
     super::super::planning::persist_operation_result(
         transaction,
@@ -235,7 +237,7 @@ fn apply_planned_changes(
     request: TaskSyncFolderApply<'_>,
     plan: &DeltaPlan,
     current: &TaskTree,
-    baseline: &TaskSyncImportPlanning,
+    baseline: &Baseline,
     idempotency_key: &str,
     request_object: &CanonicalObject,
 ) -> Result<TaskSyncImportResult, StoreError> {
@@ -278,7 +280,7 @@ fn apply_planned_changes(
         dry_run: false,
     };
     if result.changed {
-        record_planning(transaction, request)?;
+        record_planning(transaction, request, Some(baseline))?;
     }
     if !changed.is_empty() || !removed.is_empty() {
         // Each added or edited task now exports exactly as the folder
@@ -357,24 +359,73 @@ fn audit_origins(connection: &rusqlite::Connection) -> Result<(), StoreError> {
 fn record_planning(
     transaction: &rusqlite::Transaction<'_>,
     request: TaskSyncFolderApply<'_>,
+    baseline: Option<&Baseline>,
 ) -> Result<(), StoreError> {
-    let planning = TaskSyncImportPlanning {
-        project_id: request.project.clone(),
-        tree: request.tree.clone(),
-        inventory_fingerprint: documents_fingerprint(&request.tree.folder_documents()?),
-        export_basis: request.export_basis.into(),
-        profile: request.profile.clone(),
-        created_at: request.now,
-    };
-    let planning_object = CanonicalObject::mint(&planning)?;
-    SqliteStore::insert_object(transaction, IMPORT_PLANNING_KIND, &planning_object)?;
-    super::super::feeds::append_to_project_feed(
+    record_baseline(
         transaction,
         request.project,
-        IMPORT_PLANNING_KIND,
-        &planning_object,
+        baseline,
+        request.tree,
+        request.export_basis,
+        request.profile,
+        request.now,
+    )
+}
+
+/// Appends the record that turns `baseline` into `tree`: only the tasks that
+/// joined, changed or left, chained to the head it was planned against. The
+/// append refuses if that head is no longer the latest one.
+fn record_baseline(
+    transaction: &rusqlite::Transaction<'_>,
+    project: &ProjectId,
+    baseline: Option<&Baseline>,
+    tree: &TaskTree,
+    export_basis: &str,
+    profile: &ExportProfile,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let changes = changes(baseline.map(|baseline| &baseline.tree), tree);
+    let selected = changes.keys().copied().collect::<Vec<_>>();
+    let previous = baseline::entries(transaction, project, selected.iter().copied())?;
+    baseline::append(
+        transaction,
+        project,
+        baseline.map(|baseline| baseline.head.record.clone()),
+        changes,
+        export_basis,
+        profile,
+        now,
     )?;
+    super::reconciliation::advance_on(transaction, project, selected, &previous)?;
     Ok(())
+}
+
+/// The members of `next` whose documents differ from `previous`, and the
+/// members of `previous` that `next` leaves out.
+fn changes(previous: Option<&TaskTree>, next: &TaskTree) -> BTreeMap<WorkId, Option<TaskDocument>> {
+    let held = previous
+        .map(|tree| {
+            tree.tasks
+                .iter()
+                .map(|task| (task.id, task))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let mut changes = next
+        .tasks
+        .iter()
+        .filter(|task| held.get(&task.id).copied() != Some(*task))
+        .map(|task| (task.id, Some(task.clone())))
+        .collect::<BTreeMap<_, _>>();
+    let kept = next
+        .tasks
+        .iter()
+        .map(|task| task.id)
+        .collect::<HashSet<_>>();
+    for id in held.keys().filter(|id| !kept.contains(id)) {
+        changes.insert(*id, None);
+    }
+    changes
 }
 
 fn folder_export_on(
@@ -383,24 +434,15 @@ fn folder_export_on(
     profile: &ExportProfile,
 ) -> Result<TaskSyncFolderExport, StoreError> {
     profile.options().validate()?;
-    let history = planning_history(connection, project)?;
-    let retired = if let Some(planning) = history.last() {
-        // Only the note selection is shared; each host exports under its
-        // own origin-machine alias.
-        if planning.profile.include_notes != profile.include_notes {
-            return Err(TaskSyncRefusal::DivergentPlanning
-                .invalid("task folder export note selection differs from its complete baseline"));
-        }
-        history
-            .iter()
-            .flat_map(|entry| entry.tree.tasks.iter().map(|task| task.id))
-            .collect::<HashSet<_>>()
-            .difference(&planning.tree.tasks.iter().map(|task| task.id).collect())
-            .copied()
-            .collect::<HashSet<_>>()
-    } else {
-        HashSet::new()
-    };
+    // Only the note selection is shared; each host exports under its own
+    // origin-machine alias.
+    if baseline::head(connection, project)?
+        .is_some_and(|head| head.include_notes != profile.include_notes)
+    {
+        return Err(TaskSyncRefusal::DivergentPlanning
+            .invalid("task folder export note selection differs from its complete baseline"));
+    }
+    let retired = baseline::retired(connection, project)?;
     let mut captured = super::export_on_with_profile(connection, project, profile)?;
     captured
         .tree
@@ -421,82 +463,45 @@ fn folder_export_on(
     })
 }
 
-fn latest_planning(
+pub(super) fn retained_planning_on(
     connection: &rusqlite::Connection,
+    id: &ObjectId,
     project: &ProjectId,
-) -> Result<Option<TaskSyncImportPlanning>, StoreError> {
-    Ok(planning_history(connection, project)?.pop())
-}
-
-/// Recovers every complete exchange baseline in durable project-feed order.
-/// History is deliberately fail-closed: it defines which task IDs were shared.
-/// No rows means a pre-enrollment source; a malformed row must never be treated
-/// as an empty history.
-fn planning_history(
-    connection: &rusqlite::Connection,
-    project: &ProjectId,
-) -> Result<Vec<TaskSyncImportPlanning>, StoreError> {
-    let mut statement = connection.prepare(
-        "SELECT object_id FROM work_feed_entries
-         WHERE feed_kind = 'project' AND feed_id = ?1 AND object_kind = ?2
-         ORDER BY position",
-    )?;
-    statement
-        .query_map(params![project.0, IMPORT_PLANNING_KIND], |row| {
-            row.get::<_, String>(0)
-        })?
-        .map(|row| {
-            let id = ObjectId::from_stored(row?)
-                .ok_or_else(|| invalid("task folder baseline has an invalid object id"))?;
-            let planning = SqliteStore::get_typed_object_on(connection, &id, IMPORT_PLANNING_KIND)?
-                .ok_or_else(|| invalid("task folder baseline object is missing"))?;
-            validate_planning(&planning, project)?;
-            Ok(planning)
-        })
-        .collect()
-}
-
-fn validate_planning(
-    planning: &TaskSyncImportPlanning,
-    project: &ProjectId,
-) -> Result<(), StoreError> {
-    let fingerprint = documents_fingerprint(&planning.tree.folder_documents()?);
-    if planning.project_id != *project
-        || planning.tree.project.project_id != *project
-        || planning.inventory_fingerprint != fingerprint
-        || planning.export_basis.trim().is_empty()
-        || planning.profile.include_notes != planning.tree.project.notes_included
-        || planning.profile.options().validate().is_err()
-    {
-        return Err(invalid("task folder baseline inventory is inconsistent"));
+) -> Result<TaskSyncImportPlanning, StoreError> {
+    let admitted: i64 = connection.query_row("SELECT COUNT(*) FROM work_feed_entries WHERE feed_kind='project' AND feed_id=?1 AND object_kind=?2 AND object_id=?3",params![&project.0,IMPORT_PLANNING_KIND,id.as_str()],|row|row.get(0))?;
+    if admitted != 1 {
+        return Err(invalid(
+            "folder baseline lacks unique admitted project-feed provenance",
+        ));
     }
-    Ok(())
+    let planning: TaskSyncImportPlanning =
+        SqliteStore::get_typed_object_on(connection, id, IMPORT_PLANNING_KIND)?
+            .ok_or_else(|| invalid("reconciled folder baseline is missing"))?;
+    planning.validate(project)?;
+    Ok(planning)
 }
 
+/// Records `tree` as the latest complete baseline, as the changes against the
+/// current one, so a fixture can model an exchange already accepted.
 #[cfg(test)]
 pub(super) fn record_complete_baseline_for_test(
     store: &mut SqliteStore,
     tree: &TaskTree,
 ) -> Result<(), StoreError> {
     let transaction = store.begin_work_mutation()?;
-    let planning = TaskSyncImportPlanning {
-        project_id: tree.project.project_id.clone(),
-        tree: tree.clone(),
-        inventory_fingerprint: documents_fingerprint(&tree.folder_documents()?),
-        export_basis: documents_fingerprint(&tree.folder_documents()?),
-        profile: ExportProfile {
+    let project = &tree.project.project_id;
+    let current = baseline::load(&transaction, project)?;
+    record_baseline(
+        &transaction,
+        project,
+        current.as_ref(),
+        tree,
+        &documents_fingerprint(&tree.folder_documents()?),
+        &ExportProfile {
             include_notes: tree.project.notes_included,
             origin_machine: None,
         },
-        created_at: Utc::now(),
-    };
-    let object = CanonicalObject::mint(&planning)?;
-    SqliteStore::insert_object(&transaction, IMPORT_PLANNING_KIND, &object)?;
-    super::super::feeds::append_to_project_feed(
-        &transaction,
-        &planning.project_id,
-        IMPORT_PLANNING_KIND,
-        &object,
+        Utc::now(),
     )?;
     transaction.commit()?;
     Ok(())
@@ -504,13 +509,10 @@ pub(super) fn record_complete_baseline_for_test(
 
 pub(in crate::storage::work) fn planning_project(object: &CanonicalObject) -> Option<ProjectId> {
     let planning = object.decode::<TaskSyncImportPlanning>().ok()?;
-    (planning.tree.project.project_id == planning.project_id
-        && documents_fingerprint(&planning.tree.folder_documents().ok()?)
-            == planning.inventory_fingerprint
-        && !planning.export_basis.trim().is_empty()
-        && planning.profile.include_notes == planning.tree.project.notes_included
-        && planning.profile.options().validate().is_ok())
-    .then_some(planning.project_id)
+    planning
+        .validate(&planning.project_id)
+        .is_ok()
+        .then_some(planning.project_id)
 }
 
 pub(crate) fn folder_apply_projection(
@@ -518,13 +520,13 @@ pub(crate) fn folder_apply_projection(
     project: &ProjectId,
 ) -> Result<(String, DateTime<Utc>), StoreError> {
     let planning = serde_json::from_value::<TaskSyncImportPlanning>(object)?;
-    validate_planning(&planning, project)?;
+    planning.validate(project)?;
     Ok((
-        folder_apply_summary(planning.tree.tasks.len()),
+        folder_apply_summary(planning.changes.len()),
         planning.created_at,
     ))
 }
 
-pub(crate) fn folder_apply_summary(task_count: usize) -> String {
-    format!("task-sync folder apply: {task_count} tasks in the applied baseline")
+pub(crate) fn folder_apply_summary(change_count: usize) -> String {
+    format!("task-sync folder apply: {change_count} shared tasks joined, changed or left")
 }

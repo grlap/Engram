@@ -145,6 +145,21 @@ fn task_sync_global_audit_refuses_duplicate_and_incomplete_origin_graphs_on_impo
                 .unwrap();
             let parent = store.get_work_item(child.parent_id.unwrap()).unwrap();
             let id = origin_reference(&parent.created_by).unwrap();
+            let refused = store
+                .connection
+                .execute("DELETE FROM objects WHERE object_id=?1", [id.as_str()])
+                .unwrap_err();
+            assert!(matches!(refused, rusqlite::Error::SqliteFailure(error, _)
+                if error.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY));
+            // Remove the durable head first to construct this deliberately
+            // broken history without disabling the new foreign-key guard.
+            store
+                .connection
+                .execute(
+                    "DELETE FROM work_task_sync_import_heads WHERE head_id=?1",
+                    [id.as_str()],
+                )
+                .unwrap();
             store
                 .connection
                 .execute("DELETE FROM objects WHERE object_id=?1", [id.as_str()])

@@ -6,7 +6,9 @@ mod failure_modes;
 use crate::{
     ClaimWorkRequest, ReleaseWorkRequest, SessionId, WorkClaim,
     domain::{WorkPlanningAuthority, WorkTransition},
-    task_sync::{folder_plan::ProjectChange, progress::ExportProfile},
+    task_sync::{
+        folder_plan::ProjectChange, progress::ExportProfile, reconciliation::ImportedBaseline,
+    },
 };
 
 const PROJECT: &str = "folder-apply";
@@ -833,6 +835,16 @@ fn without(tree: &TaskTree, ids: &[WorkId]) -> TaskTree {
 fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
     let (mut store, fixture) = enrolled();
     let origins = durable(&store);
+    let heads_before = store
+        .connection
+        .prepare("SELECT work_id,head_id FROM work_task_sync_import_heads ORDER BY work_id")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     let tables_before = state(&store).rows;
     let before = query::load_work_item(&store.connection, fixture.first).unwrap();
     let resolved = without(&fixture.tree, &[fixture.first]);
@@ -898,6 +910,12 @@ fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
                 | "work_feed_entries"
                 | "work_feed_heads"
                 | "work_operation_results"
+                // Projections of the feed entries and the new baseline,
+                // which the doctor below compares with their records.
+                | "work_project_feed_tasks"
+                | "work_task_sync_baseline"
+                | "work_task_sync_baseline_heads"
+                | "work_task_sync_import_heads"
         ) || name.starts_with("work_catalog_fts")
         {
             continue;
@@ -912,6 +930,40 @@ fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
         );
     }
     assert_eq!(durable(&store), origins);
+    let removed_head = match store
+        .task_sync_imported_baseline_state(&ProjectId(PROJECT.into()), fixture.first)
+        .unwrap()
+    {
+        Some(ImportedBaseline::Removed { head }) => head,
+        other => panic!("a folder removal must retain an explicit removed baseline: {other:?}"),
+    };
+    let kind: String = store
+        .connection
+        .query_row(
+            "SELECT object_kind FROM objects WHERE object_id=?1",
+            [removed_head.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, super::super::folder::IMPORT_PLANNING_KIND);
+    for (work, head) in heads_before {
+        let actual: String = store
+            .connection
+            .query_row(
+                "SELECT head_id FROM work_task_sync_import_heads WHERE work_id=?1",
+                [&work],
+                |row| row.get(0),
+            )
+            .unwrap();
+        if work == fixture.first.0.to_string() {
+            assert_eq!(actual, removed_head.as_str());
+        } else {
+            assert_eq!(
+                actual, head,
+                "unchanged sibling's imported head stays unchanged"
+            );
+        }
+    }
     assert_eq!(exported(&store), resolved);
     assert_eq!(events(&store, fixture.completed), []);
     assert!(store.verify_all().unwrap().is_healthy());

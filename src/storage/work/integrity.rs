@@ -1111,6 +1111,14 @@ pub(super) fn verify_work_feed_integrity(
             continue;
         }
         let expected = match entry_kind.as_str() {
+            "task_sync_reconciliation_hold" => object
+                .decode::<crate::task_sync::reconciliation::ReconciliationHold>()
+                .ok()
+                .map(|hold| HashSet::from([format!("project:{}", hold.project_id.0)])),
+            "task_sync_shared_import_version" => object
+                .decode::<crate::task_sync::reconciliation::SharedImportVersion>()
+                .ok()
+                .map(|version| HashSet::from([format!("project:{}", version.project_id.0)])),
             "registered_host_run" => object
                 .decode::<crate::domain::RegisteredHostRun>()
                 .ok()
@@ -1393,7 +1401,8 @@ pub(super) fn verify_work_feed_integrity(
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
               'verification_evidence', 'environment_evidence', 'named_root_binding', 'registered_host_run',
              'work_obligation', 'work_obligation_resolution', 'unadmitted_execution_observation',
-             'task_sync_import_planning'
+             'task_sync_import_planning', 'task_sync_reconciliation_hold',
+             'task_sync_shared_import_version'
          )
            AND entry.object_id IS NULL
          ORDER BY object.object_id",

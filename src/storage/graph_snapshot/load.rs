@@ -1317,10 +1317,16 @@ fn validate_event_shape(event: &crate::WorkGraphSnapshotEvent) -> Result<(), Sto
         | "typed_evidence_added"
         | "completed" => event.reason.is_none() && no_relation(),
         "claimed" => no_relation(),
-        "blocked" | "unblocked" | "released" | "checkpointed" | "handoff_offered"
-        | "handoff_cancelled" | "handed_off" | "reopened" => {
-            event.reason.is_some() && no_relation()
-        }
+        "blocked"
+        | "unblocked"
+        | "released"
+        | "checkpointed"
+        | "handoff_offered"
+        | "handoff_cancelled"
+        | "handed_off"
+        | "reopened"
+        | "superseded_by_import"
+        | "reconciliation_hold_abandoned" => event.reason.is_some() && no_relation(),
         "prerequisite_added" | "prerequisite_removed" => {
             event.reason.is_none()
                 && event.lifecycle.is_none()
@@ -2062,7 +2068,19 @@ fn graph_destination_is_empty_on(
         [project_id.0.as_str()],
         |row| row.get::<_, bool>(0),
     )?;
-    Ok(!has_work && !has_memory && !has_work_events)
+    // A load writes no project-feed entry, so a project whose feed has begun
+    // (a task-sync exchange baseline among others) is never empty: change
+    // capture names its changed tasks from that feed, and the loaded tasks
+    // would be invisible to it.
+    let has_started_feed = connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM work_feed_heads
+             WHERE feed_kind = 'project' AND feed_id = ?1 AND position > 0
+         )",
+        [project_id.0.as_str()],
+        |row| row.get::<_, bool>(0),
+    )?;
+    Ok(!has_work && !has_memory && !has_work_events && !has_started_feed)
 }
 
 fn corrupt(detail: impl Into<String>) -> StoreError {

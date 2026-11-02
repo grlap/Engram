@@ -211,6 +211,9 @@ pub enum WorkRunState {
     Active,
     Completed,
     Cancelled,
+    /// The original generation was retired by an explicit planning import.
+    /// This is not successful completion and supplies no completion seal.
+    SupersededByImport,
 }
 
 /// Mutable claim projection state; immutable events retain every transition.
@@ -290,6 +293,8 @@ pub enum WorkReadinessReason {
     LiveClaimWithoutCheckpoint,
     LiveClaimWithCheckpoint,
     ReadyUnclaimed,
+    /// A non-success import retirement needs an explicit fresh generation.
+    ImportRetired,
 }
 
 /// Compact ready rows omit this restatement of the `ready` state word.
@@ -676,14 +681,17 @@ pub struct WorkRun {
 }
 
 impl WorkRun {
-    /// Whether the run has finished: it completed, or a completion seal
-    /// binds it. A record that arrives on a finished run afterwards is kept
+    /// Whether the run has finished: it completed, was retired by import,
+    /// or a completion seal binds it. A later record is kept
     /// for audit but owes, satisfies and contributes nothing, and readers
     /// show the run's obligations as history. This is the one place that
     /// decides it.
     #[must_use]
     pub fn is_finished(&self) -> bool {
-        self.state == WorkRunState::Completed || self.completion_seal.is_some()
+        matches!(
+            self.state,
+            WorkRunState::Completed | WorkRunState::SupersededByImport
+        ) || self.completion_seal.is_some()
     }
 }
 
@@ -1493,6 +1501,16 @@ pub enum WorkTransition {
     Reopened {
         run_id: WorkRunId,
         generation: i64,
+        reason: String,
+    },
+    SupersededByImport {
+        hold: ObjectId,
+        prepared: ObjectId,
+        receipt: ObjectId,
+        reason: String,
+    },
+    ReconciliationHoldAbandoned {
+        hold: ObjectId,
         reason: String,
     },
 }

@@ -595,8 +595,8 @@ fn cancelling_the_item_ends_the_carry() {
         status.carried_failure.is_none(),
         "a cancelled item carries nothing"
     );
-    // Nor can a new run shed the failure: only completed work reopens, and
-    // completing needed an evaluation that named it.
+    // A cancelled item cannot start a fresh run: reopening requires completed
+    // or import-retired work, and cancellation is neither.
     let reopened = scenario
         .service
         .work_update(
@@ -608,7 +608,7 @@ fn cancelling_the_item_ends_the_carry() {
         )
         .expect_err("a cancelled item cannot be reopened");
     assert!(
-        matches!(&reopened, StoreError::InvalidWork(reason) if reason.contains("only completed work")),
+        matches!(&reopened, StoreError::InvalidWork(reason) if reason == "only completed or import-retired work can be reopened"),
         "{reopened:?}"
     );
 }

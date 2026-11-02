@@ -196,6 +196,7 @@ fn validate_detach_on(
     item: &WorkItem,
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    super::super::task_sync::reconciliation::refuse_held_on(connection, item.work_id)?;
     let refuse = |reason: &str, remedy: String| StoreError::WorkDetachRefused {
         work_id: item.work_id,
         reason: reason.into(),

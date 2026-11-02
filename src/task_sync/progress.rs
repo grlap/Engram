@@ -69,6 +69,15 @@ pub struct ExportCapture {
     pub full_reason: Option<String>,
 }
 
+/// The tasks changed since an earlier cut, read from one SQLite snapshot
+/// without capturing any task. A task listed may still export the same
+/// bytes; a task the interval does not list cannot have changed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskChangeCapture {
+    pub cut: ExportCut,
+    pub changed: std::collections::BTreeSet<crate::WorkId>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct PrepareReceipt {
     pub directory: String,

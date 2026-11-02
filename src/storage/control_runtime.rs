@@ -464,6 +464,7 @@ impl SqliteStore {
                 return Ok(binding);
             }
             if let Some(work_binding) = work_binding {
+                work::task_sync::reconciliation::refuse_held_on(transaction, work_binding.work_id)?;
                 work::validate_control_work_binding_on(
                     transaction,
                     project_id,
@@ -717,6 +718,9 @@ impl SqliteStore {
                 return Ok(decision);
             }
 
+            if let Some(binding) = &session.work_binding {
+                work::task_sync::reconciliation::refuse_held_on(transaction, binding.work_id)?;
+            }
             let superseded_grant = Self::supersede_issued_turn(transaction, &session, now)?;
             if superseded_grant.is_some() {
                 session = Self::load_control_session_on(transaction, session_id)?
@@ -927,6 +931,9 @@ impl SqliteStore {
                 intent_object.key(),
             )? {
                 return Ok(replay);
+            }
+            if let Some(binding) = &session.work_binding {
+                work::task_sync::reconciliation::refuse_held_on(transaction, binding.work_id)?;
             }
             let grant = Self::load_turn_grant(transaction, session_id, grant_id)?
                 .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;

@@ -560,6 +560,15 @@ fn task_sync_integrity_refuses_decodable_mismatched_origin_and_missing_origin() 
         assert!(!report.is_healthy(), "{mutation}");
         assert!(format!("{report:?}").contains("task_sync_import_origin"));
     }
+    // This fixture intentionally removes the origin and its durable head;
+    // ordinary deletion of an origin retained by that head is refused by FK.
+    store
+        .connection
+        .execute(
+            "DELETE FROM work_task_sync_import_heads WHERE head_id=?1",
+            [&id],
+        )
+        .unwrap();
     store
         .connection
         .execute("DELETE FROM objects WHERE object_id = ?1", [&id])

@@ -17,6 +17,59 @@ use super::{
     WorkSessionState, is_unsafe_rendered_text_char, validate_gate_evidence_payload,
 };
 
+pub(super) fn project_reconciliation(
+    store: &SqliteStore,
+    project: &crate::ProjectId,
+    kind: &str,
+    object: serde_json::Value,
+) -> Result<super::WorkChangeProjection, StoreError> {
+    let (work_id, actor, created_at, summary) = if kind == "task_sync_reconciliation_hold" {
+        let hold: crate::task_sync::reconciliation::ReconciliationHold =
+            serde_json::from_value(object)?;
+        if hold.project_id != *project {
+            return Err(StoreError::InvalidWorkProjection(
+                "reconciliation hold delivery project differs".into(),
+            ));
+        }
+        (
+            None,
+            hold.actor,
+            hold.created_at,
+            "Task reconciliation hold recorded; new affected admissions are fenced",
+        )
+    } else {
+        let version: crate::task_sync::reconciliation::SharedImportVersion =
+            serde_json::from_value(object)?;
+        if version.project_id != *project {
+            return Err(StoreError::InvalidWorkProjection(
+                "shared version delivery project differs".into(),
+            ));
+        }
+        (
+            Some(version.task.id),
+            version.actor,
+            version.imported_at,
+            "Imported shared task baseline advanced",
+        )
+    };
+    Ok(super::WorkChangeProjection::Visible(
+        super::WorkChangeSummary {
+            schema_version: super::SCHEMA_VERSION,
+            object_kind: kind.into(),
+            work_id,
+            work_ref: work_id
+                .map(|id| store.get_work_item(id).map(|item| item.short_ref))
+                .transpose()?,
+            revision: None,
+            change_kind: kind.into(),
+            summary: summary.into(),
+            actor_id: Some(compact_text(&actor.actor_id)),
+            actor_context: projected_actor_context(&actor),
+            created_at,
+        },
+    ))
+}
+
 /// A fixed diagnostic class, never an error body, path, hash, or actor text.
 pub(crate) fn advisory_error_class(error: &StoreError) -> &'static str {
     match error {

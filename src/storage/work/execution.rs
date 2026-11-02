@@ -837,6 +837,7 @@ impl SqliteStore {
             )?;
             return Ok(claim);
         }
+        super::task_sync::reconciliation::refuse_held_on(transaction, item.work_id)?;
         let view = inspect_work_canonical_on(transaction, item.work_id, request.claimed_at)?;
         if !matches!(view.availability, WorkAvailability::Ready) {
             if matches!(

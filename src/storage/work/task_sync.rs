@@ -17,12 +17,16 @@ use crate::{
 };
 
 mod activity;
+pub(in crate::storage::work) mod baseline;
 pub(crate) mod folder;
 mod folder_admission;
 mod folder_dry_run;
 mod incremental;
+mod ledger;
 mod notes;
 mod origin;
+pub(in crate::storage) mod reconciliation;
+pub(in crate::storage) use ledger::verify_exchange;
 pub(crate) use origin::OriginScopeGuard;
 pub(in crate::storage) use origin::enter_origin_scope;
 pub(super) use origin::validate_item_origin;
@@ -203,6 +207,7 @@ pub(super) fn import_task_tree_on(
         ImportScope::legacy(),
         dry_run,
         now,
+        None,
     )
 }
 
@@ -232,6 +237,28 @@ pub(super) fn import_task_tree_on_with_profile(
         ImportScope::folder(profile.origin_machine.as_deref()),
         dry_run,
         now,
+        None,
+    )
+}
+
+/// Applies an import whose canonical bodies and record ids were planned and
+/// retained before the transaction, so a retry reproduces the same records.
+pub(super) fn import_task_tree_with_plan_on(
+    transaction: &rusqlite::Transaction<'_>,
+    project: &ProjectId,
+    actor: &ActorContext,
+    tree: &TaskTree,
+    plan: &crate::task_sync::ledger::ImportPlan,
+) -> Result<TaskSyncImportResult, StoreError> {
+    import_task_tree_on_with_scope(
+        transaction,
+        project,
+        actor,
+        tree,
+        ImportScope::legacy(),
+        false,
+        plan.recorded_at,
+        Some(plan),
     )
 }
 
@@ -239,6 +266,10 @@ pub(super) fn import_task_tree_on_with_profile(
 struct ImportScope<'a> {
     machine: Option<&'a str>,
     allow_empty_notes_profile: bool,
+    /// The plain import writes tasks without a project-feed entry, so once
+    /// a project's feed has begun it would hide them from change capture.
+    /// A folder import records its baseline on the feed instead.
+    refuses_started_feed: bool,
 }
 
 impl<'a> ImportScope<'a> {
@@ -246,6 +277,7 @@ impl<'a> ImportScope<'a> {
         Self {
             machine: None,
             allow_empty_notes_profile: false,
+            refuses_started_feed: true,
         }
     }
 
@@ -253,6 +285,7 @@ impl<'a> ImportScope<'a> {
         Self {
             machine,
             allow_empty_notes_profile: true,
+            refuses_started_feed: false,
         }
     }
 
@@ -268,6 +301,10 @@ impl<'a> ImportScope<'a> {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one import body serves the legacy, folder and planned entry points"
+)]
 fn import_task_tree_on_with_scope(
     transaction: &rusqlite::Transaction<'_>,
     project: &ProjectId,
@@ -276,6 +313,7 @@ fn import_task_tree_on_with_scope(
     scope: ImportScope<'_>,
     dry_run: bool,
     now: DateTime<Utc>,
+    plan: Option<&crate::task_sync::ledger::ImportPlan>,
 ) -> Result<TaskSyncImportResult, StoreError> {
     validate_task_import(project, actor, tree, scope.allow_empty_notes_profile)?;
     let native: bool = transaction.query_row(
@@ -351,11 +389,65 @@ fn import_task_tree_on_with_scope(
             }
         }
     }
+    if scope.refuses_started_feed
+        && transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_feed_heads
+                 WHERE feed_kind = 'project' AND feed_id = ?1 AND position > 0)",
+            [project.0.as_str()],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Err(TaskSyncRefusal::NativeState.invalid(
+            "a plain task import refuses a project whose feed has begun; its tasks would be invisible to change capture",
+        ));
+    }
     transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
+    let planned = plan.map(|plan| {
+        plan.tasks
+            .iter()
+            .map(|task| (task.task.0, task))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    });
     for (task, snapshot) in tree.tasks.iter().zip(tree.snapshots()?) {
         super::planning::refuse_record_id_pins_on(transaction, &task.acceptance_bindings)
             .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-        insert_task(transaction, tree, task, snapshot, actor, now)?;
+        if let Some(planned) = &planned {
+            let planned = planned
+                .get(&task.id.0)
+                .ok_or_else(|| invalid("import plan task is missing"))?;
+            let constructed = construct_task(
+                tree,
+                task,
+                snapshot,
+                actor,
+                now,
+                &planned.restored_id,
+                &planned.origin_id,
+            )?;
+            if ObjectId::from_canonical_bytes(constructed.object.bytes())
+                != planned.restored_fingerprint
+                || ObjectId::from_canonical_bytes(constructed.origin_object.bytes())
+                    != planned.origin_fingerprint
+                || CanonicalObject::freeze(&constructed.item)?.key() != &planned.item_fingerprint
+            {
+                return Err(invalid(
+                    "import plan cannot reproduce original canonical bodies",
+                ));
+            }
+            let collision: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id IN (?1, ?2))",
+                params![planned.restored_id.as_str(), planned.origin_id.as_str()],
+                |row| row.get(0),
+            )?;
+            if collision {
+                return Err(invalid(
+                    "planned record id already exists without an intact committed receipt; reconcile",
+                ));
+            }
+            insert_constructed_task(transaction, task, &constructed, Some(now))?;
+        } else {
+            insert_task(transaction, tree, task, snapshot, actor, now)?;
+        }
     }
     if transaction
         .prepare("PRAGMA foreign_key_check")?
@@ -599,6 +691,35 @@ fn insert_task(
     actor: &ActorContext,
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    let constructed = construct_task(
+        tree,
+        task,
+        snapshot,
+        actor,
+        now,
+        &ObjectId::mint(),
+        &ObjectId::mint(),
+    )?;
+    insert_constructed_task(connection, task, &constructed, None)
+}
+
+struct ConstructedTask {
+    item: WorkItem,
+    record: RestoredRecord,
+    object: CanonicalObject,
+    origin_object: CanonicalObject,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn construct_task(
+    tree: &TaskTree,
+    task: &TaskDocument,
+    snapshot: crate::WorkGraphSnapshotItem,
+    actor: &ActorContext,
+    now: DateTime<Utc>,
+    record_id: &ObjectId,
+    origin_id: &ObjectId,
+) -> Result<ConstructedTask, StoreError> {
     let mut actor = actor.clone();
     actor.source_tool = Some(IMPORT_TOOL.into());
     let actor = &actor;
@@ -614,7 +735,7 @@ fn insert_task(
         },
         history: history(task, actor, now),
     };
-    let object = CanonicalObject::mint(&record)?;
+    let object = CanonicalObject::identified(record_id, &record)?;
     let origin = ImportOrigin {
         project_id: tree.project.project_id.clone(),
         record_id: object.key().clone(),
@@ -623,7 +744,7 @@ fn insert_task(
         imported_at: now,
         notes_included: tree.project.notes_included,
     };
-    let origin_object = CanonicalObject::mint(&origin)?;
+    let origin_object = CanonicalObject::identified(origin_id, &origin)?;
     let item = WorkItem {
         schema_version: crate::schema::SCHEMA_VERSION,
         project_id: tree.project.project_id.clone(),
@@ -654,12 +775,49 @@ fn insert_task(
         created_at: now,
         updated_at: now,
     };
-    insert_item(connection, &item)?;
-    SqliteStore::insert_object(connection, "work_restored_record", &object)?;
-    SqliteStore::insert_object(connection, ORIGIN_KIND, &origin_object)?;
+    Ok(ConstructedTask {
+        item,
+        record,
+        object,
+        origin_object,
+    })
+}
+
+fn insert_constructed_task(
+    connection: &Connection,
+    task: &TaskDocument,
+    constructed: &ConstructedTask,
+    created_at: Option<DateTime<Utc>>,
+) -> Result<(), StoreError> {
+    let ConstructedTask {
+        item,
+        record,
+        object,
+        origin_object,
+    } = constructed;
+    insert_item(connection, item)?;
+    for (kind, object) in [
+        ("work_restored_record", object),
+        (ORIGIN_KIND, origin_object),
+    ] {
+        if let Some(created_at) = created_at {
+            connection.execute("INSERT INTO objects (object_id, object_kind, canonical_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+                params![object.key().as_str(), kind, object.bytes(), created_at.format("%Y-%m-%d %H:%M:%S").to_string()])?;
+        } else {
+            SqliteStore::insert_object(connection, kind, object)?;
+        }
+    }
     connection.execute("INSERT INTO work_restored_records (work_id, generation_index, record_id) VALUES (?1, 0, ?2)",
         params![task.id.0.to_string(), object.key().as_str()])?;
-    super::note_index::append_inherited(connection, object.key(), &record)?;
+    connection.execute(
+        "INSERT INTO work_task_sync_import_heads(project_id, work_id, head_id) VALUES (?1,?2,?3)",
+        params![
+            &item.project_id.0,
+            item.work_id.0.to_string(),
+            origin_object.key().as_str()
+        ],
+    )?;
+    super::note_index::append_inherited(connection, object.key(), record)?;
     for prerequisite in &task.prerequisites {
         connection.execute("INSERT INTO work_prerequisites (work_id, prerequisite_id, event_id) VALUES (?1, ?2, ?3)",
             params![task.id.0.to_string(), prerequisite.0.to_string(), object.key().as_str()])?;
@@ -686,7 +844,7 @@ fn insert_task(
     }
     // Search includes active blockers, so derive it after the relations exist,
     // just as graph loading does.
-    super::refresh_work_catalog_for_restore(connection, &item)
+    super::refresh_work_catalog_for_restore(connection, item)
 }
 
 fn insert_item(connection: &Connection, item: &WorkItem) -> Result<(), StoreError> {

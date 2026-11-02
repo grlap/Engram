@@ -223,9 +223,11 @@ fingerprint. Files from the preceding format are refused as
 ## Load
 
 Load targets an empty project store: no work items, no work events, no
-project memories, and no memory tombstones under the destination project id
-(a freshly initialized store, with its policy rows and audit records, is
-empty). Emptiness is checked when validation starts and re-verified inside
+project memories, no memory tombstones, and no project-feed entry (such as a
+task-sync exchange baseline) under the destination project id (a freshly
+initialized store, with its policy rows and audit records, is empty). A load
+writes no feed entry, so loading into a project whose feed has begun would
+hide the loaded tasks from task-sync change capture. Emptiness is checked when validation starts and re-verified inside
 the write transaction, so a concurrent `add` or `remember` that lands in
 between produces the same refusal, never a store that mixes native and
 loaded state. A nonempty destination is refused with the typed
@@ -547,8 +549,8 @@ a nonempty destination where `engram restore --replace` overwrites one.
   reported as already saved; the manifest may differ only in exported-at and
   exporting build, and a manifest whose digest or summary disagrees with the
   re-canonicalized body is refused on load.
-- Load refuses a nonempty destination (items, events, memories, or
-  tombstones), a project-id mismatch, a format-fingerprint mismatch, a
+- Load refuses a nonempty destination (items, events, memories, tombstones,
+  or a started project feed), a project-id mismatch, a format-fingerprint mismatch, a
   dangling relation or record target, a duplicate id, ref, or memory key, a
   parent or prerequisite cycle, a graph outside the destination policy's
   depth or open-descendant bounds, a lifecycle that disagrees with

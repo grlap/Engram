@@ -138,7 +138,9 @@ impl Default for TaskId {
 }
 
 /// Stable planning identity for first-class local work.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
+)]
 #[serde(transparent)]
 pub struct WorkId(pub Uuid);
 

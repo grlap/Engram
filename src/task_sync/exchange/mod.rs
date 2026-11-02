@@ -6,6 +6,7 @@
 //! hard parent exit before assignment can leave an inert suspended child: this
 //! is not atomic confinement. After assignment, dropping the job kills its tree.
 
+mod admission;
 mod command;
 #[cfg(all(test, windows))]
 #[path = "tests/windows/diagnostics.rs"]
@@ -28,6 +29,7 @@ mod process {
         std::future::ready(Err(RunError::UnsupportedPlatform))
     }
 }
+mod retained;
 mod target;
 #[cfg(test)]
 mod tests;
@@ -42,6 +44,10 @@ pub(crate) mod test_support {
     }
 }
 
+pub use admission::{
+    InspectedExchange, apply_exchange, inspect_exchange, prepare_exchange, record_exchange_progress,
+};
+pub use retained::{retain_commit, verify_retained_commit};
 pub use target::{ExchangeTarget, TargetSelection};
 
 use std::{

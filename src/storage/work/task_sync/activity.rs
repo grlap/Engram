@@ -87,7 +87,9 @@ fn native(
                     current = None;
                 }
             }
-            WorkTransition::Completed { .. } | WorkTransition::Disposed { .. } => {
+            WorkTransition::Completed { .. }
+            | WorkTransition::Disposed { .. }
+            | WorkTransition::SupersededByImport { .. } => {
                 if let Some((activity_id, claim)) = &current
                     && Some(claim.run_id) == event.run_id
                 {
@@ -117,7 +119,8 @@ fn native(
             | WorkTransition::MemoryCaptured { .. }
             | WorkTransition::TypedEvidenceAdded { .. }
             | WorkTransition::RequiredChildWaived { .. }
-            | WorkTransition::Reopened { .. } => {}
+            | WorkTransition::Reopened { .. }
+            | WorkTransition::ReconciliationHoldAbandoned { .. } => {}
         }
     }
     Ok(entries)

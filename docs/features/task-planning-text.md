@@ -74,8 +74,16 @@ bytes from another host cannot be told apart from this host's own, so
 selecting this host's own copy is the caller's obligation. A basis with a
 different inventory, project or note selection refuses.
 
-A successful import records the applied folder as the exchange baseline. An
-exact repeat of the same import, by the same actor and session against the
+A successful import records the applied folder as the exchange baseline. Each
+baseline record holds only what changed since the one before it: the task
+documents that joined or changed, and the members that left. It also names its
+predecessor. Writing it checks, in the same transaction, that the predecessor
+is still the project's latest baseline. The store keeps a rebuildable
+per-task view of the latest baseline, so reading one task's baseline never
+replays the history. That view also carries an order-independent content
+fingerprint of the whole membership, which each record updates for exactly
+the tasks it changes; projection repair rebuilds both from the records in
+feed order. An exact repeat of the same import, by the same actor and session against the
 same basis, replays its first receipt and records nothing more. `--dry-run`
 performs the whole import under the same identity, with every check, replay
 and refusal, then rolls it back explicitly: no task, baseline, receipt or feed
@@ -845,7 +853,8 @@ replacement.
 
 | Code | Refusal |
 | --- | --- |
-| `task_sync_native_state` | The target already holds native work or execution state. |
+| `task_sync_native_state` | The target already holds native work or execution state, or, for the plain candidate import, its project feed has begun (an exchange baseline among others), so the imported tasks would be invisible to change capture. |
+| `task_sync_reconciliation_held` | An unresolved reconciliation hold covers the work; fresh claims, handoffs, governing planning, evaluations and work-bound control admission wait while original owners settle or resolve that candidate. |
 | `task_sync_divergent_planning` | The candidate changes or adds to the planning, notes or activity the store already holds without removing a task; the destination's planning differs from its selected basis; the basis or export note selection differs from the folder's or the baseline's; or export meets native activity that conflicts with a retained entry. |
 | `task_sync_removed_planning` | The candidate omits a task the store already holds. |
 | `task_sync_id_collision` | A candidate task, blocker, note or activity id already belongs to another record, task or project. |
@@ -866,6 +875,8 @@ replacement.
 | `task_sync_destination_unknown_entry` | The candidate directory holds an entry the format does not define. |
 | `task_sync_destination_missing_tasks` | A plain candidate directory, as read by preparation and setup materialization, has no `tasks` directory. A folder import accepts a folder without one. |
 | `task_sync_import_conflict` | A folder imported into an enrolled destination asks for an unsupported field change; a task it would edit or remove is not free to take that change; a retained task still references a removed task; a relation edit rewrites an immutable blocker, collides with a held id, adds an inadmissible prerequisite or breaks the durable graph; or an addition collides with a held identity, references a native task, sits under a bound ancestor or executing root, depends on a refused addition, or breaks the destination's planning or import-origin history. Title, outcome, priority, prerequisite and blocker edits have the admission rules above. The message names the first 20 refused tasks with reasons in task-id order, counts the rest, and reports graph failures that cannot be attributed to a task at folder level. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
+| `task_sync_incremental_basis_unavailable` | An incremental exchange's recorded project-feed cut no longer continues the store's feed: the cut is ahead of the feed head, or its anchor names a different object. The check reads the anchor's entry alone, never the interval since the cut. A first capture, from position zero, also refuses while the project holds tasks that no project-feed entry names, as a loaded graph's tasks are. The changed tasks cannot be named exactly, so nothing is read; a full scan happens only on an explicit rebuild. |
+| `task_sync_baseline_head_moved` | An exchange baseline names a previous baseline that is no longer the project's latest one: another exchange was recorded after the one it was planned against. Each baseline continues exactly one predecessor, so the later exchange is refused and nothing is written; plan it again against the current baseline. |
 
 ## Local incremental preparation
 

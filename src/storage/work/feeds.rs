@@ -150,6 +150,24 @@ fn insert_reserved_feed_entry(
             work_id.map(|work_id| work_id.0.to_string())
         ],
     )?;
+    if let FeedId::Project(project) = &position.feed {
+        super::feed_tasks::record_on(
+            transaction,
+            &project.0,
+            position.position,
+            object_kind,
+            object,
+            work_id.map(|work_id| work_id.0.to_string()).as_deref(),
+        )?;
+        if object_kind == super::task_sync::folder::IMPORT_PLANNING_KIND {
+            super::task_sync::baseline::record_on(
+                transaction,
+                &project.0,
+                position.position,
+                object,
+            )?;
+        }
+    }
     Ok(())
 }
 

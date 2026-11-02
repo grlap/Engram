@@ -911,6 +911,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
     validate_child_count(request.children.len(), validation)?;
     validate_child_inputs(&request.children)?;
     let mut parent = load_work_item(transaction, request.parent_id)?;
+    super::task_sync::reconciliation::refuse_held_on(transaction, parent.work_id)?;
     assert_revision(&parent, request.expected_parent_revision)?;
     if parent.lifecycle != WorkLifecycle::Open {
         return Err(StoreError::WorkParentNotOpen {
@@ -934,6 +935,11 @@ fn decompose_work_with_validation_on<R: Redactor>(
         request.actor.clone()
     };
     validate_decomposition_budget(transaction, &parent, request.children.len(), validation)?;
+    for edge in &request.prerequisites {
+        if let WorkDependencyRef::Existing(work_id) = &edge.prerequisite {
+            super::task_sync::reconciliation::refuse_held_on(transaction, *work_id)?;
+        }
+    }
     let restored_execution = if parent.active_run_id.is_none() {
         Some(ensure_restored_execution_state(
             transaction,
@@ -1710,6 +1716,7 @@ fn validate_planning_authority(
     actor: &crate::domain::ActorContext,
     at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    super::task_sync::reconciliation::refuse_held_on(transaction, item.work_id)?;
     if let Some(run_id) = item.active_run_id {
         expire_handoff_offers(transaction, run_id, at, actor)?;
     }

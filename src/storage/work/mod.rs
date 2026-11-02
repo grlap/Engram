@@ -29,6 +29,7 @@ pub(crate) use completion::{
 };
 mod discovery;
 mod execution;
+mod feed_tasks;
 mod feeds;
 mod focus_journal;
 pub(in crate::storage) use feeds::append_named_root_binding_on;

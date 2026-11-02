@@ -250,6 +250,7 @@ impl SqliteStore {
             receipt.replayed = true;
             return Ok(receipt);
         }
+        super::task_sync::reconciliation::refuse_held_on(&transaction, item.work_id)?;
         if item.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(item.work_id));
         }

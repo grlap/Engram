@@ -799,6 +799,53 @@ fn load_refuses_incompatible_and_corrupt_documents_without_partial_state() {
         ),
         Err(StoreError::GraphDestinationNotEmpty)
     ));
+
+    // A project enrolled in task-sync exchange is not empty even with no
+    // task: a load writes no project-feed entry, so incremental exchange
+    // could never name the tasks it adds.
+    let mut enrolled =
+        SqliteStore::open(directory.path().join("enrolled.db")).expect("enrolled store");
+    let profile = crate::task_sync::progress::ExportProfile {
+        include_notes: false,
+        origin_machine: None,
+    };
+    let empty = crate::task_sync::TaskTree {
+        project: crate::task_sync::ProjectDocument {
+            format: crate::task_sync::FORMAT.into(),
+            project_id: project.clone(),
+            notes_included: false,
+        },
+        tasks: Vec::new(),
+    };
+    let basis = enrolled
+        .export_task_sync_folder(&project, &profile)
+        .expect("empty export basis")
+        .export_basis;
+    enrolled
+        .apply_task_sync_folder(
+            crate::storage::TaskSyncFolderApply {
+                project: &project,
+                actor: &actor("enrol-session"),
+                tree: &empty,
+                export_basis: &basis,
+                profile: &profile,
+                complete: true,
+                now: at(3),
+            },
+            "enrol-empty",
+        )
+        .expect("enrol an empty exchange");
+    assert!(matches!(
+        enrolled.load_work_graph_snapshot(
+            &project,
+            &actor("load-session"),
+            &snapshot_bytes(&saved.document),
+            false,
+            at(4),
+            &DevelopmentNoopRedactor
+        ),
+        Err(StoreError::GraphDestinationNotEmpty)
+    ));
 }
 
 /// The stored id of the carried record at `position` in a saved document.

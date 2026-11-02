@@ -1433,6 +1433,9 @@ fn agent_change_object(
                 store, &event, position,
             )?))
         }
+        "task_sync_reconciliation_hold" | "task_sync_shared_import_version" => {
+            projection::project_reconciliation(store, project_id, object_kind, object)
+        }
         "task_sync_import_planning" => {
             let (summary, created_at) =
                 crate::storage::folder_apply_projection(object, project_id)?;
@@ -2160,7 +2163,9 @@ fn work_transition_summary(
         WorkTransition::ClaimRenewed { .. } => format!("renewed by its holder: \"{title}\""),
         WorkTransition::Released { reason, .. }
         | WorkTransition::HandoffCancelled { reason, .. }
-        | WorkTransition::Reopened { reason, .. } => {
+        | WorkTransition::Reopened { reason, .. }
+        | WorkTransition::SupersededByImport { reason, .. }
+        | WorkTransition::ReconciliationHoldAbandoned { reason, .. } => {
             format!("because {}: \"{title}\"", detail(reason))
         }
         WorkTransition::Checkpointed { .. } => format!("progress: \"{title}\""),
@@ -2230,6 +2235,8 @@ fn work_transition_kind(transition: &WorkTransition) -> &'static str {
         WorkTransition::Disposed { .. } => "disposed",
         WorkTransition::RequiredChildWaived { .. } => "required_child_waived",
         WorkTransition::Reopened { .. } => "reopened",
+        WorkTransition::SupersededByImport { .. } => "superseded_by_import",
+        WorkTransition::ReconciliationHoldAbandoned { .. } => "reconciliation_hold_abandoned",
     }
 }
 

@@ -1074,6 +1074,13 @@ fn derive_projected_work_availability(
         reason_codes.push(WorkReadinessReason::LifecycleClosed);
         why.push(format!("lifecycle is {:?}", work.lifecycle));
         WorkAvailability::Closed
+    } else if readiness::import_retired_on(connection, &work)? {
+        reason_codes.push(WorkReadinessReason::ImportRetired);
+        why.push(
+            "retired by import without successful completion; explicitly reopen a fresh generation"
+                .into(),
+        );
+        WorkAvailability::Waiting
     } else if blocking_ancestor.is_some()
         || !projected_run_uses_active_root_execution(connection, &work)?
     {
@@ -1158,6 +1165,13 @@ fn derive_work_availability(
         reason_codes.push(WorkReadinessReason::LifecycleClosed);
         why.push(format!("lifecycle is {:?}", work.lifecycle));
         WorkAvailability::Closed
+    } else if readiness::import_retired_on(connection, &work)? {
+        reason_codes.push(WorkReadinessReason::ImportRetired);
+        why.push(
+            "retired by import without successful completion; explicitly reopen a fresh generation"
+                .into(),
+        );
+        WorkAvailability::Waiting
     } else if blocking_ancestor.is_some()
         || !((work.restored && work.active_run_id.is_none())
             || work_run_uses_active_root_execution(connection, &work)?)
