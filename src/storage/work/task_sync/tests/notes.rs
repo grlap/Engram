@@ -150,6 +150,17 @@ fn task_sync_notes_native_holder_peer_and_status_round_trip_without_authority() 
         assert!(note.actor.run_id.is_none() && note.actor.provenance_chain.is_empty());
         assert!(note.gate.is_none() && note.refs.is_empty());
     }
+    let retired_tables: i64 = target
+        .connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE type = 'table'
+         AND name IN ('control_sessions', 'control_turn_results',
+             'control_turn_grants', 'control_turn_grant_supersessions')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(retired_tables, 0);
     for table in [
         "work_run_evidence",
         "work_restored_evidence",
@@ -157,7 +168,6 @@ fn task_sync_notes_native_holder_peer_and_status_round_trip_without_authority() 
         "work_runs",
         "work_claims",
         "work_session_state",
-        "control_sessions",
     ] {
         assert_eq!(
             target

@@ -1,19 +1,18 @@
 use super::{
-    ActorContext, AssuranceLevel, BUILTIN_CONTROL_GRANT_TTL_SECONDS, BackupManifest,
-    CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION, CONTROL_POLICY_SCHEMA_VERSION,
-    CONTROL_POLICY_STATE_SCHEMA_VERSION, CONTROL_SCHEMA_VERSION, CORE_REBUILDABLE_SCHEMA_OBJECTS,
-    CanonicalObject, Connection, ControlAssurance, ControlPolicy, ControlPolicyRecoveryFinding,
-    ControlPolicyRecoveryReport, Duration, EffectClass, HashMap, HashSet, HostPathPolicy,
-    InitialControlPolicy, IntegrityReport, MAX_CONTROL_POLICY_AUTHORITY_BYTES,
-    MemoryAssertionEvent, MemoryHeadProjectionRow, MemoryStatus, MemoryVersion,
-    OBLIGATION_RULE_SET_SCHEMA_VERSION, ObjectId, ObligationRuleSet, OpenWriteNeed,
-    OptionalExtension, Path, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
-    ProjectPolicyOperation, Redactor, SCHEMA_VERSION, SchemaDurability, SchemaOwner, Scope,
-    SqliteStore, StoreError, TransactionBehavior, Utc, current_schema_definition_issue,
-    derived_project_memory_state_rows_on, describe_host_path_policy, different_build_store_error,
-    drop_schema_object, enum_name, normalize_control_policy_actor, open_sqlite_file, params,
-    parse_enum, publish_without_replacing, remove_store_files, require_current_schema_marker,
-    store_sidecars, unique_sibling_path, validate_keyed_project_memory_shape, work,
+    ActorContext, AssuranceLevel, BackupManifest, CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
+    CONTROL_POLICY_SCHEMA_VERSION, CONTROL_POLICY_STATE_SCHEMA_VERSION, CONTROL_SCHEMA_VERSION,
+    CORE_REBUILDABLE_SCHEMA_OBJECTS, CanonicalObject, Connection, ControlPolicy,
+    ControlPolicyRecoveryFinding, ControlPolicyRecoveryReport, Duration, HashMap, HashSet,
+    HostPathPolicy, IntegrityReport, MAX_CONTROL_POLICY_AUTHORITY_BYTES, MemoryAssertionEvent,
+    MemoryHeadProjectionRow, MemoryStatus, MemoryVersion, OBLIGATION_RULE_SET_SCHEMA_VERSION,
+    ObjectId, ObligationRuleSet, OpenWriteNeed, OptionalExtension, Path,
+    ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION,
+    SchemaDurability, SchemaOwner, Scope, SqliteStore, StoreError, TransactionBehavior, Utc,
+    current_schema_definition_issue, derived_project_memory_state_rows_on,
+    describe_host_path_policy, different_build_store_error, drop_schema_object, enum_name,
+    open_sqlite_file, params, publish_without_replacing, remove_store_files,
+    require_current_schema_marker, store_sidecars, unique_sibling_path,
+    validate_keyed_project_memory_shape, work,
 };
 
 #[cfg(test)]
@@ -145,7 +144,6 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             None,
-            None,
             LockWait::Timeout(Duration::from_secs(5)),
             retry,
         )
@@ -191,131 +189,12 @@ impl SqliteStore {
                 schema_version: CONTROL_SCHEMA_VERSION,
                 policy: policy.policy_id,
                 epoch: policy.epoch.0,
-                required_assurance: policy.required_assurance,
                 obligation_rules: policy.obligation_rule_set,
                 acceptance_evaluation,
-                supported_effects: policy.supported_effects,
             },
         };
         snapshot.commit()?;
         Ok(result)
-    }
-
-    /// Inspects presence and selected-project scalar state without establishing
-    /// a control connection, expiring grants, binding paths or changing rows.
-    /// This is snapshot evidence only; the host owns quiescence and reconciliation.
-    /// SQLite may maintain its shared-memory sidecar, never database/WAL bytes.
-    /// `project` limits diagnostic disclosure, never the presence booleans.
-    ///
-    /// # Errors
-    /// Refuses invalid selectors, incompatible stores, unavailable or mismatched
-    /// path policy, and uncertain reads. No refusal proves absence.
-    /// Invalid selectors and unresolved/unbound path policy use
-    /// [`StoreError::InvalidControlSession`]. The generic
-    /// [`super::store_open_refusal_kind`] classifier labels those validation
-    /// refusals as corrupt-store errors; that classification is not accurate
-    /// for them and must not be used as evidence to restore or reinitialize
-    /// the store. This diagnostic defines no per-cause retry/repair contract.
-    pub fn inspect_control_session(
-        path: &Path,
-        host_path_policy: Option<HostPathPolicy>,
-        session_id: &str,
-        retained_grant_id: &str,
-        project: &crate::ProjectId,
-        operation: Option<super::ControlOperationSelector<'_>>,
-    ) -> Result<super::ControlSessionInspection, StoreError> {
-        for (name, value) in [
-            ("session", session_id),
-            ("retained grant", retained_grant_id),
-        ] {
-            if value.trim().is_empty()
-                || value.len() > crate::MAX_SESSION_ID_BYTES
-                || value.chars().any(char::is_control)
-            {
-                return Err(StoreError::InvalidControlSession(format!(
-                    "inspection {name} must be nonblank, control-free and at most {} UTF-8 bytes",
-                    crate::MAX_SESSION_ID_BYTES
-                )));
-            }
-        }
-        let requested = host_path_policy.ok_or_else(|| {
-            StoreError::InvalidControlSession(
-                "control inspection requires resolved host path policy".into(),
-            )
-        })?;
-        // A host runs this inspection under its own end-to-end deadline, so
-        // the open returns SQLite's locking-protocol refusal at once rather
-        // than spend another ten seconds starting again.
-        let started = crate::phase_trace::start();
-        let opened = Self::open_existing_read_only_with(path, ProtocolRetry::Never);
-        let store = Self::traced_open(started, opened)?;
-        let snapshot = store.connection.unchecked_transaction()?;
-        // Admission and presence must describe the SAME snapshot, even if the
-        // schema/policy changed after the preliminary ordinary read-only open.
-        let result = Self::inspect_control_session_on(
-            &snapshot,
-            requested,
-            session_id,
-            retained_grant_id,
-            project,
-            operation,
-        )?;
-        snapshot.commit()?;
-        Ok(result)
-    }
-
-    pub(super) fn inspect_control_session_on(
-        snapshot: &rusqlite::Transaction<'_>,
-        requested: HostPathPolicy,
-        session_id: &str,
-        retained_grant_id: &str,
-        project: &crate::ProjectId,
-        operation: Option<super::ControlOperationSelector<'_>>,
-    ) -> Result<super::ControlSessionInspection, StoreError> {
-        if Self::current_core_durable_schema_issue(snapshot)?.is_some() {
-            return Err(different_build_store_error());
-        }
-        if !Self::current_core_schema_is_complete(snapshot)? {
-            if let Some(issue) = Self::current_core_rebuildable_schema_issue(snapshot)? {
-                return Err(StoreError::InvalidControlProjection(format!(
-                    "{}{issue}; run `engram doctor --repair-projections` explicitly",
-                    super::schema_diagnostics::CORE_PROJECTION_REFUSAL_PREFIX
-                )));
-            }
-            return Err(StoreError::InvalidControlProjection(
-                "control inspection requires complete current schema".into(),
-            ));
-        }
-        work::preflight_schema(snapshot, false)?;
-        if current_schema_definition_issue(
-            snapshot,
-            SchemaOwner::Work,
-            SchemaDurability::Rebuildable,
-        )?
-        .is_some()
-        {
-            return Err(StoreError::InvalidWorkProjection(
-                super::schema_diagnostics::WORK_PROJECTION_REFUSAL.into(),
-            ));
-        }
-        Self::require_task_local_cursor_schema(snapshot)?;
-        Self::preflight_host_path_policy(snapshot, Some(requested))?;
-        let stored = Self::stored_host_path_policy_on(snapshot)?.ok_or_else(|| {
-            StoreError::InvalidControlSession(
-                "control inspection requires bound host path policy".into(),
-            )
-        })?;
-        let policy = Self::verify_control_policy_history(snapshot)?;
-        Self::load_obligation_rule_set_on(snapshot, &policy.obligation_rule_set)?;
-        Self::load_acceptance_evaluation_policy_on(snapshot)?;
-        Self::control_session_presence_on(
-            snapshot,
-            session_id,
-            retained_grant_id,
-            stored,
-            project,
-            operation,
-        )
     }
 
     /// Inspects only the control-policy family through a read-only connection.
@@ -631,7 +510,6 @@ impl SqliteStore {
         let store = Self::from_connection_with_lock_wait(
             connection,
             None,
-            None,
             LockWait::Timeout(Duration::from_secs(5)),
             ProtocolRetry::Never,
         )?;
@@ -705,7 +583,6 @@ impl SqliteStore {
         Self::from_connection_with_lock_wait(
             connection,
             None,
-            None,
             LockWait::Timeout(Duration::from_secs(5)),
             ProtocolRetry::Once,
         )
@@ -732,7 +609,7 @@ impl SqliteStore {
                 Some(crate::phase_trace::control::sql_event),
             );
         }
-        Self::admit(connection, identity, None, lock_wait, retry, &mut guard)
+        Self::admit(connection, identity, lock_wait, retry, &mut guard)
     }
 
     /// The filesystem identity this opener resolved, if any.
@@ -779,6 +656,7 @@ impl SqliteStore {
 
     /// The policy that normalizes one resource intent: logical subjects never
     /// need one, path subjects need the resolved identity.
+    #[cfg(test)]
     pub(super) fn path_policy_for(
         &self,
         subject: &crate::domain::ResourceSubject,
@@ -792,45 +670,6 @@ impl SqliteStore {
                 .host_path_policy
                 .ok_or(StoreError::HostPathIdentityUnresolved),
         }
-    }
-
-    /// Creates a store with an explicit bootstrap control-assurance requirement.
-    ///
-    /// The requested value and asserted operator context apply only while
-    /// installing the first policy. Reconfiguring an existing store requires
-    /// an attributed policy update.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when initialization fails or an existing policy
-    /// has a different assurance requirement.
-    pub fn open_with_initial_control_assurance<R: Redactor>(
-        path: impl AsRef<Path>,
-        identity: Option<HostPathPolicy>,
-        required_assurance: ControlAssurance,
-        authorized_by: &ActorContext,
-        redactor: &R,
-    ) -> Result<Self, StoreError> {
-        if authorized_by.assurance != AssuranceLevel::Asserted {
-            return Err(StoreError::InvalidControlProjection(
-                "V1 control-policy bootstrap records asserted host context only".into(),
-            ));
-        }
-        let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
-        let lock_wait = LockWait::Timeout(Duration::from_secs(5));
-        let mut guard = OpenGuard::acquire(path.as_ref(), lock_wait)?;
-        let connection = open_sqlite_file(path.as_ref(), rusqlite::OpenFlags::default())?;
-        Self::admit(
-            connection,
-            identity,
-            Some(&InitialControlPolicy {
-                required_assurance,
-                authorized_by,
-            }),
-            lock_wait,
-            ProtocolRetry::Once,
-            &mut guard,
-        )
     }
 
     /// Opens a store with an explicit embedding-host filesystem identity policy.
@@ -870,18 +709,16 @@ impl SqliteStore {
         let connection = Connection::open_in_memory()?;
         #[cfg(test)]
         super::work_cost::sqlite::install(&connection);
-        Self::from_connection(connection, identity, None)
+        Self::from_connection(connection, identity)
     }
 
     fn from_connection(
         connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
-        initial_control_policy: Option<&InitialControlPolicy>,
     ) -> Result<Self, StoreError> {
         Self::from_connection_with_lock_wait(
             connection,
             host_path_policy,
-            initial_control_policy,
             LockWait::Timeout(Duration::from_secs(5)),
             ProtocolRetry::Once,
         )
@@ -897,14 +734,12 @@ impl SqliteStore {
     fn from_connection_with_lock_wait(
         connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
-        initial_control_policy: Option<&InitialControlPolicy>,
         lock_wait: LockWait,
         retry: ProtocolRetry,
     ) -> Result<Self, StoreError> {
         Self::admit(
             connection,
             host_path_policy,
-            initial_control_policy,
             lock_wait,
             retry,
             &mut OpenGuard::none(),
@@ -917,7 +752,6 @@ impl SqliteStore {
     fn admit(
         mut connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
-        initial_control_policy: Option<&InitialControlPolicy>,
         lock_wait: LockWait,
         retry: ProtocolRetry,
         guard: &mut OpenGuard,
@@ -933,7 +767,6 @@ impl SqliteStore {
                 &mut connection,
                 &mut phase,
                 host_path_policy,
-                initial_control_policy,
                 lock_wait,
                 guard,
             );
@@ -994,7 +827,6 @@ impl SqliteStore {
         connection: &mut Connection,
         phase: &mut OpenPhase,
         host_path_policy: Option<HostPathPolicy>,
-        initial_control_policy: Option<&InitialControlPolicy>,
         lock_wait: LockWait,
         guard: &mut OpenGuard,
     ) -> Result<OpenAttempt, StoreError> {
@@ -1040,11 +872,6 @@ impl SqliteStore {
         enter(ControlPhase::PolicyHistoryVerify);
         Self::preflight_control_policy_schema(connection)?;
         let control_policy_preexisted = Self::control_policy_preexisted(connection)?;
-        Self::preflight_initial_control_assurance(
-            connection,
-            control_policy_preexisted,
-            initial_control_policy.map(|policy| policy.required_assurance),
-        )?;
         enter(ControlPhase::SchemaInit);
         let core_schema_complete = Self::current_core_schema_is_complete(connection)?;
         if core_store_exists && !core_schema_complete {
@@ -1205,9 +1032,6 @@ impl SqliteStore {
                  singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                  schema_version INTEGER NOT NULL,
                  policy_epoch INTEGER NOT NULL,
-                 required_assurance TEXT NOT NULL,
-                 supported_effects_json TEXT NOT NULL,
-                 grant_ttl_seconds INTEGER NOT NULL,
                  policy_id TEXT REFERENCES objects(object_id)
              ) STRICT;
              CREATE TABLE IF NOT EXISTS control_policy_versions (
@@ -1236,76 +1060,9 @@ impl SqliteStore {
                  case_fold_paths INTEGER NOT NULL CHECK(case_fold_paths IN (0, 1)),
                  windows_alias_rules INTEGER NOT NULL CHECK(windows_alias_rules IN (0, 1))
              ) STRICT;
-             CREATE TABLE IF NOT EXISTS control_sessions (
-                 session_id TEXT PRIMARY KEY,
-                 project_id TEXT NOT NULL,
-                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
-                 root_execution_id TEXT,
-                 work_id TEXT,
-                 run_id TEXT,
-                 work_revision INTEGER,
-                 claim_id TEXT,
-                 claim_fence INTEGER,
-                 routing_token TEXT NOT NULL,
-                 actor_json BLOB NOT NULL,
-                 bind_key TEXT NOT NULL,
-                 bind_intent_hash TEXT NOT NULL,
-                 bind_intent_json BLOB NOT NULL,
-                 phase TEXT NOT NULL,
-                 assurance TEXT NOT NULL,
-                 mediated_effects_json TEXT NOT NULL,
-                 confirmed_cursor INTEGER NOT NULL,
-                 tentative_cursor INTEGER,
-                 project_policy_epoch INTEGER NOT NULL,
-                 task_admission_epoch INTEGER NOT NULL,
-                 blocking_watermark INTEGER NOT NULL,
-                 capability_map_revision INTEGER NOT NULL,
-                 revision INTEGER NOT NULL,
-                 updated_at_ms INTEGER NOT NULL
-             ) STRICT;
-             CREATE INDEX IF NOT EXISTS control_sessions_work_run
-                 ON control_sessions(project_id, run_id, session_id);
-             CREATE TABLE IF NOT EXISTS control_turn_results (
-                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                 session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
-                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
-                 idempotency_key TEXT NOT NULL,
-                 intent_hash TEXT NOT NULL,
-                 intent_json BLOB NOT NULL,
-                 decision_hash TEXT NOT NULL,
-                 decision_json BLOB NOT NULL,
-                 created_at_ms INTEGER NOT NULL,
-                 UNIQUE(session_id, idempotency_key)
-             ) STRICT;
-             CREATE TABLE IF NOT EXISTS control_turn_grants (
-                 grant_id TEXT PRIMARY KEY,
-                 session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
-                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
-                 request_key TEXT NOT NULL,
-                 grant_json BLOB NOT NULL,
-                 state TEXT NOT NULL,
-                 issued_at_ms INTEGER NOT NULL,
-                 expires_at_ms INTEGER NOT NULL,
-                 begun_at_ms INTEGER,
-                 completed_at_ms INTEGER,
-                 UNIQUE(session_id, request_key)
-             ) STRICT;
-             CREATE TABLE IF NOT EXISTS control_turn_grant_supersessions (
-                 superseded_grant_id TEXT PRIMARY KEY
-                     REFERENCES control_turn_grants(grant_id),
-                 session_id TEXT NOT NULL,
-                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
-                 replacement_request_key TEXT NOT NULL,
-                 replacement_decision_hash TEXT NOT NULL,
-                 supersession_json BLOB NOT NULL,
-                 superseded_at_ms INTEGER NOT NULL,
-                 UNIQUE(session_id, replacement_request_key),
-                 FOREIGN KEY(session_id, replacement_request_key)
-                     REFERENCES control_turn_results(session_id, idempotency_key)
-             ) STRICT;
              CREATE TABLE IF NOT EXISTS control_operation_results (
                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                 session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
+                 session_id TEXT NOT NULL,
                  operation TEXT NOT NULL,
                  idempotency_key TEXT NOT NULL,
                  intent_hash TEXT NOT NULL,
@@ -1349,14 +1106,10 @@ impl SqliteStore {
             )?;
         }
         if core_schema_complete {
-            Self::initialize_control_policy(
-                connection,
-                control_policy_preexisted,
-                initial_control_policy,
-            )?;
+            Self::initialize_control_policy(connection, control_policy_preexisted)?;
             work::initialize_schema(connection, allow_initialization)?;
         } else {
-            Self::initialize_control_policy_on(connection, initial_control_policy)?;
+            Self::initialize_control_policy_on(connection)?;
             // The work schema commits with the core schema, so no opener
             // ever sees a store that has one without the other.
             work::create_schema_on(connection)?;
@@ -1467,9 +1220,6 @@ impl SqliteStore {
             "control_policy_state",
             "control_policy_versions",
             "control_policy_operation_results",
-            "control_sessions",
-            "control_turn_grants",
-            "control_turn_grant_supersessions",
         ] {
             if Self::sqlite_table_exists(connection, table)? {
                 return Ok(true);
@@ -1594,15 +1344,7 @@ impl SqliteStore {
             ));
         }
         let columns = Self::control_policy_state_columns(connection)?;
-        for required in [
-            "singleton",
-            "schema_version",
-            "policy_epoch",
-            "required_assurance",
-            "supported_effects_json",
-            "grant_ttl_seconds",
-            "policy_id",
-        ] {
+        for required in ["singleton", "schema_version", "policy_epoch", "policy_id"] {
             if !columns.contains(required) {
                 return Err(StoreError::InvalidControlProjection(format!(
                     "control policy state is missing required column {required:?}"
@@ -1639,101 +1381,49 @@ impl SqliteStore {
         Ok(())
     }
 
-    fn preflight_initial_control_assurance(
-        connection: &Connection,
-        policy_preexisted: bool,
-        initial_required_assurance: Option<ControlAssurance>,
-    ) -> Result<(), StoreError> {
-        let Some(requested) = initial_required_assurance else {
-            return Ok(());
-        };
-        if !policy_preexisted {
-            return Ok(());
-        }
-        let required_assurance: String = connection.query_row(
-            "SELECT required_assurance
-             FROM control_policy_state WHERE singleton = 1",
-            [],
-            |row| row.get(0),
-        )?;
-        let projected_assurance: ControlAssurance = parse_enum(&required_assurance)?;
-        if projected_assurance != requested {
-            return Err(StoreError::InvalidControlProjection(
-                "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
-                    .into(),
-            ));
-        }
-        Ok(())
-    }
-
     fn initialize_control_policy(
         connection: &mut Connection,
         policy_preexisted: bool,
-        initial_control_policy: Option<&InitialControlPolicy>,
     ) -> Result<(), StoreError> {
         if policy_preexisted {
-            Self::preflight_initial_control_assurance(
-                connection,
-                true,
-                initial_control_policy.map(|policy| policy.required_assurance),
-            )?;
             return Ok(());
         }
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if Self::control_policy_row_exists(&transaction)? {
-            let policy = Self::verify_control_policy_history(&transaction)?;
-            if initial_control_policy
-                .is_some_and(|initial| initial.required_assurance != policy.required_assurance)
-            {
-                return Err(StoreError::InvalidControlProjection(
-                    "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
-                        .into(),
-                ));
-            }
+            Self::verify_control_policy_history(&transaction)?;
         } else {
-            Self::initialize_control_policy_on(&transaction, initial_control_policy)?;
+            Self::initialize_control_policy_on(&transaction)?;
         }
         transaction.commit()?;
         Ok(())
     }
 
-    fn initialize_control_policy_on(
-        connection: &Connection,
-        initial_control_policy: Option<&InitialControlPolicy>,
-    ) -> Result<(), StoreError> {
+    fn initialize_control_policy_on(connection: &Connection) -> Result<(), StoreError> {
         if !Self::control_policy_operation_results_table_is_complete(connection)? {
             return Err(StoreError::InvalidControlProjection(
                 "current control policy operation-result table is missing".into(),
             ));
         }
         let now = Utc::now();
-        let (required_assurance, authorized_by) = if let Some(initial) = initial_control_policy {
-            (initial.required_assurance, initial.authorized_by.clone())
-        } else {
-            let source = "engram:init";
-            let reason = "install the default project bootstrap control policy";
-            (
-                ControlAssurance::TurnGated,
-                ActorContext {
-                    actor_id: source.into(),
-                    actor_kind: "system".into(),
-                    assurance: AssuranceLevel::Asserted,
-                    run_id: None,
-                    session_id: None,
-                    source_tool: Some(source.into()),
-                    source_skill: None,
-                    provenance_chain: Vec::new(),
-                    reason: reason.into(),
-                },
-            )
+        let source = "engram:init";
+        let authorized_by = ActorContext {
+            actor_id: source.into(),
+            actor_kind: "system".into(),
+            assurance: AssuranceLevel::Asserted,
+            run_id: None,
+            session_id: None,
+            source_tool: Some(source.into()),
+            source_skill: None,
+            provenance_chain: Vec::new(),
+            reason: "install the default project policy".into(),
         };
         let obligation_rule_set = Self::insert_builtin_obligation_rule_set(connection)?;
         let authority = ProjectPolicyAuthorityDecision {
             schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
-            operation: ProjectPolicyOperation::SetRequiredAssurance,
+            operation: ProjectPolicyOperation::InitializeProjectPolicy,
             policy_epoch: ProjectPolicyEpoch(1),
             previous_policy: None,
-            required_assurance,
+            required_assurance: None,
             obligation_rule_set: obligation_rule_set.clone(),
             acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy::default(),
             authorized_by,
@@ -1755,9 +1445,9 @@ impl SqliteStore {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             policy_epoch: ProjectPolicyEpoch(1),
             previous_policy: None,
-            required_assurance,
-            supported_effects: Self::builtin_control_effects(),
-            grant_ttl_seconds: BUILTIN_CONTROL_GRANT_TTL_SECONDS,
+            required_assurance: None,
+            supported_effects: None,
+            grant_ttl_seconds: None,
             obligation_rule_set,
             acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy::default(),
             authority: authority_object.key().clone(),
@@ -1778,29 +1468,16 @@ impl SqliteStore {
         )?;
         connection.execute(
             "INSERT INTO control_policy_state (
-                 singleton, schema_version, policy_epoch, required_assurance,
-                 supported_effects_json, grant_ttl_seconds, policy_id
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)",
+                 singleton, schema_version, policy_epoch, policy_id
+             ) VALUES (1, ?1, ?2, ?3)",
             params![
                 CONTROL_POLICY_STATE_SCHEMA_VERSION,
                 policy.policy_epoch.0,
-                enum_name(policy.required_assurance)?,
-                serde_json::to_string(&policy.supported_effects)?,
-                policy.grant_ttl_seconds,
                 policy_object.key().as_str(),
             ],
         )?;
         Self::verify_control_policy_history(connection)?;
         Ok(())
-    }
-
-    pub(super) fn builtin_control_effects() -> Vec<EffectClass> {
-        vec![
-            EffectClass::Observe,
-            EffectClass::Communicate,
-            EffectClass::Coordinate,
-            EffectClass::MutateLocal,
-        ]
     }
 
     fn insert_builtin_obligation_rule_set(connection: &Connection) -> Result<ObjectId, StoreError> {
@@ -1822,6 +1499,7 @@ impl SqliteStore {
         Ok(rule_set)
     }
 
+    #[cfg(test)]
     pub(crate) fn obligation_rule_set_for_policy_on(
         connection: &Connection,
         policy_id: &ObjectId,
@@ -1830,28 +1508,6 @@ impl SqliteStore {
         let rule_set_id = policy.obligation_rule_set;
         let rule_set = Self::load_obligation_rule_set_on(connection, &rule_set_id)?;
         Ok((rule_set_id, rule_set))
-    }
-
-    pub(super) fn obligation_rule_set_for_policy_epoch_on(
-        connection: &Connection,
-        epoch: ProjectPolicyEpoch,
-    ) -> Result<(ObjectId, ObligationRuleSet), StoreError> {
-        let stored_policy_id = connection
-            .query_row(
-                "SELECT policy_id FROM control_policy_versions WHERE policy_epoch = ?1",
-                [epoch.0],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
-            .ok_or_else(|| {
-                StoreError::InvalidControlProjection(format!(
-                    "turn grant names missing control policy epoch {}",
-                    epoch.0
-                ))
-            })?;
-        let policy_id = ObjectId::from_stored(stored_policy_id.clone())
-            .ok_or(StoreError::InvalidStoredKey(stored_policy_id))?;
-        Self::obligation_rule_set_for_policy_on(connection, &policy_id)
     }
 
     pub(super) fn validate_obligation_rule_set(
@@ -1948,8 +1604,6 @@ impl SqliteStore {
                  ON memory_heads(project_id, work_id, agent_id, status);
              CREATE UNIQUE INDEX IF NOT EXISTS control_changes_task_cursor
                  ON control_changes(task_id, task_cursor);
-             CREATE INDEX IF NOT EXISTS control_sessions_work_run
-                 ON control_sessions(project_id, run_id, session_id);
              CREATE TABLE IF NOT EXISTS project_memory_advertisements (
                  project_id TEXT NOT NULL,
                  session_id TEXT NOT NULL,
@@ -2316,11 +1970,6 @@ impl SqliteStore {
     ) -> Result<(), StoreError> {
         let stored = Self::stored_host_path_policy_on(connection)?;
         let Some(stored) = stored else {
-            if Self::has_path_bearing_control_state(connection)? {
-                return Err(StoreError::InvalidControlSession(
-                    "path-bearing control state exists without a bound host path policy".into(),
-                ));
-            }
             return Ok(());
         };
         // An unresolved opener asserts nothing and may read; only a resolved
@@ -2339,7 +1988,7 @@ impl SqliteStore {
                 "use a host compatible with the recorded alias rules, or initialize a fresh store at a new location"
                     .to_owned()
             };
-            return Err(StoreError::InvalidControlSession(format!(
+            return Err(StoreError::InvalidHostContext(format!(
                 "the store's persisted host path policy ({}) differs from this opener's ({}); if the project moved to a different filesystem, {advice}",
                 describe_host_path_policy(stored),
                 describe_host_path_policy(expected)
@@ -2398,15 +2047,6 @@ impl SqliteStore {
                  windows_alias_rules INTEGER NOT NULL CHECK(windows_alias_rules IN (0, 1))
              ) STRICT;",
         )?;
-        if Self::has_path_bearing_control_state(connection)?
-            && connection.query_row("SELECT COUNT(*) FROM control_host_path_policy", [], |row| {
-                row.get::<_, i64>(0)
-            })? == 0
-        {
-            return Err(StoreError::InvalidControlSession(
-                "path-bearing control state exists without a bound host path policy".into(),
-            ));
-        }
         connection.execute(
             "INSERT OR IGNORE INTO control_host_path_policy (
                  singleton, case_fold_paths, windows_alias_rules
@@ -2418,22 +2058,6 @@ impl SqliteStore {
         )?;
         Self::preflight_host_path_policy(connection, Some(expected))?;
         Ok(())
-    }
-
-    fn has_path_bearing_control_state(connection: &Connection) -> Result<bool, StoreError> {
-        let table_exists = connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'control_turn_grants')",
-            [],
-            |row| row.get::<_, bool>(0),
-        )?;
-        if table_exists {
-            return Ok(connection.query_row(
-                "SELECT EXISTS(SELECT 1 FROM control_turn_grants WHERE CAST(grant_json AS TEXT) LIKE '%\"kind\":\"path\"%')",
-                [],
-                |row| row.get::<_, bool>(0),
-            )?);
-        }
-        Ok(false)
     }
 
     fn require_task_local_cursor_schema(connection: &Connection) -> Result<(), StoreError> {

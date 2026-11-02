@@ -33,7 +33,7 @@ use crate::{
     DecomposeWorkRequest, DevelopmentNoopRedactor, DisposeWorkRequest, EnvironmentEvidence,
     ExecutionObservation, FeedId, FeedPosition, MemorySummary, MemoryVersion, ObjectId,
     OfferWorkHandoffRequest, ProjectId, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
-    ReopenWorkRequest, RestoredWorkEvidence, ReviseWorkRequest, SessionId, SqliteStore, TaskId,
+    ReopenWorkRequest, RestoredWorkEvidence, ReviseWorkRequest, SessionId, SqliteStore,
     VerificationEvidence, VerificationKind, VerificationResult, WaiveRequiredChildRequest,
     WorkAvailability, WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId,
     WorkClaimState, WorkCompletionRecovery, WorkDecomposition, WorkDependencyRef, WorkDisposition,
@@ -1081,9 +1081,9 @@ fn parse_record_id(value: &str) -> Result<ObjectId, StoreError> {
 fn work_delivery_boundary(
     store: &SqliteStore,
     project_id: &ProjectId,
-    session_id: &SessionId,
+    _session_id: &SessionId,
     focused_work_id: Option<WorkId>,
-) -> Result<(Option<WorkId>, Option<TaskId>), StoreError> {
+) -> Result<Option<WorkId>, StoreError> {
     let focused_root_id = focused_work_id
         .map(|work_id| {
             let work = store.get_work_item(work_id)?;
@@ -1096,12 +1096,7 @@ fn work_delivery_boundary(
             Ok(work.root_id)
         })
         .transpose()?;
-    let bound_task_id = match store.bound_task(project_id, session_id) {
-        Ok(task_id) => Some(task_id),
-        Err(StoreError::NoActiveTask(_)) => None,
-        Err(error) => return Err(error),
-    };
-    Ok((focused_root_id, bound_task_id))
+    Ok(focused_root_id)
 }
 
 #[allow(
@@ -1432,6 +1427,9 @@ fn agent_change_object(
             Ok(WorkChangeProjection::Visible(project_work_event(
                 store, &event, position,
             )?))
+        }
+        "task_sync_reconciliation_hold" | "task_sync_shared_import_version" => {
+            projection::project_reconciliation(store, project_id, object_kind, object)
         }
         "task_sync_import_planning" => {
             let (summary, created_at) =
@@ -2160,7 +2158,9 @@ fn work_transition_summary(
         WorkTransition::ClaimRenewed { .. } => format!("renewed by its holder: \"{title}\""),
         WorkTransition::Released { reason, .. }
         | WorkTransition::HandoffCancelled { reason, .. }
-        | WorkTransition::Reopened { reason, .. } => {
+        | WorkTransition::Reopened { reason, .. }
+        | WorkTransition::SupersededByImport { reason, .. }
+        | WorkTransition::ReconciliationHoldAbandoned { reason, .. } => {
             format!("because {}: \"{title}\"", detail(reason))
         }
         WorkTransition::Checkpointed { .. } => format!("progress: \"{title}\""),
@@ -2230,6 +2230,8 @@ fn work_transition_kind(transition: &WorkTransition) -> &'static str {
         WorkTransition::Disposed { .. } => "disposed",
         WorkTransition::RequiredChildWaived { .. } => "required_child_waived",
         WorkTransition::Reopened { .. } => "reopened",
+        WorkTransition::SupersededByImport { .. } => "superseded_by_import",
+        WorkTransition::ReconciliationHoldAbandoned { .. } => "reconciliation_hold_abandoned",
     }
 }
 

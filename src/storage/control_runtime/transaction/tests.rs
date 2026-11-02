@@ -20,7 +20,7 @@ fn row_count(connection: &Connection) -> i64 {
 }
 
 #[test]
-fn control_store_busy_precommit_failure_requires_successful_rollback() {
+fn ordinary_busy_precommit_failure_rolls_back_and_keeps_native_error() {
     for code in [
         rusqlite::ffi::SQLITE_BUSY,
         rusqlite::ffi::SQLITE_BUSY_SNAPSHOT,
@@ -38,25 +38,23 @@ fn control_store_busy_precommit_failure_requires_successful_rollback() {
         .unwrap_err();
         assert!(connection.is_autocommit());
         assert_eq!(row_count(&connection), 0);
-        let StoreError::ControlStoreBusy { source } = &error else {
-            panic!("expected certified contention, got {error:?}");
-        };
-        let rusqlite::Error::SqliteFailure(native, detail) = source.as_ref() else {
+        let StoreError::Sqlite(rusqlite::Error::SqliteFailure(native, detail)) = &error else {
             panic!("lost SQLite source");
         };
         assert_eq!(native.extended_code, code);
         assert_eq!(detail.as_deref(), Some("private statement detail"));
-        assert_eq!(crate::host::store_error_code(&error), "control_store_busy");
+        assert_eq!(crate::host::store_error_code(&error), "storage_error");
         assert_eq!(
             crate::store_error_value(&error)["error"]["code"],
             "engram_store_error"
         );
-        assert!(!error.to_string().contains("private statement detail"));
+        let fault = serde_json::to_value(crate::diagnostics::Fault::store(&error)).unwrap();
+        assert!(!fault.to_string().contains("private statement detail"));
     }
 }
 
 #[test]
-fn control_store_busy_rollback_failure_keeps_generic_storage_error() {
+fn ordinary_busy_rollback_failure_keeps_generic_storage_error() {
     let mut connection = Connection::open_in_memory().unwrap();
     connection
         .execute_batch("CREATE TABLE payload (value INTEGER)")
@@ -92,7 +90,7 @@ fn control_store_busy_rollback_failure_keeps_generic_storage_error() {
 }
 
 #[test]
-fn control_store_busy_real_commit_contention_keeps_generic_storage_error() {
+fn ordinary_real_commit_contention_keeps_generic_storage_error() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("commit.db");
     let mut connection = Connection::open(&database).unwrap();

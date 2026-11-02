@@ -7,8 +7,8 @@ changes to both files; neither runtime is required to read the other file.
 Keep these files focused on current rules. Record incident history and
 decision provenance in work notes instead.
 
-Engram is a local-first work, behavioral-control, and execution-memory system
-for coding agents. SQLite is canonical on each host; agent-private scratch
+Engram is a local-first work, Execution Observability, and execution-memory
+system for coding agents. SQLite is canonical on each host; agent-private scratch
 and live execution authority stay there. External intake, backup, optional
 Git task-text exchange, and publication are independent optional capabilities.
 
@@ -350,7 +350,8 @@ This rule is prospective: do not amend, rebase or force-push existing history or
   and doctor/integrity checks.
 - `src/storage/work/` owns local-work persistence, split by schema/session,
   query, planning, execution, feed, completion, and integrity invariants.
-- `src/control.rs` owns pure deterministic control-policy evaluation.
+- `src/control.rs` owns pure deterministic verification matching, evidence
+  applicability, and work-obligation rules.
 - `src/host.rs` owns the host-private JSON-lines transport only.
 - `src/work_service/` owns the six-operation ambient work protocol and the
   separate `evaluate` service entry, split by service setup, next/delivery,
@@ -396,16 +397,15 @@ This rule is prospective: do not amend, rebase or force-push existing history or
   sends the same payload. A revision creates a superseding report and intent.
 - Actor/authority text supplied through tools and skills is asserted context,
   not authenticated identity. Never claim stronger assurance than recorded.
-- External publication still requires an explicit human decision. A host that
-  runs the optional behavioral-control plane may independently raise the bar
-  for model turns or material external actions.
+- External publication still requires an explicit human decision. A host may
+  independently raise the bar for material external actions.
 - SQLite is canonical on each host. Planned external backup may raise
   `local_backed_up`; backup and full-store migration retain their separate
   contracts. The selected [Git task sync](docs/features/git-task-sync.md) design
   exchanges agent-merged task text on the ordinary code branch through explicit
   export and import in the main checkout. Linked worktrees omit its task files
-  using the brief's sparse-checkout contract. Live claims, grants, delivery
-  state, and private scratch never transfer. The design uses no global writer
+  using the brief's sparse-checkout contract. Live claims, delivery state,
+  and private scratch never transfer. The design uses no global writer
   lock, writer epochs, or release/acquire protocol, and does not prevent
   duplicate work across hosts. Task sync is planned, not shipped. FTS and
   work/query projections are rebuildable. Cross-host execution coordination,

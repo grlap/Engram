@@ -120,15 +120,3 @@ impl Drop for ControlRequestScope {
 
 #[cfg(test)]
 pub(crate) mod test_clock;
-
-#[cfg(test)]
-impl crate::storage::SqliteStore {
-    pub(crate) fn test_control_commit_clock(&self, advance: fn()) {
-        self.connection
-            .commit_hook(Some(move || {
-                advance();
-                false
-            }))
-            .unwrap();
-    }
-}

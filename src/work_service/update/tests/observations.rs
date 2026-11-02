@@ -682,15 +682,11 @@ fn host_turn_changing_source_detected(
     actor_context: Option<&str>,
 ) {
     use crate::domain::{
-        EffectClass, ExecutionObservationInput, ExecutionOutcome, ExecutionSourceBasis,
-        ResourceCoverage, ResourceSubject, TurnIntent, TurnNextIntent, TurnPurpose,
+        EffectClass, ExecutionObservation, ExecutionOutcome, ExecutionSourceBasis,
     };
-    let mut host = crate::storage::SqliteStore::open(database).expect("host store");
+    let mut host = crate::storage::SqliteStore::open(database).expect("historical fixture store");
     let project = ProjectId("observation-test".into());
     let holder = SessionId("holder".into());
-    let connection = host
-        .resume_control_connection(&holder, at(second))
-        .expect("host connection");
     let actor = ActorContext {
         actor_id: "host".into(),
         actor_kind: "host".into(),
@@ -711,89 +707,35 @@ fn host_turn_changing_source_detected(
             .collect(),
         reason: "bind the focused claim".into(),
     };
-    let bound = host
-        .bind_control_session_with_work(
-            &project,
-            &format!("local-work:{key}"),
-            "Focused claim",
-            &holder,
-            &connection,
-            &actor,
-            Some(binding),
-            crate::ControlAssurance::TurnGated,
-            &[EffectClass::Observe, EffectClass::MutateLocal],
-            1,
-            &format!("bind-{key}"),
-            at(second),
-        )
-        .expect("bind");
-    let decision = host
-        .evaluate_control_turn(
-            &project,
-            &holder,
-            &connection,
-            &bound.routing_token,
-            &TurnIntent {
-                idempotency_key: format!("evaluate-{key}"),
-                intent_fingerprint: crate::ObjectId::from_canonical_bytes(key.as_bytes()),
-                purpose: Some(TurnPurpose::Ordinary),
-                requested_effects: vec![EffectClass::MutateLocal],
-                resource_intents: vec![ResourceSubject::Path {
-                    project_id: project.clone(),
-                    segments: vec!["src".into()],
-                    coverage: ResourceCoverage::Tree,
-                }],
-            },
-            at(second + 1),
-        )
-        .expect("evaluate");
-    let crate::ControlTurnDecision::Grant { grant } = decision else {
-        panic!("the turn must grant: {decision:?}");
+    // Install a stored historical observation; no admission operation is implemented.
+    let rules = host.control_diagnostics().unwrap().obligation_rule_set;
+    let observation = ExecutionObservation {
+        schema_version: crate::domain::SCHEMA_VERSION,
+        project_id: project,
+        binding: binding.clone(),
+        session_id: holder,
+        grant_id: format!("historical-{key}"),
+        observation_id: format!("write-{key}"),
+        action_fingerprint: crate::ObjectId::from_canonical_bytes(
+            format!("write {key}").as_bytes(),
+        ),
+        effect: EffectClass::MutateLocal,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: true,
+        reported_source_change,
+        obligation_rule_set: rules,
+        source_basis: Some(ExecutionSourceBasis {
+            git_tree: None,
+            workspace_id: "workspace".into(),
+            source_revision: format!("content-v1:{key:0>64}"),
+            source_root_generation: None,
+            source_root_state: None,
+        }),
+        observed_at: Some(at(second + 3)),
+        actor,
+        recorded_at: at(second + 3),
     };
-    assert!(matches!(
-        host.begin_control_turn(
-            &project,
-            &holder,
-            &connection,
-            &bound.routing_token,
-            &grant.grant_id,
-            &[],
-            &format!("begin-{key}"),
-            at(second + 2),
-        )
-        .expect("begin"),
-        crate::ControlTurnBeginDecision::Begin { .. }
-    ));
-    host.checkpoint_control_turn_with_observations(
-        &project,
-        &holder,
-        &connection,
-        &bound.routing_token,
-        &grant.grant_id,
-        TurnNextIntent::Continue,
-        &[ExecutionObservationInput {
-            observation_id: format!("write-{key}"),
-            action_fingerprint: crate::ObjectId::from_canonical_bytes(
-                format!("write {key}").as_bytes(),
-            ),
-            effect: EffectClass::MutateLocal,
-            outcome: ExecutionOutcome::Succeeded,
-            source_changed: true,
-            reported_source_change,
-            source_basis: Some(ExecutionSourceBasis {
-                git_tree: None,
-                workspace_id: "workspace".into(),
-                // As long as a host's content fingerprint.
-                source_revision: format!("content-v1:{key:0>64}"),
-                source_root_generation: None,
-                source_root_state: None,
-            }),
-            observed_at: Some(at(second + 3)),
-        }],
-        &format!("checkpoint-{key}"),
-        at(second + 3),
-    )
-    .expect("checkpoint");
+    host.install_historical_observation_fixture(&observation);
 }
 
 /// The agent words for the holder session, as CLI and MCP drive them.
@@ -1010,7 +952,11 @@ fn a_holder_note_moves_focus_so_the_next_source_change_lands_on_that_claim() {
             at(4),
         )
         .expect("holder note");
-    assert!(!noted.text().contains("observation"), "{}", noted.text());
+    assert!(
+        !noted.text().contains("observation recorded"),
+        "a holder note is not recorded as a non-holder observation: {}",
+        noted.text()
+    );
     let binding = focused_binding(&session, at(5));
     assert_eq!(binding.work_id, first.work_id, "a holder note moves focus");
 

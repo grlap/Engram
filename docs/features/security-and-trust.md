@@ -3,7 +3,7 @@
 > Normative reference: [spec §7](../spec.md#7-audit-security--compliance).
 > Related briefs: [write policy & review](write-policy-and-review.md),
 > [sqlite store](sqlite-store.md),
-> [behavioral control plane](behavioral-control-plane.md),
+> [Execution Observability](execution-observability.md),
 > [local work system](local-work-system.md), and
 > [execution pipeline](execution-pipeline.md).
 
@@ -91,22 +91,13 @@ If compliance-grade attribution ever becomes a deployment promise, a trusted
 write gateway or `Signer`-backed signatures must ship with that deployment —
 the port alone is not attestation.
 
-Control assurance is separate from identity assurance. `advisory` means the
-agent can bypass Engram; `turn_gated` means the host mediates every model turn;
-`action_gated` means it also mediates every declared material capability. A
-host declaration is still asserted context unless a trusted gateway attests
-it, and no deployment may claim action gating while an unmediated write,
-shell, or network path remains available.
-
-The target `engram doctor` must print the versioned per-tool mediation map,
-including unmapped write-capable host tools. The shipped alpha instead reports
-its fixed capability envelope and explicit unavailable fields for action
-gating, organizational-authority mediation, and action-outcome tracking; it
-does not claim a complete mediation map. A host-held session routing token
-prevents accidental
-cross-session request mix-ups, but neither the token nor a work claim is a security
-boundary: a caller that bypasses the host or can directly mutate the store is
-outside Engram's V1 assurance.
+Engram never controls an agent's tools: the agent can edit files or run
+commands without asking it. Host observations are the host's asserted record
+of what it saw, not attestation, unless a trusted gateway attests them.
+Engram provides no organizational-authority mediation. Neither the
+work-session connection nor a work claim is a security boundary: a caller
+that bypasses the host or can directly mutate the store is outside Engram's
+V1 assurance.
 
 ## Immutable history is the audit log
 

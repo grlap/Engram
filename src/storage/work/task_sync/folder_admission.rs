@@ -301,6 +301,40 @@ pub(super) fn apply_plan(
         Some(OriginIdentities::read(transaction)?)
     };
     for task in &plan.tasks {
+        if !matches!(task.delta, TaskDelta::Unchanged | TaskDelta::RetainedLocal) {
+            let mut affected = HashSet::new();
+            for document in prospective
+                .current
+                .get(&task.id)
+                .into_iter()
+                .chain(prospective.resolved.get(&task.id))
+            {
+                affected.insert(document.id);
+                affected.extend(document.parent_id);
+                affected.extend(document.prerequisites.iter().copied());
+                affected.extend(document.superseded_by);
+            }
+            let mut affected = affected
+                .into_iter()
+                .filter(|id| prospective.current.contains_key(id))
+                .collect::<Vec<_>>();
+            affected.sort_by_key(|id| id.0);
+            let mut held = None;
+            for id in affected {
+                if let Some(conflict) = reconciliation_conflict(transaction, id)? {
+                    held = Some(Conflict {
+                        id: task.id,
+                        reason: conflict.reason,
+                        detail: format!("affected task {}: {}", id.0, conflict.detail),
+                    });
+                    break;
+                }
+            }
+            if let Some(conflict) = held {
+                conflicts.insert(task.id.0, conflict);
+                continue;
+            }
+        }
         let conflict = match &task.delta {
             TaskDelta::Deleted => removal_eligibility(transaction, &mut reads, task.id)?,
             TaskDelta::Changed(change) if !change.is_applicable() => {
@@ -673,6 +707,9 @@ fn eligible(
         Ok(Some(Conflict { id, reason, detail }))
     };
     let item = query::load_work_item(transaction, id).map_err(origin::classify_binding)?;
+    if let Some(held) = reconciliation_conflict(transaction, id)? {
+        return Ok(Some(held));
+    }
     if !item.restored
         || item.origin != WorkOrigin::Local
         || item.source_snapshot_id.is_some()
@@ -711,6 +748,19 @@ fn eligible(
         }
     }
     Ok(None)
+}
+
+fn reconciliation_conflict(
+    connection: &rusqlite::Connection,
+    id: WorkId,
+) -> Result<Option<Conflict>, StoreError> {
+    Ok(
+        super::reconciliation::holds::held_by_on(connection, id)?.map(|candidate| Conflict {
+            id,
+            reason: "task_sync_reconciliation_held",
+            detail: format!("held by reconciliation candidate {candidate}"),
+        }),
+    )
 }
 
 /// The run-free planning transitions a task's history may hold while it
@@ -759,7 +809,9 @@ const fn is_planning(transition: &WorkTransition) -> bool {
         | WorkTransition::TypedEvidenceAdded { .. }
         | WorkTransition::Completed { .. }
         | WorkTransition::RequiredChildWaived { .. }
-        | WorkTransition::Reopened { .. } => false,
+        | WorkTransition::Reopened { .. }
+        | WorkTransition::SupersededByImport { .. }
+        | WorkTransition::ReconciliationHoldAbandoned { .. } => false,
     }
 }
 

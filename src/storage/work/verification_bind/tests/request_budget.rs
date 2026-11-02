@@ -8,13 +8,7 @@ fn control_request_expiry_rolls_back_binding_and_keeps_prior_replay_uncertain() 
     let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
     let original = native_check(&mut store, &a, "R1", 20);
     let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-    let host = bind_control_for(
-        &mut store,
-        HOLDER,
-        "budget-host",
-        &[EffectClass::Observe],
-        at(25),
-    );
+    let host = open_work_host(&mut store, HOLDER, at(25));
     let before = crate::storage::test_database_shape_snapshot(&store.connection).unwrap();
     let _scope = test_clock::scope();
     test_clock::expire_at_operation_write(&store);

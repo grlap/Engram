@@ -293,7 +293,7 @@ fn read_origin(connection: &Connection, id: &str) -> Result<ImportOrigin, StoreE
         .decode()
 }
 
-fn validate_record(
+pub(super) fn validate_record(
     connection: &Connection,
     origin: &ImportOrigin,
 ) -> Result<crate::WorkId, StoreError> {

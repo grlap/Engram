@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { observeSource } from "./work-session-fixture.mjs";
 import { createHash, randomUUID } from "node:crypto";
 
 import { fixtureHome as ownedFixtureHome, removeFixtureHomes as cleanupFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
@@ -3312,7 +3313,7 @@ test("a word that moves focus says so on CLI and MCP", async (t) => {
     const text = cliText(engramHome, session, "note", second, "CLI text note");
     assert.ok(
       text.includes(
-        `focus moved from ${first} to ${second}; the host binds ${second}'s claim from its next turn, not this one`,
+        `focus moved from ${first} to ${second}; future observations use ${second}'s claim`,
       ),
       text,
     );
@@ -5028,7 +5029,7 @@ test("nested MCP startup selects the nearest project marker like CLI", async (t)
     const cwd = join(project, "src", "deep");
     mkdirSync(cwd, { recursive: true });
     writeFileSync(join(project, ".engram-project"), `nested-${randomUUID()}`);
-    const init = spawnSync(binary, ["--home", home, "init", "--required-assurance", "advisory", "--authorized-by", "fixture"], { cwd: project, encoding: "utf8" });
+    const init = spawnSync(binary, ["--home", home, "init"], { cwd: project, encoding: "utf8" });
     assert.equal(init.status, 0, init.stderr);
     client = new McpClient(home, "nested-mcp", undefined, "nested-mcp", [], { cwd });
     await client.initialize();
@@ -5313,7 +5314,6 @@ test("evaluated acceptance policy over the real transports: locators, source fre
 test("open obligations guide evaluation timing across MCP, host observations, and completion", async (t) => {
   const engramHome = fixtureHome("engram-evaluation-obligations-", t);
   const projectId = readFileSync(join(root, ".engram-project"), "utf8").trim();
-  const libraryFile = { kind: "path", project_id: projectId, segments: ["src", "lib.rs"], coverage: "exact" };
   const fingerprint = (value) => createHash("sha256").update(value).digest("hex");
   const isGate = (row) => String(row.family).toLowerCase() === "gates";
   const clients = [];
@@ -5336,7 +5336,7 @@ test("open obligations guide evaluation timing across MCP, host observations, an
       this.buffer = "";
       this.stderr = "";
       this.child = spawn(binary, [
-        "--home", engramHome, "control", "--actor-id", session,
+        "--home", engramHome, "control", "--work-session", "--actor-id", session,
         "--session-id", session, "--source-skill", "engram-dogfood",
       ], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
       this.child.stdout.on("data", (chunk) => {
@@ -5395,39 +5395,12 @@ test("open obligations guide evaluation timing across MCP, host observations, an
       assert.ok(claimed.receipt.control_binding);
       const control = new ControlClient(session);
       controlClients.push(control);
-      const bound = await control.request({
-        operation: "session_bind", external_ref: `local-work:${suffix}`,
-        title: suffix, assurance: "turn_gated", mediated_effects: ["observe", "mutate_local"],
-        work_binding: claimed.receipt.control_binding, capability_map_revision: 1,
-        idempotency_key: `bind-${suffix}`,
-      });
+      assert.equal((await control.request({ operation: "work_session_read" })).work_session, true);
       for (let index = 0; index < sourceChanges; index += 1) {
-        const turn = await control.request({
-          operation: "turn_evaluate", routing_token: bound.routing_token,
-          idempotency_key: `turn-${suffix}-${index}`,
-          intent_fingerprint: fingerprint(`turn-${suffix}-${index}`),
-          purpose: "ordinary", requested_effects: ["mutate_local"], resource_intents: [libraryFile],
-        });
-        assert.equal(turn.decision, "grant", JSON.stringify(turn));
-        const grant = turn.grant.grant_id;
-        assert.equal((await control.request({
-          operation: "turn_begin", routing_token: bound.routing_token, grant_id: grant,
-          delivery_tokens: [], idempotency_key: `begin-${suffix}-${index}`,
-        })).decision, "begin");
-        const checkpoint = await control.request({
-          operation: "turn_checkpoint", routing_token: bound.routing_token, grant_id: grant,
-          next_intent: "continue", observations: [{
-            observation_id: `change-${suffix}-${index}`,
-            action_fingerprint: fingerprint(`change-${suffix}-${index}`),
-            effect: "mutate_local", outcome: "succeeded", source_changed: true,
-            source_basis: {
-              workspace_id: `workspace-${suffix}`,
-              source_revision: `revision-${suffix}-${index}`,
-            },
-            observed_at: "2026-09-29T14:00:00Z",
-          }], idempotency_key: `checkpoint-${suffix}-${index}`,
-        });
-        assert.equal(checkpoint.decision, "checkpointed", JSON.stringify(checkpoint));
+        await observeSource({ request: (frame) => control.request(frame), binding: claimed.receipt.control_binding,
+          policy: () => run(["control-policy", "show"]), key: `change-${suffix}-${index}`,
+          source: { workspace_id: `workspace-${suffix}`, source_revision: `revision-${suffix}-${index}` },
+          changed: true });
       }
       cliJson(engramHome, session, "gate", "cargo-test", "--work-ref", ref);
       const mcp = new McpClient(engramHome, session);

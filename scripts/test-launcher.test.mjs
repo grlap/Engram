@@ -479,7 +479,7 @@ test("required stages preserve all gates with four independent Rust phases", () 
       ["rust-scale-roots", ["--phase", "scale-roots"], true],
       ["rust-scale-planning", ["--phase", "scale-planning"], true],
     ]);
-    assert.deepEqual(stages[7].args, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs"]);
+    assert.deepEqual(stages[7].args, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs", "scripts/eo-cutover-values.test.mjs", "scripts/eo-cutover.test.mjs"]);
     assert.deepEqual(stages.slice(8).map(({ args }) => args), [
       ["--test", "scripts/mcp-dogfood.test.mjs"],
       ["--test", "scripts/control-dogfood.test.mjs"],

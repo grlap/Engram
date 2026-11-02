@@ -5,7 +5,7 @@ description: Work in the Engram repository when changing its typed memory model,
 
 # Engram Repository
 
-Engram is a local-first work, behavioral-control, and execution-memory service
+Engram is a local-first work, Execution Observability, and execution-memory service
 for multiple agent sessions. It owns local work from creation/decomposition
 through evidence-backed completion. SQLite is canonical on each host;
 agent-private scratch and live execution authority remain there. External
@@ -65,17 +65,16 @@ contract and keep the change narrow.
   Planned report assembly consumes the seal under a separate fenced
   `ReportAssemblyClaim`, without retaining completed-run authority or draining
   execution again.
-- External publication still requires an explicit human decision. A host that
-  runs the optional behavioral-control plane may independently mediate model
-  turns or material external actions.
+- External publication still requires an explicit human decision. A host may
+  independently raise the bar for material external actions.
 - One capture must feed work/peer deltas, handoffs, evidence, and report
   assembly. Optional task-text exchange derives shared planning text from
   host-local state.
 - The selected [Git task sync](../../../docs/features/git-task-sync.md) design
   exchanges agent-merged task text on the ordinary code branch through explicit
   export and import in the main checkout. Linked worktrees omit its task files
-  using the brief's sparse-checkout contract. Live work claims, control grants,
-  delivery state, and agent-private scratch never transfer. The design uses no
+  using the brief's sparse-checkout contract. Live work claims, delivery state,
+  and agent-private scratch never transfer. The design uses no
   global writer lock, writer epochs, or release/acquire protocol, and does not
   prevent duplicate work across hosts. Backup and full-store migration retain
   their separate contracts. Task sync is planned, not shipped.
@@ -99,7 +98,8 @@ contract and keep the change narrow.
   concern modules.
 - `storage/work`: local-work persistence split by schema/session, query,
   planning, execution, feeds, completion, and integrity invariants.
-- `control`: pure control-policy evaluation without I/O.
+- `control`: pure verification matching, evidence applicability and
+  work-obligation rules without I/O.
 - `host`: host-private transport without policy forks.
 - `work_service`: six-operation ambient protocol translation plus the separate
   `evaluate` service entry, split by service setup, next/delivery, focus,

@@ -11,31 +11,24 @@ struct Fixture {
     project: ProjectId,
     session: SessionId,
     connection: String,
-    routing: String,
     request: RegisteredVerificationRequest,
 }
 
-fn fixture(assurance: crate::ControlAssurance) -> Fixture {
-    fixture_offset(assurance, 0)
+fn fixture() -> Fixture {
+    fixture_offset(0)
 }
 
-fn fixture_offset(assurance: crate::ControlAssurance, offset: i64) -> Fixture {
-    fixture_in(SqliteStore::open_in_memory().unwrap(), assurance, offset)
+fn fixture_offset(offset: i64) -> Fixture {
+    fixture_in(SqliteStore::open_in_memory().unwrap(), offset)
 }
 
-fn fixture_in(store: SqliteStore, assurance: crate::ControlAssurance, offset: i64) -> Fixture {
-    fixture_with_root(store, assurance, offset, true)
+fn fixture_in(store: SqliteStore, offset: i64) -> Fixture {
+    fixture_with_root(store, offset, true)
 }
 
-fn fixture_with_root(
-    store: SqliteStore,
-    assurance: crate::ControlAssurance,
-    offset: i64,
-    pin_root: bool,
-) -> Fixture {
+fn fixture_with_root(store: SqliteStore, offset: i64, pin_root: bool) -> Fixture {
     fixture_with_create_and_root(
         store,
-        assurance,
         offset,
         &root_request("project-a", "registered-work", 1 + offset),
         pin_root,
@@ -44,30 +37,17 @@ fn fixture_with_root(
 
 fn fixture_with_create(
     store: SqliteStore,
-    assurance: crate::ControlAssurance,
     offset: i64,
     create: &crate::domain::CreateWorkRequest,
 ) -> Fixture {
-    fixture_with_create_and_root(store, assurance, offset, create, true)
+    fixture_with_create_and_root(store, offset, create, true)
 }
 
 fn fixture_with_create_and_root(
-    store: SqliteStore,
-    assurance: crate::ControlAssurance,
-    offset: i64,
-    create: &crate::domain::CreateWorkRequest,
-    pin_root: bool,
-) -> Fixture {
-    fixture_with_context(store, assurance, offset, create, pin_root, true)
-}
-
-fn fixture_with_context(
     mut store: SqliteStore,
-    assurance: crate::ControlAssurance,
     offset: i64,
     create: &crate::domain::CreateWorkRequest,
     pin_root: bool,
-    control: bool,
 ) -> Fixture {
     let at = |second| at(second + offset);
     let work = store.create_work(create, &DevelopmentNoopRedactor).unwrap();
@@ -75,43 +55,19 @@ fn fixture_with_context(
     let work = store.get_work_item(work.work_id).unwrap();
     let session = SessionId("runner".into());
     let project = work.project_id.clone();
-    let connection = if control {
-        store.resume_control_connection(&session, at(3))
-    } else {
-        store.resume_work_connection(&session, at(3))
-    }
-    .unwrap();
-    let routing = if control {
-        store
-            .bind_control_session(
-                &project,
-                "registered-host",
-                "Registered run host",
-                &session,
-                &connection,
-                &actor("runner"),
-                assurance,
-                &[crate::EffectClass::Observe],
-                1,
-                "bind",
-                at(3),
-            )
-            .unwrap()
-            .routing_token
-    } else {
-        String::new()
-    };
+    let connection = store.resume_work_connection(&session, at(3)).unwrap();
+    assert_eq!(store.connection.query_row(
+        "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN
+         ('control_sessions', 'control_turn_results', 'control_turn_grants', 'control_turn_grant_supersessions')",
+        [], |row| row.get::<_, i64>(0),
+    ).unwrap(), 0);
     if pin_root {
         store
             .bind_named_root(
                 &project,
                 &session,
                 &connection,
-                if control {
-                    crate::storage::HostSessionAuthority::Control(&routing)
-                } else {
-                    crate::storage::HostSessionAuthority::Work
-                },
+                crate::storage::HostSessionAuthority::Work,
                 claim.claim_id,
                 claim.fence,
                 "workspace-a",
@@ -182,7 +138,6 @@ fn fixture_with_context(
         project,
         session,
         connection,
-        routing,
         request,
     }
 }
@@ -193,7 +148,7 @@ impl Fixture {
             &self.project,
             &self.session,
             &self.connection,
-            &self.routing,
+            crate::storage::HostSessionAuthority::Work,
             &actor("runner"),
             &self.request,
             at(10),
@@ -211,10 +166,10 @@ impl Fixture {
 
 #[test]
 fn registered_verification_wire_and_replay_survive_root_movement() {
-    let mut f = fixture(crate::ControlAssurance::Advisory);
+    let mut f = fixture();
     let mut wire = serde_json::to_value(&f.request).unwrap();
     wire["operation"] = serde_json::json!("verification_record");
-    wire["routing_token"] = serde_json::json!(&f.routing);
+
     let parsed: crate::host::HostControlRequest = serde_json::from_value(wire).unwrap();
     assert_eq!(parsed.operation(), "verification_record");
     let receipt = f.record().unwrap();
@@ -224,7 +179,7 @@ fn registered_verification_wire_and_replay_survive_root_movement() {
             &f.project,
             &f.session,
             &f.connection,
-            &f.routing,
+            crate::storage::HostSessionAuthority::Work,
             binding.claim_id,
             binding.claim_fence,
             "workspace-b",
@@ -250,7 +205,7 @@ fn registered_verification_wire_and_replay_survive_root_movement() {
 
 #[test]
 fn registered_verification_dirty_input_never_records_credit() {
-    let mut f = fixture(crate::ControlAssurance::Advisory);
+    let mut f = fixture();
     f.request.post_run.clean_before = false;
     let snapshot = f.snapshot();
     assert!(
@@ -261,7 +216,7 @@ fn registered_verification_dirty_input_never_records_credit() {
 
 #[test]
 fn registered_verification_safe_text_refusals_have_no_effects() {
-    let mut f = fixture(crate::ControlAssurance::Advisory);
+    let mut f = fixture();
     let original = f.request.clone();
     for variant in 0..6 {
         f.request = original.clone();
@@ -298,7 +253,7 @@ fn registered_verification_delivery_next_and_peek_for_author_and_peer() {
     let store =
         SqliteStore::open_with_host_path_policy(&database, crate::HostPathPolicy::host_default())
             .unwrap();
-    let mut f = fixture_in(store, crate::ControlAssurance::Advisory, 0);
+    let mut f = fixture_in(store, 0);
     f.record().unwrap();
     let project = f.project.clone();
     drop(f.store);
@@ -329,38 +284,33 @@ fn registered_verification_delivery_next_and_peek_for_author_and_peer() {
 }
 
 #[test]
-fn registered_verification_on_and_off_is_grant_free_and_replays() {
-    for assurance in [
-        crate::ControlAssurance::TurnGated,
-        crate::ControlAssurance::Advisory,
-    ] {
-        let mut f = fixture(assurance);
-        let receipt = f.record().unwrap();
-        assert_eq!(receipt.verifications.len(), 1);
-        let snapshot = f.snapshot();
-        assert_eq!(f.record().unwrap(), receipt);
-        assert_eq!(f.snapshot(), snapshot);
-        let evidence: VerificationEvidence = super::super::feeds::load_typed_work_object(
-            &f.store.connection,
-            &receipt.verifications[0].record_id,
-            "verification_evidence",
-        )
-        .unwrap();
-        let producer =
-            super::super::load_verification_producer_on(&f.store.connection, &evidence).unwrap();
-        assert_eq!(producer.outcome, ExecutionOutcome::Succeeded);
-        assert_eq!(
-            producer.source_basis.unwrap().source_revision,
-            f.request.input.revision()
-        );
-        assert_eq!(f.store.connection.query_row("SELECT count(*) FROM objects WHERE object_kind IN ('execution_observation', 'turn_grant')", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
-        assert!(f.store.verify_all().unwrap().is_healthy());
-    }
+fn registered_verification_uses_ordinary_receipts_and_replays() {
+    let mut f = fixture();
+    let receipt = f.record().unwrap();
+    assert_eq!(receipt.verifications.len(), 1);
+    let snapshot = f.snapshot();
+    assert_eq!(f.record().unwrap(), receipt);
+    assert_eq!(f.snapshot(), snapshot);
+    let evidence: VerificationEvidence = super::super::feeds::load_typed_work_object(
+        &f.store.connection,
+        &receipt.verifications[0].record_id,
+        "verification_evidence",
+    )
+    .unwrap();
+    let producer =
+        super::super::load_verification_producer_on(&f.store.connection, &evidence).unwrap();
+    assert_eq!(producer.outcome, ExecutionOutcome::Succeeded);
+    assert_eq!(
+        producer.source_basis.unwrap().source_revision,
+        f.request.input.revision()
+    );
+    assert_eq!(f.store.connection.query_row("SELECT count(*) FROM objects WHERE object_kind IN ('execution_observation', 'turn_grant')", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    assert!(f.store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
 fn registered_verification_failure_is_not_a_pass_and_unrun_has_no_credit() {
-    let mut f = fixture(crate::ControlAssurance::Advisory);
+    let mut f = fixture();
     f.request.run.outcome = RegisteredVerificationOutcome::Failed;
     f.request.checks[0].outcome = RegisteredVerificationOutcome::Failed;
     let mut unrun = f.request.checks[0].clone();
@@ -384,7 +334,7 @@ fn registered_verification_failure_is_not_a_pass_and_unrun_has_no_credit() {
 pub(in crate::storage::work) fn registered_verification_case(
     outcome: RegisteredVerificationOutcome,
 ) -> (SqliteStore, RegisteredVerificationReceipt) {
-    let mut f = fixture(crate::ControlAssurance::Advisory);
+    let mut f = fixture();
     f.request.run.outcome = outcome;
     let receipt = f.record().unwrap();
     (f.store, receipt)
@@ -392,28 +342,23 @@ pub(in crate::storage::work) fn registered_verification_case(
 
 #[test]
 fn registered_verification_never_pinned_association_refuses_without_effects() {
-    for assurance in [
-        crate::ControlAssurance::Advisory,
-        crate::ControlAssurance::TurnGated,
-    ] {
-        let mut f = fixture_with_root(SqliteStore::open_in_memory().unwrap(), assurance, 0, false);
-        let before = f.snapshot();
-        assert!(matches!(
-            f.record(),
-            Err(StoreError::RegisteredVerificationRefused { field, reason })
-                if field == "root" && reason.contains("no named root")
-        ));
-        assert_eq!(
-            f.snapshot(),
-            before,
-            "a never-pinned association records nothing"
-        );
-    }
+    let mut f = fixture_with_root(SqliteStore::open_in_memory().unwrap(), 0, false);
+    let before = f.snapshot();
+    assert!(matches!(
+        f.record(),
+        Err(StoreError::RegisteredVerificationRefused { field, reason })
+            if field == "root" && reason.contains("no named root")
+    ));
+    assert_eq!(
+        f.snapshot(),
+        before,
+        "a never-pinned association records nothing"
+    );
 }
 
 #[test]
 fn registered_verification_refuses_moved_pin_and_changed_intent_without_effects() {
-    let mut f = fixture(crate::ControlAssurance::Advisory);
+    let mut f = fixture();
     f.request.registration.root.generation += 1;
     let snapshot = f.snapshot();
     assert!(matches!(
@@ -439,7 +384,7 @@ fn registered_verification_emits_host_wire_fixtures() {
     // Host transport uses the real current time. The registration and claim
     // must therefore also be current, rather than the fixed unit-test clock.
     let offset = (chrono::Utc::now() - at(10)).num_seconds();
-    let mut f = fixture_offset(crate::ControlAssurance::Advisory, offset);
+    let mut f = fixture_offset(offset);
     f.request.checks[0].counts = Some(std::collections::BTreeMap::from([
         ("passed".into(), 1),
         ("failed".into(), 0),
@@ -447,7 +392,7 @@ fn registered_verification_emits_host_wire_fixtures() {
     ]));
     let mut request = serde_json::to_value(&f.request).unwrap();
     request["operation"] = serde_json::json!("verification_record");
-    request["routing_token"] = serde_json::json!(&f.routing);
+
     let mut refused = request.clone();
     refused["operation_key"] = serde_json::json!("termal-run:test-refused");
     refused["registration"]["host_run_id"] = serde_json::json!("test-refused");
@@ -473,7 +418,6 @@ fn registered_verification_emits_host_wire_fixtures() {
         f.project,
         f.session,
         f.connection,
-        false,
     );
     let input = format!("{request}\n{refused}\n{failed}\n");
     let mut output = Vec::new();
@@ -523,7 +467,7 @@ fn registered_verification_emits_host_wire_fixtures() {
 
 #[test]
 fn registered_verification_stale_claim_refuses_but_committed_retry_replays() {
-    let mut f = fixture(crate::ControlAssurance::Advisory);
+    let mut f = fixture();
     let receipt = f.record().unwrap();
     let binding = f.request.registration.binding.clone();
     let item = f.store.get_work_item(binding.work_id).unwrap();
@@ -550,7 +494,7 @@ fn registered_verification_import_and_projection_repair_preserve_receipt_and_ids
     let store =
         SqliteStore::open_with_host_path_policy(&source, crate::HostPathPolicy::host_default())
             .unwrap();
-    let mut f = fixture_in(store, crate::ControlAssurance::Advisory, 0);
+    let mut f = fixture_in(store, 0);
     let receipt = f.record().unwrap();
     let producer_bytes: Vec<u8> = f
         .store
@@ -572,10 +516,7 @@ fn registered_verification_import_and_projection_repair_preserve_receipt_and_ids
     f.store =
         SqliteStore::open_with_host_path_policy(&target, crate::HostPathPolicy::host_default())
             .unwrap();
-    f.connection = f
-        .store
-        .resume_control_connection(&f.session, at(11))
-        .unwrap();
+    f.connection = f.store.resume_work_connection(&f.session, at(11)).unwrap();
     assert_eq!(f.record().unwrap(), receipt);
     let imported_bytes: Vec<u8> = f
         .store

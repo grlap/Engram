@@ -20,25 +20,19 @@ delivered or outstanding evidence.
 **Engram alone: ready to install for a colleague.** Project resolution from
 repository subdirectories and the team usage instructions are delivered and
 installed. Set up with the [usage skill](skills/engram-use/SKILL.md) and the
-[advisory host checklist](host-checklist.md#base-tier--advisory) (an
+[host checklist](host-checklist.md#base-tier) (an
 explicit local store home and a stable project identity), then supervise a
 first task. The pilot itself, installing for a colleague and observing real
 work, has not started. This path is independent of TermAl and promises no
 unattended operation, off-host durability or completed team rollout.
 
 **Engram + TermAl: partial operational rollout, 2026-10-29.** Engram
-provides durable work, evidence and deterministic control decisions; the
-host provides session supervision, dispatch and recovery. The shared
-verification-applicability cutover is complete on the dogfood stores. Gated
-model turns are on for the Engram project after the coordinators' reported
-steady-state canary pass. Its bounded samples make consecutive coverage an
-inference, not a proof.
-
-The initial enable transition stalled on a slow host settings reset. The
-TermAl projects remain off until that defect is fixed, followed by their
-own enablement and release observation. A successful Engram canary does not
-close those steps or establish an integrated pilot. The earlier October 8
-host-qualification table is retired rather than presented as current status.
+provides durable work and evidence; the host provides session supervision,
+dispatch and recovery. The shared verification-applicability cutover is
+complete on the dogfood stores. Turn gating was removed; Execution
+Observability, switched on or off per project in the host, takes its place.
+The earlier October 8 host-qualification table is retired rather than
+presented as current status.
 
 | Area | Delivered | What remains |
 | --- | --- | --- |
@@ -46,8 +40,7 @@ host-qualification table is retired rather than presented as current status.
 | Graph restore and tooling | Parent-first work-item insertion for snapshots without supersession, the Node 24.14.0 pin and ordinary Git review identity are on master. | No universal restore deadline or arbitrary-supersession optimization is claimed. |
 | Note and gate responses | A known-committed capture returns success with its exact evidence and readback if later response work fails. | Core capture failures still return errors; this is not a general unknown-outcome or lost-transport guarantee. |
 | Remote landing gates | Exact-test-ref full gates on a second trusted Windows host or the Mac carry the same landing weight under the existing tree and evidence requirements. | Windows-only changes still need a Windows gate; a component check is not a full landing gate. |
-| Engram project gated turns | Enabled; a steady-state canary pass was recorded. | Continue observing actual admission and recovery failures; this is not a blanket host-safety guarantee. |
-| TermAl project gated turns | Not enabled. | Fix the settings-reset defect, then enable and complete the release observation. |
+| Execution Observability | Turn gating removed; the work session records host observations, named source roots and registered verification. | Recording across every supported harness; acceptance evaluation stays temporarily off until it is implemented. |
 | Optional Git task sync | Explicit local planning-text export/import, opt-in, informational activity and prepared materialization ship. | Automated Git exchange and reconciliation remain planned; private scratch and runtime authority stay host-local. |
 
 The next integrated-pilot steps are to finish the host rollout, qualify the
@@ -73,43 +66,31 @@ requirements. This checkpoint waives none of them and does not assert that
 they have been met.
 
 See the [shipped inventory](shipped.md) for source-tree behavior. External
-publication, report assembly, real redaction/attestation and per-action
-gates remain deferred as listed below. No completed team rollout or
+publication, report assembly and real redaction/attestation remain deferred as listed below. No completed team rollout or
 unattended-operation promise follows from this checkpoint.
 
 ## V1 — close the loop
 
 Everything in V1 serves one loop: **open/import local work → decompose and
-select ready work → admit synchronized turns and coordinated actions →
+select ready work → claim and execute, with host observations recorded →
 complete with evidence → optionally freeze/publish → review promotion
 candidates.**
 
-Engram's advisory and turn-gated primitives are implemented. The broader
-replay-proven turn-refusal set and the degraded-envelope matrix remain V1
-targets in the control plane's
-[delivery sequence](features/behavioral-control-plane.md#delivery-sequence).
-Those broader targets stay disabled until the delivery sequence's Phase 1
-prerequisites hold, which remain incomplete. The Engram-project canary
-covers only the implemented turn-gated primitives.
-The remaining integration work concerns the host's wider rollout, evidence
-qualification and fixes for observed stops; passing Engram protocol tests
-does not close that host work.
-Action gates remain designed and deferred:
-see [action gates](features/action-gates.md#when-to-build-it).
+Turn gating was removed; [Execution Observability](features/execution-observability.md)
+takes its place, switched on or off per project in the host. The remaining
+integration work concerns the host's recording of observations across every
+supported harness; passing Engram protocol tests does not close that host
+work. Acceptance evaluation is temporarily off until Execution Observability
+is implemented.
 
 Current milestone: agents use fourteen words — `next`, `ls`, `show`, `add`,
 `claim`, `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`,
 `forget` — as flat CLI commands and MCP tools over the unchanged six-operation
 core; the baseline `add → claim → done` lifecycle is measured at three
 commands with no JSON, full record ids, fences, or keys, and every receipt
-ends with `reminders` and `next`. The separate JSON-lines host service
-process-tests a
-restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
-loop with transactional context and stale-grant refusal, plus turn-gated local
-mutation. Resource leases, host obligation waiver, the finalizer turn
-purpose/phase, the "defer" answer and the never-written session phases have
-been removed. Per-action mediation is not built; its intent is kept under
-[planned interfaces](features/behavioral-control-plane.md#planned-interfaces).
+ends with `reminders` and `next`. The separate JSON-lines host work session
+records host observations, named source roots and registered verification.
+Resource leases, host obligation waiver and turn gating have been removed.
 Optional report assembly remains deferred.
 
 - Rust core; local SQLite canonical store (append-only, minted record ids)
@@ -121,12 +102,10 @@ Optional report assembly remains deferred.
   claims, acceptance evidence, human decisions, and the six-operation ambient
   model protocol —
   [local work system](features/local-work-system.md)
-- Behavioral control: deterministic turn decisions, typed refusal
-  directives, checkpoints (inline packet/delta delivery and recovery grants
-  are dropped: turn grants carry no delivery page), effect-specific degraded
-  debt, mediation coverage reporting, and honest advisory/turn-gated
-  assurance (action-gated is not built) —
-  [behavioral control plane](features/behavioral-control-plane.md)
+- Execution Observability: host observations of execution, source and
+  tests, named source roots, registered verification and source-change
+  obligations, switched on or off per project in the host —
+  [Execution Observability](features/execution-observability.md)
 - Same-host multi-session roots: one executor/claim per child `WorkRun` under a
   `RootExecution`, fenced work claims, explicit handoff, root-shared memory,
   contribution/child-seal barrier; the separate report-assembly claim is planned
@@ -155,9 +134,8 @@ Optional report assembly remains deferred.
   [tracker adapter](features/tracker-adapter.md)
 - Audit attribution at asserted-runtime-context assurance; visibly labeled
   no-op Redactor — [security & trust](features/security-and-trust.md)
-- CLI + agent-facing MCP + host-private control transport over one core;
-  hostile-process tests prove turn and declared-capability bypasses fail —
-  [CLI & MCP](features/cli-and-mcp.md)
+- CLI + agent-facing MCP + host-private work-session transport over one
+  core — [CLI & MCP](features/cli-and-mcp.md)
 - Deterministic recovery snapshot/restore, round-trip Beads migration,
   referential/projection integrity, fixture-level retrieval checks, and
   `doctor` / explicit `doctor --repair-projections`. External durability is
@@ -273,7 +251,6 @@ item is partly shipped:
 | Environment requirements on obligations (none can name an environment today) | Acceptance needs signed attestation, component predicates, or environment families; a requirement must name environment content, not a record of one run — [execution pipeline](features/execution-pipeline.md) |
 | External intake system (enrichment, planning, sufficiency check) | The manual import → execute → publish loop has closed several times and the manual steps are the bottleneck — [execution pipeline](features/execution-pipeline.md) |
 | General obligation rule language beyond the shipped policy-selected typed rule sets | More projects need triggers, conditions, evidence kinds, blocking phases, and waiver authority that cannot be represented by the bounded V1 schema — [execution pipeline](features/execution-pipeline.md) |
-| Per-action gates and `action_gated` assurance | The operator explicitly reverses the decision of 2026-09-26 that the host will not block dangerous operations — [action gates](features/action-gates.md) |
 
 ## Open decisions
 

@@ -9,14 +9,13 @@ references another.
 
 | Brief | One line |
 | --- | --- |
-| [Behavioral control plane](behavioral-control-plane.md) | Shipped host-private turn admission channel with exact bounded delivery, checkpoints, and restart recovery; enforcement depends on the embedding host, and action gating is designed and deferred |
-| [Action gates](action-gates.md) | Design only, deferred: a grant around each declared material action, what a host would have to close to claim `action_gated`, and why nothing is built |
+| [Execution Observability](execution-observability.md) | Host feature, project-level ON/OFF: the work session, named source roots, host observations of execution, source and tests, and registered verification; turn gating was removed |
 | [Typed memory model](typed-memory-model.md) | Kind × authority × delivery axes over immutable versions under minted ids |
 | [Historical context packet format](context-packets.md) | Retained serialized history; packet construction and generic task-memory capture are removed |
 | [Write policy & review](write-policy-and-review.md) | Origin × authority promotion matrix; distillation proposes, never writes; review lifecycle |
 | [Local work system](local-work-system.md) | First-class local work graph, claims, typed verification/environment evidence, policy-selected immutable obligation rules, and exact completion seals |
 | [Atomic work plans](atomic-work-plan.md) | Shipped host/operator admission of a bounded new work forest and prerequisites in one transaction, with complete key-to-ref retry recovery; no new agent word or MCP tool |
-| [Acceptance evaluation](acceptance-evaluation.md) | Agreed contract for host-evaluated, core-enforced per-criterion acceptance before completion: modes, policy, immutable evaluation record, freshness, refusal causes, and the boundary matrix tests trace to |
+| [Acceptance evaluation](acceptance-evaluation.md) | Temporarily off until Execution Observability is implemented. Agreed contract for host-evaluated, core-enforced per-criterion acceptance before completion: modes, policy, immutable evaluation record, freshness, refusal causes, and the boundary matrix tests trace to |
 | [Acceptance-evaluation lifecycle](acceptance-evaluation-lifecycle.md) | Design review of admission and completion owners, historical failure transitions, and the shared host check-and-cut guarantee |
 | [Local tasks & reports](local-tasks-and-reports.md) | Root execution, single-executor child runs, handoffs, completion seals, fenced report assembly, and optional receipted publication |
 | [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; optional agent-merged Git task exchange; deferred cross-host coordination |
@@ -28,11 +27,8 @@ references another.
 | [Source intake](source-intake.md) | Explicit file preview/apply, authored local work, and immutable source-change notices |
 | [Execution pipeline](execution-pipeline.md) | Layer map from external ticket to report, including shipped WorkRun-bound environment evidence, obligations, and completion gating |
 | [Security & trust](security-and-trust.md) | Asserted runtime identity with assurance levels; sensitivity labels; redaction; purge realism |
-| [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing local-work tools and host-private turn channel over one core; material action mediation is deferred |
+| [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing local-work tools and the host-private work-session channel over one core |
 | [Host readiness](host-readiness.md) | Scoped read-only enablement checks, separate from the explicit full-store doctor audit |
-| [Control session inspection](control-session-inspection.md) | Scoped read-only session/grant presence evidence for host-fenced reconciliation, not clearance to reset state |
-| [Turn gate assessment](turn-gate-assessment.md) | One-page summary of what the turn gate does with TermAl: the questions asked, live-store counts, visible refusals, and the keep/simplify/remove decision for each part |
-| [Turn gate evidence](turn-gate-evidence.md) | The evidence behind that summary: TermAl call sites, code references, examples, the removed page and recovery turns, and the full refusal explanations |
 
 ## Conventions
 

@@ -202,7 +202,7 @@ impl LocalWorkService {
                     }
                     break (delivery_session, Some(page.changes), through);
                 }
-                let (focused_root_id, bound_task_id) = work_delivery_boundary(
+                let focused_root_id = work_delivery_boundary(
                     &store,
                     &self.project_id,
                     &self.session_id,
@@ -247,7 +247,6 @@ impl LocalWorkService {
                     StageWorkSessionDelivery {
                         expected_confirmed_through: delivery_session.project_cursor,
                         expected_focused_work_id: delivery_session.focused_work_id,
-                        expected_bound_task_id: bound_task_id,
                         delivered_through: selected_through,
                         delivered_entries: &delivered_entries,
                         delivery_payload: &payload,

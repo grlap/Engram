@@ -140,7 +140,7 @@ fn readiness_preserves_schema_policy_and_projection_refusals() {
             "corrupt_store",
         ),
         (
-            "UPDATE control_policy_state SET required_assurance = 'advisory'",
+            "UPDATE control_policy_state SET policy_epoch = policy_epoch + 1",
             "corrupt_store",
         ),
         (

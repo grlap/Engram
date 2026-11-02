@@ -47,7 +47,7 @@ does not retire connections that are already open.
 
 The new build refuses ordinary open without the barrier as
 `projection_repair_required`. Only the exact current schema definition counts.
-Successful `session_bind`, `session_status` and `work_session_read` results advertise
+Successful `work_session_read` results advertise
 `verification_evidence_git_tree_applicability_v1: true` only while that
 definition exists. The advertisement is specific to the active connection;
 an absent, false, malformed or unknown advertisement grants no restricted
@@ -72,7 +72,7 @@ barrier is a verified no-op. Its receipt names a verification census and does
 not claim a full audit. Full projection repair may recreate the barrier within
 its transaction, but must never commit its removal once restricted records
 exist. Do not remove the barrier to permit an older build to open the store.
-This procedure grants no host restart or gated-control enablement authority.
+This procedure grants no host restart authority.
 
 ## Pre-commit census
 

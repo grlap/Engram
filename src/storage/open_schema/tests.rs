@@ -1,5 +1,28 @@
-use chrono::{TimeDelta, TimeZone};
 mod verification_applicability;
+
+#[test]
+fn cold_schema_failure_after_ddl_rolls_back_before_retry() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("interrupted-cold-schema.db");
+    crate::storage::FAIL_COLD_SCHEMA_AFTER_DDL.set(true);
+    assert!(matches!(
+        SqliteStore::open(&database),
+        Err(StoreError::InvalidControlProjection(reason))
+            if reason.contains("injected cold-schema failure")
+    ));
+    let raw = Connection::open(&database).unwrap();
+    let tables: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 0, "cold schema DDL escaped its transaction");
+    drop(raw);
+    let retried = SqliteStore::open(&database).unwrap();
+    assert!(retried.verify_all().unwrap().is_healthy());
+}
 
 use super::*;
 use crate::storage::{
@@ -10,7 +33,7 @@ use crate::*;
 
 use crate::{
     DevelopmentNoopRedactor,
-    domain::{EffectClass, NoteVisibility, ProjectId},
+    domain::{NoteVisibility, ProjectId},
 };
 
 fn remove_schema_family(connection: &Connection, owner: SchemaOwner, fts_table: &str) {
@@ -534,10 +557,7 @@ fn store_persists_and_enforces_one_host_path_identity_policy() {
             windows_alias_rules: true,
         },
     );
-    assert!(matches!(
-        mismatch,
-        Err(StoreError::InvalidControlSession(_))
-    ));
+    assert!(matches!(mismatch, Err(StoreError::InvalidHostContext(_))));
 
     let recovery_database = directory.path().join("path-policy-recovery.sqlite3");
     drop(
@@ -553,35 +573,6 @@ fn store_persists_and_enforces_one_host_path_identity_policy() {
         SqliteStore::open_with_host_path_policy(&recovery_database, policy)
             .expect("empty policy table is rebound atomically"),
     );
-
-    let unsafe_database = directory.path().join("path-policy-unsafe.sqlite3");
-    drop(
-        SqliteStore::open_with_host_path_policy(&unsafe_database, policy)
-            .expect("initialize unsafe policy store"),
-    );
-    let unsafe_connection = Connection::open(&unsafe_database).expect("unsafe connection");
-    unsafe_connection
-        .execute("PRAGMA foreign_keys = OFF", [])
-        .expect("disable fixture foreign keys");
-    unsafe_connection
-        .execute("DELETE FROM control_host_path_policy", [])
-        .expect("remove policy binding");
-    unsafe_connection
-        .execute(
-            "INSERT INTO control_turn_grants (
-                 grant_id, task_id, session_id, request_key, grant_json,
-                 state, issued_at_ms, expires_at_ms
-              ) VALUES ('existing-path', 'task', 'session', 'request',
-                       CAST('{\"basis\":{\"resource_intents\":[{\"kind\":\"path\"}]}}' AS BLOB),
-                       'issued', 0, 1)",
-            [],
-        )
-        .expect("insert existing path-bearing state");
-    drop(unsafe_connection);
-    assert!(matches!(
-        SqliteStore::open_with_host_path_policy(&unsafe_database, policy),
-        Err(StoreError::InvalidControlSession(_))
-    ));
 }
 
 #[test]
@@ -703,16 +694,10 @@ fn backup_copies_a_live_store_and_verifies_the_copy() {
     let mut store = SqliteStore::open(&database).expect("live store");
     let project = ProjectId("backup-project".into());
     let session = SessionId("backup-session".into());
-    store
-        .bind_test_control_scope(
-            &project,
-            "dummy:BACKUP-1",
-            "Backup fixture",
-            &session,
-            &actor("backup-session"),
-            Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
-        )
-        .expect("fixture task");
+    let task = store
+        .historical_task_scope(&project, "dummy:BACKUP-1", "Backup fixture", &session)
+        .expect("fixture task")
+        .task_id;
     let copy = directory.path().join("backups").join("copy.sqlite3");
     let manifest = store.backup_to(&copy).expect("backup");
     assert_eq!(manifest.path, copy);
@@ -727,7 +712,18 @@ fn backup_copies_a_live_store_and_verifies_the_copy() {
     assert_eq!(reverified.checked_objects, manifest.checked_objects);
     // The copy is a complete store: it opens and answers on its own.
     let restored = SqliteStore::open(&copy).expect("open the copy");
-    assert!(restored.bound_task(&project, &session).is_ok());
+    let copied: (String, String, String) = restored
+        .connection
+        .query_row(
+            "SELECT project_id, external_ref, title FROM control_anchors WHERE task_id = ?1",
+            [task.0.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        copied,
+        (project.0, "dummy:BACKUP-1".into(), "Backup fixture".into())
+    );
     // An existing target is never overwritten.
     assert!(matches!(
         store.backup_to(&copy),
@@ -737,20 +733,9 @@ fn backup_copies_a_live_store_and_verifies_the_copy() {
 
 #[test]
 fn unresolved_path_identity_refuses_paths_but_not_logical_subjects() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store =
+    let store =
         SqliteStore::open_in_memory_with_host_path_identity(None).expect("unresolved store");
     assert_eq!(store.host_path_identity(), None);
-    let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-    let session = bind_control_for(&mut store, "unresolved", "bind-unresolved", &effects, now);
-    complete_control_turn(
-        &mut store,
-        &session,
-        "sync-unresolved",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
     let path = crate::domain::ResourceSubject::Path {
         project_id: ProjectId("project-a".into()),
         segments: vec!["src".into()],
@@ -788,7 +773,7 @@ fn unresolved_path_identity_refuses_paths_but_not_logical_subjects() {
                 windows_alias_rules: false,
             },
         ),
-        Err(StoreError::InvalidControlSession(_))
+        Err(StoreError::InvalidHostContext(_))
     ));
 }
 
@@ -849,67 +834,6 @@ fn verify_backup_touches_nothing_and_backups_never_replace() {
 }
 
 #[test]
-fn unresolved_opener_cannot_begin_a_path_bearing_grant() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let directory = crate::test_support::temp_home().expect("temp directory");
-    let database = directory.path().join("unresolved-begin.sqlite3");
-    let mut store = SqliteStore::open(&database).expect("resolved opener");
-    let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-    let session = bind_control_for(&mut store, "ub-a", "bind-ub-a", &effects, now);
-    complete_control_turn(
-        &mut store,
-        &session,
-        "sync-ub-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    let ControlTurnDecision::Grant { grant } = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &session.status.session_id,
-            &session.connection_token,
-            &session.routing_token,
-            &TurnIntent {
-                idempotency_key: "ub-turn".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"ub-turn"),
-                purpose: Some(crate::domain::TurnPurpose::Ordinary),
-                requested_effects: vec![EffectClass::MutateLocal],
-                resource_intents: vec![crate::domain::ResourceSubject::Path {
-                    project_id: ProjectId("project-a".into()),
-                    segments: vec!["src".into(), "lib.rs".into()],
-                    coverage: crate::domain::ResourceCoverage::Exact,
-                }],
-            },
-            now + TimeDelta::seconds(3),
-        )
-        .unwrap()
-    else {
-        panic!("the mutation turn must grant on the resolved opener");
-    };
-    drop(store);
-    let delivery_tokens = grant
-        .delivery
-        .iter()
-        .map(|delivery| delivery.page.delivery_token.clone())
-        .collect::<Vec<_>>();
-    let mut unresolved = SqliteStore::open_unresolved(&database).expect("unresolved opener");
-    assert!(matches!(
-        unresolved.begin_control_turn(
-            &ProjectId("project-a".into()),
-            &session.status.session_id,
-            &session.connection_token,
-            &session.routing_token,
-            &grant.grant_id,
-            &delivery_tokens,
-            "ub-begin",
-            now + TimeDelta::seconds(4),
-        ),
-        Err(StoreError::HostPathIdentityUnresolved)
-    ));
-}
-
-#[test]
 fn current_store_reopens_through_a_read_only_connection() {
     let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
@@ -917,7 +841,7 @@ fn current_store_reopens_through_a_read_only_connection() {
     let connection =
         Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .expect("open read-only SQLite connection");
-    SqliteStore::from_connection(connection, Some(HostPathPolicy::host_default()), None)
+    SqliteStore::from_connection(connection, Some(HostPathPolicy::host_default()))
         .expect("current schema opens without a write transaction");
 }
 
@@ -1023,8 +947,8 @@ fn missing_core_durable_table_is_named_and_never_recreated() {
     drop(SqliteStore::open(&database).expect("initialize current store"));
     let fixture = Connection::open(&database).expect("open durable corruption fixture");
     fixture
-        .execute_batch("DROP TABLE control_sessions")
-        .expect("drop durable control table");
+        .execute_batch("DROP TABLE control_connections")
+        .expect("drop durable host-connection table");
     let before = test_database_shape_snapshot(&fixture).expect("snapshot damaged store");
     drop(fixture);
 
@@ -1215,7 +1139,6 @@ fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
         SqliteStore::from_connection_with_lock_wait(
             current,
             Some(HostPathPolicy::host_default()),
-            None,
             super::LockWait::Timeout(Duration::from_millis(25)),
             super::ProtocolRetry::Once,
         )
@@ -1239,7 +1162,6 @@ fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
     let result = SqliteStore::from_connection_with_lock_wait(
         candidate,
         Some(HostPathPolicy::host_default()),
-        None,
         super::LockWait::Timeout(Duration::from_millis(25)),
         super::ProtocolRetry::Once,
     );

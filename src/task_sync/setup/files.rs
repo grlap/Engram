@@ -11,7 +11,7 @@ use std::{
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct PhysicalId {
+pub(in crate::task_sync) struct PhysicalId {
     device: u64,
     inode: u64,
 }
@@ -39,7 +39,7 @@ fn identity(metadata: &cap_std::fs::Metadata) -> Result<PhysicalId> {
     Ok(id)
 }
 
-pub(super) struct Directory(Vec<Dir>);
+pub(in crate::task_sync) struct Directory(Vec<Dir>);
 pub(super) const MAX_PRIVATE_BYTES: usize = 2 * 1024 * 1024;
 
 impl Directory {

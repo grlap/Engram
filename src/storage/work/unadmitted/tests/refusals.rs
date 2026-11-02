@@ -210,14 +210,15 @@ fn another_projects_work_is_refused() {
 fn the_root_basis_is_read_at_the_capture_cut() {
     let mut fixture = fixture();
     let before_name = inter_turn_change(&fixture, "before-name");
-    let host = &fixture.host;
+    let holder = fixture.claim.holder.clone();
+    let host = open_work_host(&mut fixture.store, &holder.0, at(4));
     let named = fixture
         .store
         .bind_named_root(
             &fixture.work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             fixture.claim.claim_id,
             fixture.claim.fence,
             "workspace-A",
@@ -225,7 +226,7 @@ fn the_root_basis_is_read_at_the_capture_cut() {
             at(4),
             NamedRootBindingKind::Bound,
             None,
-            &mut actor("observer"),
+            &mut actor(&holder.0),
             "name-3",
             at(4),
         )
@@ -293,14 +294,15 @@ pub(super) fn name_root(
     named_second: i64,
     second: i64,
 ) -> crate::domain::NamedRootBindingReceipt {
-    let host = &fixture.host;
+    let holder = fixture.claim.holder.clone();
+    let host = open_work_host(&mut fixture.store, &holder.0, at(second));
     fixture
         .store
         .bind_named_root(
             &fixture.work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             fixture.claim.claim_id,
             fixture.claim.fence,
             "workspace-A",
@@ -309,7 +311,7 @@ pub(super) fn name_root(
             kind,
             (kind == NamedRootBindingKind::Ended)
                 .then_some(crate::domain::NamedRootEndReason::RootInvalid),
-            &mut actor("observer"),
+            &mut actor(&holder.0),
             &format!("root-{generation}-{kind:?}"),
             at(second),
         )
@@ -539,8 +541,8 @@ fn an_exact_retry_of_an_observation_admitted_before_the_text_rule_replays() {
     let mut fixture = fixture();
     let key = "admitted-before-the-rule";
     let first = inter_turn_change(&fixture, key);
-    let admitted = observe(&mut fixture, first, 7).expect("recorded");
-    let mut retry = inter_turn_change(&fixture, key);
+    let admitted = observe(&mut fixture, first.clone(), 7).expect("recorded");
+    let mut retry = first;
     retry.occurrence = ObservedOccurrence::InterTurnChange {
         source_change: content_change("rev-a", "rev\u{202E}b"),
     };
@@ -549,11 +551,26 @@ fn an_exact_retry_of_an_observation_admitted_before_the_text_rule_replays() {
     fresh.idempotency_key = "fresh".into();
     let refused = observe(&mut fixture, fresh, 7).expect_err("refused text");
     assert!(source_text_refused(&refused), "{refused:?}");
+    // Model the observation itself as stored before the text rule too. The
+    // receipt verifier binds its frozen intent to this canonical record.
+    let mut historical = stored(&fixture.store, &admitted.observation);
+    historical.occurrence = RecordedOccurrence::record(retry.occurrence.clone());
+    fixture
+        .store
+        .connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+            rusqlite::params![
+                crate::canonical::canonical_bytes(&historical).expect("historical record"),
+                admitted.observation.as_str()
+            ],
+        )
+        .expect("the historical observation carries the same admitted text");
     // The stored operation as an admission before the rule left it: the
     // key's row answers for the retry's exact intent.
     let intent = CanonicalObject::freeze(
         &crate::storage::unadmitted_observation::ExecutionObserveIntent::of(
-            &fixture.host.status.session_id,
+            &fixture.host.session_id,
             &retry,
         ),
     )
@@ -562,20 +579,23 @@ fn an_exact_retry_of_an_observation_admitted_before_the_text_rule_replays() {
         .store
         .connection
         .execute(
-            "UPDATE control_operation_results SET intent_hash = ?1, intent_json = ?2
-             WHERE session_id = ?3 AND operation = 'execution_observe' AND idempotency_key = ?4",
+            "UPDATE work_operation_results SET request_hash = ?1,
+             result_json = CAST(json_set(CAST(result_json AS TEXT), '$.intent', json(CAST(?2 AS TEXT))) AS BLOB)
+             WHERE operation = 'host_execution_observe' AND idempotency_key = ?3",
             rusqlite::params![
                 intent.key().as_str(),
                 intent.bytes(),
-                fixture.host.status.session_id.0,
-                key
+                serde_json::to_string(&(&fixture.work.project_id, &fixture.host.session_id, key)).unwrap()
             ],
         )
         .expect("rewrite the stored intent");
     assert_eq!(rows, 1);
+    let report = fixture.store.verify_all().expect("historical fixture");
+    assert!(report.is_healthy(), "{report:?}");
     let before = footprint(&fixture.store);
     let replayed = observe(&mut fixture, retry, 9).expect("the exact retry replays");
     assert_eq!(replayed, admitted);
+    assert_eq!(stored(&fixture.store, &admitted.observation), historical);
     assert_eq!(
         footprint(&fixture.store),
         before,

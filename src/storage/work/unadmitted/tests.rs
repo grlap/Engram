@@ -14,7 +14,7 @@ use crate::domain::{
     RecordedOccurrence, UnadmittedExecutionObservation, VerificationKind, VerificationResult,
     WorkClaim,
 };
-use crate::storage::test_support::{TestControlBinding, bind_control_for};
+use crate::storage::test_support::{TestWorkHost, open_work_host};
 
 mod accounting;
 mod doctor;
@@ -49,7 +49,6 @@ fn work_session_turn_wire_is_provider_neutral_and_keeps_observed_checks_uncredit
             f.work.project_id,
             session.clone(),
             token,
-            true,
         )
         .with_actor_context(Some(format!("agent={provider}")));
         let first = server
@@ -116,7 +115,7 @@ fn work_session_records_observations_without_a_control_binding_or_turn() {
     assert_eq!(
         count(
             &f.store,
-            "SELECT COUNT(*) FROM control_sessions WHERE session_id = 'ordinary-observer'"
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'control_sessions'"
         ),
         0
     );
@@ -126,7 +125,7 @@ pub(super) struct Fixture {
     pub(super) store: SqliteStore,
     pub(super) work: WorkItem,
     pub(super) claim: WorkClaim,
-    pub(super) host: TestControlBinding,
+    pub(super) host: TestWorkHost,
     pub(super) binding: ControlWorkBinding,
 }
 
@@ -146,13 +145,7 @@ pub(super) fn fixture_of(mut store: SqliteStore, request: &CreateWorkRequest) ->
         .create_work(request, &DevelopmentNoopRedactor)
         .expect("work");
     let claim = claim(&mut store, &work, "runner", "observed-claim", 2, 300);
-    let host = bind_control_for(
-        &mut store,
-        "observer",
-        "observer-bind",
-        &[EffectClass::Observe],
-        at(3),
-    );
+    let host = open_work_host(&mut store, "observer", at(3));
     let run = load_work_run(&store.connection, claim.run_id).expect("run");
     let binding = ControlWorkBinding {
         root_execution_id: run.root_execution_id,
@@ -248,9 +241,9 @@ pub(super) fn observe(
     let host = &fixture.host;
     let recorded = fixture.store.record_unadmitted_execution_observation(
         &fixture.work.project_id,
-        &host.status.session_id,
+        &host.session_id,
         &host.connection_token,
-        &host.routing_token,
+        crate::storage::HostSessionAuthority::Work,
         &observer,
         input,
         at(second),
@@ -273,8 +266,11 @@ pub(super) fn footprint(store: &SqliteStore) -> [i64; 5] {
     [
         count(store, "SELECT COUNT(*) FROM objects"),
         count(store, "SELECT COUNT(*) FROM work_feed_entries"),
-        count(store, "SELECT COUNT(*) FROM control_operation_results"),
-        count(store, "SELECT COUNT(*) FROM control_turn_grants"),
+        count(store, "SELECT COUNT(*) FROM work_operation_results"),
+        count(
+            store,
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('control_sessions', 'control_turn_results', 'control_turn_grants', 'control_turn_grant_supersessions')",
+        ),
         count(store, "SELECT COUNT(*) FROM work_run_obligations"),
     ]
 }
@@ -299,16 +295,6 @@ pub(super) fn stored(store: &SqliteStore, id: &crate::ObjectId) -> UnadmittedExe
 fn an_inter_turn_change_is_recorded_as_an_unadmitted_fact_with_no_authority() {
     let mut fixture = fixture();
     let head = run_head(&fixture);
-    let status_before = fixture
-        .store
-        .control_status(
-            &fixture.work.project_id,
-            &fixture.host.status.session_id,
-            &fixture.host.connection_token,
-            &fixture.host.routing_token,
-            at(6),
-        )
-        .expect("status");
     let input = inter_turn_change(&fixture, "change-1");
     let receipt = observe(&mut fixture, input.clone(), 7).expect("recorded");
 
@@ -370,28 +356,19 @@ fn an_inter_turn_change_is_recorded_as_an_unadmitted_fact_with_no_authority() {
         .expect("feeds");
     assert_eq!(feeds, ["project", "root_work", "run_execution"]);
 
-    // No grant, no begin, no obligation, no session phase change, and the
+    // No grant, no begin, no obligation, and the
     // claim is neither renewed nor changed.
     assert_eq!(
-        count(&fixture.store, "SELECT COUNT(*) FROM control_turn_grants"),
+        count(
+            &fixture.store,
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('control_sessions', 'control_turn_results', 'control_turn_grants', 'control_turn_grant_supersessions')"
+        ),
         0
     );
     assert_eq!(
         count(&fixture.store, "SELECT COUNT(*) FROM work_run_obligations"),
         0
     );
-    let status_after = fixture
-        .store
-        .control_status(
-            &fixture.work.project_id,
-            &fixture.host.status.session_id,
-            &fixture.host.connection_token,
-            &fixture.host.routing_token,
-            at(8),
-        )
-        .expect("status");
-    assert_eq!(status_after.phase, status_before.phase);
-    assert_eq!(status_after.revision, status_before.revision);
     let claim_after = load_work_claim_optional(&fixture.store.connection, fixture.claim.run_id)
         .expect("claim")
         .expect("a claim");
@@ -423,7 +400,7 @@ fn an_identical_retry_returns_the_original_receipt_even_after_reconnecting() {
     // A new connection for the same observing session replays too.
     fixture.host.connection_token = fixture
         .store
-        .resume_control_connection(&fixture.host.status.session_id.clone(), at(31))
+        .resume_work_connection(&fixture.host.session_id.clone(), at(31))
         .expect("reconnect");
     let rotated = observe(&mut fixture, input.clone(), 32).expect("replayed after reconnect");
     assert_eq!(rotated, first);

@@ -13,8 +13,8 @@ use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use engram::domain::AssuranceLevel;
 use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
-    ClaimInput, ClaimUnderInput, ControlAssurance, DevelopmentNoopRedactor, DoneInput, ForgetInput,
-    GateInput, HandoffAction, HandoffInput, HostPathPolicy, LocalWorkService, LsInput, McpServer,
+    ClaimInput, ClaimUnderInput, DevelopmentNoopRedactor, DoneInput, ForgetInput, GateInput,
+    HandoffAction, HandoffInput, HostPathPolicy, LocalWorkService, LsInput, McpServer,
     MemoriesInput, NextInput, NoteInput, ObjectId, ObligationRuleDefinition, ObligationRuleSet,
     ProjectId, RememberInput, SessionId, SqliteStore, StoreError, UpdateAction, UpdateInput,
     VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAttributionDefaults,
@@ -31,7 +31,6 @@ mod test_support;
 
 use bin_support::{
     attribution::resolve_shell_work_attribution,
-    control::{control_assurance_name, warn_if_action_gated, warn_if_assurance_weakened},
     doctor::{ProjectionMaintenance, doctor},
     graph::run_graph_from_cli,
     project::{ResolvedProject, resolve_project},
@@ -51,8 +50,7 @@ struct Cli {
     #[arg(long)]
     home: Option<PathBuf>,
     /// Filesystem identity of the project root for host path-bearing commands
-    /// (init, doctor, control, authority, control-policy, readiness,
-    /// control-session-inspect). Omit to
+    /// (init, doctor, control, authority, control-policy, readiness). Omit to
     /// probe the root's real filesystem; supply it when probing is impossible
     /// or the host knows better. Agent work, MCP, graph, backup, restore and import
     /// do not probe. Unresolved identity refuses path-bearing control requests instead of guessing.
@@ -112,41 +110,10 @@ enum Command {
         operation: ImportCommand,
     },
     /// Create or verify the local Engram database.
-    Init {
-        /// Minimum host-control assurance required by the bootstrap policy.
-        ///
-        /// A fresh store defaults to `turn_gated` when this flag is omitted.
-        /// Plain `engram init` preserves an existing store's active policy.
-        /// Changing this on an existing store requires `control-policy
-        /// set-required-assurance`, which records attribution and bumps the
-        /// policy epoch.
-        #[arg(long, value_enum, requires = "authorized_by")]
-        required_assurance: Option<ControlAssuranceArg>,
-        /// Host/operator actor id attributed to an explicit bootstrap choice.
-        #[arg(long, requires = "required_assurance")]
-        authorized_by: Option<String>,
-    },
+    Init {},
     /// Check existing-store compatibility and policy without a full history audit.
     Readiness {
         /// Emit the versioned, scoped host-readiness receipt.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Inspect session/grant presence and state read-only; never reconcile or authorize.
-    ControlSessionInspect {
-        /// Exact session to inspect, not the ambient caller; at most 64 bytes.
-        #[arg(long, value_parser = bin_support::control_session_inspect::selector)]
-        target_session_id: String,
-        /// Host's retained grant id to check anywhere in this store; at most 64 bytes.
-        #[arg(long, value_parser = bin_support::control_session_inspect::selector)]
-        retained_grant_id: String,
-        /// Optional exact recorded operation: `turn_begin` or `turn_checkpoint`.
-        #[arg(long)]
-        operation: Option<String>,
-        /// Exact recorded-operation key (paired with --operation); at most 4096 bytes.
-        #[arg(long, allow_hyphen_values = true)]
-        idempotency_key: Option<String>,
-        /// Emit the versioned `control_session_inspect` host receipt.
         #[arg(long)]
         json: bool,
     },
@@ -238,10 +205,10 @@ enum Command {
         #[arg(long)]
         read_only: bool,
     },
-    /// Serve the host-private behavioral-control protocol as JSON Lines.
+    /// Serve Execution Observability work-session requests as JSON Lines.
     Control {
-        /// Serve ordinary work evidence and association without turn admission.
-        #[arg(long)]
+        /// Select the work-session evidence and association channel.
+        #[arg(long, required = true)]
         work_session: bool,
         /// Actor identity asserted by the host integration.
         #[arg(long)]
@@ -294,61 +261,20 @@ enum Command {
         #[command(subcommand)]
         operation: AuthorityCommand,
     },
-    /// Host-operator behavioral-control policy administration.
+    /// Host-operator obligation and acceptance policy administration.
     ControlPolicy {
         #[command(subcommand)]
         operation: ControlPolicyCommand,
     },
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum ControlAssuranceArg {
-    #[value(name = "advisory")]
-    Advisory,
-    #[value(name = "turn_gated")]
-    TurnGated,
-    #[value(name = "action_gated")]
-    ActionGated,
-}
-
-impl From<ControlAssuranceArg> for ControlAssurance {
-    fn from(value: ControlAssuranceArg) -> Self {
-        match value {
-            ControlAssuranceArg::Advisory => Self::Advisory,
-            ControlAssuranceArg::TurnGated => Self::TurnGated,
-            ControlAssuranceArg::ActionGated => Self::ActionGated,
-        }
-    }
-}
-
 #[derive(Debug, Subcommand)]
 enum ControlPolicyCommand {
-    /// Print the active policy: required assurance, obligation rule set,
-    /// supported effects, and the acceptance-evaluation policy (which
+    /// Print the active obligation rule set and acceptance-evaluation policy (which
     /// evaluator modes may record verdicts). It reads the policy head only,
     /// never the whole-store audit `doctor` runs, so a host can ask it on
     /// every evaluation request.
     Show,
-    /// Activate a new immutable policy version with a different requirement.
-    ///
-    /// Activation bumps the project policy epoch. Issued grants then fail
-    /// begin with `policy_epoch_changed` and must be re-evaluated; if the new
-    /// requirement exceeds the host declaration, fresh evaluation instead
-    /// fails `control_assurance_insufficient`. Begun grants remain
-    /// checkpointable under their frozen prior basis.
-    SetRequiredAssurance {
-        #[arg(value_enum)]
-        level: ControlAssuranceArg,
-        /// Host/operator actor id attributed to the policy decision.
-        #[arg(long)]
-        authorized_by: String,
-        /// Durable caller key for exact receipt replay after an uncertain response.
-        #[arg(long)]
-        idempotency_key: String,
-        /// Optional compare-and-swap guard from `engram doctor`.
-        #[arg(long)]
-        expected_policy_hash: Option<String>,
-    },
     /// Activate a typed immutable obligation rule set for future observations.
     SetObligationRuleSet {
         /// Strict JSON object or @path to a JSON file containing the rule set.
@@ -1063,7 +989,6 @@ fn command_resolves_host_path_identity(command: &Command) -> bool {
     match command {
         Command::Init { .. }
         | Command::Readiness { .. }
-        | Command::ControlSessionInspect { .. }
         | Command::Doctor { .. }
         | Command::Control { .. }
         | Command::Authority { .. }
@@ -1129,10 +1054,6 @@ async fn run_cli() -> Result<ExitCode> {
                 bin_support::readiness::resolution_error(&error, *json)?;
                 return Ok(ExitCode::FAILURE);
             }
-            if let Command::ControlSessionInspect { json, .. } = &cli.command {
-                bin_support::control_session_inspect::resolution_error(&error, *json)?;
-                return Ok(ExitCode::FAILURE);
-            }
             if let Command::Work {
                 json, operation, ..
             } = &cli.command
@@ -1175,34 +1096,9 @@ async fn run_cli() -> Result<ExitCode> {
                 operation,
             );
         }
-        Command::Init {
-            required_assurance,
-            authorized_by,
-        } => initialize(
-            &database,
-            identity,
-            required_assurance.map(Into::into),
-            authorized_by,
-        )?,
+        Command::Init {} => initialize(&database, identity)?,
         Command::Readiness { json } => {
             bin_support::readiness::run(&database, identity, &project_id, json)?;
-        }
-        Command::ControlSessionInspect {
-            target_session_id,
-            retained_grant_id,
-            operation,
-            idempotency_key,
-            json,
-        } => {
-            bin_support::control_session_inspect::run(
-                &database,
-                identity,
-                &project_id,
-                &target_session_id,
-                &retained_grant_id,
-                json,
-                (operation.as_deref(), idempotency_key.as_deref()),
-            )?;
         }
         Command::Doctor {
             json,
@@ -1298,7 +1194,7 @@ async fn run_cli() -> Result<ExitCode> {
             .await?;
         }
         Command::Control {
-            work_session,
+            work_session: _,
             actor_id,
             session_id,
             actor_context,
@@ -1313,7 +1209,6 @@ async fn run_cli() -> Result<ExitCode> {
             actor_context,
             source_skill,
             control_trace.as_ref().map(|startup| &startup.0),
-            work_session,
         )?,
         Command::Work {
             actor_id,
@@ -1371,34 +1266,6 @@ fn run_control_policy(
     let value = match operation {
         ControlPolicyCommand::Show => {
             bin_support::doctor::control_policy_json(&store.control_diagnostics()?)
-        }
-        ControlPolicyCommand::SetRequiredAssurance {
-            level,
-            authorized_by,
-            idempotency_key,
-            expected_policy_hash,
-        } => {
-            let level = ControlAssurance::from(level);
-            let expected_policy = parse_expected_policy_id(expected_policy_hash)?;
-            let receipt = store.set_required_control_assurance(
-                level,
-                &control_policy_actor(authorized_by),
-                &idempotency_key,
-                expected_policy.as_ref(),
-                chrono::Utc::now(),
-                &DevelopmentNoopRedactor,
-            )?;
-            if receipt.changed {
-                eprintln!(
-                    "WARNING: policy administrator identity is asserted host context, not an authenticated identity"
-                );
-            }
-            warn_if_assurance_weakened(
-                receipt.previous_required_assurance,
-                receipt.required_assurance,
-            );
-            warn_if_action_gated(receipt.required_assurance);
-            serde_json::to_value(receipt)?
         }
         ControlPolicyCommand::SetObligationRuleSet {
             input,
@@ -1562,7 +1429,7 @@ fn control_policy_actor(actor_id: String) -> ActorContext {
         source_tool: Some("cli:control_policy".into()),
         source_skill: None,
         provenance_chain: Vec::new(),
-        reason: "authorize a project-scoped behavioral-control policy change".into(),
+        reason: "authorize a project-scoped execution policy change".into(),
     }
 }
 

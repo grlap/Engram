@@ -167,7 +167,7 @@ fn frames_are_numbered_by_first_byte_and_responses_are_unchanged() {
 
     let mut input = b"\n{not json\n{\"operation\":\"unknown_operation\"}\n".to_vec();
     input.extend(vec![b'x'; crate::host::MAX_HOST_CONTROL_FRAME_BYTES + 1]);
-    input.extend_from_slice(b"\n{\"operation\":\"session_status\",\"routing_token\":\"rt\"}");
+    input.extend_from_slice(b"\n{\"operation\":\"work_session_read\"}");
     // A reader smaller than the oversize frame, so its remainder is drained
     // in the same frame.
     let reader = |input: Vec<u8>| std::io::BufReader::with_capacity(64, Cursor::new(input));
@@ -209,7 +209,7 @@ fn frames_are_numbered_by_first_byte_and_responses_are_unchanged() {
         ("invalid", "invalid_request"),
         ("invalid", "invalid_request"),
         ("invalid", "invalid_request"),
-        ("session_status", ""),
+        ("work_session_read", ""),
     ];
     for (index, (operation, outcome)) in expected.iter().enumerate() {
         let seq = u64::try_from(index).expect("small") + 1;
@@ -492,8 +492,11 @@ fn a_line_carries_no_request_text() {
     let mut server = open_server(&database);
     trace.startup_finished(None);
     let secret = "SECRET-token-C:/private/path";
+    // A parsed request carries the secret in its text fields; a second frame
+    // carries it as an unknown operation name.
+    let claim = uuid::Uuid::new_v4();
     let input = format!(
-        "{{\"operation\":\"session_status\",\"routing_token\":\"{secret}\"}}\n{{\"operation\":\"{secret}\"}}\n"
+        "{{\"operation\":\"named_root_bind\",\"claim_id\":\"{claim}\",\"claim_fence\":1,\"workspace_id\":\"{secret}\",\"generation\":1,\"named_at\":\"2020-01-01T00:00:00Z\",\"kind\":\"bound\",\"idempotency_key\":\"{secret}\"}}\n{{\"operation\":\"{secret}\"}}\n"
     );
     let length = input.len();
     let mut cursor = Cursor::new(input.into_bytes());
@@ -513,6 +516,7 @@ fn a_line_carries_no_request_text() {
     for line in text.lines() {
         assert!(line.len() < MAX_LINE_BYTES, "{}", line.len());
     }
+    assert_eq!(terminal(&lines, 1)["operation"], "named_root_bind");
     assert_eq!(terminal(&lines, 2)["operation"], "invalid");
 }
 

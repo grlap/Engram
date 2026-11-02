@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn status_correction_control_marker_is_refused() {
+fn status_markers_are_refused_for_work_notes_and_never_promote_host_evidence() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let work = store
         .create_work(
@@ -20,9 +20,27 @@ fn status_correction_control_marker_is_refused() {
         claim_fence: claim.fence,
     };
     let session = SessionId("runner".into());
-    let connection = store.resume_control_connection(&session, at(2)).unwrap();
+    let connection = store.resume_work_connection(&session, at(2)).unwrap();
     let mut clean = actor("runner");
     clean.run_id = Some(run.run_id.0.to_string());
+    store
+        .bind_named_root(
+            &work.project_id,
+            &session,
+            &connection,
+            crate::storage::HostSessionAuthority::Work,
+            claim.claim_id,
+            claim.fence,
+            "status-workspace",
+            1,
+            at(2),
+            crate::domain::NamedRootBindingKind::Bound,
+            None,
+            &mut clean,
+            "name",
+            at(2),
+        )
+        .unwrap();
     for role in [
         crate::domain::StatusNoteRole::Owner,
         crate::domain::StatusNoteRole::Peer,
@@ -30,84 +48,9 @@ fn status_correction_control_marker_is_refused() {
         let forged = crate::domain::status_note_actor(clean.clone(), Some(role));
         let before = test_database_shape_snapshot(&store.connection);
         assert_work_marker_refusals(&mut store, &work, &claim, &forged);
-        let refusal = store.bind_control_session_with_work(
-            &work.project_id,
-            "status-control",
-            "Control",
-            &session,
-            &connection,
-            &forged,
-            Some(&binding),
-            ControlAssurance::TurnGated,
-            &[EffectClass::Observe],
-            1,
-            "forged",
-            at(3),
-        );
-        assert!(
-            matches!(refusal, Err(StoreError::InvalidWork(ref message)) if message.contains("status qualification")),
-            "{refusal:?}"
-        );
         assert_eq!(test_database_shape_snapshot(&store.connection), before);
+        assert_non_note_evidence_is_not_status(&mut store, &work, &binding, &forged);
     }
-    let bound = store
-        .bind_control_session_with_work(
-            &work.project_id,
-            "status-control",
-            "Control",
-            &session,
-            &connection,
-            &clean,
-            Some(&binding),
-            ControlAssurance::TurnGated,
-            &[EffectClass::Observe],
-            1,
-            "clean",
-            at(3),
-        )
-        .unwrap();
-    // Simulate an already-bound asserted actor: capture must independently
-    // refuse the marker, not rely only on validation during a new bind.
-    let forged =
-        crate::domain::status_note_actor(clean.clone(), Some(crate::domain::StatusNoteRole::Owner));
-    store
-        .connection
-        .execute(
-            "UPDATE control_sessions SET actor_json = ?1 WHERE session_id = ?2",
-            params![serde_json::to_vec(&forged).unwrap(), session.0],
-        )
-        .unwrap();
-    let before = test_database_shape_snapshot(&store.connection);
-    let refusal = store.checkpoint_control_turn_with_evidence(
-        &work.project_id,
-        &session,
-        &connection,
-        &bound.routing_token,
-        "not-yet-loaded-grant",
-        TurnNextIntent::Continue,
-        &[],
-        &[],
-        &[EnvironmentEvidenceInput {
-            source_basis: ExecutionSourceBasis {
-                git_tree: None,
-                workspace_id: "status-workspace".into(),
-                source_revision: "source-1".into(),
-                source_root_generation: None,
-                source_root_state: None,
-            },
-            environment_fingerprint: ObjectId::from_canonical_bytes(b"status environment"),
-            components: None,
-            observed_at: at(4),
-        }],
-        "forged-capture",
-        at(4),
-    );
-    assert!(
-        matches!(refusal, Err(StoreError::InvalidWork(ref message)) if message.contains("status qualification")),
-        "{refusal:?}"
-    );
-    assert_eq!(test_database_shape_snapshot(&store.connection), before);
-    assert_non_note_evidence_is_not_status(&mut store, &work, &binding, &forged);
 }
 
 fn assert_non_note_evidence_is_not_status(

@@ -2,8 +2,9 @@
 
 use super::{SqliteStore, StoreError, export_on_snapshot, with_origin_scope};
 use crate::task_sync::{
+    TaskSyncRefusal,
     notes::NoteOmissions,
-    progress::{ExportCapture, ExportCut, ExportProfile, FeedAnchor},
+    progress::{ExportCapture, ExportCut, ExportProfile, FeedAnchor, TaskChangeCapture},
 };
 use crate::{
     ProjectId, RestoredWorkEvidence, WorkEvent, WorkEvidence,
@@ -27,20 +28,8 @@ impl SqliteStore {
         self.work_read_snapshot(|store| {
             with_origin_scope(&store.connection, || {
                 let feed = FeedId::Project(project.clone());
-                let head = store.work_feed_head(&feed)?;
-                let anchor = if head == 0 {
-                    None
-                } else {
-                    let entry = store.work_feed_between(&feed, head - 1, head)?;
-                    Some(FeedAnchor {
-                        object_kind: entry[0].object_kind.clone(),
-                        object_id: entry[0].object_id.clone(),
-                    })
-                };
-                let cut = ExportCut {
-                    position: head,
-                    anchor,
-                };
+                let cut = current_cut(store, &feed)?;
+                let head = cut.position;
                 let full_reason = previous
                     .and_then(|previous| continuity(store, &feed, previous, head).err())
                     .transpose()?;
@@ -67,9 +56,73 @@ impl SqliteStore {
             })
         })
     }
+
+    /// The current feed cut and the tasks changed since `previous`, from the
+    /// changed-task index alone: no task is captured and no record decoded,
+    /// whatever the interval's length. `previous` must lie on the feed; a
+    /// basis ahead of the head or whose anchor moved is refused by name,
+    /// never answered with a full scan.
+    ///
+    /// # Errors
+    /// Refuses a discontinuous basis with
+    /// [`TaskSyncRefusal::IncrementalBasisUnavailable`]; returns other errors
+    /// when the feed or the index cannot be read.
+    pub fn capture_task_changes(
+        &self,
+        project: &ProjectId,
+        previous: &ExportCut,
+    ) -> Result<TaskChangeCapture, StoreError> {
+        self.work_read_snapshot(|store| {
+            let feed = FeedId::Project(project.clone());
+            let cut = current_cut(store, &feed)?;
+            // The anchor and the head bound alone: the interval itself is
+            // read through the index, so its entries are never fetched here.
+            if let Err(reason) = anchored(store, &feed, previous, cut.position) {
+                return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(reason?));
+            }
+            // A first capture names every task from the feed; a task written
+            // without a feed entry, as a graph load writes them, would be
+            // silently missing, so that capture refuses instead.
+            if previous.position == 0
+                && super::super::feed_tasks::has_unindexed_task(&store.connection, project)?
+            {
+                return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(
+                    "the project holds tasks that no project-feed entry names, so a first capture cannot name them",
+                ));
+            }
+            let changed = super::super::feed_tasks::changed_between(
+                &store.connection,
+                project,
+                previous.position,
+                cut.position,
+            )?;
+            Ok(TaskChangeCapture { cut, changed })
+        })
+    }
 }
 
-fn continuity(
+/// The project feed's head and the object at it.
+fn current_cut(store: &SqliteStore, feed: &FeedId) -> Result<ExportCut, StoreError> {
+    let head = store.work_feed_head(feed)?;
+    let anchor = if head == 0 {
+        None
+    } else {
+        let entry = store.work_feed_between(feed, head - 1, head)?;
+        Some(FeedAnchor {
+            object_kind: entry[0].object_kind.clone(),
+            object_id: entry[0].object_id.clone(),
+        })
+    };
+    Ok(ExportCut {
+        position: head,
+        anchor,
+    })
+}
+
+/// Whether `previous` lies on the feed: at or behind the head, with the
+/// object it names still at its position. Reads one entry, whatever the
+/// interval's length.
+fn anchored(
     store: &SqliteStore,
     feed: &FeedId,
     previous: &ExportCut,
@@ -89,6 +142,18 @@ fn continuity(
     } else if previous.anchor.is_some() {
         return Err(Ok("invalid zero feed anchor".into()));
     }
+    Ok(())
+}
+
+/// The full preparation's continuity: the anchor, then every entry of the
+/// interval fetched and its canonical family decoded.
+fn continuity(
+    store: &SqliteStore,
+    feed: &FeedId,
+    previous: &ExportCut,
+    head: i64,
+) -> Result<(), Result<String, StoreError>> {
+    anchored(store, feed, previous, head)?;
     let mut cursor = previous.position;
     while cursor < head {
         let through = cursor.saturating_add(1000).min(head);

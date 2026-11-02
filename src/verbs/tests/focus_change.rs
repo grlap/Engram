@@ -153,9 +153,9 @@ fn claim_discloses_the_move_and_the_claim_it_took() {
         claimed.text()
     );
     assert!(
-        claimed.text().contains(&format!(
-            "the host binds {first}'s claim from its next turn, not this one"
-        )),
+        claimed
+            .text()
+            .contains(&format!("future observations use {first}'s claim")),
         "{}",
         claimed.text()
     );

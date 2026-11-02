@@ -285,7 +285,7 @@ fn a_source_change_is_new_evidence_and_a_repeat_sighting_is_not() {
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     record(
         store,
         &judged(
@@ -300,7 +300,7 @@ fn a_source_change_is_new_evidence_and_a_repeat_sighting_is_not() {
     .expect("the failing evaluation");
 
     // The host reports a change again, at the revision already judged.
-    host.checkpoint(store, true, None, 40);
+    host.install_checks(store, true, None, 40);
     rerolled(
         record(
             store,
@@ -318,7 +318,7 @@ fn a_source_change_is_new_evidence_and_a_repeat_sighting_is_not() {
 
     // A change to another revision is new evidence.
     host.basis.source_revision = "content-revision-2".into();
-    host.checkpoint(store, true, None, 60);
+    host.install_checks(store, true, None, 60);
     record(
         store,
         &judged(
@@ -351,7 +351,7 @@ fn a_reported_change_to_the_judged_revision_is_no_new_evidence() {
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     // Judged mid-turn: the evaluator saw revision 2 before the host reported it.
     let mut failing = judged(
         &work,
@@ -368,7 +368,7 @@ fn a_reported_change_to_the_judged_revision_is_no_new_evidence() {
     record(store, &failing).expect("the failing evaluation");
     // The host reports that change at the end of the turn.
     host.basis.source_revision = "content-revision-2".into();
-    host.checkpoint(store, true, None, 40);
+    host.install_checks(store, true, None, 40);
     rerolled(
         record(
             store,
@@ -384,7 +384,7 @@ fn a_reported_change_to_the_judged_revision_is_no_new_evidence() {
         "the reported change to the judged revision",
     );
     host.basis.source_revision = "content-revision-3".into();
-    host.checkpoint(store, true, None, 60);
+    host.install_checks(store, true, None, 60);
     record(
         store,
         &judged(
@@ -512,7 +512,7 @@ fn the_observation_rule_reads_the_change_flag_and_the_revision_last_seen() {
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     record(
         store,
         &judged(
@@ -536,21 +536,21 @@ fn the_observation_rule_reads_the_change_flag_and_the_revision_last_seen() {
         )
     };
 
-    host.report(store, &[(false, Some("content-revision-2"))], 40);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 40);
     let request = pass(store, "quiet", 45);
     rerolled(
         record(store, &request),
         "a quiet sighting at another revision",
     );
 
-    host.report(store, &[(true, Some("content-revision-2"))], 50);
+    host.install_source_records(store, &[(true, Some("content-revision-2"))], 50);
     let request = pass(store, "flagged-after-quiet", 55);
     rerolled(
         record(store, &request),
         "a flagged change to a revision sighted since the failure",
     );
 
-    host.report(store, &[(true, None)], 60);
+    host.install_source_records(store, &[(true, None)], 60);
     let request = pass(store, "flagged-without-revision", 65);
     record(store, &request).expect("a flagged change with no revision is new evidence");
 }
@@ -589,7 +589,7 @@ fn an_accounted_unadmitted_change_is_new_evidence_whatever_revision_it_reports()
         let mut host = HostSession::bind(store, &work, &claim, 10);
         // A sighting, not a change, so the later report is accounted as a
         // change of its own rather than a repeat of this one.
-        host.checkpoint(store, false, None, 20);
+        host.install_checks(store, false, None, 20);
         let blocked_at = cut(store, &work);
         let blocked = record(
             store,

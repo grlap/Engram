@@ -60,7 +60,6 @@ pub struct Correlation {
     pub frame_seq: Option<u64>,
     pub request_id: Option<i64>,
     pub request_seq: Option<u64>,
-    pub grant_id: Option<uuid::Uuid>,
     pub attempt_fingerprint: Option<Fingerprint>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uncorrelated_reason: Option<CorrelationLoss>,
@@ -127,18 +126,9 @@ impl Fault {
         }
         let sqlite = match error {
             crate::StoreError::Sqlite(source) => Some(source),
-            crate::StoreError::ControlStoreBusy { source } => Some(source.as_ref()),
             _ => None,
         };
         if let Some(rusqlite::Error::SqliteFailure(sqlite, _)) = sqlite {
-            if matches!(error, crate::StoreError::ControlStoreBusy { .. }) {
-                return Self {
-                    code: "control_store_busy",
-                    reason: crate::storage::CONTROL_STORE_BUSY_MESSAGE,
-                    sqlite_code: Some(sqlite.extended_code),
-                    writer_admission: None,
-                };
-            }
             let code = match sqlite.code {
                 rusqlite::ErrorCode::DatabaseBusy => "sqlite_busy",
                 rusqlite::ErrorCode::DatabaseLocked => "sqlite_locked",
@@ -152,10 +142,6 @@ impl Fault {
             };
         }
         Self::fixed(crate::host::store_error_code(error))
-    }
-
-    pub fn control(code: crate::ControlRefusalCode) -> Self {
-        Self::fixed(code.as_str())
     }
 
     pub fn tool_error() -> Self {
@@ -197,8 +183,6 @@ impl Fault {
         let reason = match code {
             "invalid_argument" | "invalid_request" => "Check the documented input schema.",
             "stale_fence" => "Recover the current claim before retrying.",
-            "grant_expired" | "grant_not_begun" => "Evaluate and begin a fresh turn.",
-            "grant_scope_mismatch" => "Recover the current grant and its declared scope.",
             "control_request_expired" => {
                 "Retry the exact retained control request with a still-valid binding; preserve earlier uncertainty."
             }
@@ -342,20 +326,16 @@ pub(super) fn label(value: &str) -> &'static str {
         "forget",
         "search",
         "shutdown",
-        "session_bind",
-        "session_status",
+        "work_session_read",
         "control_connection_read",
-        "turn_grant_read",
         "named_root_bind",
         "named_root_read",
         "named_root_sighting_read",
         "acceptance_binding_read",
         "acceptance_verification_read",
-        "turn_evaluate",
-        "turn_begin",
         "execution_observe",
-        "turn_checkpoint",
         "verification_bind",
+        "verification_record",
         "startup",
     ];
     LABELS

@@ -110,8 +110,9 @@ JavaScript tracks the visible leaf and adds mobile navigation, keyboard-operated
 operating-system tabs, clipboard copying with a selection fallback, and
 motion controls. The working notebook is explicitly illustrative; it does
 not execute commands or connect to a real Engram store. Setup commands
-explicitly initialize an advisory notebook; enforced control requires the
-integration described in the [host checklist](host-checklist.md).
+initialize a local notebook with `engram init`; Engram never controls the
+agent's tools, and the host integration that records what the agent's work
+did is described in the [host checklist](host-checklist.md).
 
 ## The machine section
 
@@ -120,7 +121,7 @@ After the fourth manuscript leaf, four machine signals — **Boot**,
 primary users, coding agents, in a warm machine voice ("You will end. Your
 work won't."): the fourteen words as the agent's working vocabulary, recovery
 after context compaction, and the product's stated boundaries (identity is
-asserted, turn gating depends on host integration, Engram never calls a model, the demos execute
+asserted, Engram records what the host observes and controls no tool, Engram never calls a model, the demos execute
 nothing).
 
 The machine section uses black ceramic and chrome, cyan and magenta optical

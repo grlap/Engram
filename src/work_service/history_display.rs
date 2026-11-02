@@ -140,6 +140,12 @@ fn transition_detail(
         T::MemoryCaptured { .. } => "shared work memory".into(),
         T::TypedEvidenceAdded { evidence_kind, .. } => format!("{} evidence", evidence_kind.word()),
         T::Completed { .. } => "completed".into(),
+        T::SupersededByImport { reason, .. } => {
+            format!("retired by import without successful completion because {reason}")
+        }
+        T::ReconciliationHoldAbandoned { reason, .. } => {
+            format!("reconciliation hold abandoned because {reason}")
+        }
         T::Disposed {
             lifecycle,
             replacement_id,

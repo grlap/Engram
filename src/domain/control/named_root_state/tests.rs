@@ -1,8 +1,5 @@
 use super::NamedRootState;
-use crate::domain::{
-    ControlTurnBeginDecision, ObservationRootBasis, SessionId, SessionPhase, TaskId,
-    TurnBeginReceipt,
-};
+use crate::domain::ObservationRootBasis;
 use chrono::{DateTime, Utc};
 
 /// One state's wire entries, in the order the derived serializer writes them,
@@ -253,48 +250,6 @@ fn an_observation_root_basis_refuses_what_its_state_does_not_name() {
         for (text, expected) in tampered(&shape) {
             let error = serde_json::from_str::<ObservationRootBasis>(&basis(&text))
                 .expect_err("tampered basis");
-            assert!(error.to_string().contains(expected), "{text}: {error}");
-        }
-    }
-}
-
-// A begin receipt sits inside an internally tagged decision, which buffers
-// its content before decoding it; a stored receipt replays through it.
-#[test]
-fn a_begin_decision_refuses_what_its_receipt_state_does_not_name() {
-    let receipt = TurnBeginReceipt {
-        grant_id: "grant-1".into(),
-        session_id: SessionId("session-1".into()),
-        task_id: TaskId(uuid::Uuid::nil()),
-        phase: SessionPhase::TurnOpen,
-        tentative_cursor: None,
-        session_revision: 3,
-        begun_at: named_at(),
-        named_root: None,
-    };
-    let without = serde_json::to_string(&ControlTurnBeginDecision::Begin {
-        receipt: receipt.clone(),
-    })
-    .expect("decision");
-    let carrying = |state: &str| {
-        let open = without.strip_suffix("}}").expect("nested object");
-        format!(r#"{open},"named_root":{state}}}}}"#)
-    };
-    for shape in shapes() {
-        let decoded: ControlTurnBeginDecision =
-            serde_json::from_str(&carrying(&shape.text())).expect("valid decision");
-        assert_eq!(
-            decoded,
-            ControlTurnBeginDecision::Begin {
-                receipt: TurnBeginReceipt {
-                    named_root: Some(shape.state.clone()),
-                    ..receipt.clone()
-                }
-            }
-        );
-        for (text, expected) in tampered(&shape) {
-            let error = serde_json::from_str::<ControlTurnBeginDecision>(&carrying(&text))
-                .expect_err("tampered decision");
             assert!(error.to_string().contains(expected), "{text}: {error}");
         }
     }

@@ -27,6 +27,16 @@ pub(crate) const CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL: crate::argument_names::
 const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
     CASE
         WHEN candidate.lifecycle != 'open' THEN 'closed'
+        WHEN candidate.active_run_id IS NULL AND EXISTS (
+            SELECT 1 FROM work_runs retired
+            WHERE retired.work_id = candidate.work_id
+              AND retired.state = 'superseded_by_import'
+              AND retired.completion_seal_id IS NULL
+              AND retired.generation = (
+                  SELECT MAX(latest.generation) FROM work_runs latest
+                  WHERE latest.work_id = candidate.work_id
+              )
+        ) THEN 'waiting'
         WHEN (candidate.active_run_id IS NOT NULL AND NOT EXISTS (
             SELECT 1
             FROM work_runs run

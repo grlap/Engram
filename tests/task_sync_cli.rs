@@ -296,12 +296,7 @@ fn task_sync_cli_round_trips_a_git_folder_without_creating_runtime_state() {
         actor.attribution_context(),
         Some("injected task-sync operator context")
     );
-    for table in [
-        "control_sessions",
-        "work_session_state",
-        "work_runs",
-        "work_claims",
-    ] {
+    for table in ["work_session_state", "work_runs", "work_claims"] {
         let count: i64 = connection
             .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
                 row.get(0)

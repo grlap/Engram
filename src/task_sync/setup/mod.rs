@@ -8,6 +8,8 @@ mod materialize;
 mod policy;
 mod repository;
 
+pub(in crate::task_sync) use files::Directory as PrivateDirectory;
+
 pub(crate) use materialize::materialize;
 pub use materialize::{MaterializeReceipt, MaterializeSelection};
 

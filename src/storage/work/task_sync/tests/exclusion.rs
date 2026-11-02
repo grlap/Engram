@@ -1,11 +1,11 @@
 use super::*;
 use crate::{
     SessionId,
-    domain::{EffectClass, NoteRequest, NoteVisibility, Scope, TurnIntent, TurnPurpose},
+    domain::{NoteRequest, NoteVisibility, Scope},
 };
 
 #[test]
-fn task_sync_export_excludes_seeded_claim_grant_delivery_and_private_memory() {
+fn task_sync_export_excludes_seeded_claim_connection_delivery_and_private_memory() {
     let mut source = SqliteStore::open_in_memory().unwrap();
     let project = ProjectId("project-a".into());
     let work = source
@@ -53,32 +53,8 @@ fn task_sync_export_excludes_seeded_claim_grant_delivery_and_private_memory() {
         )
         .unwrap();
     assert!(matches!(private.scope, Scope::Agent { .. }));
-    let binding = crate::storage::test_support::bind_control_for(
-        &mut source,
-        "control-session-marker",
-        "bind-control",
-        &[EffectClass::Observe],
-        at(3),
-    );
-    let decision = source
-        .evaluate_control_turn(
-            &project,
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &TurnIntent {
-                idempotency_key: "private-grant-intent".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"private-grant-intent"),
-                purpose: Some(TurnPurpose::Ordinary),
-                requested_effects: vec![EffectClass::Observe],
-                resource_intents: Vec::new(),
-            },
-            at(4),
-        )
-        .unwrap();
-    let crate::ControlTurnDecision::Grant { grant } = decision else {
-        panic!("fixture grant");
-    };
+    let binding =
+        crate::storage::test_support::open_work_host(&mut source, "control-session-marker", at(3));
     let payload =
         CanonicalObject::freeze(&serde_json::json!({"private_delivery_marker": true})).unwrap();
     assert!(
@@ -89,7 +65,7 @@ fn task_sync_export_excludes_seeded_claim_grant_delivery_and_private_memory() {
                 crate::storage::StageWorkSessionDelivery {
                     expected_confirmed_through: 0,
                     expected_focused_work_id: None,
-                    expected_bound_task_id: None,
+
                     delivered_through: 0,
                     delivered_entries: &[],
                     delivery_payload: payload.bytes(),
@@ -123,7 +99,7 @@ fn task_sync_export_excludes_seeded_claim_grant_delivery_and_private_memory() {
         "active_run_id",
         "session_id",
         live_claim.claim_id.0.to_string().as_str(),
-        grant.grant_id.as_str(),
+        binding.connection_token.as_str(),
         private.version.as_str(),
     ] {
         assert!(

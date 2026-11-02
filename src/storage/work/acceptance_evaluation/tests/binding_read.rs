@@ -24,7 +24,7 @@ fn read_at(
         &host.project_id,
         &host.session_id,
         &host.connection_token,
-        &host.routing_token,
+        crate::storage::HostSessionAuthority::Work,
         &BindingReadRequest {
             work_id: work.work_id,
             expected_work_revision: work.revision,
@@ -840,13 +840,13 @@ fn a_read_refuses_what_does_not_hold_and_writes_nothing() {
         )),
         Refusal::StaleCut
     );
-    let mut wrong_routing = host.routing_token.clone();
-    wrong_routing.push('x');
+    let mut wrong_connection = host.connection_token.clone();
+    wrong_connection.push('x');
     let credential = fixture.store.read_acceptance_bindings(
         &host.project_id,
         &host.session_id,
-        &host.connection_token,
-        &wrong_routing,
+        &wrong_connection,
+        crate::storage::HostSessionAuthority::Work,
         &BindingReadRequest {
             work_id: work.work_id,
             expected_work_revision: work.revision,
@@ -1030,7 +1030,7 @@ mod candidates {
             &host.project_id,
             &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             &VerificationReadRequest {
                 work_id: work.work_id,
                 expected_work_revision: work.revision,
@@ -1679,13 +1679,13 @@ mod candidates {
             refused(read_at(&fixture.store, &host, &stale, head, 1, Some(&next))),
             Refusal::CursorBasisMismatch
         );
-        let mut wrong_routing = host.routing_token.clone();
-        wrong_routing.push('x');
+        let mut wrong_connection = host.connection_token.clone();
+        wrong_connection.push('x');
         let credential = fixture.store.read_acceptance_verifications(
             &host.project_id,
             &host.session_id,
-            &host.connection_token,
-            &wrong_routing,
+            &wrong_connection,
+            crate::storage::HostSessionAuthority::Work,
             &VerificationReadRequest {
                 work_id: work.work_id,
                 expected_work_revision: work.revision,

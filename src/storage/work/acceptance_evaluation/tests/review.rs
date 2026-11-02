@@ -938,7 +938,7 @@ fn the_word_accepts_full_record_ids_of_host_minted_verification_evidence() {
     let work = fx.work.clone();
     let claim = fx.claim.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
-    let passed = host.checkpoint(
+    let passed = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
@@ -1239,7 +1239,7 @@ fn observed_passes_are_classified_from_canonical_verification_evidence() {
     let work = fx.work.clone();
     let claim = fx.claim.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
-    let failed = host.checkpoint(
+    let failed = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Failed)),
@@ -1293,13 +1293,13 @@ fn verification_projection_mismatches_refuse_exactly() {
     let work = fx.work.clone();
     let claim = fx.claim.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
-    let failed = host.checkpoint(
+    let failed = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Failed)),
         20,
     );
-    let indeterminate = host.checkpoint(
+    let indeterminate = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Unknown)),
@@ -1486,7 +1486,7 @@ fn evaluated_completion_unions_verdict_citations_into_the_seal_evidence_and_chec
     let note = fx.evidence.clone();
     let uncited = evidence(store, &work, &claim, "runner", "uncited-evidence", 7);
     let mut host = HostSession::bind(store, &work, &claim, 10);
-    let passed = host.checkpoint(
+    let passed = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
@@ -1930,7 +1930,7 @@ fn a_corrupted_verification_projection_refuses_reads_and_completion_through_the_
     let work = fx.work.clone();
     let claim = fx.claim.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
-    let passed = host.checkpoint(
+    let passed = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),

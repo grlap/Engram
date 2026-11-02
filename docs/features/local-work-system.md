@@ -2,7 +2,7 @@
 
 > Normative references: [spec §2.6](../spec.md#26-local-work-graph--execution)
 > and [spec §9](../spec.md#9-local-work-reports--external-systems).
-> Related briefs: [behavioral control plane](behavioral-control-plane.md),
+> Related briefs: [Execution Observability](execution-observability.md),
 > [local tasks & reports](local-tasks-and-reports.md),
 > [tracker adapter](tracker-adapter.md),
 > [CLI & MCP](cli-and-mcp.md),
@@ -29,12 +29,12 @@ External systems are optional at every boundary:
                                                     ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │ Engram core                                                      │── optional publication
-│ local work graph · memory · coordination · behavioral control    │
+│ local work graph · memory · coordination · host observations     │
 │ evidence · report/finalization · canonical local store           │◄─► optional backup/portable/sync
 └──────────────────────────────┬───────────────────────────────────┘
-                               │ local control protocol
+                               │ local work-session protocol
                                ▼
-                     Host Enforcement SDK
+                     Host work session
                        ├── TermAl adapter
                        ├── generic CLI wrapper
                        ├── native runtime adapters
@@ -54,8 +54,8 @@ a precondition for valid local execution.
 | Component | Owns | Does not own |
 | --- | --- | --- |
 | Engram | Local work graph, readiness, dependencies, decomposition, claims, execution memory, evidence, completion, and publication intents | Starting/stopping model processes or silently changing external systems |
-| Host runtime | Model/session lifecycle, prompt delivery, tool interception, user approvals, and enforcement of Engram grants | Reimplementing work readiness or granting authority independently |
-| Agent or human | Goals, judgment, proposed plans, evidence, and choices allowed by current authority | Self-minting claims, grants, waivers, or publication permission |
+| Host runtime | Model/session lifecycle, prompt delivery, tool interception, user approvals, and recording host observations | Reimplementing work readiness or granting authority independently |
+| Agent or human | Goals, judgment, proposed plans, evidence, and choices allowed by current authority | Self-minting claims, waivers, or publication permission |
 | External adapter | Explicit source snapshot, optional backup/portable/sync, or separately authorized export/publication | Becoming an undeclared dependency or continuously mirroring tracker state |
 
 The host may choose a model and start a process. Engram determines which local
@@ -123,11 +123,10 @@ enforced through the existing typed obligations: creating, claiming or
 revising the item opens one `WorkObligation` per binding on the item's run,
 triggered by that planning event; host-minted `VerificationEvidence` of the
 bound kind (and pinned check) with a passed result satisfies it, with or
-without a source mutation on the run. Host-minted means recorded through the
-control turn checkpoint, the one path that records typed verification
-evidence: enforcement needs no grant and no turn-gated hosting, but a host
-that runs no control plane cannot mint that evidence and can only revise or
-waive a bound requirement. `done` refuses while the obligation is open, and
+without a source mutation on the run. Host-minted means recorded as
+registered verification through the host's work session: enforcement needs no
+grant, but a host that does not run Execution Observability cannot mint that
+evidence and can only revise or waive a bound requirement. `done` refuses while the obligation is open, and
 refuses when the newest verification of that kind at the completion cut did
 not pass, since a later failure outranks an earlier pass, or does not verify
 the run's latest observed source change under the same rule that matches
@@ -151,7 +150,7 @@ root's own workspace from before the binding is satisfied by a later check of
 the root's newest sighting. A later change in that root makes an older check
 stale. The host records the binding and each sighting's capture-time root
 generation, without deriving identity from path text; see
-[the host binding](behavioral-control-plane.md#5a-bind-a-named-source-root).
+[named source roots](execution-observability.md#named-source-roots).
 Pre-binding means by generation: a foreign change is displaced only when its
 sighting's generation is absent or below the binding's. Under a later name, a
 sighting stated under an earlier, still-bound name is displaced only when it
@@ -549,8 +548,8 @@ recorded while a root was bound needs a fresh check in the claim's active
 named root or that waiver, and with no root active `done` refuses it. In the
 ordinary unbound case,
 a source change with no matching passing test is recorded as untested instead
-of refusing ([behavioral control
-plane](behavioral-control-plane.md#5-checkpoint-the-turn)). Any other open
+of refusing ([obligations from source
+changes](execution-observability.md#obligations-from-source-changes)). Any other open
 obligation refuses sealing before any terminal work mutation. A required child
 seal is decoded and checked recursively, and every accepted seal carries the
 current obligation-schema binding.
@@ -1017,8 +1016,8 @@ revision and idempotency key.
   latest checkpoint cursor, acceptance results, and evidence ids. Any
   change to those facts makes an unconsumed completion decision stale.
 - A run has one ordinary executor and at most one live ordinary work claim. A
-  session may inspect or hold claims on multiple items under policy, but each
-  ordinary turn grant binds exactly one focused, claimed work item. Parallel
+  session may inspect or hold claims on multiple items under policy, but it
+  focuses one claimed work item at a time. Parallel
   executors claim distinct child runs. Changing focus never releases a claim.
 - Claim handoff, same-holder retake, and foreign-holder recovery increment a
   monotonic claim fence. Old sessions cannot complete or mutate after transfer
@@ -1032,7 +1031,7 @@ revision and idempotency key.
 - Project-bound sessions may complete, waive, cancel, reopen, and recover
   local work; exception paths retain attributed reasons and immutable audit
   events. External publication still requires an explicit human decision, and
-  an optional host control plane may independently mediate turns or actions.
+  a host may independently raise the bar for material external actions.
 - Exact duplicate creation is prevented by idempotency. A normalized
   parent/outcome fingerprint surfaces likely semantic duplicates before
   admission; it warns or creates a proposal rather than silently merging.
@@ -1043,9 +1042,8 @@ revision and idempotency key.
 - Cross-project hierarchy and prerequisites are out of V1. An external or
   cross-project dependency is represented as a typed blocker with provenance,
   not a fake local edge.
-- A work-bound control grant requires a live claim covering
-  that work. Releasing, handing off, or recovering the claim increments its
-  fence and invalidates stale work-bound authority.
+- Releasing, handing off, or recovering a claim increments its fence and
+  invalidates stale work-bound authority.
 
 Every admitted change appends a canonical `WorkEvent`. New events bind the
 complete post-transition prerequisite and active-blocker basis by hash, so a
@@ -1365,8 +1363,8 @@ the last item actually emitted.
 The `local-process-` prefix is reserved for generated process-default work
 sessions; a `local-process-v1-*` id may be reused for seven days, after which
 the caller must omit `--session-id` to receive a fresh process default. Live
-caller, planning-actor, handoff-recipient, and control session-bind
-participant and actor session ids are at most 64 UTF-8 bytes; longer values
+caller, planning-actor, and handoff-recipient actor session ids are at most
+64 UTF-8 bytes; longer values
 refuse before store effects. The same live length-only admit applies to
 graph-snapshot save or load operator actors,
 control-policy administrator actor sessions, and project-memory remember,
@@ -1377,7 +1375,7 @@ length-admitted. Historical stored ids are not rewritten.
 The transaction that creates a new process-default session row pays for one
 index-bounded reclamation page of at most 64 older inactive rows and their
 protocol attempts; operations under an existing row take the primary-key path
-and do no retention scan. Recent activity, an explicit control-session binding, staged
+and do no retention scan. Recent activity, staged
 delivery, a pending protocol attempt, a live claim, or an open handoff offer
 prevents reclamation. Those tables are operational only; canonical work,
 events, evidence, and result objects remain intact.
@@ -1790,8 +1788,9 @@ previous content fingerprint, unless the host has bound a named root for the
 claim. Then matching and freshness use the binding's exact workspace and
 generation; a foreign sighting never stands in for a check of that root.
 
-Every execution observation freezes the canonical obligation-rule-set id
-selected by the begun grant's project-policy epoch. The built-in set turns each
+Every accounted execution observation freezes the canonical
+obligation-rule-set id its policy basis names, which must be the project's
+current one. The built-in set turns each
 source-changing observation into one immutable test obligation on the run,
 independent of action outcome and source-basis availability. Each definition
 repeats the exact rule-set id, rule identity/version, trigger, and requirement;
@@ -1817,7 +1816,7 @@ selected rule-set id, rule, requirement, trigger, state, terminal
 evidence/resolution, and deterministic typed guidance. Neither MCP nor
 `work_update` accepts a waiver. The `engram authority waive-obligation` shell
 command is an operator-intended convention, not an authenticated boundary: it
-has no grant token or run-binding check, so any local process with the binary
+has no run-binding check, so any local process with the binary
 and store access can invoke it. The host-private `obligation_waive` operation
 has been removed. Revising or dropping an acceptance binding still clears its
 open obligation through an audited work update. Canonical resolutions retain
@@ -1829,7 +1828,7 @@ Completion first resolves the source-change definitions still open: the stock
 rule's receive completion's own waivers, except that a pre-binding foreign
 change is displaced under any source-change rule, and the changes a named root
 holds open, now or since it ended or was released, refuse (see
-[the host binding](behavioral-control-plane.md#5a-bind-a-named-source-root)).
+[sightings against a root](execution-observability.md#sightings-against-a-root)).
 Otherwise
 `work_complete` returns the typed `open_work_obligations` result with the
 shared page and remedy: record matching host verification, checkpoint it, then
@@ -1857,9 +1856,7 @@ work rather than relying on a no-op claim by the current holder.
 
 Agent-facing MCP and shell work use only the stable project plus non-empty
 asserted actor/session binding. There is no work grant file, hash, environment
-variable, flag, validity window, or revocation operation. The host-private
-behavioral-control channel may still use its separate turn grants; those
-tokens never authorize or appear in the local-work word surface.
+variable, flag, validity window, or revocation operation.
 
 `work_propose` is the low-ceremony decomposition path: an agent can submit a
 small plan in one call and either all children/edges appear or none do. The
@@ -2372,7 +2369,7 @@ do.
 
 ## Audited waivers and model autonomy
 
-Agent-facing local-work words are not grant-gated. A stable project binding,
+Agent-facing local-work words need no grant. A stable project binding,
 non-empty asserted actor/session context, the current lifecycle, and fenced
 claim/handoff state determine whether a word can run. Actor text remains
 asserted context unless a stronger host mechanism verifies it.
@@ -2402,9 +2399,8 @@ waivers within those lifecycle rules. Recovery, cancellation, reopen, and
 waiver paths require attributed reasons where their audit contracts call for
 one. The project-bound session may record the waiver; the reason and immutable
 event make the exception attributable and auditable, not permission-bearing.
-External publication still requires an explicit human decision. A host that
-runs the optional behavioral-control plane may independently raise the bar for
-model turns or material external actions.
+External publication still requires an explicit human decision. A host may
+independently raise the bar for material external actions.
 
 Engram must show `allowed_next` and a typed recovery directive rather than
 making a model infer permissions by trial and error.
@@ -2534,59 +2530,27 @@ Until action outcomes are linked to `WorkRun`, V1 accepts only a
 **zero-linked-state** completion-drain attestation. Its historical resource-lease
 field remains empty; removing the lease engine does not fabricate a drain.
 An agent cannot complete by supplying arbitrary action ids or lease names.
-Binding exact reconciled action outcomes belongs to the deferred
-[action gates](action-gates.md) design.
 
-## Behavioral-control integration
+## Execution Observability integration
 
-Work calls describe intent. Separately, the host-private behavioral-control
-channel may mediate a model turn with its own short-lived grant. That
-control-plane grant binds:
+Work calls describe intent. Separately, a host that runs
+[Execution Observability](execution-observability.md) records, over its
+private work session, what it saw run, how the source changed and which
+registered checks passed, each bound to the exact claim epoch it observed:
 
 ```text
 work_id + work_revision + run_id
 claim_id + claim_fence
-project policy epoch + work admission epoch
-capability envelope + expiry
 ```
 
-`turn_begin` rechecks that basis immediately before prompt dispatch. There is
-no per-action check; it is not built. A model-facing MCP call can propose,
-query, checkpoint, or request a transition; it cannot mint or consume the
-host's grant.
-
-A planned SDK would take the ceremony out of the model loop; TermAl performs
-the built steps directly today:
-
-1. `before_turn` revalidates the optional portable writer epoch when due,
-   chooses or validates the bound work, and obtains and begins a grant. The
-   grant carries no context: the agent reads its work context through `next`.
-2. (not built) `before_action` maps a host tool call to effects/resources and
-   obtains a single-use action grant when required.
-3. (not built) `after_action` records the minimal outcome receipt even if the
-   model turn later fails.
-4. `after_turn` persists the model's structured checkpoint and reconciles
-   work-claim state before another turn.
-
-Unchanged work context is represented by a small cursor/hash receipt, not
-repeated prose. Refusals name the exact condition and safe recovery operation.
-The TermAl adapter is the first full integration target; generic wrappers can
-only claim coverage for processes and tools they actually mediate. Native
-runtime adapters and the custom-agent library share the same conformance
-suite and assurance labels.
-
-No replayable grant token appears in an agent-visible MCP response. Grants and
-their consumption stay on the private host channel; the model sees only
-references, obligations, reasons, and allowed next operations. Human
+Nothing there admits or refuses a model turn, and a model-facing MCP call can
+propose, query or request a transition but never records a host observation.
+No host-private value appears in an agent-visible MCP response; the model sees
+only references, obligations, reasons, and allowed next operations. Human
 authorization is a distinct attributed object or delegation, never a prose
-`reason` field that the model can manufacture.
-
-Work verbs do not add another admission round trip. Pre-turn delivery carries
-focus, delta, obligations, and current fences in one bounded envelope; the
-host uses that basis on the private channel. Material actions create outcome
-metadata at the action boundary. Semantic checkpoints add meaning and
-evidence, but mutation is never conditioned on the model first writing a
-status sentence.
+`reason` field that the model can manufacture. Semantic checkpoints add
+meaning and evidence, but mutation is never conditioned on the model first
+writing a status sentence.
 
 ## Optional external intake, storage, and publication
 
@@ -2642,7 +2606,7 @@ the source without silent loss. This is interoperability, not mirroring.
 
 ## Durability modes and integrity
 
-Engram reports durability separately from behavioral control and from external
+Engram reports durability separately from host observations and from external
 publication:
 
 | Mode | Off-host copy | Writer model | Normal remote reads |
@@ -2690,8 +2654,7 @@ A portable payload contains canonical shared objects, the local work graph,
 feed ordering, evidence references, schemas, and a manifest. A graph backup
 copy contains only what the copy-kind table of
 [off-host backup](off-host-backup.md#copy-kinds) lists for it, and restores
-no claim at all. Neither restores a live `WorkClaim`, control session,
-delivery state, or grant. A full-store backup copy is the exception: it
+no claim at all. Neither restores a live `WorkClaim` or delivery state. A full-store backup copy is the exception: it
 restores every row as stored, under the preconditions that
 [off-host backup](off-host-backup.md#restore) sets. In a portable payload, immutable claim lifecycle
 facts may remain for audit, but an
@@ -2796,13 +2759,13 @@ The smallest coherent implementation sequence is:
 1. Define dense per-feed cursor identity, then add canonical work
    items/events, graph projections, local roots, hierarchy, prerequisites,
    ready queries, claims, and evidence-gated completion.
-2. Bind the control scope/work run, memory feed, and turn grants to
+2. Bind host observations, the memory feed and registered verification to
    work revisions and claim fences.
 3. Ship the six-operation agent protocol plus administrative CLI/query views,
    assignment, deferral, human decisions, and use Engram to track its own
    local implementation work.
-4. Add the TermAl Host Enforcement SDK adapter and conformance suite; follow
-   with the generic wrapper and native/custom integrations.
+4. Add the TermAl Execution Observability adapter; follow with the generic
+   wrapper and native/custom integrations.
 5. Add deterministic recovery snapshot/restore, scheduled portable push plus
    explicit cross-machine handoff/divergence refusal, integrity tests, and
    round-trip Beads import/export for migration and dogfooding.

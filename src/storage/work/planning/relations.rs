@@ -95,6 +95,7 @@ pub(super) fn change_work_prerequisite_with_validation_on(
         return Err(StoreError::WorkNotOpen(item.work_id));
     }
     if add {
+        super::super::task_sync::reconciliation::refuse_held_on(transaction, prerequisite.work_id)?;
         if prerequisite.lifecycle == WorkLifecycle::Completed {
             return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
                 prerequisite.work_id,

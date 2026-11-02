@@ -79,7 +79,7 @@ fn setup(name: &str) -> (Fixture, WorkItem, ObjectId, HostSession) {
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     (fixture, work, note, host)
 }
 
@@ -100,8 +100,8 @@ fn a_quiet_sighting_at_an_undeclared_revision_is_named() {
     );
     record(store, &declared).expect("the declared evaluation records");
     // An earlier mismatch, then the newest: the newest decides.
-    host.report(store, &[(false, Some("content-revision-4"))], 30);
-    host.report(store, &[(false, Some("content-revision-3"))], 40);
+    host.install_source_records(store, &[(false, Some("content-revision-4"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-3"))], 40);
 
     let named = status_observation(store, &work).expect("the deciding observation");
     assert_positioned(store, &named);
@@ -178,7 +178,7 @@ fn a_change_to_the_declared_revision_is_not_named() {
         ),
     )
     .expect("the declared evaluation records");
-    host.report(store, &[(true, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(true, Some("content-revision-2"))], 30);
     assert_eq!(
         freshness(store, &work),
         Some((recorded.evaluation.clone(), None))
@@ -186,9 +186,9 @@ fn a_change_to_the_declared_revision_is_not_named() {
     assert_eq!(status_observation(store, &work), None);
 
     // A quiet mismatch, then a change back to the declared revision.
-    host.report(store, &[(false, Some("content-revision-3"))], 40);
+    host.install_source_records(store, &[(false, Some("content-revision-3"))], 40);
     assert!(status_observation(store, &work).is_some());
-    host.report(store, &[(true, Some("content-revision-2"))], 50);
+    host.install_source_records(store, &[(true, Some("content-revision-2"))], 50);
     assert_eq!(freshness(store, &work), Some((recorded.evaluation, None)));
     assert_eq!(status_observation(store, &work), None);
 }
@@ -212,8 +212,8 @@ fn the_first_undeclared_change_is_named() {
         ),
     )
     .expect("the declared evaluation records");
-    host.report(store, &[(true, Some("content-revision-5"))], 30);
-    host.report(store, &[(false, Some("content-revision-2"))], 40);
+    host.install_source_records(store, &[(true, Some("content-revision-5"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 40);
     let named = status_observation(store, &work).expect("the deciding observation");
     assert_positioned(store, &named);
     assert!(named.source_changed);
@@ -226,14 +226,14 @@ fn the_first_undeclared_change_is_named() {
 fn an_undeclared_evaluation_names_the_revision_judged_at_its_cut() {
     let (mut fixture, work, note, mut host) = setup("project-deciding-undeclared");
     let store = &mut fixture.store;
-    host.report(store, &[(false, Some("content-revision-2"))], 22);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 22);
     let read = cut(store, &work);
     record(
         store,
         &judged_again(&work, &note, read, None, "undeclared", 25),
     )
     .expect("the evaluation records");
-    host.report(store, &[(false, Some("content-revision-3"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-3"))], 30);
     let named = status_observation(store, &work).expect("the deciding observation");
     assert_eq!(
         named.evaluated_revision.as_deref(),
@@ -254,7 +254,7 @@ fn a_check_after_the_cut_names_no_observation() {
     let store = &mut fixture.store;
     let read = cut(store, &work);
     record(store, &judged(&work, &note, read, None, 25)).expect("the evaluation records");
-    host.capture_environment(store, "content-revision-3", 30);
+    host.install_environment(store, "content-revision-3", 30);
     let (moved, observation, message, value) = refused(record(
         store,
         &judged_again(&work, &note, read, None, "after-the-check", 40),
@@ -328,9 +328,9 @@ fn every_show_surface_names_the_deciding_observation() {
     .expect("the declared evaluation records");
     let own_workspace = host.basis.workspace_id.clone();
     host.basis.workspace_id = "another-workspace".into();
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
     host.basis.workspace_id = own_workspace;
-    host.report(store, &[(false, Some("content-revision-3"))], 40);
+    host.install_source_records(store, &[(false, Some("content-revision-3"))], 40);
     let named = status_observation(store, &work).expect("the deciding observation");
 
     let viewer = AgentVerbs::new(
@@ -435,7 +435,7 @@ fn the_observations_window_pages_every_observation_once() {
     let database = fixture.directory.path().join("engram.sqlite3");
     let store = &mut fixture.store;
     for index in 0..40 {
-        host.report(
+        host.install_source_records(
             store,
             &[(false, Some(&format!("content-revision-{index}")))],
             30 + index * 3,
@@ -584,7 +584,7 @@ fn the_longest_fields_fit_the_refusal_and_every_show_surface() {
     // width is covered by the done-budget test's direct fixture below.
     host.basis.workspace_id = format!("w{}w", "\"".repeat(510));
     let long_revision = format!("v{}v", "\\".repeat(510));
-    host.report(store, &[(false, Some(long_revision.as_str()))], 30);
+    host.install_source_records(store, &[(false, Some(long_revision.as_str()))], 30);
 
     let (_, observation, message, value) = refused(record(
         store,
@@ -699,7 +699,7 @@ fn the_json_refusal_never_spells_the_locked_store_phrase() {
     };
     record(store, &declared()).expect("the declared evaluation records");
     host.basis.workspace_id = "C:/work/Database Is Locked".into();
-    host.report(store, &[(false, Some("database is locked"))], 30);
+    host.install_source_records(store, &[(false, Some("database is locked"))], 30);
     let error = record(
         store,
         &judged_again(
@@ -761,7 +761,7 @@ fn a_change_in_the_declared_workspace_is_exempt_and_another_workspace_is_named()
         if other {
             host.basis.workspace_id = "another-workspace".into();
         }
-        host.report(store, &[(true, Some("content-revision-2"))], 30);
+        host.install_source_records(store, &[(true, Some("content-revision-2"))], 30);
         if other {
             // The declared revision, but reported on another workspace than
             // the one declared: that change is not what was judged.
@@ -822,7 +822,7 @@ fn the_widest_admitted_text_fits_every_show_surface() {
     // formatting characters, so its widest admitted form is escaped quotes
     // and backslashes.
     host.basis.workspace_id = format!("w{}w", "\"".repeat(510));
-    host.report(
+    host.install_source_records(
         store,
         &[(false, Some(format!("a{}a", "\\".repeat(510)).as_str()))],
         20,
@@ -847,7 +847,7 @@ fn the_widest_admitted_text_fits_every_show_surface() {
     );
     request.attempt_key = Some(format!("k{}k", "\u{1}".repeat(254)));
     record(store, &request).expect("the undeclared evaluation records");
-    host.report(
+    host.install_source_records(
         store,
         &[(false, Some(format!("b{}b", "\"".repeat(510)).as_str()))],
         30,

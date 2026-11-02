@@ -8,7 +8,8 @@
 Design selected on 2026-10-09. The [explicit directory profile](task-planning-text.md)
 implements planning text, opt-in shared notes and informational machine activity.
 The [host-local opt-in and explicit prepared materialization](task-planning-text.md#materializing-a-selected-preparation)
-are implemented. Automated exchange and reconciliation remain planned. The
+are implemented, together with the internal exchange foundation below.
+Automated exchange and reconciliation remain planned. The
 contract below describes that broader target. This replaces sequential
 single-writer handoff as the selected personal cross-machine workflow.
 Previous portable writer-epoch, release/acquire, dedicated-ref and scheduled
@@ -21,6 +22,129 @@ Linux reconcile through the same configured Git remote and ordinary code branch,
 then import locally. The shared Git remote is their meeting point, not an Engram authority;
 Engram has no hub. Platform transport/subprocess support must be verified per OS
 but does not change this model or transfer claims/runtime authority.
+
+## Reconciliation storage foundation
+
+The Model A storage slice retains immutable `task_sync_shared_import_version`
+and `task_sync_reconciliation_hold` objects. Durable imported-head rows point to
+the original import origin, an admitted folder-baseline delta, or its latest
+shared-version successor. Folder application advances heads only for changed
+task documents or shared membership, atomically
+with its baseline delta and result. Project-feed order selects admitted
+baselines; a previously shared member omitted from later complete membership
+has an explicit removed baseline. A local task that was never imported stays
+headless even when a folder contains it. Original
+creation records and links stay unchanged; a shared baseline is separate from
+current native planning edits. A reconciled outcome is a
+`ReconciledImportApplied` transition in the existing exchange ledger, beside the
+historical `ImportApplied` transition, with one outcome per prepared operation.
+It links the admitted folder-baseline delta rather than duplicating the shared
+graph inventory. Every versioned task appears in that same delta, including a
+version whose document is unchanged. The receipt binds the exact retained
+candidate fingerprint and resolved commit. Its after-basis is the delta
+inventory root, an internal membership comparison; it is distinct from the
+retained candidate planning fingerprint and supplies no authority assurance.
+
+One candidate hold retains the complete connected task scope and every run
+generation. Many durable run slots may name that same hold. A hold over tasks
+without runs still exists as a canonical fact; an empty slot query proves
+nothing about host responsibility. New affected claims, handoffs, governing
+planning and evaluations refuse while held.
+Original holders may renew, checkpoint, record evidence and release their own
+claims. A hold neither freezes files nor takes over a claim. The Work validator
+checks retained scope and slots inside the writer transaction; the core must
+separately prove admitted owners, enrollment and host fencing.
+
+`SupersededByImport` ends a run without successful completion, a completion
+seal or verification credit. Its audit event names the hold, prepared operation
+and reconciled receipt. Retired open work waits with explicit reopening guidance;
+reopening starts a fresh unclaimed generation. A retired tree can reopen its
+root first and then its retired children under that fresh root execution.
+This storage foundation supplies no public active-native apply or settlement
+shortcut. Responsible or unknown host execution still needs the joint host/core
+reconciliation path before final apply.
+
+The two durable tables and changed active-run index require full-store
+migration before installation. Ordinary migration preserves existing durable
+facts; it adds no guessed older-format conversion or compatibility path.
+A separate rebuildable active-work lookup includes zero-run holds. Placement
+and exact-hold resolution maintain it in the same transaction as their
+canonical facts; guarded deletion cannot silently admit unresolved work.
+Admission reads only its selected active hold. Doctor and explicit projection
+repair validate or reconstruct complete membership from canonical holds and
+their exact terminal outcomes. Supporting indexes bound selected-hold lookups;
+ordinary admission does not decode the project's historical hold ledger.
+Ordinary opening refuses an
+unconverted store without writing; projection repair cannot seed durable heads
+or invent holds, receipts or execution outcomes. Current-format export/import
+preserves actual heads and unresolved holds.
+
+## Internal exchange foundation
+
+The library stores host-local bindings and attributed progress as
+`task_sync_binding` and `task_sync_exchange_event` canonical objects in the
+existing object table. These records are excluded from task-text export. They
+pin the repository enrollment, the store's optional sync origin, branch,
+captured target configuration and profile, and record the store path, restore
+occurrence and feed cut as the caller observed them. Those observations are
+compared, never treated as the store's identity or as proof of continuity: the
+library does not itself read a restore record. Steps are ordered with explicit
+predecessors and sequences. Exact request retries compare the full attributed
+request. Competing activations, including a second enrollment for the same
+repository, and successors that bypass unresolved progress refuse.
+This adds no SQL table, column, index or global writer fence. Ordinary local
+writers remain usable; an exchange rechecks its complete planning basis rather
+than treating an old feed position as proof that nothing changed.
+
+Exchange-owned raw candidates outlive preparation's current/predecessor journal.
+Exact Git commit bytes, tree and ordered parents are pinned under operation-owned
+private refs. Missing, partial or divergent required artifacts need reconciliation;
+the library never recaptures a candidate or constructs a replacement commit as
+a recovery shortcut. A read-only inspection checks the selected branch, captured
+target and exact retained task blobs before a request can enter the ledger, and
+the same Git observations are made again immediately before every durable
+transition, so drift after inspection refuses rather than being recorded.
+
+Initial import and exact-repeat import use one SQLite writer transaction for
+graph validation, original provenance, the compact source-commit receipt and
+progress. Dry-run rolls back every staged database effect. Before an incoming
+request is prepared, an immutable private construction plan selects its record
+ids, actor, timestamps and canonical body comparisons. A retry reproduces those
+identified effects or refuses; a missing plan never permits reminting. Its build
+identity guard refuses reinterpretation by another encoder: any change of
+installed build, not only a format change, therefore strands a prepared but
+unapplied import, and so does a crash after a plan, candidate or witness file is
+written but before its SQL commit. Both block later operations on that binding
+until a reconciliation workflow exists, which this slice does not ship. An
+exact retry of an already-applied import compares the running build's planning
+basis with the stored one, so after a build change it may refuse too. An
+import plan is bounded at 2 MiB, about 5,000 tasks; a larger project cannot yet
+prepare an incoming exchange. The doctor checks stored receipts structurally;
+content fingerprints are compared only when a receipt is written. A detected restore,
+external state ahead of the ledger or local divergence requires explicit
+reconciliation. Replaying an indistinguishable pre-commit state with the same
+identified effects does not certify that no restore occurred.
+
+Outgoing progress records observations only. Recording `PushStarted` flushes an
+immutable private witness before committing its SQL event; a surviving witness
+without that exact event, or an event whose witness disappeared, preserves
+uncertainty. An absent or different current remote tip never proves that an
+earlier publication did not apply. It remains unresolved until an exact positive
+observation is recorded. Observations carry the caller's attribution, rather than
+independent network assurance. These calls dispatch no transport and publish no branch.
+
+The foundation is library-only. It does not expose an exchange CLI/MCP workflow,
+merge divergent/native graphs, reconcile real branch/index/shared files, enable a
+remote or transfer private execution state. Existing directory import retains
+its native/divergent-target refusals. The broader workflow below remains the
+target contract.
+
+Its import admits only an empty target or an exact repeat. That is a limit of
+this first slice, not of the product: two-way exchange between two active
+stores, each with its own local tasks and concurrent edits, is the required
+target. It records its outcome on the same binding and event chain, as a
+separate reconciled-import event beside the initial one, so no second receipt or
+binding registry is needed.
 
 ## User contract and Git layout
 

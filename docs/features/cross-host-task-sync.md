@@ -192,7 +192,7 @@ The following labels name design prerequisites, not shipped host APIs:
   execution across queued admission, explicit prompts, boot reconstruction,
   retry workers and late dispatch, while retaining queued requests.
 - **G3, original-operation recovery without first execution:** TermAl's half
-  retains the exact uncertain Evaluate/Begin intent and fences dispatch/recovery.
+  retains the exact uncertain operation intent and fences dispatch/recovery.
   Engram's half serializes original application against retirement and outcome
   recovery; every first-application path checks the authoritative terminal result.
   A positively unsent request may be retired by its exact owner under the fence.
@@ -200,8 +200,8 @@ The following labels name design prerequisites, not shipped host APIs:
   a missing outcome alone remains pending and cannot justify deletion or replay
   that first executes work.
 
-Both G3 halves are required. Existing `turn_grant_read` alone cannot resolve a
-lost Evaluate without a grant id or prevent late first application. A fresh ready
+Both G3 halves are required. A read alone cannot resolve a lost operation
+without its exact identity or prevent late first application. A fresh ready
 acknowledgement does not guarantee continuing process liveness: persistent
 fencing must survive crashes, orphan processes and late dispatch.
 

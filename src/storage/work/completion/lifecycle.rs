@@ -46,6 +46,7 @@ impl SqliteStore {
             return Ok(receipt);
         }
         let child = load_work_item(&transaction, request.work_id)?;
+        super::super::task_sync::reconciliation::refuse_held_on(&transaction, child.work_id)?;
         assert_revision(&child, request.expected_work_revision)?;
         let parent = child
             .parent_id
@@ -58,6 +59,7 @@ impl SqliteStore {
         let Some(parent) = parent.as_ref() else {
             return Err(refuse("the item has no parent"));
         };
+        super::super::task_sync::reconciliation::refuse_held_on(&transaction, parent.work_id)?;
         if child.child_requirement != ChildRequirement::Required {
             return Err(refuse(
                 "the child is optional and has no required-child barrier to waive",
@@ -152,7 +154,7 @@ impl SqliteStore {
         Ok(receipt)
     }
 
-    /// Reopens completed work as a clean run generation without reviving authority.
+    /// Reopens completed or import-retired work as a fresh unclaimed generation.
     ///
     /// # Errors
     ///
@@ -181,9 +183,30 @@ impl SqliteStore {
         }
         let mut item = load_work_item(&transaction, request.work_id)?;
         assert_revision(&item, request.expected_work_revision)?;
-        if item.lifecycle != WorkLifecycle::Completed {
+        super::super::task_sync::reconciliation::refuse_held_on(&transaction, item.work_id)?;
+        let latest_run: Option<String> = transaction
+            .query_row(
+                "SELECT run_id FROM work_runs WHERE work_id=?1 ORDER BY generation DESC LIMIT 1",
+                [item.work_id.0.to_string()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let retired = item.active_run_id.is_none()
+            && latest_run
+                .map(|id| {
+                    uuid::Uuid::parse_str(&id).map(WorkRunId).map_err(|_| {
+                        StoreError::InvalidWorkProjection("invalid latest run id".into())
+                    })
+                })
+                .transpose()?
+                .map(|id| load_work_run(&transaction, id))
+                .transpose()?
+                .is_some_and(|run| run.state == WorkRunState::SupersededByImport);
+        if item.lifecycle != WorkLifecycle::Completed
+            && !(item.lifecycle == WorkLifecycle::Open && retired)
+        {
             return Err(StoreError::InvalidWork(
-                "only completed work can be reopened".into(),
+                "only completed or import-retired work can be reopened".into(),
             ));
         }
         if item.parent_id.is_some() {
@@ -198,7 +221,11 @@ impl SqliteStore {
                  )
                  SELECT COUNT(*) FROM descendants
                  JOIN work_items item USING(work_id)
-                 WHERE item.lifecycle IN ('proposed', 'open')",
+                 WHERE item.lifecycle IN ('proposed', 'open')
+                   AND NOT (item.active_run_id IS NULL AND COALESCE((
+                       SELECT run.state FROM work_runs run WHERE run.work_id=item.work_id
+                       ORDER BY run.generation DESC LIMIT 1
+                   ), '') = 'superseded_by_import')",
                 [item.work_id.0.to_string()],
                 |row| row.get::<_, i64>(0),
             )?;
@@ -506,6 +533,7 @@ fn dispose_work_on(
         return Ok(Disposal { item, fresh: false });
     }
     let mut item = load_work_item(transaction, request.work_id)?;
+    super::super::task_sync::reconciliation::refuse_held_on(transaction, item.work_id)?;
     assert_revision(&item, request.expected_work_revision)?;
     if item.lifecycle != WorkLifecycle::Open {
         return Err(StoreError::WorkNotOpen(item.work_id));
@@ -727,6 +755,8 @@ fn waive_required_child_on(
     #[cfg(test)]
     super::super::cost::phase("waive.before_admission");
     let parent = load_work_item(transaction, request.parent_id)?;
+    super::super::task_sync::reconciliation::refuse_held_on(transaction, parent.work_id)?;
+    super::super::task_sync::reconciliation::refuse_held_on(transaction, request.child_id)?;
     assert_revision(&parent, request.expected_parent_revision)?;
     if parent.lifecycle != WorkLifecycle::Open {
         return Err(StoreError::WorkNotOpen(parent.work_id));

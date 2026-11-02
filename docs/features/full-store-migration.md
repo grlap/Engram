@@ -1,5 +1,9 @@
 # Full store migration
 
+The Windows [offline cutover command](offline-store-cutover.md) prepares and
+validates all stores before journaled activation in an approved stopped-consumer
+window. Rehearsal uses copies under `target/`.
+
 A store moves to a new durable format in two plain steps: export every row to a
 JSON file, then import that file into a new store in the current format. This
 is separate from [graph save and load](work-graph-snapshot.md), which shares a

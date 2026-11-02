@@ -5,7 +5,7 @@
 
 /// Canonical memory, work, evidence, and lifecycle object schema.
 pub const SCHEMA_VERSION: u16 = 1;
-/// Behavioral-control protocol schema.
+/// Host work-session protocol schema.
 pub const CONTROL_SCHEMA_VERSION: u16 = 1;
 /// Mutable control-policy selector/projection schema.
 pub const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 1;

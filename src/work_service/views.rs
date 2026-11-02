@@ -749,7 +749,7 @@ pub struct WorkHeldClaim {
     pub expires_at: DateTime<Utc>,
     /// Whether this item is the session's focus.
     pub focused: bool,
-    /// The binding session bind would accept for this claim, or null, as
+    /// The canonical work binding usable for this claim, or null, as
     /// while a handoff offer is pending. Null does not mean the claim is
     /// gone: the row is the claim.
     pub control_binding: Option<ControlWorkBinding>,

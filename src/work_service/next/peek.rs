@@ -89,7 +89,7 @@ impl LocalWorkService {
             let mut position = session.project_cursor;
             let mut changes = Vec::new();
             if wants_changes {
-                let (root, _) = work_delivery_boundary(
+                let root = work_delivery_boundary(
                     store,
                     &self.project_id,
                     &self.session_id,

@@ -109,7 +109,7 @@ fn a_temporary_or_in_memory_store_is_refused() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let session_id = SessionId("memory-session".into());
     let connection_token = store
-        .resume_control_connection(&session_id, Utc::now())
+        .resume_work_connection(&session_id, Utc::now())
         .unwrap();
     let mut server = HostControlServer {
         store,
@@ -118,7 +118,6 @@ fn a_temporary_or_in_memory_store_is_refused() {
         actor_id: "host-test".into(),
         session_id,
         connection_token,
-        work_session: false,
         source_skill: None,
         actor_context: None,
         actor_context_normalized: false,

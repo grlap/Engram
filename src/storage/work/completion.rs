@@ -42,21 +42,23 @@ use super::{
     WorkObligationWaiverFingerprint, WorkRelationBasis, WorkRelationBlockerBasis,
     empty_work_relation_basis,
 };
+#[cfg(test)]
+use crate::domain::{EnvironmentEvidence, ExecutionObservation};
 use crate::{
     CanonicalObject, ObjectId, RestoredRecord,
     domain::{
         AcceptanceResult, COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
         COMPLETION_OBLIGATION_SCHEMA_VERSION, ChildRequirement, CompleteWorkRequest,
         CompletionObligationBinding, CompletionSeal, ControlWorkBinding, DisposeWorkRequest,
-        EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition, MemoryAssertionEvent,
-        MemoryVersion, NamedRootBindingEvent, NamedRootBindingKind, OpenWorkObligation,
-        ReopenWorkRequest, RequiredChildWaiver, RootExecution, RootExecutionId, RootExecutionState,
-        SCHEMA_VERSION, SessionId, VerificationEvidence, WaiveRequiredChildRequest,
-        WaiveWorkObligationRequest, WorkBlocker, WorkCheckpoint, WorkClaim, WorkClaimId,
-        WorkClaimState, WorkCompletionRecoveryCause, WorkDisposition, WorkEvent, WorkEvidence,
-        WorkEvidenceKind, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
-        WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
-        WorkObligationState, WorkRun, WorkRunId, WorkRunState, WorkTransition,
+        FeedId, FeedPosition, MemoryAssertionEvent, MemoryVersion, NamedRootBindingEvent,
+        NamedRootBindingKind, OpenWorkObligation, ReopenWorkRequest, RequiredChildWaiver,
+        RootExecution, RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId,
+        VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkBlocker,
+        WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState, WorkCompletionRecoveryCause,
+        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer,
+        WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation, WorkObligationId,
+        WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkRun,
+        WorkRunId, WorkRunState, WorkTransition,
     },
     memory::Redactor,
 };
@@ -86,7 +88,9 @@ pub(crate) use obligation_guidance::{
 use obligation_guidance::{require_expected_obligations_on, require_projected_obligations_on};
 mod projections;
 mod repeat;
-pub(in crate::storage) use repeat::{newest_change_repeated_on, source_revision_repeats_on};
+pub(in crate::storage) use repeat::newest_change_repeated_on;
+#[cfg(test)]
+pub(in crate::storage) use repeat::source_revision_repeats_on;
 mod root_binding;
 
 use named_root::{
@@ -1456,7 +1460,7 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
             Some(&evidence.source_basis),
         )
         .map_err(|_| {
-            StoreError::InvalidControlSession(
+            StoreError::InvalidWork(
                 "applicability.tree requires an equal producer source_basis.git_tree".into(),
             )
         })?;
@@ -1494,6 +1498,7 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
     Ok(evidence_id)
 }
 
+#[cfg(test)]
 pub(in crate::storage) fn append_control_environment_evidence_on(
     transaction: &Transaction<'_>,
     evidence: &EnvironmentEvidence,
@@ -1643,6 +1648,7 @@ fn append_control_typed_evidence_on(
     Ok(object.key().clone())
 }
 
+#[cfg(test)]
 pub(in crate::storage) fn append_control_execution_observation_on(
     transaction: &Transaction<'_>,
     observation: &ExecutionObservation,

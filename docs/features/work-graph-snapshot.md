@@ -26,12 +26,10 @@ and not canonical-object interchange.
 
 - **Recreation across builds.** Every store schema marker stays 1 until
   release and a store from a different build is refused generically. Save
-  on the build that wrote the store, `engram init` on the new build with the
-  same `--required-assurance … --authorized-by …` bootstrap the project had,
-  re-apply any obligation rule set, load. The file carries no control policy —
-  that is host authority the operator asserts, never a
-  file — so a plain `init` would leave the recreated project on the fresh
-  default `turn_gated`. No migration chain, no carry script. Stores written
+  on the build that wrote the store, `engram init` on the new build,
+  re-apply any obligation rule set, load. The file carries no project policy —
+  that is host authority the operator asserts, never a file. No migration
+  chain, no carry script. Stores written
   by builds that predate the exporter keep the manual path in
   [development](../development.md).
 - **Sequential multi-machine work, by hand.** Save on host A, copy the file,
@@ -223,9 +221,11 @@ fingerprint. Files from the preceding format are refused as
 ## Load
 
 Load targets an empty project store: no work items, no work events, no
-project memories, and no memory tombstones under the destination project id
-(a freshly initialized store, with its policy rows and audit records, is
-empty). Emptiness is checked when validation starts and re-verified inside
+project memories, no memory tombstones, and no project-feed entry (such as a
+task-sync exchange baseline) under the destination project id (a freshly
+initialized store, with its policy rows and audit records, is empty). A load
+writes no feed entry, so loading into a project whose feed has begun would
+hide the loaded tasks from task-sync change capture. Emptiness is checked when validation starts and re-verified inside
 the write transaction, so a concurrent `add` or `remember` that lands in
 between produces the same refusal, never a store that mixes native and
 loaded state. A nonempty destination is refused with the typed
@@ -517,8 +517,8 @@ a nonempty destination where `engram restore --replace` overwrites one.
   checkpoints, seals, and evidence are never rebuilt from a file. A loaded
   store starts every item's execution from scratch with its history beside
   it.
-- Not a policy carrier: required assurance and obligation rule sets are
-  operator authority asserted at `init`, never restored from a file.
+- Not a policy carrier: obligation rule sets are operator authority,
+  never restored from a file.
 - Not a live sync path: two hosts loading the same file and both mutating
   produce two stores that Engram cannot reconcile. `doctor` says so; nothing
   pretends otherwise.
@@ -547,8 +547,8 @@ a nonempty destination where `engram restore --replace` overwrites one.
   reported as already saved; the manifest may differ only in exported-at and
   exporting build, and a manifest whose digest or summary disagrees with the
   re-canonicalized body is refused on load.
-- Load refuses a nonempty destination (items, events, memories, or
-  tombstones), a project-id mismatch, a format-fingerprint mismatch, a
+- Load refuses a nonempty destination (items, events, memories, tombstones,
+  or a started project feed), a project-id mismatch, a format-fingerprint mismatch, a
   dangling relation or record target, a duplicate id, ref, or memory key, a
   parent or prerequisite cycle, a graph outside the destination policy's
   depth or open-descendant bounds, a lifecycle that disagrees with

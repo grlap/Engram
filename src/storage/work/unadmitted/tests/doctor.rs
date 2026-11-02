@@ -42,11 +42,16 @@ fn doctor_refuses_a_forged_receipt() {
         .store
         .connection
         .execute(
-            "UPDATE control_operation_results
+            "UPDATE work_operation_results
              SET result_json = CAST(replace(CAST(result_json AS TEXT),
                  '\"reason\":\"explicit_audit\"', '\"reason\":\"finished_run\"') AS BLOB)
-             WHERE operation = 'execution_observe' AND idempotency_key = 'doctor-turn'",
-            [],
+             WHERE operation = 'host_execution_observe' AND idempotency_key = ?1",
+            [serde_json::to_string(&(
+                &fixture.work.project_id,
+                &fixture.host.session_id,
+                "doctor-turn",
+            ))
+            .unwrap()],
         )
         .expect("forge the receipt");
     assert!(!healthy(&fixture.store));

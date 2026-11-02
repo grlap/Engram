@@ -29,6 +29,23 @@ impl fmt::Debug for ExchangeTarget {
 }
 
 impl ExchangeTarget {
+    /// Compare this captured effective target without disclosing its URL/helper
+    /// configuration. This fingerprint grants no publication authority.
+    ///
+    /// # Errors
+    /// Refuses a canonical serialization failure.
+    pub fn fingerprint(&self) -> Result<crate::ObjectId, crate::storage::StoreError> {
+        Ok(crate::CanonicalObject::freeze(&(
+            &self.selection.remote,
+            &self.selection.reference,
+            &self.url,
+            &self.helpers,
+            &self.helper_config,
+        ))?
+        .key()
+        .clone())
+    }
+
     /// Capture one configured HTTPS destination used for both fetch and push.
     /// This is configuration observation, not network, import or publication.
     ///

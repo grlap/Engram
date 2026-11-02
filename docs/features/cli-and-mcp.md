@@ -5,7 +5,7 @@
 > [local work system](local-work-system.md),
 > [atomic work plans](atomic-work-plan.md),
 > [local tasks & reports](local-tasks-and-reports.md), and
-> [behavioral control plane](behavioral-control-plane.md).
+> [Execution Observability](execution-observability.md).
 
 One core library owns object storage, scope authorization, work binding,
 ordered deltas, and keyed project-memory operations. The CLI and MCP server
@@ -172,7 +172,7 @@ variable exists, Engram uses a synthetic process actor instead of refusing.
 Durable actor provenance distinguishes `defaulted:os_user_environment`,
 `defaulted:process_actor`, and `defaulted:process_session`. Explicit actor and
 session ids are recorded verbatim. A live caller, planning-actor,
-handoff-recipient, or control session-bind participant and actor session id is
+or handoff-recipient actor session id is
 admitted only when it is at most 64 UTF-8 bytes; longer values refuse before
 store, session, focus, attempt, offer, planning-write, or task-bind effects,
 with a bounded error that does not echo the rejected id. The same live
@@ -275,10 +275,9 @@ An `add`, `claim` (with or without `--under`), `note`, `gate`, `evaluate`,
 `done`, `update` or `handoff` that actually moves this session's focus says
 so. Its receipt carries a
 top-level `focus_change` and one text line after the headline, for example
-`focus moved from w-… to w-…; the host binds w-…'s claim from its next turn,
-not this one`. The object holds `from` and `to` (work refs, either `null`
+`focus moved from w-… to w-…; future observations use w-…'s claim`. The object holds `from` and `to` (work refs, either `null`
 when there was or is no focus). When the target has a live claim of this
-session that session bind would accept, as captured in this word's own
+session that the work-session operations would accept, as captured in this word's own
 transactions, it adds `claim_id` and `claim_fence`. When that claim has a
 bound named source root, it adds `workspace_id` and `generation`. A
 workspace name longer than 192 bytes as JSON or as escaped shell text is
@@ -1050,9 +1049,9 @@ Rules that matter:
   numbers it. `show` marks each bound criterion `[requires host KIND verification]`
   and counts bound criteria behind a clipped list. A bound criterion opens a
   typed obligation on the item's run, so `done` refuses until the host has
-  minted passing verification evidence of that kind (recorded through the
-  control turn checkpoint; a host that runs no control plane can only revise
-  or waive a bound requirement); a newer failed check of
+  minted passing verification evidence of that kind (recorded as registered
+  verification; a host that does not run Execution Observability can only
+  revise or waive a bound requirement); a newer failed check of
   that kind contradicts it, and a check that does not verify the run's latest
   observed source change (judged by the source revision it ran against, not
   by when it was recorded) no longer carries it. Both are enforced at `done`,
@@ -1705,7 +1704,7 @@ coordinated schema-barrier cutover are part of the host-private contract.
 
 The [host checklist](../host-checklist.md) is the authoritative base-tier
 recipe, including the Claude Code hooks form; this section keeps the
-two-tier contract and the control-plane details. Integration has two tiers,
+two-tier contract and the work-session details. Integration has two tiers,
 and a host picks per project:
 
 - **Base** — the tracker for agents: when the project's integration is enabled
@@ -1718,19 +1717,17 @@ and a host picks per project:
   prompt, not an immediate runtime-authored continuation. Any host that can register
   an MCP server and run a hook can do this. It carried every benefit measured
   so far.
-- **Turn-gated** (`turn_gated`, the optional tier of the checklist and of
-  [shipped today](../shipped.md)) — behavioral control: the host-private
-  JSON-lines turn channel below (bind, evaluate, begin, checkpoint), dispatch
-  withheld until a turn is granted, fenced work claims, obligations
-  before completion. Opt-in per project, off by default, for hosts that need
-  enforcement rather than coordination.
+- **Execution Observability** (the optional tier of the checklist) — the
+  host-private JSON-lines work session below records host observations of
+  execution, source and tests, named source roots and registered
+  verification against the claims they belong to. It is switched on or off
+  per project in the host, and never admits or refuses a model turn; see
+  [Execution Observability](execution-observability.md).
 
-The agent-facing MCP interface is **advisory**. A model can omit an MCP call,
-so that surface alone cannot enforce synchronization, ownership, or
-finalization. The separate host-private JSON-lines channel implements the turn
-lifecycle; grants are not exposed as tools with which the agent can authorize
-itself. Everything below is the host's and operator's business: the agent
-words above never require it.
+A model can omit an MCP call, so the agent-facing MCP interface alone cannot
+enforce synchronization, ownership, or finalization, and nothing in it grants
+the agent authority. Everything below is the host's and operator's business:
+the agent words above never require it.
 
 ### Build identity and doctor refusals
 
@@ -1740,12 +1737,6 @@ full audit; readiness is not full-store health and never returns `healthy`.
 Like readiness, `doctor` examines an existing store and never creates one:
 without an `engram.db` it refuses with `store_not_initialized`, whatever
 else stands in the project directory, such as a restore's staging file.
-
-For missing-session reconciliation evidence, use
-[`control-session-inspect`](control-session-inspection.md). It reads exact
-session/grant presence in one admitted snapshot without checkpointing or
-changing state. The host retains its own quiescence and ownership fences;
-neither all-false presence nor a refusal authorizes clearing state.
 
 `engram --version` prints `engram VERSION build FP12 (exe EXE12, schema
 SCHEMA12, rev REV)`, where `REV` is the source revision's first twelve hex
@@ -1864,17 +1855,11 @@ the [SQLite contract](sqlite-store.md#canonical-bytes-contract).
 
 ```bash
 export ENGRAM_HOME=/absolute/host-local/path
-engram init --required-assurance advisory \
-  --authorized-by host-operator
+engram init
 engram doctor
 
 # Fast read-only store/policy admission; not a full audit or execution authority.
 engram readiness --json
-
-# Read-only snapshot evidence for exact retained handles; not reconciliation.
-# Any refusal supplies no absence evidence; the host must retain its own fences.
-engram control-session-inspect --target-session-id session-id \
-  --retained-grant-id grant-id --json
 
 # When ordinary open refuses a corrupt control-policy chain, inspect only that
 # immutable family. This mode is read-only, enables no service/mutation API,
@@ -1909,15 +1894,10 @@ projections when repair is needed.
 # printed apart from that answer, in full, as asserted and unchecked.
 engram doctor --check-landings [--repo PATH] [--json]
 
-# Host/operator boundary: activate a new immutable policy version. The
-# optional expected policy id is the `id=` reported by doctor and prevents a stale
-# operator from overwriting a concurrent policy update.
-engram control-policy set-required-assurance turn_gated \
-  --authorized-by host-operator \
-  --idempotency-key enable-host-turn-mediation \
-  --expected-policy-hash <active-policy-id>
-
-# Select a bounded typed obligation set.
+# Host/operator boundary: select a bounded typed obligation set as a new
+# immutable policy version. The optional expected policy id is the `id=`
+# reported by doctor and prevents a stale operator from overwriting a
+# concurrent policy update.
 engram control-policy set-obligation-rule-set \
   --input @obligation-rules.json \
   --authorized-by host-operator \
@@ -2569,8 +2549,8 @@ under the [destination admission contract](off-host-backup.md#restore-occurrence
 Engram supplies no guard, and current TermAl project flags do not close the
 independent-writer gap. Restore changes no row. It prints,
 read from the checked copy with one clock reading, the number of unexpired
-active claims and of unexpired issued grants with when the last of each
-expires, and the number of begun turns; a restored claim serves only its old
+active claims and when the last of them expires (`as_of`, `unexpired_claims`,
+`claims_expire_by`); a restored claim serves only its old
 session, so an item still held refuses a new session's claim
 (`work_claim_held`) until that claim expires and is then recovered the
 ordinary way. `backup status` and `doctor` show the record as `restore:
@@ -2624,9 +2604,8 @@ pending record written while the home was spelled differently, by case or
 as a relative path, names its staging file outside this spelling and is
 refused; run the abandonment with the home spelled as it was then.
 
-Actor context currently binds only the work/MCP service. The behavioral
-control plane keeps its existing actor/session and environment-evidence
-attribution contract.
+Actor context binds the work/MCP service and the work session, which records
+it on its attribution, never on the principal.
 
 The optional actor context can equivalently arrive through
 `ENGRAM_ACTOR_CONTEXT`; it is fixed when the CLI invocation or MCP connection
@@ -2637,10 +2616,10 @@ without opening SQLite. A failed store operation rolls back before the next call
 connection.
 
 The same variable, `ENGRAM_MCP_PHASE_TRACE=1`, at `engram control` start
-traces the host-private `engram control` transport too. Its records differ
+traces the host-private work-session transport too. Its records differ
 from the MCP records described next; they and their correlation are
 described under the
-[control phase trace](behavioral-control-plane.md#opt-in-control-phase-trace).
+[work-session phase trace](execution-observability.md#opt-in-phase-trace).
 
 `ENGRAM_MCP_PHASE_TRACE=1` at `engram mcp` start turns on a phase trace for
 diagnosing slow calls. Any other value, or none, leaves stderr phase tracing
@@ -2833,14 +2812,8 @@ such as a directory in its place), `undecodable` (content that is not UTF-8)
 or `empty` (blank content). For those work words,
 text and `--json` emit
 `project_resolution_failed` on stderr with exit status 1 and no stdout.
-The operator commands `readiness --json` and `control-session-inspect --json`
-instead emit structured refusals on stdout and exit 1; see the
-[readiness receipt](host-readiness.md#refusals) and
-[inspection receipt](control-session-inspection.md#refusals).
-Inspection uses `control_session_inspection_refused` with `phase:"resolve"`,
-null `project_id`/`database`, and omitted selectors and presence fields for
-resolution failures, including a missing home. It does not use the work-word
-`project_resolution_failed` code or distinguish a separate `home_required` code.
+The operator command `readiness --json` instead emits structured refusals on
+stdout and exits 1; see the [readiness receipt](host-readiness.md#refusals).
 For the work words, error details name the reason, attempted `project_file`,
 `searched_directory`, `cwd` (null if unavailable), selection rule and remedy.
 The `next` command uses `--project-file 'PROJECT_DIRECTORY/.engram-project'`
@@ -2853,50 +2826,15 @@ single backslashes, and escapes every ASCII control and non-ASCII character
 backslash sequence in a path looks like an escape there, so `--json`, which
 keeps `details.project_file` as the raw path, is the unambiguous form.
 
-`doctor` verifies every canonical object plus
-record-bound control projection, reports the active immutable policy id, epoch,
-required assurance, selected obligation-rule-set id, built-in effect
-envelope, and live
-issued/begun turns, and visibly warns that action gating, organizational
-authority mediation, and action-outcome reconciliation are unavailable. V1's
-development no-op redactor provides no secret or PII protection.
-Doctor audits recorded state and reports the configured assurance requirement;
-it does not verify that every caller is mediated by a host.
+`doctor` verifies every canonical object plus record-bound projection,
+reports the active immutable policy id, epoch and selected obligation-rule-set
+id, and warns on stderr that V1's development no-op redactor provides no
+secret or PII protection. Engram provides no organizational-authority
+mediation, and doctor prints no warning about it. Doctor audits recorded
+state; it does not verify what a host observed or what an agent did outside
+Engram.
 
-So that silence cannot pass for enforcement, doctor also prints one
-`Control activity:` line, and `control.activity` in JSON. Each value is a
-time, or `never` when the store has recorded none:
-- the last session activity: the largest update time of any control
-  session, which is a bind or any later change to that session, because the
-  store keeps no separate bind time;
-- the last turn begun and the last turn settled, each the largest recorded
-  time;
-- the last turn evaluation, the creation time of the most recently appended
-  evaluation;
-- the begin times of the oldest and newest open turns, begun and not settled;
-- the latest work recorded, which is when the most recently appended record
-  of the project's work feed was stored, to the second.
-
-When the policy requires at least `turn_gated`, `control.mediation_warnings`
-and stderr report two things:
-- work recorded more than 10 minutes after the last turn activity, or with no
-  turn ever, unless a turn is open and younger than 60 minutes;
-- any turn that has stayed open for 60 minutes or more.
-
-These two limits are one constant pair in the code. `control.mediation_limits`
-and a stderr line always state them, whether or not a warning fired. The times
-come from rows the store already keeps, through bounded reads in one snapshot
-that scan no work history. Only doctor reads them; `init` and `control-policy
-show` do not. When a recorded time cannot be read, doctor keeps the rest of its
-control report: `control.activity` is null, `control.activity_error` names the
-value, and stderr says that unmediated work cannot be reported. The times
-describe recorded activity, so they cannot prove that every mutation was
-mediated, and a young open turn in one session can mask another session's
-unmediated work. The store records nothing while a turn runs, so a healthy
-long turn and a wedged one look alike until the 60-minute limit. Readiness
-reports none of this.
-
-`engram doctor --json` performs the same checks and keeps those warnings on
+`engram doctor --json` performs the same checks and keeps that warning on
 stderr while emitting a machine-readable report on stdout. Its `project_id`
 and canonical absolute `database` path give a host the stable pair used to key
 project-local authority queries. Its `control.acceptance_evaluation` names the
@@ -2906,8 +2844,10 @@ needs a fresh source fingerprint; the text report prints the same policy on one
 resolved. On Windows it never exposes the verbatim-path prefix (`\\?\`), and
 UNC paths use their ordinary `\\server\share` form. When integrity is
 unhealthy and the active control envelope cannot be decoded, the report still
-prints with `healthy: false`, `control: null`, and a `control_error`; independent
-limitations remain on stderr before the command exits nonzero.
+prints with `healthy: false`, `control: null`, and a `control_error`; stderr
+then also states that control diagnostics are unavailable and that the
+report provides no enforcement assurance, beside the redactor warning, before
+the command exits nonzero.
 
 If normal open itself refuses because the active control-policy chain is
 corrupt, `engram doctor --recover-policy` uses a separate existing-file,
@@ -2939,40 +2879,32 @@ preserving every other projection and advertisement. It refuses existing or
 damaged target objects and any other schema mismatch. It does not replace the
 full repair or full integrity audit.
 
-On a fresh store, plain `engram init` defaults to `turn_gated`;
-`--required-assurance` may instead select `advisory`, `turn_gated`, or
-`action_gated` for that first policy and requires `--authorized-by`;
-the resulting epoch-one authority object records that operator
-choice as asserted context. Plain `engram init` remains an
-idempotent create-or-verify operation and preserves any existing active
-policy. Explicitly passing a different bootstrap value for an existing store
-fails instead of silently changing policy.
-`engram control-policy set-required-assurance` records asserted operator
-attribution, creates immutable authority and policy objects, atomically
-advances the active policy id and epoch, and supports an optional
-compare-and-swap policy id while preserving the selected obligation rule set.
-Its required idempotency key
-binds the complete normalized intent and persists the exact receipt in that
-same transaction. A retry after restart or an uncertain response returns the
-original receipt even though its expected policy id is now stale; reusing
-the key for another intent is a typed conflict.
+On a fresh store, `engram init` installs the built-in policy at epoch one
+with synthetic system attribution. It remains an idempotent create-or-verify
+operation and preserves any existing active policy.
 
-Policy administration requires no justification text. Neither explicit
-bootstrap nor any `control-policy` setter accepts `--reason`; policy authority
-records carry the attributed operator and selected policy, not a reason field.
-This does not change the reasons required for separate waiver operations.
+Policy administration requires no justification text. No `control-policy`
+setter accepts `--reason`; policy authority records carry the attributed
+operator and selected policy, not a reason field. This does not change the
+reasons required for separate waiver operations.
 
 `engram control-policy show` prints the active policy as JSON: `policy` (the
-record id a compare-and-swap names), `epoch`, `required_assurance`,
-`obligation_rules`, `acceptance_evaluation` and `supported_effects`. It reads
+record id a compare-and-swap names), `epoch`, `obligation_rules` and
+`acceptance_evaluation`. A policy version written before turn gating was
+removed stays readable as stored. It reads
 the policy head and changes nothing, so a host asks it whenever it needs the
 admitted evaluator modes; the `doctor` report carries the same keys but runs
 the whole-store audit first.
 
-The sibling operator-only `set-obligation-rule-set` command selects a
-validated canonical rule set with the same atomic policy successor,
-compare-and-swap, attribution, and replay contract; it is not an MCP tool or
-host turn-protocol operation. Its `--input <JSON|@file>` is limited to 64 KiB
+The operator-only `set-obligation-rule-set` command records asserted
+operator attribution, creates immutable authority and policy objects, and
+atomically advances the active policy id and epoch, with an optional
+compare-and-swap policy id. Its required idempotency key binds the complete
+normalized intent and persists the exact receipt in that same transaction. A
+retry after restart or an uncertain response returns the original receipt
+even though its expected policy id is now stale; reusing the key for another
+intent is a typed conflict. It is not an MCP tool or work-session
+operation. Its `--input <JSON|@file>` is limited to 64 KiB
 of raw input, including any UTF-8 BOM. For files, one leading BOM is removed
 after the limit check. The input must be UTF-8. Unknown fields are rejected
 at every nested V1 object. The input passes through the same typed validator
@@ -2982,16 +2914,8 @@ environment: `required_environment` is refused by name, like any other unknown
 field. Re-supplying the active set under a fresh key
 records an exactly replayable `changed=false` receipt. Rollback likewise
 re-supplies the desired prior JSON; a rule-set id alone is never accepted as
-activation authority. Reapplying the active assurance under a fresh key also
-records an exactly replayable no-op receipt. Issued grants from the prior
-epoch fail begin with `policy_epoch_changed` and require one fresh evaluation;
-if the new requirement exceeds the host's declaration, that fresh evaluation
-instead fails `control_assurance_insufficient` because assurance is checked
-before epoch adoption. Already-begun grants remain checkpointable under their
-frozen basis. Selecting `action_gated` through either initialization or the
-setter prints a warning that no V1 host can bind at that level plus the
-`set-required-assurance turn_gated` recovery command. The operator identity is
-asserted host context, not authenticated administration.
+activation authority. The operator identity is asserted host context, not
+authenticated administration.
 
 `engram work` exposes the fourteen agent words; `--json` after any word prints
 the structured receipt (the existing shape plus `reminders` and `next`)
@@ -3361,20 +3285,21 @@ successful historical retries keep their original receipts.
 
 A successful claim receipt includes
 `control_binding { root_execution_id, work_id, run_id, work_revision,
-claim_id, claim_fence }`, ready to pass unchanged to host-private
-`session_bind`. The same live tuple appears as `focus.control_binding`;
+claim_id, claim_fence }`, the held-work binding the host-private
+work-session operations accept, such as `execution_observe` and
+`verification_record`. The same live tuple appears as `focus.control_binding`;
 `focus.run` also exposes `root_execution_id` and `work_id`, while
 `focus.claim` exposes the claim and fence components. `work_revision` is the
 focused work item's revision—the claim receipt's top-level `revision`—not the
-claim projection's own revision counter. A binding appears only when
-`session_bind` would accept it. The calling session's live claim proposes the
-tuple, and the same validation bind runs decides. A claim with a pending
+claim projection's own revision counter. A binding appears only when the
+work-session operations would accept it. The calling session's live claim
+proposes the tuple, and the same validation those operations run decides. A claim with a pending
 handoff offer therefore shows no binding, though `focus.claim` still shows the
 claim; so would a claim under a closed ancestor or outside the active root
 execution. No binding while `focus.claim` shows the calling session's live
-claim means the session still holds the claim but bind would refuse it now;
-`session_bind` with an earlier binding for it is refused as stale until a later
-read shows the binding again. This holds when an answer is built: a claim
+claim means the session still holds the claim but the work-session
+operations would refuse it now; an earlier binding for it is refused as stale
+until a later read shows the binding again. This holds when an answer is built: a claim
 retried with the same idempotency key returns the stored original receipt,
 binding included, so a host reads the current binding with `work core inspect`,
 not from a replayed receipt.
@@ -3386,18 +3311,18 @@ connection: it refuses a missing or uninitialized store rather than creating
 one, selects no focus, stages or discards no delivery page, appends nothing,
 registers no session, and carries no focus-bound memory index. Selecting a
 different item with `work core focus` is not a side-effect-free read: it
-discards a staged delivery page and changes the item that bare agent words and
-the control context act on. Core focus, the focus nested in core next, and
+discards a staged delivery page and changes the item that bare agent words act
+on. Core focus, the focus nested in core next, and
 inspect always carry `control_binding`: the
-binding when the calling session holds the item's live claim and
-`session_bind` would accept it, and an explicit `null` otherwise, never a
+binding when the calling session holds the item's live claim and the
+work-session operations would accept it, and an explicit `null` otherwise, never a
 missing key. Because only the calling session's
 claim yields a binding, the host must use the agent's own session id.
 Null and an absent key never mean different things; these reads always emit
 the key, with null meaning no bindable claim. The binding goes stale when the
 holder's planning update changes the item
 revision or when a lapsed claim is retaken with a new fence; the host then reads
-it again and rebinds between turns. A pending handoff offer hides the binding.
+it again before its next work-session request. A pending handoff offer hides the binding.
 Cancelling the offer restores the same binding, and so does letting it expire
 while the claim is still live. An offer never outlives its claim, so the two
 can lapse together; then no binding returns, and retaking the claim gives a new
@@ -3405,13 +3330,14 @@ fence and a new binding. Accepting the offer moves the claim to the recipient
 under a new fence, so the offering session gets no binding back and the
 recipient gets a new one.
 
-A host that must choose which held claim to bind uses `work core held`. It
+A host that must choose which held claim to name uses `work core held`. It
 lists every item in the project on which the calling session holds a live
 claim: `work_id`, `short_ref`, `claim_id`, `claim_fence`, `expires_at`,
 `claimed_at` (when this session acquired the claim, by claiming it or by
 accepting a handoff; renewals leave it unchanged), `focused` (whether the item
-is the session's focus), and `control_binding`, the binding `session_bind`
-would accept, computed as focus and inspect compute it, or an explicit `null`.
+is the session's focus), and `control_binding`, the binding the work-session
+operations would accept, computed as focus and inspect compute it, or an
+explicit `null`.
 A row with a null binding is still a held claim, for example one with a
 pending handoff offer. Only the holder may revise a claimed item, and its
 revision re-accepts the claim at the new revision, so the row shows a fresh
@@ -3543,140 +3469,73 @@ the ambient query/focus views. Stats, stale/orphan diagnostics, approval
 decisions, import/export, and report publication remain administrative tools
 over the same core. Successful model responses are terse; refusals return a
 stable code plus a satisfiable remedy. Full durable receipts go to the host. No
-replayable control-plane turn grant token appears in model-visible MCP
-output. Agent-facing work itself has no grant token.
+host-private value appears in model-visible MCP output. Agent-facing work has
+no grant token.
 
 One capture powers peer context and the ordered feed. The host may use a
 mailbox as a doorbell, but must not relay full state or make the agent repeat
 the same fact into another status ledger.
 
-### Shipped host-private turn channel
+### Host-private work-session channel
 
-`engram control` is a long-lived stdio process. It accepts one JSON object per
-line and returns one `{ "status": "ok", "result": ... }` or typed error line.
-An open or connection-resume failure consumes at most one bounded first frame
-without dispatching it, replies with terminal `control_startup_busy` or
+`engram control --work-session` is a long-lived stdio process for the host's
+work session. It accepts one JSON object per line and returns one
+`{ "status": "ok", "result": ... }` or typed error line. An open or
+connection-resume failure consumes at most one bounded first frame without
+dispatching it, replies with terminal `control_startup_busy` or
 `control_startup_refused`, and exits nonzero. The host must evict that worker;
 only busy permits bounded safe re-admission. Neither code proves that startup
-made no durable changes. See [Terminal startup failures](behavioral-control-plane.md#terminal-startup-failures)
-for the exact frames, input bounds and reader-first deployment requirement.
-The runtime session and asserted actor are fixed by process arguments:
-`--actor-id`, `--session-id`, and the optional `--actor-context` (or
-`ENGRAM_ACTOR_CONTEXT`) that the work words and the MCP server also accept. A
-host passes one context to every channel of a session; the control connection
-normalizes it the same way and records it on its attribution, never on the
-principal.
+made no durable changes. See [Terminal startup failures](execution-observability.md#terminal-startup-failures)
+for the exact frames and input bounds. The runtime session and asserted actor
+are fixed by process arguments: `--actor-id`, `--session-id`, and the optional
+`--actor-context` (or `ENGRAM_ACTOR_CONTEXT`) that the work words and the MCP
+server also accept. A host passes one context to every channel of a session;
+the work-session connection normalizes it the same way and records it on its
+attribution, never on the principal.
 
-With `--work-session`, the process serves ordinary association and evidence.
-Startup rotates the existing connection fence without expiring or changing
-retained control grants or session phase. `work_session_read` takes only
-`{"operation":"work_session_read"}` and returns the fixed `project_id`,
-`session_id`, `work_session: true` and capabilities `host_work_v1` and
-`verification_record_v1`. It also returns
+Startup rotates the connection fence, so a still-live predecessor for the same
+session fails its next operation with `control_connection_superseded`.
+`work_session_read` takes only `{"operation":"work_session_read"}` and returns
+the fixed `project_id`, `session_id`, `work_session: true` and capabilities
+`host_work_v1` and `verification_record_v1`. It also returns
 `verification_evidence_git_tree_applicability_v1: true` only when the serving
 connection observes the exact current applicability barrier. This read writes
-nothing and requires no control bind or status.
-
-The ordinary route accepts the named-root, acceptance-read, observation and
-verification operations listed below, with their existing payloads and
-receipts. Omit `routing_token`; a supplied string is accepted but conveys no
-ordinary authority, and null is refused. Work, claim, source and connection
-fences still apply. Turn bind/status/evaluate/begin/checkpoint are unavailable
-on this route. Without `--work-session`, the legacy turn channel remains
-available during the coordinated consumer transition. Both routes share one
-connection fence per session, so an old sidecar must exit before its ordinary
-replacement opens. See [Ordinary host work and evidence](behavioral-control-plane.md#ordinary-host-work-and-evidence).
+nothing. Work, claim, source and connection
+fences apply to every operation. Nothing on this channel admits, delays or
+refuses a model turn; see [Execution Observability](execution-observability.md).
 
 The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
-| `work_session_read` | None. Read ordinary route identity and evidence capabilities, including the conditional git-tree applicability advertisement. |
-| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`; an exact retry of the latest bind key returns the current status instead. Binding creates no task or join event. Its result carries the session status. |
-| `session_status` | Read current phase, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and, for a work-bound session, the claim's `named_root` state |
-| `control_connection_read` | None. Takes no fields. Read which store this serving connection opened. A fail-closed contract: no platform can yet prove the opened file, so it refuses with `control_connection_identity_unavailable` after checking the connection is current; see [Reading which store a control connection serves](behavioral-control-plane.md#reading-which-store-a-control-connection-serves) |
-| `turn_grant_read` | None. Read one grant from this session's history by exact `grant_id`, using current connection and `routing_token` credentials and one snapshot. Return `found` with persisted state and begin/checkpoint timestamps, or `not_found`; write and expire nothing. Evidence only, with no begin fence or replay authority; see [Exact grant evidence](behavioral-control-plane.md#exact-grant-evidence) |
-| `turn_evaluate` | Derive membership, phase, policy and work binding from SQLite and persist a decision plus optional grant |
-| `turn_begin` | Recheck the grant's basis, then consume the issued grant; for a work-bound session the receipt carries the claim's `named_root` state |
-| `turn_checkpoint` | Atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
+| `work_session_read` | None. Read the work session's identity and evidence capabilities, including the conditional git-tree applicability advertisement. |
+| `control_connection_read` | None. Takes no fields. Read which store this serving connection opened. A fail-closed contract: no platform can yet prove the opened file, so it refuses with `control_connection_identity_unavailable` after checking the connection is current; see [Reading which store a connection serves](execution-observability.md#reading-which-store-a-connection-serves) |
 | `named_root_bind` | Append a claim's named source-root event, `bound` or `ended`, to the project, root and run feeds |
 | `named_root_read` | None. Read one claim's named root on its run, for any run and claim of the project: identities, run and claim lifecycle, the derived `named_root` state, the newest root event by its real id, and the run-feed cut, from one snapshot. A `named_root_read_refused` error carries `reason`: `run_unknown`, `claim_not_current_for_run` or `other_project`; its message and the successful claim block are unchanged |
-| `named_root_sighting_read` | None. Read, for an item's run at a cut (the head by default), the named root recording an evaluation would select there and whether it has the initial sighting recording requires, with the binding event, the sighting record and whether the binding moved since the cut, from one snapshot; it needs no routing token or live holder; see [Reading a root's initial sighting before an evaluation](behavioral-control-plane.md#reading-a-roots-initial-sighting-before-an-evaluation) |
-| `execution_observe` | Append one record of execution the host observed without admission (a turn seen after it started, a change between turns, or a check inside such a turn) to the project, root and run feeds. It creates no grant, begin or turn status, renews no claim and credits no check. Under `account_if_eligible`, naming the project's current policy, an eligible reported change accounts at its own position and opens the selected rule set's obligations; an ineligible one is kept as `audit_only` with its reason; see [Record execution observed without admission](behavioral-control-plane.md#5b-record-execution-observed-without-admission) |
+| `named_root_sighting_read` | None. Read, for an item's run at a cut (the head by default), the named root recording an evaluation would select there and whether it has the initial sighting recording requires, with the binding event, the sighting record and whether the binding moved since the cut, from one snapshot; it needs no live holder; see [Reading a root's initial sighting before an evaluation](execution-observability.md#reading-a-roots-initial-sighting-before-an-evaluation) |
+| `execution_observe` | Append one host observation (a turn the host observed, a change between turns, a check inside such a turn, or a measured source sighting) to the project, root and run feeds. It renews no claim and credits no check. Under `account_if_eligible`, naming the project's current policy, an eligible reported change accounts at its own position and opens the selected rule set's obligations; an ineligible one is kept as `audit_only` with its reason; see [Host observations](execution-observability.md#host-observations) |
+| `verification_record` | Record the terminal results of a durably registered host run as typed verification, one record per completed stage, with the run's Git input and outcomes; see [Registered verification](execution-observability.md#registered-verification) |
 | `acceptance_binding_read` | None. Read, for one item on its active run, what satisfied each bound criterion: the obligation completion selects, its recorded resolution, and the original verification with its producer, in pages pinned to the run-feed cut the first page captures; see [Reading what satisfied a bound criterion](acceptance-evaluation.md#reading-what-satisfied-a-bound-criterion) |
 | `acceptance_verification_read` | None. List, for one criterion of an item on its active run, every host verification of its bound kind up to a caller-named cut that must be the run's head, with each record's id, kind, fingerprint, result, source basis, position and producer, in run-feed order and in pages with exact counts; it judges nothing; see [Listing the candidate verifications of a criterion](acceptance-evaluation.md#listing-the-candidate-verifications-of-a-criterion) |
-| `verification_bind` | Bind one native passed check to 1 to 16 other open items the session holds on the same named-root workspace, in one transaction: one verification record per target on its own run, with a typed `bound_from`, satisfying only what that target's own obligation rules allow. Any failure refuses the whole request with `verification_bind_refused` and typed `details`, writing nothing; an exact retry replays the stored receipt. It creates no observation, turn or focus change; see [Binding one check to several items](acceptance-evaluation.md#binding-one-check-to-several-items) |
+| `verification_bind` | Bind one native passed check to 1 to 16 other open items the session holds on the same named-root workspace, in one transaction: one verification record per target on its own run, with a typed `bound_from`, satisfying only what that target's own obligation rules allow. Any failure refuses the whole request with `verification_bind_refused` and typed `details`, writing nothing; an exact retry replays the stored receipt. It creates no observation or focus change; see [Binding one check to several items](acceptance-evaluation.md#binding-one-check-to-several-items) |
 
 The `named_root` state, `none`, `bound` or `unbound_by_release`, is the
 authoritative read a host uses to decide when to name a root again; see
-[Bind a named source root](behavioral-control-plane.md#5a-bind-a-named-source-root).
+[A claim's root state](execution-observability.md#a-claims-root-state).
 
-On the legacy channel, the bind response supplies the `routing_token` used on later calls. A grant
-carries no delivery page, and there are no recovery turns: the work context an
-agent sees comes from `next`, which keeps its own staged delivery. A new
-bind that succeeds leaves the session `ready`, so it may request a turn at once;
-`turn_evaluate` still admits or refuses that turn by its usual checks. An
-exact retry of the session's latest bind key instead returns its current
-status, phase unchanged. While
-hosts move off the old fields, `turn_evaluate.purpose` may be `ordinary` or
-absent (any other value is an `invalid_request`), and `turn_begin.delivery_tokens` may
-be `[]` or absent; a non-empty list is refused with `grant_scope_mismatch`
-once the earlier `turn_begin` checks pass.
-The checkpoint receipt's `confirmed_cursor` repeats its `cursor`, the position
-of the checkpoint event in the task's write-only audit index. Exact retry
-results are stored as operational records and survive a process restart, but a
-newly opened control connection invalidates unbegun grants and, when it
-invalidates one, returns a `turn_open` session with no begun turn to `ready`
-(an exited session stays exited); old results never resurrect authority. The
-new connection also fences a still-live predecessor, whose next operation
-fails with `control_connection_superseded`. A begun grant is not
-silently replayed or discarded: `session_status.open_grant_id` identifies the
-required checkpoint and `open_grant_state` distinguishes `issued` from
-`begun`. A fresh `turn_evaluate` key atomically supersedes an
-issued-but-unbegun grant and records an immutable transition bound to the
-replacement decision. An already-begun grant is never superseded: its
-session stays `turn_open`, so the evaluation is refused, with
-`turn_already_open` once the checks that come earlier in the fixed evaluation
-order have passed. A begun turn exposes no replayable prompt because its
-outcome may be uncertain; the host closes it with a report. Reusing a key for a
-different intent fails.
+Exact retry results are stored as operational records and survive a process
+restart. Reusing a key for a different intent fails with
+`control_operation_idempotency_conflict`.
 
-A native local-work bind supplies `work_binding` with
-`root_execution_id`, `work_id`, `run_id`, `work_revision`, `claim_id`, and
-`claim_fence`. Storage verifies that exact tuple against the session's live
-claim and copies it into every turn-grant basis. Ownership means
-`claim.holder == session_id` for the MCP actor session that claimed the run;
-the asserted `actor_id` is audit context and never substitutes for that holder
-check. A malformed, cross-project, or currently peer-owned bind fails as
-`work_claim_mismatch`. A tuple that canonical history proves belonged to this
-session but whose revision, fence, claim, handoff, run, root execution, or
-expiry moved before bind fails as `stale_fence`, telling the adapter to reread
-and rebind. The same movement after bind refuses evaluation or begin with
-`stale_fence`. Omitting `work_binding` binds only the shared control scope,
-without a work-claim binding; that session cannot append run execution observations.
-
-For `session_bind`, `session_status`, `turn_evaluate`, `turn_begin` and
-`turn_checkpoint`, `control_store_busy` is a transient error under the configured SQLite busy
-policy. It certifies that this invocation committed no changes: either
-`BEGIN IMMEDIATE` returned `SQLITE_BUSY` or `SQLITE_LOCKED` without starting
-a transaction, or a statement before `COMMIT` returned one of those codes
-and an explicit rollback succeeded. `COMMIT` failures, rollback failures and
-other SQLite errors remain `storage_error`, with no such guarantee. A
-`SQLITE_LOCKED` error need not wait for the busy timeout.
-
-Retry the exact retained operation and unchanged payload, with its original
-idempotency key if it has one, on the same control connection, preserving
-its still-valid binding. A busy `session_status` applied no grant expiry;
-retry its unchanged routing-token request on that connection without an
-idempotency key. A bind retries its original request even when no binding
-exists yet. A begin retains its exact grant, tokens and durable preparation; a
-checkpoint retains its exact report, grant and intent. Busy alone never
-invalidates a binding or authorizes a fresh bind, evaluation, begin or
-provider delivery. These operations take the write lock even for a status
-read or an idempotent replay, so a busy reply does not prove that an earlier
-invocation failed to commit, that a grant has not already expired, or that
-its turn never began. Preserve prior uncertainty and exact replay or
-reconciliation; stale authority stays held.
+Work-session writes do not certify a busy store. When `BEGIN IMMEDIATE`, or
+a statement before `COMMIT`, returns `SQLITE_BUSY` or `SQLITE_LOCKED`, the
+reply is the generic `storage_error`, like `COMMIT` failures, rollback
+failures and other SQLite errors, and it carries no guarantee that nothing
+was committed. A `SQLITE_LOCKED` error need not wait for the busy timeout.
+Treat the outcome as unknown: retry the exact retained operation and
+unchanged payload, with its original idempotency key if it has one, and let
+exact replay or reconciliation settle it. Preserve any earlier uncertainty
+about that key.
 
 `redaction_refused` answers a request whose text the pre-write redactor
 refused. It is definitive: the invocation recorded nothing, and the same
@@ -3685,80 +3544,16 @@ carries the redactor's own reason, to which Engram adds none of the refused
 text. The shipped development redactor never refuses, so no host request
 produces this code today.
 
-`control_request_expired` can be returned by every control operation:
-`session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
-`turn_checkpoint`, `named_root_bind`, `execution_observe`, `verification_bind`
-and the read operations. Reads check the allowance only before dispatch.
-The code certifies only that this invocation committed no changes, because
-no transaction started or explicit rollback succeeded before `COMMIT`.
-Retry only the exact retained operation and unchanged payload, with its
-original idempotency key if it has one, on the current connection with a
-still-valid binding. A bind retains its original request even when no
-binding exists yet. Preserve the exact grant, tokens, report and intent;
-the refusal neither closes a grant nor authorizes a fresh bind, evaluation,
-begin or provider delivery. It does not resolve an earlier uncertain
-attempt, prove the request was unsent or mean that no process started.
-A host timeout without this response remains unknown. For the cooperative
-15-second allowance, late commit settlement and bounded escalation after
-repeated expiry, see
-[Control request allowance](behavioral-control-plane.md#control-request-allowance).
-
-`turn_checkpoint.observations` accepts at most 64 host facts containing
-`observation_id`, `action_fingerprint`, `effect`, `outcome`, and
-`source_changed`. An observation may also carry
-`source_basis { workspace_id, source_revision }` and `observed_at`, and,
-with `source_changed=true`, `reported_source_change`: how the host
-established the change, `content_comparison`, `assumed_missing_baseline`
-or `watcher_only`, as the [checkpoint section](behavioral-control-plane.md#5-checkpoint-the-turn)
-defines them. The checkpoint is refused when the field comes with
-`source_changed=false`, when `content_comparison` or
-`assumed_missing_baseline` comes without `source_basis`, when `watcher_only`
-comes with one, or when the value is not one of the three, which is refused
-by name. A host that does not say leaves the field out.
-`source_revision` is the host's fingerprint of the full relevant content,
-including committed and dirty bytes. `workspace_id` is retained for audit but
-does not participate in anti-stale equality. Engram supplies the authoritative
-project, frozen work binding, session, grant, actor, and recording timestamp,
-then appends each canonical observation to the project, root-work, and
-run-execution feeds in the same transaction as the control checkpoint.
-
-`turn_checkpoint.verification_evidence` accepts at most 16 host-minted checks.
-Each entry supplies `producer_observation` as either
-`{ kind: "object_id", object_id }` or
-`{ kind: "observation_id", observation_id }`, plus `check_kind`, optional
-`summary`, and bounded `refs`. Storage derives the check fingerprint, outcome,
-source/run/session binding, and timestamps from the producer; an unknown
-producer returns `verification_producer_not_found`. Up to four
-`environment_evidence` entries bind an environment identity to an exact source
-basis. The opaque form supplies only a host-produced fingerprint.
-The component form adds
-`components { toolchain, sandbox?, workspace_id, capability_map_revision }`;
-Engram derives the canonical component fingerprint, requires the component
-workspace to equal the source workspace, and requires the capability-map
-revision to equal the bound session. Component strings are trimmed,
-nonempty, limited to 256 bytes, inspected by the configured redactor, and are
-asserted host context rather than attestation. Do not place secrets in them.
-
-A verification may cite an environment as
-`{ kind: "object_id", object_id }` or
-`{ kind: "index", index }`, where the index addresses the same request's
-ordered environment list. The referenced object must belong to the same run
-and source revision. The current built-in test requirement does not require a
-particular environment, but its optional link is retained for audit and future
-typed policies. Mismatched derived bytes, a missing reference, or a run/source/
-session basis mismatch return `environment_fingerprint_mismatch`,
-`environment_evidence_not_found`, or `environment_basis_mismatch`.
-
-The receipt returns all three typed record-id lists. These lists
-preserve each corresponding request list's input order. Verification and
-environment evidence mint one fresh record id per input, including duplicate
-content; exact idempotent replay returns the same ordered ids without another
-append. Execution observations preserve input order for accepted requests;
-their observation ids must be unique, so duplicate observation inputs are not
-covered by the evidence duplication guarantee. Begin and checkpoint keys
-are each scoped to the exact grant and canonical request intent. An exact retry
-returns those ids without another feed append; changing any ordered list under
-the same checkpoint key fails with `control_operation_idempotency_conflict`.
+`control_request_expired` can be returned by every work-session operation.
+Reads check the allowance only before dispatch. The code certifies only that
+this invocation committed no changes, because no transaction started or
+explicit rollback succeeded before `COMMIT`. Retry only the exact retained
+operation and unchanged payload, with its original idempotency key if it has
+one, on the current connection. It does not resolve an earlier uncertain
+attempt, prove the request was unsent or mean that no process started. A host
+timeout without this response remains unknown. For the cooperative 15-second
+allowance, late commit settlement and bounded escalation after repeated
+expiry, see [Request allowance](execution-observability.md#request-allowance).
 
 Agent-facing `work_update:evidence` retains its generic form. It also
 accepts the attach-only form
@@ -3768,36 +3563,32 @@ focused run and does not mint another canonical object or feed entry. Generic
 evidence can be cited for context and completion, but cannot satisfy a typed
 verification requirement.
 
-Every work-bound observation with `source_changed: true` atomically opens one
-built-in test obligation, irrespective of `outcome` and irrespective of
-whether `source_basis` is present. The recorded `source_changed` is the
-core's reading of the host's report, not the host's literal flag;
-observations stored before this rule keep the host's flag and are read as
-stored. It is true when the host reported a change, unless the reported
-`source_revision` equals the revision of the run's newest recorded source
-change and no host record on the run since that change (observation or
-environment evidence) carried another revision, in any
-workspace. Such a repeat is recorded as `source_changed: false` and opens
-nothing, so writes under git-ignored paths that leave the content unchanged
-do not count, while a move seen only by a check or an environment capture,
-even one that later came back, still counts at the next change. When the
-report or that newest change carries no revision, the host's report stands, so a
-later change with a revision still re-anchors obligations that a
-revision-less change left waiver-only. For a claim without a named root, a
-passed typed test satisfies open obligations only against the newest mutation
-source revision at the evaluated run-feed cut. Thus a newest basisless
-mutation makes the open set waiver-only until a later basis-bearing mutation
-plus passed test arrives; that later test may satisfy both the earlier and
-newer definitions. For the stock rule that waiver comes at `done`: completion
-records each still-open stock obligation as an untested change instead of
-refusing. Under a named root, a fresh check in the root that ran after a
-basisless change accounts for it, and `done` refuses the changes a named root
-holds open, now or since it ended or the claim was released, instead of
-recording them as untested (see
-[the host binding](behavioral-control-plane.md#5a-bind-a-named-source-root)).
-`work_focus` exposes the
-canonical bounded `obligation_page`, the same field appears inside
-`work_next.focus`, and `work_next` deltas use
+Every accounted work-bound observation with `source_changed: true` atomically
+opens one built-in test obligation, irrespective of `outcome` and
+irrespective of whether `source_basis` is present. The recorded
+`source_changed` is the core's reading of the host's report, not the host's
+literal flag; observations stored before this rule keep the host's flag and
+are read as stored. It is true when the host reported a change, unless the
+reported `source_revision` equals the revision of the run's newest recorded
+source change and no host record on the run since that change carried another
+revision. Such a repeat is recorded as `source_changed: false` and opens
+nothing, so writes under git-ignored paths that leave the content unchanged do
+not count. When the report or that newest change carries no revision, the
+host's report stands, so a later change with a revision still re-anchors
+obligations that a revision-less change left waiver-only. For a claim without
+a named root, a passed typed test satisfies open obligations only against the
+newest mutation source revision at the evaluated run-feed cut. Thus a newest
+basisless mutation makes the open set waiver-only until a later basis-bearing
+mutation plus passed test arrives; that later test may satisfy both the
+earlier and newer definitions. For the stock rule that waiver comes at
+`done`: completion records each still-open stock obligation as an untested
+change instead of refusing. Under a named root, a fresh check in the root that
+ran after a basisless change accounts for it, and `done` refuses the changes a
+named root holds open, now or since it ended or the claim was released,
+instead of recording them as untested (see
+[sightings against a root](execution-observability.md#sightings-against-a-root)).
+`work_focus` exposes the canonical bounded `obligation_page`, the same field
+appears inside `work_next.focus`, and `work_next` deltas use
 `obligation_opened`, `obligation_satisfied`, `obligation_waived`, or, for a
 waived stock obligation, `untested_source_change` naming the change and its
 source revision, or, for a displaced one, `foreign_workspace_change` naming
@@ -3806,13 +3597,13 @@ arrive as `source_root_named` and `source_root_ended`, naming the workspace
 and generation. The page's `untested_total` counts every untested change on
 the run, and its items name those that fit; likewise `displaced_total` counts
 every displaced change, and an item's `displaced_change` names its
-observation id, workspace and source revision.
-Its `open_total` counts every open obligation on the run before count and byte
-trimming, and is 0 for an item that has no run yet, such as one restored from
-a work-graph snapshot and not yet claimed. When it exceeds the open
-items shown, an open obligation was left out, and the agent reminder says more
-obligations are open than shown. Only a page stored before this count existed
-lacks it, and that page keeps its original reminder.
+observation id, workspace and source revision. Its `open_total` counts every
+open obligation on the run before count and byte trimming, and is 0 for an
+item that has no run yet, such as one restored from a work-graph snapshot and
+not yet claimed. When it exceeds the open items shown, an open obligation was
+left out, and the agent reminder says more obligations are open than shown.
+Only a page stored before this count existed lacks it, and that page keeps
+its original reminder.
 
 A page whose run completed, or that a completion seal binds, carries
 `historical: true`; the field is absent otherwise. Its rows are history and
@@ -3831,54 +3622,20 @@ does not bind is accepted only when it was opened after that cut, and never
 breaks the readback.
 
 Every new completion seal declares obligation schema V1 and freezes the exact
-definition/resolution id pairs applicable at its dense pre-seal cut. The
-final checkpoint must acknowledge the matching typed verification evidence.
-A later `note` or `gate` from any project-bound session is marked in the
-evidence actor's existing provenance chain and appended after that cut. It is
-visible in `show` notes and peer `next` changes but never changes the frozen
-seal or adds a completion barrier.
-A new seal also declares environment schema V1 and cites the sorted, distinct
-environment-evidence ids at or before that cut. It refuses more than 64
-environment records and never copies the component payload into the seal. A
-parent verifies required child seals transitively; every accepted seal carries
-the current obligation and environment schema bindings.
+definition/resolution id pairs applicable at its dense pre-seal cut. A later
+`note` or `gate` from any project-bound session is marked in the evidence
+actor's existing provenance chain and appended after that cut. It is visible
+in `show` notes and peer `next` changes but never changes the frozen seal or
+adds a completion barrier. A new seal also declares environment schema V1 and
+cites the sorted, distinct environment-evidence ids at or before that cut. It
+refuses more than 64 environment records and never copies the component
+payload into the seal. A parent verifies required child seals transitively;
+every accepted seal carries the current obligation and environment schema
+bindings.
 
-An observation effect absent from the frozen grant is a request error with
-code `observation_scope_mismatch`. Checkpointing an issued-but-unbegun grant
-returns `grant_not_begun` with host transition guidance: bind/recover the
-runtime as needed, evaluate a fresh turn, begin that exact grant, and only then
-checkpoint it. `grant_scope_mismatch` remains the general frozen-basis mismatch.
-Checkpointing an already-begun grant compares its frozen session/grant binding
-but deliberately does not recheck claim expiry or live ownership: begin already
-consumed authority, and checkpoint records what happened rather than granting a
-new action.
-This control operation is deliberately named `turn_checkpoint`; the local-work
-lifecycle operation `checkpoint_work` remains the separate run-progress and
-evidence checkpoint.
-
-The project `required_assurance` floor constrains turn decisions for bound
-control sessions. The host is responsible for enforcing its declared mediation.
-Ordinary CLI/MCP work words do not require a control grant, so the policy value
-alone does not establish that all access to the store is gated.
-
-The built-in policy grants `observe`, `communicate`, and turn-gated
-`mutate_local`. A session must meet the project and effect assurance floors,
-and declare mediation covering the requested effect. The bind receipt exposes
-`effective_mediated_effects`, capped by the host's assurance. Internal
-`coordinate` is not a model-turn capability. Shared/external/lifecycle effects
-and `action_gated` bindings remain unavailable.
-
-Resource leases and the host `obligation_waive` operation are removed.
-`turn_evaluate` still accepts `resource_intents: []`; supplied resource subjects
-are project-bound and normalized, but do not acquire exclusive ownership.
-Host/user authority still governs file and external mutation. The only turn
-purposes are `ordinary` and `recovery`; purpose `finalizer` and session phase
-`finalizer_open` are removed and not accepted.
-
-For path resource intents, the core rejects a different embedded project id and
-NFC-normalizes every segment. Path-bearing host commands (`init`, `doctor`, `control`, `authority`,
-`control-policy`, `readiness`, `control-session-inspect`) resolve the project root's filesystem identity before
-opening the store: `--host-path-policy case_fold|case_sensitive`
+Path-bearing host commands (`init`, `doctor`, `control`, `authority`,
+`control-policy`, `readiness`) resolve the project root's filesystem identity
+before opening the store: `--host-path-policy case_fold|case_sensitive`
 (or `ENGRAM_HOST_PATH_POLICY`) when the host knows it, otherwise a probe that
 looks the project file up under the opposite ASCII case: nothing there means
 the root tells the spellings apart, and when something is there the root's
@@ -3894,52 +3651,44 @@ persists that policy; read-only [readiness](host-readiness.md) never binds it
 and explicitly reports an unbound or unresolved identity. Later resolved
 openers must present the same one, and a mismatch names both. An opener that
 could not resolve the identity (a project file the probe cannot test, or a
-lookup that fails) still
-reads and tracks work, but path-bearing control requests are refused with
-`host_path_identity_unresolved` instead of guessing. Windows alias rules
-(reserved names, alternate data stream syntax, trailing-dot/space aliases,
-known 8.3 aliases) follow the running operating system. `doctor` reports the
-persisted and resolved policy.
+lookup that fails) still reads and tracks work, but path-bearing host requests
+are refused with `host_path_identity_unresolved` instead of guessing. Windows
+alias rules (reserved names, alternate data stream syntax, trailing-dot/space
+aliases, known 8.3 aliases) follow the running operating system. `doctor`
+reports the persisted and resolved policy.
 
-Standalone delivery acknowledgement, heartbeat, and independent exit are not
-built. Action authorization, begin and completion are designed and deferred:
-see [action gates](action-gates.md#when-to-build-it).
+Records written by the removed turn gating stay readable as stored; see
+[records from earlier builds](execution-observability.md#records-from-earlier-builds).
 
-Hooks can integrate the shipped turn boundary. Full action gating needs a wrapper,
-gateway, or native host integration around every declared material tool. If a
-shell or network path remains unmediated, the session must not claim
-`action_gated` assurance. See the
-[control-plane host contract](behavioral-control-plane.md#host-integration-contract).
+#### Identifiers and fingerprints on the work-session channel
 
-#### Identifiers and fingerprints on the turn channel
-
-Every identifier or fingerprint that crosses the turn channel, in a request,
-a result or an error's `details`, has one class, and its field names the
-class. A host reads the class from the field, never from the value's length:
-a record id stored before ids were minted and a SHA-256 fingerprint are both
-64 lowercase hex digits, and only the field tells them apart. A host keeps one
-validator per class and returns every identifier exactly as it received it.
-It never pads, truncates, rehashes or relinks one, and never parses a token.
-A fingerprint compares content and is never used as an id. Engram's tests
-check every host receipt they produce against this table, and fail on a value
-shaped like an identifier in a field the table does not list. Request fields
-are listed here too; their producers' admission checks them.
+Every identifier or fingerprint that crosses the work-session channel, in a
+request, a result or an error's `details`, has one class, and its field names
+the class. A host reads the class from the field, never from the value's
+length: a record id stored before ids were minted and a SHA-256 fingerprint
+are both 64 lowercase hex digits, and only the field tells them apart. A host
+keeps one validator per class and returns every identifier exactly as it
+received it. It never pads, truncates, rehashes or relinks one, and never
+parses a token. A fingerprint compares content and is never used as an id.
+Engram's tests check every host receipt they produce against this table, and
+fail on a value shaped like an identifier in a field the table does not list.
+Request fields are listed here too; their producers' admission checks them.
 
 | Class | Fields | Form | Minted by | Compared | Scope |
 | --- | --- | --- | --- | --- | --- |
-| Record id | `checkpoint`, `last_checkpoint`, `execution_observations`, `verification_evidence`, `environment_evidence`, `event`, `latest_event`, `binding_event`, `current_binding`, `claim_epoch_event`, `observation`, `opened_obligations`, `original` in a `verification_bind` request or receipt, `verification`, `sighting`, `record`, `records`, `definition`, `triggering_observation`, `producer_observation`, `resolution`, `satisfied_by`, `environment`, `evidence`, `evidence_basis`, `evaluation`, `supersedes`, `named_root_binding`, `root_binding`, `completion_seal`, `required_child_seals`, `policy`, `previous_policy`, `obligation_rule_set`, `rule_set`, `authority`, `replacement_decision`, `producer`, `record_id`, `object_id`, `source_change` where it names a record (a `repeat` accounting), `operation` in a registered verification receipt (beside `verifications`), and a memory's `version` in a historical delivery packet | 32 lowercase hex digits for a record stored now; 64 for a record stored before ids were minted, kept as stored | Engram, when it stores the record | Exact string equality | The project's store; a run's records belong to that run |
-| Typed identity | `task_id`, `root_execution_id`, `work_id`, `run_id`, `run`, `claim_id`, `obligation_id`, `root_id`, `memory_id`, and an actor context's `run_id` when Engram records the actor (a bind's `binder`, a registered run) | A lowercase, hyphenated UUID. Engram always sends this form; on a request it also parses other UUID spellings, which a host must not rely on | Engram | Exact equality | The project's store; a run, claim or obligation within its work |
+| Record id | `execution_observations`, `verification_evidence`, `environment_evidence`, `event`, `latest_event`, `binding_event`, `current_binding`, `claim_epoch_event`, `observation`, `opened_obligations`, `original` in a `verification_bind` request or receipt, `verification`, `sighting`, `record`, `records`, `definition`, `triggering_observation`, `producer_observation`, `resolution`, `satisfied_by`, `environment`, `evidence`, `evidence_basis`, `evaluation`, `supersedes`, `named_root_binding`, `root_binding`, `completion_seal`, `required_child_seals`, `policy`, `previous_policy`, `obligation_rule_set`, `rule_set`, `authority`, `producer`, `record_id`, `object_id`, `source_change` where it names a record (a `repeat` accounting), and `operation` in a registered verification receipt (beside `verifications`) | 32 lowercase hex digits for a record stored now; 64 for a record stored before ids were minted, kept as stored | Engram, when it stores the record | Exact string equality | The project's store; a run's records belong to that run |
+| Typed identity | `root_execution_id`, `work_id`, `run_id`, `run`, `claim_id`, `obligation_id`, `root_id`, `memory_id`, and an actor context's `run_id` when Engram records the actor (a bind's `binder`, a registered run) | A lowercase, hyphenated UUID. Engram always sends this form; on a request it also parses other UUID spellings, which a host must not rely on | Engram | Exact equality | The project's store; a run, claim or obligation within its work |
 | Work reference | `work_ref` | `w-` and 12 lowercase hex digits. A refused `verification_bind` target whose item is not found, or belongs to another project, carries the requested work id instead. On a request, a short reference or a work id | Engram | Exact string equality | The project's store |
-| Engram token | `routing_token`, `grant_id`, `open_grant_id`, `superseded_grant_id`, `delivery_token`, `delivery_tokens` | Opaque non-blank text, returned unchanged and never parsed (today a UUID, which is not a promise). `turn_grant_read` echoes the requested `grant_id` as sent | Engram | Exact string equality | A routing token: the session on its control connection; a grant: the session that evaluated it |
-| Host fingerprint | `intent_fingerprint`, `action_fingerprint`, `environment_fingerprint`, `check_fingerprint` | A host sends the 64-digit lowercase SHA-256 of canonical bytes. Engram today also admits 32 lowercase hex digits and returns the value unchanged wherever it echoes it (a grant's basis, a check's `check_fingerprint`, which is its producer's `action_fingerprint`) | The host | Exact equality of content, never as an id | None: equal content has equal fingerprints anywhere |
-| Content fingerprint | `content_digest`, `work_revision_hash`, `accepted_work_revision_hash`, `packet_hash` | The 64-digit lowercase SHA-256 of canonical bytes | Engram | Exact equality of content, never as an id | None: equal content has equal fingerprints anywhere |
+| Host fingerprint | `intent_fingerprint`, `action_fingerprint`, `environment_fingerprint`, `check_fingerprint` | A host sends the 64-digit lowercase SHA-256 of canonical bytes. Engram today also admits 32 lowercase hex digits and returns the value unchanged wherever it echoes it (a check's `check_fingerprint`) | The host | Exact equality of content, never as an id | None: equal content has equal fingerprints anywhere |
+| Content fingerprint | `content_digest`, `work_revision_hash`, `accepted_work_revision_hash` | The 64-digit lowercase SHA-256 of canonical bytes | Engram | Exact equality of content, never as an id | None: equal content has equal fingerprints anywhere |
 | Rule id | `rule_id`, `obligations_satisfied` | Non-empty text equal to its own trim, at most 128 bytes: a built-in rule's id (`source_mutation_requires_test`, or `acceptance_criterion_requires_verification:` and a criterion number) or one an operator's obligation rule set names | Engram for its built-in rules; the operator for a rule set it installs | Exact string equality; a rule's identity is its `rule_id` with its `rule_version` | The obligation rule set the active policy selects |
 | Host source value | `source_revision`, `workspace_id`, a named root sighting's `revision` | Non-empty host text equal to its own trim (no leading or trailing whitespace), at most 512 bytes, without control or bidirectional-formatting characters. TermAl sends `content-v1:` and 64 hex digits as a revision; for a registered run Engram writes `git-commit:` or `git-tree:` and the Git object | The host | Exact string equality; Engram never parses or recomputes it. It names what the host measured, not which source a check or an evaluation saw: that is the Git commit or tree | The workspace the host measured |
 | Git tree | `git_tree`, `tree` | 40 or 64 lowercase hex digits, as Git spells the tree | The host | Exact string equality; Engram never normalizes it | The workspace the host measured |
 | Git commit | `commit`, `base_commit` | 40 lowercase hex digits, the only form registered verification admits | The host | Exact string equality; Engram never resolves or normalizes it | The repository the host measured |
-| Host id | `session_id`, `initiating_session_id`, `observing_session`, `holder`, `owning_session_id`, `host_run_id`, `request_identity`, `operation_key`, `idempotency_key`, `request_key`, `directive_id`, `observation_id`, `host_check_id`, `host_turn_ref`, `host_evidence_ref`, `external_ref` | Non-empty host text, kept unchanged and never parsed; inner whitespace is allowed. Each must equal its own trim (no leading or trailing whitespace), except a session id, which is checked for length only; `external_ref` and the `session_bind` key, which Engram trims; and the keys of `named_root_bind`, `turn_evaluate`, `turn_begin` and `turn_checkpoint`, with the `request_key` and `directive_id` built from them, which are kept as sent. A session id is at most 64 bytes; `owning_session_id` is text of at most 512. `host_run_id` starts with `test-`, and it and `request_identity` are at most 128 bytes; `operation_key` is exactly `termal-run:` and the host run id. An `idempotency_key` is at most 128 bytes on `execution_observe` and 512 on `verification_bind`; `session_bind` trims it, the other operations keep it as sent. `request_key` is the `turn_evaluate` key, and `directive_id` is that key, a colon and the directive's code. `observation_id` is at most 256 bytes, `host_check_id` and `host_turn_ref` 128, `host_evidence_ref` 2048 | The host: a session id by its host integration, a host run id and request identity by its test runs, a key by its idempotent caller; Engram builds `directive_id` from the host's key | Exact string equality | A session id: the host and its sessions; a host run id or request identity: that host's runs; a key: one operation's retries |
+| Host id | `session_id`, `initiating_session_id`, `observing_session`, `holder`, `owning_session_id`, `host_run_id`, `request_identity`, `operation_key`, `idempotency_key`, `host_check_id`, `host_turn_ref`, `host_evidence_ref` | Non-empty host text, kept unchanged and never parsed; inner whitespace is allowed. Each must equal its own trim (no leading or trailing whitespace), except a session id, which is checked for length only, and the `named_root_bind` key, which is kept as sent. A session id is at most 64 bytes; `owning_session_id` is text of at most 512. `host_run_id` starts with `test-`, and it and `request_identity` are at most 128 bytes; `operation_key` is exactly `termal-run:` and the host run id. An `idempotency_key` is at most 128 bytes on `execution_observe` and 512 on `verification_bind`. `host_check_id` and `host_turn_ref` are at most 128 bytes, `host_evidence_ref` 2048 | The host: a session id by its host integration, a host run id and request identity by its test runs, a key by its idempotent caller | Exact string equality | A session id: the host and its sessions; a host run id or request identity: that host's runs; a key: one operation's retries |
 | Host text | `project_id`, `actor_id`, `agent_id`, `namespace`, `stage`, a provenance link's `source` and `reference`, and an actor context's `run_id` when the host asserts the actor (`causality.claimed_actor`) | Non-empty text, compared exactly and never parsed; its form is whatever the host or its configuration gives | The host, or for `project_id` the project marker | Exact string equality | The project, or the assertion it is part of |
 | Counter or cursor | `position`, `fence`, `revision` as a number, `generation`, `epoch`, cuts, criterion positions, `after`, `continuation` | A number, or opaque continuation text Engram issues | Engram | Within its own feed, run or page only | The feed, run or read it came from |
+| Historical token | `grant_id`, only inside an execution observation an earlier build stored, when a read returns that record | Non-empty opaque text, kept as stored and never parsed | Engram, by the removed turn gating, when it stored the record | Exact string equality, as passive data only: it names no current grant and authorizes nothing, and no request carries it | The stored observation it belongs to |
 
 A refused target of `verification_bind` carries `expected` and `actual`
 values whose class depends on its `reason`:
@@ -3949,11 +3698,7 @@ values whose class depends on its `reason`:
 - for every other reason, a counter, other host text or a time.
 
 In that refusal, `original` and `request` are reason codes, such as
-`claim_not_held`, not record ids. In a historical delivery packet, a memory's
-`authority` is a label, such as `firm`, not a record id. Such a packet, replayed on a `turn_evaluate`
-retry of a grant issued before deliveries ended, carries stored memory records in its change
-objects; they come back as stored, and their own fields, such as `parents` or a source snapshot's
-`fingerprint`, are outside this table.
+`claim_not_held`, not record ids.
 
 A feed position names its feed as `{"kind", "id"}`. For `root_work` and
 `run_execution`, the `id` is a typed identity; for `project`, it is the
@@ -4023,13 +3768,10 @@ The shared [test launcher](../development.md#test-launcher) drives these gates;
 `scripts/test-launcher.test.mjs` checks its execution, diagnostics and completion
 delivery behavior alongside the review-fingerprint suite.
 
-`scripts/control-dogfood.test.mjs` launches the real bounded JSON-lines service,
-bootstraps an advisory policy, activates a turn-gated successor through the
-operator CLI, verifies both versions through `doctor`, binds, evaluates,
-restarts before begin, proves the old grant cannot begin,
-resynchronizes, checkpoints, checks mutation denial, and probes a wrong
-routing token. Host action control,
-report finalization/publication, review
+`scripts/control-dogfood.test.mjs` launches the real bounded JSON-lines work
+session and exercises its protocol end to end: host observations and
+registered verification against a live claim. Report finalization/publication,
+review
 actions, history, explicit contradiction resolution, and the remaining
 administrative CLI remain planned surfaces. They must reuse this core rather
 than fork its semantics.

@@ -1253,17 +1253,14 @@ pub(crate) fn report_text(restored: &Restored) -> String {
     }
     let _ = writeln!(
         text,
-        "  live authority in the copy as of {} by this machine's clock: {} unexpired active claim(s), the last expiring {}; {} unexpired issued grant(s), the last expiring {}; {} begun turn(s)",
+        "  live authority in the copy as of {} by this machine's clock: {} unexpired active claim(s), the last expiring {}",
         authority.as_of.to_rfc3339(),
         authority.unexpired_claims,
-        expiry(authority.claims_expire_by),
-        authority.unexpired_grants,
-        expiry(authority.grants_expire_by),
-        authority.begun_turns
+        expiry(authority.claims_expire_by)
     );
     let _ = writeln!(
         text,
-        "  no row was changed: a restored claim or grant serves only its old session, and an item still held refuses a new claim until that claim expires"
+        "  no row was changed: a restored claim serves only its old session, and an item still held refuses a new claim until that claim expires"
     );
     let _ = writeln!(
         text,

@@ -10,7 +10,7 @@ mod test_support;
 use std::{
     fmt::Write as _,
     io::{BufRead, BufReader, Write},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Output, Stdio},
 };
 
@@ -76,6 +76,7 @@ fn holds(value: &Value, key: &str, expected: &str) -> bool {
 
 /// The host's control channel for one session, one JSON request per line.
 struct Control {
+    home: PathBuf,
     child: Child,
     stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
@@ -84,7 +85,14 @@ struct Control {
 impl Control {
     fn spawn(home: &Path, session: &str) -> Self {
         let mut child = engram(home)
-            .args(["control", "--actor-id", session, "--session-id", session])
+            .args([
+                "control",
+                "--work-session",
+                "--actor-id",
+                session,
+                "--session-id",
+                session,
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -93,6 +101,7 @@ impl Control {
         let stdin = child.stdin.take();
         let stdout = BufReader::new(child.stdout.take().expect("control stdout"));
         Self {
+            home: home.to_owned(),
             child,
             stdin,
             stdout,
@@ -112,47 +121,41 @@ impl Control {
         response["result"].clone()
     }
 
-    /// One turn: evaluate, begin, then checkpoint with `observations`.
-    fn turn(
-        &mut self,
-        routing_token: &Value,
-        name: &str,
-        effects: &[&str],
-        resources: &[Value],
-        observations: &[Value],
-    ) {
-        let granted = self.ok(&json!({
-            "operation": "turn_evaluate",
-            "routing_token": routing_token,
-            "idempotency_key": format!("{name}-evaluate"),
-            "intent_fingerprint": fingerprint(name),
-            "purpose": "ordinary",
-            "requested_effects": effects,
-            "resource_intents": resources,
-        }));
-        assert_eq!(granted["decision"], "grant", "{granted}");
-        let grant = &granted["grant"];
-        let tokens: Vec<Value> = grant["delivery"]["page"]["delivery_token"]
-            .as_str()
-            .map(|token| vec![json!(token)])
-            .unwrap_or_default();
-        let begun = self.ok(&json!({
-            "operation": "turn_begin",
-            "routing_token": routing_token,
-            "grant_id": grant["grant_id"],
-            "delivery_tokens": tokens,
-            "idempotency_key": format!("{name}-begin"),
-        }));
-        assert_eq!(begun["decision"], "begin", "{begun}");
-        let checkpointed = self.ok(&json!({
-            "operation": "turn_checkpoint",
-            "routing_token": routing_token,
-            "grant_id": grant["grant_id"],
-            "next_intent": "continue",
-            "observations": observations,
-            "idempotency_key": format!("{name}-checkpoint"),
-        }));
-        assert_eq!(checkpointed["decision"], "checkpointed", "{checkpointed}");
+    /// Record the source the ordinary host actually measured, without admission.
+    fn observe(&mut self, binding: &Value, name: &str, observations: &[Value]) {
+        for (index, observation) in observations.iter().enumerate() {
+            let root = self.ok(&json!({
+                "operation": "named_root_read",
+                "run_id": binding["run_id"], "claim_id": binding["claim_id"],
+            }));
+            let policy = succeeded(
+                &engram(&self.home)
+                    .args(["control-policy", "show"])
+                    .output()
+                    .unwrap(),
+            );
+            let time = observation["observed_at"].clone();
+            self.ok(&json!({
+                "operation": "execution_observe",
+                "idempotency_key": format!("{name}-{index}"),
+                "binding": binding,
+                "root_basis": {
+                    "capture_run_cut": root["read_cut"]["position"],
+                    "latest_event": root["latest_event"]["event"],
+                    "state": root["named_root"],
+                },
+                "observed_interval": {"from": time, "through": time},
+                "occurrence": {
+                    "kind": "source_sighting",
+                    "source_basis": observation["source_basis"], "observed_at": time,
+                },
+                "causality": {"kind":"unknown"},
+                "policy_basis": {
+                    "mode":"account_if_eligible", "project_policy_epoch":policy["epoch"],
+                    "policy":policy["policy"], "obligation_rule_set":policy["obligation_rules"],
+                },
+            }));
+        }
     }
 }
 
@@ -256,19 +259,6 @@ fn refusals_carrying_host_recorded_text_never_spell_the_locked_store_phrase() {
         .to_owned();
 
     let mut control = Control::spawn(home, RUNNER);
-    let bound = control.ok(&json!({
-        "operation": "session_bind",
-        "external_ref": "local-work:locked-phrase",
-        "title": "Host control for the locked-phrase refusals",
-        "assurance": "turn_gated",
-        "mediated_effects": ["observe", "mutate_local"],
-        "work_binding": binding,
-        "capability_map_revision": 1,
-        "idempotency_key": "locked-bind",
-    }));
-    let routing = bound["routing_token"].clone();
-    control.turn(&routing, "locked-sync", &["observe"], &[], &[]);
-
     // The judge evaluates at this cut, declaring the revision it judged.
     let shown = succeeded(&work(home, RUNNER, &["show", &work_ref, "--json"]));
     let bases = (
@@ -281,16 +271,9 @@ fn refusals_carrying_host_recorded_text_never_spell_the_locked_store_phrase() {
 
     // The host then sees the source at a revision and in a workspace whose
     // recorded text spells the phrase.
-    control.turn(
-        &routing,
+    control.observe(
+        &binding,
         "locked-sighting",
-        &["mutate_local"],
-        &[json!({
-            "kind": "path",
-            "project_id": project,
-            "segments": ["src", "lib.rs"],
-            "coverage": "exact",
-        })],
         &[json!({
             "observation_id": "locked-sighting",
             "action_fingerprint": fingerprint("locked-sighting"),

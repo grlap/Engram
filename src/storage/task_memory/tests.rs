@@ -13,46 +13,39 @@ use crate::{
 fn sessions_rendezvous_using_only_the_external_reference() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let project = ProjectId("project-a".into());
-    let now = Utc::now();
     let first = store
-        .bind_test_control_scope(
+        .historical_task_scope(
             &project,
             "dummy:TASK-7",
             "Dogfood the memory loop",
             &SessionId("eval-a".into()),
-            &actor("eval-a"),
-            now,
         )
         .unwrap();
     let peer = store
-        .bind_test_control_scope(
+        .historical_task_scope(
             &project,
             "dummy:TASK-7",
             "Peer control scope",
             &SessionId("eval-b".into()),
-            &actor("eval-b"),
-            now + TimeDelta::milliseconds(1),
         )
         .unwrap();
     let replay = store
-        .bind_test_control_scope(
+        .historical_task_scope(
             &project,
             "dummy:TASK-7",
             "Peer control scope",
             &SessionId("eval-b".into()),
-            &actor("eval-b"),
-            now + TimeDelta::milliseconds(2),
         )
         .unwrap();
 
-    assert_eq!(first.status.task_id, peer.status.task_id);
-    assert_eq!(peer.status.task_id, replay.status.task_id);
+    assert_eq!(first.task_id, peer.task_id);
+    assert_eq!(peer.task_id, replay.task_id);
     assert_eq!(
         store
             .connection
             .query_row(
-                "SELECT COUNT(*) FROM control_sessions WHERE task_id = ?1",
-                [first.status.task_id.0.to_string()],
+                "SELECT COUNT(*) FROM fixture_memory_membership WHERE task_id = ?1",
+                [first.task_id.0.to_string()],
                 |row| row.get::<_, i64>(0),
             )
             .unwrap(),
@@ -60,22 +53,20 @@ fn sessions_rendezvous_using_only_the_external_reference() {
     );
     assert_eq!(
         store
-            .control_changes_since(first.status.task_id, ChangeCursor::default(), 20)
+            .control_changes_since(first.task_id, ChangeCursor::default(), 20)
             .unwrap()
             .len(),
         0
     );
     let other = store
-        .bind_test_control_scope(
+        .historical_task_scope(
             &project,
             "dummy:MISSING",
             "Peer control scope",
             &SessionId("eval-c".into()),
-            &actor("eval-c"),
-            now,
         )
         .unwrap();
-    assert_ne!(other.status.task_id, first.status.task_id);
+    assert_ne!(other.task_id, first.task_id);
 }
 
 #[test]
@@ -328,29 +319,14 @@ fn inspect_historical_task_delta_show_and_private_scope_survive_restart() {
     let project = ProjectId("project-a".into());
     let session_a = SessionId("eval-a".into());
     let session_b = SessionId("eval-b".into());
-    let now = Utc::now();
     let (task_id, first_receipt, first_cursor, expected_delta, private_hash) = {
         let mut store = SqliteStore::open(&database).unwrap();
         let task = store
-            .bind_test_control_scope(
-                &project,
-                "dummy:TASK-7",
-                "Dogfood",
-                &session_a,
-                &actor("eval-a"),
-                now,
-            )
+            .historical_task_scope(&project, "dummy:TASK-7", "Dogfood", &session_a)
             .unwrap();
-        let task_id = task.status.task_id;
+        let task_id = task.task_id;
         store
-            .bind_test_control_scope(
-                &project,
-                "dummy:TASK-7",
-                "Peer control scope",
-                &session_b,
-                &actor("eval-b"),
-                now + TimeDelta::milliseconds(1),
-            )
+            .historical_task_scope(&project, "dummy:TASK-7", "Peer control scope", &session_b)
             .unwrap();
         let first_request = note_request(
             task_id,
@@ -430,7 +406,16 @@ fn inspect_historical_task_delta_show_and_private_scope_survive_restart() {
         )
     };
 
-    let reopened = SqliteStore::open(&database).unwrap();
+    let mut reopened = SqliteStore::open(&database).unwrap();
+    // The durable task scope survives the restart; the reader fixture's
+    // session membership is per connection, so the reopened store installs it
+    // again for the same scope.
+    for (session, title) in [(&session_a, "Dogfood"), (&session_b, "Peer control scope")] {
+        let scope = reopened
+            .historical_task_scope(&project, "dummy:TASK-7", title, session)
+            .unwrap();
+        assert_eq!(scope.task_id, task_id, "the scope survives the restart");
+    }
     let after_restart = reopened
         .inspect_historical_task_delta(&project, task_id, &session_b, "eval-b", first_cursor, 20)
         .unwrap();

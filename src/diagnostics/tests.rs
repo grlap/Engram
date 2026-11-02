@@ -91,32 +91,16 @@ fn diagnostics_writer_admission_keeps_native_fields_without_source_text() {
 
 #[test]
 fn mcp_verb_faults_keep_native_sqlite_details_and_control_codes() {
-    for (native_code, control_busy, control_code) in [
-        (rusqlite::ffi::SQLITE_BUSY_SNAPSHOT, false, "sqlite_busy"),
-        (
-            rusqlite::ffi::SQLITE_LOCKED_SHAREDCACHE,
-            false,
-            "sqlite_locked",
-        ),
-        (rusqlite::ffi::SQLITE_IOERR, false, "sqlite_error"),
-        (
-            rusqlite::ffi::SQLITE_BUSY_SNAPSHOT,
-            true,
-            "control_store_busy",
-        ),
+    for (native_code, control_code) in [
+        (rusqlite::ffi::SQLITE_BUSY_SNAPSHOT, "sqlite_busy"),
+        (rusqlite::ffi::SQLITE_LOCKED_SHAREDCACHE, "sqlite_locked"),
+        (rusqlite::ffi::SQLITE_IOERR, "sqlite_error"),
     ] {
         let source = rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(native_code),
             Some("PRIVATE SQL path and argument".into()),
         );
-        let error: crate::verbs::VerbError = if control_busy {
-            crate::StoreError::ControlStoreBusy {
-                source: Box::new(source),
-            }
-        } else {
-            crate::StoreError::Sqlite(source)
-        }
-        .into();
+        let error: crate::verbs::VerbError = crate::StoreError::Sqlite(source).into();
         let control = serde_json::to_value(Fault::store(&error.error)).unwrap();
         let mcp = serde_json::to_value(Fault::mcp_verb(&error)).unwrap();
         assert_eq!(control["code"], control_code);
@@ -337,7 +321,7 @@ fn real_sqlite_contention_preserves_typed_codes_without_logging_sql() {
 }
 
 #[test]
-fn control_store_busy_diagnostics_preserve_extended_codes_without_statement_prose() {
+fn ordinary_busy_diagnostics_preserve_extended_codes_without_statement_prose() {
     let home = crate::test_support::temp_home().unwrap();
     let marker = uuid::Uuid::new_v4().to_string();
     assert!(!home.path().to_string_lossy().contains(&marker));
@@ -346,14 +330,12 @@ fn control_store_busy_diagnostics_preserve_extended_codes_without_statement_pros
         rusqlite::ffi::SQLITE_BUSY_SNAPSHOT,
         rusqlite::ffi::SQLITE_LOCKED_SHAREDCACHE,
     ] {
-        let error = crate::StoreError::ControlStoreBusy {
-            source: Box::new(rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(code),
-                Some(marker.clone()),
-            )),
-        };
+        let error = crate::StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(code),
+            Some(marker.clone()),
+        ));
         sink.emit(Event::failure(
-            "turn_begin",
+            "execution_observe",
             Correlation::default(),
             Duration::ZERO,
             Fault::store(&error),
@@ -363,7 +345,12 @@ fn control_store_busy_diagnostics_preserve_extended_codes_without_statement_pros
     let rows = records(home.path());
     let codes = rows
         .iter()
-        .filter(|row| row["event"]["code"] == "control_store_busy")
+        .filter(|row| {
+            matches!(
+                row["event"]["code"].as_str(),
+                Some("sqlite_busy" | "sqlite_locked")
+            )
+        })
         .map(|row| row["event"]["sqlite_code"].as_i64().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(

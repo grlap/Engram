@@ -3,7 +3,7 @@
 > Normative reference: [spec §2.6](../spec.md#26-local-work-graph--execution).
 > Related contracts: [Acceptance evaluation](acceptance-evaluation.md),
 > [Local work](local-work-system.md), and the shared
-> [host integration contract](behavioral-control-plane.md#host-integration-contract).
+> [host integration contract](execution-observability.md#host-integration-contract).
 
 This design review describes the implementation inspected on 2026-09-30,
 after independent evaluation became the default and the declared-source
@@ -163,19 +163,19 @@ exemption lets the movement scan pass and the citation is still refused.
 ## Engram's side of the host check-and-cut guarantee
 
 The shared receipt-and-cut wording is recorded in the
-[host integration contract](behavioral-control-plane.md#host-integration-contract).
+[host integration contract](execution-observability.md#host-integration-contract).
 This section names Engram's implementation owners and the guarantee's
 horizons. Agreement does not establish host implementation delivery.
 Engram's guarantee has two steps:
 
-1. An admitted work-bound `turn_checkpoint` atomically stores its supplied
-   evidence and closes the begun grant. Its receipt returns the actual
-   observation, verification and environment record ids. Verification source,
+1. An admitted `verification_record` or `execution_observe` request
+   atomically stores its supplied evidence. Its receipt returns the actual
+   record ids. Verification source,
    outcome, command fingerprint and time derive from the validated producer.
    Refusal stores none of that report. Exact replay recovers its result.
 2. A fresh work read begun after the receipt supplies `evidence_basis`, the
    head of that same run's execution feed. Every evidence id returned by the
-   committed work-bound checkpoint is at or before any such later head of
+   committed work-session request is at or before any such later head of
    the same feed in the continuing canonical store history. This also holds
    for a replayed receipt: its ids name the original commit. Concurrent
    successful writers advance that feed's head. It does not apply to an
@@ -184,22 +184,17 @@ Engram's guarantee has two steps:
    checks cited records against its submitted cut and run, and checks
    movement after the cut.
 
-Owners: `checkpoint_control_turn_with_evidence` in
-[control runtime](../../src/storage/control_runtime.rs),
-`TurnCheckpointReceipt` in [control types](../../src/domain/control.rs), and
-the `evidence_basis` projection in
-[work service](../../src/work_service/service.rs).
-The checkpoint's task-audit cursors are not evaluator evidence positions.
-The receipt also carries no run id: the host takes the run from the begun
-grant's work binding. A session holding several claims can have its turn
-bound to another claim's run; that checkpoint does not establish inclusion
-in the run the session subsequently chooses to evaluate.
+Owners: the work-session operations in the
+[host transport](../../src/host.rs) and the `evidence_basis` projection in
+[work service](../../src/work_service/service.rs). A request binds the exact
+claim epoch it names; it does not establish inclusion in another run the
+session subsequently chooses to evaluate.
 
 The host compares returned ids with the checks it intended to report and
 reads the same run's head only after that receipt. Inclusion follows from
 that call order, not inspection of positions in the receipt: it contains
 ids without positions, and the work view's evidence window is bounded. The host
-resolves an uncertain checkpoint without abandoning its exact intent and
+resolves an uncertain request without abandoning its exact intent and
 builds the evaluator's evidence through the later read's cut. A smaller
 fallback report proves only its own records. Increasing the
 submitted cut while retaining an older brief does not establish inclusion.

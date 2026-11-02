@@ -137,19 +137,13 @@ fn task_sync_notes_exclude_each_stored_evidence_family_and_path_form() {
         .unwrap();
     // The evaluation has no named-root obligation. Bind the independent
     // path fixture afterwards, without weakening root admission.
-    let host = crate::storage::test_support::bind_control_for(
-        &mut source,
-        "holder",
-        "host-root",
-        &[crate::domain::EffectClass::Observe],
-        at(7),
-    );
+    let host = crate::storage::test_support::open_work_host(&mut source, "holder", at(7));
     source
         .bind_named_root(
             &work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.claim_id,
             claim.fence,
             &root_sentinel,

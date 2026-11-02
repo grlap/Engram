@@ -1,18 +1,22 @@
 use super::*;
 
+mod historical_capture;
+pub(crate) use historical_capture::{
+    HistoricalCapture, HistoricalEvidenceBatch, append_historical_capture,
+};
+
 mod verification_workspaces;
 pub(crate) use verification_workspaces::verification_workspace_notes_fixture;
 
+pub(super) use crate::ProjectId;
 pub(super) use crate::domain::{
     ActorContext, AssuranceLevel, CheckpointWorkRequest, ChildWorkDraft, ChildWorkPrerequisite,
-    CompleteWorkRequest, ControlAssurance, ControlRefusalCode, ControlTurnBeginDecision,
-    ControlTurnCheckpointDecision, ControlTurnDecision, CreateWorkRequest, EffectClass,
-    EnvironmentComponents, EnvironmentEvidenceInput, EnvironmentEvidenceReference,
-    ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome,
-    ExecutionSourceBasis, NoteRequest, NoteVisibility, ProvenanceLink, ProvenanceRelation,
-    RecordWorkEvidenceRequest, Scope, Sensitivity, TurnIntent, TurnNextIntent, TurnPurpose,
-    VerificationEvidenceInput, VerificationEvidenceMismatch, VerificationKind, VerificationResult,
-    WorkItemKind, WorkPlanningAuthority, WorkRevisionPatch,
+    CompleteWorkRequest, CreateWorkRequest, EffectClass, EnvironmentComponents,
+    EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservationInput,
+    ExecutionObservationReference, ExecutionOutcome, ExecutionSourceBasis, NoteRequest,
+    NoteVisibility, ProvenanceLink, ProvenanceRelation, RecordWorkEvidenceRequest, Scope,
+    Sensitivity, VerificationEvidenceInput, VerificationKind, VerificationResult, WorkItemKind,
+    WorkPlanningAuthority, WorkRevisionPatch,
 };
 pub(super) use crate::memory::DevelopmentNoopRedactor;
 pub(super) use crate::storage::test_database_shape_snapshot;
@@ -20,10 +24,19 @@ pub(super) use crate::work_service::{
     LocalWorkService, WorkAcceptanceInput, WorkCompleteInput, WorkCompleteResult,
     WorkCompletionCaptureInput,
 };
-pub(super) use crate::{ProjectId, VerificationEvidenceMatchInput, match_verification_evidence};
 pub(super) use chrono::{Duration, TimeZone};
 
 impl SqliteStore {
+    pub(crate) fn install_historical_observation_fixture(
+        &mut self,
+        observation: &crate::domain::ExecutionObservation,
+    ) -> ObjectId {
+        let tx = self.connection.transaction().unwrap();
+        let id =
+            super::completion::append_control_execution_observation_on(&tx, observation).unwrap();
+        tx.commit().unwrap();
+        id
+    }
     /// Reproduces disposal by the older implementation, which did not guard
     /// pending offers. Only hide the projection during disposal; the restored
     /// row and its canonical offer/event bytes remain exactly as written.

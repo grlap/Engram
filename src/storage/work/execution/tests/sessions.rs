@@ -304,27 +304,6 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
     let staged = process_default_session_at(17, at(0));
     let stable = SessionId("stable-host-session".into());
     let mut first = SqliteStore::open(&database).expect("first store");
-    let binder = SessionId("retention-binder".into());
-    first
-        .bind_test_control_scope(
-            &project,
-            "retention-task",
-            "Retention task",
-            &binder,
-            &actor(&binder.0),
-            at(0),
-        )
-        .expect("task session bind");
-    first
-        .bind_test_control_scope(
-            &project,
-            "retention-task",
-            "Retention task",
-            &bound,
-            &actor(&bound.0),
-            at(0),
-        )
-        .expect("explicit process session binding");
     let root = first
         .create_work(
             &root_request(&project.0, "retention-root", 0),
@@ -481,7 +460,7 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
                 |row| row.get::<_, i64>(0),
             )
             .expect("retained session states"),
-        9
+        8
     );
     assert_eq!(
         second
@@ -492,13 +471,12 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
                 |row| row.get::<_, i64>(0),
             )
             .expect("retained protocol attempts"),
-        7
+        6
     );
     for retained in [
         &recent,
         &live,
         &handoff,
-        &bound,
         &pending,
         &staged,
         &stable,

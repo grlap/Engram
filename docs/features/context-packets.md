@@ -3,18 +3,20 @@
 > Reference: [spec §4](../spec.md#4-memory-retrieval).
 > Related briefs: [typed memory model](typed-memory-model.md),
 > [CLI & MCP](cli-and-mcp.md), and
-> [behavioral control plane](behavioral-control-plane.md).
+> [Execution Observability](execution-observability.md).
 
 Context-packet construction and delivery have been removed. No CLI, MCP, or
 host operation builds a packet. Agents recover work through `next` and read
 project notes through `memories`; see [agent usage](cli-and-mcp.md#using-engram-as-an-agent).
 
-`ContextPacket` and its nested header, item, omission, and payload types remain
-serialized history. Stored `ControlDelivery` records may contain a packet;
-their readers and doctor audit checks remain supported without constructing
-or delivering new packets. Packet fields, stored record ids, and links retain
-their original meaning. Dormant context-revision tables remain in the store;
-this removal changes no durable rows or schema.
+`ContextPacket` and its nested header, item, omission, and payload types
+remain the historical serialized format, and packet fields retain their
+original meaning. A packet was stored only inside a turn grant's
+`ControlDelivery` page. That type was deleted with turn gating, and the store
+migration that removed turn gating retires the tables that held those grants,
+by name with their counts (see [SQLite store](sqlite-store.md)); their rows
+remain only in the store file kept as that migration's backup. Dormant
+context-revision tables remain in the store.
 
 Task-, work-, agent-, and project-scoped historical memories share the
 `memory_version` and `memory_assertion_event` object kinds. Scope identifies

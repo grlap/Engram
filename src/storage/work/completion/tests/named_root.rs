@@ -4,7 +4,7 @@ use crate::domain::{
     AcceptanceBinding, ExecutionSourceBasis, NamedRootBindingKind, SourceRootState,
     VerificationKind, VerificationRequirement, VerificationResult,
 };
-use crate::storage::test_support::bind_control_for;
+use crate::storage::test_support::open_work_host;
 
 fn basis(workspace: &str, revision: &str, generation: Option<i64>) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
@@ -46,20 +46,14 @@ fn named_work_in(mut store: SqliteStore) -> (SqliteStore, WorkItem, WorkClaim, O
         Some(basis("workspace-A", "A3", None)),
         None,
     );
-    let host = bind_control_for(
-        &mut store,
-        "runner",
-        "named-root-host",
-        &[crate::domain::EffectClass::Observe],
-        at(4),
-    );
+    let host = open_work_host(&mut store, "runner", at(4));
     let mut host_actor = actor("runner");
     store
         .bind_named_root(
             &work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.claim_id,
             claim.fence,
             "workspace-B",
@@ -672,19 +666,13 @@ fn name_root_in(
     generation: i64,
     second: i64,
 ) {
-    let host = bind_control_for(
-        store,
-        &claim.holder.0,
-        &format!("named-root-host-{generation}"),
-        &[crate::domain::EffectClass::Observe],
-        at(second),
-    );
+    let host = open_work_host(store, &claim.holder.0, at(second));
     store
         .bind_named_root(
             &work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.claim_id,
             claim.fence,
             workspace,
@@ -915,11 +903,13 @@ fn the_doctor_reports_a_stated_generation_it_cannot_trace() {
 #[test]
 fn the_doctor_ties_a_named_root_receipt_to_its_event() {
     let (store, _, _, _) = named_work();
-    let (sequence, stored): (i64, Vec<u8>) = store
+    // The work session stores its receipt as the host-receipt envelope in the
+    // work-operation result store; the receipt itself is its `result`.
+    let (key, stored): (String, Vec<u8>) = store
         .connection
         .query_row(
-            "SELECT sequence, result_json FROM control_operation_results
-             WHERE operation = 'named_root_bind'",
+            "SELECT idempotency_key, result_json FROM work_operation_results
+             WHERE operation = 'host_named_root_bind'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -929,27 +919,30 @@ fn the_doctor_ties_a_named_root_receipt_to_its_event() {
         store
             .connection
             .execute(
-                "UPDATE control_operation_results SET result_json = ?1 WHERE sequence = ?2",
+                "UPDATE work_operation_results SET result_json = ?1
+                 WHERE operation = 'host_named_root_bind' AND idempotency_key = ?2",
                 rusqlite::params![
-                    serde_json_canonicalizer::to_vec(receipt).expect("canonical receipt"),
-                    sequence
+                    serde_json::to_vec(receipt).expect("receipt bytes"),
+                    key.as_str()
                 ],
             )
             .expect("rewrite the receipt");
     };
+    let label = format!("work_operation_result:host_named_root_bind:{key}:");
     for (field, value) in [
         ("workspace_id", serde_json::json!("workspace-C")),
         ("event", serde_json::json!(ObjectId::mint())),
         ("generation", serde_json::json!(10)),
     ] {
         let mut altered = original.clone();
-        altered[field] = value;
+        altered["result"][field] = value;
         write(&altered);
         let report = store.verify_all().expect("doctor");
         assert!(
             report
-                .invalid_control_records
-                .contains(&format!("control_operation:{sequence}")),
+                .invalid_work_records
+                .iter()
+                .any(|record| record.starts_with(&label)),
             "{field}: {report:?}"
         );
     }
@@ -1597,19 +1590,13 @@ fn end_root(
     named_second: i64,
     second: i64,
 ) {
-    let host = bind_control_for(
-        store,
-        &claim.holder.0,
-        &format!("ending-host-{generation}"),
-        &[crate::domain::EffectClass::Observe],
-        at(second),
-    );
+    let host = open_work_host(store, &claim.holder.0, at(second));
     store
         .bind_named_root(
             &work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.claim_id,
             claim.fence,
             workspace,

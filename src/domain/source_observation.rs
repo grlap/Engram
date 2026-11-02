@@ -69,7 +69,7 @@ impl SourceObservation {
     ) -> Option<Self> {
         let source_changed = match &observation.accounting {
             ObservationAccounting::SourceChange { .. } => true,
-            ObservationAccounting::Repeat { .. } => false,
+            ObservationAccounting::Repeat { .. } | ObservationAccounting::Sighting {} => false,
             ObservationAccounting::NoSourceChange {} | ObservationAccounting::AuditOnly { .. } => {
                 return None;
             }
@@ -81,21 +81,26 @@ impl SourceObservation {
         else {
             return None;
         };
-        let change = observation.occurrence.source_change()?;
-        let (source_basis, observed_at, detection) = match change {
-            ObservedSourceChange::ContentComparison { sighting, .. } => (
-                Some(sighting.source_basis.clone()),
-                sighting.observed_at,
-                SourceChangeDetection::ContentComparison,
-            ),
-            ObservedSourceChange::AssumedMissingBaseline { sighting, .. } => (
-                Some(sighting.source_basis.clone()),
-                sighting.observed_at,
-                SourceChangeDetection::AssumedMissingBaseline,
-            ),
-            ObservedSourceChange::WatcherOnly { observed_at, .. } => {
-                (None, *observed_at, SourceChangeDetection::WatcherOnly)
-            }
+        let (source_basis, observed_at, detection) = match &observation.occurrence {
+            super::RecordedOccurrence::SourceSighting {
+                source_basis,
+                observed_at,
+            } => (Some(source_basis.clone()), *observed_at, None),
+            _ => match observation.occurrence.source_change()? {
+                ObservedSourceChange::ContentComparison { sighting, .. } => (
+                    Some(sighting.source_basis.clone()),
+                    sighting.observed_at,
+                    Some(SourceChangeDetection::ContentComparison),
+                ),
+                ObservedSourceChange::AssumedMissingBaseline { sighting, .. } => (
+                    Some(sighting.source_basis.clone()),
+                    sighting.observed_at,
+                    Some(SourceChangeDetection::AssumedMissingBaseline),
+                ),
+                ObservedSourceChange::WatcherOnly { observed_at, .. } => {
+                    (None, *observed_at, Some(SourceChangeDetection::WatcherOnly))
+                }
+            },
         };
         Some(Self {
             label: format!("unadmitted:{record}"),
@@ -105,7 +110,7 @@ impl SourceObservation {
             binding: observation.binding.clone(),
             reporting_session: observation.observing_session.clone(),
             source_changed,
-            reported_source_change: Some(detection),
+            reported_source_change: detection,
             source_basis,
             observed_at: Some(observed_at),
             recorded_at: observation.recorded_at,

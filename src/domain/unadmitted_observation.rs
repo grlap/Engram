@@ -186,6 +186,11 @@ fn reported_outcome<'de, D: serde::Deserializer<'de>>(
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ObservedOccurrence {
+    /// A measured source revision, with no source mutation or check reported.
+    SourceSighting {
+        source_basis: ExecutionSourceBasis,
+        observed_at: DateTime<Utc>,
+    },
     /// Execution seen without an admitted begin; not a begun or checkpointed
     /// turn. `source_change: null` means only that no change is
     /// reported, never that the source is unchanged.
@@ -229,6 +234,10 @@ pub struct RecordedObservedCheck {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RecordedOccurrence {
+    SourceSighting {
+        source_basis: ExecutionSourceBasis,
+        observed_at: DateTime<Utc>,
+    },
     UnadmittedTurn {
         host_turn_ref: String,
         #[serde(
@@ -258,6 +267,13 @@ impl RecordedOccurrence {
             credit: ObservedCheckCredit::Uncredited,
         };
         match occurrence {
+            ObservedOccurrence::SourceSighting {
+                source_basis,
+                observed_at,
+            } => Self::SourceSighting {
+                source_basis,
+                observed_at,
+            },
             ObservedOccurrence::UnadmittedTurn {
                 host_turn_ref,
                 outcome,
@@ -286,6 +302,13 @@ impl RecordedOccurrence {
     #[must_use]
     pub fn reported(&self) -> ObservedOccurrence {
         match self {
+            Self::SourceSighting {
+                source_basis,
+                observed_at,
+            } => ObservedOccurrence::SourceSighting {
+                source_basis: source_basis.clone(),
+                observed_at: *observed_at,
+            },
             Self::UnadmittedTurn {
                 host_turn_ref,
                 outcome,
@@ -317,6 +340,7 @@ impl RecordedOccurrence {
     #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::SourceSighting { .. } => "source_sighting",
             Self::UnadmittedTurn { .. } => "unadmitted_turn",
             Self::InterTurnChange { .. } => "inter_turn_change",
             Self::ObservedCheck { .. } => "observed_check",
@@ -329,7 +353,25 @@ impl RecordedOccurrence {
         match self {
             Self::UnadmittedTurn { source_change, .. } => source_change.as_ref(),
             Self::InterTurnChange { source_change } => Some(source_change),
-            Self::ObservedCheck { .. } => None,
+            Self::ObservedCheck { .. } | Self::SourceSighting { .. } => None,
+        }
+    }
+
+    /// The measured source, whether reported as a change or a quiet sighting.
+    #[must_use]
+    pub fn measured_sighting(&self) -> Option<MeasuredSighting> {
+        match self {
+            Self::SourceSighting {
+                source_basis,
+                observed_at,
+            } => Some(MeasuredSighting {
+                source_basis: source_basis.clone(),
+                observed_at: *observed_at,
+            }),
+            _ => self
+                .source_change()
+                .and_then(ObservedSourceChange::sighting)
+                .cloned(),
         }
     }
 
@@ -340,7 +382,7 @@ impl RecordedOccurrence {
             Self::UnadmittedTurn {
                 observed_checks, ..
             } => observed_checks.iter().collect(),
-            Self::InterTurnChange { .. } => Vec::new(),
+            Self::InterTurnChange { .. } | Self::SourceSighting { .. } => Vec::new(),
             Self::ObservedCheck { check, .. } => vec![check],
         }
     }
@@ -351,7 +393,7 @@ impl RecordedOccurrence {
         match self {
             Self::UnadmittedTurn { host_turn_ref, .. }
             | Self::ObservedCheck { host_turn_ref, .. } => Some(host_turn_ref),
-            Self::InterTurnChange { .. } => None,
+            Self::InterTurnChange { .. } | Self::SourceSighting { .. } => None,
         }
     }
 }
@@ -511,6 +553,8 @@ pub enum ObservationAuditReason {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ObservationAccounting {
+    /// A measured quiet revision eligible for source freshness, not a mutation.
+    Sighting {},
     /// A new change, the anchor later repeats point at. The receipt names
     /// the record itself; the stored record leaves the id out, since a record
     /// cannot carry its own id, and its absence means "this record".
@@ -646,6 +690,10 @@ impl ExecutionObserveInput {
             Option<&ObservedSourceChange>,
             Vec<(String, &ObservedCheck)>,
         ) = match &self.occurrence {
+            ObservedOccurrence::SourceSighting { source_basis, .. } => {
+                texts.extend(basis("source_sighting.source_basis", source_basis));
+                (None, Vec::new())
+            }
             ObservedOccurrence::UnadmittedTurn {
                 source_change,
                 observed_checks,
@@ -756,6 +804,13 @@ fn validate_observed_facts(
             return Err("observed_interval.through is after the record time".into());
         }
         match facts.occurrence {
+            ObservedOccurrence::SourceSighting {
+                source_basis,
+                observed_at,
+            } => {
+                validate_source_basis(source_basis, "source_sighting.source_basis")?;
+                within(*observed_at, interval, "source_sighting.observed_at")?;
+            }
             ObservedOccurrence::UnadmittedTurn {
                 host_turn_ref,
                 source_change,

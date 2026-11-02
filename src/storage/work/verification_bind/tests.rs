@@ -20,7 +20,7 @@ use crate::domain::{
     VerificationKind, VerificationRequirement, VerificationResult, WorkClaim, WorkItem,
     WorkObligationState,
 };
-use crate::storage::test_support::bind_control_for;
+use crate::storage::test_support::open_work_host;
 use crate::storage::{SqliteStore, StoreError};
 use crate::{DevelopmentNoopRedactor, ObjectId};
 
@@ -134,19 +134,13 @@ fn name_root(
     generation: i64,
     second: i64,
 ) -> crate::domain::NamedRootBindingReceipt {
-    let host = bind_control_for(
-        store,
-        &claim.holder.0,
-        &format!("root-host-{generation}"),
-        &[EffectClass::Observe],
-        at(second),
-    );
+    let host = open_work_host(store, &claim.holder.0, at(second));
     store
         .bind_named_root(
             &work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.claim_id,
             claim.fence,
             ROOT,
@@ -880,15 +874,15 @@ fn cross_run_positions_are_never_compared() {
 /// The host's entry: the bind through a bound control session's credentials.
 fn bind_through_host(
     store: &mut SqliteStore,
-    host: &crate::storage::test_support::TestControlBinding,
+    host: &crate::storage::test_support::TestWorkHost,
     input: &VerificationBindInput,
     second: i64,
 ) -> Result<VerificationBindReceipt, StoreError> {
     let bound = store.bind_verification(
         &crate::domain::ProjectId("project-a".into()),
-        &host.status.session_id,
+        &host.session_id,
         &host.connection_token,
-        &host.routing_token,
+        crate::storage::HostSessionAuthority::Work,
         &actor(HOLDER),
         input,
         at(second),
@@ -948,13 +942,7 @@ fn a_retry_replays_after_a_restart_and_an_ended_claim() {
             target(&store, &c, "R1", vec![]),
         ],
     );
-    let first_host = bind_control_for(
-        &mut store,
-        HOLDER,
-        "bind-host-1",
-        &[EffectClass::Observe],
-        at(25),
-    );
+    let first_host = open_work_host(&mut store, HOLDER, at(25));
     let first = bind_through_host(&mut store, &first_host, &input, 30).expect("bound");
     assert!(!first.replayed);
     let rows = evidence_rows(&store);
@@ -969,13 +957,7 @@ fn a_retry_replays_after_a_restart_and_an_ended_claim() {
     drop(store);
     let mut store = SqliteStore::open(&database).expect("reopened store");
     release(&mut store, &a, 40);
-    let second_host = bind_control_for(
-        &mut store,
-        HOLDER,
-        "bind-host-2",
-        &[EffectClass::Observe],
-        at(50),
-    );
+    let second_host = open_work_host(&mut store, HOLDER, at(50));
     assert_ne!(second_host.connection_token, first_host.connection_token);
     let replay = bind_through_host(&mut store, &second_host, &input, 60).expect("replayed");
     assert!(replay.replayed);
@@ -1354,13 +1336,7 @@ fn repair_and_migration_round_trip_with_and_without_bound_records() {
             if with_bound {
                 // Through the host entry, which also stores the operation.
                 let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-                let host = bind_control_for(
-                    &mut store,
-                    HOLDER,
-                    "bind-host",
-                    &[EffectClass::Observe],
-                    at(25),
-                );
+                let host = open_work_host(&mut store, HOLDER, at(25));
                 let receipt = bind_through_host(&mut store, &host, &input, 30).expect("bound");
                 let bound = receipt.bound[0].verification.clone();
                 assert!(stored(&store, &bound).environment.is_some());
@@ -1634,13 +1610,7 @@ fn unadmitted_change(
     to: &str,
     second: i64,
 ) -> (ObjectId, Vec<ObjectId>) {
-    let host = bind_control_for(
-        store,
-        HOLDER,
-        &format!("observe-host-{second}"),
-        &[EffectClass::Observe],
-        at(second - 3),
-    );
+    let host = open_work_host(store, HOLDER, at(second - 3));
     let receipt = unadmitted_change_through_host(store, held, &host, from, to, second);
     (receipt.observation, receipt.opened_obligations)
 }
@@ -1649,7 +1619,7 @@ fn unadmitted_change(
 fn unadmitted_change_through_host(
     store: &mut SqliteStore,
     held: &Held,
-    host: &crate::storage::test_support::TestControlBinding,
+    host: &crate::storage::test_support::TestWorkHost,
     from: &str,
     to: &str,
     second: i64,
@@ -1703,9 +1673,9 @@ fn unadmitted_change_through_host(
     store
         .record_unadmitted_execution_observation(
             &held.work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             &observer,
             input,
             at(second),
@@ -1900,7 +1870,7 @@ fn work_session_binds_native_credit_without_control_routing_or_admission() {
     let token = store.resume_work_connection(&session, at(25)).unwrap();
     let before_grants: i64 = store
         .connection
-        .query_row("SELECT count(*) FROM control_turn_grants", [], |row| {
+        .query_row("SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('control_sessions','control_turn_results','control_turn_grants','control_turn_grant_supersessions')", [], |row| {
             row.get(0)
         })
         .unwrap();
@@ -1933,11 +1903,12 @@ fn work_session_binds_native_credit_without_control_routing_or_admission() {
     assert_eq!(evidence_rows(&store), rows);
     let after_grants: i64 = store
         .connection
-        .query_row("SELECT count(*) FROM control_turn_grants", [], |row| {
+        .query_row("SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('control_sessions','control_turn_results','control_turn_grants','control_turn_grant_supersessions')", [], |row| {
             row.get(0)
         })
         .unwrap();
-    assert_eq!(after_grants, before_grants);
+    assert_eq!(before_grants, 0);
+    assert_eq!(after_grants, 0);
     let report = store.verify_all().unwrap();
     assert!(report.is_healthy(), "{report:?}");
     drop(store);

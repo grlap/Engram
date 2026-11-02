@@ -60,6 +60,12 @@ impl SqliteStore {
         let mut checked = 0_usize;
         let mut invalid = Vec::new();
         super::super::task_sync::verify_origins(connection, &mut checked, &mut invalid)?;
+        super::super::task_sync::verify_exchange(connection, &mut checked, &mut invalid);
+        super::super::task_sync::reconciliation::verify_reconciliation(
+            connection,
+            &mut checked,
+            &mut invalid,
+        )?;
         let mut seen_events = HashSet::new();
         let mut work_items = HashMap::new();
         let mut runs = HashMap::new();
@@ -158,6 +164,12 @@ impl SqliteStore {
                     .is_none_or(|blocker| blocker.work_id == event.work_id);
             if !internally_bound {
                 invalid.push(label);
+                continue;
+            }
+            if let Err(error) = super::super::task_sync::reconciliation::validate_retirement_on(
+                connection, &hash, &event,
+            ) {
+                invalid.push(format!("{label}:import_retirement:{error}"));
                 continue;
             }
             let current_basis = relation_bases
@@ -517,6 +529,8 @@ impl SqliteStore {
         )?;
         verify_work_catalog_projections(connection, &mut checked, &mut invalid)?;
         super::super::note_index::verify(connection, &mut checked, &mut invalid)?;
+        super::super::feed_tasks::verify(connection, &mut checked, &mut invalid)?;
+        super::super::task_sync::baseline::verify(connection, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
         verify_required_child_waiver_bindings(connection, &mut audit, &mut checked, &mut invalid)?;

@@ -2,13 +2,6 @@
 
 mod acceptance_binding_read;
 mod acceptance_verification_read;
-mod control_activity;
-pub use control_activity::{
-    ControlActivity, MEDIATION_GRACE, MediationReport, MediationWarning, OPEN_TURN_LIMIT,
-    mediation_warnings,
-};
-mod control_grant_read;
-mod control_inspection;
 mod control_runtime;
 pub(crate) use control_runtime::request_budget::ControlRequestScope;
 pub(crate) use transaction_timing::control::now as control_diagnostic_now;
@@ -112,10 +105,6 @@ pub(crate) const PLAN_CORE_OPERATION: &str = "propose_work_plan";
 
 pub(crate) const DECOMPOSITION_RETRY_REMEDY: &str = "inspect the parent and its existing children; reuse the already-created child when present; add new work only for a genuinely different child intent";
 
-pub use control_inspection::{
-    ControlInspectionDetails, ControlInspectionOperation, ControlOperationSelector,
-    ControlSessionInspection, MAX_INSPECTION_KEY_BYTES,
-};
 pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };
@@ -293,8 +282,6 @@ pub(crate) mod concurrent_commit;
 #[cfg(test)]
 pub(crate) mod copy_trace;
 
-#[cfg(test)]
-use control_runtime::resolve_verification_environment_on;
 use control_support::{normalize_control_policy_actor, normalize_control_policy_idempotency_key};
 use project_memory::{
     derived_project_memory_state_on, derived_project_memory_state_rows_on,
@@ -484,34 +471,23 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 #[cfg(test)]
-use crate::domain::{DeltaItem, TaskDelta};
+use crate::domain::{ChangeCursor, DeltaItem, TaskDelta};
 use crate::{
     CanonicalObject, ObjectId,
-    control::effective_mediated_effects,
     domain::{
-        ActorContext, AssuranceLevel, Authority, CONTROL_SCHEMA_VERSION, ChangeCursor,
-        ControlAssurance, ControlEpochs, ControlPolicy, ControlSessionBinding,
-        ControlSessionStatus, ControlTurnBeginDecision, ControlTurnCheckpointDecision,
-        ControlTurnDecision, ControlWorkBinding, Delivery, EffectClass, EnvironmentComponents,
-        EnvironmentEvidence, EnvironmentEvidenceInput, EnvironmentEvidenceReference,
-        ExecutionObservation, ExecutionObservationInput, ExecutionObservationReference,
-        ExecutionOutcome, ForgetProjectMemoryRequest, HostPathPolicy, IssuedTurnGrant,
-        MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
+        ActorContext, AssuranceLevel, Authority, CONTROL_SCHEMA_VERSION, ControlAssurance,
+        ControlPolicy, ControlWorkBinding, Delivery, EffectClass, ForgetProjectMemoryRequest,
+        HostPathPolicy, MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
         MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
         MemoryId, MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, NamedRootBindingEvent,
         NamedRootBindingKind, NamedRootBindingReceipt, NamedRootEndReason,
-        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation,
-        ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
-        ProjectMemoryListRow, ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision,
-        ProjectPolicyEpoch, ProjectPolicyOperation, RememberProjectMemoryRequest, SCHEMA_VERSION,
-        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskId, TurnBeginDecision,
-        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
-        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-        TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
-        TurnNextIntent, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
-        VerificationResult, WorkCompletionRecoveryCause, WorkReferenceCandidate,
+        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation, ProjectId,
+        ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow, ProjectMemoryMutationReceipt,
+        ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation,
+        RememberProjectMemoryRequest, SCHEMA_VERSION, Scope, Sensitivity, SessionId, TaskId,
+        WorkCompletionRecoveryCause, WorkReferenceCandidate,
     },
-    memory::{DevelopmentNoopRedactor, Redactor},
+    memory::Redactor,
     schema::{
         CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
         CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION, CONTROL_POLICY_SCHEMA_VERSION,
@@ -555,7 +531,6 @@ const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("table", "project_memory_state"),
     ("table", "project_memory_advertisements"),
     ("index", "control_changes_task_cursor"),
-    ("index", "control_sessions_work_run"),
 ];
 
 const VERIFICATION_APPLICABILITY_INDEX: &str = "objects_verification_git_tree_applicability_v1";
@@ -834,54 +809,6 @@ pub(crate) struct BeginGateWorkProtocolAttempt<'a, B> {
 }
 
 #[derive(Serialize)]
-struct TurnIntentFingerprint<'a> {
-    control_schema_version: u16,
-    session_id: &'a SessionId,
-    task_id: Option<TaskId>,
-    intent: &'a TurnIntent,
-}
-
-#[derive(Serialize)]
-struct ControlSessionBindFingerprint<'a> {
-    control_schema_version: u16,
-    project_id: &'a crate::domain::ProjectId,
-    external_ref: &'a str,
-    title: &'a str,
-    session_id: &'a SessionId,
-    actor: &'a ActorContext,
-    assurance: ControlAssurance,
-    mediated_effects: &'a [EffectClass],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    work_binding: Option<&'a ControlWorkBinding>,
-    capability_map_revision: i64,
-    idempotency_key: &'a str,
-}
-
-#[derive(Serialize)]
-struct ControlTurnBeginFingerprint<'a> {
-    control_schema_version: u16,
-    session_id: &'a SessionId,
-    grant_id: &'a str,
-    delivery_tokens: &'a [String],
-    idempotency_key: &'a str,
-}
-
-#[derive(Serialize)]
-struct ControlTurnCheckpointFingerprint<'a> {
-    control_schema_version: u16,
-    session_id: &'a SessionId,
-    grant_id: &'a str,
-    next_intent: TurnNextIntent,
-    #[serde(skip_serializing_if = "execution_observations_are_empty")]
-    observations: &'a [ExecutionObservationInput],
-    #[serde(skip_serializing_if = "verification_evidence_inputs_are_empty")]
-    verification_evidence: &'a [VerificationEvidenceInput],
-    #[serde(skip_serializing_if = "environment_evidence_inputs_are_empty")]
-    environment_evidence: &'a [EnvironmentEvidenceInput],
-    idempotency_key: &'a str,
-}
-
-#[derive(Serialize)]
 struct NamedRootBindingFingerprint<'a> {
     control_schema_version: u16,
     session_id: &'a SessionId,
@@ -895,18 +822,6 @@ struct NamedRootBindingFingerprint<'a> {
     idempotency_key: &'a str,
 }
 
-fn execution_observations_are_empty(value: &&[ExecutionObservationInput]) -> bool {
-    value.is_empty()
-}
-
-fn verification_evidence_inputs_are_empty(value: &&[VerificationEvidenceInput]) -> bool {
-    value.is_empty()
-}
-
-fn environment_evidence_inputs_are_empty(value: &&[EnvironmentEvidenceInput]) -> bool {
-    value.is_empty()
-}
-
 #[derive(Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 #[allow(
@@ -914,13 +829,6 @@ fn environment_evidence_inputs_are_empty(value: &&[EnvironmentEvidenceInput]) ->
     reason = "each variant names the audited policy operation it fingerprints"
 )]
 enum ControlPolicyOperationFingerprint<'a> {
-    SetRequiredAssurance {
-        fingerprint_schema_version: u16,
-        idempotency_key: &'a str,
-        required_assurance: ControlAssurance,
-        authorized_by: &'a ActorContext,
-        expected_policy: Option<&'a ObjectId>,
-    },
     SetObligationRuleSet {
         fingerprint_schema_version: u16,
         idempotency_key: &'a str,
@@ -1254,13 +1162,6 @@ pub struct MissingMemorySection {
     pub sections: Vec<String>,
 }
 
-pub(crate) const CONTROL_STORE_BUSY_MESSAGE: &str = concat!(
-    "transient control store contention; this attempt committed no changes; ",
-    "retry the exact same request on the same control connection, ",
-    "with the same idempotency key if the request has one; ",
-    "preserve the still-valid binding and prior replay or reconciliation uncertainty"
-);
-
 /// Errors at the immutable storage boundary.
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -1290,16 +1191,6 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
-    #[error("control inspection diagnostic scan exceeded its SQLite VM-step budget")]
-    ControlInspectionBudgetExceeded {
-        #[source]
-        source: Box<rusqlite::Error>,
-    },
-    #[error("{CONTROL_STORE_BUSY_MESSAGE}")]
-    ControlStoreBusy {
-        #[source]
-        source: Box<rusqlite::Error>,
-    },
     #[error(
         "Control request allowance expired before commit; this attempt committed no changes. Retry only the same retained request and idempotency key on the current connection with a still-valid binding. Earlier uncertain attempts remain unresolved."
     )]
@@ -1338,10 +1229,6 @@ pub enum StoreError {
     InvalidMemoryProjection(String),
     #[error("task projection contains invalid data: {0}")]
     InvalidTaskProjection(String),
-    #[error("session {0:?} has no control scope binding")]
-    NoActiveTask(String),
-    #[error("session {session:?} is not a participant of task {task:?}")]
-    TaskAccessDenied { task: TaskId, session: String },
     #[error("memory {0} does not exist or its schema is not active")]
     MemoryNotFound(ObjectId),
     #[error("caller is not authorized to read memory {0}")]
@@ -1375,8 +1262,8 @@ pub enum StoreError {
     ProjectMemoryBindingInvalid,
     #[error("project memory input is invalid: {0}")]
     InvalidProjectMemory(String),
-    #[error("control session input is invalid: {0}")]
-    InvalidControlSession(String),
+    #[error("host context input is invalid: {0}")]
+    InvalidHostContext(String),
     #[error("named-root binding refused: {0}")]
     NamedRootBindingRefused(String),
     /// New host-supplied source text (a workspace id or source revision)
@@ -1442,42 +1329,16 @@ pub enum StoreError {
         "the project root's filesystem identity is unresolved, so path intents are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
     )]
     HostPathIdentityUnresolved,
-    #[error("session {0:?} has no host-private control binding")]
-    ControlSessionNotBound(String),
-    #[error("routing token does not match control session {0:?}")]
-    ControlSessionTokenMismatch(String),
     #[error("host control connection for session {0:?} was superseded")]
     ControlConnectionSuperseded(String),
     /// The serving connection cannot prove which store file it holds open,
     /// which no platform can yet do, so it shows no path. Never a match.
     #[error("the control connection cannot show which store it opened: {0}")]
     ControlConnectionIdentityUnavailable(String),
-    #[error("control session bind key {0:?} was reused for a different intent")]
-    ControlSessionBindConflict(String),
-    #[error("turn request key {0:?} was reused for a different intent")]
-    ControlTurnIdempotencyConflict(String),
     #[error("control operation {operation} key {key:?} was reused for a different intent")]
     ControlOperationIdempotencyConflict { operation: String, key: String },
-    #[error("control work binding for {work:?} is stale; reread the live claim and rebind")]
+    #[error("work binding for {work:?} is stale; reread the current claim association")]
     ControlWorkBindingStale { work: crate::domain::WorkId },
-    #[error("execution observation {observation_id:?} is outside the turn grant scope")]
-    ControlGrantScopeMismatch { observation_id: String },
-    #[error("execution observation {observation_id:?} does not match the bound work scope")]
-    ControlObservationScopeMismatch { observation_id: String },
-    #[error("verification producer observation {0:?} cannot be resolved for this checkpoint")]
-    VerificationProducerObservationNotFound(String),
-    #[error("environment fingerprint does not match the canonical component identity")]
-    EnvironmentFingerprintMismatch,
-    #[error("environment evidence {0:?} cannot be resolved for this checkpoint")]
-    EnvironmentEvidenceNotFound(String),
-    #[error("environment evidence {0:?} does not match the verification run/source basis")]
-    EnvironmentBasisMismatch(String),
-    #[error("turn grant {0:?} does not exist")]
-    ControlTurnGrantNotFound(String),
-    #[error("turn grant belongs to another session")]
-    ControlTurnGrantSessionMismatch,
-    #[error("turn grant id must not be empty or whitespace-only")]
-    InvalidTurnGrantId,
     #[error("control projection contains invalid data: {0}")]
     InvalidControlProjection(String),
     #[error("active control policy changed: expected {expected}, current policy is {current}")]
@@ -1741,31 +1602,18 @@ pub struct ControlDiagnostics {
     pub control_schema_version: u16,
     pub active_policy: ObjectId,
     pub policy_epoch: ProjectPolicyEpoch,
-    pub required_assurance: ControlAssurance,
-    pub supported_effects: Vec<EffectClass>,
     pub obligation_rule_set: ObjectId,
-    /// Which evaluator modes may record verdicts and what backs a pass; a
-    /// host reads this to select a mode the store will admit.
     pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
-    pub unenforced_effects: Vec<EffectClass>,
-    pub active_sessions: usize,
-    pub issued_turns: usize,
-    pub begun_turns: usize,
-    pub action_gating_available: bool,
-    pub authority_mediation_available: bool,
-    pub action_outcome_tracking_available: bool,
 }
 
-/// Validated policy facts for host readiness, without live-history counters.
+/// Project policy metadata for work observations and acceptance evaluation.
 #[derive(Clone, Debug, Serialize)]
 pub struct ReadinessControlPolicy {
     pub schema_version: u16,
     pub policy: ObjectId,
     pub epoch: i64,
-    pub required_assurance: ControlAssurance,
     pub obligation_rules: ObjectId,
     pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
-    pub supported_effects: Vec<EffectClass>,
 }
 
 /// Existing-store admission facts, not an exhaustive integrity report or grant.
@@ -1907,12 +1755,9 @@ const MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES: usize = 4_096;
 const MAX_PROJECT_MEMORY_PROVENANCE_LINKS: usize = 32;
 const MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES: usize = 64 * 1_024;
 
-const MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT: usize = 64;
-const MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT: usize = 16;
-const MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT: usize = 4;
-const MAX_TYPED_EVIDENCE_SUMMARY_BYTES: usize = 4 * 1_024;
 const MAX_TYPED_EVIDENCE_REFS: usize = 64;
 const MAX_TYPED_EVIDENCE_REF_BYTES: usize = 1_024;
+#[cfg(test)]
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
 const BUILTIN_CONTROL_GRANT_TTL_SECONDS: i64 = 30;
 const MAX_CONTROL_POLICY_PROVENANCE_LINKS: usize = 32;
@@ -2049,117 +1894,19 @@ fn fail_cold_schema_after_ddl() -> bool {
     FAIL_COLD_SCHEMA_AFTER_DDL.replace(false)
 }
 
-struct StoredControlSession {
-    project_id: crate::domain::ProjectId,
-    task_id: TaskId,
-    work_binding: Option<ControlWorkBinding>,
-    session_id: SessionId,
-    routing_token: String,
-    actor: ActorContext,
-    bind_key: String,
-    bind_intent_hash: String,
-    phase: SessionPhase,
-    assurance: ControlAssurance,
-    mediated_effects: Vec<EffectClass>,
-    epochs: ControlEpochs,
-    capability_map_revision: i64,
-    revision: i64,
-    open_grant_id: Option<String>,
-}
-
-/// One `control_sessions` row as stored. `confirmed_cursor`,
-/// `tentative_cursor` and `blocking_watermark` are retained columns that no
-/// decision reads; the loader still checks their bounds.
-struct RawControlSession {
-    project_id: String,
-    task_id: String,
-    root_execution_id: Option<String>,
-    work_id: Option<String>,
-    run_id: Option<String>,
-    work_revision: Option<i64>,
-    claim_id: Option<String>,
-    claim_fence: Option<i64>,
-    routing_token: String,
-    actor_json: Vec<u8>,
-    bind_key: String,
-    bind_intent_hash: String,
-    bind_intent_json: Vec<u8>,
-    phase: String,
-    assurance: String,
-    mediated_effects_json: String,
-    confirmed_cursor: i64,
-    tentative_cursor: Option<i64>,
-    project_policy_epoch: i64,
-    task_admission_epoch: i64,
-    blocking_watermark: i64,
-    capability_map_revision: i64,
-    revision: i64,
-    open_grant_id: Option<String>,
-}
-
 struct ControlPolicyProjection {
     state_schema_version: i64,
     policy_id: ObjectId,
     authority_id: ObjectId,
     epoch: ProjectPolicyEpoch,
-    required_assurance: ControlAssurance,
-    supported_effects: Vec<EffectClass>,
-    grant_ttl_seconds: i64,
     obligation_rule_set: ObjectId,
     activated_at: DateTime<Utc>,
-}
-
-struct InitialControlPolicy {
-    required_assurance: ControlAssurance,
-    authorized_by: ActorContext,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OpenWriteNeed {
     Current,
     NeedsWrite,
-}
-
-struct StoredTurnGrant {
-    grant: IssuedTurnGrant,
-    state: TurnGrantState,
-}
-
-struct StoredControlTurnResult {
-    sequence: i64,
-    session_id: String,
-    task_id: String,
-    idempotency_key: String,
-    intent_hash: String,
-    intent_json: Vec<u8>,
-    decision_hash: String,
-    decision_json: Vec<u8>,
-}
-
-struct StoredControlGrantRow {
-    grant_id: String,
-    session_id: String,
-    task_id: String,
-    request_key: String,
-    grant_json: Vec<u8>,
-    state: String,
-    issued_at_ms: i64,
-    expires_at_ms: i64,
-}
-
-struct PendingTurnGrantSupersession {
-    grant_id: String,
-    request_key: String,
-}
-
-struct StoredTurnGrantSupersession {
-    superseded_grant_id: String,
-    session_id: String,
-    task_id: String,
-    replacement_request_key: String,
-    replacement_decision_hash: String,
-    supersession_json: Vec<u8>,
-    superseded_at_ms: i64,
 }
 
 struct StoredControlOperation {

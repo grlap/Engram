@@ -1,85 +1,11 @@
-use chrono::{TimeDelta, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use rusqlite::Connection;
 
 use super::*;
 use crate::storage::{store_sidecars, test_database_shape_snapshot, test_support::*};
 use crate::*;
 
-use crate::{
-    DevelopmentNoopRedactor,
-    domain::{ControlAssurance, EffectClass, ProjectId, TurnIntent},
-};
-
-#[test]
-fn integrity_scanner_covers_enforced_control_records() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().unwrap();
-    let binding = bind_control(&mut store, now);
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &SessionId("control-session".into()),
-            &binding.connection_token,
-            &binding.routing_token,
-            &TurnIntent {
-                idempotency_key: "integrity-turn-a".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"integrity-turn-a"),
-                purpose: Some(crate::domain::TurnPurpose::Ordinary),
-                requested_effects: vec![EffectClass::Observe],
-                resource_intents: Vec::new(),
-            },
-            now + TimeDelta::seconds(1),
-        )
-        .unwrap();
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("control integrity fixture must grant");
-    };
-    let healthy = store.verify_all().unwrap();
-    assert!(healthy.is_healthy());
-    // The policy state, its version, the rule set they select, the session,
-    // the turn result and the grant.
-    assert_eq!(healthy.checked_control_records, 6);
-
-    store
-        .connection
-        .execute(
-            "UPDATE control_sessions SET bind_intent_json = ?1",
-            params![b"{}".as_slice()],
-        )
-        .unwrap();
-    store
-        .connection
-        .execute(
-            "UPDATE control_turn_results SET decision_json = ?1",
-            params![b"{}".as_slice()],
-        )
-        .unwrap();
-    store
-        .connection
-        .execute(
-            "UPDATE control_turn_grants SET grant_json = ?1",
-            params![b"{}".as_slice()],
-        )
-        .unwrap();
-    let corrupted = store.verify_all().unwrap();
-    assert_eq!(corrupted.checked_control_records, 6);
-    assert_eq!(corrupted.invalid_control_records.len(), 3);
-    assert!(
-        corrupted
-            .invalid_control_records
-            .contains(&"control_session:control-session".into())
-    );
-    assert!(
-        corrupted
-            .invalid_control_records
-            .contains(&"control_turn_result:1".into())
-    );
-    assert!(
-        corrupted
-            .invalid_control_records
-            .contains(&format!("control_turn_grant:{}", grant.grant_id))
-    );
-}
+use crate::DevelopmentNoopRedactor;
 
 #[test]
 fn diagnostics_only_policy_recovery_names_every_invalid_binding_without_mutation() {
@@ -89,8 +15,11 @@ fn diagnostics_only_policy_recovery_names_every_invalid_binding_without_mutation
     let mut store = SqliteStore::open(&database).expect("initialize policy fixture");
     let initial = store.control_diagnostics().expect("initial policy");
     let changed = store
-        .set_required_control_assurance(
-            ControlAssurance::Advisory,
+        .set_obligation_rule_set(
+            &ObligationRuleSet {
+                schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+                rules: Vec::new(),
+            },
             &actor("recovery-test-admin"),
             "recovery-test-policy-update",
             Some(&initial.active_policy),
@@ -188,9 +117,6 @@ fn diagnostics_only_policy_recovery_reports_missing_and_malformed_columns_withou
                      singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                      schema_version INTEGER NOT NULL,
                      {epoch_column}
-                     required_assurance TEXT NOT NULL,
-                     supported_effects_json TEXT NOT NULL,
-                     grant_ttl_seconds INTEGER NOT NULL,
                      policy_id TEXT REFERENCES objects(object_id)
                  ) STRICT;"
             ))
@@ -198,14 +124,14 @@ fn diagnostics_only_policy_recovery_reports_missing_and_malformed_columns_withou
         let (insert_columns, select_columns) = policy_epoch_projection.map_or_else(
             || {
                 (
-                    "singleton, schema_version, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id".to_owned(),
-                    "singleton, schema_version, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id".to_owned(),
+                    "singleton, schema_version, policy_id".to_owned(),
+                    "singleton, schema_version, policy_id".to_owned(),
                 )
             },
             |projection| {
                 (
-                    "singleton, schema_version, policy_epoch, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id".to_owned(),
-                    format!("singleton, schema_version, {projection}, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id"),
+                    "singleton, schema_version, policy_epoch, policy_id".to_owned(),
+                    format!("singleton, schema_version, {projection}, policy_id"),
                 )
             },
         );

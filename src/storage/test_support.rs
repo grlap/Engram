@@ -1,14 +1,6 @@
-use chrono::TimeDelta;
-
 use super::*;
 
-use crate::{
-    DevelopmentNoopRedactor,
-    domain::{
-        AssuranceLevel, ControlAssurance, EffectClass, NoteRequest, NoteVisibility, ProjectId,
-        TurnIntent,
-    },
-};
+use crate::domain::{AssuranceLevel, NoteRequest, NoteVisibility, ProjectId};
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) struct Example {
@@ -71,19 +63,6 @@ pub(super) fn actor(session: &str) -> ActorContext {
     }
 }
 
-pub(super) fn open_with_assurance(
-    path: &Path,
-    required_assurance: ControlAssurance,
-) -> Result<SqliteStore, StoreError> {
-    SqliteStore::open_with_initial_control_assurance(
-        path,
-        Some(HostPathPolicy::host_default()),
-        required_assurance,
-        &actor("bootstrap-policy-admin"),
-        &DevelopmentNoopRedactor,
-    )
-}
-
 pub(super) fn note_request(
     task_id: TaskId,
     session: &str,
@@ -119,186 +98,84 @@ impl SqliteStore {
         self.connection.busy_timeout(timeout)
     }
 
-    pub(crate) fn bind_test_control_scope(
+    /// Installs passive historical task visibility for memory-reader fixtures.
+    pub(crate) fn historical_task_scope(
         &mut self,
         project: &ProjectId,
         external_ref: &str,
         title: &str,
         session: &SessionId,
-        actor: &ActorContext,
-        now: DateTime<Utc>,
-    ) -> Result<ControlSessionBinding, StoreError> {
-        let connection = self.resume_control_connection(session, now)?;
-        self.bind_control_session(
-            project,
-            external_ref,
-            title,
-            session,
-            &connection,
-            actor,
-            ControlAssurance::TurnGated,
-            &[EffectClass::Observe, EffectClass::Communicate],
-            1,
-            &uuid::Uuid::new_v4().to_string(),
-            now,
-        )
+    ) -> Result<HistoricalTaskScope, StoreError> {
+        self.connection.execute_batch("CREATE TEMP TABLE IF NOT EXISTS fixture_memory_membership (task_id TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(task_id,session_id))")?;
+        let existing: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT task_id FROM control_anchors WHERE project_id = ?1 AND external_ref = ?2",
+                params![project.0, external_ref],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let task_id = if let Some(id) = existing {
+            TaskId(uuid::Uuid::parse_str(&id).unwrap())
+        } else {
+            let id = TaskId::new();
+            self.connection.execute("INSERT INTO control_anchors(task_id,project_id,external_ref,title) VALUES (?1,?2,?3,?4)", params![id.0.to_string(),project.0,external_ref,title])?;
+            id
+        };
+        self.connection.execute(
+            "INSERT OR IGNORE INTO fixture_memory_membership(task_id,session_id) VALUES (?1,?2)",
+            params![task_id.0.to_string(), session.0],
+        )?;
+        Ok(HistoricalTaskScope { task_id })
     }
+}
+
+pub(crate) struct HistoricalTaskScope {
+    pub(super) task_id: TaskId,
+}
+
+pub(super) fn historical_default_task(store: &mut SqliteStore) -> HistoricalTaskScope {
+    store
+        .historical_task_scope(
+            &ProjectId("project-a".into()),
+            "dummy:CONTROL-HOST-1",
+            "Historical task",
+            &SessionId("control-session".into()),
+        )
+        .unwrap()
 }
 
 pub(super) fn install_memory_task(store: &mut SqliteStore, task_id: TaskId, sessions: &[&str]) {
     let external_ref = format!("memory-test:{task_id:?}");
-    store
-        .connection
-        .execute(
-            "INSERT INTO control_anchors (task_id, project_id, external_ref, title)
-         VALUES (?1, 'project-a', ?2, 'Memory test')",
-            params![task_id.0.to_string(), external_ref],
-        )
-        .expect("install memory scope");
+    store.connection.execute("INSERT INTO control_anchors(task_id,project_id,external_ref,title) VALUES (?1,'project-a',?2,'Memory test')", params![task_id.0.to_string(),external_ref]).unwrap();
     for session in sessions {
         store
-            .bind_test_control_scope(
+            .historical_task_scope(
                 &ProjectId("project-a".into()),
                 &external_ref,
                 "Memory test",
                 &SessionId((*session).into()),
-                &actor(session),
-                Utc::now(),
             )
-            .expect("bind memory scope");
+            .unwrap();
     }
 }
 
-pub(super) struct TestControlBinding {
-    pub(super) binding: ControlSessionBinding,
+pub(super) struct TestWorkHost {
+    pub(super) session_id: SessionId,
     pub(super) connection_token: String,
 }
 
-impl std::ops::Deref for TestControlBinding {
-    type Target = ControlSessionBinding;
-
-    fn deref(&self) -> &Self::Target {
-        &self.binding
-    }
-}
-
-pub(super) fn bind_control(store: &mut SqliteStore, now: DateTime<Utc>) -> TestControlBinding {
-    bind_control_for(
-        store,
-        "control-session",
-        "bind-control-a",
-        &[EffectClass::Observe, EffectClass::Communicate],
-        now,
-    )
-}
-
-pub(super) fn bind_control_for(
+pub(super) fn open_work_host(
     store: &mut SqliteStore,
     session: &str,
-    bind_key: &str,
-    mediated_effects: &[EffectClass],
     now: DateTime<Utc>,
-) -> TestControlBinding {
-    bind_control_for_task(
-        store,
-        session,
-        bind_key,
-        "dummy:CONTROL-HOST-1",
-        mediated_effects,
-        now,
-    )
-}
-
-pub(super) fn bind_control_for_task(
-    store: &mut SqliteStore,
-    session: &str,
-    bind_key: &str,
-    external_ref: &str,
-    mediated_effects: &[EffectClass],
-    now: DateTime<Utc>,
-) -> TestControlBinding {
+) -> TestWorkHost {
     let session_id = SessionId(session.into());
-    let connection_token = store.resume_control_connection(&session_id, now).unwrap();
-    let binding = store
-        .bind_control_session(
-            &ProjectId("project-a".into()),
-            external_ref,
-            "Exercise the host control lifecycle",
-            &session_id,
-            &connection_token,
-            &actor(session),
-            ControlAssurance::TurnGated,
-            mediated_effects,
-            1,
-            bind_key,
-            now,
-        )
-        .unwrap();
-    TestControlBinding {
-        binding,
+    let connection_token = store.resume_work_connection(&session_id, now).unwrap();
+    TestWorkHost {
+        session_id,
         connection_token,
     }
-}
-
-pub(super) fn complete_control_turn(
-    store: &mut SqliteStore,
-    binding: &TestControlBinding,
-    key: &str,
-    requested_effects: Vec<EffectClass>,
-    resource_intents: Vec<crate::domain::ResourceSubject>,
-    now: DateTime<Utc>,
-) -> IssuedTurnGrant {
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &TurnIntent {
-                idempotency_key: format!("turn-{key}"),
-                intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
-                purpose: Some(crate::domain::TurnPurpose::Ordinary),
-                requested_effects,
-                resource_intents,
-            },
-            now,
-        )
-        .unwrap();
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("control turn {key} must grant");
-    };
-    assert!(grant.delivery.is_none(), "a grant carries no delivery page");
-    assert!(matches!(
-        store
-            .begin_control_turn(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                &grant.grant_id,
-                &[],
-                &format!("begin-{key}"),
-                now + TimeDelta::milliseconds(1),
-            )
-            .unwrap(),
-        ControlTurnBeginDecision::Begin { .. }
-    ));
-    assert!(matches!(
-        store
-            .checkpoint_control_turn(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
-                &format!("checkpoint-{key}"),
-                now + TimeDelta::milliseconds(2),
-            )
-            .unwrap(),
-        ControlTurnCheckpointDecision::Checkpointed { .. }
-    ));
-    *grant
 }
 
 pub(super) fn ascii65_session() -> SessionId {

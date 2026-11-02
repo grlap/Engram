@@ -8,26 +8,23 @@ of string-keyed memory stores before this design: users hand-encoding type,
 author, and date into prose because the schema had nowhere to put them, and
 session-start payloads growing linearly until hosts truncated them.
 
-There is a third failure: even correct memory is merely advice if an agent can
-start the next turn, mutate shared work, or publish while stale, unclaimed, or
-unfinished. Engram's target architecture therefore owns the behavioral and
-coordination decision layer around locally owned work. A host runtime must enforce
-its grants at prompt and declared tool boundaries; Engram does not pretend an
-optional agent tool is control.
+There is a third failure: even correct memory says nothing about what an
+agent actually did. Engram therefore records what the host observes around
+locally owned work: which session held which claim, what ran, how the source
+changed and which registered checks passed. This is Execution Observability,
+switched on or off per project in the host. It records facts; it never
+admits, delays or refuses a model turn, and an optional agent tool is never
+presented as control.
 
-## The controlled execution loop
+## The observed execution loop
 
-For each session, the target architecture determines whether required context
-and peer deltas were host-confirmed as delivered, ownership is current,
-previous effects are reconciled, and lifecycle barriers are satisfied. Today a
-grant carries no context: agents read work context and peer changes through
-`next`, and a typed refusal directive handles the unsafe tail. The
-strongest integration level is designed and deferred
-([action gates](features/action-gates.md)): there the host also requests a
-single-use grant immediately before every declared material action and
-reports its outcome, which may arrive after the turn has ended. An effect
-whose outcome is unresolved blocks overlapping writes and completion, not
-every later turn.
+For each session, a claim schedules live execution of one run, and the agent
+reads its work context and peer changes through `next`. A host that runs
+Execution Observability records the execution, source and test facts it saw
+against that claim, and registered verification of the checks it ran. A
+source change opens a test obligation that a later registered check
+satisfies; completion binds what was recorded. An observed check is a fact
+without test credit.
 
 Engram derives a bounded, deterministic ready-work view, but it does not
 supervise processes. The host or model selects among allowed candidates; the
@@ -87,7 +84,7 @@ shipped, and cross-host execution coordination remains deferred (see
   coexist visibly as *contested* until an attributed resolution supersedes
   them — never last-writer-wins.
 - **Local authority while working, explicit at every remote boundary.** Live
-  claims, grants, delivery state, and agent-private scratch stay on their local
+  claims, delivery state, and agent-private scratch stay on their local
   host. Optional Git task-text exchange uses an explicit disclosure profile,
   with repository visibility and readership recorded at enablement. Publication
   separately sends a frozen report or explicit work projection under an
@@ -99,12 +96,10 @@ shipped, and cross-host execution coordination remains deferred (see
 - **One core, many faces.** CLI, MCP server, and any future service front the
   same core for work and project memory, so delivery semantics cannot
   drift.
-- **Control requires mediation.** Engram decides; the host enforces. Turn
-  grants are bounded, checkpointed, and invalidated by relevant policy or
-  ownership changes; action grants are designed and deferred
-  ([action gates](features/action-gates.md)). An agent never
-  self-authorizes through MCP. See the
-  [behavioral control plane](features/behavioral-control-plane.md).
+- **Observation, not authority.** The host records what happened; Engram
+  stores and links it. Claims schedule work and grant no file or external
+  authority, and no agent authorizes itself through MCP. See
+  [Execution Observability](features/execution-observability.md).
 
 ## What Engram is not
 
@@ -125,5 +120,5 @@ shipped, and cross-host execution coordination remains deferred (see
 ## Further reading
 
 - [Architecture](architecture.md) — how the pieces fit
-- [Specification](spec.md) — the normative local-work/control design (Draft 0.8)
+- [Specification](spec.md) — the normative local-work and Execution Observability design (Draft 0.8)
 - [Roadmap](roadmap.md) — the V1 cut and what is deliberately deferred

@@ -62,129 +62,31 @@ fn work_session_capabilities_track_the_actual_git_tree_barrier() {
     }
 }
 
-fn retained(connection: &rusqlite::Connection) -> Vec<(String, Vec<String>)> {
-    [
-        "control_sessions",
-        "control_turn_grants",
-        "control_turn_results",
-        "control_operation_results",
-        "control_turn_grant_supersessions",
-    ]
-    .into_iter()
-    .map(|table| {
-        let mut statement = connection
-            .prepare(&format!("SELECT * FROM {table}"))
-            .unwrap();
-        let columns = statement.column_count();
-        let mut rows = statement
-            .query_map([], |row| {
-                (0..columns)
-                    .map(|column| row.get_ref(column).map(|value| format!("{value:?}")))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(|row| format!("{row:?}"))
-            })
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        rows.sort();
-        (table.into(), rows)
-    })
-    .collect()
+fn retained(connection: &rusqlite::Connection) -> Vec<(String, Vec<u8>)> {
+    connection
+        .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
 }
 
 #[test]
-fn work_session_startup_preserves_real_issued_begun_and_exited_control_records() {
-    for state in ["issued", "begun", "exited"] {
-        let directory = crate::test_support::temp_home().unwrap();
-        let database = directory.path().join("host.db");
-        let project = ProjectId("work-project".into());
-        let session = SessionId("work-host".into());
-        let mut legacy = HostControlServer::open(
-            &database,
-            project.clone(),
-            "runner".into(),
-            session.clone(),
-            None,
-        )
-        .unwrap();
-        let bound = request(
-            &mut legacy,
-            serde_json::json!({
-                "operation":"session_bind", "external_ref":"work-host", "title":"host",
-                "assurance":"turn_gated", "mediated_effects":["observe"],
-                "capability_map_revision":1, "idempotency_key":"old-bind"
-            }),
-        );
-        let routing = &bound["routing_token"];
-        let decision = request(
-            &mut legacy,
-            serde_json::json!({
-                "operation":"turn_evaluate", "routing_token":routing,
-                "idempotency_key":"old-evaluate",
-                "intent_fingerprint":ObjectId::from_canonical_bytes(b"old-turn").as_str(),
-                "requested_effects":["observe"]
-            }),
-        );
-        let grant = &decision["grant"]["grant_id"];
-        assert!(grant.is_string(), "{decision}");
-        if state != "issued" {
-            request(
-                &mut legacy,
-                serde_json::json!({
-                    "operation":"turn_begin", "routing_token":routing, "grant_id":grant,
-                    "idempotency_key":"old-begin"
-                }),
-            );
-        }
-        if state == "exited" {
-            request(
-                &mut legacy,
-                serde_json::json!({
-                    "operation":"turn_checkpoint", "routing_token":routing, "grant_id":grant,
-                    "next_intent":"exit", "idempotency_key":"old-checkpoint"
-                }),
-            );
-        }
-        drop(legacy);
-        let observer = rusqlite::Connection::open(&database).unwrap();
-        let before = retained(&observer);
-        let mut ordinary = HostControlServer::open_work_session_with_host_path_identity(
-            &database,
-            Some(HostPathPolicy::host_default()),
-            project.clone(),
-            "runner".into(),
-            session.clone(),
-            None,
-        )
-        .unwrap();
-        let context = request(
-            &mut ordinary,
-            serde_json::json!({"operation":"work_session_read"}),
-        );
-        assert_eq!(
-            context["project_id"],
-            serde_json::to_value(project).unwrap()
-        );
-        assert_eq!(
-            context["session_id"],
-            serde_json::to_value(session).unwrap()
-        );
-        assert_eq!(context["work_session"], true);
-        let refused = ordinary.handle(
-            serde_json::from_value(serde_json::json!({
-                "operation":"turn_begin", "routing_token":routing, "grant_id":grant,
-                "idempotency_key":"old-begin"
-            }))
-            .unwrap(),
-        );
-        assert!(
-            matches!(refused, Err(StoreError::InvalidControlSession(message))
-            if message.contains("turn admission is unavailable"))
-        );
-        assert_eq!(
-            retained(&observer),
-            before,
-            "{state}: open/read/refusal changed history"
-        );
+fn removed_turn_operations_have_no_host_dispatch() {
+    for operation in [
+        "session_bind",
+        "session_status",
+        "turn_grant_read",
+        "turn_evaluate",
+        "turn_begin",
+        "turn_checkpoint",
+    ] {
+        let frame = serde_json::json!({"operation":operation});
+        let response = parse_frame(Ok(serde_json::to_vec(&frame).unwrap())).unwrap_err();
+        let HostControlResponse::Error { error } = response else {
+            panic!("removed operation admitted")
+        };
+        assert_eq!(error.code, "invalid_request");
     }
 }

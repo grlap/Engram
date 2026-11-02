@@ -14,8 +14,8 @@ use crate::ObjectId;
 use crate::canonical::CanonicalObject;
 use crate::domain::{
     ControlWorkBinding, FeedPosition, ObservationAccounting, ObservationAuditReason,
-    ObservationRootBasis, ObservedSourceChange, SourceObservation, UnadmittedExecutionObservation,
-    WorkClaimState, WorkEvent, WorkLifecycle, WorkRunState,
+    ObservationRootBasis, ObservedSourceChange, RecordedOccurrence, SourceObservation,
+    UnadmittedExecutionObservation, WorkClaimState, WorkEvent, WorkLifecycle, WorkRunState,
 };
 use crate::storage::StoreError;
 
@@ -39,7 +39,7 @@ pub(in crate::storage) fn decide_accounting_on(
     connection: &Connection,
     binding: &ControlWorkBinding,
     root_basis: &ObservationRootBasis,
-    change: Option<&ObservedSourceChange>,
+    occurrence: &RecordedOccurrence,
     through: i64,
 ) -> Result<ObservationAccounting, StoreError> {
     let audit = |reason| Ok(ObservationAccounting::AuditOnly { reason });
@@ -52,7 +52,10 @@ pub(in crate::storage) fn decide_accounting_on(
     if root_basis_moved_on(connection, binding, root_basis, through)? {
         return audit(ObservationAuditReason::RootBasisMoved);
     }
-    let Some(change) = change else {
+    if matches!(occurrence, RecordedOccurrence::SourceSighting { .. }) {
+        return Ok(ObservationAccounting::Sighting {});
+    }
+    let Some(change) = occurrence.source_change() else {
         return Ok(ObservationAccounting::NoSourceChange {});
     };
     if let Some(anchor) = repeated_change_on(connection, binding, change, through)? {

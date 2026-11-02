@@ -17,7 +17,6 @@ struct Credentials {
     project_id: ProjectId,
     session_id: SessionId,
     connection_token: String,
-    routing_token: String,
 }
 
 impl Credentials {
@@ -26,7 +25,6 @@ impl Credentials {
             project_id: host.project_id.clone(),
             session_id: host.session_id.clone(),
             connection_token: host.connection_token.clone(),
-            routing_token: host.routing_token.clone(),
         }
     }
 }
@@ -41,7 +39,7 @@ fn read(
         &host.project_id,
         &host.session_id,
         &host.connection_token,
-        &host.routing_token,
+        crate::storage::HostSessionAuthority::Work,
         run_id,
         claim_id,
     );
@@ -359,19 +357,12 @@ fn a_still_bound_root_reads_bound_after_its_holder_is_gone() {
         11,
     )
     .expect("host names B");
-    let observer = crate::storage::test_support::bind_control_for(
-        &mut fixture.store,
-        "observer",
-        "observe-old-claims",
-        &[EffectClass::Observe],
-        at(30_000),
-    );
-    assert!(observer.status.work_binding.is_none());
+    let observer =
+        crate::storage::test_support::open_work_host(&mut fixture.store, "observer", at(30_000));
     let reader = Credentials {
         project_id: work.project_id.clone(),
-        session_id: observer.status.session_id.clone(),
+        session_id: observer.session_id.clone(),
         connection_token: observer.connection_token.clone(),
-        routing_token: observer.routing_token.clone(),
     };
     assert_ne!(reader.session_id, host.session_id);
     let read =
@@ -454,10 +445,10 @@ fn a_claim_that_does_not_belong_to_the_run_is_refused() {
     );
     // The session's own credentials keep their refusals.
     let mut wrong = Credentials::of(&host);
-    wrong.routing_token = "wrong-routing".into();
+    wrong.connection_token = "superseded-connection".into();
     assert!(matches!(
         read_claim_result(&fixture.store, &wrong, &claim),
-        Err(StoreError::ControlSessionTokenMismatch(_))
+        Err(StoreError::ControlConnectionSuperseded(_))
     ));
     let mut wrong = Credentials::of(&host);
     wrong.connection_token = "wrong-connection".into();
@@ -469,7 +460,9 @@ fn a_claim_that_does_not_belong_to_the_run_is_refused() {
     wrong.project_id = ProjectId("project-b".into());
     assert!(matches!(
         read_claim_result(&fixture.store, &wrong, &claim),
-        Err(StoreError::ControlSessionNotBound(_))
+        Err(StoreError::NamedRootReadRefused(
+            NamedRootReadRefusal::OtherProject
+        ))
     ));
     assert_consistent(
         &fixture.store,
@@ -492,7 +485,7 @@ fn read_claim_result(
 // session status would expire.
 #[test]
 fn reads_and_refusals_write_nothing() {
-    let (mut fixture, _work, claim, mut host) = bound_host();
+    let (mut fixture, _work, claim, host) = bound_host();
     host_binds(
         &mut fixture.store,
         &host,
@@ -505,7 +498,6 @@ fn reads_and_refusals_write_nothing() {
         11,
     )
     .expect("host names B");
-    let _outstanding = host.grant(&mut fixture.store, &[EffectClass::Observe], false, 12);
     let before =
         crate::storage::test_database_shape_snapshot(&fixture.store.connection).expect("before");
     read_claim(&fixture.store, &host, &claim);
@@ -516,7 +508,7 @@ fn reads_and_refusals_write_nothing() {
         claim.claim_id,
     );
     let mut wrong = Credentials::of(&host);
-    wrong.routing_token = "wrong-routing".into();
+    wrong.connection_token = "superseded-connection".into();
     let _ = read_claim_result(&fixture.store, &wrong, &claim);
     let after =
         crate::storage::test_database_shape_snapshot(&fixture.store.connection).expect("after");
@@ -832,13 +824,7 @@ fn without_a_named_root_the_read_finds_none_and_recording_checks_no_sighting() {
 #[test]
 fn a_named_root_without_a_sighting_reads_absent_and_recording_refuses_until_it_is_sighted() {
     let (mut fixture, work, claim, note) = evaluated_fixture();
-    let host = bind_control_for(
-        &mut fixture.store,
-        "runner",
-        "named-evaluation-host",
-        &[crate::domain::EffectClass::Observe],
-        at(8),
-    );
+    let host = open_work_host(&mut fixture.store, "runner", at(8));
     name_root(&mut fixture.store, &work, &claim, &host, 9, 8);
     let before = sighting_read(&fixture.store, &work, claim.run_id, None);
     let NamedRootAtCut::Bound {
@@ -914,7 +900,7 @@ fn a_named_root_without_a_sighting_reads_absent_and_recording_refuses_until_it_i
 }
 
 #[test]
-fn a_quiet_checkpoint_in_the_root_is_a_sighting() {
+fn a_quiet_source_capture_in_the_root_is_a_sighting() {
     let (mut fixture, work, claim, note) = evaluated_fixture();
     let mut host = HostSession::bind(&mut fixture.store, &work, &claim, 6);
     let store = &mut fixture.store;
@@ -930,16 +916,14 @@ fn a_quiet_checkpoint_in_the_root_is_a_sighting() {
         30,
     )
     .expect("host names B");
-    assert!(matches!(
-        checkpoint_basis(
-            &mut host,
-            store,
-            workspace("workspace-B", "R2", Some(9)),
-            false,
-            40,
-        ),
-        Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
-    ));
+    observe_basis(
+        &mut host,
+        store,
+        workspace("workspace-B", "R2", Some(9)),
+        false,
+        40,
+    )
+    .expect("the host observation records");
     let read = sighting_read(store, &work, claim.run_id, None);
     assert!(
         matches!(
@@ -1000,7 +984,7 @@ fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
             &host.project_id,
             &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.run_id,
             claim.claim_id,
         )
@@ -1052,7 +1036,7 @@ fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
             &host.project_id,
             &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             &actor(&host.session_id.0),
             input,
             at(40),
@@ -1098,16 +1082,14 @@ fn after_a_release_and_a_new_name_an_older_generation_sighting_does_not_count() 
     )
     .expect("host names B");
     let mut host = host;
-    assert!(matches!(
-        checkpoint_basis(
-            &mut host,
-            &mut fixture.store,
-            stated(Some(9), Some(SourceRootState::Named)),
-            false,
-            10,
-        ),
-        Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
-    ));
+    observe_basis(
+        &mut host,
+        &mut fixture.store,
+        stated(Some(9), Some(SourceRootState::Named)),
+        false,
+        10,
+    )
+    .expect("the host observation records");
     let sighted = sighting_read(&fixture.store, &work, claim.run_id, None);
     assert!(matches!(
         sighted.root,
@@ -1171,13 +1153,7 @@ fn after_a_release_and_a_new_name_an_older_generation_sighting_does_not_count() 
 #[test]
 fn a_binding_that_moved_after_the_cut_is_reported_and_an_ended_root_reads_none() {
     let (mut fixture, work, claim, note) = evaluated_fixture();
-    let host = bind_control_for(
-        &mut fixture.store,
-        "runner",
-        "named-evaluation-host",
-        &[crate::domain::EffectClass::Observe],
-        at(8),
-    );
+    let host = open_work_host(&mut fixture.store, "runner", at(8));
     name_root(&mut fixture.store, &work, &claim, &host, 9, 8);
     host_verification_from_basis(
         &mut fixture.store,
@@ -1228,9 +1204,9 @@ fn a_binding_that_moved_after_the_cut_is_reported_and_an_ended_root_reads_none()
         .store
         .bind_named_root(
             &work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.claim_id,
             claim.fence,
             "workspace-B",
@@ -1353,7 +1329,7 @@ fn json_paths(
 fn the_documented_result_table_matches_every_result_shape() {
     let doc = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/docs/features/behavioral-control-plane.md"
+        "/docs/features/execution-observability.md"
     ));
     let table = doc
         .split("<!-- named-root-sighting-read:begin -->")

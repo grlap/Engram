@@ -46,10 +46,6 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "remedy": "inspect the item's notes and current state before retrying; earlier transactions of this word may already have committed",
         }),
         StoreError::NoteIdempotencyConflict(key) => json!({ "idempotency_key": key }),
-        StoreError::TaskAccessDenied { task, session } => json!({
-            "task_id": task.0,
-            "session_id": session,
-        }),
         StoreError::MemoryAccessDenied(hash) | StoreError::MemoryNotFound(hash) => {
             json!({ "object_id": hash })
         }
@@ -403,8 +399,6 @@ fn error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
-        StoreError::NoActiveTask(_) => "no_active_task",
-        StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::MemoryAccessDenied(_) => "memory_access_denied",
         StoreError::MemoryNotFound(_) | StoreError::ProjectMemoryNotFound(_) => "memory_not_found",
         StoreError::ProjectMemoryExists(_) => "memory_exists",
@@ -459,11 +453,9 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::GraphDifferentBuild => "different_build",
         StoreError::InvalidGraphSnapshot(_) => "graph_snapshot_corrupt",
         StoreError::Json(_)
-        | StoreError::ControlStoreBusy { .. }
         | StoreError::ControlRequestExpired
         | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::Sqlite(_)
-        | StoreError::ControlInspectionBudgetExceeded { .. }
         | StoreError::SqlitePath { .. }
         | StoreError::SqliteFile { .. }
         | StoreError::StoreFileIo { .. }
@@ -472,7 +464,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidStoredKey(_)
         | StoreError::InvalidMemoryProjection(_)
         | StoreError::InvalidTaskProjection(_)
-        | StoreError::InvalidControlSession(_)
+        | StoreError::InvalidHostContext(_)
         | StoreError::NamedRootBindingRefused(_)
         | StoreError::SourceBasisTextRefused { .. }
         | StoreError::NamedRootReadRefused(_)
@@ -485,23 +477,10 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::AcceptanceVerificationReadRefused { .. }
         | StoreError::NamedRootSightingReadRefused { .. }
         | StoreError::HostPathIdentityUnresolved
-        | StoreError::ControlSessionNotBound(_)
-        | StoreError::ControlSessionTokenMismatch(_)
         | StoreError::ControlConnectionSuperseded(_)
         | StoreError::ControlConnectionIdentityUnavailable(_)
-        | StoreError::ControlSessionBindConflict(_)
-        | StoreError::ControlTurnIdempotencyConflict(_)
         | StoreError::ControlOperationIdempotencyConflict { .. }
         | StoreError::ControlWorkBindingStale { .. }
-        | StoreError::ControlGrantScopeMismatch { .. }
-        | StoreError::ControlObservationScopeMismatch { .. }
-        | StoreError::VerificationProducerObservationNotFound(_)
-        | StoreError::EnvironmentFingerprintMismatch
-        | StoreError::EnvironmentEvidenceNotFound(_)
-        | StoreError::EnvironmentBasisMismatch(_)
-        | StoreError::ControlTurnGrantNotFound(_)
-        | StoreError::ControlTurnGrantSessionMismatch
-        | StoreError::InvalidTurnGrantId
         | StoreError::DifferentBuildSchema
         | StoreError::InvalidControlProjection(_)
         | StoreError::ControlPolicyConflict { .. }

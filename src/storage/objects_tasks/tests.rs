@@ -1,19 +1,16 @@
-use chrono::{TimeDelta, TimeZone, Utc};
-
 use super::*;
 use crate::storage::test_support::*;
 use crate::*;
 
 use crate::{
     DevelopmentNoopRedactor,
-    domain::{EffectClass, NoteVisibility, ProjectId, TurnIntent},
+    domain::{NoteVisibility, ProjectId},
 };
 
 #[test]
 fn task_cursor_arithmetic_refuses_overflow() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open_in_memory().expect("store");
-    let binding = bind_control(&mut store, now);
+    let binding = historical_default_task(&mut store);
     let (object_kind, object_id) = store
         .connection
         .query_row(
@@ -26,7 +23,7 @@ fn task_cursor_arithmetic_refuses_overflow() {
         .connection
         .execute(
             "DELETE FROM control_changes WHERE task_id = ?1",
-            [binding.status.task_id.0.to_string()],
+            [binding.task_id.0.to_string()],
         )
         .expect("clear task feed fixture");
     store
@@ -35,7 +32,7 @@ fn task_cursor_arithmetic_refuses_overflow() {
             "INSERT INTO control_changes (task_id, task_cursor, object_kind, object_id)
              VALUES (?1, ?2, ?3, ?4)",
             params![
-                binding.status.task_id.0.to_string(),
+                binding.task_id.0.to_string(),
                 i64::MAX,
                 object_kind,
                 object_id
@@ -44,7 +41,7 @@ fn task_cursor_arithmetic_refuses_overflow() {
         .expect("install maximum cursor");
     assert!(matches!(
         store.append_task_object(
-            binding.status.task_id,
+            binding.task_id,
             "cursor_overflow_event",
             &Example {
                 title: "overflow".into(),
@@ -84,7 +81,7 @@ fn append_mints_a_record_per_call_and_round_trips_content() {
             invalid_graph_snapshot_audits: Vec::new(),
             checked_control_records: 3,
             invalid_control_records: Vec::new(),
-            checked_work_records: 1,
+            checked_work_records: 2,
             invalid_work_records: Vec::new(),
         }
     );
@@ -157,20 +154,16 @@ fn control_changes_are_ordered() {
 #[test]
 fn task_local_cursors_stay_dense_across_interleaved_tasks() {
     let mut store = SqliteStore::open_in_memory().expect("store");
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let binding = bind_control(&mut store, now);
-    let task_a = binding.status.task_id;
+    let binding = historical_default_task(&mut store);
+    let task_a = binding.task_id;
     let task_b = store
-        .bind_test_control_scope(
+        .historical_task_scope(
             &ProjectId("project-a".into()),
             "dummy:CONTROL-HOST-2",
             "Interleave another task",
             &SessionId("other-session".into()),
-            &actor("other-session"),
-            now + TimeDelta::milliseconds(1),
         )
         .expect("second task")
-        .status
         .task_id;
     store
         .insert_historical_memory_fixture(
@@ -211,52 +204,11 @@ fn task_local_cursors_stay_dense_across_interleaved_tasks() {
 // The task's change index is an audit trail no grant delivers, so a backlog
 // of any length leaves an ordinary turn free to go at once.
 #[test]
-fn a_long_task_backlog_does_not_hold_an_ordinary_turn() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let binding = bind_control(&mut store, now);
-    for index in 0..256 {
-        store
-            .append_task_object(
-                binding.status.task_id,
-                "backlog_test_event",
-                &Example {
-                    title: format!("event-{index}"),
-                    body: "bounded".into(),
-                },
-            )
-            .expect("append backlog event");
-    }
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &TurnIntent {
-                idempotency_key: "ordinary-after-backlog".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"ordinary-after-backlog"),
-                purpose: None,
-                requested_effects: vec![EffectClass::Observe],
-                resource_intents: Vec::new(),
-            },
-            now + TimeDelta::milliseconds(1),
-        )
-        .expect("ordinary decision after a backlog");
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("a backlog must not hold an ordinary turn, got {decision:?}");
-    };
-    assert!(grant.delivery.is_none());
-    assert!(grant.basis.inline_delivery.is_none());
-}
-
-#[test]
 fn an_oversized_task_event_is_refused() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open_in_memory().expect("store");
-    let binding = bind_control(&mut store, now);
+    let binding = historical_default_task(&mut store);
     let oversized = store.append_task_object(
-        binding.status.task_id,
+        binding.task_id,
         "oversized_test_event",
         &Example {
             title: "oversized".into(),

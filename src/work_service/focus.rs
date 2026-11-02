@@ -182,14 +182,13 @@ impl LocalWorkService {
     }
 
     /// The host's read of one item: the bounded `work_focus` view, with the
-    /// control binding always present, as the binding session bind would
-    /// accept for this session's live claim, or an explicit null when there
+    /// work binding always present for this session's live claim, or an explicit null when there
     /// is none, as while a held claim has a pending handoff offer. It is
     /// taken in one read snapshot and opens the existing store read-only, so
     /// it never creates or initializes a store,
     /// and it selects no focus, stages or discards no delivery, appends
     /// nothing, and registers no process-default session. A host can
-    /// therefore read the binding it passes to `session_bind` without moving
+    /// therefore capture its observation and evidence association without moving
     /// the agent's focus. Unlike [`Self::inspect_work`], nothing about the
     /// store changes.
     ///
@@ -225,10 +224,10 @@ impl LocalWorkService {
     }
 
     /// The host's read of every claim this session holds in the project, so
-    /// a host can choose the binding to pass to `session_bind` without moving
+    /// a host can choose its observation and evidence association without moving
     /// the agent's focus. Each row carries the claim, the time this session
     /// acquired it, whether the item is the session's focus, and the binding
-    /// bind would accept, computed as focus and inspect compute it, or null.
+    /// work operations accept, computed as focus and inspect compute it, or null.
     /// The newest claims come first, then by work id, at most
     /// [`super::MAX_HELD_CLAIMS`] of them, with the rest counted as omitted.
     ///

@@ -25,16 +25,12 @@ engram.db
   work_root_members # element rows for current root collections
   work_handoff_offers / work_run_evidence / work_completion_seals
   work_feed_heads / work_feed_entries # shipped typed dense project/root/run feeds
-  work_operation_results # local-work idempotency receipts
+  work_operation_results # local-work and work-session (host_*) idempotency receipts
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
-  control_anchors # shared project + external-reference rendezvous, not work items
-  control_changes # write-only audit index of turn reports, dense per control scope
-  control_sessions     # durable host routing, phase, epochs; retained cursor columns feed no decision
+  control_anchors # passive history: shared project + external-reference rendezvous
+  control_changes # passive history: audit index of earlier builds' turn reports
   control_connections  # current host-process generation; fences predecessors
-  control_turn_results # idempotent enforced decisions
-  control_turn_grants  # short-lived issued/begun/completed authority
-  control_turn_grant_supersessions # immutable old-grant -> replacement audit
-  control_operation_results # begin/checkpoint retry receipts; historical receipts retained
+  control_operation_results # passive history: receipts earlier builds stored, replayed as stored
   control_policy_operation_results # store-scoped operator-policy receipts
   report_assemblies / report_assembly_claims # target post-completion authority
   projections  # exact-current heads/status plus rebuildable indexes, FTS5 and derived tables
@@ -92,20 +88,24 @@ No old database bytes are rewritten or reclaimed by this format change.
 Existing different-build stores still refuse ordinary open; cutover and any
 live-store operation need a separate operator decision.
 
-The host-private alpha adds `control_sessions`, `control_turn_results`,
-`control_turn_grants`, `control_turn_grant_supersessions`, and
-`control_operation_results`. Their intent and result payloads use canonical
-bytes even though live grants are operational rather than durable
-memory. Intent fingerprints enforce retry equality; the replacement-decision
-fingerprint binds a grant supersession. Uncompared payload checksums are not
-stored. The resource-lease engine and its table are removed; existing audit
-records remain readable. A successful checkpoint emits a canonical
-`turn_checkpoint_event`. Superseding an issued grant records exactly one
-immutable transition binding the old grant and request to the replacement
-decision, reason, and time. Each projection and its audit event commit together.
-Path resource intents are project-bound and normalized, but confer no exclusive
-ownership. Replacement host connections atomically rotate `control_connections`, making requests from a
-still-live predecessor fail closed.
+The removed turn gating's four operational tables, `control_sessions`,
+`control_turn_results`, `control_turn_grants` and
+`control_turn_grant_supersessions`, are retired by the store migration that
+removed it, by name with their counts; the store file kept as the migration's
+backup holds their rows. `control_anchors`, `control_changes` and
+`control_operation_results` stay as passive history: receipts earlier builds
+stored there stay where they were and still replay for their exact key. New
+work-session receipts (`named_root_bind`, `execution_observe`,
+`verification_record` and `verification_bind`) are stored in
+`work_operation_results` as `host_<operation>` rows, each an envelope that
+names its project, session, operation, idempotency key, intent and result. An
+exact retry reads a preserved historical receipt first, then the work receipt.
+Their intent and result payloads use canonical bytes. Intent fingerprints
+enforce retry equality; uncompared payload checksums are not stored. The resource-lease engine and its
+table are removed; existing audit records remain readable. Each projection and
+its audit event commit together. Replacement host connections atomically
+rotate `control_connections`, making requests from a still-live predecessor
+fail closed.
 Store-scoped policy administration uses a separate
 `control_policy_operation_results` table because operator updates do not belong
 to an agent session. It compares the complete normalized retry intent, decodes
@@ -134,11 +134,9 @@ the schema stays unchanged until the next planned migration drops them.
 `sequence` is only a SQLite row identity. Ordinary open refuses different-build
 schemas before mutation; explicit [full-store migration](full-store-migration.md)
 exports unchanged rows and imports into a new current-schema database. It never
-silently renumbers durable cursors. Control sessions bind directly to a shared
-`control_anchors` row, optionally with an exact local-work claim. There is no
-compatibility-task lifecycle, participant roster, or duplicate session-binding
-table. The retained `task_id` field names the control scope in existing host
-records and memory scopes; it is not a local work item. Full-store export and
+silently renumbers durable cursors. There is no compatibility-task
+lifecycle or participant roster. The retained `task_id` field names the scope
+of existing host records and memory scopes; it is not a local work item. Full-store export and
 import carry these ids and the ordered feed unchanged.
 First-class work uses `work_feed_heads` and `work_feed_entries` to allocate a
 typed dense `feed_kind + feed_id + position` for project, root-work, and
@@ -255,7 +253,7 @@ about ten seconds of failing to begin a read on the write-ahead log, ends an
 open attempt: the open rolls back the transaction the attempt had open and
 starts again from its first probe, once, separately from the restart above;
 that probe checks again whatever earlier steps of the attempt committed. An
-open for a control host's call, a control-session inspection or a store copy,
+open for a host's work-session call or a store copy,
 which run under deadlines of their own, does not start again. When the
 refusal ends an open, its message names the step it ended (`probe_snapshot`,
 `connection_settings`, `journal_query`, `journal_switch`,
@@ -466,15 +464,14 @@ retaining unbounded history or memory bodies. The `local-process-` prefix is
 reserved for generated process-default work sessions; a `local-process-v1-*`
 id may be reused for seven days, after which the caller must omit
 `--session-id` to receive a fresh process default. Live caller,
-planning-actor, handoff-recipient, and control session-bind participant and
-actor session ids are at most 64 UTF-8 bytes; longer values refuse before
+planning-actor, and handoff-recipient actor session ids are at most 64 UTF-8
+bytes; longer values refuse before
 store effects. The same live length-only admit applies to
 graph-snapshot save or load operator actors, control-policy
 administrator actor sessions, and project-memory remember, forget, full, or
 list callers. A caller-supplied catalog `held_by` filter is length-admitted
 the same way: that is live filter admission, not validation of a persisted
-claim holder. Control session bind admits both live identities before its
-transaction. A persisted claim holder used only for comparison is not
+claim holder. A persisted claim holder used only for comparison is not
 length-admitted.
 Historical stored ids are not rewritten. Creating a new process-default session atomically removes at
 most 64 index-selected inactive session rows and their attempt rows. The
@@ -513,8 +510,7 @@ outgoing changes, and imported Git commits identify incoming progress. An
 external agent merges divergent text; Engram validates and atomically imports
 the final graph as attributed versions and events.
 
-Live claims, control sessions/grants, delivery state and agent-private scratch
-remain local. Independent offline hosts can both write, so this exchange does
+Live claims, delivery state and agent-private scratch remain local. Independent offline hosts can both write, so this exchange does
 not provide global execution exclusion. It requires no writer epoch, remote
 startup check, scheduled push or background network service. The prior
 sequential `portable` handoff, dedicated-ref transport and remote-head CAS

@@ -59,6 +59,9 @@ pub(crate) fn occurrence_words(occurrence: &RecordedOccurrence) -> String {
         )
     };
     match occurrence {
+        RecordedOccurrence::SourceSighting { .. } => {
+            "a measured source sighting; no mutation or check reported".to_owned()
+        }
         RecordedOccurrence::UnadmittedTurn {
             source_change,
             outcome,
@@ -99,6 +102,7 @@ pub(crate) fn cause_words(causality: &ObservationCausality) -> String {
 /// How the record entered accounting.
 pub(crate) const fn accounting_words(accounting: &ObservationAccounting) -> &'static str {
     match accounting {
+        ObservationAccounting::Sighting {} => "accounted as a source sighting",
         ObservationAccounting::SourceChange { .. } => "accounted as a source change",
         ObservationAccounting::Repeat { .. } => "accounted as a repeat of an earlier change",
         ObservationAccounting::NoSourceChange {} => "no source change accounted",

@@ -82,17 +82,16 @@ impl SqliteStore {
         clippy::too_many_arguments,
         reason = "routing and asserted producer context stay explicit"
     )]
-    pub(crate) fn record_registered_verification<'a>(
+    pub(crate) fn record_registered_verification(
         &mut self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        authority: impl Into<super::HostSessionAuthority<'a>>,
+        authority: super::HostSessionAuthority,
         actor: &ActorContext,
         request: &RegisteredVerificationRequest,
         now: DateTime<Utc>,
     ) -> Result<RegisteredVerificationReceipt, StoreError> {
-        let authority = authority.into();
         let intent = CanonicalObject::freeze(&Intent {
             control_schema_version: crate::CONTROL_SCHEMA_VERSION,
             session_id: session_id.clone(),
@@ -101,7 +100,7 @@ impl SqliteStore {
             request: request.clone(),
         })?;
         super::control_runtime::control_lifecycle_transaction(&mut self.connection, |tx| {
-            let _ = authority.verify_on(tx, project_id, session_id, connection_token)?;
+            authority.verify_on(tx, project_id, session_id, connection_token)?;
             if let Some(receipt) = Self::replay_host_operation(
                 tx,
                 project_id,

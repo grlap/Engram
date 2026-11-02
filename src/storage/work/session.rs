@@ -27,8 +27,8 @@ use super::{
 use crate::{
     CanonicalObject, ObjectId,
     domain::{
-        FeedId, SessionId, TaskId, WorkClaim, WorkCompletionRecoveryCause, WorkEvent, WorkId,
-        WorkItem, WorkLifecycle, WorkRun, WorkRunId, WorkSessionState, WorkTransition,
+        FeedId, SessionId, WorkClaim, WorkCompletionRecoveryCause, WorkEvent, WorkId, WorkItem,
+        WorkLifecycle, WorkRun, WorkRunId, WorkSessionState, WorkTransition,
     },
 };
 
@@ -133,10 +133,6 @@ pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
       AND stale.session_id GLOB ?3
       AND stale.session_id != ?4
       AND stale.tentative_delivery_token IS NULL
-      AND NOT EXISTS (
-          SELECT 1 FROM control_sessions AS binding
-          WHERE binding.session_id = stale.session_id
-      )
       AND NOT EXISTS (
           SELECT 1 FROM work_protocol_attempts AS recent
           WHERE recent.project_id = ?1
@@ -1197,7 +1193,6 @@ impl SqliteStore {
         let StageWorkSessionDelivery {
             expected_confirmed_through,
             expected_focused_work_id,
-            expected_bound_task_id,
             delivered_through,
             delivered_entries,
             delivery_payload,
@@ -1227,23 +1222,8 @@ impl SqliteStore {
         let focused_work_id = focused_work_id
             .map(|value| parse_work_id(&value))
             .transpose()?;
-        let bound_task_id = transaction
-            .query_row(
-                "SELECT task_id FROM control_sessions
-                 WHERE session_id = ?1 AND project_id = ?2",
-                params![session_id.0, project_id.0],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
-            .map(|stored| {
-                uuid::Uuid::parse_str(&stored)
-                    .map(TaskId)
-                    .map_err(|error| StoreError::InvalidTaskProjection(error.to_string()))
-            })
-            .transpose()?;
         if confirmed != expected_confirmed_through
             || focused_work_id != expected_focused_work_id
-            || bound_task_id != expected_bound_task_id
             || pending.is_some()
         {
             return Ok(None);

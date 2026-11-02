@@ -46,7 +46,7 @@ mod citable {
         let (mut fixture, work, _claim, mut host) = bound_fixture("citable-source-matrix", false);
         let note = fixture.evidence.clone();
         let store = &mut fixture.store;
-        let bad = one_check(host.checkpoint(
+        let bad = one_check(host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -57,9 +57,9 @@ mod citable {
         } else {
             host.basis.source_revision = "revision-e".into();
         }
-        host.checkpoint(store, true, None, 30);
+        host.install_checks(store, true, None, 30);
         let candidate = candidate_present.then(|| {
-            one_check(host.checkpoint(
+            one_check(host.install_checks(
                 store,
                 false,
                 Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -142,17 +142,17 @@ mod citable {
         let note = fixture.evidence.clone();
         let store = &mut fixture.store;
         host.basis.workspace_id = format!("old-{}", "x".repeat(240));
-        let bad = one_check(host.checkpoint(
+        let bad = one_check(host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
             20,
         ));
         host.basis.workspace_id = format!("new-{}", "y".repeat(240));
-        host.checkpoint(store, true, None, 30);
+        host.install_checks(store, true, None, 30);
         let mut candidates = Vec::new();
         for second in [40, 50, 60, 70, 80, 90] {
-            candidates.push(one_check(host.checkpoint(
+            candidates.push(one_check(host.install_checks(
                 store,
                 false,
                 Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -160,19 +160,19 @@ mod citable {
             )));
         }
         // A newer failed check or a check of another kind must not consume the cap.
-        host.checkpoint(
+        host.install_checks(
             store,
             false,
             Some((VerificationKind::Test, ExecutionOutcome::Failed)),
             100,
         );
-        host.checkpoint(
+        host.install_checks(
             store,
             false,
             Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
             110,
         );
-        host.checkpoint(
+        host.install_checks(
             store,
             false,
             Some((VerificationKind::Test, ExecutionOutcome::Unknown)),
@@ -339,14 +339,14 @@ mod citable {
         let (mut fixture, work, _claim, mut host) = bound_fixture("citable-cut", false);
         let note = fixture.evidence.clone();
         let store = &mut fixture.store;
-        let bad = one_check(host.checkpoint(
+        let bad = one_check(host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
             20,
         ));
         host.basis.source_revision = "revision-e".into();
-        host.checkpoint(store, true, None, 30);
+        host.install_checks(store, true, None, 30);
         let input = evaluation(
             store,
             &work,
@@ -355,7 +355,7 @@ mod citable {
             Some(declared("revision-e", None)),
             35,
         );
-        let later = one_check(host.checkpoint(
+        let later = one_check(host.install_checks(
             store,
             false,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -378,7 +378,7 @@ mod citable {
         let store = &mut fixture.store;
         let command = ObjectId::from_canonical_bytes(b"cargo test --lib selected");
         let checks = [(VerificationKind::Test, ExecutionOutcome::Succeeded)];
-        let bad = one_check(host.checkpoint_commands(
+        let bad = one_check(host.install_check_commands(
             store,
             true,
             &checks,
@@ -386,8 +386,8 @@ mod citable {
             Some(std::slice::from_ref(&command)),
         ));
         host.basis.source_revision = "revision-e".into();
-        host.checkpoint(store, true, None, 30);
-        let good = one_check(host.checkpoint_commands(
+        host.install_checks(store, true, None, 30);
+        let good = one_check(host.install_check_commands(
             store,
             false,
             &checks,
@@ -395,7 +395,7 @@ mod citable {
             Some(std::slice::from_ref(&command)),
         ));
         let other_command = ObjectId::from_canonical_bytes(b"cargo test --lib another");
-        let other = one_check(host.checkpoint_commands(
+        let other = one_check(host.install_check_commands(
             store,
             false,
             &checks,
@@ -446,15 +446,15 @@ mod citable {
         let (mut fixture, work, _claim, mut host) = bound_fixture("citable-damage", false);
         let note = fixture.evidence.clone();
         let store = &mut fixture.store;
-        let bad = one_check(host.checkpoint(
+        let bad = one_check(host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
             20,
         ));
         host.basis.source_revision = "revision-e".into();
-        host.checkpoint(store, true, None, 30);
-        let good = one_check(host.checkpoint(
+        host.install_checks(store, true, None, 30);
+        let good = one_check(host.install_checks(
             store,
             false,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -593,14 +593,14 @@ mod citable {
         let (mut fixture, work, _claim, mut host) = bound_fixture("citable-other-run", false);
         let note = fixture.evidence.clone();
         let store = &mut fixture.store;
-        let bad = one_check(host.checkpoint(
+        let bad = one_check(host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
             20,
         ));
         host.basis.source_revision = "revision-e".into();
-        host.checkpoint(store, true, None, 30);
+        host.install_checks(store, true, None, 30);
         let foreign = store
             .create_work(
                 &root_request(&work.project_id.0, "another-run", 40),
@@ -638,7 +638,7 @@ mod citable {
         let (mut fixture, work, claim, mut host) = bound_fixture("citable-naming", false);
         let note = fixture.evidence.clone();
         let store = &mut fixture.store;
-        let bad = one_check(host.checkpoint(
+        let bad = one_check(host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -667,7 +667,7 @@ mod citable {
                 &work.project_id,
                 &host.session_id,
                 &host.connection_token,
-                &host.routing_token,
+                crate::storage::HostSessionAuthority::Work,
                 claim.claim_id,
                 claim.fence,
                 "workspace-B",
@@ -905,14 +905,14 @@ fn a_pass_citing_a_check_of_an_older_revision_is_refused_and_a_rerun_seals() {
     let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-case-d", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
     host.basis.source_revision = "revision-e".into();
-    let checkpointed = host.checkpoint(store, true, None, 30);
+    let checkpointed = host.install_checks(store, true, None, 30);
     assert!(checkpointed.is_empty(), "{checkpointed:?}");
 
     let before = cut(store, &work);
@@ -960,7 +960,7 @@ fn a_pass_citing_a_check_of_an_older_revision_is_refused_and_a_rerun_seals() {
         None
     );
 
-    let at_e = one_check(host.checkpoint(
+    let at_e = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -994,14 +994,14 @@ fn the_completion_fingerprint_does_not_stand_in_for_the_citation_rule() {
     let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-freshness", true);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
     host.basis.source_revision = "revision-e".into();
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
 
     let stale = evaluation(
         store,
@@ -1037,7 +1037,7 @@ fn the_completion_fingerprint_does_not_stand_in_for_the_citation_rule() {
         40,
     ));
 
-    let at_e = one_check(host.checkpoint(
+    let at_e = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1077,7 +1077,7 @@ fn an_earlier_build_record_is_stale_at_done_and_replays_before_the_refusal() {
     let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-satisfied", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1093,7 +1093,7 @@ fn an_earlier_build_record_is_stale_at_done_and_replays_before_the_refusal() {
         "the R_d check satisfies the binding"
     );
     host.basis.source_revision = "revision-e".into();
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
 
     let stale = evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 35);
     let earlier = admitted_by_an_earlier_build(store, &stale);
@@ -1148,14 +1148,14 @@ fn a_stale_citation_is_refused_at_done_when_the_binding_obligation_was_waived() 
             &DevelopmentNoopRedactor,
         )
         .expect("waive the binding's obligation");
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
     host.basis.source_revision = "revision-e".into();
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
 
     admitted_by_an_earlier_build(
         store,
@@ -1193,7 +1193,7 @@ fn a_stale_citation_is_refused_at_done_when_the_binding_obligation_was_waived() 
         42,
     ));
 
-    let at_e = one_check(host.checkpoint(
+    let at_e = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1227,7 +1227,7 @@ fn a_declared_source_is_matched_and_never_hides_a_later_sighting() {
     let (mut fixture, work, _claim, mut host) = bound_fixture("project-citation-declared", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1295,7 +1295,7 @@ fn a_declared_source_is_matched_and_never_hides_a_later_sighting() {
     // The run is then seen at R_e. Declaring R_d, the revision the check ran
     // on, matches the check but not the run after it.
     host.basis.source_revision = "revision-e".into();
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
     let behind = typed_reason(
         store,
         Typed::Citation(
@@ -1332,13 +1332,13 @@ fn a_change_without_a_revision_after_the_check_retires_it() {
     let (mut fixture, work, _claim, mut host) = bound_fixture("project-citation-unrevised", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
-    host.report(store, &[(true, None)], 30);
+    host.install_source_records(store, &[(true, None)], 30);
     let refused = typed_reason(
         store,
         Typed::Citation(
@@ -1370,13 +1370,13 @@ fn a_quiet_move_or_a_fresh_check_does_not_rescue_a_stale_citation() {
     let (mut fixture, work, _claim, mut host) = bound_fixture("project-citation-quiet", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
-    host.report(store, &[(false, Some("revision-e"))], 30);
+    host.install_source_records(store, &[(false, Some("revision-e"))], 30);
     let quiet = refusal(record(
         store,
         &evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 35),
@@ -1386,7 +1386,7 @@ fn a_quiet_move_or_a_fresh_check_does_not_rescue_a_stale_citation() {
         "{quiet}"
     );
     // Seen back at R_d, the source holds the content the check ran on.
-    host.report(store, &[(false, Some("revision-d"))], 36);
+    host.install_source_records(store, &[(false, Some("revision-d"))], 36);
     record(
         store,
         &evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 39),
@@ -1394,7 +1394,7 @@ fn a_quiet_move_or_a_fresh_check_does_not_rescue_a_stale_citation() {
     .expect("a pass on the check records once the source is back where it ran");
 
     host.basis.source_revision = "revision-e".into();
-    let at_e = one_check(host.checkpoint(
+    let at_e = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1445,15 +1445,15 @@ fn a_check_stands_through_later_sightings_of_its_own_revision() {
         bound_fixture("project-citation-same-revision", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
-    host.report(store, &[(false, Some("revision-d"))], 25);
+    host.install_source_records(store, &[(false, Some("revision-d"))], 25);
     host.basis.workspace_id = "another-workspace".into();
-    host.report(store, &[(false, Some("revision-d"))], 30);
+    host.install_source_records(store, &[(false, Some("revision-d"))], 30);
     record(
         store,
         &evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 40),
@@ -1515,15 +1515,15 @@ fn a_reported_move_and_revert_leave_the_check_standing() {
         bound_fixture("project-citation-reported-revert", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
     let after_check = cut(store, &work);
-    host.report(store, &[(true, Some("revision-e"))], 25);
-    host.report(store, &[(true, Some("revision-d"))], 30);
+    host.install_source_records(store, &[(true, Some("revision-e"))], 25);
+    host.install_source_records(store, &[(true, Some("revision-d"))], 30);
     assert_eq!(
         observations_after(store, &work, after_check),
         vec![
@@ -1584,7 +1584,7 @@ fn a_late_record_of_a_check_stands_through_sightings_of_its_revision() {
     );
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let first = one_check(host.checkpoint(
+    let first = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
@@ -1594,8 +1594,8 @@ fn a_late_record_of_a_check_stands_through_sightings_of_its_revision() {
         .load_verification_evidence(&first)
         .expect("load the first build")
         .producer_observation;
-    host.report(store, &[(false, Some("revision-d"))], 25);
-    host.cite_earlier_producer(store, &producer, Some("revision-d"), 30);
+    host.install_source_records(store, &[(false, Some("revision-d"))], 25);
+    host.install_later_verification(store, &producer, Some("revision-d"), 30);
     let late = newest_verification(store, &work);
     assert_ne!(late, first, "the later turn recorded its own verification");
     record(
@@ -1677,7 +1677,7 @@ pub(super) fn unadmitted_change(
             &host.project_id,
             &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             &actor(&host.session_id.0),
             input,
             at(second),
@@ -1694,7 +1694,7 @@ fn an_unadmitted_change_after_a_check_retires_it_whatever_revision_it_reports() 
     let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-unadmitted", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1716,7 +1716,7 @@ fn an_unadmitted_change_after_a_check_retires_it_whatever_revision_it_reports() 
         )),
         "{refused}"
     );
-    let fresh = one_check(host.checkpoint(
+    let fresh = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1738,7 +1738,7 @@ fn a_check_completed_before_an_unadmitted_change_was_recorded_does_not_follow_it
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
     let change = unadmitted_change(store, &host, &claim, "revision-d", "late-report", 40);
-    let cached = one_check(host.checkpoint(
+    let cached = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1823,7 +1823,7 @@ fn after_an_unadmitted_change_a_later_environment_sighting_retires_a_check() {
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
     unadmitted_change(store, &host, &claim, "revision-u", "late-report", 30);
-    let fresh = one_check(host.checkpoint(
+    let fresh = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1847,7 +1847,7 @@ fn an_unadmitted_change_after_the_cut_retires_an_evaluation_that_declared_its_re
     let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-post-cut", false);
     let store = &mut fixture.store;
     let note = fixture.evidence.clone();
-    let at_d = one_check(host.checkpoint(
+    let at_d = one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1869,7 +1869,7 @@ fn an_unadmitted_change_after_the_cut_retires_an_evaluation_that_declared_its_re
         change.accounting,
         crate::domain::ObservationAccounting::SourceChange { .. }
     ));
-    one_check(host.checkpoint(
+    one_check(host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),

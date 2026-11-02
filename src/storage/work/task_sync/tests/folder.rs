@@ -709,7 +709,7 @@ fn task_sync_folder_exports_a_no_history_source_and_round_trips_its_inventory() 
 }
 
 #[test]
-fn task_sync_folder_refuses_a_corrupt_history_source() {
+fn task_sync_folder_doctor_names_a_corrupt_baseline_record() {
     let tree = candidate();
     let mut store = SqliteStore::open_in_memory().unwrap();
     apply_folder(&mut store, &tree, "folder-import-1", at(5));
@@ -727,10 +727,16 @@ fn task_sync_folder_refuses_a_corrupt_history_source() {
         )
         .unwrap();
 
-    let error = store
+    // Export reads the per-task baseline view, never the records, so the
+    // doctor is what names a record the view can no longer be derived from.
+    store
         .export_task_sync_folder(&tree.project.project_id, &profile())
-        .unwrap_err();
-    assert!(matches!(error, StoreError::Json(_)), "{error:#}");
+        .unwrap();
+    let report = format!("{:?}", store.verify_all().unwrap());
+    assert!(
+        report.contains("work_task_sync_baseline:underivable"),
+        "{report}"
+    );
 }
 
 #[test]

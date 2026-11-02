@@ -20,8 +20,11 @@ pub mod folder_plan;
 pub mod notes;
 pub use activity::TaskSyncExportOptions;
 pub mod git;
+pub mod ledger;
 pub mod progress;
 mod publication;
+pub mod reconciliation;
+pub mod retention;
 pub mod settings;
 pub mod setup;
 
@@ -438,6 +441,14 @@ pub enum TaskSyncRefusal {
     /// A resolved folder asks for a change this import cannot apply, or a
     /// task it would change is not free to take it.
     ImportConflict,
+    /// An incremental exchange's recorded basis no longer continues the
+    /// store's history, so its changed tasks cannot be named exactly.
+    IncrementalBasisUnavailable,
+    /// Another exchange baseline was recorded after the one this exchange
+    /// was planned against.
+    BaselineHeadMoved,
+    /// A retained reconciliation candidate currently fences affected admission.
+    ReconciliationHeld,
 }
 
 // One mapping generates both the exhaustive match and the test inventory.
@@ -480,6 +491,9 @@ task_sync_refusal_codes! {
     DestinationUnknownEntry => "task_sync_destination_unknown_entry",
     DestinationMissingTasks => "task_sync_destination_missing_tasks",
     ImportConflict => "task_sync_import_conflict",
+    IncrementalBasisUnavailable => "task_sync_incremental_basis_unavailable",
+    BaselineHeadMoved => "task_sync_baseline_head_moved",
+    ReconciliationHeld => "task_sync_reconciliation_held",
 }
 
 impl TaskSyncRefusal {

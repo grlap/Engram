@@ -1,6 +1,6 @@
 use super::{
-    AuthorityCommand, Command, ControlAssuranceArg, ControlPolicyCommand, CoreWorkCommand,
-    GraphCommand, ImportCommand, WorkCommand, command_resolves_host_path_identity,
+    AuthorityCommand, Command, ControlPolicyCommand, CoreWorkCommand, GraphCommand, ImportCommand,
+    WorkCommand, command_resolves_host_path_identity,
 };
 use clap::Parser;
 use std::path::PathBuf;
@@ -48,25 +48,7 @@ fn core_next() -> WorkCommand {
 fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
     let rows = [
         ("readiness", true, Command::Readiness { json: true }),
-        (
-            "control-session-inspect",
-            true,
-            Command::ControlSessionInspect {
-                target_session_id: "target".into(),
-                retained_grant_id: "retained".into(),
-                operation: None,
-                idempotency_key: None,
-                json: true,
-            },
-        ),
-        (
-            "init",
-            true,
-            Command::Init {
-                required_assurance: None,
-                authorized_by: None,
-            },
-        ),
+        ("init", true, Command::Init {}),
         (
             "doctor",
             true,
@@ -84,7 +66,7 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
             "control",
             true,
             Command::Control {
-                work_session: false,
+                work_session: true,
                 actor_id: "host".into(),
                 session_id: "session".into(),
                 actor_context: None,
@@ -108,12 +90,7 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
             "control-policy",
             true,
             Command::ControlPolicy {
-                operation: ControlPolicyCommand::SetRequiredAssurance {
-                    level: ControlAssuranceArg::Advisory,
-                    authorized_by: "host".into(),
-                    idempotency_key: "key".into(),
-                    expected_policy_hash: None,
-                },
+                operation: ControlPolicyCommand::Show,
             },
         ),
         (
@@ -220,9 +197,7 @@ fn host_path_policy_help_names_path_bearing_host_commands() {
     let help = error.to_string();
     let normalized = help.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        normalized.contains(
-            "init, doctor, control, authority, control-policy, readiness, control-session-inspect"
-        ),
+        normalized.contains("init, doctor, control, authority, control-policy, readiness"),
         "{help}"
     );
     assert!(help.contains("do not probe"), "{help}");

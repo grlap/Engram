@@ -1,7 +1,7 @@
 //! Authority of an embedding host's project-local evidence channel.
 
 use super::{CanonicalObject, ObjectId, StoredControlOperation, work};
-use super::{Connection, SessionId, SessionPhase, SqliteStore, StoreError};
+use super::{Connection, SessionId, SqliteStore, StoreError};
 use crate::ProjectId;
 use chrono::{DateTime, Utc};
 use rusqlite::{OptionalExtension, Transaction, params};
@@ -102,24 +102,11 @@ pub(super) fn verify_work_receipt_on(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum HostSessionAuthority<'a> {
-    Control(&'a str),
+pub(crate) enum HostSessionAuthority {
     Work,
 }
 
-impl<'a> From<&'a str> for HostSessionAuthority<'a> {
-    fn from(token: &'a str) -> Self {
-        Self::Control(token)
-    }
-}
-
-impl<'a> From<&'a String> for HostSessionAuthority<'a> {
-    fn from(token: &'a String) -> Self {
-        Self::Control(token)
-    }
-}
-
-impl HostSessionAuthority<'_> {
+impl HostSessionAuthority {
     #[allow(
         clippy::too_many_arguments,
         reason = "receipt persistence retains each scoped retry input"
@@ -133,16 +120,12 @@ impl HostSessionAuthority<'_> {
         key: &str,
         intent: &CanonicalObject,
         result: &T,
-        now: DateTime<Utc>,
+        _now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        if matches!(self, Self::Control(_)) {
-            return SqliteStore::persist_control_operation(
-                tx, session, operation, key, intent, result, now,
-            );
-        }
+        let Self::Work = self;
         if key.trim().is_empty() {
-            return Err(StoreError::InvalidControlSession(
-                "control operation idempotency key is empty".into(),
+            return Err(StoreError::InvalidWork(
+                "host operation idempotency key is empty".into(),
             ));
         }
         let stored = WorkHostReceipt {
@@ -163,27 +146,18 @@ impl HostSessionAuthority<'_> {
     pub(super) fn verify_on(
         self,
         connection: &Connection,
-        project: &ProjectId,
+        _project: &ProjectId,
         session: &SessionId,
         connection_token: &str,
-    ) -> Result<Option<SessionPhase>, StoreError> {
-        SqliteStore::verify_control_connection(connection, session, connection_token)?;
-        let Self::Control(routing) = self else {
-            // Project and actor are fixed by the serving process. Each work
-            // operation checks its own project, claim and source association;
-            // historical observations need not have a current live holder.
-            return Ok(None);
-        };
-        let stored = SqliteStore::load_control_session_on(connection, session)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session.0.clone()))?;
-        SqliteStore::verify_control_session(&stored, project, routing)?;
-        Ok(Some(stored.phase))
+    ) -> Result<(), StoreError> {
+        let Self::Work = self;
+        SqliteStore::verify_control_connection(connection, session, connection_token)
     }
 }
 
 impl SqliteStore {
-    /// Reuse committed receipts across the legacy/ordinary transition. No
-    /// unknown operation is executed or settled by this lookup.
+    /// Read an exact preserved historical receipt or an ordinary work receipt.
+    /// No historical operation is executed or settled by this lookup.
     pub(super) fn replay_host_operation<T: DeserializeOwned>(
         tx: &Transaction<'_>,
         project: &ProjectId,

@@ -1,38 +1,38 @@
-//! The host test session's check turns: one checkpoint carrying an optional
-//! source change and host-observed checks.
+//! Historical stored checks and source records used to exercise surviving readers.
+//! Fixtures install canonical data directly; no turn-admission protocol runs.
 
 use super::*;
 
 impl HostSession {
     /// One mutation turn: an optional source change plus an optional
     /// host-observed check. Returns the minted verification evidence ides.
-    pub(super) fn checkpoint(
+    pub(super) fn install_checks(
         &mut self,
         store: &mut SqliteStore,
         source_changed: bool,
         check: Option<(VerificationKind, ExecutionOutcome)>,
         second: i64,
     ) -> Vec<ObjectId> {
-        self.checkpoint_checks(store, source_changed, check.as_slice(), second)
+        self.install_check_batch(store, source_changed, check.as_slice(), second)
     }
 
     /// One mutation turn: an optional source change plus host-observed
     /// checks in order, all on the current basis and sharing one environment
     /// record, as a host reports several checks of one turn. Returns the
     /// minted verification evidence ids in order.
-    pub(super) fn checkpoint_checks(
+    pub(super) fn install_check_batch(
         &mut self,
         store: &mut SqliteStore,
         source_changed: bool,
         checks: &[(VerificationKind, ExecutionOutcome)],
         second: i64,
     ) -> Vec<ObjectId> {
-        self.checkpoint_commands(store, source_changed, checks, second, None)
+        self.install_check_commands(store, source_changed, checks, second, None)
     }
 
     /// A host may repeat the same command on different source revisions.
     /// Callers without explicit commands retain the existing per-turn keys.
-    pub(super) fn checkpoint_commands(
+    pub(super) fn install_check_commands(
         &mut self,
         store: &mut SqliteStore,
         source_changed: bool,
@@ -43,8 +43,8 @@ impl HostSession {
         if let Some(commands) = commands {
             assert_eq!(commands.len(), checks.len(), "one fingerprint per command");
         }
-        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
-        self.begin(store, &grant, second + 1);
+        let grant = self.historical_capture();
+
         let mut observations = Vec::new();
         if source_changed {
             observations.push(ExecutionObservationInput {
@@ -113,25 +113,17 @@ impl HostSession {
                 observed_at: at(second + 1),
             });
         }
-        let checkpointed = store
-            .checkpoint_control_turn_with_evidence(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &self.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
-                &observations,
-                &verifications,
-                &environments,
-                &self.key("checkpoint"),
-                at(second + 2),
-            )
-            .expect("checkpoint host turn with evidence");
+        let checkpointed = append_historical_capture(
+            store,
+            &grant,
+            &observations,
+            &verifications,
+            &environments,
+            at(second + 2),
+        )
+        .expect("checkpoint host turn with evidence");
         crate::host::id_contract::assert_host_ids(&checkpointed);
-        let ControlTurnCheckpointDecision::Checkpointed { receipt } = checkpointed else {
-            panic!("host turn must checkpoint: {checkpointed:?}");
-        };
+        let receipt = checkpointed;
         receipt.verification_evidence.clone()
     }
 }
@@ -177,7 +169,7 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
         .work_run_obligations(claim.run_id)
         .expect("obligations")
         .len();
-    host.checkpoint(&mut fixture.store, true, None, 10);
+    host.install_checks(&mut fixture.store, true, None, 10);
     let live = fixture
         .store
         .work_run_obligations(claim.run_id)
@@ -189,8 +181,8 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
     );
 
     // A turn begun while the run is live...
-    let grant = host.grant(&mut fixture.store, &[EffectClass::MutateLocal], true, 20);
-    host.begin(&mut fixture.store, &grant, 21);
+    let grant = host.historical_capture();
+
     // ...outlives the run's completion.
     let current = fixture
         .store
@@ -270,28 +262,20 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
         refs: vec!["command:test".into()],
     }];
     let environments = vec![host.environment(&late_basis.source_revision, 22)];
-    let checkpoint = |store: &mut SqliteStore, key: &str| {
-        store
-            .checkpoint_control_turn_with_evidence(
-                &host.project_id,
-                &host.session_id,
-                &host.connection_token,
-                &host.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
-                &observations,
-                &verifications,
-                &environments,
-                key,
-                at(24),
-            )
-            .expect("checkpoint the late turn")
+    let checkpoint = |store: &mut SqliteStore, _key: &str| {
+        append_historical_capture(
+            store,
+            &grant,
+            &observations,
+            &verifications,
+            &environments,
+            at(24),
+        )
+        .expect("checkpoint the late turn")
     };
     let late_key = host.key("late-checkpoint");
     let first = checkpoint(&mut fixture.store, &late_key);
-    let ControlTurnCheckpointDecision::Checkpointed { receipt } = &first else {
-        panic!("the late turn must checkpoint: {first:?}");
-    };
+    let receipt = &first;
     assert_eq!(receipt.execution_observations.len(), 2);
     assert_eq!(receipt.verification_evidence.len(), 1);
     assert_eq!(receipt.environment_evidence.len(), 1);
@@ -312,7 +296,7 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
         .collect();
     for observation in &stored {
         assert_eq!(observation.binding.run_id, claim.run_id);
-        assert_eq!(observation.grant_id, grant.grant_id);
+        assert_eq!(observation.grant_id, grant.capture_id);
     }
     let change = stored
         .iter()
@@ -381,17 +365,6 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
     assert!(inspected.view().obligation_page.historical);
     assert_eq!(inspected.view().obligation_page.open_total, Some(0));
 
-    // An exact replay returns the same receipt and writes nothing more.
-    let replay = checkpoint(&mut fixture.store, &late_key);
-    assert_eq!(replay, first);
-    assert_eq!(closed_state(&fixture.store, claim.run_id, &seal), before);
-    // The turn closed: the grant checkpoints nothing more.
-    let again = checkpoint(&mut fixture.store, &host.key("late-checkpoint-again"));
-    assert!(
-        !matches!(again, ControlTurnCheckpointDecision::Checkpointed { .. }),
-        "{again:?}"
-    );
-
     // The allowance covers only what was recorded after the seal: the live
     // change's obligation lost from the projection is still a damaged store.
     let live_obligation = live.last().expect("the live obligation");
@@ -426,8 +399,8 @@ fn sealed_run_with_a_late_change(project: &str) -> (Fixture, WorkRunId, ObjectId
     let mut fixture = fixture(project);
     let claim = fixture.claim.clone();
     let mut host = HostSession::bind(&mut fixture.store, &fixture.work.clone(), &claim, 5);
-    let grant = host.grant(&mut fixture.store, &[EffectClass::MutateLocal], true, 20);
-    host.begin(&mut fixture.store, &grant, 21);
+    let grant = host.historical_capture();
+
     let current = fixture
         .store
         .get_work_item(fixture.work.work_id)
@@ -460,29 +433,10 @@ fn sealed_run_with_a_late_change(project: &str) -> (Fixture, WorkRunId, ObjectId
             observed_at: Some(at(23)),
         })
         .collect();
-    let checkpointed = fixture
-        .store
-        .checkpoint_control_turn_with_evidence(
-            &host.project_id,
-            &host.session_id,
-            &host.connection_token,
-            &host.routing_token,
-            &grant.grant_id,
-            TurnNextIntent::Continue,
-            &late,
-            &[],
-            &[],
-            &host.key("late-checkpoint"),
-            at(24),
-        )
-        .expect("checkpoint the late change");
-    assert!(
-        matches!(
-            checkpointed,
-            ControlTurnCheckpointDecision::Checkpointed { .. }
-        ),
-        "{checkpointed:?}"
-    );
+    let checkpointed =
+        append_historical_capture(&mut fixture.store, &grant, &late, &[], &[], at(24))
+            .expect("checkpoint the late change");
+    assert_eq!(checkpointed.execution_observations.len(), late.len());
     let seal = load_work_run(&fixture.store.connection, claim.run_id)
         .expect("run")
         .completion_seal
@@ -720,24 +674,20 @@ mod resolution_writers {
     fn checkpoint_check(
         host: &HostSession,
         store: &mut SqliteStore,
-        grant: &IssuedTurnGrant,
+        grant: &HistoricalCapture,
         kind: VerificationKind,
         key: &str,
         second: i64,
-    ) -> Result<ControlTurnCheckpointDecision, StoreError> {
+    ) -> Result<HistoricalEvidenceBatch, StoreError> {
         let components = EnvironmentComponents {
             toolchain: "rustc-test".into(),
             sandbox: Some("test-host-sandbox".into()),
             workspace_id: host.basis.workspace_id.clone(),
             capability_map_revision: 1,
         };
-        store.checkpoint_control_turn_with_evidence(
-            &host.project_id,
-            &host.session_id,
-            &host.connection_token,
-            &host.routing_token,
-            &grant.grant_id,
-            TurnNextIntent::Continue,
+        append_historical_capture(
+            store,
+            grant,
             &[ExecutionObservationInput {
                 observation_id: key.into(),
                 action_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
@@ -767,7 +717,6 @@ mod resolution_writers {
                 components: Some(components),
                 observed_at: at(second),
             }],
-            key,
             at(second),
         )
     }
@@ -777,53 +726,23 @@ mod resolution_writers {
         for kind in [VerificationKind::Test, VerificationKind::Build] {
             let (mut store, work, claim) = bound_run(kind);
             let mut host = HostSession::bind(&mut store, &work, &claim, 3);
-            let first = host.grant(&mut store, &[EffectClass::MutateLocal], true, 7);
-            host.begin(&mut store, &first, 8);
+            let first = host.historical_capture();
+
             let admitted = checkpoint_check(&host, &mut store, &first, kind, "first-check", 9)
                 .expect("intact checkpoint");
-            let ControlTurnCheckpointDecision::Checkpointed { receipt } = &admitted else {
-                panic!("{admitted:?}");
-            };
+            let receipt = &admitted;
             assert_eq!(receipt.verification_evidence.len(), 1);
             assert_eq!(
                 store.work_run_obligations(claim.run_id).expect("satisfied")[0].state,
                 WorkObligationState::Satisfied
             );
-            let second = host.grant(&mut store, &[EffectClass::MutateLocal], true, 10);
-            host.begin(&mut store, &second, 11);
+            let second = host.historical_capture();
+
             lose_resolution(&store, claim.run_id);
             let before = test_database_shape_snapshot(&store.connection).expect("after damage");
-            // An exact committed retry is still replayable, even after damage.
-            assert_eq!(
-                checkpoint_check(&host, &mut store, &first, kind, "first-check", 9)
-                    .expect("committed replay"),
-                admitted
-            );
-            assert_eq!(
-                test_database_shape_snapshot(&store.connection).unwrap(),
-                before
-            );
             let refused = checkpoint_check(&host, &mut store, &second, kind, "second-check", 12);
             assert_damaged_refusal(&store, claim.run_id, &before, &refused);
 
-            // A host may later close this same grant without the rejected check.
-            // That fallback never credits the successful command it could not record.
-            let fallback = store
-                .checkpoint_control_turn(
-                    &host.project_id,
-                    &host.session_id,
-                    &host.connection_token,
-                    &host.routing_token,
-                    &second.grant_id,
-                    TurnNextIntent::Continue,
-                    "empty-fallback",
-                    at(13),
-                )
-                .expect("empty recovery checkpoint");
-            let ControlTurnCheckpointDecision::Checkpointed { receipt: fallback } = fallback else {
-                panic!("empty recovery must checkpoint");
-            };
-            assert_eq!(fallback.verification_evidence, Vec::<ObjectId>::new());
             let verification_count: i64 = store
                 .connection
                 .query_row(
@@ -881,7 +800,7 @@ mod resolution_writers {
         for rewrite in [false, true] {
             let (mut store, work, claim) = bound_run(VerificationKind::Test);
             let mut host = HostSession::bind(&mut store, &work, &claim, 3);
-            host.checkpoint(
+            host.install_checks(
                 &mut store,
                 false,
                 Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),

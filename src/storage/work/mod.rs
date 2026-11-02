@@ -29,6 +29,7 @@ pub(crate) use completion::{
 };
 mod discovery;
 mod execution;
+mod feed_tasks;
 mod feeds;
 mod focus_journal;
 pub(in crate::storage) use feeds::append_named_root_binding_on;
@@ -129,10 +130,10 @@ use crate::{
     CanonicalObject, ObjectId,
     domain::{
         ActorContext, CompletionSeal, FeedPosition, RootExecution, SCHEMA_VERSION, SessionId,
-        TaskId, WorkBlocker, WorkClaim, WorkClaimId, WorkCompletionRecovery,
-        WorkCompletionRecoveryCause, WorkEvent, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
-        WorkId, WorkItem, WorkObligation, WorkObligationId, WorkObligationResolutionEvent,
-        WorkObligationState, WorkPrerequisiteState, WorkRun, WorkRunId, WorkTransition,
+        WorkBlocker, WorkClaim, WorkClaimId, WorkCompletionRecovery, WorkCompletionRecoveryCause,
+        WorkEvent, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkId, WorkItem,
+        WorkObligation, WorkObligationId, WorkObligationResolutionEvent, WorkObligationState,
+        WorkPrerequisiteState, WorkRun, WorkRunId, WorkTransition,
     },
     schema::WORK_SCHEMA_VERSION as CURRENT_WORK_SCHEMA_VERSION,
 };
@@ -145,8 +146,7 @@ use crate::{
         ControlWorkBinding, DEFAULT_WORK_CLAIM_TTL_SECONDS, DecomposeWorkRequest,
         DisposeWorkRequest, ExecutionObservation, FeedId, OfferWorkHandoffRequest,
         RecordGateEvidenceRequest, ReleaseWorkRequest, ReviseWorkRequest, WorkAvailability,
-        WorkDependencyRef, WorkDisposition, WorkObligationResolution, WorkOrigin,
-        WorkReadinessReason,
+        WorkDependencyRef, WorkDisposition, WorkOrigin, WorkReadinessReason,
     },
     memory::Redactor,
 };
@@ -224,7 +224,6 @@ pub(in crate::storage) fn validate_work_source_snapshot_for_restore(
 pub(crate) struct StageWorkSessionDelivery<'a> {
     pub expected_confirmed_through: i64,
     pub expected_focused_work_id: Option<WorkId>,
-    pub expected_bound_task_id: Option<TaskId>,
     pub delivered_through: i64,
     pub delivered_entries: &'a [WorkFeedEntry],
     /// The page, frozen as canonical bytes.
@@ -501,17 +500,17 @@ pub(crate) fn work_item_projection_decode_count() -> usize {
     WORK_ITEM_PROJECTION_DECODE_COUNT.with(Cell::get)
 }
 
+#[cfg(test)]
+pub(super) use completion::append_control_execution_observation_on;
+pub(super) use completion::append_control_verification_evidence_on;
 pub(crate) use completion::normalize_completion_acceptance_shape;
-pub(super) use completion::{
-    append_control_environment_evidence_on, append_control_execution_observation_on,
-    append_control_verification_evidence_on, source_revision_repeats_on,
-};
 #[cfg(test)]
 pub(super) use feeds::append_fixture_memory_to_work_feeds;
 pub(crate) use feeds::checkpoint_run_feed_end;
+#[cfg(test)]
+pub(super) use feeds::load_control_execution_observation_on;
 pub(super) use feeds::{
     current_run_feed_cut_on, latest_named_root_event_on, latest_named_root_event_record_on,
-    load_control_environment_evidence_on, load_control_execution_observation_on,
     load_typed_work_object, named_root_state_on,
 };
 #[cfg(test)]

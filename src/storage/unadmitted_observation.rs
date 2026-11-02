@@ -187,20 +187,19 @@ impl SqliteStore {
         clippy::too_many_arguments,
         reason = "the host record keeps routing, attribution, request and time explicit"
     )]
-    pub(crate) fn record_unadmitted_execution_observation<'a>(
+    pub(crate) fn record_unadmitted_execution_observation(
         &mut self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        authority: impl Into<super::HostSessionAuthority<'a>>,
+        authority: super::HostSessionAuthority,
         observer: &ActorContext,
         input: ExecutionObserveInput,
         now: DateTime<Utc>,
     ) -> Result<ExecutionObservationReceipt, StoreError> {
-        let authority = authority.into();
         let intent = CanonicalObject::freeze(&ExecutionObserveIntent::of(session_id, &input))?;
         control_lifecycle_transaction(&mut self.connection, |transaction| {
-            let _ = authority.verify_on(transaction, project_id, session_id, connection_token)?;
+            authority.verify_on(transaction, project_id, session_id, connection_token)?;
             // A committed record replays before anything mutable is consulted.
             if let Some(replay) = Self::replay_host_operation::<ExecutionObservationReceipt>(
                 transaction,
@@ -260,10 +259,7 @@ impl SqliteStore {
                 work::historical_claim_epoch_on(transaction, project_id, &input.binding, cut)?;
             work::check_root_basis_on(transaction, &input.binding, &input.root_basis)?;
             let occurrence = RecordedOccurrence::record(input.occurrence);
-            if let Some(sighting) = occurrence
-                .source_change()
-                .and_then(|change| change.sighting())
-            {
+            if let Some(sighting) = occurrence.measured_sighting() {
                 work::check_sighting_matches_root_basis_on(
                     transaction,
                     &input.binding,
@@ -290,7 +286,7 @@ impl SqliteStore {
                     transaction,
                     &input.binding,
                     &input.root_basis,
-                    occurrence.source_change(),
+                    &occurrence,
                     work::current_run_feed_cut_on(transaction, input.binding.run_id)?.position,
                 )?,
             };

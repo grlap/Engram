@@ -8,6 +8,76 @@ mod store_busy;
 mod verification_applicability;
 mod work_session;
 
+/// A real ordinary claim for transport tests that mutate host evidence.
+fn claimed_binding(server: &mut HostControlServer) -> crate::domain::ControlWorkBinding {
+    use crate::domain::*;
+    let now = Utc::now();
+    let actor = server.actor(
+        "execution_observe",
+        "prepare ordinary host evidence fixture",
+    );
+    let work = server
+        .store
+        .create_work(
+            &CreateWorkRequest {
+                project_id: server.project_id.clone(),
+                parent_id: None,
+                child_requirement: ChildRequirement::Required,
+                title: "Observe ordinary work".into(),
+                outcome: "Host observations retain the real claim".into(),
+                acceptance: vec!["evidence remains attributable".into()],
+                acceptance_bindings: vec![],
+                evaluation_mode: None,
+                external_ref: None,
+                notes: vec![],
+                kind: WorkItemKind::Task,
+                priority: 1,
+                labels: vec![],
+                assigned_to: None,
+                deferred_until: None,
+                origin: WorkOrigin::Local,
+                source_snapshot_id: None,
+                actor: actor.clone(),
+                idempotency_key: "host-fixture-root".into(),
+                created_at: now,
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let claim = server
+        .store
+        .claim_work(
+            &ClaimWorkRequest {
+                work_id: work.work_id,
+                expected_work_revision: work.revision,
+                expected_run_id: work.active_run_id,
+                holder: server.session_id.clone(),
+                ttl_seconds: 3600,
+                recovery_reason: None,
+                actor,
+                idempotency_key: "host-fixture-claim".into(),
+                claimed_at: now,
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let run = server.store.get_work_run(claim.run_id).unwrap();
+    ControlWorkBinding {
+        root_execution_id: run.root_execution_id,
+        work_id: work.work_id,
+        run_id: run.run_id,
+        work_revision: work.revision,
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+    }
+}
+
+fn root_bind_frame(binding: &crate::domain::ControlWorkBinding) -> Value {
+    serde_json::json!({"operation":"named_root_bind", "claim_id":binding.claim_id,
+        "claim_fence":binding.claim_fence, "workspace_id":"PRIVATE-workspace", "generation":1,
+        "named_at":Utc::now(), "kind":"bound", "idempotency_key":"PRIVATE-root-key"})
+}
+
 #[test]
 fn pending_handoff_preserves_host_and_agent_error_classifications() {
     let old = StoreError::InvalidWork(crate::storage::PENDING_HANDOFF_REFUSAL.into());
@@ -37,109 +107,6 @@ fn task_sync_refusals_keep_their_unclassified_host_wire_code() {
         assert_eq!(store_error_code(&classified), store_error_code(&graph));
         assert_eq!(classified.to_string(), graph.to_string());
     }
-}
-
-#[test]
-fn turn_grant_read_round_trips_on_the_host_channel() {
-    let mut store = SqliteStore::open_in_memory().unwrap();
-    let session_id = SessionId("grant-read-host".into());
-    let connection_token = store
-        .resume_control_connection(&session_id, Utc::now())
-        .unwrap();
-    let mut server = HostControlServer {
-        store,
-        diagnostic_store: crate::diagnostics::Fingerprint::store(Path::new(":memory:")),
-        project_id: ProjectId("grant-read-project".into()),
-        actor_id: "host-test".into(),
-        session_id,
-        connection_token,
-        work_session: false,
-        source_skill: None,
-        actor_context: None,
-        actor_context_normalized: false,
-        diagnostics: None,
-        diagnostic_frame: None,
-        diagnostic_sequence: 0,
-    };
-    let bound = server
-        .handle(HostControlRequest::SessionBind {
-            external_ref: "grant-read-anchor".into(),
-            title: "grant read".into(),
-            assurance: ControlAssurance::TurnGated,
-            mediated_effects: vec![EffectClass::Observe],
-            work_binding: None,
-            capability_map_revision: 1,
-            idempotency_key: "bind".into(),
-        })
-        .unwrap();
-    let routing = bound["routing_token"].as_str().unwrap();
-    assert_eq!(
-        bound["capabilities"],
-        serde_json::json!(["verification_record_v1"])
-    );
-    // A 32-digit intent fingerprint, which Engram admits today, comes back
-    // unchanged in the grant and still holds to the identifier contract.
-    let intent = ObjectId::mint().as_str().to_owned();
-    let decision = server
-        .handle(HostControlRequest::TurnEvaluate {
-            routing_token: routing.into(),
-            idempotency_key: "evaluate".into(),
-            intent_fingerprint: intent.clone(),
-            purpose: None,
-            requested_effects: vec![EffectClass::Observe],
-            resource_intents: vec![],
-        })
-        .unwrap();
-    let grant_id = decision["grant"]["grant_id"].as_str().unwrap();
-    let request = |id: &str| serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":id});
-    let frames = [
-        request(grant_id),
-        request("missing"),
-        request(" "),
-        serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":7}),
-        serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":"missing","idempotency_key":"extra"}),
-        serde_json::json!({"operation":"session_status","routing_token":routing}),
-    ];
-    let mut input = Vec::new();
-    for frame in &frames {
-        serde_json::to_writer(&mut input, frame).unwrap();
-        input.push(b'\n');
-    }
-    let mut output = Vec::new();
-    server.serve(Cursor::new(input), &mut output).unwrap();
-    let replies = output
-        .split(|b| *b == b'\n')
-        .filter(|b| !b.is_empty())
-        .map(|line| serde_json::from_slice::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
-    for response in [&bound, &decision, &replies[0], &replies[1], &replies[5]] {
-        id_contract::assert_host_ids(response);
-    }
-    assert_eq!(decision["grant"]["basis"]["intent_fingerprint"], intent);
-    assert_eq!(replies[5]["status"], "ok");
-    assert_eq!(replies[0]["status"], "ok");
-    assert_eq!(
-        replies[0]["result"],
-        serde_json::json!({"control_schema_version":crate::CONTROL_SCHEMA_VERSION,"session_id":server.session_id,"grant_id":grant_id,"status":"found","state":"issued","begun_at":null,"completed_at":null})
-    );
-    assert_eq!(
-        replies[1]["result"],
-        serde_json::json!({"control_schema_version":crate::CONTROL_SCHEMA_VERSION,"session_id":server.session_id,"grant_id":"missing","status":"not_found"})
-    );
-    assert_eq!(replies[2]["error"]["code"], "invalid_turn_grant_id");
-    assert_eq!(replies[3]["error"]["code"], "invalid_request");
-    assert_eq!(replies[4]["error"]["code"], "invalid_request");
-    assert_eq!(
-        store_error_code(&StoreError::ControlTurnGrantSessionMismatch),
-        "turn_grant_session_mismatch"
-    );
-    assert!(matches!(
-        serde_json::from_value::<HostControlRequest>(
-            serde_json::json!({"operation":"session_status","routing_token":routing})
-        )
-        .unwrap(),
-        HostControlRequest::SessionStatus { .. }
-    ));
 }
 
 #[test]
@@ -247,7 +214,6 @@ fn verification_bind_request_and_refusal_wire_shape() {
     };
     let mut request = serde_json::json!({
         "operation": "verification_bind",
-        "routing_token": "routing",
         "idempotency_key": "bind-1",
         "original": id,
         "measurement": {
@@ -314,7 +280,6 @@ fn oversized_control_frame_is_rejected_and_drained() {
         actor_id: "frame-agent".into(),
         session_id: SessionId("frame-session".into()),
         connection_token: "frame-connection".into(),
-        work_session: false,
         source_skill: None,
         actor_context: None,
         actor_context_normalized: false,
@@ -345,7 +310,7 @@ fn oversized_control_frame_is_rejected_and_drained() {
 fn removed_host_obligation_waiver_is_refused() {
     let clean = serde_json::json!({
         "operation": "obligation_waive",
-        "routing_token": "routing-token",
+
         "obligation_id": uuid::Uuid::nil().to_string(),
         "expected_definition": "a".repeat(64),
         "waived_by": "operator",
@@ -401,7 +366,7 @@ fn typed_evaluation_admission_preserves_host_private_error_code() {
 fn execution_observe_frame() -> Value {
     serde_json::json!({
         "operation": "execution_observe",
-        "routing_token": "routing-token",
+
         "idempotency_key": "termal-turn-17-observed",
         "binding": {
             "root_execution_id": uuid::Uuid::new_v4(),
@@ -666,7 +631,7 @@ fn execution_observation_refusals_answer_with_distinct_codes() {
 fn named_root_binding_frame_carries_claim_and_workspace_identity() {
     let frame = serde_json::json!({
         "operation": "named_root_bind",
-        "routing_token": "routing-token",
+
         "claim_id": uuid::Uuid::new_v4(),
         "claim_fence": 4,
         "workspace_id": r"\\?\C:\source-root",
@@ -693,7 +658,7 @@ fn named_root_binding_frame_carries_claim_and_workspace_identity() {
 fn acceptance_binding_read_frame_takes_no_caller_cut() {
     let frame = serde_json::json!({
         "operation": "acceptance_binding_read",
-        "routing_token": "routing-token",
+
         "work_id": uuid::Uuid::new_v4(),
         "expected_work_revision": 3,
         "run_id": uuid::Uuid::new_v4(),
@@ -815,7 +780,7 @@ fn acceptance_binding_read_refusals_answer_with_distinct_codes() {
 fn acceptance_verification_read_frame_names_its_cut_and_criterion_strictly() {
     let frame = serde_json::json!({
         "operation": "acceptance_verification_read",
-        "routing_token": "routing-token",
+
         "work_id": uuid::Uuid::new_v4(),
         "expected_work_revision": 3,
         "run_id": uuid::Uuid::new_v4(),
@@ -903,30 +868,17 @@ fn acceptance_verification_read_refusals_answer_with_distinct_codes() {
 #[test]
 fn host_control_frames_reject_duplicate_fields_without_unbounded_diagnostics() {
     let duplicate_top_level = br#"{
-            "operation":"session_status",
-            "operation":"session_status",
-            "routing_token":"routing-token"
-        }"#;
+        "operation":"work_session_read", "operation":"work_session_read"
+    }"#;
     let error = parse_host_control_request(duplicate_top_level)
         .expect_err("duplicate top-level field must fail closed");
     assert!(error.contains("duplicate field"));
-
-    let duplicate_nested = br#"{
-            "operation":"turn_evaluate",
-            "routing_token":"routing-token",
-            "purpose":"ordinary",
-            "intent_fingerprint":"unused",
-            "requested_effects":["observe"],
-            "resource_intents":[{
-                "kind":"logical",
-                "namespace":"workspace",
-                "namespace":"other-workspace",
-                "segments":["src"],
-                "coverage":"exact"
-            }],
-            "idempotency_key":"turn-once"
-        }"#;
-    let error = parse_host_control_request(duplicate_nested)
+    let mut frame = serde_json::to_string(&execution_observe_frame()).unwrap();
+    frame = frame.replace(
+        "\"capture_run_cut\":12",
+        "\"capture_run_cut\":12,\"capture_run_cut\":12",
+    );
+    let error = parse_host_control_request(frame.as_bytes())
         .expect_err("duplicate nested field must fail closed");
     assert!(error.contains("duplicate field"));
 
@@ -939,178 +891,6 @@ fn host_control_frames_reject_duplicate_fields_without_unbounded_diagnostics() {
     .expect_err("unknown oversized operation must fail closed");
     assert!(error.contains("<invalid>"));
     assert!(error.len() < 512);
-}
-
-#[test]
-fn host_control_frames_reject_unknown_nested_fields() {
-    let misspelled_components = serde_json::json!({
-        "operation": "turn_checkpoint",
-        "routing_token": "routing-token",
-        "grant_id": "grant-id",
-        "next_intent": "continue",
-        "observations": [],
-        "verification_evidence": [],
-        "environment_evidence": [{
-            "source_basis": {
-                "workspace_id": "workspace",
-                "source_revision": "revision"
-            },
-            "environment_fingerprint": "a".repeat(64),
-            "componentz": {
-                "toolchain": "stable",
-                "workspace_id": "workspace",
-                "capability_map_revision": 1
-            },
-            "observed_at": "2026-09-02T00:00:00Z"
-        }],
-        "idempotency_key": "checkpoint-once"
-    });
-    let error = parse_host_control_request(
-        &serde_json::to_vec(&misspelled_components).expect("encode nested typo"),
-    )
-    .expect_err("misspelled optional components field must fail closed");
-    assert!(error.contains("turn_checkpoint"));
-    assert!(error.contains("componentz"));
-
-    let extra_resource_field = serde_json::json!({
-        "operation": "turn_evaluate",
-        "routing_token": "routing-token",
-        "purpose": "ordinary",
-        "intent_fingerprint": "a".repeat(64),
-        "requested_effects": ["observe"],
-        "resource_intents": [{
-            "kind": "logical",
-            "namespace": "workspace",
-            "segments": ["src"],
-            "coverage": "exact",
-            "unexpected": true
-        }],
-        "idempotency_key": "turn-once"
-    });
-    let error = parse_host_control_request(
-        &serde_json::to_vec(&extra_resource_field).expect("encode extra resource field"),
-    )
-    .expect_err("unknown resource-subject field must fail closed");
-    assert!(error.contains("turn_evaluate"));
-    assert!(error.contains("unexpected"));
-}
-
-fn turn_evaluate_frame(purpose: Option<&str>, key: &str) -> Value {
-    let mut frame = serde_json::json!({
-        "operation": "turn_evaluate",
-        "routing_token": "routing-token",
-        "idempotency_key": key,
-        "intent_fingerprint": ObjectId::from_canonical_bytes(key.as_bytes()).as_str(),
-        "requested_effects": ["observe"],
-    });
-    if let Some(purpose) = purpose {
-        frame["purpose"] = purpose.into();
-    }
-    frame
-}
-
-// While hosts move off the removed fields, a turn request may still name
-// the only purpose; a recovery turn no longer parses.
-#[test]
-fn turn_evaluate_takes_an_ordinary_or_absent_purpose_and_refuses_recovery() {
-    for purpose in [None, Some("ordinary")] {
-        let frame = turn_evaluate_frame(purpose, "turn-once");
-        assert!(
-            matches!(
-                parse_host_control_request(&serde_json::to_vec(&frame).expect("encode")),
-                Ok(HostControlRequest::TurnEvaluate { .. })
-            ),
-            "purpose {purpose:?} must parse"
-        );
-    }
-    let frame = turn_evaluate_frame(Some("recovery"), "turn-once");
-    let error = parse_host_control_request(&serde_json::to_vec(&frame).expect("encode"))
-        .expect_err("a recovery turn must be refused");
-    assert!(error.contains("turn_evaluate"));
-    assert!(error.contains("recovery"));
-}
-
-// Grants carry no delivery page. A begin may omit the tokens or send
-// none; a begin naming a token is refused as outside the grant.
-#[test]
-fn turn_begin_takes_no_delivery_tokens_and_refuses_any() {
-    let directory = crate::test_support::temp_home().expect("temp");
-    let mut server = HostControlServer::open_with_host_path_identity(
-        directory.path().join("control.sqlite3"),
-        None,
-        ProjectId("wire-transition".into()),
-        "agent".into(),
-        SessionId("wire-session".into()),
-        None,
-    )
-    .expect("open the control connection");
-    let mut call = |frame: Value| {
-        let request = parse_host_control_request(&serde_json::to_vec(&frame).expect("encode"))
-            .expect("a valid frame");
-        server.handle(request).expect("handled")
-    };
-    let bound = call(serde_json::json!({
-        "operation": "session_bind",
-        "external_ref": "dummy:WIRE",
-        "title": "Wire transition",
-        "assurance": "turn_gated",
-        "mediated_effects": ["observe", "communicate"],
-        "capability_map_revision": 1,
-        "idempotency_key": "bind-wire",
-    }));
-    assert_eq!(bound["status"]["phase"], "ready");
-    assert!(bound["status"].get("confirmed_cursor").is_none());
-    let routing_token = bound["routing_token"].as_str().expect("token").to_owned();
-    let grant_for = |key: &str, call: &mut dyn FnMut(Value) -> Value| {
-        let mut frame = turn_evaluate_frame(None, key);
-        frame["routing_token"] = routing_token.clone().into();
-        let decision = call(frame);
-        assert_eq!(decision["decision"], "grant", "{decision}");
-        assert!(decision["grant"].get("delivery").is_none());
-        decision["grant"]["grant_id"]
-            .as_str()
-            .expect("grant id")
-            .to_owned()
-    };
-    let begin = |grant_id: &str, tokens: Option<Value>, key: &str| {
-        let mut frame = serde_json::json!({
-            "operation": "turn_begin",
-            "routing_token": routing_token.clone(),
-            "grant_id": grant_id,
-            "idempotency_key": key,
-        });
-        if let Some(tokens) = tokens {
-            frame["delivery_tokens"] = tokens;
-        }
-        frame
-    };
-
-    let first = grant_for("turn-echoes-a-token", &mut call);
-    let refused = call(begin(
-        &first,
-        Some(serde_json::json!(["token-from-an-old-page"])),
-        "begin-with-a-token",
-    ));
-    assert_eq!(refused["decision"], "refuse");
-    assert_eq!(refused["code"], "grant_scope_mismatch");
-
-    for (key, tokens) in [("absent", None), ("empty", Some(serde_json::json!([])))] {
-        let grant = grant_for(&format!("turn-{key}-tokens"), &mut call);
-        let started = call(begin(&grant, tokens, &format!("begin-{key}-tokens")));
-        assert_eq!(started["decision"], "begin", "{started}");
-        let reported = call(serde_json::json!({
-            "operation": "turn_checkpoint",
-            "routing_token": routing_token.clone(),
-            "grant_id": grant,
-            "next_intent": "continue",
-            "idempotency_key": format!("checkpoint-{key}-tokens"),
-        }));
-        assert_eq!(reported["decision"], "checkpointed", "{reported}");
-        assert_eq!(
-            reported["receipt"]["confirmed_cursor"],
-            reported["receipt"]["cursor"]
-        );
-    }
 }
 
 #[test]
@@ -1164,12 +944,12 @@ fn host_control_attributes_its_records_to_the_supplied_actor_context() {
             .map(|link| link.source.clone())
     };
 
-    let plain = open("plain.sqlite3").actor("turn_begin", "begin");
+    let plain = open("plain.sqlite3").actor("execution_observe", "observe");
     assert_eq!(context_of(&plain), None);
 
     let attributed = open("attributed.sqlite3")
         .with_actor_context(Some("agent=claude;model=fable;reasoning=high".into()))
-        .actor("turn_begin", "begin");
+        .actor("execution_observe", "observe");
     assert_eq!(
         context_of(&attributed).as_deref(),
         Some("agent=claude;model=fable;reasoning=high")
@@ -1181,7 +961,7 @@ fn host_control_attributes_its_records_to_the_supplied_actor_context() {
 
     let normalized = open("normalized.sqlite3")
         .with_actor_context(Some("agent=claude\u{7};model=fable".into()))
-        .actor("turn_begin", "begin");
+        .actor("execution_observe", "observe");
     assert_eq!(
         context_of(&normalized).as_deref(),
         Some("agent=claude ;model=fable")
@@ -1192,4 +972,17 @@ fn host_control_attributes_its_records_to_the_supplied_actor_context() {
     normalized
         .validate_attribution_context()
         .expect("a normalized attribution stays valid");
+}
+
+#[test]
+fn ordinary_source_sighting_uses_the_observation_protocol_without_admission() {
+    let mut frame = execution_observe_frame();
+    frame["occurrence"] = serde_json::json!({"kind":"source_sighting", "source_basis":{
+        "workspace_id":"workspace-A", "source_revision":"quiet-revision"},
+        "observed_at":"2026-10-02T03:04:00Z"});
+    let decoded = parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).unwrap();
+    assert_eq!(decoded.operation(), "execution_observe");
+    frame["routing_token"] = "removed-token".into();
+    let error = parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).unwrap_err();
+    assert!(error.contains("routing_token"), "{error}");
 }

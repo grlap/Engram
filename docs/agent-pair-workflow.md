@@ -172,8 +172,9 @@ coordination child should gate the root only when its outcome is actually
 required.
 
 A claim tracks execution ownership. Permission to mutate files still comes from
-the user, repository rules, and any host-enforced mutation controls. In an advisory
-deployment, file ownership agreements are coordination conventions.
+the user, repository rules, and any host-enforced mutation controls. Engram does
+not control file access, so file ownership agreements are coordination
+conventions.
 
 ### 3. Implement and communicate meaningful changes
 

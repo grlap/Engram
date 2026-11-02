@@ -1,7 +1,7 @@
 # Architecture
 
 Engram is a Rust workspace built around one core library. The target V1
-architecture keeps CLI, agent-facing MCP, and the host-private control
+architecture keeps CLI, agent-facing MCP, and the host-private work-session
 transport as thin faces over that core; none reimplements domain logic. This
 is a summary — the [specification](spec.md) is normative.
 
@@ -17,12 +17,12 @@ optional intake ─────────────────────�
                                                ▼
 ┌──────────────────┐       ┌─────────────┐  ┌─────────────┐
 │ Host runtime     │       │ engram CLI  │  │ Agent MCP   │
-│ + enforcement SDK│       └──────┬──────┘  └──────┬──────┘
+│ + observability  │       └──────┬──────┘  └──────┬──────┘
 └───────┬──────────┘              └────────┬─────────┘
-        │ private control                  │ work / memory requests
+        │ work session                     │ work / memory requests
         ▼                                  ▼
 ┌────────────────────────────────────────────────────────┐
-│ core: work graph · control · memory · evidence/report  │
+│ core: work graph · observations · memory · evidence    │
 └──────────┬──────────────────┬──────────────────┬───────┘
            │ Store            │ Index            │ optional adapters
            ▼                  ▼                  ▼
@@ -49,16 +49,14 @@ capabilities.
 | `Redactor` | pre-write DLP / secret scanning | visibly labeled no-op |
 | `Signer` | optional cryptographic attestation | not shipped in V1 |
 
-`domain.rs` owns substrate-neutral control records and valid state
-representations. `control.rs` owns deterministic turn, turn-begin and
-turn-checkpoint decisions. `storage/` atomically derives
-work/run lifecycle, membership, context, and named feed heads; persists sessions and
-short-lived grants; consumes grants at begin; and emits canonical checkpoint
-events. `host.rs` is the thin JSON-lines host transport. Checks on individual
-actions are not built (see
-[planned interfaces](features/behavioral-control-plane.md#planned-interfaces)),
-and report-assembly projections remain a later phase. Front
-ends translate requests; they do not decide eligibility.
+`domain.rs` owns substrate-neutral records and valid state representations.
+`storage/` atomically derives work/run lifecycle, membership, context, and
+named feed heads, and records host observations, named-root events and
+registered verification as canonical work records. `host.rs` is the thin
+JSON-lines transport of the host's work session (see
+[Execution Observability](features/execution-observability.md)).
+Report-assembly projections remain a later phase. Front ends translate
+requests; they do not decide eligibility.
 
 ## Object model
 
@@ -115,21 +113,11 @@ transactions, and atomic compare-and-swap operations support multiple
 processes. Project, root-work, and run-execution feeds each allocate a dense
 typed `FeedPosition` with their event transaction. The work protocol stages
 and acknowledges an exact dense project-feed cursor; that is the only context
-delivery. Host-control grants carry no delivery page, and the control scope's
-change index is a write-only audit trail. Global SQLite row ids are not
-cursors.
-The shipped host-control alpha adds mutable session and turn-grant projections
-plus canonical checkpoint events. The target extends these with action and
-report-barrier projections. Turn grants in every state, grant supersessions,
-turn decisions and operation results use noncanonical operational storage;
-bounding its retention is designed, not built, and nothing prunes it today.
-
-Host session binding resolves one shared control anchor by project and external
-reference, without creating a compatibility task. `control_sessions` owns the
-binding and optional exact work-claim basis; `control_changes` is the scope's
-write-only audit index of turn reports, which no grant delivers and no
-decision reads. Existing `task_id` fields retain their scope identity for stored
-history and memory applicability, not a second task lifecycle.
+delivery. Global SQLite row ids are not cursors. Work-session operation
+results use noncanonical operational storage. The canonical records of the
+removed turn gating, such as checkpoint events, remain readable as stored; its
+operational tables are retired by the store migration (see
+[records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
 
 ### Optional Git task sync
 
@@ -147,7 +135,7 @@ An external agent merges divergent task text alongside code. Engram validates
 the final graph and atomically imports it as attributed new versions/events;
 it never calls a model or rewrites immutable stored records. Shared note bodies
 are opt-in; modifying one creates a new attributed note citing the original.
-Claims, sessions, grants and private scratch remain local. Offline machines
+Claims, sessions and private scratch remain local. Offline machines
 can both write and may duplicate execution; task merge does not promise
 global exclusion.
 
@@ -163,14 +151,12 @@ Git enablement, exchange and reconciliation remain deferred.
 1. **Open and select work**: a user/model creates local work or explicitly
    imports a source snapshot. Engram derives a bounded ready view; the model
    or host focuses one item without requiring an external reference.
-2. **Bind**: the host binds a durable session to the work run under the
-   current control policy. The agent reads its work context and peer changes
-   through `next`.
-3. **Admit**: before each prompt, the host asks the deterministic evaluator
-   for a short-lived turn grant, which carries no context. A refusal carries a
-   typed directive. There is no per-action check: action grants are not built
-   (see
-   [planned interfaces](features/behavioral-control-plane.md#planned-interfaces)).
+2. **Claim**: a session claims the work run. The agent reads its work
+   context and peer changes through `next`.
+3. **Observe**: a host that runs Execution Observability records what it saw
+   run, how the source changed and which registered checks passed, against
+   that claim. Nothing admits or refuses a model turn (see
+   [Execution Observability](features/execution-observability.md)).
 4. **Write**: an assertion passes the `Redactor` port, gets attributed
    (asserted runtime context + assurance level), and either activates or
    lands as `proposed` per the write-policy matrix. See
@@ -198,30 +184,15 @@ Git enablement, exchange and reconciliation remain deferred.
 
 The CLI (`engram …`) and agent-facing MCP expose the six-operation ambient
 work protocol, memory, diagnostics, and coordination requests. The host-private
-control channel is defined in [spec §8.3](spec.md#83-host-control-channel);
+work-session channel is defined in [spec §8.3](spec.md#83-host-work-session-channel);
 its shipped operation inventory is in
-[CLI & MCP](features/cli-and-mcp.md#shipped-host-private-turn-channel).
-The host owns prompt/tool mediation and notifications; Engram owns durable
-protocol state and decisions. See
-[CLI & MCP](features/cli-and-mcp.md).
+[CLI & MCP](features/cli-and-mcp.md#host-private-work-session-channel).
+The host owns its tools, processes and notifications; Engram owns durable
+protocol state. See [CLI & MCP](features/cli-and-mcp.md).
 
-A reusable Host Enforcement SDK that implements that private lifecycle once,
-for the TermAl adapter, a generic CLI wrapper, native runtime adapters and a
-custom-agent library, is planned; today TermAl implements it directly.
-Adapters declare only the prompt/tool coverage they actually mediate.
-
-The hot control path targets one long-lived host-local `engram serve` process
-per project store with thin hook clients and short-lived cached grants. This
-avoids process/SQLite startup for every mediated tool. The required mediation
-map and latency/degraded-mode diagnostics are surfaced through `engram doctor`.
-
-The currently shipped MCP slice is advisory. The separate host-private
-transport process-tests restart-safe turn grant/begin/checkpoint behavior for
-`observe`, `communicate`, and turn-gated local mutation. Supplied resource
-intents are normalized, not exclusive resource reservations. A deployment may
-describe itself as `turn_gated` only when its runtime makes that channel
-mandatory before every prompt. No shipped deployment may claim `action_gated`
-yet.
+The MCP work tools are agent-facing and grant no authority. The work session
+records host observations and registered verification; it never admits or
+refuses a model turn.
 
 ## Security posture
 

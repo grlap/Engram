@@ -3,12 +3,17 @@
 > Normative section: [spec § Local work system](../spec.md); related briefs:
 > [Local work system](local-work-system.md) (completion seals, obligations),
 > [Execution pipeline](execution-pipeline.md) (typed evidence),
-> [Behavioral control plane](behavioral-control-plane.md) (host channel),
+> [Execution Observability](execution-observability.md) (host work session),
 > [CLI & MCP](cli-and-mcp.md) (agent words),
-> [Turn gate assessment](turn-gate-assessment.md) (why the evaluation request
-> stays out of the turn gate),
 > [Lifecycle ownership](acceptance-evaluation-lifecycle.md) (rule owners,
 > admission and completion horizons, consolidation proposals).
+
+> **Temporarily off.** Acceptance evaluation is switched off in the project
+> policy until [Execution Observability](execution-observability.md) delivers
+> the host evidence it needs. While it is off, no landing, completion or other
+> work waits for an evaluation. A missing verdict stays missing and is never
+> recorded as a pass. The contract below is kept unchanged for when
+> evaluation is switched back on.
 
 This brief is the contract for evidence-based acceptance evaluation before
 completion. It describes the agreed design, not a claim that every row is
@@ -55,9 +60,8 @@ model itself.
 ## Registered Git-input evidence
 
 A native, item-bound check from the
-[registered launcher producer](behavioral-control-plane.md#registered-launcher-verification-without-a-turn)
-can support an evaluation without a named-root sighting, including when gated
-control is off. The evaluator declares `source_basis.fingerprint` as
+[registered verification producer](execution-observability.md#registered-verification)
+can support an evaluation without a named-root sighting. The evaluator declares `source_basis.fingerprint` as
 `git-commit:<full commit>` or `git-tree:<full tree>` for the staged lane.
 Each selected registered check must match that exact input. Different commits
 never become interchangeable because their trees match; a staged input's base
@@ -102,7 +106,7 @@ agreement”**. Agreement never erases an earlier differing observation, includi
 one outside the displayed page. The diagnostic retains the original observation
 locators and the seal/evaluation/source basis; it creates no diagnostic record.
 Unadmitted reports retain their admission and accounting labels, including an
-audit-only report on a finished run; they gain no grant, check credit or cause.
+audit-only report on a finished run; they gain no check credit or cause.
 
 An observation describes the interval the host measured. Run-feed position
 relative to the seal's completion cut establishes recording order, not that a
@@ -683,7 +687,7 @@ stale reason named.
   does not stand in for it: the fingerprint ties the evaluated content to
   the content at completion, not to the check a pass cites.
 
-The host-private [named-root binding](behavioral-control-plane.md#5a-bind-a-named-source-root)
+The host-private [named-root binding](execution-observability.md#named-source-roots)
 is claim-scoped. Evaluation records the binding active at its cut and becomes
 stale if that binding ends, by an `ended` event or the claim's release, or
 changes. Its judged source and F8 check use
@@ -698,11 +702,11 @@ bound requires a fresh check in the claim's active named root or a waiver,
 even after that root ended, was released or was renamed. Neither the
 evaluator nor the core infers workspace identity from a path string.
 
-A host may also report a source change it observed without admission
-([Record execution observed without
-admission](behavioral-control-plane.md#5b-record-execution-observed-without-admission)).
-Accounted as a new change or a repeat, such a record is a source record like
-a turn's observation in F3, F8 and the judged source. As a barrier it also
+A host reports a source change it observed as a
+[host observation](execution-observability.md#host-observations).
+Accounted as a new change or a repeat, such a record is a source record in
+F3, F8 and the judged source, as a turn checkpoint's observation recorded by
+an earlier build is. As a barrier it also
 retires a cited check that does not follow it: one whose producer was
 recorded before the change, or that completed before the change was
 recorded, whatever revision the change reports, since the report may
@@ -960,7 +964,7 @@ tests cite the row identifier in a nearby comment.
 | B27 | seals and policies recorded before this feature | read unchanged; doctor healthy; self-asserted receipts |
 | B28 | `done "summary"` capture and its checkpoint after the evaluation | still fresh; seal binds the evaluation |
 | B29 | `show` and `next` on an evaluated item | per-criterion newest verdict, basis, evaluator label, mode, and freshness; `done` receipt names the path |
-| B30 | host-owned (not a core test): TermAl evaluator spawn, attested sub-agent identity, fingerprint at completion, observed build via the control channel | documented in the host item; end-to-end acceptance stays open until exercised |
+| B30 | host-owned (not a core test): TermAl evaluator spawn, attested sub-agent identity, fingerprint at completion, observed build via registered verification on the work session | documented in the host item; end-to-end acceptance stays open until exercised |
 | B31 | evaluator reads at cut `c`; a host-observed `source_changed` observation or check lands after `c`; the verdicts are submitted with `evidence_basis = c` | refuse at write: `acceptance_evaluation_resubmit` after a check, `acceptance_evaluation_void` after a source change the evaluation did not judge, or when the newest execution observation after `c` that carries a revision is at another revision than the judged one, even when it reports no change; a change to the declared judged revision does not refuse, nor does a passed host check on it with its environment record and resolution (B73); a citation beyond `c` also refuses; resubmission with the current basis records |
 | B32 | passing `asserted` evaluation, then policy `mechanical_basis` → `observed`; passing evaluation without a source basis, then `require_source_freshness` → on | `done` refuses `AcceptanceEvaluationStale { policy }` / `{ source }`; no older, weaker record seals |
 | B33 | `pass` cites gate `cargo-test`; a newer `cargo-test` record (any result) lands after the cut; an unrelated gate lands after another passing evaluation | `done` refuses `AcceptanceEvaluationStale { evidence }` / the unrelated gate leaves the evaluation fresh |
@@ -1125,9 +1129,8 @@ none.
   whether it reported a change, workspace, revision and root generation when
   recorded, reporting session as the display label `show` uses, and the
   observed and recorded times. Each row says its `admission`: `admitted`
-  for a turn's own observation, `unadmitted` for one a host recorded without
-  admission ([Record execution observed without
-  admission](behavioral-control-plane.md#5b-record-execution-observed-without-admission)).
+  for an observation an earlier build's turn checkpoint recorded,
+  `unadmitted` for a [host observation](execution-observability.md#host-observations).
   An unadmitted row adds what was observed and its window, its cause as
   unknown or as the host's unverified assertion, its accounting, and every
   check as `observed check, uncredited`. Every host-supplied value in an
@@ -1162,7 +1165,7 @@ pin as `status.work.evaluation_mode`, omitted when the task pins nothing; the
 text form prints the same fact as `evaluation mode:`. `control-policy show`
 prints the active policy as JSON, with `acceptance_evaluation`
 (`allowed_modes`, `mechanical_basis`, `require_source_freshness`) beside the
-policy id, epoch, required assurance, rule set and supported effects. It
+policy id, epoch and rule set. It
 reads the policy head only, so a host can ask it on every evaluation request;
 `doctor --json` carries the same keys under `control` and the text report one
 `Acceptance evaluation:` line, but `doctor` audits the whole store and can
@@ -1250,22 +1253,18 @@ process:
   pending: the host must not complete on an older pass while a newer attempt
   it requested is still running or has timed out, because Engram only sees
   recorded evaluations and the newest recorded one decides;
-- minting observed build evidence through the control channel
-  (`turn_checkpoint` with `verification_evidence`), which is the only way an
-  `observed` pass can exist. The bootstrap policy requires `turn_gated`
-  assurance, so this needs the host channel for the pilot project; lowering the
-  assurance to dodge that prerequisite is not the plan.
+- minting observed build evidence as registered verification over the
+  host's work session, which is the only way an `observed` pass can exist.
 
 ### Reading what satisfied a bound criterion
 
 A host reads, for one item on its active run, the evidence that satisfied
 each bound criterion with the host-private `acceptance_binding_read`
-operation on the [host control channel](../spec.md#83-host-control-channel).
-Its request carries `routing_token`, the full `work_id`, the
-`expected_work_revision`, the full `run_id` and, for a later page, `after`.
-It takes no cut, idempotency key, fence or note text; a request naming any
-other field, such as `run_cut`, is refused as `invalid_request`. Any bound
-host session of the project may read, whatever its own work binding.
+operation on the [host work-session channel](../spec.md#83-host-work-session-channel).
+Its request carries the full `work_id`, the `expected_work_revision`, the
+full `run_id` and, for a later page, `after`. It takes no cut, idempotency
+key, fence or note text; a request naming any other field, such as `run_cut`,
+is refused as `invalid_request`. Any work session of the project may read.
 
 The first page captures the run's feed head as its cut. Each page then
 reads one snapshot and checks, in order: that a continuation is one this
@@ -1345,7 +1344,7 @@ An append to another item does not move
 the basis; a revision of the item or any append to its run does, so a host
 paging a run that is still recording may be refused `stale_cut` again and
 again, and reads from the first page each time, or once the run is quiet.
-Wrong credentials keep their codes, and a record that fails its canonical
+A superseded connection keeps its code, and a record that fails its canonical
 association returns a storage error.
 
 ### Listing the candidate verifications of a criterion
@@ -1357,12 +1356,11 @@ run recorded up to the binding read's cut, with the host-private
 that closed an obligation; this read lists every check the consumer may
 weigh, and judging which of them applies is the consumer's.
 
-Its request carries `routing_token`, the full `work_id`, the
-`expected_work_revision`, the full `run_id`, the `run_cut`, the one-based
-`criterion` and, for a later page, `after`. The project is the bound
-session's; a request cannot name a project, a kind or a fingerprint, and any
+Its request carries the full `work_id`, the `expected_work_revision`, the
+full `run_id`, the `run_cut`, the one-based `criterion` and, for a later page,
+`after`. The project is the work session's; a request cannot name a project, a kind or a fingerprint, and any
 other field is refused as `invalid_request`, as is a criterion that is not a
-non-negative integer. Any bound host session of the project may read.
+non-negative integer. Any work session of the project may read.
 
 Unlike the binding read, this read never captures a cut: `run_cut` must be
 the run's feed head on the first page and on every continuation, so a host
@@ -1416,7 +1414,7 @@ verification.
 
 A continuation is a validated position, not a capability: it is checked
 against the current snapshot, and a token that passes every check is a
-read under the current credentials. It carries the basis, the criterion,
+read on the current connection. It carries the basis, the criterion,
 the requirement, the count and the last candidate returned. The read
 writes nothing. Each refusal has its own code, and none is an empty page:
 
@@ -1442,7 +1440,7 @@ writes nothing. Each refusal has its own code, and none is an empty page:
 
 Any append to the run moves its head, so a host paging a run that is still
 recording may be refused `stale_cut` again and again; an append to another
-item does not. Wrong credentials keep their codes.
+item does not. A superseded connection keeps its code.
 
 ### Binding one check to several items
 
@@ -1452,7 +1450,7 @@ host-private `verification_bind` operation. The check runs once, on one
 item's run; binding gives every other item a record of it on that item's own
 run, and each item is still evaluated on its own.
 
-The request carries `routing_token`, an `idempotency_key` of 1 to 512 bytes
+The request carries an `idempotency_key` of 1 to 512 bytes
 without surrounding whitespace, the `original` verification's record id,
 the host's `measurement` of the shared root (`workspace_id`,
 `source_revision`, `measured_at`) and `targets`: for each, its claim
@@ -1534,8 +1532,8 @@ A committed bind is kept as a control operation of the session. A retry
 with the same key and the same project, session and request, every
 original, target, sighting, measurement and criterion field included,
 returns the stored receipt marked `replayed`, before anything current is
-checked: it answers even after a claim it named ended, and under refreshed
-routing credentials, since the routing token is not part of the intent.
+checked: it answers even after a claim it named ended, and over a new
+connection of the same session.
 The same key with another request is
 `control_operation_idempotency_conflict`. A new bind needs every claim live
 and held.

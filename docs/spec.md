@@ -30,7 +30,7 @@ boundary reached only through explicit authorization (§9.5), never by
 mirroring Engram's local event stream.
 
 The V1 product definition is deliberately narrow: **a host-local work graph
-and behavioral/coordination control plane for multiple agent sessions, backed
+and Execution Observability for multiple agent sessions, backed
 by typed execution memory and producing context, controlled handoffs,
 evidence-gated completion, and optional frozen reports — not a general
 knowledge graph or process scheduler.**
@@ -48,11 +48,9 @@ knowledge graph or process scheduler.**
 - Optional explicit Git push/pull of task text on the code branch, local
   offline writes on every machine, and agent-mediated conflict resolution
   without live-authority transfer.
-- Host-enforced turn admission: context,
-  peer-delta, checkpoint, and finalization obligations are protocol
-  preconditions rather than optional agent habits. Authorization of each
-  material action is designed and deferred
-  ([action gates](features/action-gates.md)).
+- Execution Observability: the host records execution, source and test
+  observations and registered verification against the claim they belong
+  to, without admitting or refusing a model turn.
 - An optional polished final report per completed root, published only under a
   separately authorized durable receipt.
 - Bounded, predictable context cost: memory never crowds out the work it is
@@ -369,190 +367,61 @@ immutable bytes and a report hash. A publication intent and idempotency key
 exist only when a target is requested; retry sends the same bytes, and
 revision creates a superseding report.
 
-### 2.7 Execution control
+### 2.7 Execution Observability
 
-Memory can govern behavior only when the host makes Engram's decision a
-precondition for execution. Engram is the policy decision point; the host
-runtime is the policy enforcement point and actuator. The agent may request
-coordination operations but cannot grant itself permission. Effective
-authority is always the intersection of user/host policy and an Engram grant:
-an Engram grant is necessary for a controlled operation and can never widen
-the host's authority.
+Execution Observability is the host feature that records what happens while
+agents work, switched on or off per project in the host. Engram stores what
+the host records and links it to the work it belongs to; it never admits,
+delays or refuses a model turn, and nothing it stores grants filesystem, tool
+or external-action authority. With the feature off, ordinary work words,
+claims, notes, gates and completion behave exactly as with it on.
 
-Each bound session follows a durable protocol:
+The host's **work session** (`engram control --work-session`) carries:
 
-```text
-bind -> ready -> turn_open -> ready
-          ^          |
-          |          +-- report with next intent exit -> exited
-          +-- grant expired or superseded, refused start, restart before start
-```
+- **host observations**: execution, source and test facts the host saw, as
+  `execution_observe` records bound to the exact claim epoch observed. They
+  are attributed history: observed checks are facts without test credit, and
+  an observed source change may open a source-change obligation (§2.6);
+- **named source roots**: a claim's selected workspace, as `named_root_bind`
+  events, read back with `named_root_read` and `named_root_sighting_read`;
+- **registered verification**: terminal results of a durably registered host
+  run, as `verification_record`, credited to further items with
+  `verification_bind`. Registration is asserted by the host, not proven.
 
-Storage writes only `ready`, `turn_open` and `exited`. A `sync_required` row
-written before grants stopped carrying a delivery page admits a turn as `ready`
-does.
+**Assignment** is future intent on a work item; a fenced **claim** schedules
+live execution of one run. Neither grants file or external authority.
+**Acceptance evaluation** is temporarily off until Execution Observability is
+implemented (see [acceptance evaluation](features/acceptance-evaluation.md)).
 
-Before a turn, the core deterministically evaluates the control schema, the
-host's assurance and mediated effects against the declared control policy, the
-session's work binding (work revision, claim fence and run state), its task
-anchor, membership and phase, and the project-policy and work-admission
-epochs. It returns one of:
-
-- a short-lived `TurnGrant` bound to one canonical turn intent, session,
-  work item/revision, run generation, claim fence, project-policy and
-  work-admission epochs, mediated capability envelope and expiry. A grant
-  carries no context: the work context an agent sees comes from the `next`
-  word, which keeps its own staged delivery (see
-  [the local work system](features/local-work-system.md)); or
-- a typed refusal with stable code and the directive that repairs it. Every
-  turn is ordinary; there are no recovery turns.
-
-Immediately before prompt dispatch, `turn_begin` atomically rechecks the
-grant's state and expiry, the session's phase, the task's control anchor and
-the session's membership, the project-policy and work-admission epochs, the
-capability map, the work revision and the claim fence, then activates the
-grant. A begin that names a
-delivery token is refused, because no grant carries one. A begun prompt whose
-outcome is uncertain after a restart stays open until the host reports it; it
-is never replayed.
-
-There is no check on individual actions. Checks around each material action,
-and the other interfaces no host calls, are described as not built in the
-[behavioral control plane](features/behavioral-control-plane.md#planned-interfaces).
-
-Turn completion is one structured checkpoint, not a second status dialogue.
-The host supplies its execution observations, any test or build evidence
-it saw (per-action receipts are not built) and a bounded next intent:
-`continue`, `wait` or `exit`. The agent records durable findings and typed
-blockers with `note` and `update` beside its ordinary response, not in the
-checkpoint, so meaningful progress prose is captured once as typed memory. The
-checkpoint drives deltas, handoff material, and report input without storing
-raw reasoning traces or creating another work ledger.
-
-An ordinary mutation is never gated on creating a memory. Semantic capture is
-prompted at meaningful boundaries and required only for the participant
-contribution; structural action metadata is captured automatically. This
-prevents a capture quota from being satisfied with low-value prose.
-
-Turn grants deliver no context. Each turn report appends one event to the
-bound task's change index, which is a write-only audit trail: no grant
-delivers it and no decision reads it. The control session's
-`confirmed_cursor`, `tentative_cursor` and `blocking_watermark` columns feed
-no decision; the loader only checks they are non-negative. Only a bind writes
-them, as zero or null, so a row written earlier keeps its last values until it
-is rebound. They are retained only so the schema stays unchanged until the
-next planned migration drops them.
-
-A project policy epoch invalidates grants after global
-control/mediation changes; a work admission epoch invalidates grants after
-applicable pinned-rule, participant-access, work-revision, claim, or run-state
-changes; work-claim fences invalidate old execution ownership. These values are not
-interchangeable. Unknown safety-relevant schema or policy versions block
-admission rather than being ignored.
-
-State-changing control transitions are idempotent. Among session and turn
-transitions, only a turn checkpoint emits a canonical control event: its turn
-checkpoint event is stored as an object and indexed only in the task's change
-index, an audit record that no production path consumes. Binding a session,
-opening a turn and beginning it emit none. When the session is bound to a work
-claim, which host evidence requires, the same checkpoint also appends its
-execution observations and its verification and environment evidence as
-canonical work records to the project, root and run feeds (§2.6). While the
-run is unfinished, obligations and completion read them; on a finished run
-they are late records kept for audit only. The session and
-grant rows are the durable record, and recovery reads them; an event for
-every transition, from which those rows could be rebuilt, is designed, not
-built. Turn grants in every state and high-volume allow/refusal diagnostics
-are operational records, not canonical memory. A grant's intent binding
-never changes, while its row's state moves from issued to begun and
-completed, or to expired or superseded. Reopening a session's host-control
-connection after a restart
-expires every grant it was issued and has not begun, discarding that
-authority; a process restart alone changes nothing until then. A rebind also
-expires every issued, unbegun grant, and a status read lazily expires issued
-grants already past their expiry. A begun turn stays open,
-checkpoint-required, until the host reports it (see
-[crash, restart, and replay](features/behavioral-control-plane.md#crash-restart-and-replay)).
-Bounded retention of these records is designed, not built: nothing prunes
-stored grants or results today, so an exact retry of a turn, begin or
-checkpoint request finds its stored result. A session bind keeps only its
-latest key: an exact retry returns the session's current status, phase
-unchanged, while that key is still its latest, and after a rebind under a new
-key the older key runs as a fresh bind.
-Compact durable request-key tombstones are likewise designed, not built: they
-would bind kind/key/intent/terminal state through work retention, so that
-once pruning exists, pruning or expiry could never reinterpret an old key as
-fresh authority. Only a transition that can change peer
-behavior enters the work/run delta feed, so control does not become a second
-status ledger.
-
-Host/operator project-policy mutations use a separate store-scoped durable
-idempotency key because they are not owned by an agent session. The normalized
-intent and exact receipt commit atomically with activation. Retry-time wall
-clock is excluded from intent, so a lost-response retry with the original
-expected head returns the committed receipt before re-evaluating that now-stale
-compare-and-swap guard; same-key different-intent reuse is a conflict.
-
-Initialization installs and selects a versioned safe project-scoped
-`ControlPolicy` atomically in a new store. An existing store must match the
+The project `ControlPolicy` selects the obligation rule set and the
+acceptance-evaluation policy. Initialization installs and selects a versioned
+built-in policy atomically in a new store. An existing store must match the
 complete current schema and policy chain exactly; missing, different-build,
 corrupt, or ambiguous state fails ordinary store open for every surface before
-DDL. `doctor --recover-policy` is a read-only diagnostics-only path:
-it exposes no service or mutation handle and never selects or rewrites policy.
-A new immutable version records a canonical
-`project_policy_admin`-shaped host/operator authority decision. V1 honestly
-records that attribution as asserted context, not authenticated identity;
-authenticated policy administration is deferred. The implicit bootstrap
-default uses synthetic system attribution; an explicit initial assurance
-requires and records an asserted operator. Selecting the new policy
-and advancing the project epoch is one transaction.
-The active policy also selects one canonical `ObligationRuleSet` id.
-Assurance-only transitions preserve the selected set. A host/operator-only
-activation may append a validated
-`set_obligation_rule_set` successor under the same epoch/id compare-and-swap.
-The shipped operator CLI accepts at most 64 KiB of strict nested V1 JSON inline
-or through `@file`; rollback re-supplies the desired typed JSON and never
-activates an id alone. No MCP or model-turn operation can administer it.
-Unknown schemas, unknown fields or triggers, duplicate rule identities, and
-missing selected objects fail closed.
-Every active run rechecks that shared epoch at turn/action boundaries—no
-single work claim controls project policy. Host/user
-authority is the ceiling; control policy and work-applicable pinned rules may
-only restrict it. External action intents cite durable authority references bound to work/run, effect,
-payload fingerprint, and validity window.
+DDL. `doctor --recover-policy` is a read-only diagnostics-only path: it
+exposes no service or mutation handle and never selects or rewrites policy. A
+new immutable version records a canonical `project_policy_admin`-shaped
+host/operator authority decision, recorded honestly as asserted context, not
+authenticated identity. Selecting the new policy and advancing the project
+epoch is one transaction. A host/operator-only activation may append a
+validated `set_obligation_rule_set` successor under an epoch/id
+compare-and-swap. The operator CLI accepts at most 64 KiB of strict nested V1
+JSON inline or through `@file`; rollback re-supplies the desired typed JSON
+and never activates an id alone. No MCP operation can administer it. Unknown
+schemas, unknown fields or triggers, duplicate rule identities, and missing
+selected objects fail closed. Host/operator project-policy mutations use a
+store-scoped durable idempotency key; the normalized intent and exact receipt
+commit atomically with activation, and same-key different-intent reuse is a
+conflict. Policy epochs, not wall-clock timestamps, order immutable policy
+history.
 
-Failure policy is capability-specific. Observation remains available where
-disclosure permits. On a decision-service deadline or clean unavailability,
-policy may allow only reversible local work as `degraded_open` under a
-previously issued unexpired envelope bound to policy/epoch, mediation map,
-resources, work-claim basis, and action/debt limits. The host durably spools typed
-`DegradedActionDebt` for idempotent upload and reconciliation; communication
-remains closed while Engram is unavailable, and the host must not create an
-offline message ledger. After recovery, an ordinary turn may capture a
-durable semantic finding through the ordinary typed-memory path. Shared
-mutation, external effects, and lifecycle actions remain closed. Store
-corruption, unknown safety schemas,
-user/host denial, missing mediation, and unverifiable external authority are
-non-overridable. Break-glass applies only to explicitly policy-authorized
-coordination exceptions after those invariants pass.
-
-Control assurance is recorded honestly:
-
-- `advisory`: Engram tools can be bypassed;
-- `turn_gated`: the host mediates every model turn;
-- `action_gated`: the host also mediates every declared material capability.
-
-The project policy is a floor, not the only assurance check. `observe` and
-`communicate` require `advisory`; internal `coordinate`, mutation,
-external-side-effect, and lifecycle effects require at least `turn_gated`. A
-bind records the declared mediated set and returns its assurance-capped
-effective subset; turn evaluation refuses effects above that
-subset. Policy epochs, not wall-clock timestamps, order immutable policy
-history; activation and decision timestamps are attribution only.
-
-The full protocol, effect classes, failure semantics, and host conformance
-contract are specified in the
-[behavioral control-plane brief](features/behavioral-control-plane.md).
+Turn gating, the per-turn grants an earlier build issued (turn grants:
+Evaluate/Begin) with its session admission, settlement and recovery, was
+removed. Its canonical records remain readable as stored; the store migration
+that removed it retires its operational tables by name with their counts (see
+[records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
+The full protocol is
+specified in the [Execution Observability brief](features/execution-observability.md).
 
 ## 3. Storage & sync
 
@@ -580,17 +449,11 @@ but is never a cursor. This identity is fixed by the work graph so
 safety CAS never depends on sparse cross-feed numbering.
 Delivery progress, the root completion barrier and indexes are mutable
 projections; the barrier's transitions append immutable work events (§2.6).
-Control session and grant rows are durable records,
-restored from backup and never rebuilt from events: among their transitions
-only a turn checkpoint emits a canonical control event, indexed only in the
-task's audit change index, and auditing every safety-relevant control
-transition through canonical events is designed, not built (§2.7). The
-execution observations and evidence a work-bound checkpoint carries are
+Host observations, named-root events and registered verification are
 canonical work records on the project, root and run feeds, which obligations
-and completion read while the run is unfinished (§2.7). Action records are not
-built. Turn grants in every state and decision diagnostics
-occupy a separate operational tier and never become peer context; bounding
-that tier's retention is designed, not built, and nothing prunes it today. The
+and completion read while the run is unfinished (§2.7). The canonical records
+of the removed turn gating remain readable as stored; its operational tables
+are retired by the store migration (§2.7). The
 cursor orders peer deltas; it is not an object identity and does not cross
 stores as a global sequence number.
 
@@ -598,7 +461,7 @@ stores as a global sequence number.
 engram.db
   objects      // rows keyed by minted id: versions, events, edges, evidence — write-once
   projections  // exact-current heads/status/order plus rebuildable indexes, FTS5 and derived tables
-  control.*    // turn grants in every state + diagnostics — operational, never memory
+  control.*    // operational records and diagnostics, never memory
   meta         // current-build marker; refuses stores created by another build
 ```
 
@@ -857,10 +720,13 @@ and unkeyed project memories remain readable by storage, doctor, projection
 repair, and graph restore. They share object kinds with live project memory;
 scope and keyed project identity distinguish them, never object kind alone.
 
-Context-packet construction and delivery are removed. Stored `ContextPacket`
-and `ControlDelivery` formats remain decodable and auditable, with ids and
-links unchanged. No new packet is constructed, and turn grants carry no
-delivery page. See [historical context packet format](features/context-packets.md).
+Context-packet construction and delivery are removed. No new packet is
+constructed. The `ContextPacket` type still describes the historical
+serialized format. The `ControlDelivery` type that carried a packet inside a
+turn grant was deleted with turn gating; the store migration that removed
+turn gating retires the tables that held those grants, by name with their
+counts, and the store file kept as that migration's backup holds their rows.
+See [historical context packet format](features/context-packets.md).
 
 ## 5. Write path
 
@@ -1057,9 +923,6 @@ engram work list [filters]    engram work stats            engram work preflight
 engram report finalize <root-ref>            # optional barrier → polish → report_ready
 engram report show <root-ref>                engram report publish <root-ref> # optional, receipted
 
-# control diagnostics and recovery (§2.7)
-engram control status                       engram control explain <decision-id>
-engram action reconcile <action-id>         # proposed with action gates; not built
 
 # optional external adapters (§9)
 engram import preview <adapter> <ref>        engram import apply <snapshot>
@@ -1069,14 +932,6 @@ engram export preview <adapter> <work-ref>   engram export apply <intent>
 engram graph save [--out FILE | --stdout] [--include-restricted --reason "<why>"]
 engram graph load FILE [--dry-run]
 ```
-
-`engram action reconcile` is a proposed operator command and is not built.
-Action checks are designed and deferred
-([action gates](features/action-gates.md)). In that design the host reports
-an outcome and continues an unknown one with the `action_reconcile`
-operation; the command would be the operator's route for an attributed
-decision on an action whose effect stays unknown, and its own syntax is not
-designed.
 
 ### 8.2 Agent-facing MCP server
 
@@ -1134,149 +989,94 @@ before acting. Only a domain-separated digest of that asserted
 value is persisted; its raw text is never retained.
 
 This surface is for capture, retrieval, explanation, and coordination
-requests. It is not a self-authorization channel: a model-callable MCP tool
-cannot prove that the host withheld a turn or a side effect. Replayable grant
-tokens never appear in model-visible results; the private host channel owns
-them.
+requests. It is not an authorization channel: a model-callable MCP tool
+grants no turn, file or external authority, and the host-private
+work-session operations are never exposed through it.
 
-### 8.3 Host control channel
+### 8.3 Host work-session channel
 
-A separate host-private transport exposes the §2.7 protocol:
+A separate host-private transport, `engram control --work-session`, exposes
+the §2.7 protocol as JSON lines:
 
 ```text
-session_bind   session_status   turn_grant_read   turn_evaluate   turn_begin   turn_checkpoint
+work_session_read   control_connection_read
 named_root_bind   named_root_read   named_root_sighting_read
-execution_observe   acceptance_binding_read   acceptance_verification_read
-verification_bind
+execution_observe   verification_record   verification_bind
+acceptance_binding_read   acceptance_verification_read
 ```
 
-`engram control` ships these as JSON lines, for the built-in
-`observe`/`communicate`/`mutate_local` policy. The other interfaces the design
-named (`control_bootstrap`, `delivery_ack`, `action_authorize`,
-`action_begin`, `action_complete`, `session_heartbeat` and `session_exit`) are
-not built; see the
-[behavioral control plane](features/behavioral-control-plane.md#planned-interfaces).
-Internal `coordinate` is not a model-turn capability. The policy checks
-project/effect assurance floors, declared mediation, supported effects, and
-current epochs. Resource leases and host obligation waiver are removed.
-Resource intents may be empty; supplied subjects are project-bound and normalized,
-not exclusive reservations.
+None is exposed through agent-facing MCP, and none grants a model turn,
+filesystem, tool or external-action authority. Exact retry evidence survives
+restart, and a new connection fences its predecessor for the same session.
+Every request variant is strict: the paired consumer must send exactly the
+current field set for every operation. Any additive, unknown, or removed
+request field is an `invalid_request` refusal that names the request kind and
+offending field. There is deliberately no version-negotiation or legacy-frame
+shim: the paired TermAl consumer updates its host-frame shapes in step with
+each Engram build. For the build that removed turn gating, that TermAl build
+must be in place before landing, install or cutover; see
+[the paired TermAl build](features/offline-store-cutover.md#paired-termal-build).
 
-Exact retry evidence survives restart. New connections fence predecessors and
-invalidate unbegun grants. Begun grants stay open until the host reports them
-and are discoverable through session status; no prompt or payload is
-redelivered. Individual action/shared/external/lifecycle authority is not
-shipped; `action_gated` declarations are rejected.
-Every `HostControlRequest` variant is strict: the paired consumer must send
-exactly the current field set for every operation. Any additive, unknown, or
-removed request field is an `invalid_request` refusal that names the request
-kind and offending field. The former `obligation_waive` operation is removed.
-This pre-release request-shape revision is coordinated
-atomically with the live TermAl consumer. There is deliberately no
-version-negotiation or legacy-frame shim: the paired consumer must update all
-host-frame shapes before this Engram build lands. Two fields are in transition
-while the consumer stops sending them: `turn_evaluate.purpose` may be
-`ordinary` or absent, and any other value is an invalid request;
-`turn_begin.delivery_tokens` may be `[]` or absent, and a non-empty list is
-refused with `grant_scope_mismatch`, because no grant carries a delivery page.
-Both fields are removed once the consumer no longer sends them.
-
-For a work-bound begun turn, the private checkpoint may atomically append up to
-64 host execution observations, mint up to 16 typed verification objects, and
-mint up to four source-bound environment identities. Verification derives its
-source/run/session/check/result/time binding from a producer observation and
-may link an environment by object id or same-request index. Environment
-evidence may use an opaque fingerprint or supply a bounded closed
-component identity: toolchain, optional sandbox/image, workspace id, and the
-bound session's capability-map revision. Engram derives the component
-fingerprint and rejects a workspace, revision, run, or capability-map mismatch.
-These fields are asserted host context, not attestation, and must not contain
-secrets. `source_revision` fingerprints committed plus dirty content. A later
-source revision reopens the requirement. Agent-authored generic evidence never
-satisfies verification; the work protocol may only attach an existing typed
-hash to the focused run.
-
-Every checkpoint resolves the obligation rule set selected by the begun
-grant's frozen project-policy epoch and records its id on the canonical
-`ExecutionObservation`. The built-in set maps every observation with
-`source_changed=true` to one immutable test obligation regardless of outcome
-or source-basis presence. The recorded `source_changed` is the core's reading
-of the host's report. It is false whenever the host reported no change. When
-the host reported one, it is true unless the reported `source_revision`
-equals the revision of the run's newest recorded source change and no host
-record on the run since that change (observation or environment
-evidence) carried another revision; with no revision on the
-report or on that change, or no recorded change yet, it is true. Each
-definition binds the same rule-set id, rule identity/version, trigger, and
-requirement. A later policy activation applies
-only to later observations and cannot reinterpret existing history. Every
-observation and obligation definition carries its exact rule-set id.
-Obligation definitions
+An `execution_observe` record binds the exact claim epoch the host observed.
+With `account_if_eligible`, it resolves the obligation rule set its
+`policy_basis` names, which must be the project's current one, and records
+its id on the canonical observation. The built-in set maps every
+observation accounted as a new `source_change` to one immutable test
+obligation regardless of outcome or source-basis presence. That accounting is
+the core's reading of the host's report: a request that reports no change is
+`no_source_change`, a `source_sighting` only records where the source was,
+and a measured change whose revision equals that of the newest change
+recorded in its workspace under the same claim, with no other revision seen
+there since, is a `repeat`; none of these opens an obligation. An
+observation an earlier build admitted from a turn keeps the
+`source_changed` reading recorded with it, and only one recorded as true
+opened an obligation. Each definition binds the same rule-set id, rule identity/version, trigger,
+and requirement. A later policy activation applies only to later
+observations and cannot reinterpret existing history. Obligation definitions
 and terminal satisfaction/waiver events are direct project, root-work, and
 run-execution feed objects; query rows are verified projections.
-A typed V1 requirement may leave the verification command open, as the stock
-set does, or pin an exact `check_fingerprint`. It never names an environment:
-environment evidence belongs to one run and one source revision, so it stays
-audit provenance linked from each verification. A mismatched command or source
-basis leaves the obligation open; only exact passed evidence at the
-post-mutation cut satisfies it.
-A passed test satisfies open definitions only against the latest mutation at
-the evaluated run-feed cut. For a claim without a named root, a latest
-basisless mutation therefore leaves the open set waiver-only until a later
-basis-bearing mutation and passed test; that test may satisfy earlier
-definitions too. Under a named root, a fresh check in the root that ran after a
-basisless change accounts for it. Focus, nested next views, updates,
-and both completion outcomes expose one count- and byte-bounded,
-authority-redacted `obligation_page` with an explicit omission count and
-deterministic typed guidance. Waiver is absent from MCP and `work_update`.
-The operator-intended shell command has no credential or run-binding check;
-its separation is a local convention, not an authenticated boundary. The
-private JSON-lines request is the enforced alternative: it is bound to the
-session's exact run and records the server-fixed actor beside an asserted
-`waived_by` human and reason. Typed binding refusals are replayable while token
-and transport faults remain request errors. The stock
-`source_mutation_requires_test` rule records rather than blocks. Once the
-final checkpoint is confirmed to reach the run-feed head, completion resolves
-each of that rule's still-open definitions as a waiver in the completing
-actor's name, inside the sealed cut, and discloses the change as untested,
-unless a named root, active now or bound when the change was recorded,
-changes its disposition. A foreign change from before the binding receives a
-terminal `displaced` resolution under any source-change rule and is disclosed
-in the seal. A foreign change recorded under a bound name, or an unknown-root
-change recorded while a root was bound, stays open and refuses completion,
-even after that root ended or the claim was released. Completion then
-evaluates the cut-aware set at the exact
-pre-seal run-feed position. Any other open definition returns a bounded
-`open_work_obligations` protocol result recomputed from one coherent current
-snapshot; it is guidance rather than a durable replay result. A new seal
-declares obligation schema V1 and binds every applicable definition to its
-satisfied, waived or displaced resolution; success and fresh-session focus
-reconstruct their
-pages from canonical history, and the final checkpoint acknowledges the
-matching typed verification evidence.
-A requirement never names an environment id. New seals
-nevertheless declare environment schema V1 and bind the sorted, distinct
-environment-evidence ids at or before the exact dense cut, with a maximum
-of 64 and without copying component bytes. Required child seals are decoded
-and checked recursively; every accepted seal carries the current obligation
-and environment schema bindings.
+
+Registered verification, from `verification_record`, is the typed
+verification that may satisfy an obligation. A typed V1 requirement may
+leave the verification command open, as the stock set does, or pin an exact
+`check_fingerprint`. It never names an environment. A mismatched command or
+source basis leaves the obligation open; only exact passed evidence at the
+post-mutation cut satisfies it. A passed test satisfies open definitions only
+against the latest mutation at the evaluated run-feed cut. For a claim
+without a named root, a latest basisless mutation therefore leaves the open
+set waiver-only until a later basis-bearing mutation and passed test; that
+test may satisfy earlier definitions too. Under a named root, a fresh check
+in the root that ran after a basisless change accounts for it. Observed
+checks are facts without test credit. Agent-authored generic evidence never
+satisfies verification.
+
+Focus, nested next views, updates, and both completion outcomes expose one
+count- and byte-bounded, authority-redacted `obligation_page` with an
+explicit omission count and deterministic typed guidance. Waiver is absent
+from MCP and `work_update`. The operator shell command has no credential
+check; its separation is a local convention, not an authenticated boundary.
+The stock `source_mutation_requires_test` rule records rather than blocks:
+completion resolves each of that rule's still-open definitions as a waiver in
+the completing actor's name, inside the sealed cut, and discloses the change
+as untested, unless a named root, active now or bound when the change was
+recorded, changes its disposition. A foreign change from before the binding
+receives a terminal `displaced` resolution under any source-change rule and
+is disclosed in the seal. A foreign change recorded under a bound name, or an
+unknown-root change recorded while a root was bound, stays open and refuses
+completion, even after that root ended or the claim was released. Completion
+then evaluates the cut-aware set at the exact pre-seal run-feed position. Any
+other open definition returns a bounded `open_work_obligations` protocol
+result recomputed from one coherent current snapshot. A new seal declares
+obligation schema V1 and binds every applicable definition to its satisfied,
+waived or displaced resolution, and declares environment schema V1 with the
+sorted, distinct environment-evidence ids at or before the exact dense cut,
+at most 64. Required child seals are decoded and checked recursively.
 
 The transport may be an in-process API, native host integration, wrapper, or
-local gateway. It is never exposed as an agent-callable way to mint grants.
-The host must bind a local work item/run before delivering a task prompt, obtain a `TurnGrant`
-before every model turn, activate it through `turn_begin`, and persist
-a checkpoint before the next turn.
-Action gating is not built. An `action_gated` host would additionally
-intercept every declared material capability, obtain and begin a matching
-single-use action grant, and record its outcome even if the model turn later
-fails. That design is the [action gates](features/action-gates.md) brief, and
-it is deferred.
-
-Hooks can satisfy `turn_gated` conformance. `action_gated` conformance needs
-native mediation around the declared tools; MCP alone remains `advisory`.
-The runtime owns notification delivery and action execution. Engram owns
-durable protocol state, deterministic decisions, and cursors. No
-host-specific dependency enters the domain core.
+local gateway. The runtime owns notification delivery and action execution.
+Engram owns durable protocol state and cursors. No host-specific dependency
+enters the domain core. The full contract is in the
+[Execution Observability brief](features/execution-observability.md).
 
 ## 9. Local work, reports & external systems
 
@@ -1452,13 +1252,13 @@ Further retrieval measurement may use:
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; attributed work notes and keyed project memories; bounded work context, dense ordered peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (designed and deferred, not part of v1: [action gates](features/action-gates.md)); deterministic recovery snapshot/restore, optional explicit Git task-text push/pull with agent-mediated merge and main-checkout exchange, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; attributed work notes and keyed project memories; bounded work context, dense ordered peer deltas, and policy epochs; work handoff, contributions/child seals, separate fenced report assembly and optional publication; deterministic recovery snapshot/restore, optional explicit Git task-text push/pull with agent-mediated merge and main-checkout exchange, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private work-session transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
 | **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
 | **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 
 > **Scope discipline.** V1's riskiest cut is doing too much. Everything in v1
 > serves one loop: open or import local work → decompose/select ready work →
-> coordinate concurrent sessions under enforced turn/action preconditions →
+> coordinate concurrent sessions through claims and host observations →
 > complete with evidence → optionally freeze/publish a report → review
 > promotion candidates. Cross-host sync and real external adapters widen that
 > loop but are not dependencies of local execution.
@@ -1479,7 +1279,7 @@ Codex::AgentMemory):
 | Architecture refinement | Local work graph plus dual-layer memory/report model; final report and publication are optional state machines after local completion (§1, §2.6, §9.5). |
 | Multi-session operating model | Normal in V1 on one host. Root-work memory is shared by default; agent scratch is private. Each `WorkRun` has one ordinary executor/claim, parallel sessions claim distinct children under a `RootExecution`, and claims, typed source/delivery positions, contributions, child seals, and a completion barrier are V1 primitives. |
 | Product seam | Engram owns host-local work from creation/decomposition through completion. External intake, storage/sync, and publication are independent optional ports. One capture generates work delta, handoff, evidence, and report inputs. |
-| Behavioral control | Engram decides task-bound readiness and capability eligibility; the host enforces those decisions at turn and declared tool boundaries. MCP alone is advisory. Effective authority is the intersection of Engram and user/host policy (§2.7, §8.3). |
+| Execution Observability | The host records execution, source and test observations and registered verification, switched on or off per project; Engram stores and links them and never admits or refuses a turn. Authority stays with the user and host (§2.7, §8.3). |
 
 ### Still open
 
@@ -1521,13 +1321,14 @@ outcomes:
 | Dual memory / report model | Greg: local working memory while work runs; polished final report published to the tracker at finalization. Codex elaboration: SQLite canonical in V1; Git store deferred, not rejected; finalization state machine; report contract with cited memory/version IDs; configurable post-publication retention | | Adopted (§1, §2.6, §3, §9.5) → Draft 0.3 |
 | Round-4 correction | Failure transition returned to `finalization_pending` | Freeze the report at `report_ready`: immutable report + hash bound to the idempotency key; failure retries identical bytes, never re-enters distillation; revision = superseding version + new intent. Endorsed keeping §3.1.1/JCS in V1 | **Codex**, adopted (§2.6, §9.5) → Draft 0.4, final ACK by both authors |
 | Round-5 product test | Greg asked whether the authors would actually use Engram and clarified that multi-session work is normal. Fable identified capture ceremony, double entry, claims, and peer visibility as adoption blockers. | Codex separated packet fingerprint from ordered event cursor, added leases/recovery, finalization barrier, and stable project identity across worktrees. | **Both**, joint position confirmed: narrow Engram to concurrent execution memory with three visibility rings, one-write-many-views, deterministic report assembly, and the backlog/execution seam (§1–5, §8–9) → Draft 0.5 |
-| Round-6 control correction | Greg identified the missing behavioral and coordination layer and asked Engram to control it. Engram::Opus independently argued that the hot path should mediate by inlining fresh context, with refusal as a narrow tail; semantic capture must not gate edits; enforcement needs observe/replay evidence and honest coverage. | A voluntary memory loop is not control. Separate deterministic decisions from host enforcement; add recovery/finalizer grants and a stable quiescence cut to avoid refusal/finalization deadlocks; mediate declared material capabilities with scoped fenced leases, checkpoints, and crash-safe receipts. | **Adopted:** Engram becomes the task-bound behavioral/coordination decision plane while the host remains actuator/reference monitor. Normal pre-turn grants inline delivery; capability-specific failure policy, observe-first rollout, and advisory/turn-gated/action-gated assurance keep the claim honest (§2.7, §8.3) → Draft 0.6 |
+| Round-6 control correction | Greg identified the missing behavioral and coordination layer and asked Engram to control it. Engram::Opus independently argued that the hot path should mediate by inlining fresh context, with refusal as a narrow tail; semantic capture must not gate edits; enforcement needs observe/replay evidence and honest coverage. | A voluntary memory loop is not control. Separate deterministic decisions from host enforcement; add recovery/finalizer grants and a stable quiescence cut to avoid refusal/finalization deadlocks; mediate declared material capabilities with scoped fenced leases, checkpoints, and crash-safe receipts. | **Adopted:** Engram becomes the task-bound behavioral/coordination decision plane while the host remains actuator/reference monitor. Normal pre-turn grants inline delivery; capability-specific failure policy, observe-first rollout, and advisory/turn-gated/action-gated assurance keep the claim honest (§2.7, §8.3) → Draft 0.6 *Historical: superseded 2026-11-02, when turn gating was removed (see the last row).* |
 | Round-7 local-work correction | Greg required Engram to replace Beads for local work: external injection and publication are both optional because heavy external systems do not scale to execution-time decomposition. Engram::Opus endorsed local ownership, claim/lease separation, derived readiness, and optional boundaries, while challenging durability, assignment, agent ceremony, root memory scope, and authority escalation. | Add a first-class work graph and six-operation ambient model protocol; keep assignment, claim, and resource lease distinct; bind grants to work/claim/lease/context fences; make completion evidence-based; separate publication; expose explicit durability modes. | **Adopted with Greg's clarification:** SQLite is immediately authoritative in valid `local` mode; optional durability improves over time but is never a prerequisite for local execution. Honest mode claims, restore/integrity tooling, and round-trip Beads compatibility bound the replacement promise (§2.6, §3.4, §8, §9) → Draft 0.7. |
 | Round-7 independent rereview | Engram::Opus accepted Greg's optional-storage clarification but found stale durability-gate prose, run-owned memory that would disappear on reopen, ambiguous sparse/global cursors in safety CAS, focus/claim coupling, and completion/report drain ordering. | Preserve memory on the root work item across runs; use dense named project/root/run source feeds plus a separate per-session delivery sequence; make focus navigation-only; put draining in `CompletionSeal` and make optional report assembly consume it. | **Adopted before implementation.** The rereview identified no additional P0/P1 category beyond these exact corrections (§1.2, §2.6–2.7, §3.1, §8–9). |
 | Round-7 Codex verification | Independent read-only verification found four implementation-blocking ambiguities: finalizer authority survived a terminal work claim, participant plurality conflicted with a singular run claim, scalar cursors lacked feed identity, and separately acyclic hierarchy/prerequisite graphs could still create a completion deadlock. | Add fenced post-completion `ReportAssemblyClaim`; make one executor own each child `WorkRun` under a root aggregate; type source feed positions separately from session delivery positions; cycle-check explicit prerequisites plus implicit required-child completion edges as one graph. | **Adopted before implementation.** No external storage is required by any correction (§2.6–2.7, §3.1, §9.5). |
 | Round-8 portability correction | Greg stated that Engram starts local but must persist remotely, that he moves between machines, and that repository scale may reach hundreds of developers. He agreed to a canonical human-readable work projection and proposed a branch. | Engram::Opus separated restore-only backup, sequential portability, and concurrent sync; recommended a dedicated plumbing ref rather than a branch/working tree, scheduled push with visible lag, divergence refusal, sensitivity filtering, and no transfer of live claims/leases. | **Historical Draft 0.8 adoption, superseded for the selected personal workflow by §3.2:** optional V1 `portable` mode has one active host, explicit handoff/restore, head CAS, and no live-authority transfer. A private dedicated Git ref is the recommended personal transport; organization-scale substrate remains a product choice (§3.2–3.4, §7, §9.2–9.4) → Draft 0.8. |
 | Round-8 portability verification | Independent Codex verification and Engram::Opus both found that push-time CAS alone did not protect restore/startup and that sensitivity-filtered content-addressed projections could sever object/feed references. | Add writer-epoch release/acquire, exact-base restore, bounded startup/resume validation, and honest forced-takeover detection; require executable shared-state closure, separately hashed exclusion stubs, dense feed placeholders, export pass-or-exclude, coverage diagnostics, and policy-hash equality on acquire. | **Historical portable proposal, superseded for the selected personal workflow by §3.2.** Steps 1–4 remain independent of remote storage; the portable step must satisfy these conformance rules (§2.7, §3.2, §7, §9.2–9.4). |
 | Cleanup correction (2026-09-23) | Greg approved direct control-session binding, resource-lease and host-waiver removal, finalizer turn removal, object-id naming, and self-asserted acceptance disclosure. | Current contracts above supersede the lease/finalizer mechanisms described in the historical rows of this table; optional report assembly remains deferred. | Approved cleanup; paired host changes and explicit store conversion are required before deployment. |
+| Turn-gating removal (2026-11-02) | Greg: turn gating caused the most stops and problems; replace it with Execution Observability, keep no legacy, and keep acceptance evaluation but switch it off until Execution Observability is implemented. | Delete turn admission (Evaluate/Begin grants, control-session binding, settlement and recovery), its operations, settings and init flags; keep host observations, named source roots, registered verification and claims on a work-session channel, switched on or off per project in the host. | **Adopted:** Execution Observability (§2.7, §8.3). Canonical records of the removed gating stay readable; the store migration retires its operational tables by name with their counts. The rows above that describe grants, turn admission or control assurance are history. |
 
 ## Appendix B — Beads verdict
 
@@ -1539,7 +1340,7 @@ replace its memory model." Draft 0.8 supersedes the product boundary behind
 that sentence: Engram now also owns local work. It still does not copy Beads'
 implementation or make Beads a dependency; it must cover the useful local
 workflow while integrating task state with typed memory, evidence, and
-behavioral control.
+Execution Observability.
 
 **Borrow:** an explicit canonical source of truth distinct from
 export/interchange formats; local/offline-first operation;

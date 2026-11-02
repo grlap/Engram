@@ -28,6 +28,9 @@ pub(in crate::storage) use accounting::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod source_sighting_tests;
+
 /// The record kind an unadmitted observation is stored and fed under.
 pub(in crate::storage) const UNADMITTED_OBSERVATION_KIND: &str = "unadmitted_execution_observation";
 
@@ -373,11 +376,7 @@ pub(in crate::storage) fn unadmitted_observation_is_consistent_on(
             ));
         }
         check_root_basis_on(connection, binding, &observation.root_basis)?;
-        if let Some(sighting) = observation
-            .occurrence
-            .source_change()
-            .and_then(|change| change.sighting())
-        {
+        if let Some(sighting) = observation.occurrence.measured_sighting() {
             check_sighting_matches_root_basis_on(
                 connection,
                 binding,
@@ -397,7 +396,7 @@ pub(in crate::storage) fn unadmitted_observation_is_consistent_on(
             connection,
             binding,
             &observation.root_basis,
-            observation.occurrence.source_change(),
+            &observation.occurrence,
             own_position - 1,
         )? != observation.accounting
         {

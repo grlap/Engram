@@ -17,17 +17,16 @@ impl SqliteStore {
     /// reason when the item, revision, run or continuation does not hold or
     /// one row does not fit a page; and other [`StoreError`] values when a
     /// record fails its canonical association or cannot be read.
-    pub(crate) fn read_acceptance_bindings<'a>(
+    pub(crate) fn read_acceptance_bindings(
         &self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        authority: impl Into<super::HostSessionAuthority<'a>>,
+        authority: super::HostSessionAuthority,
         request: &super::BindingReadRequest<'_>,
     ) -> Result<AcceptanceBindingPage, StoreError> {
-        let authority = authority.into();
         work::on_one_snapshot(&self.connection, |connection| {
-            let _ = authority.verify_on(connection, project_id, session_id, connection_token)?;
+            authority.verify_on(connection, project_id, session_id, connection_token)?;
             work::read_acceptance_bindings_on(connection, project_id, request)
         })
     }

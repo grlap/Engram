@@ -26,10 +26,10 @@ frames produce none. `handler_ms` ends when the response value is ready,
 before serialization and delivery. Only the new slow-success record includes
 `store_write`: attempted and acquired write-transaction counts, aggregate
 `wait_ms` around `BEGIN IMMEDIATE`, and aggregate `hold_ms` from acquisition
-through commit, rollback or drop cleanup. These counts cover control write
-transactions (`BEGIN IMMEDIATE`), not the operation's name: `turn_grant_read`
-has zero counts and durations, while `session_status` takes a write transaction
-and may expire an unbegun turn. Admission elapsed time includes SQLite work,
+through commit, rollback or drop cleanup. These counts cover work-session
+write transactions (`BEGIN IMMEDIATE`), not the operation's name: a read such
+as `named_root_read` has zero counts and durations, while `execution_observe`
+takes a write transaction. Admission elapsed time includes SQLite work,
 scheduling and I/O: `wait_ms` is not pure lock wait. The acquired interval is not pure SQL
 time, and failed cleanup does not prove the writer lock was released.
 

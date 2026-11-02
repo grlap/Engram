@@ -5,7 +5,7 @@
 > Related briefs: [tracker adapter](tracker-adapter.md),
 > [local work system](local-work-system.md),
 > [write policy & review](write-policy-and-review.md),
-> [behavioral control plane](behavioral-control-plane.md), and
+> [Execution Observability](execution-observability.md), and
 > [execution pipeline](execution-pipeline.md).
 
 An Engram `RootExecution` coordinates the live multi-session execution of one

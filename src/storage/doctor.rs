@@ -1,14 +1,11 @@
 use super::{
     CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION, CONTROL_POLICY_STATE_SCHEMA_VERSION,
-    CONTROL_SCHEMA_VERSION, CanonicalObject, Connection, ControlPolicyRecoveryFinding,
-    ControlPolicyRecoveryReport, ControlPolicyUpdateReceipt, ControlTurnDecision, IntegrityReport,
-    IssuedTurnGrant, MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES,
+    CanonicalObject, Connection, ControlPolicyRecoveryFinding, ControlPolicyRecoveryReport,
+    ControlPolicyUpdateReceipt, IntegrityReport, MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES,
     MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES, MemoryAssertionEvent, MemoryProjectionMode,
     MemoryVersion, ObjectId, ObligationRuleSetUpdateReceipt, OptionalExtension, SCHEMA_VERSION,
-    Scope, SessionId, SqliteStore, StoreError, StoredControlGrantRow, StoredControlOperation,
-    StoredControlPolicyOperation, StoredControlTurnResult, StoredTurnGrantSupersession,
-    Transaction, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, enum_name,
-    params, parse_enum, validate_keyed_project_memory_shape,
+    Scope, SqliteStore, StoreError, StoredControlOperation, StoredControlPolicyOperation,
+    Transaction, enum_name, params, validate_keyed_project_memory_shape,
 };
 
 #[cfg(test)]
@@ -127,122 +124,6 @@ impl SqliteStore {
         )?;
 
         Self::verify_control_policy_records_on(&self.connection, &mut report)?;
-
-        let mut session_statement = self
-            .connection
-            .prepare("SELECT session_id FROM control_sessions ORDER BY session_id")?;
-        let session_rows = session_statement.query_map([], |row| row.get::<_, String>(0))?;
-        for row in session_rows {
-            let session_id = row?;
-            report.checked_control_records += 1;
-            if Self::load_control_session_on(&self.connection, &SessionId(session_id.clone()))
-                .is_err()
-            {
-                report
-                    .invalid_control_records
-                    .push(format!("control_session:{session_id}"));
-            }
-        }
-
-        let mut turn_statement = self.connection.prepare(
-            "SELECT sequence, session_id, task_id, idempotency_key,
-                    intent_hash, intent_json, decision_hash, decision_json
-             FROM control_turn_results ORDER BY sequence",
-        )?;
-        let turn_rows = turn_statement.query_map([], |row| {
-            Ok(StoredControlTurnResult {
-                sequence: row.get(0)?,
-                session_id: row.get(1)?,
-                task_id: row.get(2)?,
-                idempotency_key: row.get(3)?,
-                intent_hash: row.get(4)?,
-                intent_json: row.get(5)?,
-                decision_hash: row.get(6)?,
-                decision_json: row.get(7)?,
-            })
-        })?;
-        for row in turn_rows {
-            let stored = row?;
-            report.checked_control_records += 1;
-            if Self::verify_control_turn_result(&stored).is_err() {
-                report
-                    .invalid_control_records
-                    .push(format!("control_turn_result:{}", stored.sequence));
-            }
-        }
-
-        let grant_rows = {
-            let mut grant_statement = self.connection.prepare(
-                "SELECT grant_id, session_id, task_id, request_key, grant_json, state, issued_at_ms, expires_at_ms
-                 FROM control_turn_grants ORDER BY issued_at_ms, grant_id",
-            )?;
-            grant_statement
-                .query_map([], |row| {
-                    Ok(StoredControlGrantRow {
-                        grant_id: row.get(0)?,
-                        session_id: row.get(1)?,
-                        task_id: row.get(2)?,
-                        request_key: row.get(3)?,
-                        grant_json: row.get(4)?,
-                        state: row.get(5)?,
-                        issued_at_ms: row.get(6)?,
-                        expires_at_ms: row.get(7)?,
-                    })
-                })?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        for stored in grant_rows {
-            report.checked_control_records += 1;
-            let supersession_count = if stored.state == "superseded" {
-                self.connection.query_row(
-                    "SELECT COUNT(*) FROM control_turn_grant_supersessions
-                     WHERE superseded_grant_id = ?1",
-                    [&stored.grant_id],
-                    |row| row.get::<_, i64>(0),
-                )?
-            } else {
-                0
-            };
-            if Self::verify_control_grant_row(&stored).is_err()
-                || (stored.state == "superseded" && supersession_count != 1)
-            {
-                report
-                    .invalid_control_records
-                    .push(format!("control_turn_grant:{}", stored.grant_id));
-            }
-        }
-
-        let supersession_rows = {
-            let mut statement = self.connection.prepare(
-                "SELECT superseded_grant_id, session_id, task_id,
-                        replacement_request_key, replacement_decision_hash,
-                        supersession_json, superseded_at_ms
-                 FROM control_turn_grant_supersessions
-                 ORDER BY superseded_at_ms, superseded_grant_id",
-            )?;
-            statement
-                .query_map([], |row| {
-                    Ok(StoredTurnGrantSupersession {
-                        superseded_grant_id: row.get(0)?,
-                        session_id: row.get(1)?,
-                        task_id: row.get(2)?,
-                        replacement_request_key: row.get(3)?,
-                        replacement_decision_hash: row.get(4)?,
-                        supersession_json: row.get(5)?,
-                        superseded_at_ms: row.get(6)?,
-                    })
-                })?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        for stored in supersession_rows {
-            report.checked_control_records += 1;
-            if Self::verify_turn_grant_supersession(&self.connection, &stored).is_err() {
-                report.invalid_control_records.push(format!(
-                    "control_turn_grant_supersession:{}",
-                    stored.superseded_grant_id
-                ));
-            }
-        }
 
         let mut operation_statement = self.connection.prepare(
             "SELECT sequence, session_id, operation, idempotency_key,
@@ -438,9 +319,6 @@ impl SqliteStore {
                     ("singleton", "INTEGER"),
                     ("schema_version", "INTEGER"),
                     ("policy_epoch", "INTEGER"),
-                    ("required_assurance", "TEXT"),
-                    ("supported_effects_json", "TEXT"),
-                    ("grant_ttl_seconds", "INTEGER"),
                     ("policy_id", "TEXT"),
                 ],
                 &mut report,
@@ -624,131 +502,6 @@ impl SqliteStore {
         });
         report.invalid_control_records.dedup();
         Ok(report)
-    }
-
-    fn verify_control_turn_result(stored: &StoredControlTurnResult) -> Result<(), StoreError> {
-        let intent = Self::decode_canonical_value(&stored.intent_hash, stored.intent_json.clone())?;
-        let decision: ControlTurnDecision =
-            Self::decode_canonical_projection(&stored.decision_hash, stored.decision_json.clone())?;
-        let row_matches = intent.get("session_id").and_then(serde_json::Value::as_str)
-            == Some(stored.session_id.as_str())
-            && intent.get("task_id").and_then(serde_json::Value::as_str)
-                == Some(stored.task_id.as_str())
-            && intent
-                .get("intent")
-                .and_then(|value| value.get("idempotency_key"))
-                .and_then(serde_json::Value::as_str)
-                == Some(stored.idempotency_key.as_str());
-        let decision_matches = match decision {
-            ControlTurnDecision::Grant { grant } => {
-                grant.control_schema_version == CONTROL_SCHEMA_VERSION
-                    && grant.request_key == stored.idempotency_key
-                    && grant.basis.session_id.0 == stored.session_id
-                    && grant.basis.task_id.0.to_string() == stored.task_id
-            }
-            ControlTurnDecision::Refuse { directive } => directive
-                .directive_id
-                .starts_with(&format!("{}:", stored.idempotency_key)),
-        };
-        if !row_matches || !decision_matches {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "turn result {} is not bound to its row",
-                stored.sequence
-            )));
-        }
-        Ok(())
-    }
-
-    fn verify_control_grant_row(stored: &StoredControlGrantRow) -> Result<(), StoreError> {
-        let grant: IssuedTurnGrant = Self::decode_json_projection(&stored.grant_json)?;
-        let state = parse_enum::<TurnGrantState>(&stored.state)?;
-        let delivery_matches = crate::control::delivery_matches_grant(&grant);
-        let row_matches = grant.control_schema_version == CONTROL_SCHEMA_VERSION
-            && grant.grant_id == stored.grant_id
-            && grant.request_key == stored.request_key
-            && grant.basis.session_id.0 == stored.session_id
-            && grant.basis.task_id.0.to_string() == stored.task_id
-            && grant.issued_at.timestamp_millis() == stored.issued_at_ms
-            && grant.basis.expires_at.timestamp_millis() == stored.expires_at_ms
-            && stored.expires_at_ms > stored.issued_at_ms
-            && matches!(
-                state,
-                TurnGrantState::Issued
-                    | TurnGrantState::Begun
-                    | TurnGrantState::Completed
-                    | TurnGrantState::Expired
-                    | TurnGrantState::Superseded
-            );
-        if !row_matches || !delivery_matches {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "turn grant {:?} is not bound to its row",
-                stored.grant_id
-            )));
-        }
-        Ok(())
-    }
-
-    fn verify_turn_grant_supersession(
-        connection: &Connection,
-        stored: &StoredTurnGrantSupersession,
-    ) -> Result<(), StoreError> {
-        let transition: TurnGrantSupersession =
-            Self::decode_json_projection(&stored.supersession_json)?;
-        let grant = connection
-            .query_row(
-                "SELECT session_id, task_id, request_key, state
-                 FROM control_turn_grants WHERE grant_id = ?1",
-                [&stored.superseded_grant_id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                    ))
-                },
-            )
-            .optional()?
-            .ok_or_else(|| {
-                StoreError::InvalidControlProjection(format!(
-                    "superseded turn grant {:?} is missing",
-                    stored.superseded_grant_id
-                ))
-            })?;
-        let replacement_decision = connection
-            .query_row(
-                "SELECT decision_hash FROM control_turn_results
-                 WHERE session_id = ?1 AND idempotency_key = ?2",
-                params![stored.session_id, stored.replacement_request_key],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
-            .ok_or_else(|| {
-                StoreError::InvalidControlProjection(format!(
-                    "replacement turn result {:?} is missing",
-                    stored.replacement_request_key
-                ))
-            })?;
-        let row_matches = transition.control_schema_version == CONTROL_SCHEMA_VERSION
-            && transition.session_id.0 == stored.session_id
-            && transition.task_id.0.to_string() == stored.task_id
-            && transition.superseded_grant_id == stored.superseded_grant_id
-            && transition.superseded_request_key == grant.2
-            && transition.replacement_request_key == stored.replacement_request_key
-            && transition.replacement_decision.as_str() == stored.replacement_decision_hash
-            && transition.replacement_decision.as_str() == replacement_decision
-            && transition.reason == TurnGrantSupersessionReason::FreshEvaluation
-            && transition.superseded_at.timestamp_millis() == stored.superseded_at_ms
-            && grant.0 == stored.session_id
-            && grant.1 == stored.task_id
-            && grant.3 == "superseded";
-        if !row_matches {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "turn grant supersession {:?} is not bound to its grant and replacement",
-                stored.superseded_grant_id
-            )));
-        }
-        Ok(())
     }
 
     /// Whether a stored named-root receipt names the binding event it

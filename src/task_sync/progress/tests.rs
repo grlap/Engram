@@ -10,6 +10,7 @@ mod pending_profile;
 mod prepared;
 mod publication;
 mod recovery;
+mod retention;
 mod state_limit;
 
 /// Every entry under `root` with its bytes; directories carry none.

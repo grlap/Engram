@@ -1,19 +1,19 @@
-//! Supplied host facts, ordered through a begun control turn. This does not
+//! Supplied host facts with a historical producer and ordinary source captures. This does not
 //! prove live `TermAl` observation emission or an actual subprocess start.
 
 use super::*;
 use crate::domain::{
     AcceptanceBasis, AcceptanceEvaluationMode, AcceptanceEvaluationPolicy, AcceptanceVerdict,
-    IssuedTurnGrant, MechanicalBasis, ObservationAccounting,
+    MechanicalBasis, ObservationAccounting,
 };
-use crate::storage::test_support::TestControlBinding;
+use crate::storage::test_support::{TestWorkHost, open_work_host};
 
 struct Fixture {
     store: SqliteStore,
     a: Held,
     b: Held,
-    host: TestControlBinding,
-    grant: IssuedTurnGrant,
+    host: TestWorkHost,
+    capture: HistoricalCapture,
 }
 
 /// B has exactly one Test-bound criterion, so a cited pass is an overall pass.
@@ -60,72 +60,19 @@ fn fixture() -> Fixture {
         .unwrap();
     let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
     let b = target_item(&mut store);
-    let connection_token = store
-        .resume_control_connection(&a.claim.holder, at(7))
-        .unwrap();
-    let binding = binding_of(&store, &a);
-    let mut host_actor = actor(HOLDER);
-    host_actor.run_id = Some(a.claim.run_id.0.to_string());
-    let control = store
-        .bind_control_session_with_work(
-            &a.work.project_id,
-            "local-work:check-in-progress",
-            "Check A while observing B",
-            &a.claim.holder,
-            &connection_token,
-            &host_actor,
-            Some(&binding),
-            ControlAssurance::TurnGated,
-            &[EffectClass::Observe],
-            1,
-            "host-on-a",
-            at(8),
-        )
-        .unwrap();
-    let host = TestControlBinding {
-        binding: control,
-        connection_token,
+    let host = open_work_host(&mut store, &a.claim.holder.0, at(7));
+    let capture = HistoricalCapture {
+        project: a.work.project_id.clone(),
+        session: a.claim.holder.clone(),
+        binding: binding_of(&store, &a),
+        capture_id: "historical-check-a".into(),
     };
-    let decision = store
-        .evaluate_control_turn(
-            &a.work.project_id,
-            &host.status.session_id,
-            &host.connection_token,
-            &host.routing_token,
-            &TurnIntent {
-                idempotency_key: "check-a".into(),
-                intent_fingerprint: check_fingerprint("check-a"),
-                purpose: Some(TurnPurpose::Ordinary),
-                requested_effects: vec![EffectClass::Observe],
-                resource_intents: vec![],
-            },
-            at(9),
-        )
-        .unwrap();
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("A must receive a grant: {decision:?}");
-    };
-    assert!(matches!(
-        store
-            .begin_control_turn(
-                &a.work.project_id,
-                &host.status.session_id,
-                &host.connection_token,
-                &host.routing_token,
-                &grant.grant_id,
-                &[],
-                "begin-a",
-                at(10),
-            )
-            .unwrap(),
-        ControlTurnBeginDecision::Begin { .. }
-    ));
     Fixture {
         store,
         a,
         b,
         host,
-        grant: *grant,
+        capture,
     }
 }
 
@@ -167,43 +114,33 @@ impl Fixture {
     }
 
     fn finish_a(&mut self) -> ObjectId {
-        let outcome = self
-            .store
-            .checkpoint_control_turn_with_evidence(
-                &self.a.work.project_id,
-                &self.host.status.session_id,
-                &self.host.connection_token,
-                &self.host.routing_token,
-                &self.grant.grant_id,
-                TurnNextIntent::Continue,
-                &[ExecutionObservationInput {
+        let receipt = append_historical_capture(
+            &mut self.store,
+            &self.capture,
+            &[ExecutionObservationInput {
+                observation_id: "check-a-finished".into(),
+                action_fingerprint: check_fingerprint("suite"),
+                effect: EffectClass::Observe,
+                outcome: ExecutionOutcome::Succeeded,
+                source_changed: false,
+                reported_source_change: None,
+                source_basis: Some(basis("R1", self.a.generation)),
+                observed_at: Some(at(20)),
+            }],
+            &[VerificationEvidenceInput {
+                applicability: None,
+                producer_observation: ExecutionObservationReference::ObservationId {
                     observation_id: "check-a-finished".into(),
-                    action_fingerprint: check_fingerprint("suite"),
-                    effect: EffectClass::Observe,
-                    outcome: ExecutionOutcome::Succeeded,
-                    source_changed: false,
-                    reported_source_change: None,
-                    source_basis: Some(basis("R1", self.a.generation)),
-                    observed_at: Some(at(20)),
-                }],
-                &[VerificationEvidenceInput {
-                    applicability: None,
-                    producer_observation: ExecutionObservationReference::ObservationId {
-                        observation_id: "check-a-finished".into(),
-                    },
-                    check_kind: VerificationKind::Test,
-                    environment: None,
-                    summary: Some("host observed the suite".into()),
-                    refs: vec!["command:suite".into()],
-                }],
-                &[],
-                "finish-a",
-                at(20),
-            )
-            .unwrap();
-        let ControlTurnCheckpointDecision::Checkpointed { receipt } = outcome else {
-            panic!("A must complete without switching to B: {outcome:?}");
-        };
+                },
+                check_kind: VerificationKind::Test,
+                environment: None,
+                summary: Some("host observed the suite".into()),
+                refs: vec!["command:suite".into()],
+            }],
+            &[],
+            at(20),
+        )
+        .unwrap();
         assert_eq!(receipt.verification_evidence.len(), 1);
         let original = receipt.verification_evidence[0].clone();
         assert_eq!(stored(&self.store, &original).completed_at, at(20));
@@ -223,7 +160,7 @@ impl Fixture {
 fn a_target_observed_during_a_check_binds_replays_and_passes_evaluation() {
     let mut f = fixture();
     let sighting = f.observe_b(15);
-    // The same host remains bound to A with its turn begun during B's observation.
+    // The producer association stays on A while the same host observes B.
     let original = f.finish_a();
     let native = stored(&f.store, &original);
     // The checkpoint also appends resolutions after the verification: its

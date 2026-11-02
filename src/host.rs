@@ -1,13 +1,11 @@
-//! Host-private newline-delimited JSON control transport.
+//! Host-private newline-delimited JSON transport for Execution Observability.
 //!
-//! This surface is intentionally separate from agent-facing MCP. Possessing a
-//! routing token prevents accidental session mix-ups but is not authentication;
-//! the embedding host remains the policy-enforcement point.
+//! This surface is separate from agent-facing MCP. The embedding host supplies
+//! asserted session and actor context; it does not authenticate their identity.
 
 use std::{
     io::{BufRead, Write},
     path::Path,
-    str::FromStr,
 };
 
 use chrono::Utc;
@@ -15,11 +13,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, EnvironmentEvidenceInput,
-    ExecutionObservationInput, HostPathPolicy, NamedRootBindingKind, NamedRootEndReason, ObjectId,
-    ProjectId, SessionId, SqliteStore, TurnIntent, TurnPurpose, VerificationEvidenceInput,
-    WorkClaimId, WorkRunId,
-    domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
+    ActorContext, ControlWorkBinding, HostPathPolicy, NamedRootBindingKind, NamedRootEndReason,
+    ProjectId, SessionId, SqliteStore, WorkClaimId, WorkRunId,
+    domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation},
     storage::StoreError,
 };
 
@@ -35,32 +31,13 @@ const MAX_HOST_CONTROL_ERROR_DETAIL_BYTES: usize = 384;
 pub enum HostControlRequest {
     /// Read the ordinary host channel context and supported evidence protocol.
     WorkSessionRead {},
-    SessionBind {
-        external_ref: String,
-        title: String,
-        assurance: ControlAssurance,
-        mediated_effects: Vec<EffectClass>,
-        #[serde(default)]
-        work_binding: Option<ControlWorkBinding>,
-        capability_map_revision: i64,
-        idempotency_key: String,
-    },
-    SessionStatus {
-        routing_token: String,
-    },
     /// Asks which store this serving connection opened. It needs no routing
     /// token, grant or bind and writes nothing to the store. It refuses a
     /// superseded connection, and otherwise always refuses with
     /// `control_connection_identity_unavailable`: no platform can yet prove
     /// which file the connection holds, so it never returns a path.
     ControlConnectionRead {},
-    TurnGrantRead {
-        routing_token: String,
-        grant_id: String,
-    },
     NamedRootBind {
-        #[serde(default)]
-        routing_token: String,
         claim_id: WorkClaimId,
         claim_fence: i64,
         workspace_id: String,
@@ -74,8 +51,6 @@ pub enum HostControlRequest {
     /// Reads one claim's named-root lifecycle on its run, for any run and
     /// claim of the project; it writes nothing and needs no live holder.
     NamedRootRead {
-        #[serde(default)]
-        routing_token: String,
         run_id: WorkRunId,
         claim_id: WorkClaimId,
     },
@@ -93,8 +68,6 @@ pub enum HostControlRequest {
     /// acceptance criterion: the first page captures the run's feed head as
     /// its cut, and `after` continues at that cut. It writes nothing.
     AcceptanceBindingRead {
-        #[serde(default)]
-        routing_token: String,
         work_id: crate::WorkId,
         expected_work_revision: i64,
         run_id: WorkRunId,
@@ -106,8 +79,6 @@ pub enum HostControlRequest {
     /// `run_cut`, which must be the run's feed head; `after` continues at
     /// that cut. It computes no freshness and writes nothing.
     AcceptanceVerificationRead {
-        #[serde(default)]
-        routing_token: String,
         work_id: crate::WorkId,
         expected_work_revision: i64,
         run_id: WorkRunId,
@@ -116,33 +87,11 @@ pub enum HostControlRequest {
         #[serde(default)]
         after: Option<String>,
     },
-    TurnEvaluate {
-        routing_token: String,
-        idempotency_key: String,
-        intent_fingerprint: String,
-        /// Optional while hosts still send it; only `ordinary` parses.
-        #[serde(default)]
-        purpose: Option<TurnPurpose>,
-        requested_effects: Vec<EffectClass>,
-        #[serde(default)]
-        resource_intents: Vec<crate::ResourceSubject>,
-    },
-    TurnBegin {
-        routing_token: String,
-        grant_id: String,
-        /// Optional while hosts still send it; grants carry no delivery
-        /// page, so any token refuses the begin.
-        #[serde(default)]
-        delivery_tokens: Vec<String>,
-        idempotency_key: String,
-    },
     /// Records execution the host observed without admission: a turn seen
     /// after it started, a workspace change between turns, or a check inside
     /// such a turn. It records a fact, never a grant, a begin or a turn
     /// result.
     ExecutionObserve {
-        #[serde(default)]
-        routing_token: String,
         idempotency_key: String,
         binding: Box<ControlWorkBinding>,
         root_basis: Box<crate::domain::ObservationRootBasis>,
@@ -151,32 +100,16 @@ pub enum HostControlRequest {
         causality: crate::domain::ObservationCausality,
         policy_basis: Box<crate::domain::ObservationPolicyBasis>,
     },
-    TurnCheckpoint {
-        routing_token: String,
-        grant_id: String,
-        next_intent: TurnNextIntent,
-        #[serde(default)]
-        observations: Vec<ExecutionObservationInput>,
-        #[serde(default)]
-        verification_evidence: Vec<VerificationEvidenceInput>,
-        #[serde(default)]
-        environment_evidence: Vec<EnvironmentEvidenceInput>,
-        idempotency_key: String,
-    },
     /// Binds one native passed check to other items this session holds whose
     /// named roots hold the same content: one record per target, all or
     /// nothing. It creates no observation, turn or focus change.
     VerificationBind {
-        #[serde(default)]
-        routing_token: String,
         idempotency_key: String,
         original: crate::ObjectId,
         measurement: crate::domain::BindMeasurement,
         targets: Vec<crate::domain::VerificationBindTarget>,
     },
     VerificationRecord {
-        #[serde(default)]
-        routing_token: String,
         operation_key: String,
         registration: Box<crate::domain::RegisteredVerificationAssociation>,
         input: crate::domain::RegisteredVerificationInput,
@@ -192,19 +125,13 @@ impl HostControlRequest {
     pub const fn operation(&self) -> &'static str {
         match self {
             Self::WorkSessionRead {} => "work_session_read",
-            Self::SessionBind { .. } => "session_bind",
-            Self::SessionStatus { .. } => "session_status",
             Self::ControlConnectionRead {} => "control_connection_read",
-            Self::TurnGrantRead { .. } => "turn_grant_read",
             Self::NamedRootBind { .. } => "named_root_bind",
             Self::NamedRootRead { .. } => "named_root_read",
             Self::NamedRootSightingRead { .. } => "named_root_sighting_read",
             Self::AcceptanceBindingRead { .. } => "acceptance_binding_read",
             Self::AcceptanceVerificationRead { .. } => "acceptance_verification_read",
-            Self::TurnEvaluate { .. } => "turn_evaluate",
-            Self::TurnBegin { .. } => "turn_begin",
             Self::ExecutionObserve { .. } => "execution_observe",
-            Self::TurnCheckpoint { .. } => "turn_checkpoint",
             Self::VerificationBind { .. } => "verification_bind",
             Self::VerificationRecord { .. } => "verification_record",
         }
@@ -257,7 +184,6 @@ pub struct HostControlServer {
     actor_id: String,
     session_id: SessionId,
     connection_token: String,
-    work_session: bool,
     source_skill: Option<String>,
     actor_context: Option<String>,
     actor_context_normalized: bool,
@@ -273,7 +199,6 @@ impl HostControlServer {
         project_id: ProjectId,
         session_id: SessionId,
         connection_token: String,
-        work_session: bool,
     ) -> Self {
         Self {
             store,
@@ -282,7 +207,6 @@ impl HostControlServer {
             actor_id: "runner".into(),
             session_id,
             connection_token,
-            work_session,
             source_skill: None,
             actor_context: None,
             actor_context_normalized: false,
@@ -354,12 +278,6 @@ impl HostControlServer {
         self
     }
 
-    fn observe_refusal(&self, code: Option<crate::ControlRefusalCode>) {
-        if let Some(code) = code {
-            self.observe_fault(crate::diagnostics::Fault::control(code));
-        }
-    }
-
     fn observe_fault(&self, fault: crate::diagnostics::Fault) {
         if let (Some(sink), Some(frame)) = (&self.diagnostics, &self.diagnostic_frame) {
             frame.emit(sink, fault);
@@ -424,12 +342,10 @@ impl HostControlServer {
             actor_id,
             session_id,
             source_skill,
-            false,
         )
     }
 
-    /// Opens the ordinary host evidence channel without control admission.
-    /// Retained control phases, grants and unknown results are untouched.
+    /// Opens the ordinary host evidence channel for Execution Observability.
     ///
     /// # Errors
     /// Returns a storage error when the store or connection fence cannot be opened.
@@ -448,7 +364,6 @@ impl HostControlServer {
             actor_id,
             session_id,
             source_skill,
-            true,
         )
     }
 
@@ -459,7 +374,6 @@ impl HostControlServer {
         actor_id: String,
         session_id: SessionId,
         source_skill: Option<String>,
-        work_session: bool,
     ) -> Result<Self, StoreError> {
         crate::storage::admit_session_id(&session_id)?;
         let diagnostic_store = crate::diagnostics::Fingerprint::store(database.as_ref());
@@ -467,11 +381,7 @@ impl HostControlServer {
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionResume,
         );
-        let connection_token = if work_session {
-            store.resume_work_connection(&session_id, Utc::now())?
-        } else {
-            store.resume_control_connection(&session_id, Utc::now())?
-        };
+        let connection_token = store.resume_work_connection(&session_id, Utc::now())?;
         Ok(Self {
             store,
             diagnostic_store,
@@ -479,7 +389,6 @@ impl HostControlServer {
             actor_id,
             session_id,
             connection_token,
-            work_session,
             source_skill,
             actor_context: None,
             actor_context_normalized: false,
@@ -501,25 +410,6 @@ impl HostControlServer {
     )]
     pub fn handle(&mut self, request: HostControlRequest) -> Result<Value, StoreError> {
         let _budget = crate::storage::ControlRequestScope::ensure()?;
-        if self.work_session
-            && !matches!(
-                &request,
-                HostControlRequest::WorkSessionRead {}
-                    | HostControlRequest::NamedRootBind { .. }
-                    | HostControlRequest::NamedRootRead { .. }
-                    | HostControlRequest::NamedRootSightingRead { .. }
-                    | HostControlRequest::AcceptanceBindingRead { .. }
-                    | HostControlRequest::AcceptanceVerificationRead { .. }
-                    | HostControlRequest::ExecutionObserve { .. }
-                    | HostControlRequest::VerificationRecord { .. }
-                    | HostControlRequest::VerificationBind { .. }
-                    | HostControlRequest::ControlConnectionRead {}
-            )
-        {
-            return Err(StoreError::InvalidControlSession(
-                "turn admission is unavailable on an ordinary work-session channel".into(),
-            ));
-        }
         let now = Utc::now();
         match request {
             HostControlRequest::WorkSessionRead {} => {
@@ -528,11 +418,10 @@ impl HostControlServer {
                 self.with_verification_applicability(serde_json::json!({
                     "project_id": self.project_id,
                     "session_id": self.session_id,
-                    "work_session": self.work_session,
+                    "work_session": true,
                 }))
             }
             HostControlRequest::VerificationRecord {
-                routing_token,
                 operation_key,
                 registration,
                 input,
@@ -545,7 +434,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    authority(self.work_session, &routing_token),
+                    crate::storage::HostSessionAuthority::Work,
                     &actor,
                     &crate::domain::RegisteredVerificationRequest {
                         operation_key,
@@ -559,61 +448,8 @@ impl HostControlServer {
                 )?)
                 .map_err(StoreError::Json)
             }
-            HostControlRequest::SessionBind {
-                external_ref,
-                title,
-                assurance,
-                mediated_effects,
-                work_binding,
-                capability_map_revision,
-                idempotency_key,
-            } => {
-                let mut actor = self.actor("session_bind", "bind the host control session");
-                actor.run_id = work_binding
-                    .as_ref()
-                    .map(|binding| binding.run_id.0.to_string());
-                serde_json::to_value(self.store.bind_control_session_with_work(
-                    &self.project_id,
-                    &external_ref,
-                    &title,
-                    &self.session_id,
-                    &self.connection_token,
-                    &actor,
-                    work_binding.as_ref(),
-                    assurance,
-                    &mediated_effects,
-                    capability_map_revision,
-                    &idempotency_key,
-                    now,
-                )?)
-                .map_err(StoreError::Json)
-                .and_then(|value| self.with_verification_applicability(value))
-            }
-            HostControlRequest::SessionStatus { routing_token } => {
-                serde_json::to_value(self.store.control_status(
-                    &self.project_id,
-                    &self.session_id,
-                    &self.connection_token,
-                    &routing_token,
-                    now,
-                )?)
-                .map_err(StoreError::Json)
-                .and_then(|value| self.with_verification_applicability(value))
-            }
             HostControlRequest::ControlConnectionRead {} => self.control_connection_read(),
-            HostControlRequest::TurnGrantRead {
-                routing_token,
-                grant_id,
-            } => serde_json::to_value(self.store.read_control_turn_grant(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &routing_token,
-                &grant_id,
-            )?)
-            .map_err(StoreError::Json),
             HostControlRequest::NamedRootBind {
-                routing_token,
                 claim_id,
                 claim_fence,
                 workspace_id,
@@ -628,7 +464,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    authority(self.work_session, &routing_token),
+                    crate::storage::HostSessionAuthority::Work,
                     claim_id,
                     claim_fence,
                     &workspace_id,
@@ -642,19 +478,17 @@ impl HostControlServer {
                 )?)
                 .map_err(StoreError::Json)
             }
-            HostControlRequest::NamedRootRead {
-                routing_token,
-                run_id,
-                claim_id,
-            } => serde_json::to_value(self.store.read_named_root(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                authority(self.work_session, &routing_token),
-                run_id,
-                claim_id,
-            )?)
-            .map_err(StoreError::Json),
+            HostControlRequest::NamedRootRead { run_id, claim_id } => {
+                serde_json::to_value(self.store.read_named_root(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.connection_token,
+                    crate::storage::HostSessionAuthority::Work,
+                    run_id,
+                    claim_id,
+                )?)
+                .map_err(StoreError::Json)
+            }
             HostControlRequest::NamedRootSightingRead {
                 work_ref,
                 run_id,
@@ -667,7 +501,6 @@ impl HostControlServer {
             )?)
             .map_err(StoreError::Json),
             HostControlRequest::AcceptanceBindingRead {
-                routing_token,
                 work_id,
                 expected_work_revision,
                 run_id,
@@ -676,7 +509,7 @@ impl HostControlServer {
                 &self.project_id,
                 &self.session_id,
                 &self.connection_token,
-                authority(self.work_session, &routing_token),
+                crate::storage::HostSessionAuthority::Work,
                 &crate::storage::BindingReadRequest {
                     work_id,
                     expected_work_revision,
@@ -686,7 +519,6 @@ impl HostControlServer {
             )?)
             .map_err(StoreError::Json),
             HostControlRequest::AcceptanceVerificationRead {
-                routing_token,
                 work_id,
                 expected_work_revision,
                 run_id,
@@ -697,7 +529,7 @@ impl HostControlServer {
                 &self.project_id,
                 &self.session_id,
                 &self.connection_token,
-                authority(self.work_session, &routing_token),
+                crate::storage::HostSessionAuthority::Work,
                 &crate::storage::VerificationReadRequest {
                     work_id,
                     expected_work_revision,
@@ -708,73 +540,7 @@ impl HostControlServer {
                 },
             )?)
             .map_err(StoreError::Json),
-            HostControlRequest::TurnEvaluate {
-                routing_token,
-                idempotency_key,
-                intent_fingerprint,
-                purpose,
-                requested_effects,
-                resource_intents,
-            } => {
-                let intent_fingerprint = ObjectId::from_str(&intent_fingerprint).map_err(|_| {
-                    StoreError::InvalidControlSession(
-                        "intent_fingerprint must be a lowercase SHA-256 digest".into(),
-                    )
-                })?;
-                serde_json::to_value(
-                    self.store
-                        .evaluate_control_turn(
-                            &self.project_id,
-                            &self.session_id,
-                            &self.connection_token,
-                            &routing_token,
-                            &TurnIntent {
-                                idempotency_key,
-                                intent_fingerprint,
-                                purpose,
-                                requested_effects,
-                                resource_intents,
-                            },
-                            now,
-                        )
-                        .inspect(|decision| {
-                            self.observe_refusal(match decision {
-                                crate::ControlTurnDecision::Grant { .. } => None,
-                                crate::ControlTurnDecision::Refuse { directive } => {
-                                    Some(directive.code)
-                                }
-                            });
-                        })?,
-                )
-                .map_err(StoreError::Json)
-            }
-            HostControlRequest::TurnBegin {
-                routing_token,
-                grant_id,
-                delivery_tokens,
-                idempotency_key,
-            } => serde_json::to_value(
-                self.store
-                    .begin_control_turn(
-                        &self.project_id,
-                        &self.session_id,
-                        &self.connection_token,
-                        &routing_token,
-                        &grant_id,
-                        &delivery_tokens,
-                        &idempotency_key,
-                        now,
-                    )
-                    .inspect(|decision| {
-                        self.observe_refusal(match decision {
-                            crate::ControlTurnBeginDecision::Begin { .. } => None,
-                            crate::ControlTurnBeginDecision::Refuse { code } => Some(*code),
-                        });
-                    })?,
-            )
-            .map_err(StoreError::Json),
             HostControlRequest::ExecutionObserve {
-                routing_token,
                 idempotency_key,
                 binding,
                 root_basis,
@@ -792,7 +558,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    authority(self.work_session, &routing_token),
+                    crate::storage::HostSessionAuthority::Work,
                     &observer,
                     crate::domain::ExecutionObserveInput {
                         idempotency_key,
@@ -807,41 +573,7 @@ impl HostControlServer {
                 )?)
                 .map_err(StoreError::Json)
             }
-            HostControlRequest::TurnCheckpoint {
-                routing_token,
-                grant_id,
-                next_intent,
-                observations,
-                verification_evidence,
-                environment_evidence,
-                idempotency_key,
-            } => serde_json::to_value(
-                self.store
-                    .checkpoint_control_turn_with_evidence(
-                        &self.project_id,
-                        &self.session_id,
-                        &self.connection_token,
-                        &routing_token,
-                        &grant_id,
-                        next_intent,
-                        &observations,
-                        &verification_evidence,
-                        &environment_evidence,
-                        &idempotency_key,
-                        now,
-                    )
-                    .inspect(|decision| {
-                        self.observe_refusal(match decision {
-                            crate::ControlTurnCheckpointDecision::Checkpointed { .. } => None,
-                            crate::ControlTurnCheckpointDecision::Refuse { code, .. } => {
-                                Some(*code)
-                            }
-                        });
-                    })?,
-            )
-            .map_err(StoreError::Json),
             HostControlRequest::VerificationBind {
-                routing_token,
                 idempotency_key,
                 original,
                 measurement,
@@ -855,7 +587,7 @@ impl HostControlServer {
                     &self.project_id,
                     &self.session_id,
                     &self.connection_token,
-                    authority(self.work_session, &routing_token),
+                    crate::storage::HostSessionAuthority::Work,
                     &binder,
                     &crate::domain::VerificationBindInput {
                         idempotency_key,
@@ -1055,11 +787,7 @@ impl HostControlServer {
 
     /// The response to one parsed request.
     fn with_verification_applicability(&self, mut value: Value) -> Result<Value, StoreError> {
-        value["capabilities"] = if self.work_session {
-            serde_json::json!(["host_work_v1", "verification_record_v1"])
-        } else {
-            serde_json::json!(["verification_record_v1"])
-        };
+        value["capabilities"] = serde_json::json!(["host_work_v1", "verification_record_v1"]);
         if self.store.verification_git_tree_applicability_available()? {
             value["verification_evidence_git_tree_applicability_v1"] = Value::Bool(true);
         }
@@ -1304,12 +1032,11 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
 pub fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::RegisteredVerificationRefused { .. } => "verification_record_refused",
-        StoreError::ControlStoreBusy { .. } => "control_store_busy",
         StoreError::ControlRequestExpired => "control_request_expired",
         StoreError::SearchBudgetExhausted { .. } => "search_budget_exhausted",
         StoreError::SearchCancelled => "search_cancelled",
         StoreError::StoreNotInitialized => "store_not_initialized",
-        StoreError::InvalidControlSession(_) => "invalid_control_session",
+        StoreError::InvalidHostContext(_) => "invalid_host_context",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
         StoreError::SourceBasisTextRefused { .. } => "source_basis_text_refused",
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
@@ -1323,27 +1050,14 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::NamedRootSightingReadRefused { refusal, .. } => refusal.code(),
         StoreError::AcceptanceVerificationReadRefused { refusal, .. } => refusal.code(),
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
-        StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
-        StoreError::ControlSessionTokenMismatch(_) => "control_session_token_mismatch",
         StoreError::ControlConnectionSuperseded(_) => "control_connection_superseded",
         StoreError::ControlConnectionIdentityUnavailable(_) => {
             "control_connection_identity_unavailable"
         }
-        StoreError::ControlSessionBindConflict(_) => "control_session_bind_conflict",
-        StoreError::ControlTurnIdempotencyConflict(_) => "turn_idempotency_conflict",
         StoreError::ControlOperationIdempotencyConflict { .. } => {
             "control_operation_idempotency_conflict"
         }
         StoreError::ControlWorkBindingStale { .. } => "stale_fence",
-        StoreError::ControlGrantScopeMismatch { .. } => "grant_scope_mismatch",
-        StoreError::ControlObservationScopeMismatch { .. } => "observation_scope_mismatch",
-        StoreError::VerificationProducerObservationNotFound(_) => "verification_producer_not_found",
-        StoreError::EnvironmentFingerprintMismatch => "environment_fingerprint_mismatch",
-        StoreError::EnvironmentEvidenceNotFound(_) => "environment_evidence_not_found",
-        StoreError::EnvironmentBasisMismatch(_) => "environment_basis_mismatch",
-        StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
-        StoreError::ControlTurnGrantSessionMismatch => "turn_grant_session_mismatch",
-        StoreError::InvalidTurnGrantId => "invalid_turn_grant_id",
         StoreError::AcceptanceEvaluationRefused { .. }
         | StoreError::AcceptanceEvaluationCarriedFailure { .. } => "acceptance_evaluation_refused",
         // A standing blocking evaluation answers as an evaluation refusal;
@@ -1360,7 +1074,6 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::DifferentBuildSchema | StoreError::InvalidControlProjection(_) => {
             "control_projection_invalid"
         }
-        StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::RedactionRefused(_) => "redaction_refused",
         StoreError::ProjectMemoryExists(_) => "memory_exists",
         StoreError::ProjectMemoryRevisionConflict { .. } => "memory_revision_conflict",
@@ -1386,7 +1099,6 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::TaskSyncRefused { inner, .. } => store_error_code(inner),
         StoreError::Json(_)
         | StoreError::Sqlite(_)
-        | StoreError::ControlInspectionBudgetExceeded { .. }
         | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::SqlitePath { .. }
         | StoreError::SqliteFile { .. }
@@ -1398,7 +1110,6 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::EmptyNote
         | StoreError::InvalidMemoryProjection(_)
         | StoreError::InvalidTaskProjection(_)
-        | StoreError::NoActiveTask(_)
         | StoreError::MemoryNotFound(_)
         | StoreError::MemoryAccessDenied(_)
         | StoreError::ControlPolicyConflict { .. }
@@ -1435,11 +1146,3 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
 pub(crate) mod id_contract;
 #[cfg(test)]
 mod tests;
-
-fn authority(work_session: bool, routing: &str) -> crate::storage::HostSessionAuthority<'_> {
-    if work_session {
-        crate::storage::HostSessionAuthority::Work
-    } else {
-        crate::storage::HostSessionAuthority::Control(routing)
-    }
-}

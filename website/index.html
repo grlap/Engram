@@ -477,10 +477,9 @@ git clone https://github.com/grlap/Engram.git
 cd Engram
 cargo install --path .
 
-# 02 — Open a local advisory notebook
+# 02 — Open a local notebook
 export ENGRAM_HOME="$HOME/.engram"
-engram init --required-assurance advisory \
-  --authorized-by "$USER"
+engram init
 engram work next</code></pre>
               </div>
               <p class="setup-footnote">
@@ -509,23 +508,23 @@ engram work next</code></pre>
                 ><span class="note-tag">THE PRESENT / SHIPPED ALPHA</span>
                 <h3>On the workbench <span aria-hidden="true">↗</span></h3>
                 <p>
-                  Local work, typed memory, and a host-private control loop.
+                  Local work, typed memory, and Execution Observability.
                 </p></a
               ><a
                 href="https://github.com/grlap/Engram/blob/master/docs/features/security-and-trust.md"
                 ><span class="note-tag">THE BOUNDARIES / TRUST</span>
                 <h3>An honest foundation <span aria-hidden="true">↗</span></h3>
                 <p>
-                  Agent tools are advisory. Enforcing turn decisions requires
-                  host integration.
+                  Agent tools grant no authority. Engram records what the host
+                  observes and never gates a turn.
                 </p></a
               ><a
                 href="https://github.com/grlap/Engram/blob/master/docs/roadmap.md"
                 ><span class="note-tag">THE HORIZON / PLANNED WORK</span>
                 <h3>Studies in progress <span aria-hidden="true">↗</span></h3>
                 <p>
-                  Host enforcement SDK, portable handoff, and optional report
-                  publication.
+                  Execution Observability across harnesses, portable handoff,
+                  and optional report publication.
                 </p></a
               >
             </div>
@@ -860,7 +859,7 @@ engram work next</code></pre>
                 <div class="limits-panel-head">ABSOLUTE LIMITS · READ BEFORE USE</div>
                 <ul>
                   <li><b>IDENTITY</b><span><em>asserted, not authenticated.</em> Attribution records what the caller declared, nothing stronger.</span></li>
-                  <li><b>ENFORCEMENT</b><span><em>host-dependent.</em> Advisory tools do not gate turns. Enforced turn decisions require the host's control integration.</span></li>
+                  <li><b>OBSERVATION</b><span><em>host-recorded.</em> Engram never gates a turn or a tool; the host records what it observed, switched on or off per project.</span></li>
                   <li><b>MODEL CALLS</b><span><em>none.</em> Where required, acceptance verdicts come from an evaluator the host runs. Engram validates structure and provenance, not relevance.</span></li>
                   <li><b>THESE DEMOS</b><span><em>execute nothing.</em> The consoles on this page are illustrative; no store is touched.</span></li>
                 </ul>

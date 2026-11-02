@@ -38,8 +38,8 @@ pub(crate) enum IdClass {
     /// A Git commit the host names: 40 lowercase hex digits, the only form
     /// registered verification admits.
     GitCommit,
-    /// An opaque token Engram mints for the host, such as a routing token or
-    /// a grant id: returned unchanged and never parsed.
+    /// A historical execution observation's grant id, returned unchanged as
+    /// recorded data and never used for live authority.
     Token,
     /// An identifier the host mints and Engram keeps unchanged, such as a
     /// session id, a host run id or an idempotency key: non-empty text,
@@ -170,13 +170,9 @@ pub(crate) fn class_of(field: &str) -> Option<IdClass> {
         "workspace_id" | "source_revision" | "revision" | "project_id" | "actor_id"
         | "agent_id" | "namespace" | "stage" => IdClass::HostText,
         "work_ref" => IdClass::WorkRef,
-        // Tokens Engram mints for the host.
-        "routing_token"
-        | "grant_id"
-        | "open_grant_id"
-        | "superseded_grant_id"
-        | "delivery_token"
-        | "delivery_tokens" => IdClass::Token,
+        // Historical ExecutionObservation records may expose their original
+        // grant id. No current host operation mints or admits a grant.
+        "grant_id" => IdClass::Token,
         _ => return None,
     })
 }
@@ -370,7 +366,7 @@ mod tests {
             ),
             (
                 IdClass::Token,
-                vec![uuid.clone(), "routing".into(), "a host's grant id".into()],
+                vec![uuid.clone(), "a historical observation's grant id".into()],
                 vec![String::new()],
             ),
             (
@@ -432,7 +428,7 @@ mod tests {
             "rule": {"rule_id": crate::control::SOURCE_CHANGE_RULE_ID, "rule_version": 1},
             "work_id": crate::WorkId::new().0.to_string(),
             "source_basis": {"git_tree": "c".repeat(40), "source_revision": "content-v1:x"},
-            "routing_token": "opaque",
+            "historical_observation": {"grant_id": "recorded-grant"},
             "accounting": {"kind": "repeat", "source_change": minted()},
             "occurrence": {"source_change": {"detection": "watcher_only"}},
             // A refused target's values take the class its reason names.
@@ -458,7 +454,6 @@ mod tests {
             // Host-minted keys, refs and text hold whatever form the host
             // gives them, including one shaped like an identifier.
             "idempotency_key": uuid.clone(),
-            "grant": {"request_key": uuid.clone(), "directive_id": format!("{uuid}:refused")},
             "observed_checks": [{"host_check_id": uuid.clone()}],
             "session_id": "runner one",
             "named_root": {"workspace_id": uuid.clone(), "source_revision": "f".repeat(40)},
@@ -466,7 +461,6 @@ mod tests {
                 {"reason": "workspace_differs", "expected": uuid.clone(), "actual": "f".repeat(64)},
             ],
             "project_feed": {"feed": {"kind": "project", "id": uuid.clone()}, "position": 1},
-            "delivery_tokens": [uuid.clone()],
             "checkpoint_reference": {"kind": "object_id", "object_id": minted()},
             // A work ref is the short ref, or the work id when no item has it.
             "bound": [{"work_ref": "w-0123456789ab"}, {"work_ref": uuid.clone()}],

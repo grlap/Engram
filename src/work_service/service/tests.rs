@@ -1298,7 +1298,7 @@ fn focus_and_next_emit_null_without_a_bindable_owned_claim() {
 /// but bind refuses it. Focus, next and inspect print null until the offer
 /// is cancelled.
 #[test]
-fn a_binding_is_shown_exactly_when_session_bind_would_accept_it() {
+fn a_binding_is_shown_exactly_when_the_ordinary_host_can_use_it() {
     let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("binding-project".into());
@@ -1327,40 +1327,29 @@ fn a_binding_is_shown_exactly_when_session_bind_would_accept_it() {
         .control_binding
         .expect("claim receipt binding");
     let mut host = SqliteStore::open(&database).expect("host store");
-    let connection = host
-        .resume_control_connection(&SessionId("holder".into()), at(2))
-        .expect("host control connection");
+    host.resume_work_connection(&SessionId("holder".into()), at(2))
+        .expect("host work connection");
 
     // An ordinary live claim: every view shows the binding, and bind takes it.
     assert_binding_views(&holder, &item, Some(&binding), at(2));
-    bind_holder(
-        &mut host,
-        &connection,
-        &project,
-        &binding,
-        "bind-live",
-        at(2),
-    )
-    .expect("bind accepts the shown binding");
+    validate_holder(&mut host, &project, &binding, at(2)).expect("bind accepts the shown binding");
     // Only a canonical event that recorded the exact binding vouches for its
     // root execution: one naming another agrees with the live claim in every
-    // other field and is still refused, as a claim mismatch because no event
-    // ever recorded it.
+    // other field and is still refused, because no event ever recorded it.
     let unrecorded = ControlWorkBinding {
         root_execution_id: crate::domain::RootExecutionId(uuid::Uuid::now_v7()),
         ..binding.clone()
     };
-    let refused = bind_holder(
-        &mut host,
-        &connection,
-        &project,
-        &unrecorded,
-        "bind-unrecorded",
-        at(2),
-    );
     assert!(
-        matches!(refused, Err(StoreError::WorkClaimMismatch { work }) if work == item.work_id),
-        "{refused:?}"
+        !host
+            .control_work_binding_bindable(
+                &project,
+                &SessionId("holder".into()),
+                &unrecorded,
+                at(2)
+            )
+            .expect("bindable read"),
+        "an unrecorded root execution is not bindable"
     );
 
     // A pending offer keeps the claim live and held, but bind refuses it.
@@ -1390,7 +1379,7 @@ fn a_binding_is_shown_exactly_when_session_bind_would_accept_it() {
     assert_eq!(offered.view().status.work.revision, binding.work_revision);
     assert_binding_views(&holder, &item, None, at(4));
     assert!(matches!(
-        bind_holder(&mut host, &connection, &project, &binding, "bind-offered", at(4)),
+        validate_holder(&mut host, &project, &binding, at(4)),
         Err(StoreError::ControlWorkBindingStale { work }) if work == item.work_id
     ));
 
@@ -1405,15 +1394,8 @@ fn a_binding_is_shown_exactly_when_session_bind_would_accept_it() {
         )
         .expect("cancel the offer");
     assert_binding_views(&holder, &item, Some(&binding), at(6));
-    bind_holder(
-        &mut host,
-        &connection,
-        &project,
-        &binding,
-        "bind-after-cancel",
-        at(6),
-    )
-    .expect("bind accepts the restored binding");
+    validate_holder(&mut host, &project, &binding, at(6))
+        .expect("bind accepts the restored binding");
 }
 
 /// Focus, nested next focus and inspect carry exactly one binding key, whose
@@ -1451,39 +1433,17 @@ fn assert_binding_views(
 }
 
 /// Binds the holder's control session to `binding`, as a host would.
-fn bind_holder(
+fn validate_holder(
     host: &mut SqliteStore,
-    connection: &str,
     project: &ProjectId,
     binding: &ControlWorkBinding,
-    key: &str,
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
-    let session = SessionId("holder".into());
-    let actor = ActorContext {
-        actor_id: "host".into(),
-        actor_kind: "host".into(),
-        assurance: AssuranceLevel::Asserted,
-        run_id: Some(binding.run_id.0.to_string()),
-        session_id: Some(session.clone()),
-        source_tool: Some("host-control:bind".into()),
-        source_skill: None,
-        provenance_chain: Vec::new(),
-        reason: "bind the held item".into(),
-    };
-    host.bind_control_session_with_work(
-        project,
-        "local-work:binding",
-        "Held item",
-        &session,
-        connection,
-        &actor,
-        Some(binding),
-        crate::ControlAssurance::TurnGated,
-        &[crate::EffectClass::Observe],
-        1,
-        key,
-        now,
-    )
-    .map(|_| ())
+    if host.control_work_binding_bindable(project, &SessionId("holder".into()), binding, now)? {
+        Ok(())
+    } else {
+        Err(StoreError::ControlWorkBindingStale {
+            work: binding.work_id,
+        })
+    }
 }

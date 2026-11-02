@@ -1,151 +1,89 @@
-use chrono::{TimeDelta, TimeZone};
-
 use super::*;
 use crate::{
-    ObjectId, ProjectId,
-    domain::{ControlTurnBeginDecision, ControlTurnDecision, EffectClass, TurnIntent, TurnPurpose},
-    storage::test_support::{TestControlBinding, bind_control_for},
+    ProjectId, SessionId,
+    domain::{ActorContext, AssuranceLevel, ClaimWorkRequest, CreateWorkRequest},
+    memory::DevelopmentNoopRedactor,
 };
-
-/// Evaluates one turn for `binding` at `at` and returns its grant id.
-fn issue(
-    store: &mut SqliteStore,
-    binding: &TestControlBinding,
-    key: &str,
-    at: DateTime<Utc>,
-) -> String {
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &TurnIntent {
-                idempotency_key: key.into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
-                purpose: Some(TurnPurpose::Ordinary),
-                requested_effects: vec![EffectClass::Observe],
-                resource_intents: Vec::new(),
-            },
-            at,
-        )
-        .unwrap();
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("turn {key} must grant");
-    };
-    grant.grant_id
-}
-
-fn expires_at(store: &SqliteStore, grant: &str) -> DateTime<Utc> {
-    let ms: i64 = store
-        .connection
-        .query_row(
-            "SELECT expires_at_ms FROM control_turn_grants WHERE grant_id = ?1",
-            [grant],
-            |row| row.get(0),
-        )
-        .unwrap();
-    DateTime::from_timestamp_millis(ms).unwrap()
-}
+use chrono::{TimeDelta, TimeZone};
 
 #[test]
-fn the_live_authority_of_a_copy_counts_unexpired_issued_grants_and_begun_turns_apart() {
+fn the_live_authority_of_a_copy_counts_only_unexpired_work_claims() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("engram.db");
     let start = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open(&database).unwrap();
-    let early = bind_control_for(
-        &mut store,
-        "early-session",
-        "bind-early",
-        &[EffectClass::Observe],
-        start,
-    );
-    let late = bind_control_for(
-        &mut store,
-        "late-session",
-        "bind-late",
-        &[EffectClass::Observe],
-        start,
-    );
-    let begun = bind_control_for(
-        &mut store,
-        "begun-session",
-        "bind-begun",
-        &[EffectClass::Observe],
-        start,
-    );
-
-    // An issued grant that will have expired, one that will not, and a grant
-    // whose turn began.
-    let early_grant = issue(
-        &mut store,
-        &early,
-        "early-turn",
-        start + TimeDelta::seconds(1),
-    );
-    let late_grant = issue(
-        &mut store,
-        &late,
-        "late-turn",
-        start + TimeDelta::seconds(10),
-    );
-    let begun_grant = issue(
-        &mut store,
-        &begun,
-        "begun-turn",
-        start + TimeDelta::seconds(11),
-    );
-    assert!(matches!(
-        store
-            .begin_control_turn(
-                &ProjectId("project-a".into()),
-                &begun.status.session_id,
-                &begun.connection_token,
-                &begun.routing_token,
-                &begun_grant,
-                &[],
-                "begin-begun-turn",
-                start + TimeDelta::seconds(12),
+    let actor = ActorContext {
+        actor_id: "restore-author".into(),
+        actor_kind: "test_agent".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: None,
+        session_id: Some(SessionId("restore-author".into())),
+        source_tool: None,
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "restore fixture".into(),
+    };
+    let mut expiries = Vec::new();
+    for (index, ttl_seconds) in [10, 60].into_iter().enumerate() {
+        let item = store
+            .create_work(
+                &CreateWorkRequest {
+                    project_id: ProjectId("restore-project".into()),
+                    parent_id: None,
+                    child_requirement: crate::domain::ChildRequirement::Required,
+                    title: format!("Restore work {index}"),
+                    outcome: "Preserve claim".into(),
+                    acceptance: vec!["Claim retained".into()],
+                    acceptance_bindings: Vec::new(),
+                    evaluation_mode: None,
+                    kind: crate::domain::WorkItemKind::Task,
+                    priority: 1,
+                    labels: Vec::new(),
+                    assigned_to: None,
+                    deferred_until: None,
+                    external_ref: None,
+                    notes: Vec::new(),
+                    origin: crate::domain::WorkOrigin::Local,
+                    source_snapshot_id: None,
+                    actor: actor.clone(),
+                    idempotency_key: format!("create-{index}"),
+                    created_at: start,
+                },
+                &DevelopmentNoopRedactor,
             )
-            .unwrap(),
-        ControlTurnBeginDecision::Begin { .. }
-    ));
-    let early_expiry = expires_at(&store, &early_grant);
-    let late_expiry = expires_at(&store, &late_grant);
-    assert!(early_expiry < late_expiry);
+            .unwrap();
+        let claim = store
+            .claim_work(
+                &ClaimWorkRequest {
+                    work_id: item.work_id,
+                    expected_work_revision: item.revision,
+                    expected_run_id: item.active_run_id,
+                    holder: actor.session_id.clone().unwrap(),
+                    ttl_seconds,
+                    recovery_reason: None,
+                    actor: actor.clone(),
+                    idempotency_key: format!("claim-{index}"),
+                    claimed_at: start,
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap();
+        expiries.push(claim.expires_at);
+    }
     drop(store);
-
-    // Between the two expiries, one issued grant is live; the begun turn is
-    // counted apart, whatever its grant's expiry.
-    let as_of = early_expiry + TimeDelta::seconds(1);
-    let report = SqliteStore::verify_restore_copy(&database, as_of).unwrap();
-    assert_eq!(
-        report.authority,
-        LiveAuthority {
-            as_of,
-            unexpired_claims: 0,
-            claims_expire_by: None,
-            unexpired_grants: 1,
-            grants_expire_by: Some(late_expiry),
-            begun_turns: 1,
-        }
-    );
-    assert_eq!(report.project_ids, ["project-a"]);
-
-    // Before both expiries, both issued grants are live and the last named.
-    let report =
-        SqliteStore::verify_restore_copy(&database, start + TimeDelta::seconds(20)).unwrap();
-    assert_eq!(report.authority.unexpired_grants, 2);
-    assert_eq!(report.authority.grants_expire_by, Some(late_expiry));
-    assert_eq!(report.authority.begun_turns, 1);
-
-    // After both, none is, and the begun turn still counts.
-    let report = SqliteStore::verify_restore_copy(&database, late_expiry).unwrap();
-    assert_eq!(report.authority.unexpired_grants, 0);
-    assert_eq!(report.authority.grants_expire_by, None);
-    assert_eq!(report.authority.begun_turns, 1);
-    // The check wrote nothing beside the copy.
+    for (as_of, count) in [
+        (start, 2),
+        (start + TimeDelta::seconds(11), 1),
+        (expiries[1], 0),
+    ] {
+        let report = SqliteStore::verify_restore_copy(&database, as_of).unwrap();
+        assert_eq!(report.authority.unexpired_claims, count);
+        assert_eq!(
+            report.authority.claims_expire_by,
+            (count > 0).then_some(expiries[1])
+        );
+        assert_eq!(report.project_ids, ["restore-project"]);
+    }
     for sidecar in store_sidecars(&database) {
         assert!(!sidecar.exists(), "{}", sidecar.display());
     }

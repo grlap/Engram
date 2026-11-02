@@ -33,7 +33,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
             StageWorkSessionDelivery {
                 expected_confirmed_through: 0,
                 expected_focused_work_id: None,
-                expected_bound_task_id: None,
+
                 delivered_through: head + 1,
                 delivered_entries: &[],
                 delivery_payload: empty_payload.bytes(),
@@ -51,7 +51,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
             StageWorkSessionDelivery {
                 expected_confirmed_through: 0,
                 expected_focused_work_id: None,
-                expected_bound_task_id: None,
+
                 delivered_through: head,
                 delivered_entries: &entries,
                 delivery_payload: payload.bytes(),
@@ -102,7 +102,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
             StageWorkSessionDelivery {
                 expected_confirmed_through: head,
                 expected_focused_work_id: None,
-                expected_bound_task_id: None,
+
                 delivered_through: head - 1,
                 delivered_entries: &[],
                 delivery_payload: empty_payload.bytes(),
@@ -128,7 +128,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
             StageWorkSessionDelivery {
                 expected_confirmed_through: 0,
                 expected_focused_work_id: None,
-                expected_bound_task_id: None,
+
                 delivered_through: head,
                 delivered_entries: &entries,
                 delivery_payload: payload.bytes(),
@@ -137,72 +137,6 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
         ),
         Err(StoreError::InvalidWorkProjection(_))
     ));
-}
-
-#[test]
-fn staged_work_delivery_cas_binds_the_current_task() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let work = store
-        .create_work(
-            &root_request("project-delivery-task-cas", "delivery-root", 0),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("root");
-    let feed = FeedId::Project(work.project_id.clone());
-    let head = store.work_feed_head(&feed).expect("project feed head");
-    let entries = store
-        .work_feed_between(&feed, 0, head)
-        .expect("dense source entries");
-    let payload = CanonicalObject::freeze(&entries).expect("test delivery payload");
-    let session = SessionId("task-bound-delivery".into());
-    let task = store
-        .bind_test_control_scope(
-            &work.project_id,
-            "dummy:DELIVERY-TASK-CAS",
-            "Delivery task CAS",
-            &session,
-            &actor("task-bound-delivery"),
-            at(1),
-        )
-        .expect("task binding")
-        .status;
-
-    assert!(
-        store
-            .stage_work_session_delivery(
-                &work.project_id,
-                &session,
-                StageWorkSessionDelivery {
-                    expected_confirmed_through: 0,
-                    expected_focused_work_id: None,
-                    expected_bound_task_id: None,
-                    delivered_through: head,
-                    delivered_entries: &entries,
-                    delivery_payload: payload.bytes(),
-                    now: at(2),
-                },
-            )
-            .expect("basis mismatch is a retry")
-            .is_none()
-    );
-    let staged = store
-        .stage_work_session_delivery(
-            &work.project_id,
-            &session,
-            StageWorkSessionDelivery {
-                expected_confirmed_through: 0,
-                expected_focused_work_id: None,
-                expected_bound_task_id: Some(task.task_id),
-                delivered_through: head,
-                delivered_entries: &entries,
-                delivery_payload: payload.bytes(),
-                now: at(3),
-            },
-        )
-        .expect("current task basis stages")
-        .expect("exact staging CAS");
-    assert_eq!(staged.tentative_project_cursor, Some(head));
-    assert!(staged.tentative_delivery_token.is_some());
 }
 
 #[test]
@@ -243,7 +177,7 @@ fn focus_change_and_pending_delivery_serialize_across_connections() {
             StageWorkSessionDelivery {
                 expected_confirmed_through: 0,
                 expected_focused_work_id: Some(first.work_id),
-                expected_bound_task_id: None,
+
                 delivered_through: head,
                 delivered_entries: &entries,
                 delivery_payload: payload.bytes(),
@@ -287,7 +221,7 @@ fn focus_change_and_pending_delivery_serialize_across_connections() {
             StageWorkSessionDelivery {
                 expected_confirmed_through: 0,
                 expected_focused_work_id: Some(second.work_id),
-                expected_bound_task_id: None,
+
                 delivered_through: head,
                 delivered_entries: &entries,
                 delivery_payload: payload.bytes(),

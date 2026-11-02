@@ -2,7 +2,7 @@
 
 > Normative reference: [spec §8](spec.md#8-interfaces).
 > Related briefs: [CLI & MCP](features/cli-and-mcp.md),
-> [behavioral control plane](features/behavioral-control-plane.md),
+> [Execution Observability](features/execution-observability.md),
 > [security & trust](features/security-and-trust.md), and
 > [external adapters](features/tracker-adapter.md).
 >
@@ -16,8 +16,8 @@
 
 A host is any runtime that starts agent sessions and wants Engram to own
 their work: TermAl today, an external planner and coordinator tomorrow. The
-base tier below is the whole integration for an advisory pilot. Nothing in
-it requires the host to mediate turns or actions.
+base tier below is the whole integration. Nothing in it requires the host
+to mediate turns or actions.
 
 ## Before upgrading: cut over each store
 
@@ -116,18 +116,17 @@ captured store state; it does not merge later writes. Keep ordinary writes
 stopped through read-back and acceptance. Once writes resume, reconcile any
 later discrepancy instead of restoring over new work.
 
-## Base tier — advisory
+## Base tier
 
 For host source association and evidence, use
 `engram control --work-session` with the same project, actor and session as
 the agent's ordinary work channel. Use `work_session_read` to identify the
 channel and its capabilities, then the existing named-root, acceptance-read,
-execution-observation and registered-verification operations without
-`routing_token`. No control bind, status, Evaluate, Begin or checkpoint is
-needed. This keeps work/source authority and eligible native test credit;
-it does not convert ad-hoc observed checks into verification. See the
-[ordinary host contract](features/behavioral-control-plane.md#ordinary-host-work-and-evidence).
-Old control records and unknown outcomes remain separate history, never a
+execution-observation and registered-verification operations. This keeps
+eligible native test credit; it does not convert
+ad-hoc observed checks into verification. See
+[the work session](features/execution-observability.md#the-work-session).
+Records from the removed turn gating remain separate history, never a
 prerequisite to ordinary dispatch or a reason to replay an old operation.
 
 Use [`engram readiness --json`](features/host-readiness.md) for fast, scoped
@@ -142,16 +141,9 @@ knows its filesystem identity, supply `--host-path-policy` or
 too when the probe cannot test the project file: its name has no ASCII
 letter, or it is named by an alias wider than ASCII case, such as a short 8.3
 name.
-Readiness does not emit Full Audit's development no-op-redactor warning or
-control-limitation warnings (including unsupported action gating). Those remain
-in `doctor --json`; their absence from readiness is not a protection or
-enforcement assurance. Hosts must still compare `control.required_assurance`
-with the mediation they actually implement.
-
-For stale checkpoint handles, use [control session inspection](features/control-session-inspection.md)
-only under the host's reset/quiescence and exact-store fences. A missing-binding
-error or stopped session is not proof that no grant exists; the read-only
-receipt supplies presence facts, never permission to clear recovery state.
+Readiness does not emit Full Audit's development no-op-redactor warning. It
+remains in `doctor --json`; its absence from readiness is not a protection
+assurance.
 
 1. **One store per project on each host.** Ship a tracked `.engram-project`
    with the stable project id; every session and worktree of that project
@@ -159,17 +151,12 @@ receipt supplies presence facts, never permission to clear recovery state.
    relative value resolves against each process's working directory and
    silently splits the project across stores). Initialize it once per
    project on each host, before any other word touches the store, with
-   `engram init --required-assurance advisory --authorized-by <operator>`:
-   a plain `engram init` selects `turn_gated` as the project's required
-   assurance, which an advisory pilot cannot honestly claim, and
-   `engram doctor` would print that requirement. The flagged
-   `init` is idempotent when the stored assurance already matches (a re-run
-   records no new attribution) and is refused when it differs; change an
-   existing store with `engram control-policy set-required-assurance`.
+   `engram init`. A re-run on an existing current store preserves its
+   selected policy.
 2. **Inject identity into every agent process and shell.** Set
    `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, `ENGRAM_SESSION_ID`, and optionally
    `ENGRAM_ACTOR_CONTEXT` (free text such as `model=…;reasoning=…`,
-   bounded and normalized by Engram for work and control operations, never
+   bounded and normalized by Engram for work and work-session operations, never
    refused by those operations). Task-sync setup preparation and materialization
    use their [strict attribution contract](features/task-planning-text.md#private-git-setup-preparation):
    an exactly empty context is absent, while nonempty context must be nonblank,
@@ -202,11 +189,14 @@ receipt supplies presence facts, never permission to clear recovery state.
    explicitly read `next --peek` before resuming action and follow
    clipped-status locators. Receipts end with `reminders` and `next` commands;
    agents follow them.
-5. **State the assurance honestly.** Without turn mediation the deployment is
-   `advisory`: the agent can bypass Engram. `engram doctor` prints the
-   required assurance and supported effects in its `--json` report and the
-   unavailable capabilities as human warnings on stderr; do not describe the
-   integration as gated.
+5. **State what is recorded honestly.** Engram never controls the agent's
+   tools: the agent can edit files or run commands without asking it.
+   Identity is asserted, not authenticated, and Engram provides no
+   organizational-authority mediation. A healthy `engram doctor` run warns on
+   stderr only that the development redactor provides no secret or PII
+   protection.
+   Describe the integration as observed only where the host actually records
+   observations.
 6. **Kill switch.** Stop injecting; nothing else to undo. Stores, evidence,
    and memories remain readable with the shell words.
 
@@ -269,7 +259,7 @@ read paths, and a natural first action after real compaction. For the latter,
 record where the recovery instruction came from and the commands and current
 version actually read before work resumed. A peer reminder or a test that
 starts with the target key does not demonstrate independent discovery. This
-check requires neither a new agent word nor turn-gated control.
+check requires no new agent word.
 
 #### Choose what to retrieve
 
@@ -388,7 +378,7 @@ source/evidence locators, unresolved dependencies and the named owners of
 remaining duties. It independently recovers current instructions and follows
 the [startup memory recovery sequence](#recover-saved-guidance-after-compaction)
 before substantive work. Read the current item and relevant full notes from
-their source. A brief transfers information, not a live claim, grant or source
+their source. A brief transfers information, not a live claim or source
 binding; the successor obtains its own claim and names its worktree under the
 project's existing rules. Fresh context still shares repository files and
 durable project memory, so it must respect outstanding frozen inputs.
@@ -713,28 +703,25 @@ for the fields named here.
    occurrence and a durable host/session identity to a distinct opaque
    asserted Engram identity, separate from the local UI identity. Persist
    the mapping and handled-occurrence acknowledgement; move existing local
-   sessions onto it and retire old routing/grant/recovery handles before any
-   control connection, MCP opening or work recovery. Never replay old-session
+   sessions onto it and retire old recovery handles before any
+   work-session connection, MCP opening or work recovery. Never replay old-session
    authority. Reboot reuses the same handled occurrence's mapping; a new
    restore of the same copy rotates it once. A reused `session-N`, per-process
    UUID, copy hash or completion timestamp is not the mapping key. Hold
    maintenance until completed status, mapping, acknowledgement and old-handle
    retirement are durable; serialize reopening with subsequent restores,
    discarding status read outside that boundary. A restored store keeps the
-   origin's claims, grants, begun turns
-   and session rows unchanged, and the only boundary on them is the asserted
-   session id. A session that reuses an old id can use and renew its claim,
-   reconnect its control session and checkpoint its begun turn. A new
-   session cannot claim an item still held in the copy until that claim's
-   recorded expiry, and then recovers it with
-   `engram work claim <ref> --recover "<reason>"`. A restored begun turn has
-   no clock end: it stays open until a caller acting as its session
-   checkpoints it. Engram resets none of this; see
+   origin's claims unchanged, and the only boundary on them is the asserted
+   session id. A session that reuses an old id can use and renew its claim.
+   A new session cannot claim an item still held in the copy until that
+   claim's recorded expiry, and then recovers it with
+   `engram work claim <ref> --recover "<reason>"`. Engram resets none of
+   this; see
    [restore](features/off-host-backup.md#restore).
 
 ## Claude Code as the host (no TermAl)
 
-MADE can use this advisory recipe when it launches `claude` directly. No
+MADE can use this recipe when it launches `claude` directly. No
 TermAl process or mailbox is required. This is a host contract, not an
 implemented MADE launcher. The configuration examples were checked against
 Claude Code's official [MCP reference](https://code.claude.com/docs/en/mcp)
@@ -856,10 +843,9 @@ do so after each of these events, pass `--context-generation` with a value
 that differs on each one. MCP hosts use `peek: true`.
 
 Everything else on this page applies unchanged: one store per project on
-each host initialized with an explicit `advisory` assurance, the same values
-at every injection point, and no claim of gating. The coordinator owns plan
-items as an external source (see the last section); it does not need the
-turn-gated channel for an advisory pilot.
+each host, the same values at every injection point, and no claim of control
+over the agent's tools. The coordinator owns plan items as an external source
+(see the last section); it does not need the work-session channel.
 
 ### Recover a host delivery after an invalid ACK
 
@@ -918,7 +904,7 @@ actual deployment has not been tested here.
 
 ### MADE smoke test — required before deployment acceptance
 
-Use an isolated test project and store, initialized explicitly as advisory.
+Use an isolated test project and store, initialized with `engram init`.
 Do not experiment on live work or repair an unexpected store automatically.
 
 1. Start through the MADE launcher. Check its chosen project, absolute home,
@@ -942,40 +928,28 @@ Do not experiment on live work or repair an unexpected store automatically.
 
 ## Version story
 
-Ordinary opening refuses incompatible store schemas before mutation, and
-`session_bind` carries the host's
-`capability_map_revision`. Engram negotiates no protocol features or
+Ordinary opening refuses incompatible store schemas before mutation.
+Engram negotiates no protocol features or
 versions; a host pins the build it ships with and follows the
 [per-store cutover](#before-upgrading-cut-over-each-store) above for an
 existing store. Initialization is for a new store, not an upgrade remedy.
-`session_bind` belongs to the optional host-private control channel; the
-advisory MCP-and-hooks recipe does not require that channel.
+The MCP-and-hooks recipe does not require the host-private work-session
+channel.
 
-## Turn-gated tier — optional
+## Execution Observability tier — optional
 
-A host that wants Engram to admit every model turn uses the host-private
-JSON-lines control channel (`session_bind → turn_evaluate → turn_begin →
-turn_checkpoint`) and withholds the prompt until Engram grants and begins the
-turn. Every frame is strict: exactly the current field set, no additive or
-legacy fields. Resource-lease acquisition/release, host obligation waiver,
-and the finalizer purpose/phase are removed; hosts must not send those frames.
-A grant carries no delivery page and there are no recovery turns: the work
-context an agent sees comes from `next`. While hosts move off the old fields,
-`turn_evaluate.purpose` may be `ordinary` or absent, and
-`turn_begin.delivery_tokens` may be `[]` or absent; a non-empty token list is
-refused with `grant_scope_mismatch` once the earlier `turn_begin` checks pass.
-A new bind that succeeds leaves the session `ready`, so it may request a turn
-at once; `turn_evaluate` still admits
-or refuses that turn by its usual checks. A new bind is refused while a begun
-turn awaits its checkpoint, and an exact retry of the session's latest bind
-key returns its current status, phase unchanged.
-An empty resource_intents list remains valid. Control sessions bind directly
-by project and external reference, without starting a compatibility task.
-Action gating and action-outcome reconciliation are designed and deferred
-([action gates](features/action-gates.md#when-to-build-it)), and
-organizational-authority mediation is not built; all three fail closed
-today. See the
-[behavioral control plane](features/behavioral-control-plane.md).
+A host that runs Execution Observability, switched on or off per project in
+the host (in TermAl, the project setting `executionObservability`, on by
+default; off suppresses only the automatic observations), records what it saw
+run, how the source changed and which
+registered checks passed, over the host-private work session
+(`engram control --work-session`): `named_root_bind` before stating a root
+generation, `execution_observe` for host observations, and
+`verification_record` for registered verification. Every frame is strict:
+exactly the current field set, no additive or legacy fields. Nothing in this
+tier admits, delays or refuses a model turn. Turn gating was removed; its
+records remain readable as stored, and hosts must not send its frames. See
+[Execution Observability](features/execution-observability.md).
 
 ## External planner as a work source
 

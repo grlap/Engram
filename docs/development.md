@@ -36,9 +36,8 @@ This project tracks its work in Engram — the fourteen agent words, documented 
   project store on the destination build. The two builds must share the
   runtime-derived snapshot format fingerprint; a format change or an older
   store keeps the manual re-add path.
-  Either way that file carries no control policy: `engram init` on the new
-  build repeats the project's `--required-assurance … --authorized-by …`
-  bootstrap and any obligation rule set is re-applied by hand.
+  Either way that file carries no project policy: run `engram init` on the
+  new build and re-apply any obligation rule set by hand.
   Those bootstrap steps belong to graph and manual reconstruction only. A
   [whole-store transfer](features/full-store-migration.md) is the other route
   and carries the store's policy, authority and rule-set rows with everything

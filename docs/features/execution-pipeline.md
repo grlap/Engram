@@ -2,7 +2,7 @@
 
 > Normative reference: [spec §9](../spec.md#9-local-work-reports--external-systems).
 > Related briefs: [external adapters](tracker-adapter.md),
-> [behavioral control plane](behavioral-control-plane.md),
+> [Execution Observability](execution-observability.md),
 > [local work system](local-work-system.md),
 > [local tasks & reports](local-tasks-and-reports.md),
 > [context packets](context-packets.md), and
@@ -19,10 +19,10 @@ separately owned.
 
 Shipped in this repository today: the local work graph (`WorkItem`,
 `RootExecution`, `WorkRun`, fenced claims, decomposition under planning
-authority), the host-private turn channel (`session_bind` → `turn_evaluate`
-→ `turn_begin` → `turn_checkpoint`) with exact live `WorkRun` binding, bounded
-context delivery, host execution observations, typed verification/environment
-evidence, immutable policy-selected obligation rule sets with the stock
+authority), the host-private work session of
+[Execution Observability](execution-observability.md) with exact claim-epoch
+binding, bounded context delivery, host execution observations, registered
+verification, typed verification/environment evidence, immutable policy-selected obligation rule sets with the stock
 source-change/test rule plus operator-selected exact check pins,
 obligation-gated `CompletionSeal`, the
 `WorkSourceSnapshot` type and its admission path.
@@ -31,9 +31,7 @@ Specified but not yet shipped: a `WorkSourceAdapter` intake port; fenced report
 assembly (`ReportAssemblyClaim`, `report_ready`) and durable publication
 intents; real external adapters; capability requirements on work; a general
 obligation rule language; and environment requirements, which the typed
-obligation schema does not express. Per-project required assurance is
-selectable at bootstrap and through an
-attributed, immutable policy update. Table rows and diagram nodes marked
+obligation schema does not express. Table rows and diagram nodes marked
 **planned** are exactly the remaining items.
 
 The shipped **obligation** substrate is deliberately small and typed. An
@@ -74,8 +72,8 @@ frozen artifact back.
 | **Intake / enrich** (external) | fetching the ticket; gathering evidence — bug reports, linked tickets, production logs; redaction; tiering into pinned / index / on-demand | an immutable `WorkSourceSnapshot` plus an evidence bundle | no — a refreshed ticket is a new snapshot and a visible delta |
 | **Planning** (external) | goal, acceptance criteria, approach, sufficiency check (“can repro and acceptance be derived at all?”) | the root `WorkItem` with acceptance; the plan as a *proposal* | yes, under optimistic revision control and bounded planning authority; while a live claim exists, planning is claim-bound |
 | **Capability & context assignment** (external, coarse pass) | which capabilities and evidence the whole item requires | capability requirements on the item (**planned**); evidence references for explicit reads | yes |
-| **Engram** | work graph, turn admission, exact bounded delivery, work claims, typed evidence, policy-selected typed obligations, obligation-gated seals, report freeze (**planned**) | — | — |
-| **Hosting environment** (TermAl under integration) | agent runtime, workspace (worktree or sandbox), tools and skills, credentials, resource limits; enforcing Engram's decisions | `session_bind` with assurance, mediated effects, capability-map revision, and an exact live `WorkRun` binding; evidence from execution | — |
+| **Engram** | work graph, exact bounded delivery, work claims, typed evidence, policy-selected typed obligations, obligation-gated seals, report freeze (**planned**) | — | — |
+| **Hosting environment** (TermAl under integration) | agent runtime, workspace (worktree or sandbox), tools and skills, credentials, resource limits; recording host observations | host observations, named source roots and registered verification bound to an exact claim epoch | — |
 | **Decomposition** (admitted by Engram) | splitting the root once the code is visible, under the holder's claim or the ordinary project-bound planning path | child `WorkItem`s and their `WorkRun`s, registered in the existing `RootExecution`; each run is separately claimable, owns a dense run feed, and receives a seal on completion | under Engram admission |
 | **Obligations** (Engram; typed canonical rule sets shipped) | selecting a bounded immutable rule set through project policy and turning matching host observations into concrete duties on their runs | a canonical `ObligationRuleSet` id frozen into each observation and immutable `WorkObligation` definition (run, rule-set id, rule version, triggering observation, required evidence kind), immutable resolution events (`satisfied` by matching verification evidence, `waived` by an attributed operator waiver or acceptance-binding revision), and exact definition/resolution bindings in `CompletionSeal`; a rebuildable projection holds current state | no — a policy successor affects only later observations and obligation state advances only by appending a resolution through an Engram transaction |
 | **Capability & context assignment** (fine pass, under a claim; **planned**) | what each run needs delivered | per-run evidence references; no context-packet construction | yes, per run |
@@ -83,7 +81,7 @@ frozen artifact back.
 
 ## The flow
 
-Within Engram and the host-control path, dashed nodes are **planned** and
+Within Engram and the host work session, dashed nodes are **planned** and
 solid nodes ship today; solid nodes in the external layers describe upstream
 responsibilities, not repository features.
 
@@ -109,8 +107,8 @@ flowchart TD
         W["Root WorkItem<br/>acceptance"]
         C["Bounded next delivery<br/>explicit evidence / project-memory reads"]
         RE["Child WorkItems + WorkRuns<br/>in the existing RootExecution"]
-        CT["Per turn: turn_evaluate → turn_begin → turn_checkpoint<br/>(task- or WorkRun-bound)"]
-        WB["Native WorkRun binding"]
+        CT["Host observations · registered verification<br/>(claim-epoch bound)"]
+        WB["Native WorkRun claim"]
         EV["Evidence · deltas · handoffs"]
         PO["Policy-selected immutable<br/>obligation rules"]
         OB["Obligations<br/>rule × verified observation → required evidence"]
@@ -120,7 +118,7 @@ flowchart TD
     end
 
     subgraph HO["Hosting environment (executes; TermAl under integration)"]
-        B["session_bind<br/>assurance · effects · capability-map revision"]
+        B["Work session<br/>Execution Observability ON/OFF"]
         D["Decomposition admitted under planning authority"]
         A2["Assignment, fine<br/>per-run evidence references"]
         X["Agent turns in a workspace"]
@@ -161,9 +159,8 @@ soon as the agent starts.
 ## Rules that keep the layers honest
 
 1. **Engram supports execution; it never executes.** Execution occurs in the
-   hosting environment, while work claims, grants, and every
-   other form of live execution authority remain in Engram's SQLite store on
-   the active host; the host enforces those decisions. The intake system
+   hosting environment, while work claims and every other form of live
+   execution authority remain in Engram's SQLite store on the active host. The intake system
    hands Engram work inputs and evidence, not commands.
 2. **Decomposition is admitted by Engram.** An upstream planner may propose a
    split or a revision; it remains a proposal until Engram admits it under
@@ -185,9 +182,8 @@ soon as the agent starts.
    ([security & trust](security-and-trust.md)) must not be treated as
    protection or compliance assurance.
 5. **Skills are host capabilities, not Engram objects.** Planned work records
-   will carry capability requirements; today `session_bind` records only a
-   `capability_map_revision`, not a capability map, and Engram does not
-   enforce requirement matching. When matching ships, Engram makes the
+   will carry capability requirements; today Engram records no capability
+   map and does not enforce requirement matching. When matching ships, Engram makes the
    admission decision and the host selects the concrete skill when it creates
    the session.
 6. **Intake is not an orchestrator.** A changed ticket is a new snapshot and a
@@ -212,9 +208,8 @@ soon as the agent starts.
 9. **Evidence is typed, not a bag.** A generic evidence collection makes
    completion rules ambiguous. Each kind has its own producer and binding:
    the `WorkSourceSnapshot` (intake: ticket, logs, bug reports — cited, never
-   copied); `ExecutionObservation` (host-captured during turns: session, grant
-   or action fingerprint, effect and outcome, observed state change, source
-   and workspace basis); `VerificationEvidence` (tests, reviews, acceptance
+   copied); `ExecutionObservation` (host-captured: observing session, claim
+   epoch, outcome, observed source change, source and workspace basis); `VerificationEvidence` (tests, reviews, acceptance
    checks — the kind that discharges an obligation, bound to the obligation
    and to the source state actually verified, optionally linked to the exact
    environment object); `EnvironmentEvidence` (source revision and workspace
@@ -233,14 +228,8 @@ soon as the agent starts.
     Intake may identify decisive evidence and cite its full source. Agents
     receive bounded `next` delivery and explicitly read evidence and project
     memories; no context packet or automatic pinned-memory injection is
-    constructed. An external system never sets behavioral policy by labelling
+    constructed. An external system never sets project policy by labelling
     evidence, and never creates or closes an obligation.
-11. **Advisory is for integration; `turn_gated` is for acceptance.** The
-    per-project required assurance exists so a host adapter can be integrated
-    in shadow mode against a real store. It does not lower the default
-    (`turn_gated`), and the behavioral acceptance test of this pipeline must
-    run `turn_gated`: an `advisory` host is observed, not controlled, and a
-    run under it proves integration, not enforcement.
 
 ## Two assignment passes
 
@@ -259,19 +248,13 @@ assignment does not imply context-packet construction or automatic injection.
 1. One ticket source, one-way import: a `WorkSourceSnapshot` and a root
    `WorkItem` with acceptance and a tiered evidence packet, created by hand
    from a real ticket.
-2. Execution through TermAl under the shipped control channel, with
-   decomposition admitted under the agent's claim. Prerequisites for this
-   step to be honest rather than shadowed: the host must be bound
-   `turn_gated`. The project policy can already require
-   `advisory` for a shadow host and later advance to `turn_gated` without
-   rewriting prior policy history; an `advisory` run of the same sequence is
-   the integration test, not the acceptance test.
+2. Execution through TermAl with Execution Observability on, with
+   decomposition admitted under the agent's claim.
 3. Record a source mutation under a policy-selected rule that requires the
    test. The stock rule records an untested change instead of refusing, so
    use a criterion bound with `--bind` or an operator-selected rule. Observe
    `work_complete` refuse the open test obligation, record matching host
-   verification linked to canonical
-   environment evidence, checkpoint that typed evidence, and freeze the exact
+   verification as registered verification, and freeze the exact
    obligation and bounded environment basis in `CompletionSeal`. Then
    exercise the report path; until fenced report assembly and a real
    side-effecting adapter exist, no publication receipt or ticket-update claim
@@ -287,8 +270,7 @@ assignment does not imply context-packet construction or automatic injection.
   (`ReportAssemblyClaim`, `report_ready`). `CompletionSeal` exists; the unwired
   dummy adapter and unused publication scaffolding have been removed.
 - **Capability requirements on work items** matched against the host's
-  capability map at bind. Today `session_bind` carries only
-  `capability_map_revision`; work items have no requirement field and no
+  host's capability map. Today work items have no requirement field and no
   matcher exists.
 - **Environment requirements.** Environment components, verification links
   and the seal's exact bounded environment-hash set ship as audit provenance.

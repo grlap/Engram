@@ -64,7 +64,7 @@ fn tested_at_revision_one(name: &str) -> (Fixture, HostSession) {
     );
     let (work, claim) = (fixture.work.clone(), fixture.claim.clone());
     let mut host = HostSession::bind(&mut fixture.store, &work, &claim, 10);
-    host.checkpoint(
+    host.install_checks(
         &mut fixture.store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -101,7 +101,7 @@ fn a_same_turn_change_and_passed_test_leave_the_evaluation_fresh_and_it_seals() 
         };
         // The requesting turn's report: the change to revision 2 and its test.
         host.basis.source_revision = JUDGED.into();
-        host.checkpoint(
+        host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -167,7 +167,7 @@ fn a_failed_or_indeterminate_check_in_the_same_report_still_asks_for_a_resubmiss
         )
         .expect("the evaluation records");
         host.basis.source_revision = JUDGED.into();
-        let minted = host.checkpoint_checks(store, true, &checks, 40);
+        let minted = host.install_check_batch(store, true, &checks, 40);
         assert_eq!(minted.len(), checks.len(), "{name}");
         assert_eq!(
             stale(store, &work),
@@ -204,7 +204,7 @@ fn a_passed_check_is_exempt_only_on_the_declared_revision() {
     let mut undeclared = declared_pass(&work, &note, started_at, JUDGED, None, "undeclared", 30);
     undeclared.source_basis = None;
     record(store, &undeclared).expect("the evaluation records");
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -231,7 +231,7 @@ fn a_passed_check_is_exempt_only_on_the_declared_revision() {
         ),
     )
     .expect("the evaluation records");
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -259,7 +259,7 @@ fn an_exempt_check_is_new_evidence_only_within_the_next_basis() {
     )];
     record(store, &failing).expect("the failing evaluation records");
     host.basis.source_revision = JUDGED.into();
-    host.checkpoint(
+    host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -313,7 +313,7 @@ fn a_late_check_of_the_declared_revision_after_the_run_moved_on_still_counts() {
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let declared = host.basis.source_revision.clone();
-    let earlier = host.checkpoint(
+    let earlier = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
@@ -328,7 +328,7 @@ fn a_late_check_of_the_declared_revision_after_the_run_moved_on_still_counts() {
     .producer_observation;
     // The run moves on to another revision.
     host.basis.source_revision = JUDGED.into();
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
     record(
         store,
         &declared_pass(
@@ -343,7 +343,7 @@ fn a_late_check_of_the_declared_revision_after_the_run_moved_on_still_counts() {
     )
     .expect("the evaluation records");
     // A late verification of the earlier run on the declared revision.
-    host.cite_earlier_producer(store, &producer, None, 50);
+    host.install_later_verification(store, &producer, None, 50);
     assert_eq!(stale(store, &work), Some(AcceptanceStaleReason::Mutation));
 }
 
@@ -366,7 +366,7 @@ fn a_late_passed_check_on_another_revision_than_the_declared_one_still_counts() 
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    let earlier = host.checkpoint(
+    let earlier = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
@@ -381,7 +381,7 @@ fn a_late_passed_check_on_another_revision_than_the_declared_one_still_counts() 
     .producer_observation;
     // The run moves on, and the evaluation judges where it is now.
     host.basis.source_revision = JUDGED.into();
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
     record(
         store,
         &declared_pass(&work, &note, cut(store, &work), JUDGED, None, "current", 40),
@@ -389,7 +389,7 @@ fn a_late_passed_check_on_another_revision_than_the_declared_one_still_counts() 
     .expect("the evaluation records");
     assert_eq!(stale(store, &work), None);
     // A late verification of the earlier revision's build.
-    host.cite_earlier_producer(store, &producer, None, 50);
+    host.install_later_verification(store, &producer, None, 50);
     assert_eq!(stale(store, &work), Some(AcceptanceStaleReason::Mutation));
 }
 
@@ -439,12 +439,12 @@ fn a_bound_criterions_only_passed_check_after_the_cut_cannot_support_its_pass() 
     let note = fixture.evidence.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
     // The run is sighted at revision 1 with no check.
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     let started_at = cut(store, &work);
     // The requesting turn's report: the change to the declared revision and
     // the criterion's only passed test.
     host.basis.source_revision = JUDGED.into();
-    let passed = host.checkpoint(
+    let passed = host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),

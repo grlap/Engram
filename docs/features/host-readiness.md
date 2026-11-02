@@ -3,7 +3,7 @@
 > Normative reference: [spec §8](../spec.md#8-interfaces).
 > Related: [CLI and MCP](cli-and-mcp.md), [host checklist](../host-checklist.md),
 > [SQLite admission](sqlite-store.md), [security and trust](security-and-trust.md),
-> [turn gate assessment](turn-gate-assessment.md).
+> [Execution Observability](execution-observability.md).
 
 Host Verify/Save can call:
 
@@ -30,19 +30,15 @@ dot or space, or another Unicode normalization, none of which the listing
 matches), when the file changes during the probe, or when a lookup or
 the listing fails.
 
-It does not run the work-history audit, reconstruct roots or enumerate historical
-sessions/grants. Policy-chain admission remains required, so this is not a
+It does not run the work-history audit or reconstruct roots. Policy-chain admission remains required, so this is not a
 constant-time promise. Full Audit is a separate explicit host action using
 `engram doctor --json`; its existing health contract is unchanged. A host must
 not call the full audit implicitly to save settings, report readiness as full
 health, or erase a previous audit result when it reads readiness.
-Readiness does not emit Full Audit's no-op-redactor and control-limitation
-stderr warnings. `doctor --json` retains those disclosures: the development
-redactor provides no secret or PII protection, and action gating, organizational
-authority mediation and action-outcome tracking remain unavailable. A quiet
-readiness stderr is not evidence of these protections. Hosts still compare the
-reported required assurance with their actual mediation; no V1 host may claim
-unsupported action gating.
+Readiness does not emit Full Audit's no-op-redactor stderr warning.
+`doctor --json` retains that disclosure: the development redactor provides no
+secret or PII protection. A quiet readiness stderr is not evidence of that
+protection.
 
 ## Version 1 receipt
 
@@ -87,10 +83,8 @@ status fields (the actual receipt also includes the identity and policy above):
 ```
 
 `control` contains `schema_version`, opaque record ids `policy` and
-`obligation_rules`, numeric `epoch`, `required_assurance`, `supported_effects`,
-and `acceptance_evaluation`. It does not include session/grant counts.
-The host compares the required assurance with the mediation it actually provides;
-a successful probe does not attest that the host mediates every turn.
+`obligation_rules`, numeric `epoch`, and `acceptance_evaluation`. A
+successful probe attests nothing about what the host observes.
 
 Host-path strings use the same descriptions as doctor; do not parse them as an
 authority token. `status` is `matched` when stored and resolved policies agree,
@@ -110,15 +104,11 @@ inspect this status when their intended operation requires resolved identity.
 
 Project identity uses normal explicit project-file/home routing; it is not
 authentication of the owner of an arbitrary copied database. The host retains
-binary/path trust, expected store identity, configuration/reset race fences,
-grant revocation/rebinding and persistence checks. This read is an observation,
+binary/path trust, expected store identity, configuration/reset race fences
+and persistence checks. This read is an observation,
 not a lease against subsequent policy or store changes.
 
 ## Refusals
-
-For stale checkpoint handles, use the separate
-[read-only session inspection](control-session-inspection.md) receipt.
-Readiness itself supplies no session or grant absence evidence.
 
 An admitted invocation that refuses emits one JSON object on stdout and exits 1.
 Required fields: `schema_version:1`, `scope:"readiness"`, `ready:false`,

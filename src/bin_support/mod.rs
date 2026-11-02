@@ -11,7 +11,6 @@ pub(crate) mod attribution;
 pub(crate) mod backup;
 pub(crate) mod backup_target;
 pub(crate) mod control;
-pub(crate) mod control_session_inspect;
 pub(crate) mod doctor;
 pub(crate) mod graph;
 pub(crate) mod import;

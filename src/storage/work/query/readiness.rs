@@ -1,9 +1,35 @@
 use std::collections::HashSet;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{RootExecution, StoreError, WorkId, WorkLifecycle, load_work_item};
 use crate::ChildRequirement;
+
+pub(super) fn import_retired_on(
+    connection: &Connection,
+    work: &crate::WorkItem,
+) -> Result<bool, StoreError> {
+    if work.lifecycle != WorkLifecycle::Open || work.active_run_id.is_some() {
+        return Ok(false);
+    }
+    let latest: Option<String> = connection
+        .query_row(
+            "SELECT run_id FROM work_runs WHERE work_id=?1 ORDER BY generation DESC LIMIT 1",
+            [work.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(latest) = latest else {
+        return Ok(false);
+    };
+    let id = uuid::Uuid::parse_str(&latest)
+        .map(crate::WorkRunId)
+        .map_err(|_| {
+            StoreError::InvalidWorkProjection("invalid import-retired generation id".into())
+        })?;
+    let run = super::load_work_run(connection, id)?;
+    Ok(run.state == crate::WorkRunState::SupersededByImport && run.completion_seal.is_none())
+}
 
 #[cfg(test)]
 mod tests;

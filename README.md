@@ -110,14 +110,12 @@ for both its MCP process and shell commands.
 Run these commands from the project directory:
 
 ```sh
-engram init --required-assurance advisory \
-  --authorized-by alice
+engram init
 engram doctor
 ```
 
-`advisory` means Engram tracks work but does not control the agent's tool
-execution. A plain `init` defaults to a stronger policy, so use the explicit
-option for this setup.
+Engram tracks work and stores what the host observes; it never controls the
+agent's tool execution.
 
 The multi-line command examples use POSIX shell syntax. In PowerShell, put
 each command on one line without the trailing backslash. See the
@@ -225,9 +223,9 @@ A criterion can be bound to a host-verified check with
 `review` or `acceptance`. This works with or without an acceptance policy.
 The binding opens an obligation on the run, and completion refuses until a
 passing host check of that kind covers the run's latest source change, or
-while a newer check of that kind has failed. Only a control-plane host records
-such checks; on an advisory host a bound criterion can only be revised or
-waived.
+while a newer check of that kind has failed. Only a host that runs Execution
+Observability records such checks as registered verification; without one, a
+bound criterion can only be revised or waived.
 
 ### Complete under an acceptance policy
 
@@ -263,8 +261,8 @@ it, from `show REF`, and each `LOCATOR` from `show REF --notes --gates`.
 Under the policy, evidence is cited in `evaluate`, and `done` refuses author
 `--link`s.
 
-With a control-plane host such as TermAl, which records host checks and
-measures the source, the policy can require more:
+With a host that runs Execution Observability, such as TermAl, which records
+host checks and measures the source, the policy can require more:
 
 - With `--mechanical-basis observed`, no pass may rest on the `asserted`
   basis, a gate the agent recorded. A check-backed pass is `observed` and
@@ -328,18 +326,17 @@ MCP exposes the same work commands as the CLI, plus `search`. For recovery,
 call the `next` tool with `peek: true`. A host can inject this summary at the
 next prompt after session start or compaction.
 
-The standard integration is advisory. Engram checks its task rules, but
-the agent can still edit files or run tools without asking it.
+Engram checks its task rules, but the agent can still edit files or run
+tools without asking it. Claims schedule work; they grant no file or external
+authority.
 
-For hosts that need execution control, a separate private API can admit
-model turns and check fenced work claims. Resource intents are not locks and
-reserve no resources. The host must enforce the control decisions and coordinate
-resource ownership separately. Per-tool action gating is not available; it is
-[designed and deferred](docs/features/action-gates.md).
+A host that runs Execution Observability records what it saw run, how the
+source changed and which registered checks passed, through a separate private
+work-session channel. It never admits or refuses a model turn.
 
 See the [host checklist](docs/host-checklist.md) for setup and the
-[control-plane guide](docs/features/behavioral-control-plane.md) for the
-optional private API.
+[Execution Observability guide](docs/features/execution-observability.md) for
+the private channel.
 
 ## Data and limits
 

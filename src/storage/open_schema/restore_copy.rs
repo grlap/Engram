@@ -19,8 +19,7 @@ pub struct RestoreCopyReport {
     pub authority: LiveAuthority,
 }
 
-/// The claims, grants and begun turns a store copy holds, read with one clock
-/// reading over the whole store.
+/// The work claims a store copy holds, read with one clock reading.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct LiveAuthority {
     /// The clock reading every expiry was compared with.
@@ -29,12 +28,6 @@ pub struct LiveAuthority {
     pub unexpired_claims: u64,
     /// When the last of them expires.
     pub claims_expire_by: Option<DateTime<Utc>>,
-    /// Issued turn grants that have not yet expired at `as_of`.
-    pub unexpired_grants: u64,
-    /// When the last of them expires.
-    pub grants_expire_by: Option<DateTime<Utc>>,
-    /// Turns begun and not yet completed, whatever their grants' expiry.
-    pub begun_turns: u64,
 }
 
 impl SqliteStore {
@@ -128,24 +121,10 @@ impl SqliteStore {
             [now_ms],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
         )?;
-        let (unexpired_grants, grants_last) = self.connection.query_row(
-            "SELECT COUNT(*), MAX(expires_at_ms) FROM control_turn_grants
-             WHERE state = 'issued' AND expires_at_ms > ?1",
-            [now_ms],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
-        )?;
-        let begun_turns = self.connection.query_row(
-            "SELECT COUNT(*) FROM control_turn_grants WHERE state = 'begun'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )?;
         Ok(LiveAuthority {
             as_of: now,
             unexpired_claims: count(unexpired_claims),
             claims_expire_by: claims_last.and_then(DateTime::from_timestamp_millis),
-            unexpired_grants: count(unexpired_grants),
-            grants_expire_by: grants_last.and_then(DateTime::from_timestamp_millis),
-            begun_turns: count(begun_turns),
         })
     }
 }

@@ -29,10 +29,9 @@ pub(crate) use source_recovery::*;
 use super::super::test_support::*;
 use super::*;
 use crate::domain::{
-    AcceptanceEvaluationMode as Mode, AcceptanceSourceBasis, CompletionSeal, ControlSessionBinding,
-    ControlWorkBinding, ExecutionObservation, IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION,
-    ObligationRuleSet, RecordGateEvidenceRequest, ResourceCoverage, ResourceSubject,
-    ReviseWorkRequest, WorkClaim,
+    AcceptanceEvaluationMode as Mode, AcceptanceSourceBasis, CompletionSeal, ControlWorkBinding,
+    ExecutionObservation, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
+    RecordGateEvidenceRequest, ReviseWorkRequest, WorkClaim,
 };
 
 fn disable_obligation_rules(store: &mut SqliteStore, second: i64) {
@@ -269,85 +268,41 @@ fn revise(
     )
 }
 
-/// Bound host control session that mints observed execution evidence on the
-/// holder's run, mirroring the host checkpoint protocol.
+/// Ordinary work association plus explicitly installed historical evidence data.
 struct HostSession {
     applicability: Option<crate::domain::VerificationApplicability>,
     project_id: ProjectId,
     session_id: SessionId,
     connection_token: String,
-    routing_token: String,
-    subject: ResourceSubject,
+    binding: ControlWorkBinding,
     basis: ExecutionSourceBasis,
-    turns: usize,
+    captures: usize,
 }
 
-/// Binds the claim holder's host control session to the claim under `key`.
-/// Repeating an earlier bind's key with the same claim replays that bind.
-fn bind_host_control(
-    store: &mut SqliteStore,
-    work: &WorkItem,
-    claim: &WorkClaim,
-    connection_token: &str,
-    key: &str,
-    second: i64,
-) -> ControlSessionBinding {
-    let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
-    let binding = ControlWorkBinding {
+fn fixture_binding(store: &SqliteStore, work: &WorkItem, claim: &WorkClaim) -> ControlWorkBinding {
+    let run = load_work_run(&store.connection, claim.run_id).unwrap();
+    ControlWorkBinding {
         root_execution_id: run.root_execution_id,
         work_id: work.work_id,
         run_id: run.run_id,
         work_revision: claim.accepted_work_revision,
         claim_id: claim.claim_id,
         claim_fence: claim.fence,
-    };
-    let mut host_actor = actor(&claim.holder.0);
-    host_actor.run_id = Some(run.run_id.0.to_string());
-    let bound = store
-        .bind_control_session_with_work(
-            &work.project_id,
-            "local-work:acceptance-evaluation",
-            "Mint observed evidence for acceptance evaluation",
-            &claim.holder,
-            connection_token,
-            &host_actor,
-            Some(&binding),
-            ControlAssurance::TurnGated,
-            &[EffectClass::Observe, EffectClass::MutateLocal],
-            1,
-            key,
-            at(second),
-        )
-        .expect("bind control session to the claim");
-    crate::host::id_contract::assert_host_ids(&bound);
-    bound
+    }
 }
 
 impl HostSession {
     fn bind(store: &mut SqliteStore, work: &WorkItem, claim: &WorkClaim, second: i64) -> Self {
         let session_id = claim.holder.clone();
         let connection_token = store
-            .resume_control_connection(&session_id, at(second))
-            .expect("resume host control connection");
-        let control = bind_host_control(
-            store,
-            work,
-            claim,
-            &connection_token,
-            "bind-host-session",
-            second,
-        );
-        let mut host = Self {
+            .resume_work_connection(&session_id, at(second))
+            .unwrap();
+        Self {
             applicability: None,
             project_id: work.project_id.clone(),
             session_id,
             connection_token,
-            routing_token: control.routing_token,
-            subject: ResourceSubject::Path {
-                project_id: work.project_id.clone(),
-                segments: vec!["src".into()],
-                coverage: ResourceCoverage::Tree,
-            },
+            binding: fixture_binding(store, work, claim),
             basis: ExecutionSourceBasis {
                 git_tree: None,
                 workspace_id: "workspace-evaluated".into(),
@@ -355,96 +310,32 @@ impl HostSession {
                 source_root_generation: None,
                 source_root_state: None,
             },
-            turns: 0,
-        };
-        let synchronize = host.grant(store, &[EffectClass::Observe], false, second + 1);
-        host.begin(store, &synchronize, second + 2);
-        assert!(matches!(
-            store
-                .checkpoint_control_turn(
-                    &host.project_id,
-                    &host.session_id,
-                    &host.connection_token,
-                    &host.routing_token,
-                    &synchronize.grant_id,
-                    TurnNextIntent::Continue,
-                    &host.key("checkpoint-sync"),
-                    at(second + 3),
-                )
-                .expect("checkpoint synchronization turn"),
-            ControlTurnCheckpointDecision::Checkpointed { .. }
-        ));
-        host
+            captures: 0,
+        }
     }
-
     fn key(&self, stem: &str) -> String {
-        format!("{stem}-{}", self.turns)
+        format!("{stem}-{}", self.captures)
     }
-
-    fn grant(
-        &mut self,
-        store: &mut SqliteStore,
-        effects: &[EffectClass],
-        with_subject: bool,
-        second: i64,
-    ) -> IssuedTurnGrant {
-        self.turns += 1;
-        let decision = store
-            .evaluate_control_turn(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &self.routing_token,
-                &TurnIntent {
-                    idempotency_key: self.key("evaluate"),
-                    intent_fingerprint: ObjectId::from_canonical_bytes(
-                        self.key("intent").as_bytes(),
-                    ),
-                    purpose: Some(TurnPurpose::Ordinary),
-                    requested_effects: effects.to_vec(),
-                    resource_intents: if with_subject {
-                        vec![self.subject.clone()]
-                    } else {
-                        Vec::new()
-                    },
-                },
-                at(second),
-            )
-            .expect("evaluate host turn");
-        crate::host::id_contract::assert_host_ids(&decision);
-        let ControlTurnDecision::Grant { grant } = decision else {
-            panic!("host turn must grant: {decision:?}");
-        };
-        *grant
-    }
-
-    fn begin(&self, store: &mut SqliteStore, grant: &IssuedTurnGrant, second: i64) {
-        let tokens = grant
-            .delivery
-            .as_ref()
-            .map(|delivery| vec![delivery.page.delivery_token.clone()])
-            .unwrap_or_default();
-        let begun = store
-            .begin_control_turn(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &self.routing_token,
-                &grant.grant_id,
-                &tokens,
-                &self.key("begin"),
-                at(second),
-            )
-            .expect("begin host turn");
-        crate::host::id_contract::assert_host_ids(&begun);
-        assert!(matches!(begun, ControlTurnBeginDecision::Begin { .. }));
+    fn historical_capture(&mut self) -> HistoricalCapture {
+        self.captures += 1;
+        HistoricalCapture {
+            project: self.project_id.clone(),
+            session: self.session_id.clone(),
+            binding: self.binding.clone(),
+            capture_id: format!("historical-capture-{}", self.captures),
+        }
     }
 
     /// One mutation turn reporting exactly `reports`, in order: whether the
     /// host claims a source change, and the revision it reports, if any.
-    fn report(&mut self, store: &mut SqliteStore, reports: &[(bool, Option<&str>)], second: i64) {
-        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
-        self.begin(store, &grant, second + 1);
+    fn install_source_records(
+        &mut self,
+        store: &mut SqliteStore,
+        reports: &[(bool, Option<&str>)],
+        second: i64,
+    ) {
+        let grant = self.historical_capture();
+
         let observations: Vec<ExecutionObservationInput> = reports
             .iter()
             .enumerate()
@@ -469,27 +360,13 @@ impl HostSession {
                 },
             )
             .collect();
-        let checkpointed = store
-            .checkpoint_control_turn_with_evidence(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &self.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
-                &observations,
-                &[],
-                &[],
-                &self.key("checkpoint"),
-                at(second + 2),
-            )
-            .expect("checkpoint reported observations");
+        let checkpointed =
+            append_historical_capture(store, &grant, &observations, &[], &[], at(second + 2))
+                .expect("checkpoint reported observations");
         assert!(
-            matches!(
-                checkpointed,
-                ControlTurnCheckpointDecision::Checkpointed { .. }
-            ),
-            "host turn must checkpoint: {checkpointed:?}"
+            !checkpointed.execution_observations.is_empty()
+                || !checkpointed.verification_evidence.is_empty()
+                || !checkpointed.environment_evidence.is_empty()
         );
     }
 
@@ -498,15 +375,15 @@ impl HostSession {
     /// producer's older revision at a new feed position. With
     /// `environment_at`, the same checkpoint also records the check's
     /// environment, which must carry the producer's revision too.
-    fn cite_earlier_producer(
+    fn install_later_verification(
         &mut self,
         store: &mut SqliteStore,
         producer: &ObjectId,
         environment_at: Option<&str>,
         second: i64,
     ) {
-        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
-        self.begin(store, &grant, second + 1);
+        let grant = self.historical_capture();
+
         let environments: Vec<EnvironmentEvidenceInput> = environment_at
             .map(|revision| self.environment(revision, second))
             .into_iter()
@@ -521,27 +398,19 @@ impl HostSession {
             summary: Some("host observed an earlier build".into()),
             refs: vec!["command:build".into()],
         };
-        let checkpointed = store
-            .checkpoint_control_turn_with_evidence(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &self.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
-                &[],
-                std::slice::from_ref(&verification),
-                &environments,
-                &self.key("checkpoint"),
-                at(second + 2),
-            )
-            .expect("checkpoint late verification");
+        let checkpointed = append_historical_capture(
+            store,
+            &grant,
+            &[],
+            std::slice::from_ref(&verification),
+            &environments,
+            at(second + 2),
+        )
+        .expect("checkpoint late verification");
         assert!(
-            matches!(
-                checkpointed,
-                ControlTurnCheckpointDecision::Checkpointed { .. }
-            ),
-            "host turn must checkpoint: {checkpointed:?}"
+            !checkpointed.execution_observations.is_empty()
+                || !checkpointed.verification_evidence.is_empty()
+                || !checkpointed.environment_evidence.is_empty()
         );
     }
 
@@ -572,31 +441,23 @@ impl HostSession {
 
     /// One turn that records only environment evidence, captured at
     /// `revision`: no execution observation, no check.
-    fn capture_environment(&mut self, store: &mut SqliteStore, revision: &str, second: i64) {
-        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
-        self.begin(store, &grant, second + 1);
+    fn install_environment(&mut self, store: &mut SqliteStore, revision: &str, second: i64) {
+        let grant = self.historical_capture();
+
         let environment = self.environment(revision, second);
-        let checkpointed = store
-            .checkpoint_control_turn_with_evidence(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &self.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
-                &[],
-                &[],
-                std::slice::from_ref(&environment),
-                &self.key("checkpoint"),
-                at(second + 2),
-            )
-            .expect("checkpoint environment evidence");
+        let checkpointed = append_historical_capture(
+            store,
+            &grant,
+            &[],
+            &[],
+            std::slice::from_ref(&environment),
+            at(second + 2),
+        )
+        .expect("checkpoint environment evidence");
         assert!(
-            matches!(
-                checkpointed,
-                ControlTurnCheckpointDecision::Checkpointed { .. }
-            ),
-            "host turn must checkpoint: {checkpointed:?}"
+            !checkpointed.execution_observations.is_empty()
+                || !checkpointed.verification_evidence.is_empty()
+                || !checkpointed.environment_evidence.is_empty()
         );
     }
 }
@@ -1666,7 +1527,7 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
     let claim = fixture.claim.clone();
     let evidence = fixture.evidence.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
-    let passed = host.checkpoint(
+    let passed = host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1767,7 +1628,7 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
     // A real source change moves the revision; one that leaves it where the
     // run last saw it is not a change.
     host.basis.source_revision = "content-revision-2".into();
-    let none = host.checkpoint(store, true, None, 30);
+    let none = host.install_checks(store, true, None, 30);
     assert!(none.is_empty(), "{none:?}");
     assert!(matches!(
         recovery_cause(complete_evaluated(
@@ -1792,7 +1653,7 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
         Some((observed.evaluation, Some(AcceptanceStaleReason::Mutation)))
     );
 
-    let failed = host.checkpoint(
+    let failed = host.install_checks(
         store,
         false,
         Some((VerificationKind::Build, ExecutionOutcome::Failed)),
@@ -1862,7 +1723,7 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
         WorkCompletionRecoveryCause::AcceptanceFailed { .. }
     ));
 
-    let repaired = host.checkpoint(
+    let repaired = host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -2131,7 +1992,7 @@ fn submissions_behind_a_host_observed_change_are_refused() {
     let note = fixture.evidence.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
     let read_before_mutation = cut(store, &work);
-    let passed = host.checkpoint(
+    let passed = host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),

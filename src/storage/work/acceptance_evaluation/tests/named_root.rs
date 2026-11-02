@@ -3,7 +3,7 @@ use crate::domain::{
     AcceptanceBinding, ExecutionSourceBasis, NamedRootBindingKind, SourceRootState,
     VerificationRequirement, VerificationResult, WorkObligationResolution,
 };
-use crate::storage::test_support::bind_control_for;
+use crate::storage::test_support::open_work_host;
 
 mod characterization;
 mod deciding;
@@ -37,16 +37,16 @@ fn name_root(
     store: &mut SqliteStore,
     work: &WorkItem,
     claim: &WorkClaim,
-    host: &crate::storage::test_support::TestControlBinding,
+    host: &crate::storage::test_support::TestWorkHost,
     generation: i64,
     second: i64,
 ) {
     store
         .bind_named_root(
             &work.project_id,
-            &host.status.session_id,
+            &host.session_id,
             &host.connection_token,
-            &host.routing_token,
+            crate::storage::HostSessionAuthority::Work,
             claim.claim_id,
             claim.fence,
             "workspace-B",
@@ -133,13 +133,7 @@ fn a_bound_evaluation_accepts_only_a_check_after_the_current_named_binding() {
         7,
         unnamed("workspace-B"),
     );
-    let host = bind_control_for(
-        &mut fixture.store,
-        "runner",
-        "named-evaluation-host",
-        &[crate::domain::EffectClass::Observe],
-        at(8),
-    );
+    let host = open_work_host(&mut fixture.store, "runner", at(8));
     name_root(&mut fixture.store, &work, &claim, &host, 8, 8);
     let old_generation = host_verification_from_basis(
         &mut fixture.store,
@@ -243,7 +237,7 @@ fn host_binds(
         &host.project_id,
         &host.session_id,
         &host.connection_token,
-        &host.routing_token,
+        crate::storage::HostSessionAuthority::Work,
         claim.claim_id,
         claim.fence,
         workspace,
@@ -333,35 +327,72 @@ fn a_focus_move_captures_the_claims_named_root() {
 
 /// One host turn whose only observation states `basis`, a source change or
 /// a quiet sighting, with the checkpoint's own answer.
-fn checkpoint_basis(
+fn observe_basis(
     host: &mut HostSession,
     store: &mut SqliteStore,
     basis: ExecutionSourceBasis,
     source_changed: bool,
     second: i64,
-) -> Result<ControlTurnCheckpointDecision, StoreError> {
-    let grant = host.grant(store, &[EffectClass::MutateLocal], true, second);
-    host.begin(store, &grant, second + 1);
-    store.checkpoint_control_turn_with_evidence(
+) -> Result<crate::domain::ExecutionObservationReceipt, StoreError> {
+    use crate::domain::{
+        ExecutionObserveInput, MeasuredSighting, ObservationCausality, ObservationPolicyBasis,
+        ObservationRootBasis, ObservedInterval, ObservedOccurrence, ObservedSourceChange,
+    };
+    host.captures += 1;
+    let root = store.read_named_root(
         &host.project_id,
         &host.session_id,
         &host.connection_token,
-        &host.routing_token,
-        &grant.grant_id,
-        TurnNextIntent::Continue,
-        &[ExecutionObservationInput {
-            observation_id: host.key("stated-sighting"),
-            action_fingerprint: ObjectId::from_canonical_bytes(host.key("write").as_bytes()),
-            effect: EffectClass::MutateLocal,
-            outcome: ExecutionOutcome::Succeeded,
-            source_changed,
-            reported_source_change: None,
-            source_basis: Some(basis),
-            observed_at: Some(at(second + 1)),
-        }],
-        &[],
-        &[],
-        &host.key("checkpoint"),
+        crate::storage::HostSessionAuthority::Work,
+        host.binding.run_id,
+        host.binding.claim_id,
+    )?;
+    let policy = SqliteStore::load_active_control_policy(&store.connection)?;
+    let sighting = MeasuredSighting {
+        source_basis: basis,
+        observed_at: at(second + 1),
+    };
+    let occurrence = if source_changed {
+        ObservedOccurrence::InterTurnChange {
+            source_change: ObservedSourceChange::AssumedMissingBaseline {
+                workspace_id: sighting.source_basis.workspace_id.clone(),
+                sighting,
+            },
+        }
+    } else {
+        ObservedOccurrence::SourceSighting {
+            source_basis: sighting.source_basis,
+            observed_at: sighting.observed_at,
+        }
+    };
+    let mut observer = actor(&host.session_id.0);
+    observer.run_id = Some(host.binding.run_id.0.to_string());
+    store.record_unadmitted_execution_observation(
+        &host.project_id,
+        &host.session_id,
+        &host.connection_token,
+        crate::storage::HostSessionAuthority::Work,
+        &observer,
+        ExecutionObserveInput {
+            idempotency_key: host.key("source-capture"),
+            binding: host.binding.clone(),
+            root_basis: ObservationRootBasis {
+                capture_run_cut: root.read_cut.position,
+                latest_event: root.latest_event.map(|event| event.event),
+                state: root.named_root,
+            },
+            observed_interval: ObservedInterval {
+                from: at(second),
+                through: at(second + 1),
+            },
+            occurrence,
+            causality: ObservationCausality::Unknown {},
+            policy_basis: ObservationPolicyBasis::AccountIfEligible {
+                project_policy_epoch: policy.epoch,
+                policy: policy.policy_id,
+                obligation_rule_set: policy.obligation_rule_set,
+            },
+        },
         at(second + 2),
     )
 }
@@ -396,7 +427,7 @@ fn release_runner(fixture: &mut Fixture, work: &WorkItem, claim: &WorkClaim, sec
 /// and an end never recorded name no event. Each is refused before anything
 /// is stored.
 #[test]
-fn a_checkpoint_may_state_only_a_generation_the_claim_recorded() {
+fn a_source_capture_may_state_only_a_generation_the_claim_recorded() {
     #[derive(Debug, PartialEq)]
     enum Answer {
         Admitted,
@@ -450,15 +481,15 @@ fn a_checkpoint_may_state_only_a_generation_the_claim_recorded() {
             9,
         )
         .expect("host names B");
-        let answer = checkpoint_basis(&mut host, &mut fixture.store, basis, true, 10);
+        let answer = observe_basis(&mut host, &mut fixture.store, basis, true, 10);
         let got = match &answer {
-            Ok(ControlTurnCheckpointDecision::Checkpointed { .. }) => Answer::Admitted,
-            Err(StoreError::InvalidControlSession(reason))
+            Ok(_) => Answer::Admitted,
+            Err(StoreError::ExecutionObservationInvalid(reason))
                 if reason.contains("generation and state must occur together") =>
             {
                 Answer::Malformed
             }
-            Err(StoreError::NamedRootBindingRefused(_)) => Answer::Unrecorded,
+            Err(StoreError::ExecutionObservationBasisMismatch(_)) => Answer::Unrecorded,
             other => panic!("{case}: {other:?}"),
         };
         assert_eq!(got, expected, "{case}: {answer:?}");
@@ -468,10 +499,10 @@ fn a_checkpoint_may_state_only_a_generation_the_claim_recorded() {
 }
 
 /// A host that missed a release goes on stating the old generation after
-/// the claim is taken again. The checkpoint admits it, because its bound
-/// event is recorded, and the doctor finds the store healthy.
+/// the claim is taken again. A new capture refuses that ended generation,
+/// leaves no evidence behind, and the doctor finds the store healthy.
 #[test]
-fn after_a_release_a_checkpoint_may_still_state_the_old_generation() {
+fn a_new_capture_cannot_reuse_the_root_generation_ended_by_release() {
     let mut fixture = fixture("project-a");
     let (work, claim) = (fixture.work.clone(), fixture.claim.clone());
     let host = HostSession::bind(&mut fixture.store, &work, &claim, 5);
@@ -492,7 +523,7 @@ fn after_a_release_a_checkpoint_may_still_state_the_old_generation() {
     let reclaimed = super::claim(&mut fixture.store, &current, "second", "reclaim", 11, 3_600);
     assert_eq!(reclaimed.claim_id, claim.claim_id);
     let mut second = HostSession::bind(&mut fixture.store, &current, &reclaimed, 12);
-    let answer = checkpoint_basis(
+    let answer = observe_basis(
         &mut second,
         &mut fixture.store,
         stated(Some(9), Some(SourceRootState::Named)),
@@ -502,7 +533,7 @@ fn after_a_release_a_checkpoint_may_still_state_the_old_generation() {
     assert!(
         matches!(
             answer,
-            Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
+            Err(StoreError::ExecutionObservationBasisMismatch(_))
         ),
         "{answer:?}"
     );
@@ -613,7 +644,7 @@ fn workspace(workspace: &str, revision: &str, generation: Option<i64>) -> Execut
 /// seals, displacing and disclosing both A changes. A later source change
 /// in B instead leaves that check stale, and `done` refuses.
 #[test]
-fn the_observed_sequence_through_the_host_checkpoint() {
+fn ordinary_source_captures_preserve_the_observed_sequence() {
     for later_change_in_b in [false, true] {
         let mut fixture = fixture("project-a");
         let claim = fixture.claim.clone();
@@ -644,8 +675,8 @@ fn the_observed_sequence_through_the_host_checkpoint() {
                 .expect("the claim is held");
         let mut host = HostSession::bind(store, &work, &claim, 6);
         host.basis = workspace("workspace-A", "R_a", None);
-        host.checkpoint(store, true, None, 10);
-        host.report(store, &[(false, Some("R_a")), (false, Some("R_a"))], 20);
+        host.install_checks(store, true, None, 10);
+        host.install_source_records(store, &[(false, Some("R_a")), (false, Some("R_a"))], 20);
         host_binds(
             store,
             &host,
@@ -658,20 +689,18 @@ fn the_observed_sequence_through_the_host_checkpoint() {
             30,
         )
         .expect("host names B");
-        assert!(matches!(
-            checkpoint_basis(
-                &mut host,
-                store,
-                workspace("workspace-B", "R_b", Some(9)),
-                false,
-                40,
-            ),
-            Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
-        ));
+        observe_basis(
+            &mut host,
+            store,
+            workspace("workspace-B", "R_b", Some(9)),
+            false,
+            40,
+        )
+        .expect("the host observation records");
         host.basis = workspace("workspace-A", "R_a2", None);
-        host.checkpoint(store, true, None, 50);
+        host.install_checks(store, true, None, 50);
         host.basis = workspace("workspace-B", "R_b", Some(9));
-        let check = host.checkpoint(
+        let check = host.install_checks(
             store,
             false,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -693,7 +722,7 @@ fn the_observed_sequence_through_the_host_checkpoint() {
         ));
         if later_change_in_b {
             host.basis = workspace("workspace-B", "R_b2", Some(9));
-            host.checkpoint(store, true, None, 70);
+            host.install_checks(store, true, None, 70);
         }
         let completed = checkpoint_then_complete(
             store,
@@ -748,7 +777,7 @@ struct NamedEvaluation {
     fixture: Fixture,
     work: WorkItem,
     claim: WorkClaim,
-    host: crate::storage::test_support::TestControlBinding,
+    host: crate::storage::test_support::TestWorkHost,
     current: ObjectId,
 }
 
@@ -782,13 +811,7 @@ fn named_evaluation() -> NamedEvaluation {
         "enable-evaluation",
         6,
     );
-    let host = bind_control_for(
-        &mut fixture.store,
-        "runner",
-        "named-evaluation-host",
-        &[crate::domain::EffectClass::Observe],
-        at(8),
-    );
+    let host = open_work_host(&mut fixture.store, "runner", at(8));
     name_root(&mut fixture.store, &work, &claim, &host, 9, 8);
     let current = host_verification_from_basis(
         &mut fixture.store,
@@ -874,9 +897,9 @@ fn an_evaluation_goes_stale_when_its_named_root_ends_is_released_or_renamed() {
                     .store
                     .bind_named_root(
                         &named.work.project_id,
-                        &named.host.status.session_id,
+                        &named.host.session_id,
                         &named.host.connection_token,
-                        &named.host.routing_token,
+                        crate::storage::HostSessionAuthority::Work,
                         named.claim.claim_id,
                         named.claim.fence,
                         "workspace-B",
@@ -1058,19 +1081,17 @@ fn a_check_after_a_quiet_move_inside_the_root_satisfies_and_completes() {
     )
     .expect("host names B");
     host.basis = workspace("workspace-B", "R1", Some(9));
-    host.checkpoint(store, true, None, 40);
-    assert!(matches!(
-        checkpoint_basis(
-            &mut host,
-            store,
-            workspace("workspace-B", "R2", Some(9)),
-            false,
-            50,
-        ),
-        Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
-    ));
+    host.install_checks(store, true, None, 40);
+    observe_basis(
+        &mut host,
+        store,
+        workspace("workspace-B", "R2", Some(9)),
+        false,
+        50,
+    )
+    .expect("the host observation records");
     host.basis = workspace("workspace-B", "R2", Some(9));
-    let check = host.checkpoint(
+    let check = host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1116,7 +1137,7 @@ fn a_repeated_foreign_report_under_a_named_root_is_no_change() {
     let (mut fixture, work, claim, mut host) = bound_host();
     let store = &mut fixture.store;
     host.basis = workspace("workspace-A", "A1", None);
-    host.checkpoint(store, true, None, 10);
+    host.install_checks(store, true, None, 10);
     host_binds(
         store,
         &host,
@@ -1129,16 +1150,14 @@ fn a_repeated_foreign_report_under_a_named_root_is_no_change() {
         20,
     )
     .expect("host names B");
-    assert!(matches!(
-        checkpoint_basis(
-            &mut host,
-            store,
-            workspace("workspace-A", "A1", Some(9)),
-            true,
-            30,
-        ),
-        Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
-    ));
+    observe_basis(
+        &mut host,
+        store,
+        workspace("workspace-A", "A1", Some(9)),
+        true,
+        30,
+    )
+    .expect("the host observation records");
     assert_eq!(
         store
             .work_run_obligations(claim.run_id)
@@ -1148,7 +1167,7 @@ fn a_repeated_foreign_report_under_a_named_root_is_no_change() {
         "the bound criterion and the first A change only"
     );
     host.basis = workspace("workspace-B", "R_b", Some(9));
-    let check = host.checkpoint(
+    let check = host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1189,13 +1208,7 @@ fn an_evaluation_waits_for_the_named_root_first_sighting() {
         fixture.claim.clone(),
         fixture.evidence.clone(),
     );
-    let host = bind_control_for(
-        &mut fixture.store,
-        "runner",
-        "named-evaluation-host",
-        &[crate::domain::EffectClass::Observe],
-        at(8),
-    );
+    let host = open_work_host(&mut fixture.store, "runner", at(8));
     name_root(&mut fixture.store, &work, &claim, &host, 9, 8);
     let judge = |store: &SqliteStore, key: &str, second: i64| {
         let mut input = request(
@@ -1555,7 +1568,7 @@ fn a_foreign_report_under_a_named_root_does_not_unlock_a_failure() {
     )
     .expect("host names B");
     host.basis = workspace("workspace-B", "R1", Some(9));
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
     let fail = |store: &mut SqliteStore, key: &str, second: i64| {
         let mut input = request(
             &work,
@@ -1575,7 +1588,7 @@ fn a_foreign_report_under_a_named_root_does_not_unlock_a_failure() {
     };
     fail(store, "fail", 40).expect("the failing evaluation");
     // Workspace A has no earlier change, so the report keeps its change flag.
-    checkpoint_basis(
+    observe_basis(
         &mut host,
         store,
         workspace("workspace-A", "A1", None),
@@ -1594,7 +1607,7 @@ fn a_foreign_report_under_a_named_root_does_not_unlock_a_failure() {
         "{refused:?}"
     );
     host.basis = workspace("workspace-B", "R2", Some(9));
-    host.checkpoint(store, true, None, 70);
+    host.install_checks(store, true, None, 70);
     fail(store, "after-change", 80).expect("a change inside the named root is new evidence");
 }
 
@@ -1626,7 +1639,7 @@ fn sighted_root(name: &str) -> (Fixture, WorkItem, WorkClaim, HostSession) {
     )
     .expect("host names B");
     host.basis = workspace("workspace-B", "R1", Some(9));
-    host.checkpoint(
+    host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1741,7 +1754,7 @@ fn a_declared_revision_the_root_is_about_to_report_records_and_seals_once_sighte
     );
     // The requesting turn's report: the change to R2 and its passed test.
     host.basis = workspace("workspace-B", "R2", Some(9));
-    host.checkpoint(
+    host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1831,7 +1844,7 @@ fn a_late_declaration_under_a_named_root_records_and_an_off_root_check_still_cou
     let store = &mut fixture.store;
     let started_at = cut(store, &work);
     host.basis = workspace("workspace-B", "R2", Some(9));
-    host.checkpoint(
+    host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -1857,7 +1870,7 @@ fn a_late_declaration_under_a_named_root_records_and_an_off_root_check_still_cou
     )
     .expect("the evaluation of the root's revision records");
     host.basis = workspace("workspace-A", "R1", None);
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),

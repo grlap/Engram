@@ -6,76 +6,24 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use engram::domain::AssuranceLevel;
-use engram::{
-    ActorContext, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, HostPathPolicy,
-    ProjectPolicyAuthorityDecision, SqliteStore,
-};
-
-use crate::{control_assurance_name, warn_if_action_gated};
+use engram::{HostPathPolicy, SqliteStore};
 
 use super::graph::engram_home_and_project_digest;
 
-pub(crate) fn initialize(
-    database: &Path,
-    identity: Option<HostPathPolicy>,
-    required_assurance: Option<ControlAssurance>,
-    authorized_by: Option<String>,
-) -> Result<()> {
+pub(crate) fn initialize(database: &Path, identity: Option<HostPathPolicy>) -> Result<()> {
     if let Some(parent) = database.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    let requested_attribution = authorized_by.as_deref().map(str::trim).map(str::to_owned);
-    let store = match (required_assurance, authorized_by) {
-        (None, None) => SqliteStore::open_with_host_path_identity(database, identity),
-        (Some(required_assurance), Some(authorized_by)) => {
-            SqliteStore::open_with_initial_control_assurance(
-                database,
-                identity,
-                required_assurance,
-                &ActorContext {
-                    actor_id: authorized_by,
-                    actor_kind: "host_operator".into(),
-                    assurance: AssuranceLevel::Asserted,
-                    run_id: None,
-                    session_id: None,
-                    source_tool: Some("cli:init".into()),
-                    source_skill: None,
-                    provenance_chain: Vec::new(),
-                    reason: "authorize an explicit project bootstrap control policy".into(),
-                },
-                &DevelopmentNoopRedactor,
-            )
-        }
-        _ => bail!("--required-assurance and --authorized-by must be supplied together"),
-    }
-    .with_context(|| format!("failed to initialize {}", database.display()))?;
-    let control = store.control_diagnostics()?;
-    let bootstrap_attribution_recorded = if let Some(actor_id) = requested_attribution {
-        let policy: ControlPolicy = store
-            .get(&control.active_policy)?
-            .context("active bootstrap policy object is missing")?;
-        let authority: ProjectPolicyAuthorityDecision = store
-            .get(&policy.authority)?
-            .context("active bootstrap policy authority object is missing")?;
-        authority.authorized_by.actor_id == actor_id
-    } else {
-        false
-    };
-    if bootstrap_attribution_recorded {
-        eprintln!(
-            "WARNING: bootstrap policy administrator identity is asserted host context, not an authenticated identity"
-        );
-    }
-    warn_if_action_gated(control.required_assurance);
+    let store = SqliteStore::open_with_host_path_identity(database, identity)
+        .with_context(|| format!("failed to initialize {}", database.display()))?;
+    let policy = store.control_diagnostics()?;
     println!(
-        "Initialized local Engram store at {} with policy {} (epoch {}, required {}, obligation rules {})",
+        "Initialized local Engram store at {} with policy {} (epoch {}, obligation rules {})",
         database.display(),
-        control.active_policy,
-        control.policy_epoch.0,
-        control_assurance_name(control.required_assurance),
-        control.obligation_rule_set,
+        policy.active_policy,
+        policy.policy_epoch.0,
+        policy.obligation_rule_set
     );
     Ok(())
 }

@@ -103,21 +103,20 @@ impl SqliteStore {
         clippy::too_many_arguments,
         reason = "the host record keeps routing, attribution, request and time explicit"
     )]
-    pub(crate) fn bind_verification<'a>(
+    pub(crate) fn bind_verification(
         &mut self,
         project_id: &ProjectId,
         session_id: &SessionId,
         connection_token: &str,
-        authority: impl Into<super::HostSessionAuthority<'a>>,
+        authority: super::HostSessionAuthority,
         binder: &ActorContext,
         input: &VerificationBindInput,
         now: DateTime<Utc>,
     ) -> Result<VerificationBindReceipt, StoreError> {
-        let authority = authority.into();
         let intent =
             CanonicalObject::freeze(&VerificationBindIntent::new(project_id, session_id, input))?;
         control_lifecycle_transaction(&mut self.connection, |transaction| {
-            let _ = authority.verify_on(transaction, project_id, session_id, connection_token)?;
+            authority.verify_on(transaction, project_id, session_id, connection_token)?;
             if let Some(mut replay) = Self::replay_host_operation::<VerificationBindReceipt>(
                 transaction,
                 project_id,

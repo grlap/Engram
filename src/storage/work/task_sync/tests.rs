@@ -8,18 +8,22 @@ use crate::{
 };
 
 mod activity;
+mod baseline_view;
 mod exclusion;
+mod feed_changes;
 mod folder;
 mod folder_apply;
 mod folder_dry_run;
 mod incremental;
+pub(in crate::storage::work::task_sync) mod ledger;
 mod native;
 mod notes;
 mod origin_links;
 mod refusals;
 mod regressions;
+mod transactions;
 
-fn candidate() -> TaskTree {
+pub(in crate::storage::work::task_sync) fn candidate() -> TaskTree {
     let make = |title: &str| TaskDocument {
         id: WorkId(uuid::Uuid::new_v4()),
         external_ref: None,
@@ -107,7 +111,9 @@ fn refusal_code(error: &StoreError) -> serde_json::Value {
     crate::store_error_value(error)["error"]["code"].clone()
 }
 
-fn state(store: &SqliteStore) -> crate::storage::TestDatabaseShapeSnapshot {
+pub(in crate::storage::work::task_sync) fn state(
+    store: &SqliteStore,
+) -> crate::storage::TestDatabaseShapeSnapshot {
     crate::storage::test_database_shape_snapshot(&store.connection).unwrap()
 }
 

@@ -1,13 +1,12 @@
 use super::{
-    CanonicalObject, ChangeCursor, Connection, DateTime, DeserializeOwned,
-    MAX_TASK_CHANGE_OBJECT_BYTES, MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow,
-    ObjectId, OptionalExtension, Scope, SqliteStore, StoreError, TaskId, Transaction,
+    CanonicalObject, Connection, DateTime, DeserializeOwned, MemoryId, MemoryStatus, MemorySummary,
+    MemorySummaryRow, ObjectId, OptionalExtension, Scope, SqliteStore, StoreError, TaskId,
     lookup_project_memory_on, params, parse_enum,
 };
 #[cfg(test)]
 use super::{
-    DeltaItem, MemoryAssertionEvent, Serialize, SessionId, TaskChange, TaskDelta,
-    TransactionBehavior,
+    ChangeCursor, DeltaItem, MAX_TASK_CHANGE_OBJECT_BYTES, MemoryAssertionEvent, Serialize,
+    SessionId, TaskChange, TaskDelta, Transaction, TransactionBehavior,
 };
 
 #[cfg(test)]
@@ -414,6 +413,7 @@ impl SqliteStore {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn insert_task_change(
         transaction: &Transaction<'_>,
         task_id: TaskId,

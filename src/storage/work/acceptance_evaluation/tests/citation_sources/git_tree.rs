@@ -15,7 +15,7 @@ fn registered_git_input_does_not_relabel_legacy_content_evidence() {
         "content-v1:{}",
         ObjectId::from_canonical_bytes(b"legacy source")
     );
-    let check = one_check(host.checkpoint(
+    let check = one_check(host.install_checks(
         &mut fixture.store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -60,14 +60,14 @@ fn git_tree_evaluation_checks_every_selected_citation_and_keeps_unused_history_i
         let note = fixture.evidence.clone();
         let store = &mut fixture.store;
         set_tree(&mut host, Some('a'), true);
-        let old = one_check(host.checkpoint(
+        let old = one_check(host.install_checks(
             store,
             true,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
             20,
         ));
         set_tree(&mut host, (!missing).then_some('b'), !missing);
-        let local = one_check(host.checkpoint(
+        let local = one_check(host.install_checks(
             store,
             false,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -133,7 +133,7 @@ fn git_tree_consumption_rechecks_the_current_quiet_sighting_even_for_a_waived_bi
         )
         .unwrap();
     set_tree(&mut host, Some('a'), true);
-    let check = one_check(host.checkpoint(
+    let check = one_check(host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -153,7 +153,7 @@ fn git_tree_consumption_rechecks_the_current_quiet_sighting_even_for_a_waived_bi
     record(store, &input).unwrap();
     // A quiet same-content move cannot borrow the check's tree identity.
     set_tree(&mut host, Some('b'), false);
-    host.report(store, &[(false, Some("revision-d"))], 40);
+    host.install_source_records(store, &[(false, Some("revision-d"))], 40);
     stale_verification_source(done(
         store,
         &work,
@@ -166,21 +166,21 @@ fn git_tree_consumption_rechecks_the_current_quiet_sighting_even_for_a_waived_bi
 }
 
 #[test]
-fn git_tree_checkpoint_producer_mismatch_rolls_back_for_both_reference_forms() {
+fn historical_git_tree_producer_mismatch_rolls_back_for_both_reference_forms() {
     for existing in [false, true] {
         for actual in [None, Some('b'), Some('a')] {
-            let (mut fixture, work, _, mut host) = bound_fixture("tree-producer", false);
+            let (mut fixture, _work, _, mut host) = bound_fixture("tree-producer", false);
             let store = &mut fixture.store;
             set_tree(&mut host, actual, false);
-            let previous = one_check(host.checkpoint(
+            let previous = one_check(host.install_checks(
                 store,
                 false,
                 Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
                 20,
             ));
             let previous = store.load_verification_evidence(&previous).unwrap();
-            let grant = host.grant(store, &[EffectClass::Observe], false, 30);
-            host.begin(store, &grant, 31);
+            let grant = host.historical_capture();
+
             let observation = ExecutionObservationInput {
                 observation_id: "tree-producer".into(),
                 action_fingerprint: check_fingerprint("tree-producer"),
@@ -211,27 +211,19 @@ fn git_tree_checkpoint_producer_mismatch_rolls_back_for_both_reference_forms() {
                 refs: vec![],
             };
             let before = test_database_shape_snapshot(&store.connection).unwrap();
-            let result = store.checkpoint_control_turn_with_evidence(
-                &work.project_id,
-                &host.session_id,
-                &host.connection_token,
-                &host.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
+            let result = append_historical_capture(
+                store,
+                &grant,
                 &[observation],
                 &[verification],
                 &[],
-                "restricted-producer-checkpoint",
                 at(32),
             );
             if actual == Some('a') {
                 assert!(result.is_ok(), "{result:?}");
             } else {
                 let error = result.unwrap_err();
-                assert_eq!(
-                    crate::host::store_error_code(&error),
-                    "invalid_control_session"
-                );
+                assert!(matches!(&error, StoreError::InvalidWork(_)), "{error:?}");
                 assert!(error.to_string().contains("applicability.tree"));
                 assert!(error.to_string().contains("source_basis.git_tree"));
                 assert_eq!(
@@ -257,14 +249,14 @@ fn git_tree_unbound_observed_mechanical_pass_also_requires_applicability() {
     );
     let mut host = HostSession::bind(&mut fixture.store, &work, &fixture.claim, 10);
     set_tree(&mut host, Some('a'), true);
-    let check = one_check(host.checkpoint(
+    let check = one_check(host.install_checks(
         &mut fixture.store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
         20,
     ));
     set_tree(&mut host, Some('b'), false);
-    host.report(
+    host.install_source_records(
         &mut fixture.store,
         &[(false, Some("content-revision-1"))],
         30,

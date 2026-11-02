@@ -9,10 +9,13 @@ use crate::{
     memory::DevelopmentNoopRedactor,
 };
 
+mod former_planning;
 mod historical;
+mod indexed_load;
 mod pending_delivery;
 mod publication;
 mod refusals;
+mod retired_control;
 mod round_trip;
 
 fn actor(session: &str) -> ActorContext {

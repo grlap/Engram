@@ -221,7 +221,6 @@ fn failed_admission_records_the_original_sqlite_error_before_disposal() {
     let Err(error) = SqliteStore::from_connection_with_lock_wait(
         connection,
         None,
-        None,
         LockWait::CopyDeadline,
         ProtocolRetry::Never,
     ) else {

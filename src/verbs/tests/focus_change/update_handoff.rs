@@ -212,7 +212,7 @@ fn an_accept_after_its_move_names_the_transferred_claim() {
     assert!(
         accepted
             .text()
-            .contains(&format!("the host binds {offered}'s claim")),
+            .contains(&format!("future observations use {offered}'s claim")),
         "{}",
         accepted.text()
     );

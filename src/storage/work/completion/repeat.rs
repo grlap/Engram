@@ -33,6 +33,7 @@ use crate::storage::StoreError;
 /// revision-less change left waiver-only. Without a named root, the content
 /// fingerprint compares across workspaces. Once the host names a root, only
 /// that workspace and generation can anchor source freshness.
+#[cfg(test)]
 pub(in crate::storage) fn source_revision_repeats_on(
     connection: &Connection,
     run_id: WorkRunId,

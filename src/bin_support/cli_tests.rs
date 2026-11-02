@@ -111,7 +111,7 @@ fn record_id_help_preserves_existing_cli_flags() {
     let help = super::Cli::try_parse_from([
         "engram",
         "control-policy",
-        "set-required-assurance",
+        "set-obligation-rule-set",
         "--help",
     ])
     .unwrap_err()
@@ -159,22 +159,6 @@ fn complete_cli_command_graph_fits_the_configured_parse_stack() {
 #[test]
 fn policy_administration_has_no_reason_argument_or_help() {
     let commands = [
-        vec![
-            "init",
-            "--required-assurance",
-            "advisory",
-            "--authorized-by",
-            "operator",
-        ],
-        vec![
-            "control-policy",
-            "set-required-assurance",
-            "advisory",
-            "--authorized-by",
-            "operator",
-            "--idempotency-key",
-            "key",
-        ],
         vec![
             "control-policy",
             "set-obligation-rule-set",
@@ -745,4 +729,64 @@ fn the_refusal_guard_covers_each_family_carrying_host_text_and_nothing_else() {
     }
     let other = engram::storage::StoreError::InvalidWork("database is locked".into());
     assert_eq!(super::refusal_stderr_text(&other, text.clone()), text);
+}
+
+#[test]
+fn removed_turn_gating_commands_and_bootstrap_flags_are_not_exposed() {
+    use clap::Parser;
+    for args in [
+        vec!["engram", "control-session-inspect"],
+        vec![
+            "engram",
+            "control-policy",
+            "set-required-assurance",
+            "advisory",
+        ],
+        vec![
+            "engram",
+            "init",
+            "--required-assurance",
+            "advisory",
+            "--authorized-by",
+            "operator",
+        ],
+    ] {
+        let error = Cli::try_parse_from(&args).unwrap_err();
+        assert!(
+            matches!(
+                error.kind(),
+                clap::error::ErrorKind::InvalidSubcommand | clap::error::ErrorKind::UnknownArgument
+            ),
+            "{error}"
+        );
+    }
+    assert!(
+        Cli::try_parse_from([
+            "engram",
+            "control",
+            "--actor-id",
+            "host",
+            "--session-id",
+            "session"
+        ])
+        .is_err()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "engram",
+            "control",
+            "--work-session",
+            "--actor-id",
+            "host",
+            "--session-id",
+            "session"
+        ])
+        .is_ok()
+    );
+    assert_eq!(
+        Cli::try_parse_from(["engram", "work", "evaluate", "--help"])
+            .unwrap_err()
+            .kind(),
+        clap::error::ErrorKind::DisplayHelp
+    );
 }

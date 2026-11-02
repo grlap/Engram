@@ -63,9 +63,9 @@ impl SealedSourceTransportFixture {
             .store
             .record_unadmitted_execution_observation(
                 &fixture.work.project_id,
-                &observer.status.session_id,
+                &observer.session_id,
                 &observer.connection_token,
-                &observer.routing_token,
+                crate::storage::HostSessionAuthority::Work,
                 &actor("appending-observer"),
                 input,
                 at(90),
@@ -104,7 +104,7 @@ pub(crate) fn sealed_source_transport_fixture(case: &str) -> SealedSourceTranspo
     }
 }
 
-fn prepared(project: &str) -> (Fixture, HostSession, IssuedTurnGrant, ObjectId) {
+fn prepared(project: &str) -> (Fixture, HostSession, HistoricalCapture, ObjectId) {
     prepared_on(fixture(project))
 }
 
@@ -112,42 +112,18 @@ fn bind_observer(
     fixture: &mut Fixture,
     session: &str,
     second: i64,
-) -> crate::storage::test_support::TestControlBinding {
-    let session_id = SessionId(session.into());
-    let connection_token = fixture
-        .store
-        .resume_control_connection(&session_id, at(second))
-        .unwrap();
-    let binding = fixture
-        .store
-        .bind_control_session(
-            &fixture.work.project_id,
-            &fixture.work.short_ref,
-            "Observe the completed fixture's source",
-            &session_id,
-            &connection_token,
-            &actor(session),
-            crate::ControlAssurance::TurnGated,
-            &[EffectClass::Observe],
-            1,
-            "bind-late-observer",
-            at(second),
-        )
-        .unwrap();
-    crate::storage::test_support::TestControlBinding {
-        binding,
-        connection_token,
-    }
+) -> crate::storage::test_support::TestWorkHost {
+    crate::storage::test_support::open_work_host(&mut fixture.store, session, at(second))
 }
 
-fn prepared_on(fixture: Fixture) -> (Fixture, HostSession, IssuedTurnGrant, ObjectId) {
+fn prepared_on(fixture: Fixture) -> (Fixture, HostSession, HistoricalCapture, ObjectId) {
     prepared_with_prior_root(fixture, None)
 }
 
 fn prepared_with_prior_root(
     mut fixture: Fixture,
     prior_generation: Option<i64>,
-) -> (Fixture, HostSession, IssuedTurnGrant, ObjectId) {
+) -> (Fixture, HostSession, HistoricalCapture, ObjectId) {
     let work = fixture.work.clone();
     let claim = fixture.claim.clone();
     let store = &mut fixture.store;
@@ -187,7 +163,7 @@ fn prepared_with_prior_root(
     )
     .unwrap();
     host.basis = workspace("workspace-B", "A", Some(9));
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -202,8 +178,8 @@ fn prepared_with_prior_root(
         40,
     );
     record(store, &input).unwrap();
-    let closing = host.grant(store, &[EffectClass::MutateLocal], true, 45);
-    host.begin(store, &closing, 46);
+    let closing = host.historical_capture();
+
     complete_evaluated(
         store,
         &work,
@@ -244,31 +220,11 @@ fn quiet(
 
 fn close(
     fixture: &mut Fixture,
-    host: &HostSession,
-    grant: &IssuedTurnGrant,
+    _host: &HostSession,
+    grant: &HistoricalCapture,
     inputs: &[ExecutionObservationInput],
-) -> ControlTurnCheckpointDecision {
-    let result = fixture
-        .store
-        .checkpoint_control_turn_with_evidence(
-            &host.project_id,
-            &host.session_id,
-            &host.connection_token,
-            &host.routing_token,
-            &grant.grant_id,
-            TurnNextIntent::Continue,
-            inputs,
-            &[],
-            &[],
-            "closing",
-            at(60),
-        )
-        .unwrap();
-    assert!(
-        matches!(result, ControlTurnCheckpointDecision::Checkpointed { .. }),
-        "{result:?}"
-    );
-    result
+) -> HistoricalEvidenceBatch {
+    append_historical_capture(&mut fixture.store, grant, inputs, &[], &[], at(60)).unwrap()
 }
 
 #[test]
@@ -658,9 +614,9 @@ fn sealed_source_unadmitted_finished_run_and_watcher_reports_keep_their_original
             .store
             .record_unadmitted_execution_observation(
                 &fixture.work.project_id,
-                &observer.status.session_id,
+                &observer.session_id,
                 &observer.connection_token,
-                &observer.routing_token,
+                crate::storage::HostSessionAuthority::Work,
                 &actor("observer"),
                 input,
                 at(70),

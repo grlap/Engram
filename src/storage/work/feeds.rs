@@ -11,7 +11,6 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use super::super::{SqliteStore, StoreError};
 use super::execution::latest_canonical_handoff_offer;
-use super::integrity::expected_environment_projection;
 use super::planning::{
     apply_work_relation_transition, projected_work_relation_basis,
     validated_current_work_relation_basis, work_relation_fingerprint,
@@ -150,6 +149,24 @@ fn insert_reserved_feed_entry(
             work_id.map(|work_id| work_id.0.to_string())
         ],
     )?;
+    if let FeedId::Project(project) = &position.feed {
+        super::feed_tasks::record_on(
+            transaction,
+            &project.0,
+            position.position,
+            object_kind,
+            object,
+            work_id.map(|work_id| work_id.0.to_string()).as_deref(),
+        )?;
+        if object_kind == super::task_sync::folder::IMPORT_PLANNING_KIND {
+            super::task_sync::baseline::record_on(
+                transaction,
+                &project.0,
+                position.position,
+                object,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -293,6 +310,7 @@ pub(in crate::storage) fn append_fixture_memory_to_work_feeds(
     Ok(positions)
 }
 
+#[cfg(test)]
 pub(in crate::storage) fn load_control_execution_observation_on(
     connection: &Connection,
     hash: &ObjectId,
@@ -311,28 +329,6 @@ pub(in crate::storage) fn load_control_execution_observation_on(
         return Ok(None);
     }
     Ok(Some(CanonicalObject::stored(hash, bytes)?.decode()?))
-}
-
-pub(in crate::storage) fn load_control_environment_evidence_on(
-    connection: &Connection,
-    hash: &ObjectId,
-) -> Result<Option<EnvironmentEvidence>, StoreError> {
-    let stored = connection
-        .query_row(
-            "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
-            [hash.as_str()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )
-        .optional()?;
-    let Some((kind, bytes)) = stored else {
-        return Ok(None);
-    };
-    if kind != "environment_evidence" {
-        return Ok(None);
-    }
-    let evidence = CanonicalObject::stored(hash, bytes)?.decode()?;
-    expected_environment_projection(connection, hash)?;
-    Ok(Some(evidence))
 }
 
 pub(super) fn verify_anchored_memory_feeds(
@@ -711,12 +707,12 @@ pub(super) fn named_root_event_on(
 }
 
 /// SQL over `entry` and `object` that is true for a source record of either
-/// kind: an admitted turn's observation, or an unadmitted record accounted as a
-/// new change or a repeat. An audit-only record, or one that reported no
-/// change, is never a source record.
+/// kind: a historical execution observation, or a host record accounted as a
+/// new change, a repeat or a quiet sighting. Audit-only records are excluded;
+/// callers selecting mutations also apply the source-changed predicate.
 pub(in crate::storage) const SOURCE_RECORD_SQL: &str = "(entry.object_kind = 'execution_observation'
      OR (entry.object_kind = 'unadmitted_execution_observation'
-         AND json_extract(object.canonical_json, '$.accounting.kind') IN ('source_change', 'repeat')))";
+         AND json_extract(object.canonical_json, '$.accounting.kind') IN ('source_change', 'repeat', 'sighting')))";
 
 /// SQL that is true for a source record read as a change.
 pub(in crate::storage) const SOURCE_CHANGED_SQL: &str = "(CASE entry.object_kind
@@ -730,8 +726,9 @@ pub(in crate::storage) fn source_basis_sql(field: &str) -> String {
     format!(
         "(CASE entry.object_kind
              WHEN 'unadmitted_execution_observation'
-                 THEN json_extract(object.canonical_json,
-                     '$.occurrence.source_change.sighting.source_basis.{field}')
+                 THEN CASE json_extract(object.canonical_json, '$.occurrence.kind')
+                     WHEN 'source_sighting' THEN json_extract(object.canonical_json, '$.occurrence.source_basis.{field}')
+                     ELSE json_extract(object.canonical_json, '$.occurrence.source_change.sighting.source_basis.{field}') END
              ELSE json_extract(object.canonical_json, '$.source_basis.{field}') END)"
     )
 }

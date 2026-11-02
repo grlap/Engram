@@ -29,14 +29,8 @@ impl Frame {
     }
     pub(crate) fn request(&mut self, request: &HostControlRequest) {
         self.operation = request.operation();
-        let (key, grant) = match request {
-            HostControlRequest::SessionBind {
-                idempotency_key, ..
-            }
-            | HostControlRequest::NamedRootBind {
-                idempotency_key, ..
-            }
-            | HostControlRequest::TurnEvaluate {
+        let key = match request {
+            HostControlRequest::NamedRootBind {
                 idempotency_key, ..
             }
             | HostControlRequest::ExecutionObserve {
@@ -44,31 +38,16 @@ impl Frame {
             }
             | HostControlRequest::VerificationBind {
                 idempotency_key, ..
-            } => (Some(idempotency_key), None),
-            HostControlRequest::VerificationRecord { operation_key, .. } => {
-                (Some(operation_key), None)
-            }
-            HostControlRequest::TurnBegin {
-                idempotency_key,
-                grant_id,
-                ..
-            }
-            | HostControlRequest::TurnCheckpoint {
-                idempotency_key,
-                grant_id,
-                ..
-            } => (Some(idempotency_key), Some(grant_id)),
-            HostControlRequest::TurnGrantRead { grant_id, .. } => (None, Some(grant_id)),
+            } => Some(idempotency_key),
+            HostControlRequest::VerificationRecord { operation_key, .. } => Some(operation_key),
             HostControlRequest::WorkSessionRead {}
-            | HostControlRequest::SessionStatus { .. }
             | HostControlRequest::ControlConnectionRead {}
             | HostControlRequest::NamedRootRead { .. }
             | HostControlRequest::NamedRootSightingRead { .. }
             | HostControlRequest::AcceptanceBindingRead { .. }
-            | HostControlRequest::AcceptanceVerificationRead { .. } => (None, None),
+            | HostControlRequest::AcceptanceVerificationRead { .. } => None,
         };
         self.correlation.attempt_fingerprint = key.map(|key| Fingerprint::attempt(key));
-        self.correlation.grant_id = grant.and_then(|id| uuid::Uuid::parse_str(id).ok());
     }
     pub(crate) fn emit(&self, sink: &Diagnostics, fault: Fault) {
         // A dropped diagnostic must still suppress the apparent success of a

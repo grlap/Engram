@@ -328,13 +328,7 @@ fn initialize_fixture(root: &Path, home: &Path, project: &engram::ProjectId) {
         .env_remove("ENGRAM_HOST_PATH_POLICY")
         .arg("--home")
         .arg(home)
-        .args([
-            "init",
-            "--required-assurance",
-            "advisory",
-            "--authorized-by",
-            "fixture",
-        ])
+        .arg("init")
         .output()
         .unwrap();
     assert!(

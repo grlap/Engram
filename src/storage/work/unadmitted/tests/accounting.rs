@@ -172,7 +172,10 @@ fn an_eligible_change_accounts_opens_its_obligations_and_moves_freshness_without
     assert_eq!(actions, [WorkObligationCompletionAction::DoneWaives]);
     // No grant, and the claim is neither renewed nor changed.
     assert_eq!(
-        count(&fixture.store, "SELECT COUNT(*) FROM control_turn_grants"),
+        count(
+            &fixture.store,
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('control_sessions', 'control_turn_results', 'control_turn_grants', 'control_turn_grant_supersessions')"
+        ),
         0
     );
     let claim_after = load_work_claim_optional(&fixture.store.connection, fixture.claim.run_id)

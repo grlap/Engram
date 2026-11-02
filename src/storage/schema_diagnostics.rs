@@ -37,7 +37,7 @@ pub fn store_open_refusal_kind(error: &StoreError) -> StoreOpenRefusalKind {
         StoreError::InvalidWorkProjection(message) if message == WORK_PROJECTION_REFUSAL => {
             StoreOpenRefusalKind::ProjectionRepairRequired
         }
-        StoreError::InvalidControlSession(message) => path_policy_mismatch(message).map_or(
+        StoreError::InvalidHostContext(message) => path_policy_mismatch(message).map_or(
             StoreOpenRefusalKind::CorruptStore,
             |(recorded, requested)| StoreOpenRefusalKind::PathPolicy {
                 recorded: recorded.into(),

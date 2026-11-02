@@ -51,7 +51,7 @@ impl FocusDisclosure {
                 };
                 // Shell text never carries a fence; the JSON names it.
                 format!(
-                    "focus moved from {from} to {to}; the host binds {to}'s claim{root} from its next turn, not this one"
+                    "focus moved from {from} to {to}; future observations use {to}'s claim{root}"
                 )
             }
             None => format!("focus moved from {from} to {to}; {to} has no live claim to bind"),

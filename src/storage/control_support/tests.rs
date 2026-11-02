@@ -6,12 +6,7 @@ use crate::storage::{
 };
 use crate::*;
 
-use crate::{
-    DevelopmentNoopRedactor,
-    domain::{
-        ControlAssurance, EffectClass, ProjectId, ProjectPolicyEpoch, TurnIntent, TurnPurpose,
-    },
-};
+use crate::{DevelopmentNoopRedactor, domain::ProjectPolicyEpoch};
 
 #[test]
 fn policy_operation_result_enforces_the_canonical_byte_limit() {
@@ -27,7 +22,7 @@ fn policy_operation_result_enforces_the_canonical_byte_limit() {
     );
     SqliteStore::persist_control_policy_operation(
         &transaction,
-        "set_required_assurance",
+        "set_obligation_rule_set",
         "at-result-limit",
         &intent,
         &at_limit,
@@ -37,7 +32,7 @@ fn policy_operation_result_enforces_the_canonical_byte_limit() {
     let over_limit = format!("{at_limit}x");
     let error = SqliteStore::persist_control_policy_operation(
         &transaction,
-        "set_required_assurance",
+        "set_obligation_rule_set",
         "over-result-limit",
         &intent,
         &over_limit,
@@ -63,13 +58,13 @@ fn policy_operation_result_enforces_the_canonical_byte_limit() {
     assert_projection_bytes(
         &store,
         "SELECT result_json FROM control_policy_operation_results
-         WHERE operation = 'set_required_assurance' AND idempotency_key = ?1",
+         WHERE operation = 'set_obligation_rule_set' AND idempotency_key = ?1",
         ["at-result-limit"],
         &at_limit,
     );
     let replayed = SqliteStore::replay_control_policy_operation::<String>(
         &store.connection,
-        "set_required_assurance",
+        "set_obligation_rule_set",
         "at-result-limit",
         &intent,
     )
@@ -82,7 +77,7 @@ fn policy_operation_result_enforces_the_canonical_byte_limit() {
         .connection
         .execute(
             "UPDATE control_policy_operation_results SET result_json = ?1
-             WHERE operation = 'set_required_assurance' AND idempotency_key = ?2",
+             WHERE operation = 'set_obligation_rule_set' AND idempotency_key = ?2",
             params![
                 crate::canonical::canonical_bytes(&over_limit).unwrap(),
                 "at-result-limit"
@@ -91,7 +86,7 @@ fn policy_operation_result_enforces_the_canonical_byte_limit() {
         .unwrap();
     let error = SqliteStore::replay_control_policy_operation::<String>(
         &store.connection,
-        "set_required_assurance",
+        "set_obligation_rule_set",
         "at-result-limit",
         &intent,
     )
@@ -113,14 +108,17 @@ fn live_control_policy_load_is_bounded_independently_of_history_depth() {
         .expect("initial diagnostics")
         .active_policy;
     for epoch in 2_i64..=51 {
-        let required_assurance = if epoch % 2 == 0 {
-            ControlAssurance::Advisory
+        let rules = if epoch % 2 == 0 {
+            crate::domain::ObligationRuleSet {
+                schema_version: crate::OBLIGATION_RULE_SET_SCHEMA_VERSION,
+                rules: Vec::new(),
+            }
         } else {
-            ControlAssurance::TurnGated
+            crate::control::builtin_obligation_rule_set()
         };
         let receipt = store
-            .set_required_control_assurance(
-                required_assurance,
+            .set_obligation_rule_set(
+                &rules,
                 &actor("policy-load-admin"),
                 &format!("policy-load-{epoch}"),
                 Some(&active),
@@ -133,58 +131,8 @@ fn live_control_policy_load_is_bounded_independently_of_history_depth() {
     }
 
     reset_control_policy_version_load_count();
-    let binding = bind_control_for(
-        &mut store,
-        "bounded-policy-session",
-        "bind-bounded-policy",
-        &[EffectClass::Observe],
-        now + TimeDelta::seconds(1),
-    );
-    assert_eq!(control_policy_version_load_count(), 1);
-
-    reset_control_policy_version_load_count();
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &TurnIntent {
-                idempotency_key: "bounded-policy-turn".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"bounded-policy-turn"),
-                purpose: Some(TurnPurpose::Ordinary),
-                requested_effects: vec![EffectClass::Observe],
-                resource_intents: Vec::new(),
-            },
-            now + TimeDelta::seconds(2),
-        )
-        .expect("evaluate through bounded policy loader");
-    assert_eq!(control_policy_version_load_count(), 1);
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("bounded policy fixture must grant");
-    };
-    let delivery_tokens = grant
-        .delivery
-        .iter()
-        .map(|delivery| delivery.page.delivery_token.clone())
-        .collect::<Vec<_>>();
-
-    reset_control_policy_version_load_count();
-    assert!(matches!(
-        store
-            .begin_control_turn(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                &grant.grant_id,
-                &delivery_tokens,
-                "begin-bounded-policy-turn",
-                now + TimeDelta::seconds(3),
-            )
-            .expect("begin through bounded policy loader"),
-        ControlTurnBeginDecision::Begin { .. }
-    ));
+    let loaded = SqliteStore::load_active_control_policy(&store.connection).unwrap();
+    assert_eq!(loaded.policy_id, active);
     assert_eq!(control_policy_version_load_count(), 1);
 }
 
@@ -197,8 +145,7 @@ fn the_control_policy_head_reads_its_state_and_history_from_one_commit() {
     let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("policy-race.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut writer =
-        open_with_assurance(&database, ControlAssurance::Advisory).expect("advisory store");
+    let mut writer = SqliteStore::open(&database).expect("advisory store");
     let reader = SqliteStore::open(&database).expect("reader store");
     let (before, _, _) = SqliteStore::load_control_policy_head(&reader.connection).expect("before");
     let read = crate::storage::concurrent_commit::read_across_a_concurrent_commit(
@@ -207,8 +154,11 @@ fn the_control_policy_head_reads_its_state_and_history_from_one_commit() {
         &["FROM control_policy_versions WHERE policy_epoch > ?1"],
         move || {
             writer
-                .set_required_control_assurance(
-                    ControlAssurance::TurnGated,
+                .set_obligation_rule_set(
+                    &crate::domain::ObligationRuleSet {
+                        schema_version: crate::OBLIGATION_RULE_SET_SCHEMA_VERSION,
+                        rules: Vec::new(),
+                    },
                     &actor("policy-race-admin"),
                     "policy-race",
                     None,

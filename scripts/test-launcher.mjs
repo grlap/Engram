@@ -146,7 +146,7 @@ export function requiredStages(platform = process.platform) {
     ["rust-scale-claims", "test", rustCommand, [...rustArgs, "--phase", "scale-claims"]],
     ["rust-scale-roots", "test", rustCommand, [...rustArgs, "--phase", "scale-roots"]],
     ["rust-scale-planning", "test", rustCommand, [...rustArgs, "--phase", "scale-planning"]],
-    ["freeze", "test", process.execPath, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs"]],
+    ["freeze", "test", process.execPath, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs", "scripts/eo-cutover-values.test.mjs", "scripts/eo-cutover.test.mjs"]],
     ["mcp", "test", process.execPath, ["--test", "scripts/mcp-dogfood.test.mjs"]],
     ["control", "test", process.execPath, ["--test", "scripts/control-dogfood.test.mjs"]],
     ["parity", "test", process.execPath, ["--test", "scripts/parity.test.mjs"]],

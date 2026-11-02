@@ -10,6 +10,8 @@ use rusqlite::hooks::{AuthAction, AuthContext, Authorization, TransactionOperati
 use super::super::request_budget::{CONTROL_REQUEST_ALLOWANCE, ControlRequestScope};
 use super::*;
 
+mod settlement;
+
 thread_local! {
     static CLOCK: Cell<Instant> = Cell::new(Instant::now());
 }

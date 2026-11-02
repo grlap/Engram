@@ -3,30 +3,7 @@
 
 use super::*;
 
-/// A populated store with one bound control session, the moment it was bound.
-fn bound_control(
-    path: &Path,
-) -> (
-    crate::storage::test_support::TestControlBinding,
-    chrono::DateTime<Utc>,
-) {
-    use crate::domain::EffectClass;
-    populated(path);
-    let mut store =
-        SqliteStore::open_with_host_path_policy(path, crate::HostPathPolicy::host_default())
-            .unwrap();
-    let now = chrono::DateTime::parse_from_rfc3339("2026-09-20T10:00:00Z")
-        .unwrap()
-        .with_timezone(&Utc);
-    let binding = crate::storage::test_support::bind_control_for(
-        &mut store,
-        "historical-session",
-        "historical-bind",
-        &[EffectClass::Observe, EffectClass::MutateLocal],
-        now,
-    );
-    (binding, now)
-}
+mod policy_chain;
 
 #[test]
 fn historical_control_operation_receipts_import_unchanged() {
@@ -34,15 +11,14 @@ fn historical_control_operation_receipts_import_unchanged() {
     let source = directory.path().join("source.db");
     let target = directory.path().join("target.db");
     let file = directory.path().join("store.jsonl");
-    let (binding, _) = bound_control(&source);
+    populated(&source);
     let connection = Connection::open(&source).unwrap();
-    let bind_intent: String = connection
-        .query_row(
-            "SELECT bind_intent_hash FROM control_sessions WHERE session_id = ?1",
-            [&binding.status.session_id.0],
-            |row| row.get(0),
-        )
-        .unwrap();
+    let task_id = crate::TaskId(uuid::Uuid::new_v4());
+    let session_id = crate::SessionId("historical-session".into());
+    let bind_intent = crate::CanonicalObject::freeze(&serde_json::json!({"historical": "bind"}))
+        .unwrap()
+        .key()
+        .clone();
     let definition = crate::ObjectId::mint();
     let obligation = uuid::Uuid::new_v4();
     // Receipts of operations this build no longer offers, retained as history
@@ -68,8 +44,8 @@ fn historical_control_operation_receipts_import_unchanged() {
                 "lease_id": "historical-lease"
             }),
             serde_json::json!({
-                "lease_id": "historical-lease", "task_id": binding.status.task_id,
-                "holder": binding.status.session_id, "fence": 1, "cursor": 1,
+                "lease_id": "historical-lease", "task_id": task_id,
+                "holder": session_id, "fence": 1, "cursor": 1,
                 "released_at": "2026-09-20T10:00:00Z"
             }),
         ),
@@ -89,7 +65,7 @@ fn historical_control_operation_receipts_import_unchanged() {
         ),
     ] {
         let key = format!("historical-{operation}");
-        intent["session_id"] = serde_json::json!(binding.status.session_id);
+        intent["session_id"] = serde_json::json!(session_id);
         intent["idempotency_key"] = serde_json::json!(key);
         let frozen = crate::CanonicalObject::freeze(&intent).unwrap();
         connection
@@ -98,7 +74,7 @@ fn historical_control_operation_receipts_import_unchanged() {
                  intent_hash, intent_json, result_json, created_at_ms)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
-                    binding.status.session_id.0,
+                    session_id.0,
                     operation,
                     key,
                     frozen.key().as_str(),
@@ -151,74 +127,6 @@ fn historical_control_operation_receipts_import_unchanged() {
         "{error}"
     );
     assert!(!broken_target.exists(), "published an unhealthy store");
-}
-
-#[test]
-fn historical_lease_refusal_imports_and_replays_without_lease_authority() {
-    use crate::domain::{EffectClass, TurnIntent, TurnPurpose};
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let target = directory.path().join("target.db");
-    let file = directory.path().join("store.jsonl");
-    let (binding, now) = bound_control(&source);
-    let intent = TurnIntent {
-        idempotency_key: "unleased-mutation".into(),
-        intent_fingerprint: crate::ObjectId::mint(),
-        purpose: Some(TurnPurpose::Ordinary),
-        requested_effects: vec![EffectClass::MutateLocal],
-        resource_intents: vec![],
-    };
-    // Written by an earlier evaluator; the current one never produces this code.
-    let decision = serde_json::json!({"decision": "refuse", "directive": {
-        "directive_id": "unleased-mutation:lease_required", "code": "lease_required",
-        "target": "host", "satisfaction": "host_transition", "recovery_effects": ["observe"]
-    }});
-    let saved_intent = crate::CanonicalObject::freeze(&serde_json::json!({
-        "control_schema_version": crate::CONTROL_SCHEMA_VERSION,
-        "session_id": binding.status.session_id,
-        "task_id": binding.status.task_id,
-        "intent": intent
-    }))
-    .unwrap();
-    let saved_decision = crate::CanonicalObject::freeze(&decision).unwrap();
-    Connection::open(&source)
-        .unwrap()
-        .execute(
-            "INSERT INTO control_turn_results (session_id, task_id, idempotency_key,
-             intent_hash, intent_json, decision_hash, decision_json, created_at_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![
-                binding.status.session_id.0,
-                binding.status.task_id.0.to_string(),
-                intent.idempotency_key,
-                saved_intent.key().as_str(),
-                saved_intent.bytes(),
-                saved_decision.key().as_str(),
-                saved_decision.bytes(),
-                now.timestamp_millis()
-            ],
-        )
-        .unwrap();
-    let before = rows(&source)["control_turn_results"].clone();
-    export_json(&source, &file).unwrap();
-    import_json(&file, &target).unwrap();
-    assert_eq!(rows(&target)["control_turn_results"], before);
-    let mut imported =
-        SqliteStore::open_with_host_path_policy(&target, crate::HostPathPolicy::host_default())
-            .unwrap();
-    assert!(imported.verify_all().unwrap().is_healthy());
-    let replay = imported
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &intent,
-            now + chrono::Duration::seconds(1),
-        )
-        .unwrap();
-    assert_eq!(serde_json::to_value(replay).unwrap(), decision);
-    assert_eq!(rows(&target)["control_turn_results"], before);
 }
 
 /// A replay receipt of a work operation this build no longer runs is read as

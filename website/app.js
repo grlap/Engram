@@ -319,7 +319,7 @@ const setupCode = document.querySelector("#setup-code");
 const commands = {
   unix: setupCode.textContent,
   windows:
-    '# 01 — Build from source (Git + Rust required)\ngit clone https://github.com/grlap/Engram.git\ncd Engram\ncargo install --path .\n\n# 02 — Open a local advisory notebook (PowerShell)\n$env:ENGRAM_HOME = "$env:USERPROFILE/.engram"\nengram init --required-assurance advisory `\n  --authorized-by "$env:USERNAME"\nengram work next',
+    '# 01 — Build from source (Git + Rust required)\ngit clone https://github.com/grlap/Engram.git\ncd Engram\ncargo install --path .\n\n# 02 — Open a local notebook (PowerShell)\n$env:ENGRAM_HOME = "$env:USERPROFILE/.engram"\nengram init\nengram work next',
 };
 function bindCopyButton(button, codeElement, feedbackElement, copiedMessage) {
   let feedbackTimer;

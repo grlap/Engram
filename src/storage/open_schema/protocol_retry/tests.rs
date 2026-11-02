@@ -6,8 +6,6 @@
 use rusqlite::Connection;
 
 use super::{OpenPhase, inject_locking_protocol};
-use crate::domain::ControlAssurance;
-use crate::storage::test_support::open_with_assurance;
 use crate::storage::{
     CopyInterrupt, HostPathPolicy, SqliteStore, StoreError, StoreOpenRefusalKind,
     between_work_schema_probes, store_open_refusal_kind,
@@ -85,40 +83,6 @@ fn a_refusal_met_once_while_an_initialized_store_opens_is_recovered() {
     assert_eq!(injected.remaining(), 0);
 }
 
-/// A new store's bootstrap policy survives a retry. When the refusal ends the
-/// first attempt before its initialization commits, the attempt that starts
-/// again installs the requested assurance, not the default. When it ends the
-/// first attempt after that commit, the attempt that starts again admits the
-/// store the first one initialized, with the same requested assurance.
-#[test]
-fn a_recovered_open_installs_the_requested_bootstrap_policy() {
-    for phase in [OpenPhase::ColdInitialization, OpenPhase::StoreSetup] {
-        let directory = crate::test_support::temp_home().expect("temp home");
-        let database = directory.path().join("work.sqlite3");
-        let injected = inject_locking_protocol(phase, 1);
-        drop(
-            open_with_assurance(&database, ControlAssurance::ActionGated)
-                .unwrap_or_else(|error| panic!("{}: {error}", phase.label())),
-        );
-        assert_eq!(injected.remaining(), 0, "{} was met", phase.label());
-        drop(injected);
-        let raw = Connection::open(&database).expect("inspect store");
-        assert_eq!(
-            count(&raw, "SELECT COUNT(*) FROM control_policy_versions"),
-            1,
-            "{}",
-            phase.label()
-        );
-        drop(raw);
-        drop(open_with_assurance(&database, ControlAssurance::ActionGated).expect("same policy"));
-        assert!(
-            open_with_assurance(&database, ControlAssurance::Advisory).is_err(),
-            "{}: the store holds the requested assurance, not another",
-            phase.label()
-        );
-    }
-}
-
 /// Met again in the attempt that started again, the refusal ends the open:
 /// one retry, never a third attempt. The refusal names where it ended both
 /// attempts. The rolled-back attempts leave no part of a new store, and a
@@ -188,30 +152,6 @@ fn a_store_copy_returns_the_refusal_without_a_retry() {
     assert_refusal(&refusal, OpenPhase::ProbeSnapshot, None);
 }
 
-/// A host runs a control-session inspection under its own deadline, so the
-/// inspection's read-only open returns the refusal at once too.
-#[test]
-fn a_control_session_inspection_returns_the_refusal_without_a_retry() {
-    let directory = crate::test_support::temp_home().expect("temp home");
-    let database = directory.path().join("work.sqlite3");
-    drop(SqliteStore::open(&database).expect("initialize"));
-    let injected = inject_locking_protocol(OpenPhase::ProbeSnapshot, 2);
-    let refusal = SqliteStore::inspect_control_session(
-        &database,
-        Some(HostPathPolicy::host_default()),
-        "session",
-        "grant",
-        &crate::ProjectId("project".into()),
-        None,
-    )
-    .map(drop)
-    .expect_err("refused at once");
-    assert_eq!(injected.remaining(), 1, "one attempt only");
-    assert_refusal(&refusal, OpenPhase::ProbeSnapshot, None);
-}
-
-/// When rolling back the ended attempt fails too, the refusal names both
-/// failures and is still classified as a busy store.
 #[test]
 fn a_failed_rollback_still_refuses_as_a_busy_store() {
     let rollback = rusqlite::Error::SqliteFailure(

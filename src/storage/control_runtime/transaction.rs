@@ -3,37 +3,31 @@ use super::{Connection, StoreError, Transaction};
 use rusqlite::TransactionBehavior;
 use std::time::Duration;
 
+#[cfg(test)]
 pub(in crate::storage) fn control_transaction<T>(
     connection: &mut Connection,
     apply: impl FnOnce(&Transaction<'_>) -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
-    budgeted_transaction(connection, apply, true)
+    control_lifecycle_transaction(connection, apply)
 }
 
-/// Other control operations retain their existing generic storage errors;
-/// only the new allowance certificate is shared with turn operations.
+/// Ordinary host operations share the request budget and keep their generic
+/// storage errors. No execution-admission state participates in this writer.
 pub(in crate::storage) fn control_lifecycle_transaction<T>(
     connection: &mut Connection,
     apply: impl FnOnce(&Transaction<'_>) -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
-    budgeted_transaction(connection, apply, false)
+    budgeted_transaction(connection, apply)
 }
 
 fn budgeted_transaction<T>(
     connection: &mut Connection,
     apply: impl FnOnce(&Transaction<'_>) -> Result<T, StoreError>,
-    certify_busy: bool,
 ) -> Result<T, StoreError> {
     let budget = request_budget::current();
     check_budget(budget)?;
     let policy = BusyPolicy::cap(connection, budget)?;
-    let result = apply_transaction(
-        connection,
-        apply,
-        budget,
-        certify_busy,
-        policy.diagnostic_budget,
-    );
+    let result = apply_transaction(connection, apply, budget, policy.diagnostic_budget);
     policy.finish(result)
 }
 
@@ -45,7 +39,6 @@ fn apply_transaction<T>(
     connection: &Connection,
     apply: impl FnOnce(&Transaction<'_>) -> Result<T, StoreError>,
     budget: Option<ControlRequestBudget>,
-    certify_busy: bool,
     diagnostic_budget: crate::diagnostics::transaction::Budget,
 ) -> Result<T, StoreError> {
     // Reading/restoring the busy policy must not give a delayed frame a fresh
@@ -64,11 +57,7 @@ fn apply_transaction<T>(
         Err(error) => {
             timing.begin_failed(&error, connection.is_autocommit());
             let error = StoreError::Sqlite(error);
-            return Err(if certify_busy && connection.is_autocommit() {
-                classify_busy(error)
-            } else {
-                error
-            });
+            return Err(error);
         }
     };
     timing.acquired();
@@ -90,18 +79,11 @@ fn apply_transaction<T>(
             committed?;
             Ok(result)
         }
-        Err(error)
-            if (certify_busy && is_busy(&error))
-                || matches!(error, StoreError::ControlRequestExpired) =>
-        {
-            // Drop discards rollback errors. Observe an explicit rollback
-            // before telling the host that this attempt applied nothing.
+        Err(error) if is_busy(&error) || matches!(error, StoreError::ControlRequestExpired) => {
+            // Drop discards rollback errors. Preserve a rollback failure as
+            // a native error; only expiry has a no-application wire code.
             rollback_observed(transaction, &mut timing)?;
-            Err(if certify_busy {
-                classify_busy(error)
-            } else {
-                error
-            })
+            Err(error)
         }
         Err(error) => Err(error),
     }
@@ -176,18 +158,6 @@ fn is_busy(error: &StoreError) -> bool {
                 Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
             )
     )
-}
-
-fn classify_busy(error: StoreError) -> StoreError {
-    if !is_busy(&error) {
-        return error;
-    }
-    match error {
-        StoreError::Sqlite(source) => StoreError::ControlStoreBusy {
-            source: Box::new(source),
-        },
-        error => error,
-    }
 }
 
 #[cfg(test)]

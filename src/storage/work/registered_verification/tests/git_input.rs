@@ -19,12 +19,7 @@ fn unevaluated(bound: bool) -> Fixture {
             },
         }];
     }
-    let mut f = fixture_with_create(
-        SqliteStore::open_in_memory().unwrap(),
-        crate::ControlAssurance::Advisory,
-        0,
-        &create,
-    );
+    let mut f = fixture_with_create(SqliteStore::open_in_memory().unwrap(), 0, &create);
     f.request.input = RegisteredVerificationInput::Commit {
         commit: object_name("tested commit"),
     };
@@ -395,7 +390,7 @@ fn registered_git_input_late_registration_cannot_test_a_later_change() {
                 &f.project,
                 &f.session,
                 &f.connection,
-                &f.routing,
+                crate::storage::HostSessionAuthority::Work,
                 &actor("runner"),
                 &f.request,
                 at(12),
@@ -547,7 +542,7 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
             &f.project,
             &f.session,
             &f.connection,
-            &f.routing,
+            crate::storage::HostSessionAuthority::Work,
             binding.run_id,
             binding.claim_id,
         )
@@ -559,7 +554,7 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
             &f.project,
             &f.session,
             &f.connection,
-            &f.routing,
+            crate::storage::HostSessionAuthority::Work,
             &actor("runner"),
             ExecutionObserveInput {
                 idempotency_key: "actual-unadmitted-change".into(),
@@ -619,7 +614,7 @@ fn registered_git_input_citations_retain_change_floors_despite_late_terminal_arr
                         &f.project,
                         &f.session,
                         &f.connection,
-                        &f.routing,
+                        crate::storage::HostSessionAuthority::Work,
                         &actor("runner"),
                         &f.request,
                         at(12),

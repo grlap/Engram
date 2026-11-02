@@ -78,30 +78,16 @@ fn report_turn(
     reports: &[Report],
     second: i64,
 ) -> Result<(), String> {
-    let grant = host.grant(store, &[EffectClass::MutateLocal], true, second);
-    host.begin(store, &grant, second + 1);
+    let grant = host.historical_capture();
+
     let observations: Vec<_> = reports
         .iter()
         .enumerate()
         .map(|(index, report)| report.input(host, index, second))
         .collect();
-    match store.checkpoint_control_turn_with_evidence(
-        &host.project_id,
-        &host.session_id,
-        &host.connection_token,
-        &host.routing_token,
-        &grant.grant_id,
-        TurnNextIntent::Continue,
-        &observations,
-        &[],
-        &[],
-        &host.key("checkpoint"),
-        at(second + 2),
-    ) {
-        Ok(ControlTurnCheckpointDecision::Checkpointed { .. }) => Ok(()),
-        Ok(other) => Err(format!("checkpoint {other:?}")),
-        Err(error) => Err(format!("checkpoint refused: {error}")),
-    }
+    append_historical_capture(store, &grant, &observations, &[], &[], at(second + 2))
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 /// One host act after the cut, each in its own turn.
@@ -224,7 +210,7 @@ fn deliver_acts(
                     At::Unstated => workspace(ROOT, revision, None),
                     At::Unknown => panic!("a check has a source"),
                 };
-                host.checkpoint_checks(
+                host.install_check_batch(
                     store,
                     changed,
                     &[(VerificationKind::Test, outcome)],

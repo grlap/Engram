@@ -107,7 +107,7 @@ fn a_host_check_after_the_basis_asks_for_a_resubmission() {
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let read = cut(store, &work);
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -141,7 +141,7 @@ fn a_source_change_the_evaluation_did_not_judge_voids_it() {
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let read = cut(store, &work);
     // A check in the same turn does not soften it: the unseen change wins.
-    host.checkpoint(
+    host.install_checks(
         store,
         true,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -183,7 +183,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let read = cut(store, &work);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     assert!(cut(store, &work) > read, "the change reached the run feed");
     // The change opened one "tests have not run" obligation, triggered by
     // its own observation: the exemption must skip that obligation too.
@@ -217,7 +217,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
     // on the revision the evaluation judged: it can only support the verdicts,
     // so the evaluation stays fresh, and one submitted on the old cut records
     // too, as an evaluator started before that report would submit.
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -262,7 +262,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
 
     // A later change to another revision retires it at completion.
     host.basis.source_revision = "content-revision-2".into();
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
     assert_eq!(
         store
             .acceptance_evaluation_status(work.work_id, None)
@@ -289,7 +289,7 @@ fn a_reported_change_that_leaves_the_revision_unchanged_is_not_a_source_change()
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let before = cut(store, &work);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     assert_eq!(
         entries_after(store, &work, before, "work_obligation").len(),
         1,
@@ -299,7 +299,7 @@ fn a_reported_change_that_leaves_the_revision_unchanged_is_not_a_source_change()
 
     // The host reports a change again, but at the revision the run already
     // recorded, as it does for writes under git-ignored paths.
-    host.checkpoint(store, true, None, 30);
+    host.install_checks(store, true, None, 30);
     let repeated = entries_after(store, &work, read, "execution_observation");
     assert_eq!(repeated.len(), 1);
     let observation: ExecutionObservation =
@@ -316,7 +316,7 @@ fn a_reported_change_that_leaves_the_revision_unchanged_is_not_a_source_change()
     let recorded = record(store, &judged(&work, &note, read, None, 35))
         .expect("an unchanged revision neither voids nor asks for a resubmission");
     // An evaluation recorded before such a report stays fresh at completion.
-    host.checkpoint(store, true, None, 36);
+    host.install_checks(store, true, None, 36);
     assert_eq!(
         store
             .acceptance_evaluation_status(work.work_id, None)
@@ -335,7 +335,7 @@ fn a_reported_change_that_leaves_the_revision_unchanged_is_not_a_source_change()
         host.basis.workspace_id = workspace.into();
         host.basis.source_revision = revision.into();
         let position = cut(store, &work);
-        host.checkpoint(store, true, None, second);
+        host.install_checks(store, true, None, second);
         let reported = entries_after(store, &work, position, "execution_observation");
         let observation: ExecutionObservation =
             load_typed_work_object(&store.connection, &reported[0], "execution_observation")
@@ -407,7 +407,7 @@ fn a_later_observation_in_the_same_checkpoint_sees_the_earlier_change() {
     let work = fixture.work.clone();
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let start = cut(store, &work);
-    host.report(
+    host.install_source_records(
         store,
         &[
             (true, Some("content-revision-1")),
@@ -442,11 +442,11 @@ fn after_a_revision_less_change_the_host_flag_stands_and_a_revision_re_anchors_t
     // revision, then one back at the known revision. The newest recorded
     // change carries no revision, so the last report is not compared away:
     // it stays a change and re-anchors the obligations at its revision.
-    host.report(store, &[(true, Some("content-revision-1"))], 20);
-    host.report(store, &[(true, None)], 30);
-    host.report(store, &[(true, Some("content-revision-1"))], 40);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 20);
+    host.install_source_records(store, &[(true, None)], 30);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 40);
     assert_eq!(recorded_changes(store, &work, start), [true, true, true]);
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -471,14 +471,14 @@ fn a_revision_move_seen_only_on_an_observation_claiming_no_change_still_counts()
     let run = work.active_run_id.expect("active run");
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let start = cut(store, &work);
-    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 20);
     let read = cut(store, &work);
     // The content moves to another revision on an observation that claims
     // no change, such as a check run after someone else's edit. The next
     // reported change at that revision is compared with the newest recorded
     // change, not with that observation, so it counts.
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
-    host.report(store, &[(true, Some("content-revision-2"))], 40);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(true, Some("content-revision-2"))], 40);
     assert_eq!(recorded_changes(store, &work, start), [true, false, true]);
     assert_eq!(
         moved(record(store, &judged(&work, &note, read, None, 45))),
@@ -488,7 +488,7 @@ fn a_revision_move_seen_only_on_an_observation_claiming_no_change_still_counts()
         )
     );
     host.basis.source_revision = "content-revision-2".into();
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -512,14 +512,14 @@ fn a_revert_after_a_move_seen_only_on_an_observation_claiming_no_change_still_co
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let start = cut(store, &work);
-    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 20);
     // The content moves to another revision on an observation that claims
     // no change, and the evaluator judges that revision.
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
     let read = cut(store, &work);
     // A change back to the newest recorded change's revision is still a move
     // away from what the run last saw, so it counts.
-    host.report(store, &[(true, Some("content-revision-1"))], 40);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 40);
     assert_eq!(recorded_changes(store, &work, start), [true, false, true]);
     assert_eq!(
         moved(record(
@@ -554,14 +554,14 @@ fn a_change_after_the_content_went_away_and_came_back_still_counts() {
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let start = cut(store, &work);
-    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 20);
     // Two observations that claim no change see the content move away and
     // back; the evaluator judges the revision in between.
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
     let read = cut(store, &work);
-    host.report(store, &[(false, Some("content-revision-1"))], 40);
+    host.install_source_records(store, &[(false, Some("content-revision-1"))], 40);
     let before_last = cut(store, &work);
-    host.report(store, &[(true, Some("content-revision-1"))], 50);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 50);
     assert_eq!(
         recorded_changes(store, &work, start),
         [true, false, false, true]
@@ -604,16 +604,16 @@ fn a_move_seen_only_in_environment_evidence_still_counts_at_the_next_change() {
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let start = cut(store, &work);
-    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 20);
     // Only environment evidence, which carries its own source basis, sees the
     // content at another revision; the evaluator judges that revision.
-    host.capture_environment(store, "content-revision-2", 30);
+    host.install_environment(store, "content-revision-2", 30);
     assert_eq!(
         entries_after(store, &work, start, "environment_evidence").len(),
         1
     );
     let read = cut(store, &work);
-    host.report(store, &[(true, Some("content-revision-1"))], 40);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 40);
     assert_eq!(recorded_changes(store, &work, start), [true, true]);
     assert_eq!(
         entries_after(store, &work, read, "work_obligation").len(),
@@ -654,15 +654,15 @@ fn a_late_verification_of_an_older_producer_is_not_a_move() {
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let start = cut(store, &work);
     // A build observed at R0, then a change to R1.
-    host.report(store, &[(false, Some("content-revision-0"))], 20);
+    host.install_source_records(store, &[(false, Some("content-revision-0"))], 20);
     let producer = entries_after(store, &work, start, "execution_observation")[0].clone();
-    host.report(store, &[(true, Some("content-revision-1"))], 30);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 30);
     // A later turn records verification evidence for that earlier build: it
     // copies the producer's R0 at a feed position after the change, but the
     // producer itself is where that revision was seen.
-    host.cite_earlier_producer(store, &producer, None, 40);
+    host.install_later_verification(store, &producer, None, 40);
     let read = cut(store, &work);
-    host.report(store, &[(true, Some("content-revision-1"))], 50);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 50);
     assert_eq!(recorded_changes(store, &work, start), [false, true, false]);
     assert!(
         entries_after(store, &work, read, "work_obligation").is_empty(),
@@ -686,7 +686,7 @@ fn a_declared_workspace_must_match_the_reported_one() {
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
     let read = cut(store, &work);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     record(
         store,
         &judged(
@@ -745,7 +745,7 @@ fn a_check_at_another_revision_without_a_reported_change_voids_the_evaluation() 
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     let first = cut(store, &work);
     let judged_first = record(store, &judged(&work, &note, first, None, 25))
         .expect("an evaluation of the changed source records");
@@ -755,7 +755,7 @@ fn a_check_at_another_revision_without_a_reported_change_voids_the_evaluation() 
     );
 
     // A check that sees the judged revision is only a check: resubmit.
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -787,7 +787,7 @@ fn a_check_at_another_revision_without_a_reported_change_voids_the_evaluation() 
     // the check it observed ran at another revision. The evaluation judged
     // content that is gone: it is stale at completion and void at recording.
     host.basis.source_revision = "content-revision-2".into();
-    host.checkpoint(
+    host.install_checks(
         store,
         false,
         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -826,7 +826,7 @@ fn a_check_at_another_revision_without_a_reported_change_voids_the_evaluation() 
     // A late verification of the earlier check, with the environment it ran
     // in, carries that check's older revision. Both describe the check, not
     // where the source is now: a check to resubmit for, never a move.
-    host.cite_earlier_producer(store, &producer, Some("content-revision-1"), 36);
+    host.install_later_verification(store, &producer, Some("content-revision-1"), 36);
     assert_eq!(
         moved(record(
             store,
@@ -842,7 +842,7 @@ fn a_check_at_another_revision_without_a_reported_change_voids_the_evaluation() 
     let fourth = cut(store, &work);
     let judged_fourth = record(store, &judged(&work, &note, fourth, None, 40))
         .expect("a re-read resubmission records");
-    host.report(store, &[(false, Some("content-revision-2"))], 41);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 41);
     assert_eq!(
         freshness(store, &work),
         Some((judged_fourth.evaluation.clone(), None))
@@ -866,13 +866,13 @@ fn an_observation_alone_at_another_revision_voids_the_evaluation() {
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     let first = cut(store, &work);
     let judged_first = record(store, &judged(&work, &note, first, None, 25))
         .expect("an evaluation of the changed source records");
 
     // Observations at the judged revision, or with none, move nothing.
-    host.report(
+    host.install_source_records(
         store,
         &[(false, Some("content-revision-1")), (false, None)],
         26,
@@ -882,7 +882,7 @@ fn an_observation_alone_at_another_revision_voids_the_evaluation() {
         Some((judged_first.evaluation.clone(), None))
     );
     // One at another revision voids it, though it claims no change.
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
     assert_eq!(
         freshness(store, &work),
         Some((
@@ -906,7 +906,7 @@ fn an_observation_alone_at_another_revision_voids_the_evaluation() {
     let second = cut(store, &work);
     record(store, &judged(&work, &note, second, None, 35))
         .expect("an evaluation of the moved source records");
-    host.capture_environment(store, "content-revision-3", 36);
+    host.install_environment(store, "content-revision-3", 36);
     assert_eq!(
         moved(record(
             store,
@@ -922,7 +922,7 @@ fn an_observation_alone_at_another_revision_voids_the_evaluation() {
     let third = cut(store, &work);
     let judged_third = record(store, &judged(&work, &note, third, None, 40))
         .expect("a re-read resubmission records");
-    host.report(store, &[(false, Some("content-revision-2"))], 41);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 41);
     assert_eq!(
         freshness(store, &work),
         Some((judged_third.evaluation.clone(), None))
@@ -946,7 +946,7 @@ fn a_quiet_record_is_compared_with_the_declared_revision_in_any_workspace() {
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.checkpoint(store, true, None, 20);
+    host.install_checks(store, true, None, 20);
     let read = cut(store, &work);
     // The evaluator declares it judged R2, which the host has not reported
     // yet; the run was last seen at R1.
@@ -959,7 +959,7 @@ fn a_quiet_record_is_compared_with_the_declared_revision_in_any_workspace() {
         25,
     );
     let recorded = record(store, &declared).expect("the declared evaluation records");
-    host.report(store, &[(false, Some("content-revision-2"))], 26);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 26);
     assert_eq!(
         freshness(store, &work),
         Some((recorded.evaluation.clone(), None)),
@@ -979,14 +979,14 @@ fn a_quiet_record_is_compared_with_the_declared_revision_in_any_workspace() {
     // The revision fingerprints the full content, so a record from another
     // workspace is compared too: at the declared revision it moves nothing.
     host.basis.workspace_id = "another-workspace".into();
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
     assert_eq!(
         freshness(store, &work),
         Some((recorded.evaluation.clone(), None))
     );
     // At R1 it is a move, in whatever workspace, though R1 is the revision
     // the run was last seen at when the basis was cut.
-    host.report(store, &[(false, Some("content-revision-1"))], 34);
+    host.install_source_records(store, &[(false, Some("content-revision-1"))], 34);
     assert_eq!(
         freshness(store, &work),
         Some((
@@ -1018,7 +1018,7 @@ fn a_quiet_record_is_compared_with_the_revision_last_seen_at_the_cut() {
     let blind = cut(store, &work);
     let unanchored = record(store, &judged(&work, &note, blind, None, 15))
         .expect("an evaluation before any revision records");
-    host.report(store, &[(false, Some("content-revision-1"))], 16);
+    host.install_source_records(store, &[(false, Some("content-revision-1"))], 16);
     assert_eq!(
         freshness(store, &work),
         Some((unanchored.evaluation.clone(), None))
@@ -1027,20 +1027,20 @@ fn a_quiet_record_is_compared_with_the_revision_last_seen_at_the_cut() {
     // A change to R1, then a quiet move to R2 before the cut: the evaluation
     // judged R2, the revision the run was last seen at, not the newest
     // reported change.
-    host.report(store, &[(true, Some("content-revision-1"))], 20);
-    host.report(store, &[(false, Some("content-revision-2"))], 24);
+    host.install_source_records(store, &[(true, Some("content-revision-1"))], 20);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 24);
     let read = cut(store, &work);
     let recorded = record(
         store,
         &judged_again(&work, &note, read, None, "after-the-quiet-move", 28),
     )
     .expect("the evaluation records");
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
     assert_eq!(
         freshness(store, &work),
         Some((recorded.evaluation.clone(), None))
     );
-    host.report(store, &[(false, Some("content-revision-1"))], 34);
+    host.install_source_records(store, &[(false, Some("content-revision-1"))], 34);
     assert_eq!(
         freshness(store, &work),
         Some((
@@ -1068,7 +1068,7 @@ fn a_late_report_ending_at_the_declared_revision_re_anchors_earlier_sightings() 
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.report(store, &[(true, Some("content-revision-0"))], 20);
+    host.install_source_records(store, &[(true, Some("content-revision-0"))], 20);
     // Mid-turn, after a check at R0 and an edit to R1, the evaluator judges
     // R1 and declares it; the host reports that turn only when it ends.
     let read = cut(store, &work);
@@ -1086,7 +1086,7 @@ fn a_late_report_ending_at_the_declared_revision_re_anchors_earlier_sightings() 
     .expect("the declared evaluation records");
     // The host lists the turn in the order it saw it: the check at R0, then
     // the change to R1. The earlier sighting is older than that change.
-    host.report(
+    host.install_source_records(
         store,
         &[
             (false, Some("content-revision-0")),
@@ -1111,7 +1111,7 @@ fn a_late_report_ending_at_the_declared_revision_re_anchors_earlier_sightings() 
     )
     .expect("the same judgment still records at its cut");
     // A sighting of R0 after that change is a move back.
-    host.report(store, &[(false, Some("content-revision-0"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-0"))], 30);
     assert_eq!(
         freshness(store, &work),
         Some((
@@ -1138,7 +1138,7 @@ fn the_newest_sighting_decides_where_the_source_is() {
     disable_obligation_rules(store, 6);
     let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
     let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-    host.report(store, &[(true, Some("content-revision-0"))], 20);
+    host.install_source_records(store, &[(true, Some("content-revision-0"))], 20);
     // Someone else's edit to R1, which the host does not flag, and the
     // evaluator judges R1 and declares it.
     let read = cut(store, &work);
@@ -1156,7 +1156,7 @@ fn the_newest_sighting_decides_where_the_source_is() {
     .expect("the declared evaluation records");
     // The turn lists a check before the edit and one after it: the source
     // ended where it was judged.
-    host.report(
+    host.install_source_records(
         store,
         &[
             (false, Some("content-revision-0")),
@@ -1169,7 +1169,7 @@ fn the_newest_sighting_decides_where_the_source_is() {
         freshness(store, &work),
         Some((declared.evaluation.clone(), None))
     );
-    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.install_source_records(store, &[(false, Some("content-revision-2"))], 30);
     assert_eq!(
         freshness(store, &work),
         Some((
@@ -1186,7 +1186,7 @@ fn the_newest_sighting_decides_where_the_source_is() {
         &judged_again(&work, &note, second, None, "undeclared", 35),
     )
     .expect("an evaluation of R2 records");
-    host.report(
+    host.install_source_records(
         store,
         &[
             (false, Some("content-revision-3")),
@@ -1198,7 +1198,7 @@ fn the_newest_sighting_decides_where_the_source_is() {
         freshness(store, &work),
         Some((undeclared.evaluation.clone(), None))
     );
-    host.report(store, &[(false, Some("content-revision-3"))], 40);
+    host.install_source_records(store, &[(false, Some("content-revision-3"))], 40);
     assert_eq!(
         freshness(store, &work),
         Some((
@@ -1216,9 +1216,9 @@ fn report_detected(
     store: &mut SqliteStore,
     reports: &[(bool, Option<&str>, Option<SourceChangeDetection>)],
     second: i64,
-) -> Result<ControlTurnCheckpointDecision, StoreError> {
-    let grant = host.grant(store, &[EffectClass::MutateLocal], true, second);
-    host.begin(store, &grant, second + 1);
+) -> Result<HistoricalEvidenceBatch, StoreError> {
+    let grant = host.historical_capture();
+
     let observations: Vec<ExecutionObservationInput> = reports
         .iter()
         .enumerate()
@@ -1243,19 +1243,7 @@ fn report_detected(
             },
         )
         .collect();
-    store.checkpoint_control_turn_with_evidence(
-        &host.project_id,
-        &host.session_id,
-        &host.connection_token,
-        &host.routing_token,
-        &grant.grant_id,
-        TurnNextIntent::Continue,
-        &observations,
-        &[],
-        &[],
-        &host.key("checkpoint"),
-        at(second + 2),
-    )
+    append_historical_capture(store, &grant, &observations, &[], &[], at(second + 2))
 }
 
 fn observations_after(
@@ -1295,10 +1283,7 @@ fn how_the_host_established_a_change_is_stored_as_said_and_changes_no_obligation
         let read = cut(store, &work);
         let decision = report_detected(&mut host, store, &[(true, *revision, *detection)], second)
             .expect("a consistent report checkpoints");
-        assert!(matches!(
-            decision,
-            ControlTurnCheckpointDecision::Checkpointed { .. }
-        ));
+        assert_eq!(decision.execution_observations.len(), 1);
         let stored = observations_after(store, &work, read);
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].reported_source_change, *detection);
@@ -1358,75 +1343,6 @@ fn a_repeated_revision_keeps_what_the_host_said_and_is_read_as_no_change() {
     );
     let late_obligations = entries_after(store, &work, read, "work_obligation");
     assert!(late_obligations.is_empty(), "{late_obligations:?}");
-}
-
-#[test]
-fn a_report_that_contradicts_itself_is_refused_and_stores_nothing() {
-    let contradictions = [
-        (
-            false,
-            Some("revision-a"),
-            SourceChangeDetection::ContentComparison,
-            "reports no change",
-        ),
-        (
-            false,
-            None,
-            SourceChangeDetection::WatcherOnly,
-            "reports no change",
-        ),
-        (
-            true,
-            None,
-            SourceChangeDetection::ContentComparison,
-            "without the source basis",
-        ),
-        (
-            true,
-            None,
-            SourceChangeDetection::AssumedMissingBaseline,
-            "without the source basis",
-        ),
-        (
-            true,
-            Some("revision-a"),
-            SourceChangeDetection::WatcherOnly,
-            "with a source basis",
-        ),
-    ];
-    for (index, (changed, revision, detection, why)) in contradictions.iter().enumerate() {
-        // A refused checkpoint leaves its turn open, so each case has a
-        // store of its own.
-        let mut fixture = fixture(&format!("project-detection-refusal-{index}"));
-        let store = &mut fixture.store;
-        let work = fixture.work.clone();
-        let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-        let second = 20;
-        let read = cut(store, &work);
-        // A consistent report in the same checkpoint is refused with it.
-        let refused = report_detected(
-            &mut host,
-            store,
-            &[
-                (
-                    true,
-                    Some("revision-good"),
-                    Some(SourceChangeDetection::ContentComparison),
-                ),
-                (*changed, *revision, Some(*detection)),
-            ],
-            second,
-        );
-        let Err(StoreError::InvalidControlProjection(message)) = refused else {
-            panic!("{detection:?} with changed={changed} must be refused: {refused:?}");
-        };
-        assert!(message.contains(why), "{message}");
-        assert!(message.contains(detection.as_str()), "{message}");
-        let late_observations = observations_after(store, &work, read);
-        assert!(late_observations.is_empty(), "{late_observations:?}");
-        let late_obligations = entries_after(store, &work, read, "work_obligation");
-        assert!(late_obligations.is_empty(), "{late_obligations:?}");
-    }
 }
 
 #[test]
@@ -1504,7 +1420,7 @@ fn a_flagged_move_and_revert_after_the_cut_leave_the_evaluation_void() {
         disable_obligation_rules(store, 6);
         let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
         let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
-        host.report(store, &[(true, Some("content-revision-a"))], 20);
+        host.install_source_records(store, &[(true, Some("content-revision-a"))], 20);
         let read = cut(store, &work);
         let source = declared.then(|| revision("content-revision-a", None));
         let recorded = record(
@@ -1517,7 +1433,7 @@ fn a_flagged_move_and_revert_after_the_cut_leave_the_evaluation_void() {
             Some((recorded.evaluation.clone(), None))
         );
         if one_turn {
-            host.report(
+            host.install_source_records(
                 store,
                 &[
                     (true, Some("content-revision-b")),
@@ -1526,8 +1442,8 @@ fn a_flagged_move_and_revert_after_the_cut_leave_the_evaluation_void() {
                 30,
             );
         } else {
-            host.report(store, &[(true, Some("content-revision-b"))], 30);
-            host.report(store, &[(true, Some("content-revision-a"))], 35);
+            host.install_source_records(store, &[(true, Some("content-revision-b"))], 30);
+            host.install_source_records(store, &[(true, Some("content-revision-a"))], 35);
         }
         let status = store
             .acceptance_evaluation_status(work.work_id, None)

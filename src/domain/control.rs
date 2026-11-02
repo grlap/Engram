@@ -1,5 +1,4 @@
-//! Behavioral-control types: policy, session phases, verification
-//! evidence, obligation rules, turn and action grants, and resource subjects.
+//! Project policy, execution observations, verification evidence and source identity.
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
@@ -12,9 +11,8 @@ use crate::ObjectId;
 mod named_root_state;
 
 use super::{
-    AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, FeedPosition, ProjectId,
-    RootExecutionId, SessionId, TaskDelta, TaskId, WorkClaimId, WorkClaimState, WorkId, WorkRunId,
-    WorkRunState,
+    AcceptanceEvaluationPolicy, ActorContext, FeedPosition, ProjectId, RootExecutionId, SessionId,
+    WorkClaimId, WorkClaimState, WorkId, WorkRunId, WorkRunState,
 };
 
 /// Monotonic invalidation epoch for the active project control policy.
@@ -22,19 +20,8 @@ use super::{
 #[serde(transparent)]
 pub struct ProjectPolicyEpoch(pub i64);
 
-/// Monotonic invalidation epoch for task-applicable admission state.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
-pub struct TaskAdmissionEpoch(pub i64);
-
-/// Independent invalidation epochs captured by a control decision.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ControlEpochs {
-    pub project_policy: ProjectPolicyEpoch,
-    pub task_admission: TaskAdmissionEpoch,
-}
-
-/// How completely the host mediates the behavior Engram evaluates.
+/// Historical assurance values preserved in immutable policy data. They do
+/// not select an execution-admission mode in the current runtime.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlAssurance {
@@ -43,19 +30,13 @@ pub enum ControlAssurance {
     ActionGated,
 }
 
-impl ControlAssurance {
-    /// Whether this assurance is at least as strong as a policy requirement.
-    #[must_use]
-    pub fn covers(self, required: Self) -> bool {
-        self >= required
-    }
-}
-
 /// Project-scoped administrative operation attributed to one immutable
 /// control-policy authority decision.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectPolicyOperation {
+    InitializeProjectPolicy,
+    /// Decode historical policy attribution without restoring its operation.
     SetRequiredAssurance,
     SetObligationRuleSet,
     SetAcceptanceEvaluation,
@@ -71,7 +52,8 @@ pub struct ProjectPolicyAuthorityDecision {
     pub operation: ProjectPolicyOperation,
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_policy: Option<ObjectId>,
-    pub required_assurance: ControlAssurance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_assurance: Option<ControlAssurance>,
     pub obligation_rule_set: ObjectId,
     /// Acceptance-evaluation policy in force after this decision; omitted
     /// bytes mean the self-asserted path.
@@ -84,16 +66,20 @@ pub struct ProjectPolicyAuthorityDecision {
     pub decided_at: DateTime<Utc>,
 }
 
-/// Immutable version of the project-scoped behavioral-control policy.
+/// Immutable project policy for obligations and acceptance evaluation.
+/// Optional admission metadata is read from historical versions only.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlPolicy {
     pub schema_version: u16,
     pub control_schema_version: u16,
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_policy: Option<ObjectId>,
-    pub required_assurance: ControlAssurance,
-    pub supported_effects: Vec<EffectClass>,
-    pub grant_ttl_seconds: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_assurance: Option<ControlAssurance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supported_effects: Option<Vec<EffectClass>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant_ttl_seconds: Option<i64>,
     pub obligation_rule_set: ObjectId,
     /// Per-project acceptance-evaluation policy; omitted bytes mean the
     /// self-asserted completion path, so earlier policy objects keep
@@ -105,35 +91,6 @@ pub struct ControlPolicy {
     pub acceptance_evaluation: AcceptanceEvaluationPolicy,
     pub authority: ObjectId,
     pub activated_at: DateTime<Utc>,
-}
-
-/// Durable execution phase for a task-bound host session.
-///
-/// Storage writes only `ready`, `turn_open` and `exited`. `sync_required`
-/// is still read from rows written before turn grants stopped carrying a
-/// delivery page, and admits a turn as `ready` does. No store holds any other
-/// phase.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionPhase {
-    SyncRequired,
-    Ready,
-    TurnOpen,
-    Exited,
-}
-
-/// Scope of a model turn admitted by the control plane. Every turn is
-/// ordinary; a request naming any other purpose is refused as malformed.
-///
-/// The former `recovery` purpose has no decode-only variant because no store
-/// holds one: no host ever sent a recovery turn, and every stored intent,
-/// grant and decision names `ordinary`. A stored record naming `recovery`
-/// would therefore fail to decode rather than be read as something else.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TurnPurpose {
-    #[default]
-    Ordinary,
 }
 
 /// Material effect classes used by host capability mediation.
@@ -150,137 +107,8 @@ pub enum EffectClass {
     Lifecycle,
 }
 
-/// Durable membership result for the bound session and task.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParticipantMembership {
-    Member,
-    NotMember,
-}
-
-/// Stable machine-readable reason why a turn cannot be admitted.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlRefusalCode {
-    /// A stored grant or snapshot names a control schema this build does not
-    /// know.
-    UnknownControlSchema,
-    ControlAssuranceInsufficient,
-    CapabilityNotPermitted,
-    /// Defensive: the session names no task, or the task's control anchor is
-    /// gone. Storage never deletes an anchor.
-    TaskUnbound,
-    /// Defensive: the session is not a member of its task. Storage never
-    /// removes a membership.
-    TaskAccessDenied,
-    PolicyEpochChanged,
-    TaskAdmissionEpochChanged,
-    /// Historical saved refusals only; turn grants no longer build a context
-    /// packet.
-    PinnedBudgetExceeded,
-    /// Historical saved refusals only; turn grants no longer carry a
-    /// delivery page.
-    ContextRequired,
-    /// Historical saved refusals only; turn grants no longer carry a
-    /// delivery page.
-    DeltaRequired,
-    /// Historical saved refusals only; turn grants no longer carry a
-    /// delivery page.
-    DeliveryInvalid,
-    /// Historical saved refusals only; recovery turns no longer exist.
-    RecoveryRequired,
-    TurnAlreadyOpen,
-    /// Historical saved refusals only; every turn is ordinary.
-    TurnPurposeMismatch,
-    GrantExpired,
-    GrantNotBegun,
-    GrantScopeMismatch,
-    StaleFence,
-    /// Historical saved refusals only; current evaluation has no lease
-    /// requirement.
-    LeaseRequired,
-    SessionExited,
-}
-
-impl ControlRefusalCode {
-    /// Stable protocol spelling used in directive identifiers and transports.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::UnknownControlSchema => "unknown_control_schema",
-            Self::ControlAssuranceInsufficient => "control_assurance_insufficient",
-            Self::CapabilityNotPermitted => "capability_not_permitted",
-            Self::TaskUnbound => "task_unbound",
-            Self::TaskAccessDenied => "task_access_denied",
-            Self::PolicyEpochChanged => "policy_epoch_changed",
-            Self::TaskAdmissionEpochChanged => "task_admission_epoch_changed",
-            Self::PinnedBudgetExceeded => "pinned_budget_exceeded",
-            Self::ContextRequired => "context_required",
-            Self::DeltaRequired => "delta_required",
-            Self::DeliveryInvalid => "delivery_invalid",
-            Self::RecoveryRequired => "recovery_required",
-            Self::TurnAlreadyOpen => "turn_already_open",
-            Self::TurnPurposeMismatch => "turn_purpose_mismatch",
-            Self::GrantExpired => "grant_expired",
-            Self::GrantNotBegun => "grant_not_begun",
-            Self::GrantScopeMismatch => "grant_scope_mismatch",
-            Self::StaleFence => "stale_fence",
-            Self::LeaseRequired => "lease_required",
-            Self::SessionExited => "session_exited",
-        }
-    }
-}
-
-/// Party capable of satisfying a typed control directive.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DirectiveTarget {
-    Host,
-    Agent,
-}
-
-/// Evidence required before the evaluator may clear a directive.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DirectiveSatisfaction {
-    HostTransition,
-    RecoveryCheckpoint,
-}
-
-/// Exact bounded packet or delta page that a turn grant issued before grants
-/// stopped carrying a delivery page proposed for prompt injection. It is read
-/// from those stored grants only.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct DeliveryPage {
-    pub from_cursor: ChangeCursor,
-    pub to_cursor: ChangeCursor,
-    pub head_cursor: ChangeCursor,
-    pub has_more: bool,
-    pub content_digest: ObjectId,
-    pub delivery_token: String,
-}
-
-/// Canonical intent supplied by the host before one model turn.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnIntent {
-    pub idempotency_key: String,
-    pub intent_fingerprint: ObjectId,
-    /// The host may still name the only purpose, `ordinary`; an absent
-    /// purpose means the same turn. It stays in the intent fingerprint as
-    /// sent, so a retried request keeps its idempotency match.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<TurnPurpose>,
-    pub requested_effects: Vec<EffectClass>,
-    #[serde(default)]
-    pub resource_intents: Vec<ResourceSubject>,
-}
-
-/// Exact local-work claim basis selected by the embedding host for one control
-/// session.
-///
-/// The binding is a frozen reference to a live claim. Storage revalidates it
-/// before granting or beginning ordinary work and never derives it from a
-/// task id or ambient focus.
+/// Exact work, run and claim association captured by the embedding host.
+/// Storage validates its holder, fence and source context for ordinary operations.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlWorkBinding {
@@ -520,9 +348,8 @@ pub fn holds_refused_source_text(text: &str) -> bool {
     text.chars().any(is_refused_source_text_char)
 }
 
-/// Host-supplied portion of one execution observation recorded at turn
-/// checkpoint. Storage supplies the bound run, claim, session, grant, actor,
-/// and recording timestamp.
+/// Input used only to construct historical execution-observation fixtures.
+#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionObservationInput {
@@ -541,7 +368,7 @@ pub struct ExecutionObservationInput {
     pub observed_at: Option<DateTime<Utc>>,
 }
 
-/// Immutable host-captured execution fact routed to the exact bound run feed.
+/// Immutable historical execution fact on its exact bound run feed.
 ///
 /// The host may preserve workspace and full-content source-state basis on the
 /// observation. Observations may trigger obligations and may be referenced by
@@ -588,6 +415,7 @@ pub struct ExecutionObservation {
 
 /// Stable host-private reference to a previously recorded execution
 /// observation or to one observation in the same checkpoint request.
+#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionObservationReference {
@@ -615,12 +443,12 @@ pub enum VerificationResult {
     Indeterminate,
 }
 
-/// Host-private request to mint typed verification evidence from an exact
-/// host-captured execution observation.
+/// Historical verification fixture input referencing a stored producer.
 ///
 /// The caller supplies classification and presentation only. Storage derives
 /// the run, workspace/source basis, command fingerprint, result, producer
 /// session, and timestamps from `producer_observation`.
+#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct VerificationEvidenceInput {
@@ -656,6 +484,7 @@ pub struct EnvironmentComponents {
 
 /// Host-private reference to environment evidence already stored or supplied
 /// earlier in the same checkpoint request.
+#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EnvironmentEvidenceReference {
@@ -667,6 +496,7 @@ pub enum EnvironmentEvidenceReference {
 /// run and content state. When `components` is present, storage derives and
 /// compares `environment_fingerprint`; absence selects the opaque fingerprint
 /// contract.
+#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvironmentEvidenceInput {
@@ -903,374 +733,6 @@ pub struct StaleVerificationSource {
     pub root_generation: Option<i64>,
     pub verification_workspace: String,
     pub verification_revision: String,
-}
-
-const fn default_work_binding_current() -> bool {
-    true
-}
-
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "serde skip_serializing_if callbacks receive a reference to the field"
-)]
-const fn work_binding_is_current(value: &bool) -> bool {
-    *value
-}
-
-/// Complete explicitly supplied state used to evaluate one turn.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnEvaluationInput {
-    pub control_schema_version: u16,
-    pub session_id: SessionId,
-    pub task_id: Option<TaskId>,
-    pub participant_membership: ParticipantMembership,
-    pub anchor_exists: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_binding: Option<ControlWorkBinding>,
-    /// Whether storage revalidated `work_binding` against the current work,
-    /// run, claim, holder, fence, root execution, and expiry in this snapshot.
-    #[serde(
-        default = "default_work_binding_current",
-        skip_serializing_if = "work_binding_is_current"
-    )]
-    pub work_binding_current: bool,
-    pub phase: SessionPhase,
-    pub host_assurance: ControlAssurance,
-    pub required_assurance: ControlAssurance,
-    #[serde(default)]
-    pub policy_effects: Vec<EffectClass>,
-    #[serde(default)]
-    pub mediated_effects: Vec<EffectClass>,
-    pub current_epochs: ControlEpochs,
-    pub session_epochs: ControlEpochs,
-    pub capability_map_revision: i64,
-    pub intent: TurnIntent,
-    pub evaluated_at: DateTime<Utc>,
-    pub grant_ttl_seconds: i64,
-}
-
-/// Repair obligation returned with a refused observed decision.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ControlDirective {
-    pub directive_id: String,
-    pub code: ControlRefusalCode,
-    /// Effect whose intrinsic assurance or mediation rule caused this refusal.
-    /// Project-wide assurance refusals leave this unset.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effect: Option<EffectClass>,
-    /// Assurance required by the failed project-wide or effect-specific rule.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub required_assurance: Option<ControlAssurance>,
-    /// Effects the host declared it mediates for this session, when the
-    /// refusal is tied to the mediation envelope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub declared_mediated_effects: Option<Vec<EffectClass>>,
-    /// Declared effects that remain credible after the host assurance cap.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effective_mediated_effects: Option<Vec<EffectClass>>,
-    pub target: DirectiveTarget,
-    pub satisfaction: DirectiveSatisfaction,
-    pub recovery_effects: Vec<EffectClass>,
-}
-
-/// Exact basis a storage layer would bind into a short-lived turn grant.
-///
-/// `purpose`, `confirmed_cursor`, `delivery_cursor`, `blocking_watermark`
-/// and `inline_delivery` are read from grants issued while grants carried a
-/// delivery page. New grants omit them.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnGrantBasis {
-    pub session_id: SessionId,
-    pub task_id: TaskId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_binding: Option<ControlWorkBinding>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<TurnPurpose>,
-    pub intent_fingerprint: ObjectId,
-    pub project_policy_epoch: ProjectPolicyEpoch,
-    pub task_admission_epoch: TaskAdmissionEpoch,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confirmed_cursor: Option<ChangeCursor>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delivery_cursor: Option<ChangeCursor>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blocking_watermark: Option<ChangeCursor>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inline_delivery: Option<DeliveryPage>,
-    pub capability_map_revision: i64,
-    pub requested_effects: Vec<EffectClass>,
-    #[serde(default)]
-    pub resource_intents: Vec<ResourceSubject>,
-    pub expires_at: DateTime<Utc>,
-}
-
-/// Deterministic result the observe-only evaluator says enforcement would use.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum TurnDecision {
-    Grant { basis: Box<TurnGrantBasis> },
-    Refuse { directive: ControlDirective },
-}
-
-/// Persistable shadow result. It is evidence, never execution authority.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ObservedTurnDecision {
-    pub control_schema_version: u16,
-    pub request_key: String,
-    pub observed_at: DateTime<Utc>,
-    pub decision: TurnDecision,
-}
-
-/// Durable host-control session state returned without exposing SQLite rows.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ControlSessionStatus {
-    pub control_schema_version: u16,
-    pub project_id: ProjectId,
-    pub task_id: TaskId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_binding: Option<ControlWorkBinding>,
-    pub session_id: SessionId,
-    pub phase: SessionPhase,
-    pub assurance: ControlAssurance,
-    pub mediated_effects: Vec<EffectClass>,
-    pub epochs: ControlEpochs,
-    pub capability_map_revision: i64,
-    pub revision: i64,
-    /// A grant still issued or begun. A begun turn stays open until the
-    /// host reports it; the host never redelivers its prompt.
-    pub open_grant_id: Option<String>,
-    /// Durable state of `open_grant_id`, when one is present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub open_grant_state: Option<TurnGrantState>,
-    /// The bound claim's named-root state at this read, when the session is
-    /// bound to work.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub named_root: Option<NamedRootState>,
-}
-
-/// Result of binding or safely rebinding a host-private control session.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ControlSessionBinding {
-    pub routing_token: String,
-    /// Declared effects capped to those this session's assurance may mediate.
-    pub effective_mediated_effects: Vec<EffectClass>,
-    pub status: ControlSessionStatus,
-}
-
-/// Exact prompt payload that a turn grant issued before grants stopped
-/// carrying a delivery page attached. It is read from those stored grants
-/// only.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ControlDelivery {
-    pub page: DeliveryPage,
-    /// Present on the final page only. Partial recovery pages contain exact
-    /// deltas without exposing state beyond their cursor.
-    pub context: Option<ContextPacket>,
-    /// Exact verified task-feed interval covered by `page`.
-    pub delta: TaskDelta,
-}
-
-/// Live turn authority issued to a host policy-enforcement point.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct IssuedTurnGrant {
-    pub control_schema_version: u16,
-    pub grant_id: String,
-    pub request_key: String,
-    pub basis: TurnGrantBasis,
-    /// Present only on grants issued while grants carried a delivery page.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delivery: Option<ControlDelivery>,
-    pub issued_at: DateTime<Utc>,
-}
-
-/// Enforced host-facing turn decision. Unlike [`ObservedTurnDecision`], a
-/// grant here has a persisted identity and can be begun exactly once.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum ControlTurnDecision {
-    Grant { grant: Box<IssuedTurnGrant> },
-    Refuse { directive: ControlDirective },
-}
-
-/// Operational state of a persisted turn grant.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TurnGrantState {
-    Issued,
-    Begun,
-    Completed,
-    Expired,
-    Superseded,
-}
-
-/// Immutable audit record for replacing issued-but-unbegun turn authority.
-///
-/// The mutable grant row makes the old authority unusable. This record binds
-/// that terminalization to the exact replacement decision so the transition
-/// can be reconstructed and integrity-checked after restart.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TurnGrantSupersessionReason {
-    FreshEvaluation,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnGrantSupersession {
-    pub control_schema_version: u16,
-    pub session_id: SessionId,
-    pub task_id: TaskId,
-    pub superseded_grant_id: String,
-    pub superseded_request_key: String,
-    pub replacement_request_key: String,
-    pub replacement_decision: ObjectId,
-    pub reason: TurnGrantSupersessionReason,
-    pub superseded_at: DateTime<Utc>,
-}
-
-/// Durable facts rechecked immediately before the host dispatches a prompt.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnBeginSnapshot {
-    pub control_schema_version: u16,
-    pub session_id: SessionId,
-    pub task_id: TaskId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_binding: Option<ControlWorkBinding>,
-    #[serde(
-        default = "default_work_binding_current",
-        skip_serializing_if = "work_binding_is_current"
-    )]
-    pub work_binding_current: bool,
-    pub phase: SessionPhase,
-    pub participant_membership: ParticipantMembership,
-    pub anchor_exists: bool,
-    pub grant_state: TurnGrantState,
-    pub current_epochs: ControlEpochs,
-    pub capability_map_revision: i64,
-    /// Tokens the host echoed from a delivery page. Grants carry no page,
-    /// so a begin that names any token is refused.
-    pub delivery_tokens: Vec<String>,
-    pub observed_at: DateTime<Utc>,
-}
-
-/// Pure begin-time result before any storage transition is committed.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum TurnBeginDecision {
-    Begin,
-    Refuse { code: ControlRefusalCode },
-}
-
-/// Receipt proving that the host may dispatch the exact granted prompt.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnBeginReceipt {
-    pub grant_id: String,
-    pub session_id: SessionId,
-    pub task_id: TaskId,
-    pub phase: SessionPhase,
-    /// Present on receipts recorded while grants carried a delivery page.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tentative_cursor: Option<ChangeCursor>,
-    pub session_revision: i64,
-    pub begun_at: DateTime<Utc>,
-    /// The bound claim's named-root state when the turn began. Receipts
-    /// recorded before this field existed replay without it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub named_root: Option<NamedRootState>,
-}
-
-/// Host decision after a begin-time state and delivery recheck.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum ControlTurnBeginDecision {
-    Begin { receipt: TurnBeginReceipt },
-    Refuse { code: ControlRefusalCode },
-}
-
-/// Bounded lifecycle choice made after a model turn.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TurnNextIntent {
-    Continue,
-    Wait,
-    Exit,
-}
-
-/// Durable facts checked before a begun turn can be checkpointed.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnCheckpointSnapshot {
-    pub control_schema_version: u16,
-    pub session_id: SessionId,
-    pub task_id: TaskId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_binding: Option<ControlWorkBinding>,
-    pub phase: SessionPhase,
-    pub grant_state: TurnGrantState,
-}
-
-/// Pure checkpoint eligibility result before the transaction emits an event.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum TurnCheckpointDecision {
-    Checkpoint,
-    Refuse { code: ControlRefusalCode },
-}
-
-/// Immutable audit event emitted by a successful turn checkpoint.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnCheckpointEvent {
-    pub schema_version: u16,
-    pub task_id: TaskId,
-    pub session_id: SessionId,
-    pub grant_id: String,
-    /// The grant's delivery position, present only when the grant was
-    /// issued while grants carried a delivery page.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delivered_cursor: Option<ChangeCursor>,
-    pub next_intent: TurnNextIntent,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub execution_observations: Vec<ObjectId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub verification_evidence: Vec<ObjectId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub environment_evidence: Vec<ObjectId>,
-    pub actor: ActorContext,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Restart-safe receipt for closing one begun model turn.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TurnCheckpointReceipt {
-    pub grant_id: String,
-    pub checkpoint: ObjectId,
-    /// Position of the checkpoint event in the task's audit index.
-    pub cursor: ChangeCursor,
-    /// New receipts repeat `cursor` here. The field stays because the host
-    /// still requires it.
-    pub confirmed_cursor: ChangeCursor,
-    pub phase: SessionPhase,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub execution_observations: Vec<ObjectId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub verification_evidence: Vec<ObjectId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub environment_evidence: Vec<ObjectId>,
-    pub session_revision: i64,
-    pub checkpointed_at: DateTime<Utc>,
-}
-
-/// Host result when checkpoint preconditions are evaluated atomically.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum ControlTurnCheckpointDecision {
-    Checkpointed {
-        receipt: TurnCheckpointReceipt,
-    },
-    Refuse {
-        code: ControlRefusalCode,
-        /// Additive host transition/recovery guidance for this refusal.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        directive: Option<ControlDirective>,
-    },
 }
 
 /// Component-boundary coverage of a canonical resource subject.

@@ -41,7 +41,7 @@ const BARRIER_PREFIX = ".watch-barrier-";
 const JOURNAL_DIAGNOSTIC_LIMIT = 16;
 // A host control process with closed stdin: it starts, resolves identity and
 // exits at end of input.
-const CONTROL_ARGS = ["control", "--actor-id", "probe", "--session-id", "probe-control"];
+const CONTROL_ARGS = ["control", "--work-session", "--actor-id", "probe", "--session-id", "probe-control"];
 const WARNING = "could not probe the filesystem identity";
 const ACL_TIMEOUT_MS = 15000;
 const RESOLVED_POLICY = /^(case_fold|case_sensitive), windows alias rules (on|off)$/u;

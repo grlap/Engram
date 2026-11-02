@@ -307,9 +307,6 @@ fn a_clean_home_restores_a_checked_copy_reports_its_live_authority_and_changes_n
     assert_eq!(restored["completed_interrupted"], false);
     let authority = &restored["authority"];
     assert_eq!(authority["unexpired_claims"], 2, "{authority}");
-    assert_eq!(authority["unexpired_grants"], 0, "{authority}");
-    assert_eq!(authority["grants_expire_by"], Value::Null, "{authority}");
-    assert_eq!(authority["begun_turns"], 0, "{authority}");
     let as_of = chrono::DateTime::parse_from_rfc3339(authority["as_of"].as_str().unwrap()).unwrap();
     let last =
         chrono::DateTime::parse_from_rfc3339(authority["claims_expire_by"].as_str().unwrap())
@@ -381,13 +378,13 @@ fn the_plain_report_names_the_copy_its_origin_and_the_live_authority() {
         format!("sha256 {}", manifest["capture"]["sha256"].as_str().unwrap()),
         "origin retired by greg (asserted; recorded under this home)".to_owned(),
         "0 unexpired active claim(s), the last expiring none".to_owned(),
-        "0 unexpired issued grant(s), the last expiring none".to_owned(),
-        "0 begun turn(s)".to_owned(),
         "no row was changed".to_owned(),
         "run `engram doctor` and `engram readiness`".to_owned(),
     ] {
         assert!(output.contains(&expected), "{expected:?} in {output}");
     }
+    assert!(!output.contains("begun turn"), "{output}");
+    assert!(!output.contains("unexpired grant"), "{output}");
 }
 
 #[test]

@@ -3,15 +3,21 @@ use crate::verbs::AgentVerbs;
 use crate::work_service::{LocalWorkService, MAX_FOCUS_RELATIONS, WorkNextQuery};
 use std::sync::Arc;
 
-/// Binds the holder's host session to its claim and records, through real
-/// control turns, one verification together with the environment it ran in.
-/// Returns the environment and the verification.
+/// Record a real ordinary registered check, then retain a typed environment
+/// link to exercise paging of historical evidence without a turn fixture.
 fn record_checked_environment(
     store: &mut SqliteStore,
     work: &WorkItem,
     claim: &WorkClaim,
-) -> (ObjectId, ObjectId) {
-    let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
+) -> (ObjectId, ObjectId, ObjectId) {
+    use crate::domain::{
+        NamedRootBindingKind, RegisteredVerificationAssociation, RegisteredVerificationCheck,
+        RegisteredVerificationInput, RegisteredVerificationInputOutcome,
+        RegisteredVerificationOutcome, RegisteredVerificationPostRun,
+        RegisteredVerificationRequest, RegisteredVerificationRoot, RegisteredVerificationRun,
+    };
+    use crate::storage::HostSessionAuthority;
+    let run = load_work_run(&store.connection, claim.run_id).unwrap();
     let binding = ControlWorkBinding {
         root_execution_id: run.root_execution_id,
         work_id: work.work_id,
@@ -21,156 +27,124 @@ fn record_checked_environment(
         claim_fence: claim.fence,
     };
     let session = claim.holder.clone();
-    let connection = store
-        .resume_control_connection(&session, at(10))
-        .expect("resume connection");
+    let token = store.resume_work_connection(&session, at(10)).unwrap();
     let mut host = actor(&session.0);
     host.run_id = Some(run.run_id.0.to_string());
-    let bound = store
-        .bind_control_session_with_work(
+    store
+        .bind_named_root(
             &work.project_id,
-            "evidence-page",
-            "Record checked evidence",
             &session,
-            &connection,
-            &host,
-            Some(&binding),
-            ControlAssurance::TurnGated,
-            &[EffectClass::Observe, EffectClass::MutateLocal],
+            &token,
+            HostSessionAuthority::Work,
+            claim.claim_id,
+            claim.fence,
+            "workspace-page",
             1,
-            "bind-evidence-page",
+            at(10),
+            NamedRootBindingKind::Bound,
+            None,
+            &mut host,
+            "name-page",
             at(10),
         )
-        .expect("bind host session");
-    let turn = |store: &mut SqliteStore, key: &str, effects: Vec<EffectClass>, second: i64| {
-        let resource_intents = if effects.contains(&EffectClass::MutateLocal) {
-            vec![crate::domain::ResourceSubject::Path {
-                project_id: work.project_id.clone(),
-                segments: vec!["src".into()],
-                coverage: crate::domain::ResourceCoverage::Tree,
-            }]
-        } else {
-            Vec::new()
-        };
-        let decision = store
-            .evaluate_control_turn(
-                &work.project_id,
-                &session,
-                &connection,
-                &bound.routing_token,
-                &TurnIntent {
-                    idempotency_key: format!("evaluate-{key}"),
-                    intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
-                    purpose: Some(TurnPurpose::Ordinary),
-                    requested_effects: effects,
-                    resource_intents,
-                },
-                at(second),
-            )
-            .expect("evaluate turn");
-        let ControlTurnDecision::Grant { grant } = decision else {
-            panic!("the turn must grant: {decision:?}");
-        };
-        let tokens = grant
-            .delivery
-            .as_ref()
-            .map(|delivery| vec![delivery.page.delivery_token.clone()])
-            .unwrap_or_default();
-        assert!(matches!(
-            store
-                .begin_control_turn(
-                    &work.project_id,
-                    &session,
-                    &connection,
-                    &bound.routing_token,
-                    &grant.grant_id,
-                    &tokens,
-                    &format!("begin-{key}"),
-                    at(second + 1),
-                )
-                .expect("begin turn"),
-            ControlTurnBeginDecision::Begin { .. }
-        ));
-        grant
+        .unwrap();
+    let request = RegisteredVerificationRequest {
+        operation_key: "termal-run:test-evidence-page".into(),
+        registration: RegisteredVerificationAssociation {
+            host_run_id: "test-evidence-page".into(),
+            request_identity: "page-request".into(),
+            registered_at: at(11),
+            initiating_session_id: session.clone(),
+            owning_session_id: None,
+            binding: binding.clone(),
+            root: RegisteredVerificationRoot {
+                workspace_id: "workspace-page".into(),
+                generation: 1,
+                state: crate::domain::SourceRootState::Named,
+            },
+        },
+        input: RegisteredVerificationInput::Commit {
+            commit: "a".repeat(40),
+        },
+        run: RegisteredVerificationRun {
+            mode: "focused".into(),
+            command: "cargo test".into(),
+            started_at: at(12),
+            finished_at: at(15),
+            outcome: RegisteredVerificationOutcome::Passed,
+        },
+        checks: vec![RegisteredVerificationCheck {
+            stage: "focused".into(),
+            check_kind: VerificationKind::Test,
+            command: "cargo test".into(),
+            check_fingerprint: ObjectId::from_canonical_bytes(b"cargo test"),
+            started_at: Some(at(12)),
+            completed_at: Some(at(15)),
+            outcome: RegisteredVerificationOutcome::Passed,
+            summary: Some("host registered the tests".into()),
+            refs: vec!["command:cargo-test".into()],
+            counts: None,
+        }],
+        post_run: RegisteredVerificationPostRun {
+            outcome: RegisteredVerificationInputOutcome::Clean,
+            clean_before: true,
+            clean_after: true,
+            dirty_paths: vec![],
+            disposition: None,
+        },
     };
-    let synchronize = turn(store, "synchronize", vec![EffectClass::Observe], 11);
-    assert!(matches!(
-        store
-            .checkpoint_control_turn(
-                &work.project_id,
-                &session,
-                &connection,
-                &bound.routing_token,
-                &synchronize.grant_id,
-                TurnNextIntent::Continue,
-                "checkpoint-synchronize",
-                at(13),
-            )
-            .expect("checkpoint synchronization"),
-        ControlTurnCheckpointDecision::Checkpointed { .. }
-    ));
-    let check = turn(store, "check", vec![EffectClass::MutateLocal], 14);
-    let basis = ExecutionSourceBasis {
-        git_tree: None,
-        workspace_id: "workspace-page".into(),
-        source_revision: "content-revision-1".into(),
-        source_root_generation: None,
-        source_root_state: None,
-    };
+    let receipt = store
+        .record_registered_verification(
+            &work.project_id,
+            &session,
+            &token,
+            HostSessionAuthority::Work,
+            &host,
+            &request,
+            at(16),
+        )
+        .unwrap();
+    let original = receipt.verifications[0].record_id.clone();
+    let mut verification: VerificationEvidence =
+        super::super::super::feeds::load_typed_work_object(
+            &store.connection,
+            &original,
+            "verification_evidence",
+        )
+        .unwrap();
     let components = EnvironmentComponents {
         toolchain: "rustc-test".into(),
         sandbox: None,
-        workspace_id: basis.workspace_id.clone(),
+        workspace_id: "workspace-page".into(),
         capability_map_revision: 1,
     };
-    let checkpointed = store
-        .checkpoint_control_turn_with_evidence(
-            &work.project_id,
-            &session,
-            &connection,
-            &bound.routing_token,
-            &check.grant_id,
-            TurnNextIntent::Continue,
-            &[ExecutionObservationInput {
-                observation_id: "test-command".into(),
-                action_fingerprint: ObjectId::from_canonical_bytes(b"cargo test"),
-                effect: EffectClass::MutateLocal,
-                outcome: ExecutionOutcome::Succeeded,
-                source_changed: false,
-                reported_source_change: None,
-                source_basis: Some(basis.clone()),
-                observed_at: Some(at(15)),
-            }],
-            &[VerificationEvidenceInput {
-                applicability: None,
-                producer_observation: ExecutionObservationReference::ObservationId {
-                    observation_id: "test-command".into(),
-                },
-                check_kind: VerificationKind::Test,
-                environment: Some(EnvironmentEvidenceReference::Index { index: 0 }),
-                summary: Some("host observed the tests".into()),
-                refs: vec!["command:cargo-test".into()],
-            }],
-            &[EnvironmentEvidenceInput {
-                source_basis: basis,
-                environment_fingerprint: CanonicalObject::freeze(&components)
-                    .expect("freeze components")
-                    .key()
-                    .clone(),
-                components: Some(components),
-                observed_at: at(15),
-            }],
-            "checkpoint-check",
-            at(16),
-        )
-        .expect("checkpoint the check");
-    let ControlTurnCheckpointDecision::Checkpointed { receipt } = checkpointed else {
-        panic!("the check must checkpoint: {checkpointed:?}");
+    let environment = crate::EnvironmentEvidence {
+        schema_version: crate::domain::SCHEMA_VERSION,
+        project_id: work.project_id.clone(),
+        binding,
+        session_id: session,
+        source_basis: verification.source_basis.clone(),
+        environment_fingerprint: CanonicalObject::freeze(&components).unwrap().key().clone(),
+        components: Some(components),
+        observed_at: at(15),
+        actor: host,
+        recorded_at: at(17),
     };
-    (
-        receipt.environment_evidence[0].clone(),
-        receipt.verification_evidence[0].clone(),
+    let transaction = store.connection.transaction().unwrap();
+    let environment_id = super::super::super::completion::append_control_environment_evidence_on(
+        &transaction,
+        &environment,
     )
+    .unwrap();
+    verification.environment = Some(environment_id.clone());
+    verification.recorded_at = at(17);
+    let verification_id = super::super::super::completion::append_control_verification_evidence_on(
+        &transaction,
+        &verification,
+    )
+    .unwrap();
+    transaction.commit().unwrap();
+    (environment_id, verification_id, original)
 }
 
 // More records than the page holds: the page keeps the newest by run-feed
@@ -191,7 +165,8 @@ fn the_evidence_page_keeps_the_newest_records_and_each_verifications_environment
         .expect("create work");
     let claim = claim(&mut store, &work, "runner", "claim", 1, 3_600);
     let oldest = evidence(&mut store, &work, &claim, "runner", "oldest", 2);
-    let (environment, verification) = record_checked_environment(&mut store, &work, &claim);
+    let (environment, verification, original_verification) =
+        record_checked_environment(&mut store, &work, &claim);
     // Seven newer generic records leave the verification as the eighth
     // newest and its environment, recorded just before it, as the ninth.
     let newer = (0..7)
@@ -214,7 +189,7 @@ fn the_evidence_page_keeps_the_newest_records_and_each_verifications_environment
     );
     let mut expected = vec![environment, verification];
     expected.extend(newer.iter().rev().take(MAX_FOCUS_RELATIONS - 2).cloned());
-    let omitted = [oldest, newer[0].clone()];
+    let omitted = [oldest, original_verification, newer[0].clone()];
     assert!(expected.iter().all(|kept| !omitted.contains(kept)));
     drop(store);
 

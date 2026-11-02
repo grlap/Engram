@@ -249,7 +249,6 @@ impl SqliteStore {
         let store = Self::from_connection_with_lock_wait(
             connection,
             None,
-            None,
             LockWait::CopyDeadline,
             ProtocolRetry::Never,
         );
@@ -311,7 +310,6 @@ impl SqliteStore {
         interrupt.install(&connection, CopyProbePoint::Settle)?;
         drop(Self::from_connection_with_lock_wait(
             connection,
-            None,
             None,
             LockWait::CopyDeadline,
             ProtocolRetry::Never,

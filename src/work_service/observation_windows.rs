@@ -127,7 +127,8 @@ pub(super) fn observation_row(
         }
         crate::storage::SourceObservationRecord::Unadmitted(observation) => {
             let change = observation.occurrence.source_change();
-            let sighting = change.and_then(|change| change.sighting());
+            let measured = observation.occurrence.measured_sighting();
+            let sighting = measured.as_ref();
             let checks = observation
                 .occurrence
                 .checks()
@@ -153,8 +154,17 @@ pub(super) fn observation_row(
                 observation: hash.as_str().to_owned(),
                 position,
                 admission: "unadmitted",
-                source_changed: change.is_some().then_some(true),
-                workspace: change.map(|change| displayed(change.workspace_id())),
+                source_changed: if matches!(
+                    observation.occurrence,
+                    crate::domain::RecordedOccurrence::SourceSighting { .. }
+                ) {
+                    Some(false)
+                } else {
+                    change.is_some().then_some(true)
+                },
+                workspace: sighting
+                    .map(|sighting| displayed(&sighting.source_basis.workspace_id))
+                    .or_else(|| change.map(|change| displayed(change.workspace_id()))),
                 revision: sighting
                     .map(|sighting| displayed(&sighting.source_basis.source_revision)),
                 root_generation: sighting

@@ -1329,6 +1329,20 @@ fn snapshot_event_on(
         WorkTransition::Reopened { reason, .. } => {
             ("reopened", Some(reason.clone()), None, None, None)
         }
+        WorkTransition::SupersededByImport { reason, .. } => (
+            "superseded_by_import",
+            Some(reason.clone()),
+            None,
+            None,
+            None,
+        ),
+        WorkTransition::ReconciliationHoldAbandoned { reason, .. } => (
+            "reconciliation_hold_abandoned",
+            Some(reason.clone()),
+            None,
+            None,
+            None,
+        ),
     };
     Ok(WorkGraphSnapshotEvent {
         kind: kind.into(),

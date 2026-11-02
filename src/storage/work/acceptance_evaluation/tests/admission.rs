@@ -82,7 +82,7 @@ pub(crate) fn admission_transport_fixture(
                     &work.project_id,
                     &host.session_id,
                     &host.connection_token,
-                    &host.routing_token,
+                    crate::storage::HostSessionAuthority::Work,
                     claim.claim_id,
                     claim.fence,
                     "workspace-B",
@@ -132,7 +132,7 @@ pub(crate) fn admission_transport_fixture(
             host.basis.source_revision = "transport-R".into();
             basis = cut(store, &work);
             citation = host
-                .checkpoint(
+                .install_checks(
                     store,
                     true,
                     Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
@@ -143,9 +143,9 @@ pub(crate) fn admission_transport_fixture(
             declared = Some("transport-R".into());
             if case == "wrong_source" {
                 host.basis.source_revision = "transport-S".into();
-                host.checkpoint(store, true, None, second + 20);
+                host.install_checks(store, true, None, second + 20);
                 citable_record = host
-                    .checkpoint(
+                    .install_checks(
                         store,
                         false,
                         Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),

@@ -30,13 +30,13 @@ fn a_sighting_on_another_workspace_is_not_named_under_a_named_root() {
     // Another workspace sights another revision. (A reported change there
     // would open an obligation, a check after the cut, which is another move.)
     host.basis = workspace("workspace-C", "R9", None);
-    host.report(store, &[(false, Some("R8"))], 50);
+    host.install_source_records(store, &[(false, Some("R8"))], 50);
     assert_eq!(stale_reason(store, &work), None);
     assert_eq!(status_observation(store, &work), None);
 
     // A change inside the root is the one named.
     host.basis = workspace("workspace-B", "R2", Some(9));
-    host.checkpoint(store, true, None, 60);
+    host.install_checks(store, true, None, 60);
     let named = status_observation(store, &work).expect("the deciding observation");
     assert_eq!(named.workspace.as_deref(), Some("workspace-B"));
     assert_eq!(named.revision.as_deref(), Some("R2"));

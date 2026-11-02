@@ -41,11 +41,8 @@ impl Write for DiagnosticWriter {
     }
 }
 
-fn diagnostic_server(
-    home: &std::path::Path,
-    sink: &Diagnostics,
-) -> (HostControlServer, String, String) {
-    let mut server = HostControlServer::open_with_host_path_identity(
+fn diagnostic_server(home: &std::path::Path, sink: &Diagnostics) -> (HostControlServer, Value) {
+    let mut server = HostControlServer::open_work_session_with_host_path_identity(
         home.join("store.sqlite3"),
         None,
         ProjectId("slow-control".into()),
@@ -54,51 +51,24 @@ fn diagnostic_server(
         None,
     )
     .unwrap();
-    let bound = server
-        .handle(HostControlRequest::SessionBind {
-            external_ref: "PRIVATE-anchor".into(),
-            title: "PRIVATE-title".into(),
-            assurance: ControlAssurance::TurnGated,
-            mediated_effects: vec![EffectClass::Observe],
-            work_binding: None,
-            capability_map_revision: 1,
-            idempotency_key: "PRIVATE-bind".into(),
-        })
-        .unwrap();
-    let routing = bound["routing_token"].as_str().unwrap().to_owned();
-    let granted = server
-        .handle(HostControlRequest::TurnEvaluate {
-            routing_token: routing.clone(),
-            idempotency_key: "PRIVATE-setup".into(),
-            intent_fingerprint: ObjectId::from_canonical_bytes(b"diagnostic-fixture").to_string(),
-            purpose: None,
-            requested_effects: vec![EffectClass::Observe],
-            resource_intents: vec![],
-        })
-        .unwrap();
-    let grant = granted["grant"]["grant_id"].as_str().unwrap().to_owned();
-    // Exercise frame assertions alongside fully captured transaction records.
+    let binding = claimed_binding(&mut server);
+    let request = root_bind_frame(&binding);
     (
         server.with_diagnostics(sink.clone().capture_transactions_for_test()),
-        routing,
-        grant,
+        request,
     )
 }
 
 #[test]
-fn diagnostics_control_slow_evaluate_and_read_have_exact_isolated_timings() {
+fn diagnostics_control_slow_write_and_read_have_exact_isolated_timings() {
     let home = crate::test_support::temp_home().unwrap();
     let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
-    let (mut server, routing, grant) = diagnostic_server(home.path(), &sink);
+    let (mut server, root_request) = diagnostic_server(home.path(), &sink);
     server
         .store
         .test_control_diagnostic_delays(Duration::from_millis(1_000), Duration::from_millis(1_100));
     let _clock = crate::storage::control_diagnostic_test_clock::start();
-    let evaluate = serde_json::json!({
-        "operation":"turn_evaluate", "routing_token":routing,
-        "idempotency_key":"PRIVATE-evaluate", "intent_fingerprint":ObjectId::from_canonical_bytes(b"slow-evaluate"),
-        "purpose":null, "requested_effects":["observe"], "resource_intents":[]
-    }).to_string() + "\n";
+    let evaluate = root_request.to_string() + "\n";
     let mut output = DiagnosticWriter::new(Duration::from_millis(200));
     server.serve(Cursor::new(evaluate), &mut output).unwrap();
     let response: serde_json::Value = serde_json::from_slice(&output.bytes).unwrap();
@@ -107,7 +77,7 @@ fn diagnostics_control_slow_evaluate_and_read_have_exact_isolated_timings() {
     server
         .store
         .test_control_diagnostic_delays(Duration::ZERO, Duration::ZERO);
-    let read = serde_json::json!({"operation":"turn_grant_read", "routing_token":routing, "grant_id":grant}).to_string() + "\n";
+    let read = serde_json::json!({"operation":"work_session_read"}).to_string() + "\n";
     let mut read_output = DiagnosticWriter::new(Duration::from_millis(2_001));
     server.serve(Cursor::new(read), &mut read_output).unwrap();
     assert_eq!(
@@ -128,13 +98,13 @@ fn diagnostics_control_slow_evaluate_and_read_have_exact_isolated_timings() {
     assert_eq!(events.len(), 2, "{rows:?}");
     let first = &events[0]["event"];
     assert_eq!(first["code"], "slow_call");
-    assert_eq!(first["operation"], "turn_evaluate");
+    assert_eq!(first["operation"], "named_root_bind");
     assert_eq!(first["frame_seq"], 1);
     assert_eq!(first["elapsed_ms"], 2_300);
     assert_eq!(first["handler_ms"], 2_100);
     assert_eq!(
         first["attempt_fingerprint"],
-        serde_json::to_value(Fingerprint::attempt("PRIVATE-evaluate")).unwrap()
+        serde_json::to_value(Fingerprint::attempt("PRIVATE-root-key")).unwrap()
     );
     assert_eq!(
         first["store_write"],
@@ -142,7 +112,7 @@ fn diagnostics_control_slow_evaluate_and_read_have_exact_isolated_timings() {
     );
     let second = &events[1]["event"];
     assert_eq!(second["frame_seq"], 2);
-    assert_eq!(second["operation"], "turn_grant_read");
+    assert_eq!(second["operation"], "work_session_read");
     assert_eq!(second["elapsed_ms"], 2_001);
     assert_eq!(second["handler_ms"], 0);
     assert_eq!(
@@ -151,16 +121,15 @@ fn diagnostics_control_slow_evaluate_and_read_have_exact_isolated_timings() {
     );
     let text = serde_json::to_string(&rows).unwrap();
     assert!(!text.contains("PRIVATE"));
-    assert!(!text.contains(&routing));
 }
 
 #[test]
 fn diagnostics_control_fast_and_exact_threshold_frames_are_silent() {
     let home = crate::test_support::temp_home().unwrap();
     let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
-    let (mut server, routing, grant) = diagnostic_server(home.path(), &sink);
+    let (mut server, _root_request) = diagnostic_server(home.path(), &sink);
     let _clock = crate::storage::control_diagnostic_test_clock::start();
-    let read = serde_json::json!({"operation":"turn_grant_read", "routing_token":routing, "grant_id":grant}).to_string() + "\n";
+    let read = serde_json::json!({"operation":"work_session_read"}).to_string() + "\n";
     for delay in [
         Duration::ZERO,
         crate::diagnostics::SLOW_CALL,
@@ -191,22 +160,22 @@ fn diagnostics_control_slow_typed_and_store_refusals_keep_fault_records_only() {
     for store_error in [false, true] {
         let home = crate::test_support::temp_home().unwrap();
         let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
-        let (mut server, routing, grant) = diagnostic_server(home.path(), &sink);
+        let (mut server, root_request) = diagnostic_server(home.path(), &sink);
         server
             .store
             .test_control_diagnostic_delays(Duration::from_millis(2_101), Duration::ZERO);
         let _clock = crate::storage::control_diagnostic_test_clock::start();
-        let request = serde_json::json!({
-            "operation":"turn_begin", "routing_token":routing,
-            "grant_id":if store_error { uuid::Uuid::new_v4().to_string() } else { grant },
-            "delivery_tokens":["PRIVATE-delivery"], "idempotency_key":"PRIVATE-refusal"
-        })
-        .to_string()
-            + "\n";
+        let mut request = root_request;
+        if store_error {
+            request["claim_id"] = serde_json::json!(uuid::Uuid::new_v4());
+        } else {
+            request["generation"] = 0.into();
+        }
+        let request = request.to_string() + "\n";
         let mut writer = DiagnosticWriter::new(Duration::from_millis(2_001));
         server.serve(Cursor::new(request), &mut writer).unwrap();
         let response: serde_json::Value = serde_json::from_slice(&writer.bytes).unwrap();
-        assert_eq!(response["status"], if store_error { "error" } else { "ok" });
+        assert_eq!(response["status"], "error");
         drain(&sink);
         let rows = records(home.path());
         let events = rows
@@ -216,15 +185,8 @@ fn diagnostics_control_slow_typed_and_store_refusals_keep_fault_records_only() {
             .collect::<Vec<_>>();
         assert_eq!(events.len(), 1, "no extra slow success: {rows:?}");
         let event = &events[0]["event"];
-        assert_eq!(
-            event["code"],
-            if store_error {
-                "turn_grant_not_found"
-            } else {
-                "grant_scope_mismatch"
-            }
-        );
-        assert_eq!(event["elapsed_ms"], 2_101);
+        assert_eq!(event["code"], "named_root_binding_refused");
+        assert_eq!(event["elapsed_ms"], if store_error { 2_101 } else { 0 });
         assert!(event["handler_ms"].is_null());
         assert!(!event.as_object().unwrap().contains_key("store_write"));
         assert!(!serde_json::to_string(&rows).unwrap().contains("PRIVATE"));
@@ -236,13 +198,11 @@ fn diagnostics_control_failed_delivery_never_adds_a_slow_success() {
     for write_failure in [false, true] {
         let home = crate::test_support::temp_home().unwrap();
         let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
-        let (mut server, routing, grant) = diagnostic_server(home.path(), &sink);
+        let (mut server, root_request) = diagnostic_server(home.path(), &sink);
         let _clock = crate::storage::control_diagnostic_test_clock::start();
-        let request =
-            serde_json::json!({"operation":"turn_begin", "routing_token":routing, "grant_id":grant,
-            "delivery_tokens":["PRIVATE-delivery"], "idempotency_key":"PRIVATE-refusal"})
-            .to_string()
-                + "\n";
+        let mut request = root_request;
+        request["generation"] = 0.into();
+        let request = request.to_string() + "\n";
         let mut writer = DiagnosticWriter::new(Duration::from_millis(2_001));
         writer.fail_write = write_failure;
         writer.fail_flush = !write_failure;
@@ -261,7 +221,7 @@ fn diagnostics_control_failed_delivery_never_adds_a_slow_success() {
             .filter(|row| row["event"]["frame_seq"] == 1)
             .map(|row| row["event"]["code"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(codes, ["grant_scope_mismatch", "send_failed"]);
+        assert_eq!(codes, ["named_root_binding_refused", "send_failed"]);
     }
 }
 
@@ -269,13 +229,9 @@ fn diagnostics_control_failed_delivery_never_adds_a_slow_success() {
 fn diagnostics_control_successful_frame_failed_flush_keeps_only_send_failure() {
     let home = crate::test_support::temp_home().unwrap();
     let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
-    let (mut server, routing, grant) = diagnostic_server(home.path(), &sink);
+    let (mut server, _root_request) = diagnostic_server(home.path(), &sink);
     let _clock = crate::storage::control_diagnostic_test_clock::start();
-    let request = serde_json::json!({
-        "operation":"turn_grant_read", "routing_token":routing, "grant_id":grant
-    })
-    .to_string()
-        + "\n";
+    let request = serde_json::json!({"operation":"work_session_read"}).to_string() + "\n";
     let mut writer = DiagnosticWriter::new(Duration::from_millis(2_001));
     writer.fail_flush = true;
     assert_eq!(
@@ -300,7 +256,7 @@ fn diagnostics_control_successful_frame_failed_flush_keeps_only_send_failure() {
         "no slow success after failed flush: {rows:?}"
     );
     let event = &events[0]["event"];
-    assert_eq!(event["operation"], "turn_grant_read");
+    assert_eq!(event["operation"], "work_session_read");
     assert_eq!(event["code"], "send_failed");
     assert_eq!(event["elapsed_ms"], 2_001);
     assert!(event["handler_ms"].is_null());
@@ -332,14 +288,7 @@ fn diagnostics_control_slow_success_is_retained_after_response_flush() {
     )
     .unwrap()
     .with_diagnostics(sink.clone());
-    let input = serde_json::json!({
-        "operation": "session_bind", "external_ref": "PRIVATE-anchor",
-        "title": "PRIVATE-title", "assurance": "turn_gated",
-        "mediated_effects": ["observe"], "work_binding": null,
-        "capability_map_revision": 1, "idempotency_key": "PRIVATE-key"
-    })
-    .to_string()
-        + "\n";
+    let input = serde_json::json!({"operation":"work_session_read"}).to_string() + "\n";
     let _clock = crate::storage::control_diagnostic_test_clock::start();
     let mut output = SlowFlush(Vec::new());
     server.serve(Cursor::new(input), &mut output).unwrap();
@@ -359,11 +308,11 @@ fn diagnostics_control_slow_success_is_retained_after_response_flush() {
     );
     let event = &events[0]["event"];
     assert_eq!(event["code"], "slow_call");
-    assert_eq!(event["operation"], "session_bind");
+    assert_eq!(event["operation"], "work_session_read");
     assert_eq!(event["elapsed_ms"], 2_001);
     assert_eq!(event["handler_ms"], 0);
-    assert_eq!(event["store_write"]["attempted"], 1);
-    assert_eq!(event["store_write"]["acquired"], 1);
+    assert_eq!(event["store_write"]["attempted"], 0);
+    assert_eq!(event["store_write"]["acquired"], 0);
     assert!(!serde_json::to_string(&rows).unwrap().contains("PRIVATE"));
 }
 
@@ -473,33 +422,14 @@ fn diagnostics_control_refusals_keep_wire_bytes_and_safe_frame_correlation() {
         None,
     )
     .unwrap();
-    let bound = server
-        .handle(HostControlRequest::SessionBind {
-            external_ref: "PRIVATE-anchor".into(),
-            title: "PRIVATE-title".into(),
-            assurance: ControlAssurance::TurnGated,
-            mediated_effects: vec![EffectClass::Observe],
-            work_binding: None,
-            capability_map_revision: 1,
-            idempotency_key: "PRIVATE-bind".into(),
-        })
-        .unwrap();
-    let routing = bound["routing_token"].as_str().unwrap();
-    let grant = server
-        .handle(HostControlRequest::TurnEvaluate {
-            routing_token: routing.into(),
-            idempotency_key: "PRIVATE-eval".into(),
-            intent_fingerprint: ObjectId::from_canonical_bytes(b"diagnostics").to_string(),
-            purpose: None,
-            requested_effects: vec![EffectClass::Observe],
-            resource_intents: vec![],
-        })
-        .unwrap();
-    let grant = grant["grant"]["grant_id"].as_str().unwrap();
     let input = format!(
         "{}\n{}\n",
-        serde_json::json!({"operation":"turn_begin","routing_token":routing,"grant_id":grant,"delivery_tokens":["PRIVATE-delivery"],"idempotency_key":"PRIVATE-key"}),
-        serde_json::json!({"operation":"turn_begin","routing_token":routing,"grant_id":uuid::Uuid::new_v4(),"delivery_tokens":[],"idempotency_key":"PRIVATE-missing-grant"})
+        serde_json::json!({"operation":"named_root_bind", "claim_id":uuid::Uuid::new_v4(),
+            "claim_fence":1, "workspace_id":"PRIVATE-workspace", "generation":1,
+            "named_at":"2020-01-01T00:00:00Z", "kind":"bound",
+            "idempotency_key":"PRIVATE-key"}),
+        serde_json::json!({"operation":"named_root_read", "run_id":uuid::Uuid::new_v4(),
+            "claim_id":uuid::Uuid::new_v4()})
     );
     let mut baseline = Vec::new();
     server.serve(Cursor::new(&input), &mut baseline).unwrap();
@@ -511,7 +441,7 @@ fn diagnostics_control_refusals_keep_wire_bytes_and_safe_frame_correlation() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(error_response["error"]["code"], "turn_grant_not_found");
+    assert_eq!(error_response["error"]["code"], "named_root_read_refused");
     server = server.with_diagnostics(sink.clone());
     let mut observed = Vec::new();
     server.serve(Cursor::new(&input), &mut observed).unwrap();
@@ -530,25 +460,25 @@ fn diagnostics_control_refusals_keep_wire_bytes_and_safe_frame_correlation() {
     assert_eq!(baseline, traced_bytes);
     drain(&sink);
     let rows = records(home.path());
+    // A frame that parses and is then refused names its operation and its
+    // attempt, never its body.
     let refused = rows
         .iter()
-        .find(|row| row["event"]["code"] == "grant_scope_mismatch")
+        .find(|row| row["event"]["code"] == "named_root_binding_refused")
         .unwrap();
-    assert_eq!(refused["event"]["operation"], "turn_begin");
+    assert_eq!(refused["event"]["operation"], "named_root_bind");
     assert_eq!(refused["event"]["frame_seq"], 3);
-    assert_eq!(refused["event"]["grant_id"], grant);
     assert_eq!(
         refused["event"]["attempt_fingerprint"],
         serde_json::to_value(Fingerprint::attempt("PRIVATE-key")).unwrap()
     );
     let error = rows
         .iter()
-        .find(|row| row["event"]["code"] == "turn_grant_not_found")
+        .find(|row| row["event"]["code"] == "named_root_read_refused")
         .unwrap();
     assert_eq!(error["event"]["frame_seq"], 4);
     let text = serde_json::to_string(&rows).unwrap();
     assert!(!text.contains("PRIVATE"));
-    assert!(!text.contains(routing));
     assert!(refused["event"]["observed_at"].as_str().is_some());
 }
 
@@ -567,12 +497,8 @@ fn diagnostics_control_transaction_scope_keeps_exact_frame_and_wire_replay() {
         None,
     )
     .unwrap();
-    let input = serde_json::to_vec(&serde_json::json!({
-        "operation":"session_bind", "external_ref":"PRIVATE-anchor", "title":"PRIVATE-title",
-        "assurance":"turn_gated", "mediated_effects":["observe"], "capability_map_revision":1,
-        "idempotency_key":"PRIVATE-bind"
-    }))
-    .unwrap();
+    let binding = claimed_binding(&mut server);
+    let input = serde_json::to_vec(&root_bind_frame(&binding)).unwrap();
     let wire = [input, vec![b'\n']].concat();
     let mut baseline = Vec::new();
     server.serve(Cursor::new(&wire), &mut baseline).unwrap();
@@ -593,7 +519,7 @@ fn diagnostics_control_transaction_scope_keeps_exact_frame_and_wire_replay() {
     assert_ne!(transactions, Vec::<&Value>::new());
     for row in transactions {
         let event = &row["event"];
-        assert_eq!(event["operation"], "session_bind");
+        assert_eq!(event["operation"], "named_root_bind");
         assert_eq!(event["frame_seq"], 2);
         assert_eq!(event["store_transaction"]["boundary"], "control_mutation");
         assert_eq!(

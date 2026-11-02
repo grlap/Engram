@@ -19,21 +19,21 @@ Use this setup only when the operator or consuming project requests it.
 The operator confirms configuration; an agent reports a missing access route,
 store or project binding rather than guessing or creating one.
 See [build and setup](../../../README.md#build-and-set-up) and the
-[host checklist](../../host-checklist.md#base-tier--advisory).
+[host checklist](../../host-checklist.md#base-tier).
 
 1. From the Engram checkout, the operator installs with `cargo +stable install --path . --locked`, then reads `engram --version`.
 2. Track one `.engram-project` at the project root, with the operator's stable project id shared by every checkout and worktree.
 3. Confirm an absolute, local, non-synced store home. Supply it explicitly with `--home` or `ENGRAM_HOME` at every CLI, MCP and host launch point; there is no default home. Do not place the store in a cloud-synced or network folder.
 4. Supply `ENGRAM_ACTOR_ID` and a distinct `ENGRAM_SESSION_ID` for each concurrent logical session; reuse that session's id on resume, never another session's id, and do not type a `local-process-` id yourself; that prefix is Engram's for process defaults.
-5. For a new store, the operator explicitly runs `engram init --required-assurance advisory --authorized-by <operator>`, then `engram doctor`, from the project root with the confirmed home.
+5. For a new store, the operator explicitly runs `engram init`, then `engram doctor`, from the project root with the confirmed home.
 6. Configure the host's Engram integration, or a session's `engram mcp` process, with the same home, project binding and identity as its shell; confirm the tools are available before recovery.
 
 When `--project-file` is omitted, Engram searches from the working directory through its ancestors to the filesystem root and uses the nearest `.engram-project`, without stopping at `.git`. An explicit `--project-file` wins: relative paths resolve from the working directory, and failures do not fall back to another file. An invalid or unreadable nearest marker also refuses without falling through. A nested worktree uses its own marker when present; otherwise search can reach an outer repository's marker. The selected marker's parent is the project root. If none is found, use the intended project tree or pass its explicit project-file path; do not create a second marker in a subdirectory to fix the refusal.
 
-Advisory setup tracks work without controlling tool execution. A plain `init`
-defaults to a stronger policy; policy and
+Engram tracks work and records what the host observes; it never controls tool
+execution. `init` takes no policy option, and
 [acceptance evaluation](../../features/acceptance-evaluation.md#policy)
-are separate operator choices.
+is a separate operator choice.
 Use injected Engram tools first. Without them, use the available CLI as
 `engram --home <confirmed-absolute-home> work ...` from the project folder.
 [Claude Code without TermAl](../../host-checklist.md#claude-code-as-the-host-no-termal)

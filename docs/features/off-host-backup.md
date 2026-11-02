@@ -48,8 +48,8 @@ promised to share one cut.
 | | `store` copy | `graph` copy |
 | --- | --- | --- |
 | Artifact | The verified full-store file that the shipped `engram backup` writes: SQLite's own consistent copy, then a full check that every record decodes and agrees | The shipped [work-graph snapshot](work-graph-snapshot.md) document, saved without widening |
-| Contains | Every row: work graph, runs, claims, seals, evidence, acceptance evaluations, obligations, control policy and its history, sessions and grants, delivery state, project memories with every body, agent-private scratch | Work items, active blockers, cited source snapshots, per-item history as inert records, keyed project memories with their history and tombstones |
-| Excludes | Nothing | Runs, root executions, claims, seals, checkpoints, waivers, evidence bodies, acceptance evaluations, obligations, control policy and rule sets, sessions, grants, delivery state, unkeyed observations, private scratch. A `restricted` memory body is a typed placeholder |
+| Contains | Every row: work graph, runs, claims, seals, evidence, acceptance evaluations, obligations, control policy and its history, sessions, delivery state, project memories with every body, agent-private scratch | Work items, active blockers, cited source snapshots, per-item history as inert records, keyed project memories with their history and tombstones |
+| Excludes | Nothing | Runs, root executions, claims, seals, checkpoints, waivers, evidence bodies, acceptance evaluations, obligations, control policy and rule sets, sessions, delivery state, unkeyed observations, private scratch. A `restricted` memory body is a typed placeholder |
 | A restore gives | The same store at the copy's cut | A new store with the same planning graph: completed items land completed by record, never by seal; open items start execution again; the operator asserts the control policy again at `init` |
 | Bound to | One store schema, and the full check of the build that restores it | One snapshot format fingerprint |
 | Exposure at the target | Everything above, readable by anyone who can read the target, including host-private state. The target must be a place where the store itself may be kept, readable only by the operator's own account | Planning text, history and memory bodies labelled `public`, `internal` or `secret-ref`, readable by anyone who can read the target |
@@ -650,7 +650,7 @@ identity, occurrence id and a durable host/session identity to a distinct
 opaque asserted Engram session id. Keep it separate from local UI identities;
 a reused `session-N`, a process UUID, a copy hash or a timestamp is not this
 mapping. Move existing sessions onto it, acknowledge the handled occurrence
-durably, and retire old routing, grant and recovery handles before any control
+durably, and retire old recovery handles before any work-session
 connection, MCP opening or work recovery. Never replay old-session authority.
 The same handled occurrence reuses its mapping after reboot; a new restore
 of the same copy rotates identities once again.
@@ -743,9 +743,8 @@ in `engram.db` mean something wrote to it, and the retry refuses it as an
 existing store, naming what did not match. `backup status` and `doctor`
 show a pending record from the moment it is written.
 
-**What restore does with live authority.** A `store` copy holds the claims,
-grants, begun turns, control sessions and delivery state that were live at
-its cut. Restore changes no row, so the restored store equals the copy. It
+**What restore does with live authority.** A `store` copy holds the claims
+and delivery state that were live at its cut. Restore changes no row, so the restored store equals the copy. It
 never renews, resets or revives authority, and it never uses this machine's
 clock to extend or end any of it: the clock only decides what the report
 calls unexpired. Restore does three things about that authority:
@@ -758,9 +757,8 @@ calls unexpired. Restore does three things about that authority:
   copy's digest and origin host name, to this home's recorded state, and
   `status` and `doctor` show it from then on.
 - It reports, read from the checked copy with one reading of this machine's
-  clock, how many active claims and how many issued grants have not yet
-  expired, when the last of each expires, and, separately, how many begun
-  turns are still open, not yet checkpointed.
+  clock, how many active claims have not yet expired and when the last of
+  them expires (`as_of`, `unexpired_claims`, `claims_expire_by`).
 - It resets nothing, and what it restores ends only as the origin's would
   have:
   - A restored claim stays held until its recorded expiry (one hour by
@@ -768,23 +766,11 @@ calls unexpired. Restore does three things about that authority:
     new session's claim of the item is refused (`work_claim_held`); after
     it, the item is recovered the ordinary way, with
     `engram work claim <ref> --recover "<reason>"`.
-  - A restored issued grant expires at its recorded time, seconds after it
-    was issued, or sooner, when a control connection is opened for its
-    session; either way it is then unusable.
-  - A restored begun turn has no clock end: a grant's expiry does not close
-    a turn that began under it. It stays open until a caller acting as its
-    session checkpoints it, and no other session can close it today. It
-    does not keep a new session from the work: once the old claim expires,
-    the item is recovered as above.
 
   Who can use what restore keeps is the same asserted boundary the origin
   had: the session id, and nothing more. A caller that asserts a restored
-  session's id can use and renew its claim, as on the origin. Opening the
-  control transport with that id reconnects the session under a new
-  connection token, which also ends its issued grants, and the session's
-  routing token is in the copy, so that caller can also checkpoint the
-  session's begun turn. Nothing in the restored store keeps a reused session
-  id out. This is why the host must give its sessions identities the
+  session's id can use and renew its claim, as on the origin. Nothing in
+  the restored store keeps a reused session id out. This is why the host must give its sessions identities the
   restored store has not seen.
 
 The preconditions before any consumer starts are therefore: every consumer
@@ -853,7 +839,7 @@ folder.
   same items, blockers, sources and memories as the pushed file and carries
   the pushed file's native history layer as an inherited one. A `restricted`
   body is a placeholder. The restored store holds no run, claim, seal,
-  grant, session or scratch.
+  session or scratch.
 - **The rule.** A table test over the pure rule produces `local_backed_up`
   and every reason above, including a future timestamp, a changed target,
   and three cases of an old copy confirmed a minute ago: a `store` copy on
@@ -940,9 +926,8 @@ folder.
   created. For a `graph` capture, work and memory changes made
   during it leave a body whose two positions describe one state.
 - **Restore and authority.** `backup restore` without `--origin-retired-by`
-  is refused. With it, the output names the unexpired claims and issued
-  grants with the last expiry of each, and the begun turns apart; the
-  restored store's rows are unchanged; `status` shows the statement; and a
+  is refused. With it, the output names the unexpired claims with the last
+  expiry; the restored store's rows are unchanged; `status` shows the statement; and a
   new session's claim on a still-held item is refused until the old claim's
   expiry, then recovered with `--recover`.
 - **Stored compressed.** The file at a `directory` target is a gzip file;

@@ -29,7 +29,7 @@ pub(crate) fn expire_at_operation_write(store: &SqliteStore) {
             if matches!(
                 context.action,
                 AuthAction::Insert {
-                    table_name: "control_operation_results"
+                    table_name: "work_operation_results"
                 }
             ) {
                 expire();

@@ -51,7 +51,7 @@ pub(crate) fn source_recovery_transport_fixture(
                 &work.project_id,
                 &host.session_id,
                 &host.connection_token,
-                &host.routing_token,
+                crate::storage::HostSessionAuthority::Work,
                 claim.claim_id,
                 claim.fence,
                 "C:/database is locked/源",
@@ -71,7 +71,7 @@ pub(crate) fn source_recovery_transport_fixture(
             source_root_generation: Some(9),
             source_root_state: Some(SourceRootState::Named),
         };
-        host.checkpoint(
+        host.install_checks(
             store,
             false,
             Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
