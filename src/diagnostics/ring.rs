@@ -64,7 +64,20 @@ impl Sink for Ring {
 }
 
 impl Ring {
+    pub(super) fn append_durable(&self, line: &[u8], acquired: impl FnOnce()) -> io::Result<()> {
+        self.append_with_sync(line, |_| acquired(), true)
+    }
+
     fn append_observing_lock(&self, line: &[u8], acquired: impl FnOnce(&File)) -> io::Result<()> {
+        self.append_with_sync(line, acquired, false)
+    }
+
+    fn append_with_sync(
+        &self,
+        line: &[u8],
+        acquired: impl FnOnce(&File),
+        durable: bool,
+    ) -> io::Result<()> {
         if line.len() > super::MAX_RECORD_BYTES {
             return Err(io::ErrorKind::InvalidData.into());
         }
@@ -131,6 +144,9 @@ impl Ring {
             // torn tail is bounded and repaired under the same lock next time.
             let _ = file.set_len(before);
             return Err(error);
+        }
+        if durable {
+            file.sync_all()?;
         }
         drop(file);
         lock.release()

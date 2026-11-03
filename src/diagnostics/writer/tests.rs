@@ -2,6 +2,8 @@ use super::*;
 use crate::diagnostics::{Correlation, Fault};
 use std::sync::atomic::AtomicUsize;
 
+mod control_exit;
+
 #[derive(Clone, Copy)]
 struct DrainStart {
     timeouts: u64,

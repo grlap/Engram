@@ -176,6 +176,11 @@ fn store_error_details(error: &StoreError) -> Option<Value> {
     }
 }
 
+/// A terminal unwind at the control boundary; no application outcome is implied.
+#[derive(Debug, thiserror::Error)]
+#[error("Engram control stopped after an internal panic; the operation outcome is unknown")]
+pub struct ControlPanic;
+
 /// Long-lived host-private service over one project-local store.
 pub struct HostControlServer {
     store: SqliteStore,
@@ -190,6 +195,7 @@ pub struct HostControlServer {
     diagnostics: Option<crate::diagnostics::Diagnostics>,
     diagnostic_frame: Option<crate::diagnostics::control::Frame>,
     diagnostic_sequence: u64,
+    terminal: bool,
 }
 
 impl HostControlServer {
@@ -213,6 +219,7 @@ impl HostControlServer {
             diagnostics: None,
             diagnostic_frame: None,
             diagnostic_sequence: 0,
+            terminal: false,
         }
     }
 
@@ -395,6 +402,7 @@ impl HostControlServer {
             diagnostics: None,
             diagnostic_frame: None,
             diagnostic_sequence: 0,
+            terminal: false,
         })
     }
 
@@ -409,6 +417,11 @@ impl HostControlServer {
         reason = "the tagged host protocol stays auditable as one exhaustive dispatch"
     )]
     pub fn handle(&mut self, request: HostControlRequest) -> Result<Value, StoreError> {
+        if self.terminal {
+            return Err(StoreError::InvalidHostContext(
+                "control service has terminated; open a fresh connection".into(),
+            ));
+        }
         let _budget = crate::storage::ControlRequestScope::ensure()?;
         let now = Utc::now();
         match request {
@@ -632,6 +645,55 @@ impl HostControlServer {
 
     fn serve_observed(
         &mut self,
+        reader: impl BufRead,
+        writer: impl Write,
+        trace: Option<&crate::phase_trace::control::ControlTrace>,
+    ) -> std::io::Result<()> {
+        if self.terminal {
+            return Err(std::io::Error::other(
+                "Engram control service has terminated; open a fresh connection",
+            ));
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.serve_frames(reader, writer, trace)
+        }));
+        let frame = self.diagnostic_frame.take();
+        if matches!(result, Ok(Ok(()))) {
+            return Ok(());
+        }
+        // An unwind can leave handler state unsafe to reuse. Ordinary I/O
+        // errors end this transport invocation; fresh transport may retry.
+        self.terminal = result.is_err();
+        if let Some(sink) = &self.diagnostics {
+            let frame = frame.as_ref();
+            let persisted = sink.control_abnormal_exit(
+                if result.is_err() {
+                    "panic"
+                } else {
+                    "transport_failure"
+                },
+                frame.map_or("unknown", |frame| frame.operation),
+                frame.map_or(crate::diagnostics::Correlation::default(), |frame| {
+                    frame.correlation
+                }),
+                frame.map_or("idle_read", |frame| frame.phase),
+                frame.map_or(std::time::Duration::ZERO, |frame| {
+                    crate::storage::control_diagnostic_now()
+                        .saturating_duration_since(frame.started)
+                }),
+            );
+            if persisted.is_err() {
+                eprintln!("Engram control abnormal-exit diagnostic could not be persisted");
+            }
+        }
+        match result {
+            Ok(result) => result,
+            Err(_) => Err(std::io::Error::other(ControlPanic)),
+        }
+    }
+
+    fn serve_frames(
+        &mut self,
         mut reader: impl BufRead,
         mut writer: impl Write,
         trace: Option<&crate::phase_trace::control::ControlTrace>,
@@ -698,6 +760,7 @@ impl HostControlServer {
                     }
                     if let Some(frame) = &mut self.diagnostic_frame {
                         frame.request(&request);
+                        frame.phase = "handler";
                     }
                     let _transaction_scope = self.diagnostics.as_ref().and_then(|sink| {
                         self.diagnostic_frame.as_ref().map(|frame| {
@@ -728,6 +791,9 @@ impl HostControlServer {
             if let (Some(frame), Some(timing)) = (&mut self.diagnostic_frame, &diagnostic_timing) {
                 frame.handler_finished(timing.snapshot());
             }
+            if let Some(frame) = &mut self.diagnostic_frame {
+                frame.phase = "response_write";
+            }
             if let Some(trace) = trace {
                 trace.enter(ControlPhase::ResponseSerialize);
             }
@@ -753,6 +819,9 @@ impl HostControlServer {
                     crate::diagnostics::Fault::incomplete()
                 });
                 return Err(error.into());
+            }
+            if let Some(frame) = &mut self.diagnostic_frame {
+                frame.phase = "response_flush";
             }
             let written = writer.write_all(b"\n").and_then(|()| writer.flush());
             if let Err(error) = written {

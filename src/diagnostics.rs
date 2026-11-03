@@ -4,6 +4,7 @@
 //! the home-wide ring; diagnostics never change admission or operation results.
 
 pub(crate) mod control;
+mod control_exit;
 pub mod mcp;
 mod record;
 mod ring;
@@ -23,6 +24,7 @@ pub const QUEUE_CAPACITY: usize = 256;
 /// One producer's fixed metadata and bounded writer. Cloning shares its queue.
 #[derive(Clone, Debug)]
 pub struct Diagnostics {
+    home: std::path::PathBuf,
     writer: Arc<Writer>,
     transaction_sequence: Arc<std::sync::atomic::AtomicU64>,
     full_transactions: bool,
@@ -38,6 +40,7 @@ impl Diagnostics {
     /// Uses the explicitly selected home; never discovers or opens a store.
     pub fn start(home: &Path, session: &str, surface: Surface) -> Self {
         Self {
+            home: home.to_owned(),
             writer: Writer::start(home, session, surface),
             transaction_sequence: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             full_transactions: std::env::var_os("ENGRAM_STORE_TRANSACTION_TRACE")

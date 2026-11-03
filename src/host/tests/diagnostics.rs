@@ -6,11 +6,258 @@ use crate::diagnostics::{
 use std::io::{self, Write};
 use std::time::Duration;
 
+struct LostControlReply;
+impl Write for LostControlReply {
+    fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+        panic!("PRIVATE panic payload must not enter the diagnostic");
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn control_unwind_records_the_lost_reply_and_exact_retry_replays_once() {
+    let _ = crate::build_identity::current();
+    let home = crate::test_support::temp_home().unwrap();
+    let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
+    let (mut server, request) = diagnostic_server(home.path(), &sink);
+    server = server.with_diagnostics(sink.clone());
+    sink.emit(crate::diagnostics::Event::failure(
+        "work_session_read",
+        crate::diagnostics::Correlation::default(),
+        Duration::ZERO,
+        crate::diagnostics::Fault::slow(),
+    ));
+    drain(&sink);
+    let input = request.to_string() + "\n";
+    let failure = server
+        .serve(Cursor::new(input.clone()), LostControlReply)
+        .unwrap_err();
+    assert!(failure.get_ref().unwrap().is::<ControlPanic>());
+    let mut refused_output = Vec::new();
+    assert!(
+        server
+            .serve(Cursor::new(input.clone()), &mut refused_output)
+            .is_err()
+    );
+    assert!(refused_output.is_empty(), "an unwound server never resumes");
+    assert!(matches!(
+        server.handle(HostControlRequest::WorkSessionRead {}),
+        Err(StoreError::InvalidHostContext(_))
+    ));
+    // The async drain precedes the synced append; neither uses serving SQLite.
+    drain(&sink);
+    let observed = records(home.path());
+    let terminal = observed
+        .iter()
+        .find(|row| row["event"]["code"] == "control_abnormal_exit")
+        .unwrap();
+    assert_eq!(terminal["event"]["reason"], "panic");
+    assert_eq!(terminal["event"]["operation"], "named_root_bind");
+    assert_eq!(terminal["event"]["phase"], "response_write");
+    assert_eq!(terminal["event"]["frame_seq"], 1);
+    assert_eq!(
+        terminal["event"]["attempt_fingerprint"],
+        serde_json::to_value(Fingerprint::attempt(
+            request["idempotency_key"].as_str().unwrap()
+        ))
+        .unwrap()
+    );
+    assert_eq!(terminal["producer"]["pid"], std::process::id());
+    let queued = observed
+        .iter()
+        .find(|row| row["event"]["operation"] == "work_session_read")
+        .unwrap();
+    assert_eq!(
+        terminal["producer"], queued["producer"],
+        "queued and fatal records share one producer"
+    );
+    assert!(terminal["loss"].is_object());
+    assert!(!terminal.to_string().contains("PRIVATE"));
+    drop(server);
+    let mut replacement = HostControlServer::open_work_session_with_host_path_identity(
+        home.path().join("store.sqlite3"),
+        None,
+        ProjectId("slow-control".into()),
+        "PRIVATE-actor".into(),
+        SessionId("session-11296".into()),
+        None,
+    )
+    .unwrap();
+    let audit_connection = rusqlite::Connection::open_with_flags(
+        home.path().join("store.sqlite3"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let count: i64 = audit_connection
+        .query_row("SELECT count(*) FROM objects", [], |row| row.get(0))
+        .unwrap();
+    let mut first = Vec::new();
+    replacement
+        .serve(Cursor::new(input.clone()), &mut first)
+        .unwrap();
+    let mut second = Vec::new();
+    replacement.serve(Cursor::new(input), &mut second).unwrap();
+    assert_eq!(first, second, "exact retry returns the original receipt");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&first).unwrap()["status"],
+        "ok"
+    );
+    let after: i64 = audit_connection
+        .query_row("SELECT count(*) FROM objects", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, after, "exact retries add no canonical objects");
+}
+
 struct DiagnosticWriter {
     bytes: Vec<u8>,
     flush_delay: Duration,
     fail_write: bool,
     fail_flush: bool,
+}
+
+#[test]
+fn control_io_failure_is_durable_and_fresh_transport_can_recover() {
+    let home = crate::test_support::temp_home().unwrap();
+    let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
+    let (mut server, _) = diagnostic_server(home.path(), &sink);
+    let _clock = crate::storage::control_diagnostic_test_clock::start();
+    let input = "{\"operation\":\"work_session_read\"}\n";
+    let mut writer = DiagnosticWriter::new(Duration::ZERO);
+    writer.fail_flush = true;
+    assert_eq!(
+        server
+            .serve(Cursor::new(input), &mut writer)
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::BrokenPipe
+    );
+    assert!(server.diagnostic_frame.is_none());
+    let mut unreadable_output = Vec::new();
+    assert_eq!(
+        server
+            .serve(FailedInitialRead, &mut unreadable_output)
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    assert_eq!(unreadable_output, [] as [u8; 0]);
+    drain(&sink);
+    let rows = records(home.path());
+    let terminal = rows
+        .iter()
+        .find(|row| row["event"]["kind"] == "control_exit")
+        .unwrap();
+    assert_eq!(terminal["event"]["reason"], "transport_failure");
+    assert_eq!(terminal["event"]["phase"], "response_flush");
+    assert_eq!(terminal["event"]["frame_seq"], 1);
+    assert!(terminal["loss"].is_object());
+    let idle = rows
+        .iter()
+        .filter(|row| row["event"]["kind"] == "control_exit")
+        .nth(1)
+        .unwrap();
+    assert_eq!(idle["event"]["reason"], "transport_failure");
+    assert_eq!(idle["event"]["operation"], "unknown");
+    assert_eq!(idle["event"]["phase"], "idle_read");
+    assert!(idle["event"]["frame_seq"].is_null());
+    assert!(idle["event"]["attempt_fingerprint"].is_null());
+    assert!(
+        server
+            .handle(HostControlRequest::WorkSessionRead {})
+            .is_ok()
+    );
+    let mut next_output = Vec::new();
+    server.serve(Cursor::new(input), &mut next_output).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&next_output).unwrap()["status"],
+        "ok"
+    );
+}
+
+struct FailedInitialRead;
+
+impl io::Read for FailedInitialRead {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+}
+
+impl io::BufRead for FailedInitialRead {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+
+    fn consume(&mut self, _: usize) {}
+}
+
+#[derive(Default)]
+struct PartialControlReply {
+    bytes: Vec<u8>,
+    failures: usize,
+}
+
+impl Write for PartialControlReply {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        let remaining = 7 - self.bytes.len();
+        if remaining == 0 {
+            self.failures += 1;
+            return Err(io::ErrorKind::BrokenPipe.into());
+        }
+        let accepted = bytes.len().min(remaining);
+        self.bytes.extend_from_slice(&bytes[..accepted]);
+        Ok(accepted)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn control_partial_write_stops_before_the_next_frame_and_exact_retry_replays() {
+    let home = crate::test_support::temp_home().unwrap();
+    let sink = Diagnostics::start(home.path(), "session-11296", Surface::Control);
+    let (mut server, request) = diagnostic_server(home.path(), &sink);
+    let input = request.to_string() + "\n";
+    let second = "{\"operation\":\"work_session_read\"}\n";
+    let mut reader = Cursor::new(input.clone() + second);
+    let mut writer = PartialControlReply::default();
+    assert_eq!(
+        server.serve(&mut reader, &mut writer).unwrap_err().kind(),
+        io::ErrorKind::BrokenPipe
+    );
+    assert_eq!(reader.position(), u64::try_from(input.len()).unwrap());
+    assert_eq!(writer.bytes.len(), 7);
+    assert_eq!(writer.failures, 1, "no replacement response is attempted");
+    assert!(!writer.bytes.contains(&b'\n'));
+    let observer = rusqlite::Connection::open(home.path().join("store.sqlite3")).unwrap();
+    let committed = crate::storage::test_database_shape_snapshot(&observer).unwrap();
+    let mut replay = Vec::new();
+    server.serve(Cursor::new(input), &mut replay).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&replay).unwrap()["status"],
+        "ok"
+    );
+    assert_eq!(writer.bytes, replay[..7]);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&observer).unwrap(),
+        committed,
+        "fresh transport replays the committed receipt without another write"
+    );
+    drain(&sink);
+    let rows = records(home.path());
+    let failure = rows
+        .iter()
+        .find(|row| row["event"]["kind"] == "control_exit")
+        .unwrap();
+    assert_eq!(failure["event"]["operation"], "named_root_bind");
+    assert_eq!(failure["event"]["phase"], "response_write");
+    assert_eq!(failure["event"]["frame_seq"], 1);
 }
 
 impl DiagnosticWriter {

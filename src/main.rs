@@ -974,7 +974,7 @@ fn main() -> ExitCode {
             Ok(Ok(code)) => code,
             Ok(Err(error)) => {
                 emit_anyhow_error(&error);
-                ExitCode::FAILURE
+                bin_support::control::failure_exit_code(&error)
             }
             Err(payload) => std::panic::resume_unwind(payload),
         },

@@ -40,60 +40,133 @@ pub(crate) fn serve_control(
         engram::diagnostics::Surface::Control,
     );
     let _finish = DiagnosticExit(diagnostics.clone());
-    // ENGRAM_MCP_PHASE_TRACE=1 at start traces startup and each frame to
-    // stderr; unset, only the default diagnostic observer is installed.
-    if let Err(error) = crate::validate_session_id_length(&session_id) {
-        if let Some(trace) = trace {
-            trace.abandon_startup("invalid_session_id");
-        }
-        return Err(error.into());
-    }
-    let opened = HostControlServer::open_work_session_with_host_path_identity(
-        database,
-        identity,
-        project_id,
-        actor_id,
-        SessionId(session_id),
-        source_skill,
-    );
-    let mut server = match opened {
-        Ok(server) => server
-            .with_actor_context(actor_context)
-            .with_diagnostics(diagnostics.clone()),
-        Err(error) => {
-            diagnostics.emit(engram::diagnostics::Event::failure(
-                "startup",
-                engram::diagnostics::Correlation::default(),
-                std::time::Duration::ZERO,
-                engram::diagnostics::Fault::store(&error),
-            ));
+    let started = std::time::Instant::now();
+    catch_startup(&diagnostics, started, || {
+        // ENGRAM_MCP_PHASE_TRACE=1 at start traces startup and each frame to
+        // stderr; unset, only the default diagnostic observer is installed.
+        if let Err(error) = crate::validate_session_id_length(&session_id) {
             if let Some(trace) = trace {
-                trace.startup_finished(Some(engram::host::store_error_code(&error)));
+                trace.abandon_startup("invalid_session_id");
             }
-            let response = HostControlServer::serve_startup_failure(
-                &error,
-                BufReader::new(io::stdin().lock()),
-                BufWriter::new(io::stdout().lock()),
-            );
-            if let Err(transport) = response {
-                return Err(error).context(format!(
+            return Err(error.into());
+        }
+        let opened = HostControlServer::open_work_session_with_host_path_identity(
+            database,
+            identity,
+            project_id,
+            actor_id,
+            SessionId(session_id),
+            source_skill,
+        );
+        let mut server = match opened {
+            Ok(server) => server
+                .with_actor_context(actor_context)
+                .with_diagnostics(diagnostics.clone()),
+            Err(error) => {
+                diagnostics.emit(engram::diagnostics::Event::failure(
+                    "startup",
+                    engram::diagnostics::Correlation::default(),
+                    std::time::Duration::ZERO,
+                    engram::diagnostics::Fault::store(&error),
+                ));
+                if let Some(trace) = trace {
+                    trace.startup_finished(Some(engram::host::store_error_code(&error)));
+                }
+                let response = startup_response(
+                    &diagnostics,
+                    started,
+                    &error,
+                    BufReader::new(io::stdin().lock()),
+                    BufWriter::new(io::stdout().lock()),
+                );
+                if let Err(transport) = response {
+                    return Err(error).context(format!(
                     "failed to start Engram host-control service; startup response failed: {transport}"
                 ));
+                }
+                return Err(error).context("failed to start Engram host-control service");
             }
-            return Err(error).context("failed to start Engram host-control service");
+        };
+        let reader = BufReader::new(io::stdin().lock());
+        let writer = BufWriter::new(io::stdout().lock());
+        let stopped = match trace {
+            Some(trace) => {
+                trace.startup_finished(None);
+                server.serve_traced(reader, writer, trace)
+            }
+            None => server.serve(reader, writer),
+        };
+        if stopped
+            .as_ref()
+            .err()
+            .and_then(std::io::Error::get_ref)
+            .is_some_and(<dyn std::error::Error + Send + Sync>::is::<engram::host::ControlPanic>)
+        {
+            return Err(engram::host::ControlPanic.into());
         }
-    };
-    let reader = BufReader::new(io::stdin().lock());
-    let writer = BufWriter::new(io::stdout().lock());
-    let stopped = match trace {
-        Some(trace) => {
-            trace.startup_finished(None);
-            server.serve_traced(reader, writer, trace)
-        }
-        None => server.serve(reader, writer),
-    };
-    stopped.context("Engram host-control stdio service stopped with an error")
+        stopped.context("Engram host-control stdio service stopped with an error")
+    })
 }
+
+fn startup_response(
+    diagnostics: &engram::diagnostics::Diagnostics,
+    started: std::time::Instant,
+    error: &engram::StoreError,
+    reader: impl io::BufRead,
+    writer: impl io::Write,
+) -> io::Result<()> {
+    let result = HostControlServer::serve_startup_failure(error, reader, writer);
+    if result.is_err()
+        && diagnostics
+            .control_abnormal_exit(
+                "transport_failure",
+                "startup",
+                engram::diagnostics::Correlation::default(),
+                "startup_response",
+                started.elapsed(),
+            )
+            .is_err()
+    {
+        eprintln!("Engram control abnormal-exit diagnostic could not be persisted");
+    }
+    result
+}
+
+fn catch_startup(
+    diagnostics: &engram::diagnostics::Diagnostics,
+    started: std::time::Instant,
+    action: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(action));
+    if let Ok(result) = outcome {
+        result
+    } else {
+        if diagnostics
+            .control_abnormal_exit(
+                "panic",
+                "startup",
+                engram::diagnostics::Correlation::default(),
+                "startup",
+                started.elapsed(),
+            )
+            .is_err()
+        {
+            eprintln!("Engram control abnormal-exit diagnostic could not be persisted");
+        }
+        Err(engram::host::ControlPanic.into())
+    }
+}
+
+pub(crate) fn failure_exit_code(error: &anyhow::Error) -> std::process::ExitCode {
+    if error.is::<engram::host::ControlPanic>() {
+        std::process::ExitCode::from(70)
+    } else {
+        std::process::ExitCode::FAILURE
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 struct DiagnosticExit(engram::diagnostics::Diagnostics);
 impl Drop for DiagnosticExit {

@@ -7,7 +7,7 @@ use std::{
     io,
     path::Path,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Condvar, Mutex, MutexGuard, OnceLock, TryLockError,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
@@ -33,7 +33,11 @@ fn increment(counter: &AtomicU64) {
 
 #[derive(Debug, Default)]
 struct Shared {
+    producer: OnceLock<Producer>,
     counters: Counters,
+    append: Mutex<()>,
+    #[cfg(test)]
+    append_hooks: Mutex<Option<Arc<AppendHooks>>>,
     publication: Mutex<()>,
     accepted: AtomicU64,
     processed: AtomicU64,
@@ -43,7 +47,40 @@ struct Shared {
     notification: (Mutex<()>, Condvar),
 }
 
-#[derive(Debug, Serialize)]
+#[cfg(test)]
+#[derive(Debug)]
+struct AppendHooks {
+    held: mpsc::SyncSender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+    contended: mpsc::SyncSender<()>,
+}
+
+impl Shared {
+    #[cfg(test)]
+    fn append_hooks(&self) -> Option<Arc<AppendHooks>> {
+        self.append_hooks.lock().unwrap().clone()
+    }
+
+    fn worker_append_guard(&self) -> MutexGuard<'_, ()> {
+        match self.append.try_lock() {
+            Ok(guard) => guard,
+            // This unit mutex protects exclusion, not mutable data. A prior
+            // unwind released the ring's OS lock through its own RAII guard.
+            Err(TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                #[cfg(test)]
+                if let Some(hooks) = self.append_hooks() {
+                    hooks.contended.send(()).unwrap();
+                }
+                self.append
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
 struct Producer {
     build_fingerprint: Option<String>,
     source_revision: &'static str,
@@ -93,6 +130,7 @@ impl Writer {
             session_fingerprint: (!opaque).then(|| Fingerprint::session(session)),
         };
         let shared = Arc::new(Shared::default());
+        let _ = shared.producer.set(producer.clone());
         let worker_shared = Arc::clone(&shared);
         let (sender, receiver) = mpsc::sync_channel(super::QUEUE_CAPACITY);
         let started = std::thread::Builder::new()
@@ -136,6 +174,67 @@ impl Writer {
             increment(&self.shared.counters.queue);
         } else {
             increment(&self.shared.accepted);
+        }
+    }
+
+    pub(super) fn control_exit_envelope(
+        &self,
+        event: &serde_json::Value,
+        build: Option<String>,
+    ) -> io::Result<serde_json::Value> {
+        let mut producer = self
+            .shared
+            .producer
+            .get()
+            .ok_or_else(|| io::Error::other("diagnostic producer unavailable"))?
+            .clone();
+        producer.build_fingerprint = build;
+        Ok(envelope(event, &self.shared, &producer))
+    }
+
+    pub(super) fn append_control_exit(&self, home: &Path, line: &[u8]) -> io::Result<()> {
+        self.append_control_exit_by(home, line, Instant::now() + super::EXIT_FLUSH)
+    }
+
+    fn append_control_exit_by(
+        &self,
+        home: &Path,
+        line: &[u8],
+        deadline: Instant,
+    ) -> io::Result<()> {
+        let _append = loop {
+            if Instant::now() >= deadline {
+                return Err(append_deadline());
+            }
+            match self.shared.append.try_lock() {
+                Ok(guard) => break guard,
+                Err(TryLockError::Poisoned(error)) => break error.into_inner(),
+                Err(TryLockError::WouldBlock) => wait_for_append(deadline)?,
+            }
+        };
+        let ring = Ring::new(home);
+        loop {
+            if Instant::now() >= deadline {
+                return Err(append_deadline());
+            }
+            let result = ring.append_durable(line, || {
+                #[cfg(test)]
+                if let Some(hooks) = self.shared.append_hooks() {
+                    hooks.held.send(()).unwrap();
+                    hooks
+                        .release
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(super::tests::RECORD_DRAIN)
+                        .unwrap();
+                }
+            });
+            match result {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    wait_for_append(deadline)?;
+                }
+                result => return result,
+            }
         }
     }
 
@@ -202,14 +301,31 @@ impl Writer {
     }
 }
 
+fn append_deadline() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::TimedOut,
+        "diagnostic append lock deadline expired",
+    )
+}
+
+fn wait_for_append(deadline: Instant) -> io::Result<()> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err(append_deadline());
+    }
+    std::thread::sleep(remaining.min(Duration::from_millis(5)));
+    Ok(())
+}
+
 fn write(event: &Event, shared: &Shared, ring: &impl Sink, producer: &Producer) {
-    let value = serde_json::json!({"engram_diagnostic":1,"producer":producer,"event":event,"loss":{"queue":shared.counters.queue.load(Ordering::Relaxed),"io":shared.counters.io.load(Ordering::Relaxed),"lock":shared.counters.lock.load(Ordering::Relaxed),"writer_start":shared.counters.start.load(Ordering::Relaxed),"oversized":shared.counters.oversized.load(Ordering::Relaxed),"tracking":shared.counters.tracking.load(Ordering::Relaxed),"quarantine_overflow":shared.counters.quarantine_overflow.load(Ordering::Relaxed),"flush_timeout":shared.counters.timeout.load(Ordering::Relaxed)}});
+    let value = envelope(event, shared, producer);
     let mut line = value.to_string().into_bytes();
     line.push(b'\n');
     if line.len() > super::MAX_RECORD_BYTES {
         increment(&shared.counters.oversized);
         return;
     }
+    let _append = shared.worker_append_guard();
     if let Err(error) = ring.append(&line) {
         increment(if error.kind() == io::ErrorKind::WouldBlock {
             &shared.counters.lock
@@ -217,6 +333,10 @@ fn write(event: &Event, shared: &Shared, ring: &impl Sink, producer: &Producer) 
             &shared.counters.io
         });
     }
+}
+
+fn envelope(event: &impl Serialize, shared: &Shared, producer: &Producer) -> serde_json::Value {
+    serde_json::json!({"engram_diagnostic":1,"producer":producer,"event":event,"loss":{"queue":shared.counters.queue.load(Ordering::Relaxed),"io":shared.counters.io.load(Ordering::Relaxed),"lock":shared.counters.lock.load(Ordering::Relaxed),"writer_start":shared.counters.start.load(Ordering::Relaxed),"oversized":shared.counters.oversized.load(Ordering::Relaxed),"tracking":shared.counters.tracking.load(Ordering::Relaxed),"quarantine_overflow":shared.counters.quarantine_overflow.load(Ordering::Relaxed),"flush_timeout":shared.counters.timeout.load(Ordering::Relaxed)}})
 }
 
 fn run(

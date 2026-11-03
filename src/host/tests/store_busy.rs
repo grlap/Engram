@@ -35,6 +35,7 @@ impl Fixture {
             diagnostics: None,
             diagnostic_frame: None,
             diagnostic_sequence: 0,
+            terminal: false,
         };
         let observer = Connection::open(&database).unwrap();
         Self {

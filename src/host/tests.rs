@@ -286,6 +286,7 @@ fn oversized_control_frame_is_rejected_and_drained() {
         diagnostics: None,
         diagnostic_frame: None,
         diagnostic_sequence: 0,
+        terminal: false,
     };
 
     server

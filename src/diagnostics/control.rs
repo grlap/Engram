@@ -11,6 +11,7 @@ pub(crate) struct Frame {
     pub(crate) operation: &'static str,
     pub(crate) correlation: Correlation,
     pub(crate) started: Instant,
+    pub(crate) phase: &'static str,
     fault_observed: Cell<bool>,
     handler: Option<(Duration, crate::storage::ControlWriteTiming)>,
 }
@@ -18,6 +19,7 @@ impl Frame {
     pub(crate) fn new(sequence: u64) -> Self {
         Self {
             operation: "unknown",
+            phase: "read",
             correlation: Correlation {
                 frame_seq: Some(sequence),
                 ..Correlation::default()

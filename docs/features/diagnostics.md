@@ -240,6 +240,46 @@ dropped attempts do not advance it. An always-unwritable destination
 cannot retain its own loss report. Forced termination or power loss has no
 durability guarantee.
 
+## Abnormal control exits
+
+The control boundary stops after an unwind and never resumes that server.
+The CLI exits with code 70 for this terminal panic classification. It does
+not claim whether the interrupted write committed, and it does not append a
+replacement response after a partial response write. The supervisor must
+return a defined transport error and retain the original request key for an
+exact retry.
+
+An ordinary transport error ends only the current serving invocation. The CLI
+returns that error; a library caller can supply fresh reader and writer objects
+to the same healthy server and retry with the original key. No replacement
+response or automatic redispatch follows a partial response write. Failed-frame
+metadata is consumed before recording, so a later failure before its first
+input byte does not inherit the previous request's correlation.
+
+An unwind or abnormal stdio return appends a fixed `control_abnormal_exit`
+record of kind `control_exit` directly to the bounded diagnostic ring outside SQLite, bypassing the
+lossy queue. The record includes the build, PID, producer instance and session identity,
+operation, frame and attempt fingerprint, phase and elapsed time. It excludes
+panic payloads and request bodies. The append flushes and syncs the file;
+the preceding queue drain and build-identity lookup each wait for at most one
+second. A shared producer append guard serializes the direct append with its
+background writer, including summary records. Acquiring that guard and retrying
+the ring's OS lock share one further one-second deadline. Ordinary queue
+admission never waits for the guard; the background writer can wait behind the
+direct append. A timed-out build lookup records a null
+fingerprint with the same producer instance and session identity. Every fatal
+record carries the same loss-counter envelope as queued records. A persistence failure is
+reported on stderr, with an explicit append-lock timeout when that shared
+deadline expires. Filesystem calls and sync can themselves block; this is a terminal
+diagnostic path, not ordinary request handling. A transport-failure record
+observes an abnormal serving return; it does not by itself prove process exit.
+
+A hard kill bypasses the child boundary. The supervisor owns the durable
+record of observed exit status or its own termination reason per child,
+including request phase. Neither missing child records nor a child still
+running when stdout closes proves a crash. Power loss and an unwritable
+diagnostic destination remain outside the durability guarantee.
+
 ## Visibility limits
 
 The observer sees decoded messages and front-door events delivered by rmcp.

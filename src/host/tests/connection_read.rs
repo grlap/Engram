@@ -124,6 +124,7 @@ fn a_temporary_or_in_memory_store_is_refused() {
         diagnostics: None,
         diagnostic_frame: None,
         diagnostic_sequence: 0,
+        terminal: false,
     };
     assert_eq!(
         refusal(&mut server),
