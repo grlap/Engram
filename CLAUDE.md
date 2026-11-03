@@ -207,9 +207,12 @@ their presence in a file alone does not prove delivery.
   route; recording his words, narrowing, or clarifying needs only (a), (b)
   and (c). No other approval is asked.
 - Outside the standing approval's conditions above and the candidate-commits
-  bullet, a commit or push needs Greg's own word in the acting session.
-  Outside the standing approval and the candidate-commits bullet, a word
-  relayed by another session never carries a commit or push. The
+  bullet, a commit or push needs Greg's own word, given in the acting session
+  or relayed by Engram::Asistant, the session Greg designated for talking with
+  him directly. A relayed word counts only when Asistant quotes it verbatim
+  with its source mailbox and sequence, and it names the change or commit it
+  covers; the acting session records that quote on the item. A word relayed
+  by any other session never carries a commit or push. The
   standing approval grants no restart, deploy or global-configuration
   authority; those acts are Greg's and need his explicit word.
   A landing under it installs the binary built from the exact gated tree:
