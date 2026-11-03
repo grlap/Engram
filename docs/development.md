@@ -504,25 +504,42 @@ still apply. If the coordinator launches its own command, use foreground mode
 and the host's supported process-completion wait; do not pretend self-mailbox
 notifications work. Where no completion wake exists, disclose that limitation.
 
-Stop a superseded detached full gate from the worktree that launched it:
+Stop a superseded detached run from the worktree that launched it:
 
 ```bash
 node scripts/test-launcher.mjs stop RUN_ID --actor SESSION_ID --reason "input superseded"
 ```
 
-Stop support currently requires Windows and a newly launched gate whose request
-declares `windows-job-v1`. Each command starts suspended, joins an owned Windows
+On Windows, stop requires a newly launched full gate whose request declares
+`windows-job-v1`. Each command starts suspended, joins an owned Windows
 Job Object without breakaway permission, then runs. The supervisor retains the
 job through parent exit and confirms that no members remain before returning.
-POSIX, legacy and focused runs refuse stop requests: a process group alone
-cannot contain the detached descendants that the launcher tests create.
-Ordinary runs on those platforms remain available.
+On macOS and Linux, new detached focused and full runs declare `posix-group-v1`.
+Each command has a living helper that leads its own process group; ordinary
+children inherit that group. Only that helper sends terminating signals, to
+its own group. A stop sends TERM, then KILL after a one-second grace. Normal
+command exit instead initiates immediate residual-group cleanup. Worker loss
+closes the private control channel and initiates the same cleanup. After the
+helper exits, the worker only observes the group until it is absent; it never
+signals a recovered numeric PID or group. Darwin EPERM alone is not success:
+helper exit/reaping and a group probe returning ESRCH are both required.
+Workloads receive no private helper IPC descriptor. A helper-initiated stop
+without a controller request fails the stage even if the workload exits zero.
+POSIX containment covers only this group. Descendants that deliberately leave
+it with `setsid` or another group are not chased, and forced death of both
+worker and helper cannot guarantee descendant cleanup. Windows retains its
+stronger detached-descendant containment. Legacy runs, foreground runs and
+unsupported platforms refuse stop requests.
+
+The POSIX stop fixtures use a broker outside the helper's group as a surviving
+witness. The fixture owns that broker and awaits its exit during cleanup;
+helper exit is awaited separately from IPC closure.
 
 The stop command accepts a run id, never a PID or directory. It retains the
 first actor, reason and request time. These are asserted attribution, not
 authenticated identity. A receipt means **requested**, not stopped. Only the
 owning worker stops its current command, including preflight commands; it waits
-for tree cleanup and saves a nonpassing terminal result through its ordinary
+for job or group cleanup and saves a nonpassing terminal result through its ordinary
 completion and notification path. No later stage starts. Completed stages and
 logs remain intact. A stop accepted before the final terminal save wins even
 if the final command just exited zero. A completed run is a no-op with a clear
@@ -540,8 +557,12 @@ unreadable after its bounded transient-read retries reports
 cleanup remains refused receives a `warning:` line, while the published stop
 intent remains available to the worker.
 The reason is `process-cleanup-unconfirmed` in the result, summary and
-notification. Cleanup membership polling has a 30-second confirmation allowance;
-expiry reports the residual count rather than waiting forever. This does not
+notification. Cleanup observation has a 30-second confirmation allowance;
+Windows expiry reports the residual count, while POSIX expiry reports that
+group disappearance is unconfirmed, rather than waiting forever. A POSIX
+helper that does not close within 31 seconds of a stop is also unconfirmed.
+Missing helper outcome or cleanup-initiation proof remains uncertainty even
+if the group is absent. This does not
 promise that an OS call itself can be interrupted. A helper startup failure
 before any workload launch attempt instead reports `helper-start-failed`.
 The inbox PowerShell helper uses fixed inline command text, with paths and

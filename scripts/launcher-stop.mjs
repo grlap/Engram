@@ -5,6 +5,7 @@ import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const stopProtocol = "windows-job-v1";
+export const posixStopProtocol = "posix-group-v1";
 const runToken = /^test-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
 const read = (path) => JSON.parse(readFileSync(path, "utf8"));
 const terminal = (result) => ["passed", "failed"].includes(result.state)
@@ -24,7 +25,7 @@ function text(value, name, maximum) {
   }
   return value;
 }
-export function readStopIntent(runDir, runId) {
+export function readStopIntent(runDir, runId, protocol = stopProtocol) {
   const path = join(runDir, "stop.request.json");
   let intent;
   try { intent = read(path); }
@@ -34,7 +35,7 @@ export function readStopIntent(runDir, runId) {
     throw error;
   }
   if (intent === null || typeof intent !== "object" || Array.isArray(intent)
-    || intent.runId !== runId || intent.protocol !== stopProtocol || typeof intent.id !== "string"
+    || intent.runId !== runId || intent.protocol !== protocol || typeof intent.id !== "string"
     || !Number.isFinite(Date.parse(intent.requestedAt))) throw invalidStopRequest("malformed stop request");
   try { text(intent.actor, "actor", 256); text(intent.reason, "reason", 2000); }
   catch { throw invalidStopRequest("malformed stop request"); }
@@ -89,12 +90,14 @@ export async function requestStop(runId, {
       throw refused("run records do not identify this worktree and run id");
     }
     if (terminal(result)) return { requested: false, terminal: true, result, runDir };
-    if (request.stopProtocol !== stopProtocol || request.full !== true || request.detached !== true) {
-      throw refused("run has no owned Windows job supervisor; legacy, focused and unsupported-platform runs cannot be stopped");
+    const windows = request.stopProtocol === stopProtocol && request.full === true;
+    const posix = request.stopProtocol === posixStopProtocol;
+    if ((!windows && !posix) || request.detached !== true) {
+      throw refused("run has no owned Windows job or POSIX process-group supervisor; legacy and unsupported runs cannot be stopped");
     }
-    const prior = readStopIntent(runDir, runId);
+    const prior = readStopIntent(runDir, runId, request.stopProtocol);
     if (prior) return { requested: true, duplicate: true, intent: prior, runDir };
-    const intent = { protocol: stopProtocol, runId, id: randomUUID(), actor, reason, requestedAt: now().toISOString() };
+    const intent = { protocol: request.stopProtocol, runId, id: randomUUID(), actor, reason, requestedAt: now().toISOString() };
     const temporary = join(runDir, `stop-${intent.id}.tmp`);
     let published = false, cleanupWarning;
     try {
@@ -117,7 +120,7 @@ export function stopController(runDir, request, { readIntent = readStopIntent, r
   const inspect = () => {
     if (intent || failure) return intent;
     try {
-      intent = readIntent(runDir, request.runId);
+      intent = readIntent(runDir, request.runId, request.stopProtocol ?? stopProtocol);
       readFailures = 0;
     } catch (error) {
       readFailures += 1;
@@ -153,6 +156,85 @@ export function stopController(runDir, request, { readIntent = readStopIntent, r
     },
     close() { clearInterval(timer); },
   };
+}
+
+// Called only after the live child handle has reported helper closure. Never
+// send a terminating signal to this numeric group after its leader has exited.
+export async function waitForPosixGroupExit(pgid, { probe = (pid) => process.kill(-pid, 0),
+  timeoutMs = 30_000, now = () => performance.now(), sleep = pause } = {}) {
+  const deadline = now() + timeoutMs;
+  while (true) {
+    try { probe(pgid); }
+    catch (error) {
+      if (error.code === "ESRCH") return;
+      if (error.code !== "EPERM") throw error;
+    }
+    if (now() >= deadline) throw new Error("owned POSIX process group disappearance is unconfirmed");
+    await sleep(Math.min(25, Math.max(0, deadline - now())));
+  }
+}
+
+export async function runPosixCommand(command, args, { cwd, env, log, runDir, control }) {
+  if (!["darwin", "linux"].includes(process.platform)) throw refused("POSIX process groups are unavailable on this platform");
+  control.check();
+  const receipt = join(runDir, `group-${randomUUID()}.json`);
+  const helper = fileURLToPath(new URL("./launcher-process-group.mjs", import.meta.url));
+  const fd = openSync(log, "wx", 0o600);
+  let unregister = () => {}, child, admitted = false, stopped = false, deadline;
+  try {
+    const outcome = await new Promise((done, reject) => {
+      const spec = Buffer.from(JSON.stringify({ command, args, cwd, receipt })).toString("base64");
+      child = spawn(process.execPath, [helper, spec], { cwd, env, detached: true,
+        stdio: ["ignore", fd, fd, "ipc"] });
+      const send = (message) => {
+        if (child.connected) child.send(message, () => {});
+      };
+      unregister = control.register(() => {
+        if (stopped) return;
+        stopped = true;
+        send({ kind: "stop" });
+        deadline = setTimeout(() => {
+          child.unref();
+          if (child.connected) child.disconnect();
+          reject(Object.assign(new Error("POSIX helper closure is unconfirmed"), { cleanupUnconfirmed: true }));
+        }, 31_000);
+      });
+      child.once("message", (message) => {
+        if (message?.ready !== true) { reject(new Error("invalid POSIX helper startup response")); return; }
+        if (stopped) send({ kind: "stop" });
+        else { admitted = true; send({ kind: "start" }); }
+      });
+      child.once("error", reject);
+      // Reap the helper independently of IPC EOF: escaped descendants must
+      // not keep a completed command waiting for inherited descriptors.
+      child.once("exit", (code, signal) => {
+        clearTimeout(deadline);
+        child.channel?.unref();
+        if (child.connected) child.disconnect();
+        done({ code, signal });
+      });
+    });
+    // Closure/reaping precedes every group probe. Signal zero only observes;
+    // EPERM must eventually become ESRCH, never merely be treated as success.
+    await waitForPosixGroupExit(child.pid);
+    const proof = read(receipt);
+    if (proof.protocol !== posixStopProtocol || proof.pid !== child.pid || proof.cleanupStarted !== true
+      || (proof.terminationError && proof.terminationError !== "EPERM")
+      || (!proof.terminationError && outcome.signal !== "SIGKILL")
+      || !(Number.isInteger(proof.code) || proof.code === null)) throw new Error("POSIX helper outcome or cleanup receipt is unconfirmed");
+    const unsolicited = proof.stopped === true && !stopped;
+    return { code: unsolicited ? 1 : proof.code, signal: proof.signal,
+      ...(unsolicited ? { error: "POSIX helper stopped without a controller request" }
+        : proof.error ? { error: proof.error } : {}),
+      cleanup: { method: posixStopProtocol, scope: "process-group", confirmed: true, activeProcesses: 0, receipt },
+      stopped: proof.stopped === true };
+  } catch (error) {
+    // Closing our private channel asks the living helper to clean its own
+    // group. No recovered numeric PID is ever used as a fallback killer.
+    if (child) { child.unref(); if (child.connected) child.disconnect(); }
+    if (admitted || error.cleanupUnconfirmed) throw Object.assign(error, { cleanupUnconfirmed: true });
+    throw Object.assign(error, { reason: "helper-start-failed" });
+  } finally { clearTimeout(deadline); unregister(); closeSync(fd); }
 }
 
 // Walk each component before creating the next one. A pre-existing junction

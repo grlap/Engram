@@ -9,7 +9,7 @@ import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:pa
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { captureFingerprint, classifyInputChange, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
-import { powerShellEnvironment, requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
+import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registrationLine } from "./test-run-registration.mjs";
 
 const script = fileURLToPath(import.meta.url);
@@ -683,6 +683,7 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
     creatorPid: process.pid, owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
     ...(full && detached && process.platform === "win32" ? { stopProtocol } : {}),
+    ...(detached && ["darwin", "linux"].includes(process.platform) ? { stopProtocol: posixStopProtocol } : {}),
     ...(item !== undefined ? { item } : {}), ...(nextTransition !== undefined ? { nextTransition: { ...nextTransition } } : {}) };
   // A worker that never starts leaves this first heartbeat to go stale.
   const initial = { runId, state: "running", started: request.started,
@@ -873,10 +874,14 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     control?.check();
     let outcome;
     try {
-      outcome = control
-        ? await runJobCommand(binary, args, { cwd: request.root, env: childEnv, log, runDir, control,
-          powerShell: executable(systemPowerShell(childEnv), request.root, childEnv) })
-        : await runCommand(binary, args, { cwd: request.root, env: childEnv, log });
+      if (control && request.stopProtocol === posixStopProtocol) {
+        outcome = await runPosixCommand(binary, args, { cwd: request.root, env: childEnv, log, runDir, control });
+      } else {
+        outcome = control
+          ? await runJobCommand(binary, args, { cwd: request.root, env: childEnv, log, runDir, control,
+            powerShell: executable(systemPowerShell(childEnv), request.root, childEnv) })
+          : await runCommand(binary, args, { cwd: request.root, env: childEnv, log });
+      }
     } catch (error) {
       if (error.cleanupUnconfirmed === true) cleanupUnconfirmed = true;
       else if (control && !error.reason) error.reason = "helper-start-failed";
@@ -917,7 +922,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     result = saved;
     result.plan = plan;
     if (result.state === "failed") { control?.close(); return result; }
-    if (request.stopProtocol === stopProtocol) control = stopController(runDir, request);
+    if ([stopProtocol, posixStopProtocol].includes(request.stopProtocol)) control = stopController(runDir, request);
     try { childEnv = powerShellEnvironment(request.root, basename(runDir), childEnv); }
     catch (error) { throw because(control ? "helper-start-failed" : "launcher-error", error); }
     // The cadence createRun recorded, held to the same bounds as the setting;

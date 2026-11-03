@@ -25,6 +25,7 @@ import { registerCompletionDiagnostics, registerCompletionReceipts } from "./tes
 import { registerRecoveryLiveness, registerRecoveryProcesses } from "./test-launcher-tests/recovery.mjs";
 import { registerCountTests } from "./test-launcher-tests/counts.mjs";
 import { registerStopTests } from "./test-launcher-tests/stop.mjs";
+import { registerPosixStopTests } from "./test-launcher-tests/posix-stop.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
@@ -51,3 +52,4 @@ registerExecutionEnvironment(support);
 registerCountTests(support);
 registerRecoveryProcesses(support);
 registerStopTests(support);
+registerPosixStopTests(support);

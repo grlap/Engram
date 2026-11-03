@@ -13,7 +13,7 @@ import { fixtureHome, removeFixtureHomes } from "../test-temp.mjs";
 // Created once by the entry point after its environment setup.
 export function createSupport({ env, entryUrl }) {
 const launcher = fileURLToPath(new URL("./test-launcher.mjs", entryUrl));
-const launcherSupportFiles = ["test-run-registration.mjs", "review-freeze-fingerprint.mjs", "launcher-stop.mjs", "launcher-process-job.ps1", "launcher-process-job.cs"];
+const launcherSupportFiles = ["test-run-registration.mjs", "review-freeze-fingerprint.mjs", "launcher-stop.mjs", "launcher-process-group.mjs", "launcher-process-job.ps1", "launcher-process-job.cs"];
 const launcherFixtureFiles = ["test-launcher.mjs", ...launcherSupportFiles];
 const stage = (name, source = "") => ({ name, command: process.execPath, args: ["-e", source] });
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
