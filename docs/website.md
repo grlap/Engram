@@ -134,6 +134,29 @@ Plate V is an original synthetic intelligence portrait,
 generated with the built-in image tool and stored as a lazy-loaded 1254-pixel
 WebP. Its exact prompt is in
 [synthetic-agent.prompt.txt](../website/assets/synthetic-agent.prompt.txt).
+Four original environment illustrations give each machine folio its own
+cinematic industrial world: a rain-soaked neon city for Boot, a command deck
+for Vocabulary, a subterranean memory vault for Wake up, and a host gateway
+for Honest limits. Each folio has distinct artwork; no environment is shared
+across pages. All four are local 1536 × 1024 WebP assets. Their generation
+prompts are in
+[cyberpunk-worlds.prompt.txt](artwork-provenance/cyberpunk-worlds.prompt.txt)
+and [cyberpunk-deck-gateway.prompt.txt](artwork-provenance/cyberpunk-deck-gateway.prompt.txt),
+retained outside the deployed website directory.
+Decorative, lazy-loaded image layers fill only the machine folios, with dark
+directional scrims behind the copy and stronger scenery toward the right edge.
+The instrument panels retain dark surfaces; recovery's circular gauge has its
+own dark backing, with a solid plate beneath its bottom caption. Small legend,
+portrait-caption and console-label surfaces also use solid dark backings to
+keep their text readable over bright scenery. The portrait fades on all four
+edges so its square image boundary blends into the environment.
+Bounded scenic windows above the command matrix and host
+connection example show panoramic strips on taller and stacked layouts. Those
+windows are hidden at desktop widths from 1001px when the viewport is at most
+1000px tall, preserving the existing content height budget. The backgrounds
+never contribute layout height. All new imagery is static, hidden from
+assistive technology, and omitted in forced-colors mode. The manuscript
+illustrations, runtime interactions and motion controls are unchanged.
 The portrait contains no text; captions and decorative HUD labels remain HTML.
 The rail and gauge telemetry is CSS-generated decoration, hidden from assistive
 technology. The chamfered command keys and HUD tiles, and the connect panel's

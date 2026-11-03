@@ -66,10 +66,120 @@ html[data-theme="machine"] .menu-toggle span {
     linear-gradient(90deg, #71b8d007 1px, transparent 1px) 0 0 / 64px 64px,
     #06070a;
 }
+/* Static environments sit below the instruments and never size a folio. */
+.folio-machine .machine-world {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.folio-machine .machine-world img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: 70% center;
+  opacity: .88;
+}
+.folio-machine .machine-world::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, #06070af5 0%, #06070aeb 32%, #06070ab8 52%, #06070a40 78%, #06070a18),
+    linear-gradient(#06070af0, transparent 26% 72%, #06070af2);
+}
+.folio-machine-vocabulary .machine-world img {
+  object-position: 80% 42%;
+}
+.folio-machine-wake .machine-world img {
+  object-position: 75% center;
+}
+.folio-machine-limits .machine-world img {
+  object-position: 85% center;
+}
+.folio-machine .hud-line,
+.folio-machine .signal-strip {
+  background: linear-gradient(90deg, #06070ad9, #06070a8c);
+}
+.folio-machine .sheet-copy {
+  text-shadow: 0 2px 14px #000;
+}
+.folio-machine .gauge-figure {
+  background: radial-gradient(ellipse, #060b12f5 48%, #060b12c9 64%, transparent 73%);
+}
+.folio-machine .key-legend,
+.folio-machine .core-figure figcaption,
+.folio-machine .console-label,
+.folio-machine .gauge-figure::after {
+  background: #060b12;
+}
+.folio-machine .gauge-caption-backplate {
+  fill: #060b12;
+}
+.folio-machine .limits-panel {
+  background: #150d15f2;
+}
+.folio-machine .link-rows {
+  background: #06070ae8;
+}
+.folio-machine .machine-scene {
+  position: relative;
+  height: 92px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  border: 1px solid #50717c;
+  border-left: 3px solid #efba44;
+  background: #06070a;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.folio-machine .machine-scene img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center 48%;
+}
+.folio-machine .machine-scene-gateway img {
+  object-position: center 44%;
+}
+.folio-machine .machine-scene span {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 10px 12px;
+  color: #eef2f6;
+  background: linear-gradient(transparent, #06070af2 45%);
+  font: .5625rem / 1.5 var(--mono);
+  letter-spacing: 1.6px;
+}
+/* Compact desktop retains its existing height budget; the full-bleed art
+   remains visible, while scenic windows appear on taller and stacked layouts. */
+@media (min-width: 1001px) and (max-height: 1000px) {
+  .folio-machine .machine-scene {
+    display: none;
+  }
+}
+@media (max-width: 1000px) {
+  .folio-machine .machine-world::after {
+    background:
+      linear-gradient(90deg, #06070ae8, #06070aa6),
+      linear-gradient(#06070ae8, transparent 24% 72%, #06070af2);
+  }
+  .folio-machine .machine-scene {
+    height: 112px;
+  }
+}
+@media (forced-colors: active) {
+  .folio-machine .machine-world,
+  .folio-machine .machine-scene {
+    display: none;
+  }
+}
 .folio-machine::before {
   content: "";
   position: absolute;
-  z-index: 0;
+  z-index: 1;
   inset: calc(var(--header-height) + 16px) 28px calc(var(--footer-height) + 16px);
   pointer-events: none;
   --b: var(--neon-dim);
@@ -169,6 +279,7 @@ h2.cyber-display {
 }
 .button-hud {
   position: relative;
+  text-shadow: none;
   border: 1px solid var(--neon);
   font: 600 var(--text-small) var(--mono);
   letter-spacing: 2px;
@@ -242,7 +353,11 @@ h2.cyber-display {
   width: 100%;
   height: auto;
   display: block;
-  mask-image: linear-gradient(transparent, #000 9% 84%, transparent);
+  /* Fade every edge independently, keeping the face in the opaque center. */
+  mask-image:
+    linear-gradient(90deg, transparent, #000 14% 86%, transparent),
+    linear-gradient(transparent, #000 9% 84%, transparent);
+  mask-composite: intersect;
   animation: core-float 12s ease-in-out infinite;
   animation-play-state: var(--motion-state);
   mix-blend-mode: screen;
