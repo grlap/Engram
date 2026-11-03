@@ -679,7 +679,7 @@ test("a client's own stall is not attributed to the server or its send", async (
 }
 
 export function registerArgumentRefusal(support) {
-  const { test, fixtureHome, removeFixtureHomes, structured, receipt, buildAndInit, McpClient } = support;
+  const { test, fixtureHome, removeFixtureHomes, structured, structuredError, receipt, buildAndInit, McpClient } = support;
 test("an argument a word's schema rejects is a text-only tool error and the connection stays usable", async (t) => {
   const engramHome = fixtureHome("engram-schema-rejected-", t);
   let client;
@@ -720,6 +720,45 @@ test("an argument a word's schema rejects is a text-only tool error and the conn
       const shown = receipt(await client.call("show", { work_ref: reference }));
       assert.equal(shown.status.work.title, "Schema-rejected arguments", label);
       assert.ok(Array.isArray(shown.next), label);
+    }
+    // An action must not discard a declared field, including explicit null,
+    // false or an empty list. These are structured argument refusals before
+    // any work mutation, and the same connection continues to serve reads.
+    const before = receipt(await client.call("show", { work_ref: reference, notes: true, gates: true }));
+    for (const [tool, action, field, value] of [
+      ["update", "release", "title", null],
+      ["update", "blocked", "reason", "unused"],
+      ["update", "unblock", "text", "unused"],
+      ["update", "revise", "reason", "unused"],
+      ["update", "evaluation_mode", "labels", []],
+      ["update", "cancel", "clear_external", false],
+      ["update", "reject", "outcome", "unused"],
+      ["update", "after", "child", reference],
+      ["update", "drop_after", "replacement", reference],
+      ["update", "waive", "prerequisite", reference],
+      ["update", "supersede", "child", reference],
+      ["update", "detach", "priority", 0],
+      ["handoff", "offer", "reason", "unused"],
+      ["handoff", "accept", "to", null],
+      ["handoff", "accept", "summary", "unused"],
+      ["handoff", "accept", "reason", "unused"],
+      ["handoff", "accept", "ttl_seconds", 1],
+      ["handoff", "cancel", "summary", "unused"],
+      ["update", { cancel: null }, "title", "unused"],
+      ["handoff", { cancel: null }, "summary", "unused"],
+    ]) {
+      const actionName = typeof action === "string" ? action : Object.keys(action)[0];
+      const refused = structuredError(await client.call(tool, {
+        work_ref: reference, action, [field]: value,
+        ...(typeof action === "object" ? { reason: "cancel" } : {}),
+      }), "invalid_argument");
+      assert.equal(refused.details.field, field);
+      assert.ok(refused.message.includes(actionName), refused.message);
+      assert.ok(refused.message.includes(field), refused.message);
+      const after = receipt(await client.call("show", { work_ref: reference, notes: true, gates: true }));
+      assert.deepEqual(after.status, before.status, `${tool} ${actionName}: status changed`);
+      assert.deepEqual(after.history, before.history, `${tool} ${actionName}: history changed`);
+      assert.deepEqual(after.notes, before.notes, `${tool} ${actionName}: notes changed`);
     }
   } finally {
     try {

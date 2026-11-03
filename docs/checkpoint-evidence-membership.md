@@ -31,7 +31,7 @@ Evidence membership and a feed boundary answer different questions:
 | Seal evidence list | Which evidence this completion selected |
 | Acceptance citations | Which selected records support each criterion |
 
-[`checkpoint_work`](../src/storage/work/execution.rs) accepts an explicit
+[`checkpoint_work`](../src/storage/work/execution/checkpoints.rs) accepts an explicit
 evidence selection; when the selection is omitted, it captures all available
 run evidence. An explicit empty checkpoint selection remains distinct from
 an omitted selection. The

@@ -491,7 +491,7 @@ pub(super) fn verb(outcome: Result<Receipt, VerbError>, words: &AgentVerbs) -> C
 /// error Engram itself returns, it carries `reminders` and `next`: the
 /// reason, and no command, as a verb error with no specific remedy does. An
 /// argument the MCP library rejects first carries text only.
-fn invalid_argument(field: &str, message: &str) -> CallToolResult {
+pub(super) fn invalid_argument(field: &str, message: &str) -> CallToolResult {
     CallToolResult::structured_error(json!({
         "error": {
             "code": "invalid_argument",

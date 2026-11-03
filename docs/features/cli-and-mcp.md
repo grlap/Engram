@@ -1200,6 +1200,13 @@ Rules that matter:
   accepted one: `accept` on `add` is refused and points to `acceptance`,
   rather than being ignored while a defaulted criterion is recorded. Each
   word's input schema says so with `additionalProperties: false`.
+- MCP `update` and `handoff` also refuse declared fields that the selected
+  action does not consume, before any work mutation. The structured
+  `invalid_argument` refusal names the field and action; explicit `null`,
+  `false` and empty lists still count as supplied fields. For example,
+  `update` with action `cancel` refuses `title`, and `handoff` with action
+  `accept` refuses `to`, `summary`, `reason` and `ttl_seconds`. Schema and
+  type errors keep their existing text-only refusal.
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. When acceptance is omitted, text and JSON
   reminders say `acceptance defaulted to the title being done; set --accept`,

@@ -1,6 +1,7 @@
 //! MCP stdio surface for fourteen work words, `search`, and the separate
 //! `task_sync_settings` configuration tool.
 
+mod action_fields;
 mod arguments;
 #[cfg(test)]
 mod assessment_tests;
@@ -172,6 +173,9 @@ impl McpServer {
                 restriction,
             ))
             .into());
+        }
+        if let Some(refusal) = action_fields::refusal(&request.name, request.arguments.as_ref()) {
+            return Ok(refusal.into());
         }
         self.tool_router
             .call(ToolCallContext::new(self, request, context))

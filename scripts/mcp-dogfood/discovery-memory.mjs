@@ -208,7 +208,7 @@ test("status resume recovers both roles across CLI and MCP process replacement w
 }
 
 export function registerBlockerDiscovery(support) {
-  const { test, fixtureHome, removeFixtureHomes, receipt, buildAndInit, cliWord, cliText, cliJson, McpClient } = support;
+  const { test, fixtureHome, removeFixtureHomes, receipt, structuredError, buildAndInit, cliWord, cliText, cliJson, McpClient } = support;
 test("show names each of several blockers, and its printed command clears only that one on CLI and MCP", async (t) => {
   const engramHome = fixtureHome("engram-blockers-", t);
   const session = "blocker-author";
@@ -268,7 +268,9 @@ test("show names each of several blockers, and its printed command clears only t
     const refused = await client.call("update", { work_ref: ref, action: "unblock", blocker: `${shown.blockers[0].blocker}=` });
     assert.match(JSON.stringify(refused), /not a blocker selector/u);
     const misplaced = await client.call("update", { work_ref: ref, action: "cancel", reason: "no", blocker: shown.blockers[0].blocker });
-    assert.match(JSON.stringify(misplaced), /requires action unblock/u);
+    const misplacedError = structuredError(misplaced, "invalid_argument");
+    assert.equal(misplacedError.details.field, "blocker");
+    assert.match(misplacedError.message, /action `cancel`.*field `blocker`/u);
     assert.equal(cliJson(engramHome, session, "show", ref).blockers_total, 3);
 
     // The CLI runs the second printed command exactly as printed.
