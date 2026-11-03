@@ -1,8 +1,14 @@
+use super::completion::applicable_work_obligations_at_cut_on;
+use super::feeds::run_feed_position_for_object_on;
+use super::query::on_one_snapshot;
 use super::*;
+use crate::domain::WorkObligationId;
 
 mod historical_capture;
 pub(crate) use historical_capture::{
-    HistoricalCapture, HistoricalEvidenceBatch, append_historical_capture,
+    EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservationInput,
+    ExecutionObservationReference, HistoricalCapture, HistoricalEvidenceBatch,
+    VerificationEvidenceInput, append_historical_capture,
 };
 
 mod verification_workspaces;
@@ -11,12 +17,10 @@ pub(crate) use verification_workspaces::verification_workspace_notes_fixture;
 pub(super) use crate::ProjectId;
 pub(super) use crate::domain::{
     ActorContext, AssuranceLevel, CheckpointWorkRequest, ChildWorkDraft, ChildWorkPrerequisite,
-    CompleteWorkRequest, CreateWorkRequest, EffectClass, EnvironmentComponents,
-    EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservationInput,
-    ExecutionObservationReference, ExecutionOutcome, ExecutionSourceBasis, NoteRequest,
-    NoteVisibility, ProvenanceLink, ProvenanceRelation, RecordWorkEvidenceRequest, Scope,
-    Sensitivity, VerificationEvidenceInput, VerificationKind, VerificationResult, WorkItemKind,
-    WorkPlanningAuthority, WorkRevisionPatch,
+    CompleteWorkRequest, CreateWorkRequest, EffectClass, EnvironmentComponents, ExecutionOutcome,
+    ExecutionSourceBasis, NoteRequest, NoteVisibility, ProvenanceLink, ProvenanceRelation,
+    RecordWorkEvidenceRequest, Scope, Sensitivity, VerificationKind, VerificationResult,
+    WorkItemKind, WorkPlanningAuthority, WorkRevisionPatch,
 };
 pub(super) use crate::memory::DevelopmentNoopRedactor;
 pub(super) use crate::storage::test_database_shape_snapshot;
@@ -27,6 +31,32 @@ pub(super) use crate::work_service::{
 pub(super) use chrono::{Duration, TimeZone};
 
 impl SqliteStore {
+    /// Test view of unresolved obligations at one immutable run-feed cut.
+    pub(crate) fn open_work_obligations_at_cut(
+        &self,
+        run_id: WorkRunId,
+        cut: &FeedPosition,
+    ) -> Result<Vec<WorkObligationId>, StoreError> {
+        // The records are checked against the run's current observations, so
+        // they come from one commit.
+        on_one_snapshot(&self.connection, |connection| {
+            let records = applicable_work_obligations_at_cut_on(connection, run_id, cut)?;
+            let mut open = Vec::new();
+            for record in records {
+                let terminal_at_cut = record
+                    .resolution_id
+                    .as_ref()
+                    .map(|hash| run_feed_position_for_object_on(connection, run_id, hash))
+                    .transpose()?
+                    .is_some_and(|position| position.position <= cut.position);
+                if !terminal_at_cut {
+                    open.push(record.obligation.obligation_id);
+                }
+            }
+            Ok(open)
+        })
+    }
+
     pub(crate) fn install_historical_observation_fixture(
         &mut self,
         observation: &crate::domain::ExecutionObservation,

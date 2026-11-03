@@ -29,8 +29,9 @@ unattended operation, off-host durability or completed team rollout.
 **Engram + TermAl: partial operational rollout, 2026-10-29.** Engram
 provides durable work and evidence; the host provides session supervision,
 dispatch and recovery. The shared verification-applicability cutover is
-complete on the dogfood stores. Turn gating was removed; Execution
-Observability, switched on or off per project in the host, takes its place.
+complete on the dogfood stores. Execution Observability is switched on or off
+per project in the host; [earlier records](features/execution-observability.md#records-from-earlier-builds)
+remain passive history.
 The earlier October 8 host-qualification table is retired rather than
 presented as current status.
 
@@ -40,7 +41,7 @@ presented as current status.
 | Graph restore and tooling | Parent-first work-item insertion for snapshots without supersession, the Node 24.14.0 pin and ordinary Git review identity are on master. | No universal restore deadline or arbitrary-supersession optimization is claimed. |
 | Note and gate responses | A known-committed capture returns success with its exact evidence and readback if later response work fails. | Core capture failures still return errors; this is not a general unknown-outcome or lost-transport guarantee. |
 | Remote landing gates | Exact-test-ref full gates on a second trusted Windows host or the Mac carry the same landing weight under the existing tree and evidence requirements. | Windows-only changes still need a Windows gate; a component check is not a full landing gate. |
-| Execution Observability | Turn gating removed; the work session records host observations, named source roots and registered verification. | Recording across every supported harness; acceptance evaluation stays temporarily off until it is implemented. |
+| Execution Observability | The work session records host observations, named source roots and registered verification. | Recording across every supported harness; acceptance evaluation stays temporarily off until Execution Observability is implemented. |
 | Optional Git task sync | Explicit local planning-text export/import, opt-in, informational activity and prepared materialization ship. | Automated Git exchange and reconciliation remain planned; private scratch and runtime authority stay host-local. |
 
 The next integrated-pilot steps are to finish the host rollout, qualify the
@@ -76,12 +77,9 @@ select ready work → claim and execute, with host observations recorded →
 complete with evidence → optionally freeze/publish → review promotion
 candidates.**
 
-Turn gating was removed; [Execution Observability](features/execution-observability.md)
-takes its place, switched on or off per project in the host. The remaining
-integration work concerns the host's recording of observations across every
-supported harness; passing Engram protocol tests does not close that host
-work. Acceptance evaluation is temporarily off until Execution Observability
-is implemented.
+The host rollout and recording work remaining for
+[Execution Observability](features/execution-observability.md) is listed above;
+passing Engram protocol tests does not close it.
 
 Current milestone: agents use fourteen words — `next`, `ls`, `show`, `add`,
 `claim`, `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`,
@@ -90,7 +88,6 @@ core; the baseline `add → claim → done` lifecycle is measured at three
 commands with no JSON, full record ids, fences, or keys, and every receipt
 ends with `reminders` and `next`. The separate JSON-lines host work session
 records host observations, named source roots and registered verification.
-Resource leases, host obligation waiver and turn gating have been removed.
 Optional report assembly remains deferred.
 
 - Rust core; local SQLite canonical store (append-only, minted record ids)

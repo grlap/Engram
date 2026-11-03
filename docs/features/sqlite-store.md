@@ -90,9 +90,11 @@ live-store operation need a separate operator decision.
 
 The removed turn gating's four operational tables, `control_sessions`,
 `control_turn_results`, `control_turn_grants` and
-`control_turn_grant_supersessions`, are retired by the store migration that
-removed it, by name with their counts; the store file kept as the migration's
-backup holds their rows. `control_anchors`, `control_changes` and
+`control_turn_grant_supersessions`, were retired by the completed store
+migration, by name with their counts; the backup holds their original rows.
+The converter has been removed. Current import refuses those tables and the
+removed policy-selector columns by name; an unconverted backup requires the
+retained converter build. `control_anchors`, `control_changes` and
 `control_operation_results` stay as passive history: receipts earlier builds
 stored there stay where they were and still replay for their exact key. New
 work-session receipts (`named_root_bind`, `execution_observe`,

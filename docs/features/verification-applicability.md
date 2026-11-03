@@ -1,24 +1,41 @@
 # Verification applicability
 
-Host-minted verification may carry an optional restriction:
+Stored verification evidence may carry an optional restriction:
 
 ```json
 {"applicability":{"kind":"git_tree","tree":"<full Git tree object name>"}}
 ```
 
-`source_basis.git_tree` is an optional host measurement on checkpoint
-observations and `execution_observe` sightings. Both tree fields accept exactly
+On `execution_observe` sightings and observed-check source bases,
+`source_basis.git_tree` is an optional host measurement. Both tree fields accept exactly
 40 or 64 lowercase ASCII hexadecimal characters. The host supplies it only
 when that same capture found `git status --porcelain=v1 --untracked-files=all`
 empty. A dirty capture omits it. Absence means no tree identity and is valid
 input. A commit id and a content-v1 fingerprint are not tree identity.
 
-Omission of applicability preserves unrestricted checks and their canonical
-bytes. A present null, unsupported kind, malformed tree or undeclared member
-is refused by name, without echoing values. Malformed wire input returns
-`invalid_request` on either ingestion route. Minting requires the producer's
-`source_basis.git_tree` to equal `applicability.tree`; missing or different
-producer identity returns `invalid_control_session`, naming both fields.
+`execution_observe` records source sightings and observed checks; it does not
+mint native verification. `verification_record` creates native evidence from
+registered terminal checks. Its current request has no `applicability` member,
+and the evidence it creates has no applicability restriction. Engram sets
+`source_basis.git_tree` from the declared `tree` of a `staged_tree` input; a
+`commit` input has no tree field in its source basis, even for a clean checkout.
+Eligibility requires `post_run.clean_before` and `clean_after`, a clean input
+outcome and no dirty paths. These describe the registered input, including a
+staged tree; they do not require porcelain status to be empty.
+
+Historical restricted evidence retains its stored restriction and canonical
+bytes; see [records from earlier builds](execution-observability.md#records-from-earlier-builds).
+A present null, unsupported kind, malformed tree or undeclared member in a
+restriction is refused without echoing values. Strict host request decoding
+returns `invalid_request` for unknown fields, including an applicability member
+on the current registered-verification request.
+
+`verification_bind` preserves an original restriction when binding evidence to
+another run. A missing or different target tree returns
+`verification_bind_refused` with the typed reason `git_tree_missing` or
+`git_tree_mismatch`. Core evidence ingestion also rejects a restricted record
+whose producer tree does not match its restriction; that invariant does not
+provide another host ingestion operation.
 
 The shared core predicate compares each selected record's restriction with
 the relevant host-measured judged sighting. Missing or different identity
@@ -51,9 +68,10 @@ Successful `work_session_read` results advertise
 `verification_evidence_git_tree_applicability_v1: true` only while that
 definition exists. The advertisement is specific to the active connection;
 an absent, false, malformed or unknown advertisement grants no restricted
-credit. Each restricted writer also checks the actual barrier in its own
-transaction; a missing or wrong barrier returns `control_projection_invalid`.
-Never retry by dropping a restriction.
+credit. Binding a copy of historical restricted evidence checks the actual
+barrier in its write transaction; a missing or wrong barrier returns
+`control_projection_invalid`. The copy preserves the original restriction;
+a host cannot retry by supplying evidence with that restriction removed.
 
 Follow the existing [host cutover procedure](../host-checklist.md). Verify the
 new build refuses an unconverted store without writing before its conditional

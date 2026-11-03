@@ -4,6 +4,69 @@
 use super::*;
 
 #[test]
+fn removed_turn_admission_tables_and_columns_are_refused_by_name() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    let target = directory.path().join("target.db");
+    populated(&source);
+    export_json(&source, &file).unwrap();
+    let original: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let source_before = rows(&source);
+    for (table, column) in [
+        ("control_sessions", None),
+        ("control_turn_results", None),
+        ("control_turn_grants", None),
+        ("control_turn_grant_supersessions", None),
+        ("control_policy_state", Some("required_assurance")),
+        ("control_policy_state", Some("supported_effects_json")),
+        ("control_policy_state", Some("grant_ttl_seconds")),
+    ] {
+        let mut document = original.clone();
+        let declarations = document[0]["engram_export"]["tables"]
+            .as_array_mut()
+            .unwrap();
+        let expected = if let Some(column) = column {
+            declarations
+                .iter_mut()
+                .find(|entry| entry["name"] == table)
+                .unwrap()["columns"]
+                .as_array_mut()
+                .unwrap()
+                .push(Json::from(column));
+            format!("column {column} of table {table} has no place in the current format")
+        } else {
+            // Even an empty declaration is refused before its rows are read.
+            declarations.push(serde_json::json!({
+                "name": table, "columns": [], "rows": 0
+            }));
+            format!("table {table} has no place in the current format")
+        };
+        fs::write(
+            &file,
+            document
+                .iter()
+                .map(Json::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let error = import_json(&file, &target).unwrap_err();
+        assert!(
+            matches!(&error, MigrationError::Refused(reason) if reason == &expected),
+            "{table} {column:?}: {error}"
+        );
+        assert!(!target.exists(), "published a refused declaration");
+        assert_eq!(staging_leftovers(directory.path()), 0);
+        assert_eq!(rows(&source), source_before);
+    }
+}
+
+#[test]
 fn omitted_format_marker_rows_are_validated_and_counted() {
     let directory = crate::test_support::temp_home().unwrap();
     let source = directory.path().join("source.db");

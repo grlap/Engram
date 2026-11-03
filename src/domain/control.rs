@@ -348,26 +348,6 @@ pub fn holds_refused_source_text(text: &str) -> bool {
     text.chars().any(is_refused_source_text_char)
 }
 
-/// Input used only to construct historical execution-observation fixtures.
-#[cfg(test)]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExecutionObservationInput {
-    pub observation_id: String,
-    pub action_fingerprint: ObjectId,
-    pub effect: EffectClass,
-    pub outcome: ExecutionOutcome,
-    pub source_changed: bool,
-    /// How the host established the change it reports; only with
-    /// `source_changed`. Absent when the host does not say.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reported_source_change: Option<SourceChangeDetection>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_basis: Option<ExecutionSourceBasis>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub observed_at: Option<DateTime<Utc>>,
-}
-
 /// Immutable historical execution fact on its exact bound run feed.
 ///
 /// The host may preserve workspace and full-content source-state basis on the
@@ -413,16 +393,6 @@ pub struct ExecutionObservation {
     pub recorded_at: DateTime<Utc>,
 }
 
-/// Stable host-private reference to a previously recorded execution
-/// observation or to one observation in the same checkpoint request.
-#[cfg(test)]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ExecutionObservationReference {
-    ObjectId { object_id: ObjectId },
-    ObservationId { observation_id: String },
-}
-
 /// Host-declared class of one verification command or check.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -443,31 +413,6 @@ pub enum VerificationResult {
     Indeterminate,
 }
 
-/// Historical verification fixture input referencing a stored producer.
-///
-/// The caller supplies classification and presentation only. Storage derives
-/// the run, workspace/source basis, command fingerprint, result, producer
-/// session, and timestamps from `producer_observation`.
-#[cfg(test)]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct VerificationEvidenceInput {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::verification_applicability::present_applicability"
-    )]
-    pub applicability: Option<super::VerificationApplicability>,
-    pub producer_observation: ExecutionObservationReference,
-    pub check_kind: VerificationKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub environment: Option<EnvironmentEvidenceReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub refs: Vec<String>,
-}
-
 /// Host-declared components whose canonical bytes identify one execution
 /// environment without embedding image, sandbox, or toolchain payload bytes.
 /// These are asserted audit labels, not authenticated attestation, and must
@@ -480,31 +425,6 @@ pub struct EnvironmentComponents {
     pub sandbox: Option<String>,
     pub workspace_id: String,
     pub capability_map_revision: i64,
-}
-
-/// Host-private reference to environment evidence already stored or supplied
-/// earlier in the same checkpoint request.
-#[cfg(test)]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum EnvironmentEvidenceReference {
-    ObjectId { object_id: ObjectId },
-    Index { index: usize },
-}
-
-/// Host-private request to capture the environment identity used for one exact
-/// run and content state. When `components` is present, storage derives and
-/// compares `environment_fingerprint`; absence selects the opaque fingerprint
-/// contract.
-#[cfg(test)]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct EnvironmentEvidenceInput {
-    pub source_basis: ExecutionSourceBasis,
-    pub environment_fingerprint: ObjectId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub components: Option<EnvironmentComponents>,
-    pub observed_at: DateTime<Utc>,
 }
 
 /// Immutable host-minted evidence that one check ran against an exact content

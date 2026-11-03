@@ -1,0 +1,255 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { createServer } from "node:http";
+import { join } from "node:path";
+import test, { after } from "node:test";
+import { registerTestRun, confirmDetachedRegistration } from "../test-run-registration.mjs";
+import { createRun, executeRun, notifyRun, summarize } from "../test-launcher.mjs";
+
+export function registerRegistrationTests(support) {
+  const { env, stage, json, git, repository } = support;
+const registrationAck = (request) => ({ contract: "termal-durable-test-run-registration", version: 1,
+  runId: request.runId, registered: true });
+const registrationQuery = (request, runDir, source = "index") => ({ source, run: {
+  runId: request.runId, ownerSessionId: request.owner, initiatingSessionId: request.owner,
+  registrationState: "registered", trackingDurability: "durable", trackingProvenances: ["launcherRegistered"],
+  creatorPid: request.creatorPid, startedAt: request.started, detached: request.detached,
+  runDir, worktree: request.root,
+} });
+const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
+const registrationEnv = { ...env, TERMAL_BASE_URL: "http://127.0.0.1:1" };
+
+test("registration covers all launch modes before fingerprint capture through the supported HTTP contract", async () => {
+  await repository(async (root) => {
+    const requests = new Map(), calls = [], errors = [];
+    const server = createServer(async (incoming, outgoing) => {
+      try {
+        calls.push([incoming.method, incoming.url]);
+        let body;
+        if (incoming.method === "POST") {
+          const chunks = [];
+          for await (const chunk of incoming) chunks.push(chunk);
+          body = JSON.parse(Buffer.concat(chunks));
+          assert.deepEqual(Object.keys(body).sort(), ["runDirectory", "runId"]);
+          const request = json(join(body.runDirectory, "request.json"));
+          assert.equal(request.runId, body.runId);
+          assert.equal(request.creatorPid, process.pid);
+          assert.equal(request.owner, env.TERMAL_SESSION_ID);
+          assert.equal(existsSync(join(body.runDirectory, "input.json")), false);
+          assert.equal(request.expectedFingerprint, undefined);
+          // The capture must include a source change made during registration.
+          writeFileSync(join(root, "tracked.txt"), `${request.runId}\n`);
+          requests.set(request.runId, { request, directory: body.runDirectory });
+          outgoing.end(JSON.stringify(registrationAck(request)));
+        } else {
+          const found = requests.get(incoming.url.split("/").at(-1));
+          assert.ok(found);
+          outgoing.end(JSON.stringify(registrationQuery(found.request, found.directory)));
+        }
+      } catch (error) { errors.push(error); outgoing.statusCode = 500; outgoing.end("{}"); }
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const hostEnv = { ...env, TERMAL_BASE_URL: `http://127.0.0.1:${server.address().port}` };
+    try {
+      for (const full of [false, true]) for (const detached of [false, true]) {
+        const runDir = await createRun({ root, full, detached, notifyTo: "fixture-parent",
+          stages: [stage("once", "console.log('ok 1 - registration fixture')")] }, hostEnv);
+        const request = json(join(runDir, "request.json"));
+        assert.equal(request.registration.state, "registered");
+        assert.equal(request.registration.nativeWaitReady, true);
+        assert.equal(json(join(runDir, "results.json")).registration.state, "registered");
+        assert.equal(json(join(runDir, "input.json")).fingerprint, request.expectedFingerprint);
+        assert.equal(calls.at(-2)[1], `/api/sessions/${env.TERMAL_SESSION_ID}/test-runs`);
+        assert.equal(calls.at(-1)[1], `/api/test-runs/${request.runId}`);
+        if (!full) {
+          const before = calls.length;
+          const result = await executeRun(runDir, hostEnv);
+          assert.equal(result.state, "passed");
+          assert.equal(result.before, request.expectedFingerprint);
+          assert.equal(result.after, result.before);
+          assert.equal(calls.length, before + (detached ? 1 : 0));
+          assert.match(await summarize(runDir), /registration: registered; native-wait=ready; not host check credit/u);
+        }
+      }
+      assert.deepEqual(errors, []);
+    } finally { await new Promise((done) => { server.close(done); server.closeAllConnections(); }); }
+  });
+});
+
+test("registration fallback preserves stage execution, terminal results and notification retry intent", async () => {
+  await repository(async (root) => {
+    const attempts = [];
+    const runDir = await createRun({ root, detached: true, notifyTo: "fixture-parent",
+      stages: [stage("once", "require('node:fs').appendFileSync('.git/registration-count', 'once')")] },
+    registrationEnv, { fetch: async (_url, options) => {
+      attempts.push(options.body);
+      throw Object.assign(new Error("lost response"), { cause: { code: "EPIPE" } });
+    } });
+    assert.equal(attempts.length, 2);
+    assert.equal(attempts[0], attempts[1]);
+    const result = await executeRun(runDir, registrationEnv);
+    assert.equal(result.state, "passed");
+    assert.equal(result.registration.state, "unconfirmed");
+    assert.equal(readFileSync(join(root, ".git", "registration-count"), "utf8"), "once");
+    const summary = await summarize(runDir);
+    assert.match(summary, /registration: unconfirmed; native-wait=unavailable; use --notify/u);
+    const sends = [];
+    const send = async (_command, args) => {
+      sends.push({ key: args[args.indexOf("--idempotency-key") + 1],
+        message: readFileSync(args[args.indexOf("--message-file") + 1], "utf8") });
+      return { code: sends.length === 1 ? 1 : 0 };
+    };
+    await assert.rejects(notifyRun(runDir, registrationEnv, send));
+    await notifyRun(runDir, registrationEnv, send);
+    assert.equal(sends.length, 2);
+    assert.deepEqual(sends[0], sends[1]);
+    assert.equal(sends[0].message, summary);
+    assert.equal(readFileSync(join(root, ".git", "registration-count"), "utf8"), "once");
+  });
+});
+
+test("registration refuses malformed or unavailable context locally without a host call", async () => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner" };
+    const forbidden = { fetch: () => assert.fail("no host call for unavailable context") };
+    assert.equal((await registerTestRun(request, root, {}, forbidden)).state, "untracked");
+    for (const context of [{ TERMAL_SESSION_ID: "fixture-owner" }, { ...registrationEnv, TERMAL_BASE_URL: "file:///x" },
+      { ...registrationEnv, TERMAL_BASE_URL: "http://user:secret@localhost" },
+      { ...registrationEnv, TERMAL_SESSION_ID: "wrong-owner" }]) {
+      assert.equal((await registerTestRun(request, root, context, forbidden)).state, "unconfirmed");
+    }
+  });
+});
+
+test("registration never replays a definitive redirect or a refused connection and preserves fallback execution", async () => {
+  await repository(async (root) => {
+    const calls = [];
+    const server = createServer((request, reply) => {
+      calls.push([request.method, request.url]);
+      reply.writeHead(307, { location: "/unexpected-target" });
+      reply.end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const hostEnv = { ...env, TERMAL_BASE_URL: `http://127.0.0.1:${server.address().port}` };
+    try {
+      const runDir = await createRun({ root, stages: [stage("once",
+        "require('node:fs').appendFileSync('.git/redirect-count', 'once')")] }, hostEnv);
+      const request = json(join(runDir, "request.json"));
+      assert.deepEqual(calls, [["POST", `/api/sessions/${env.TERMAL_SESSION_ID}/test-runs`]]);
+      assert.equal(request.registration.state, "unconfirmed");
+      assert.equal(request.registration.reason, "registration-refused");
+      assert.equal((await executeRun(runDir, hostEnv)).state, "passed");
+      assert.equal(readFileSync(join(root, ".git", "redirect-count"), "utf8"), "once");
+      let refusedCalls = 0;
+      const result = await registerTestRun(request, runDir, hostEnv, { fetch: async () => {
+        refusedCalls++;
+        throw Object.assign(new Error("connection refused"), { cause: { code: "ECONNREFUSED" } });
+      } });
+      assert.equal(refusedCalls, 1);
+      assert.equal(result.state, "unconfirmed");
+    } finally { await new Promise((done) => { server.close(done); server.closeAllConnections(); }); }
+  });
+});
+
+test("registration and detached confirmation keep short-cadence heartbeats fresh", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: Date.now() });
+  await repository(async (root) => {
+    const hostEnv = { ...registrationEnv, ENGRAM_LAUNCHER_HEARTBEAT_MS: "1000" };
+    let request, directory;
+    const fetch = async (_url, options) => {
+      if (options.method === "POST") {
+        directory = JSON.parse(options.body).runDirectory;
+        request = json(join(directory, "request.json"));
+        const before = Date.parse(json(join(directory, "results.json")).heartbeat.at);
+        t.mock.timers.tick(4000);
+        assert.equal(Date.parse(json(join(directory, "results.json")).heartbeat.at), before + 4000);
+        assert.match(await summarize(directory), /^RUNNING /u);
+        return response(registrationAck(request));
+      }
+      return response(registrationQuery(request, directory));
+    };
+    const runDir = await createRun({ root, detached: true, stages: [stage("once")] }, hostEnv, { fetch });
+    t.mock.method(globalThis, "fetch", async () => {
+      const before = Date.parse(json(join(runDir, "results.json")).heartbeat.at);
+      t.mock.timers.tick(4000);
+      assert.equal(Date.parse(json(join(runDir, "results.json")).heartbeat.at), before + 4000);
+      assert.match(await summarize(runDir), /^RUNNING /u);
+      return response(registrationQuery(request, runDir));
+    });
+    const result = await executeRun(runDir, hostEnv);
+    assert.equal(result.state, "passed");
+    assert.equal(result.registration.state, "registered");
+    const terminal = readFileSync(join(runDir, "results.json"));
+    t.mock.timers.tick(4000);
+    assert.deepEqual(readFileSync(join(runDir, "results.json")), terminal, "the timer stops before terminal completion");
+  });
+});
+
+test("registration distinguishes durable registration from indexing and keeps ambiguous fallback sticky", async () => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    const fetch = async (_url, options) => response(options.method === "POST"
+      ? registrationAck(request) : registrationQuery(request, root, "registration"));
+    request.registration = await registerTestRun(request, root, registrationEnv, { fetch });
+    assert.equal(request.registration.state, "registered-but-not-indexed");
+    assert.equal(request.registration.nativeWaitReady, false);
+    const indexed = async () => response(registrationQuery(request, root));
+    assert.equal((await confirmDetachedRegistration(request, root, registrationEnv, { fetch: indexed })).nativeWaitReady, false);
+    request.registration = { state: "unconfirmed", nativeWaitReady: false };
+    assert.deepEqual(await confirmDetachedRegistration(request, root, registrationEnv,
+      { fetch: () => assert.fail("ambiguous registration cannot be promoted by a late query") }), request.registration);
+  });
+});
+
+test("registration validates exact replies, retries only ambiguous transport, and bounds stalled requests and bodies", async () => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    for (const reply of [() => response({}, 503), () => response({ ...registrationAck(request), runId: "other" }),
+      () => new Response("{"), () => new Response("x".repeat(65_537))]) {
+      let calls = 0;
+      const result = await registerTestRun(request, root, registrationEnv, { fetch: async () => { calls++; return reply(); } });
+      assert.equal(result.state, "unconfirmed");
+      assert.equal(calls, 1);
+    }
+    for (const change of [{ ownerSessionId: "other" }, { creatorPid: -1 }, { trackingDurability: "volatile" },
+      { runDir: join(root, "missing") }, { detached: false }]) {
+      const result = await registerTestRun(request, root, registrationEnv, { fetch: async (_url, options) => {
+        const query = registrationQuery(request, root);
+        Object.assign(query.run, change);
+        return response(options.method === "POST" ? registrationAck(request) : query);
+      } });
+      assert.equal(result.state, "unconfirmed");
+    }
+    let calls = 0;
+    const reset = Object.assign(new Error("reset"), { cause: { code: "ECONNRESET" } });
+    const fetch = async (_url, options) => {
+      calls++;
+      if (calls === 1 || calls === 3) throw reset;
+      return response(options.method === "POST" ? registrationAck(request) : registrationQuery(request, root));
+    };
+    request.registration = await registerTestRun(request, root, registrationEnv, { fetch });
+    assert.equal(request.registration.state, "registered");
+    assert.equal(calls, 4);
+    request.stages.push(stage("changed"));
+    assert.equal((await confirmDetachedRegistration(request, root, registrationEnv,
+      { fetch: () => assert.fail("changed worker request cannot reuse registration") })).state, "unconfirmed");
+    for (const stalledBody of [false, true]) {
+      let signal;
+      const result = await registerTestRun(request, root, registrationEnv, { budgetMs: 10,
+        fetch: async (_url, options) => {
+          signal = options.signal;
+          return stalledBody ? new Response(new ReadableStream({ start() {} })) : await new Promise(() => {});
+        } });
+      assert.equal(result.state, "unconfirmed");
+      assert.equal(result.reason, "registration-timeout");
+      assert.equal(signal.aborted, true);
+    }
+  });
+});
+}

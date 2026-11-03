@@ -195,7 +195,9 @@ purpose/phase are removed. The operator waiver command remains;
 acceptance-binding revision still resolves obsolete bound obligations. The
 context-packet assembly is removed. Turn gating is removed with its
 operations, settings and init flags; its canonical records stay readable and
-its operational tables are retired by the store migration (see
+its operational tables were retired by the completed store migration. The
+converter has been removed; current import refuses those tables and the
+removed policy-selector columns by name (see
 [records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
 The unused generic task-memory capture writer and task-memory search/show
 helpers are retired; historical construction and inspection exist only in

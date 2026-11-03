@@ -126,8 +126,8 @@ execution-observation and registered-verification operations. This keeps
 eligible native test credit; it does not convert
 ad-hoc observed checks into verification. See
 [the work session](features/execution-observability.md#the-work-session).
-Records from the removed turn gating remain separate history, never a
-prerequisite to ordinary dispatch or a reason to replay an old operation.
+See [records from earlier builds](features/execution-observability.md#records-from-earlier-builds)
+for passive history. It is never a prerequisite to ordinary dispatch.
 
 Use [`engram readiness --json`](features/host-readiness.md) for fast, scoped
 Verify/Save checks on an existing store. Keep `doctor --json` behind a separate
@@ -947,8 +947,9 @@ registered checks passed, over the host-private work session
 generation, `execution_observe` for host observations, and
 `verification_record` for registered verification. Every frame is strict:
 exactly the current field set, no additive or legacy fields. Nothing in this
-tier admits, delays or refuses a model turn. Turn gating was removed; its
-records remain readable as stored, and hosts must not send its frames. See
+tier admits, delays or refuses a model turn. Hosts send only current frames;
+[historical records](features/execution-observability.md#records-from-earlier-builds)
+do not provide additional operations. See
 [Execution Observability](features/execution-observability.md).
 
 ## External planner as a work source

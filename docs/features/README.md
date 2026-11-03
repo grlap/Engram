@@ -9,7 +9,7 @@ references another.
 
 | Brief | One line |
 | --- | --- |
-| [Execution Observability](execution-observability.md) | Host feature, project-level ON/OFF: the work session, named source roots, host observations of execution, source and tests, and registered verification; turn gating was removed |
+| [Execution Observability](execution-observability.md) | Host feature, project-level ON/OFF: work sessions, named source roots, observations of execution, source and tests, and registered verification; [earlier records](execution-observability.md#records-from-earlier-builds) |
 | [Typed memory model](typed-memory-model.md) | Kind × authority × delivery axes over immutable versions under minted ids |
 | [Historical context packet format](context-packets.md) | Retained serialized history; packet construction and generic task-memory capture are removed |
 | [Write policy & review](write-policy-and-review.md) | Origin × authority promotion matrix; distillation proposes, never writes; review lifecycle |

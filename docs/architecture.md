@@ -116,7 +116,8 @@ and acknowledges an exact dense project-feed cursor; that is the only context
 delivery. Global SQLite row ids are not cursors. Work-session operation
 results use noncanonical operational storage. The canonical records of the
 removed turn gating, such as checkpoint events, remain readable as stored; its
-operational tables are retired by the store migration (see
+operational tables were retired by the completed store migration. The converter
+has been removed, and current import refuses those tables by name (see
 [records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
 
 ### Optional Git task sync

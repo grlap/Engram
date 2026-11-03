@@ -25,8 +25,6 @@ use crate::SqliteStore;
 #[cfg(test)]
 mod tests;
 
-mod retired_control;
-
 const FORMAT: &str = "engram-json-export";
 
 /// Tables whose single row describes the format of the store that holds it.
@@ -788,8 +786,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     transaction.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
     let mut inserts = HashMap::new();
     let mut omitted = HashMap::new();
-    let mut retired = HashMap::new();
-    let mut retired_policy_columns = false;
     let mut declared_names = std::collections::HashSet::new();
     let mut tables = Vec::new();
     for entry in &header.left_out {
@@ -812,43 +808,10 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                 )));
             }
         }
-        if retired_control::declaration(&table.name, &table.columns)? {
-            retired.insert(table.name.clone(), 0_u64);
-            left_out.push(LeftOut {
-                name: table.name.clone(),
-                rows: table.rows,
-                reason: "retired turn-admission table".into(),
-            });
-            continue;
-        }
-        let mut destination_columns = table.columns.clone();
-        if table.name == "control_policy_state" {
-            let count = retired_control::POLICY_COLUMNS
-                .iter()
-                .filter(|name| table.columns.iter().any(|column| column == **name))
-                .count();
-            if count != 0 && count != retired_control::POLICY_COLUMNS.len() {
-                return Err(refused(
-                    "control_policy_state has an incomplete former admission-column declaration",
-                ));
-            }
-            retired_policy_columns = count != 0;
-            if retired_policy_columns {
-                destination_columns
-                    .retain(|column| !retired_control::POLICY_COLUMNS.contains(&column.as_str()));
-                for column in retired_control::POLICY_COLUMNS {
-                    left_out.push(LeftOut {
-                        name: format!("control_policy_state.{column}"),
-                        rows: table.rows,
-                        reason: "retired turn-admission column".into(),
-                    });
-                }
-            }
-        }
         // A format marker is left out, but its columns must still have a place
         // in the current format: leaving a table out never drops a column
         // silently.
-        admit_destination(&transaction, &table.name, &destination_columns)?;
+        admit_destination(&transaction, &table.name, &table.columns)?;
         if FORMAT_MARKER_TABLES.contains(&table.name.as_str()) {
             left_out.push(LeftOut {
                 name: table.name.clone(),
@@ -862,28 +825,22 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         let insert = format!(
             "INSERT INTO {} ({}) VALUES ({})",
             quoted(&table.name),
-            destination_columns
+            table
+                .columns
                 .iter()
                 .map(|column| quoted(column))
                 .collect::<Vec<_>>()
                 .join(", "),
-            (1..=destination_columns.len())
+            (1..=table.columns.len())
                 .map(|index| format!("?{index}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
         inserts.insert(
             table.name.clone(),
-            (
-                transaction.prepare(&insert)?,
-                destination_columns.clone(),
-                0_u64,
-            ),
+            (transaction.prepare(&insert)?, table.columns.clone(), 0_u64),
         );
-        tables.push(TableRows {
-            columns: destination_columns,
-            ..table.clone()
-        });
+        tables.push(table.clone());
     }
 
     for &(name, table, column) in IMPORT_FOREIGN_KEY_INDEXES {
@@ -909,14 +866,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             }
             Line::Row { table, mut values } => {
                 seen += 1;
-                if let Some(count) = retired.get_mut(&table) {
-                    retired_control::row(&table, values)?;
-                    *count += 1;
-                    continue;
-                }
-                if table == "control_policy_state" && retired_policy_columns {
-                    retired_control::policy_row(&mut values)?;
-                }
                 if let Some((columns, count)) = omitted.get_mut(&table) {
                     validate_omitted_row(&table, columns, values)?;
                     *count += 1;
@@ -978,7 +927,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             .get(&table.name)
             .copied()
             .or_else(|| omitted.get(&table.name).map(|(_, count)| *count))
-            .or_else(|| retired.get(&table.name).copied())
             .ok_or_else(|| refused(format!("unaccounted table {}", table.name)))?;
         if inserted != table.rows {
             return Err(refused(format!(

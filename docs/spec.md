@@ -418,7 +418,9 @@ history.
 Turn gating, the per-turn grants an earlier build issued (turn grants:
 Evaluate/Begin) with its session admission, settlement and recovery, was
 removed. Its canonical records remain readable as stored; the store migration
-that removed it retires its operational tables by name with their counts (see
+retired its operational tables by name with their counts. That conversion is
+complete and its code removed; current import refuses the old tables and
+policy-selector columns by name (see
 [records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
 The full protocol is
 specified in the [Execution Observability brief](features/execution-observability.md).
@@ -453,7 +455,7 @@ Host observations, named-root events and registered verification are
 canonical work records on the project, root and run feeds, which obligations
 and completion read while the run is unfinished (§2.7). The canonical records
 of the removed turn gating remain readable as stored; its operational tables
-are retired by the store migration (§2.7). The
+were retired by the completed store migration (§2.7). The
 cursor orders peer deltas; it is not an object identity and does not cross
 stores as a global sequence number.
 
@@ -724,8 +726,9 @@ Context-packet construction and delivery are removed. No new packet is
 constructed. The `ContextPacket` type still describes the historical
 serialized format. The `ControlDelivery` type that carried a packet inside a
 turn grant was deleted with turn gating; the store migration that removed
-turn gating retires the tables that held those grants, by name with their
-counts, and the store file kept as that migration's backup holds their rows.
+turn gating retired the tables that held those grants, by name with their
+counts, and the backup holds their rows. The converter has been removed;
+current import refuses those tables by name.
 See [historical context packet format](features/context-packets.md).
 
 ## 5. Write path
@@ -1328,7 +1331,7 @@ outcomes:
 | Round-8 portability correction | Greg stated that Engram starts local but must persist remotely, that he moves between machines, and that repository scale may reach hundreds of developers. He agreed to a canonical human-readable work projection and proposed a branch. | Engram::Opus separated restore-only backup, sequential portability, and concurrent sync; recommended a dedicated plumbing ref rather than a branch/working tree, scheduled push with visible lag, divergence refusal, sensitivity filtering, and no transfer of live claims/leases. | **Historical Draft 0.8 adoption, superseded for the selected personal workflow by §3.2:** optional V1 `portable` mode has one active host, explicit handoff/restore, head CAS, and no live-authority transfer. A private dedicated Git ref is the recommended personal transport; organization-scale substrate remains a product choice (§3.2–3.4, §7, §9.2–9.4) → Draft 0.8. |
 | Round-8 portability verification | Independent Codex verification and Engram::Opus both found that push-time CAS alone did not protect restore/startup and that sensitivity-filtered content-addressed projections could sever object/feed references. | Add writer-epoch release/acquire, exact-base restore, bounded startup/resume validation, and honest forced-takeover detection; require executable shared-state closure, separately hashed exclusion stubs, dense feed placeholders, export pass-or-exclude, coverage diagnostics, and policy-hash equality on acquire. | **Historical portable proposal, superseded for the selected personal workflow by §3.2.** Steps 1–4 remain independent of remote storage; the portable step must satisfy these conformance rules (§2.7, §3.2, §7, §9.2–9.4). |
 | Cleanup correction (2026-09-23) | Greg approved direct control-session binding, resource-lease and host-waiver removal, finalizer turn removal, object-id naming, and self-asserted acceptance disclosure. | Current contracts above supersede the lease/finalizer mechanisms described in the historical rows of this table; optional report assembly remains deferred. | Approved cleanup; paired host changes and explicit store conversion are required before deployment. |
-| Turn-gating removal (2026-11-02) | Greg: turn gating caused the most stops and problems; replace it with Execution Observability, keep no legacy, and keep acceptance evaluation but switch it off until Execution Observability is implemented. | Delete turn admission (Evaluate/Begin grants, control-session binding, settlement and recovery), its operations, settings and init flags; keep host observations, named source roots, registered verification and claims on a work-session channel, switched on or off per project in the host. | **Adopted:** Execution Observability (§2.7, §8.3). Canonical records of the removed gating stay readable; the store migration retires its operational tables by name with their counts. The rows above that describe grants, turn admission or control assurance are history. |
+| Turn-gating removal (2026-11-02) | Greg: turn gating caused the most stops and problems; replace it with Execution Observability, keep no legacy, and keep acceptance evaluation but switch it off until Execution Observability is implemented. | Delete turn admission (Evaluate/Begin grants, control-session binding, settlement and recovery), its operations, settings and init flags; keep host observations, named source roots, registered verification and claims on a work-session channel, switched on or off per project in the host. | **Adopted:** Execution Observability (§2.7, §8.3). Canonical records of the removed gating stay readable; the completed store migration retired its operational tables by name with their counts, and its converter has been removed. The rows above that describe grants, turn admission or control assurance are history. |
 
 ## Appendix B — Beads verdict
 

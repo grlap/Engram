@@ -105,20 +105,21 @@ Versions, approvals, retractions, evidence, and tombstones are append-only
 objects under minted ids. There is no separate audit channel to fall out of
 sync with the data.
 
-Control decisions and transitions also use immutable intent fingerprints and
-receipts, while current sessions, grants, and action state remain
-durable operational projections. A new database receives the built-in policy
+Work-session writes use scoped intent fingerprints and exact replay
+receipts. Connections and fenced work claims remain operational state;
+observations and policy versions are immutable records. A new database receives
+the built-in policy
 atomically; partial, missing, different-build, or corrupt control storage and
 unknown safety-relevant policy/event schemas fail closed for every
 ordinary store-open surface. `engram doctor --recover-policy` is the one
 separately constrained exception: it opens the existing database read-only,
 verifies the active selector plus every reachable policy, authority, and rule
 set, and names invalid bindings with restore/inspection guidance. It returns
-only a report, never a usable store handle; it cannot run MCP, control, work,
-grants, schema initialization, or repair, and never selects or rewrites a
-policy. Clean service unavailability may allow only
-policy-designated reversible local work with durably spooled reconciliation
-debt; shared, external, and lifecycle effects remain closed.
+only a report, never a usable store handle; it cannot run MCP, the host channel,
+work operations, schema initialization, or repair, and never selects or rewrites
+a policy. Execution Observability records execution; it does not authorize or
+prevent model turns or tool use. External actions still require their own
+human authorization.
 
 Ordinary open also refuses missing or malformed rebuildable indexes, triggers,
 FTS tables, or derived projection tables without DDL. Only the explicit
@@ -129,9 +130,12 @@ durable-definition and policy preflight; it never repairs canonical, authority,
 ordering, or idempotency state.
 
 The active immutable policy also selects a canonical obligation-rule-set id.
-Checkpointing resolves that selection from the begun grant's frozen policy
-epoch, and both the execution observation and each generated obligation retain
-it. A later operator policy change cannot retroactively weaken or strengthen an
+For a new `execution_observe` request, `AccountIfEligible` supplies the policy
+epoch, policy id and rule-set id, which must match the active selection before
+accounting is considered. `AuditOnly` records without accounting. The stored
+observation and generated obligations retain their original policy basis;
+an exact retry replays the committed receipt before consulting mutable policy.
+A later operator policy change cannot retroactively weaken or strengthen an
 old execution fact. Unknown rule-set schemas or missing/corrupt selected
 objects fail store open; V1's rule-set administrator is host/operator-only and
 records asserted, redactor-inspected attribution rather than authenticated

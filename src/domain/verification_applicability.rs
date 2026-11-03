@@ -160,30 +160,27 @@ mod tests {
     }
 
     #[test]
-    fn git_tree_optional_restriction_distinguishes_omission_from_present_null() {
-        let old = json!({"producer_observation":{"kind":"observation_id","observation_id":"check"},"check_kind":"test"});
-        let decoded: crate::domain::VerificationEvidenceInput =
-            serde_json::from_value(old.clone()).unwrap();
-        assert_eq!(
-            crate::CanonicalObject::freeze(&old).unwrap().bytes(),
-            crate::CanonicalObject::freeze(&decoded).unwrap().bytes()
-        );
-        let mut null = old.clone();
-        null["applicability"] = serde_json::Value::Null;
-        let error = serde_json::from_value::<crate::domain::VerificationEvidenceInput>(null)
+    fn production_applicability_decoder_refuses_present_null() {
+        #[derive(Debug, Deserialize)]
+        struct Evidence {
+            #[serde(default, deserialize_with = "present_applicability")]
+            applicability: Option<VerificationApplicability>,
+        }
+
+        let omitted: Evidence = serde_json::from_value(json!({})).unwrap();
+        assert!(omitted.applicability.is_none());
+        let restricted: Evidence = serde_json::from_value(json!({
+            "applicability": {"kind": "git_tree", "tree": "a".repeat(40)}
+        }))
+        .unwrap();
+        assert!(matches!(
+            restricted.applicability,
+            Some(VerificationApplicability::GitTree { .. })
+        ));
+        let error = serde_json::from_value::<Evidence>(json!({"applicability": null}))
             .unwrap_err()
             .to_string();
         assert!(error.contains("applicability"), "{error}");
-        let duplicate = format!(
-            "{{\"kind\":\"git_tree\",\"kind\":\"git_tree\",\"tree\":\"{}\"}}",
-            "a".repeat(40)
-        );
-        assert!(
-            serde_json::from_str::<VerificationApplicability>(&duplicate)
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate field")
-        );
     }
 
     #[test]

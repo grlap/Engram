@@ -480,6 +480,213 @@ fn read_claim_result(
     read(store, host, claim.run_id, claim.claim_id)
 }
 
+fn reopen_fixture(fixture: Fixture) -> Fixture {
+    let Fixture {
+        store,
+        directory,
+        work,
+        claim,
+        evidence,
+    } = fixture;
+    drop(store);
+    let store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("reopen store");
+    Fixture {
+        store,
+        directory,
+        work,
+        claim,
+        evidence,
+    }
+}
+
+fn assert_definitive_refusals(
+    store: &SqliteStore,
+    credentials: &Credentials,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    absent_run: WorkRunId,
+    unrelated_claim: WorkClaimId,
+) -> NamedRootRead {
+    let unknown = read(store, credentials, absent_run, claim.claim_id);
+    assert!(
+        matches!(
+            unknown,
+            Err(StoreError::NamedRootReadRefused(
+                NamedRootReadRefusal::RunUnknown
+            ))
+        ),
+        "{unknown:?}"
+    );
+    let mismatch = read(store, credentials, claim.run_id, unrelated_claim);
+    assert!(
+        matches!(
+            mismatch,
+            Err(StoreError::NamedRootReadRefused(
+                NamedRootReadRefusal::ClaimNotCurrentForRun
+            ))
+        ),
+        "{mismatch:?}"
+    );
+    let own = read(store, credentials, claim.run_id, claim.claim_id).expect("recorded claim reads");
+    assert_consistent(store, &own, work, claim);
+    own
+}
+
+#[test]
+fn named_root_refusals_survive_reopen_and_later_work_lifecycles() {
+    let mut fixture = fixture("project-a");
+    let work = fixture.work.clone();
+    let claim = fixture.claim.clone();
+    let host = HostSession::bind(&mut fixture.store, &work, &claim, 6);
+    let named = host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        10,
+        "name-stable-refusal-root",
+        10,
+    )
+    .expect("name root");
+    // Reuse these exact absent identities throughout every lifecycle transition.
+    let absent_run = WorkRunId(uuid::Uuid::now_v7());
+    let unrelated_claim = WorkClaimId(uuid::Uuid::now_v7());
+    let credentials = Credentials::of(&host);
+    let check = |fixture: &Fixture| {
+        let own = assert_definitive_refusals(
+            &fixture.store,
+            &credentials,
+            &work,
+            &claim,
+            absent_run,
+            unrelated_claim,
+        );
+        assert_event(&own, &named);
+        own
+    };
+    let initial = check(&fixture);
+    assert_eq!(initial.claim.state, WorkClaimState::Active);
+    fixture = reopen_fixture(fixture);
+    assert_eq!(check(&fixture), initial);
+
+    release_runner(&mut fixture, &work, &claim, 20);
+    assert_eq!(check(&fixture).claim.state, WorkClaimState::Released);
+    fixture = reopen_fixture(fixture);
+    assert_eq!(check(&fixture).claim.state, WorkClaimState::Released);
+
+    let current = fixture
+        .store
+        .get_work_item(work.work_id)
+        .expect("current item");
+    let reclaimed = super::claim(
+        &mut fixture.store,
+        &current,
+        "runner",
+        "reclaim-stable-refusal-run",
+        21,
+        3_600,
+    );
+    assert_eq!(reclaimed.run_id, claim.run_id);
+    assert_eq!(reclaimed.claim_id, claim.claim_id);
+    assert!(reclaimed.fence > claim.fence);
+    assert_eq!(check(&fixture).claim.state, WorkClaimState::Active);
+
+    let current = fixture
+        .store
+        .get_work_item(work.work_id)
+        .expect("current item");
+    let evidence = fixture.evidence.clone();
+    checkpoint_then_complete(
+        &mut fixture.store,
+        &current,
+        &reclaimed,
+        "runner",
+        std::slice::from_ref(&evidence),
+        true,
+        None,
+        "complete-stable-refusal-run",
+        25,
+    )
+    .expect("complete original run");
+    let completed = check(&fixture);
+    assert_eq!(completed.run.state, WorkRunState::Completed);
+    assert_eq!(completed.claim.state, WorkClaimState::Completed);
+    fixture = reopen_fixture(fixture);
+    assert_eq!(check(&fixture), completed);
+
+    let done = fixture
+        .store
+        .get_work_item(work.work_id)
+        .expect("completed item");
+    let reopened = fixture
+        .store
+        .reopen_work(
+            &crate::domain::ReopenWorkRequest {
+                work_id: done.work_id,
+                expected_work_revision: done.revision,
+                reason: "new work after the completed run".into(),
+                actor: actor("planner"),
+                idempotency_key: "reopen-stable-refusal-work".into(),
+                reopened_at: at(30),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("reopen work");
+    assert_ne!(reopened.run_id, claim.run_id);
+    let current = fixture
+        .store
+        .get_work_item(work.work_id)
+        .expect("reopened item");
+    let next = super::claim(
+        &mut fixture.store,
+        &current,
+        "runner",
+        "claim-next-stable-refusal-run",
+        31,
+        3_600,
+    );
+    assert_ne!(next.run_id, claim.run_id);
+    assert_ne!(next.claim_id, claim.claim_id);
+    assert_eq!(check(&fixture), completed);
+    // Real claims of different runs are just as definitive as an absent claim.
+    assert_definitive_refusals(
+        &fixture.store,
+        &credentials,
+        &work,
+        &claim,
+        absent_run,
+        next.claim_id,
+    );
+    assert_definitive_refusals(
+        &fixture.store,
+        &credentials,
+        &current,
+        &next,
+        absent_run,
+        claim.claim_id,
+    );
+    fixture = reopen_fixture(fixture);
+    assert_eq!(check(&fixture), completed);
+    assert_definitive_refusals(
+        &fixture.store,
+        &credentials,
+        &work,
+        &claim,
+        absent_run,
+        next.claim_id,
+    );
+    assert_definitive_refusals(
+        &fixture.store,
+        &credentials,
+        &current,
+        &next,
+        absent_run,
+        claim.claim_id,
+    );
+}
+
 // Reads and refusals write nothing: every table's rows are byte-identical
 // afterwards, an issued turn grant that has not begun included, which the
 // session status would expire.

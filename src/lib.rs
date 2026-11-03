@@ -125,9 +125,3 @@ pub use work_service::{
 
 #[cfg(test)]
 pub use domain::{NoteRequest, NoteVisibility};
-
-#[cfg(test)]
-pub use domain::{
-    EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservationInput,
-    ExecutionObservationReference, VerificationEvidenceInput,
-};

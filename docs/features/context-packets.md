@@ -13,8 +13,9 @@ project notes through `memories`; see [agent usage](cli-and-mcp.md#using-engram-
 remain the historical serialized format, and packet fields retain their
 original meaning. A packet was stored only inside a turn grant's
 `ControlDelivery` page. That type was deleted with turn gating, and the store
-migration that removed turn gating retires the tables that held those grants,
-by name with their counts (see [SQLite store](sqlite-store.md)); their rows
+migration retired the tables that held those grants, by name with their counts.
+The converter has been removed; current import refuses those tables by name
+(see [SQLite store](sqlite-store.md)). Their rows
 remain only in the store file kept as that migration's backup. Dormant
 context-revision tables remain in the store.
 

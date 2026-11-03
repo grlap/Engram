@@ -118,6 +118,14 @@ for is never dropped in silence. Canonical objects keep their ids, links and
 bytes. A store written by a design this build no longer knows is refused the
 same way; the build that still reads it is kept beside its backups.
 
+The completed turn-admission conversion is no longer supplied. Current import
+refuses `control_sessions`, `control_turn_results`, `control_turn_grants` and
+`control_turn_grant_supersessions`, and the `control_policy_state` columns
+`required_assurance`, `supported_effects_json` and `grant_ttl_seconds`, by name.
+An unconverted backup needs the retained build that performed that conversion.
+Historical canonical policies, observations and receipts in the current schema
+remain readable and transfer unchanged.
+
 Records the store already holds are read as they were stored, including ones
 written by operations this build no longer offers: historical `lease_required`
 refusal decisions replay unchanged, and `control_operation_results` receipts for

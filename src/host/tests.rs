@@ -168,6 +168,33 @@ fn named_root_read_refusals_preserve_messages_and_expose_stable_reasons() {
 }
 
 #[test]
+fn named_root_read_integrity_and_session_errors_have_no_definitive_refusal_reason() {
+    for (error, expected_code) in [
+        (
+            StoreError::InvalidWorkProjection("run feed without its run row".into()),
+            "storage_error",
+        ),
+        (
+            StoreError::ControlConnectionSuperseded("old connection".into()),
+            "control_connection_superseded",
+        ),
+    ] {
+        let response = HostControlResponse::Error {
+            error: HostControlErrorBody {
+                code: store_error_code(&error),
+                message: error.to_string(),
+                reason: store_error_reason(&error),
+                details: store_error_details(&error),
+            },
+        };
+        let response = serde_json::to_value(response).expect("host error response");
+        assert_eq!(response["status"], "error");
+        assert_eq!(response["error"]["code"], expected_code);
+        assert!(response["error"].get("reason").is_none(), "{response}");
+    }
+}
+
+#[test]
 fn moved_evaluation_basis_preserves_both_host_wire_codes() {
     for (moved, expected) in [
         (

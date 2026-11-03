@@ -37,16 +37,13 @@ use rusqlite::{Connection, OptionalExtension, params, types::Value};
 
 use super::super::{SqliteStore, StaleRecoveryContext, StoreError};
 use super::completion::{
-    applicable_work_obligations_at_cut_on, blocking_ancestor_on, feed_head,
-    load_work_obligation_records_on, work_run_uses_active_root_execution,
+    blocking_ancestor_on, feed_head, load_work_obligation_records_on,
+    work_run_uses_active_root_execution,
 };
 use super::execution::{
     live_handoff_on, work_evidence_kind_on, work_run_evidence_on, work_run_evidence_projection_on,
 };
-use super::feeds::{
-    checkpoint_feed_end, load_handoff_offer_projection, load_typed_work_object,
-    run_feed_position_for_object_on,
-};
+use super::feeds::{checkpoint_feed_end, load_handoff_offer_projection, load_typed_work_object};
 use super::integrity::{expected_environment_projection, expected_verification_projection};
 use super::planning::{
     encode_state, normalize_work_catalog_key, require_work_item_relation_integrity,
@@ -59,9 +56,9 @@ use crate::{
         RootExecutionId, SessionId, VerificationEvidence, WorkAvailability, WorkBlocker,
         WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState,
         WorkCompletionRecovery, WorkCompletionRecoveryCause, WorkEvent, WorkEvidenceKind,
-        WorkFeedEntry, WorkHandoffOffer, WorkId, WorkItem, WorkLifecycle, WorkObligationId,
-        WorkPrerequisiteState, WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId,
-        WorkRunState, WorkTransition,
+        WorkFeedEntry, WorkHandoffOffer, WorkId, WorkItem, WorkLifecycle, WorkPrerequisiteState,
+        WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId, WorkRunState,
+        WorkTransition,
     },
 };
 
@@ -233,43 +230,6 @@ impl SqliteStore {
         // both come from one commit.
         on_one_snapshot(&self.connection, |connection| {
             load_work_obligation_records_on(connection, run_id, None)
-        })
-    }
-
-    /// Derives the obligations that were still open at one exact immutable
-    /// run-feed cut. A3 consumes this helper when sealing completion.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when the cut names another feed, exceeds the
-    /// current head, splits an atomic observation/definition append, or any
-    /// canonical obligation binding is invalid.
-    #[allow(
-        dead_code,
-        reason = "A2 ships the verified cut query as the explicit basis for the A3 completion gate"
-    )]
-    pub(crate) fn open_work_obligations_at_cut(
-        &self,
-        run_id: WorkRunId,
-        cut: &FeedPosition,
-    ) -> Result<Vec<WorkObligationId>, StoreError> {
-        // The records are checked against the run's current observations, so
-        // they come from one commit.
-        on_one_snapshot(&self.connection, |connection| {
-            let records = applicable_work_obligations_at_cut_on(connection, run_id, cut)?;
-            let mut open = Vec::new();
-            for record in records {
-                let terminal_at_cut = record
-                    .resolution_id
-                    .as_ref()
-                    .map(|hash| run_feed_position_for_object_on(connection, run_id, hash))
-                    .transpose()?
-                    .is_some_and(|position| position.position <= cut.position);
-                if !terminal_at_cut {
-                    open.push(record.obligation.obligation_id);
-                }
-            }
-            Ok(open)
         })
     }
 

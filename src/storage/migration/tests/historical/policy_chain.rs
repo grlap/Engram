@@ -78,9 +78,6 @@ fn historical_chain(path: &Path) -> (ObjectId, ObjectId) {
         )
         .unwrap();
     assert!(store.verify_all().unwrap().is_healthy());
-    store.connection.execute_batch("ALTER TABLE control_policy_state ADD COLUMN required_assurance TEXT NOT NULL DEFAULT 'advisory';
-        ALTER TABLE control_policy_state ADD COLUMN supported_effects_json TEXT NOT NULL DEFAULT '[\"observe\",\"communicate\",\"coordinate\",\"mutate_local\"]';
-        ALTER TABLE control_policy_state ADD COLUMN grant_ttl_seconds INTEGER NOT NULL DEFAULT 30;").unwrap();
     (first, next.key().clone())
 }
 
@@ -94,29 +91,11 @@ fn historical_admission_policy_chain_imports_unchanged_and_current_successors_om
     let source = directory.path().join("historical.db");
     let file = directory.path().join("historical.jsonl");
     let (first, second) = historical_chain(&source);
-    let mut expected = rows(&source);
-    for row in expected.get_mut("control_policy_state").unwrap() {
-        row.truncate(4);
-    }
+    let expected = rows(&source);
     export_json(&source, &file).unwrap();
     for acceptance in [false, true] {
         let target = directory.path().join(format!("current-{acceptance}.db"));
-        let report = import_json(&file, &target).unwrap();
-        for column in [
-            "required_assurance",
-            "supported_effects_json",
-            "grant_ttl_seconds",
-        ] {
-            assert_eq!(
-                report
-                    .left_out
-                    .iter()
-                    .find(|entry| entry.name == format!("control_policy_state.{column}"))
-                    .unwrap()
-                    .rows,
-                1
-            );
-        }
+        import_json(&file, &target).unwrap();
         assert_eq!(rows(&target), expected);
         let mut store = SqliteStore::open(&target).unwrap();
         assert!(store.verify_all().unwrap().is_healthy());
