@@ -689,9 +689,7 @@ fn validate_planning_graph_indexed(
         if !ids.contains(&blocker.work_id) || !blocker_ids.insert(blocker.blocker_id.as_str()) {
             return Err(corrupt("duplicate or dangling blocker"));
         }
-        validate_text(&blocker.blocker_id, "blocker id")?;
-        validate_text(&blocker.detail, "blocker detail")?;
-        validate_actor(&blocker.created_by)?;
+        validate_snapshot_blocker_shape(blocker)?;
     }
     for item in items {
         count_graph_validation_work(
@@ -728,7 +726,17 @@ fn validate_planning_graph_indexed(
     validate_combined_graph(items)
 }
 
-fn validate_snapshot_item_shape(item: &crate::WorkGraphSnapshotItem) -> Result<(), StoreError> {
+pub(crate) fn validate_snapshot_blocker_shape(
+    blocker: &crate::WorkGraphSnapshotBlocker,
+) -> Result<(), StoreError> {
+    validate_text(&blocker.blocker_id, "blocker id")?;
+    validate_text(&blocker.detail, "blocker detail")?;
+    validate_actor(&blocker.created_by)
+}
+
+pub(crate) fn validate_snapshot_item_shape(
+    item: &crate::WorkGraphSnapshotItem,
+) -> Result<(), StoreError> {
     let external = crate::domain::normalize_external_reference(item.external_ref.as_deref())
         .map_err(|message| corrupt(&message))?;
     if external != item.external_ref {

@@ -29,7 +29,9 @@ use crate::{
 };
 
 mod load;
-pub(crate) use load::validate_planning_graph;
+pub(crate) use load::{
+    validate_planning_graph, validate_snapshot_blocker_shape, validate_snapshot_item_shape,
+};
 
 pub(super) const REDACTED_MEMORY_PLACEHOLDER: &str = "[redacted in work-graph snapshot]";
 pub(super) const RESTORED_MEMORY_SOURCE: &str = "engram:work-graph-snapshot";

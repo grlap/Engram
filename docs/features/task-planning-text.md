@@ -875,10 +875,50 @@ replacement.
 | `task_sync_destination_unknown_entry` | The candidate directory holds an entry the format does not define. |
 | `task_sync_destination_missing_tasks` | A plain candidate directory, as read by preparation and setup materialization, has no `tasks` directory. A folder import accepts a folder without one. |
 | `task_sync_import_conflict` | A folder imported into an enrolled destination asks for an unsupported field change; a task it would edit or remove is not free to take that change; a retained task still references a removed task; a relation edit rewrites an immutable blocker, collides with a held id, adds an inadmissible prerequisite or breaks the durable graph; or an addition collides with a held identity, references a native task, sits under a bound ancestor or executing root, depends on a refused addition, or breaks the destination's planning or import-origin history. Title, outcome, priority, prerequisite and blocker edits have the admission rules above. The message names the first 20 refused tasks with reasons in task-id order, counts the rest, and reports graph failures that cannot be attributed to a task at folder level. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
-| `task_sync_incremental_basis_unavailable` | An incremental exchange's recorded project-feed cut no longer continues the store's feed: the cut is ahead of the feed head, or its anchor names a different object. The check reads the anchor's entry alone, never the interval since the cut. A first capture, from position zero, also refuses while the project holds tasks that no project-feed entry names, as a loaded graph's tasks are. The changed tasks cannot be named exactly, so nothing is read; a full scan happens only on an explicit rebuild. |
+| `task_sync_incremental_basis_unavailable` | An incremental exchange's recorded project-feed cut no longer continues the store's feed: the cut is ahead of the feed head, or its anchor names a different object. The check reads the anchor's entry alone, never the interval since the cut. A first capture, from position zero, also refuses while the project holds tasks that no project-feed entry names, as a loaded graph's tasks are. Commit-delta intake also uses this code when Git completes its lookup but the selected commit is unavailable. The changed tasks cannot be named exactly; a full scan happens only on an explicit rebuild. |
+| `task_sync_git_query_failed` | A local Git read could not complete, including repository/process failures or the query deadline. Correct that failure and retry; this does not request a rebuild. A response over its bound instead uses the file or tree limit code, and a blob refusal names the document path. |
 | `task_sync_baseline_head_moved` | An exchange baseline names a previous baseline that is no longer the project's latest one: another exchange was recorded after the one it was planned against. Each baseline continues exactly one predecessor, so the later exchange is refused and nothing is written; plan it again against the current baseline. |
 
+## Reading a commit delta
+
+The library-only `task_sync::git::read_task_delta` takes an absolute repository,
+project id and two explicit full commit object ids. It compares the complete
+old and new trees through the existing hardened, bounded local Git executor;
+intervening commits and merges require no history walk. NUL-delimited changes
+under `.engram` select only added or modified task blobs. A removal opens no
+old task blob, and a rename is a removal plus an addition. Both `project.json`
+envelopes are read to check project binding and a stable note selection.
+
+The result is transient typed upserts and explicit removals, with the two
+embedded folder bases. Their fingerprints are envelope text, not recomputed
+inventory or recorded baselines, and may be stale after a task-text merge.
+The prior source tree must already have been admitted. Changed
+documents receive the shared document-field, note/activity disclosure and
+local shape checks; graph relationships and identity collisions with retained
+documents still need the caller's admission. Unchanged task blobs are not
+opened or revalidated. Missing commits, malformed changed documents, unexpected
+paths and non-ordinary modes refuse. The operation has a 30-second query budget,
+a one-MiB bound per Git response and a 128-MiB changed-payload bound.
+
+This seam opens no SQLite store, retains no cursor or receipt, imports nothing,
+and changes no Git ref, index or worktree file. It does not wire incremental
+intake into ordinary import, preparation or reconciliation, and grants no
+publication authority.
+
 ## Local incremental preparation
+
+The library's `SqliteStore::capture_task_documents` captures an explicit set of
+task ids in one read snapshot. It shares the complete exporter's per-task
+capture, including note and activity disclosure, but reads no unrelated task
+documents. Its transient result distinguishes a present document, an absent
+identity, and a task explicitly retired by the selected project's exchange
+baseline. Duplicate ids are captured once. Changed baseline note selection,
+cross-project selections, and selected read or capture errors refuse without
+a full-export fallback. References may name unselected tasks: typed capture
+does not admit document shape or graph relationships. Callers must validate
+both before applying or publishing changes.
+This library seam does not make the ordinary directory or preparation routes
+proportional to changes.
 
 `task-sync prepare DIRECTORY --progress-directory PROGRESS` prepares an immutable,
 complete directory candidate. Add `--include-notes --origin-machine ALIAS` for

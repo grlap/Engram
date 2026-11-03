@@ -434,14 +434,7 @@ fn folder_export_on(
     profile: &ExportProfile,
 ) -> Result<TaskSyncFolderExport, StoreError> {
     profile.options().validate()?;
-    // Only the note selection is shared; each host exports under its own
-    // origin-machine alias.
-    if baseline::head(connection, project)?
-        .is_some_and(|head| head.include_notes != profile.include_notes)
-    {
-        return Err(TaskSyncRefusal::DivergentPlanning
-            .invalid("task folder export note selection differs from its complete baseline"));
-    }
+    baseline::validate_note_selection(connection, project, profile.include_notes)?;
     let retired = baseline::retired(connection, project)?;
     let mut captured = super::export_on_with_profile(connection, project, profile)?;
     captured

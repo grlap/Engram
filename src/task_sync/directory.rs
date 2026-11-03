@@ -181,7 +181,11 @@ fn read_folder_stored(path: &Path, verify_inventory: bool) -> Result<FolderExcha
 /// Refuses a linked, irregular, oversized, malformed or incomplete document.
 pub fn read_folder_basis(path: &Path) -> Result<FolderBasis> {
     let bytes = read_file_with(path, LIMITS, &mut |_, _| Ok(()))?;
-    let envelope: FolderProjectDocument = crate::task_sync::parse(&bytes)
+    folder_basis_from_bytes(&bytes)
+}
+
+pub(crate) fn folder_basis_from_bytes(bytes: &[u8]) -> Result<FolderBasis> {
+    let envelope: FolderProjectDocument = crate::task_sync::parse(bytes)
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     if envelope.project.format != crate::task_sync::FORMAT {
         return Err(TaskSyncRefusal::InvalidGraph

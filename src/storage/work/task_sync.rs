@@ -18,6 +18,7 @@ use crate::{
 
 mod activity;
 pub(in crate::storage::work) mod baseline;
+mod capture;
 pub(crate) mod folder;
 mod folder_admission;
 mod folder_dry_run;
@@ -587,87 +588,17 @@ fn export_on_snapshot(
         // Loading, notes and activity read the task's import origin through the
         // shared validators; their binding refusals are origin mismatches here.
         let item = query::load_work_item(connection, id).map_err(origin::classify_binding)?;
-        if item.origin == crate::WorkOrigin::Imported || item.source_snapshot_id.is_some() {
-            return Err(TaskSyncRefusal::OriginMismatch.invalid(
-                "task export refuses external imported origin and source snapshot; use graph export to retain that provenance",
-            ));
-        }
-        let event_records = query::canonical_work_event_records_for_item(connection, id)?;
-        let shared_activity = activity::capture(
+        let (document, stored_inclusion) = capture::capture_document_on(
             connection,
-            &item,
-            &event_records,
+            item,
+            include_notes,
             machine,
             comparison,
+            omissions,
             activity_omissions,
-        )
-        .map_err(origin::classify_binding)?;
-        let events = event_records
-            .into_iter()
-            .map(|(_, event)| event)
-            .collect::<Vec<_>>();
-        let records = graph_snapshot::restored_records_on(connection, id)?;
-        let prerequisites = query::load_prerequisite_projection_ids(connection, id)?;
-        let snapshot =
-            graph_snapshot::snapshot_item(&item, prerequisites.clone(), &events, &records)?;
-        let completion = graph_snapshot::completion_from_events(
-            connection, &item, &events, &records,
-        )?
-        .map(|completion| SharedCompletion {
-            summary: completion.summary,
-            completed_at: completion.completed_at,
-            actor: SharedActor::from_actor(&completion.actor),
-        });
-        let mut blockers = query::load_active_blocker_projections(connection, id)?
-            .into_iter()
-            .map(|blocker| SharedBlocker {
-                blocker_id: blocker.blocker_id,
-                kind: blocker.kind,
-                detail: blocker.detail,
-                created_by: SharedActor::from_actor(&blocker.created_by),
-                created_at: blocker.created_at,
-            })
-            .collect::<Vec<_>>();
-        blockers.sort_by(|a, b| a.blocker_id.cmp(&b.blocker_id));
-        let shared_notes = if include_notes || comparison {
-            let (notes, stored_inclusion) = notes::capture(
-                connection,
-                &item,
-                machine,
-                include_notes,
-                comparison,
-                omissions,
-            )
-            .map_err(origin::classify_binding)?;
-            notes_included |= stored_inclusion;
-            notes
-        } else {
-            Vec::new()
-        };
-        tasks.push(TaskDocument {
-            id,
-            external_ref: item.external_ref,
-            title: item.title,
-            outcome: item.outcome,
-            acceptance: item.acceptance,
-            acceptance_bindings: item.acceptance_bindings,
-            evaluation_mode: item.evaluation_mode,
-            kind: item.kind,
-            priority: item.priority,
-            labels: item.labels,
-            assigned_to: item.assigned_to,
-            deferred_until: item.deferred_until,
-            lifecycle: item.lifecycle,
-            parent_id: item.parent_id,
-            child_requirement: item.child_requirement,
-            prerequisites,
-            blockers,
-            superseded_by: item.superseded_by,
-            disposal_reason: snapshot.disposal_reason,
-            completion,
-            notes: shared_notes,
-            activity: shared_activity,
-        });
+        )?;
+        notes_included |= stored_inclusion;
+        tasks.push(document);
     }
     let tree = TaskTree {
         project: ProjectDocument {

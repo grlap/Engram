@@ -15,6 +15,7 @@ mod folder;
 mod folder_apply;
 mod folder_dry_run;
 mod incremental;
+mod keyed_capture;
 pub(in crate::storage::work::task_sync) mod ledger;
 mod native;
 mod notes;

@@ -13,6 +13,8 @@ use crate::{
 };
 
 pub mod activity;
+mod capture;
+pub use capture::{CapturedTask, TaskDocumentCapture};
 pub mod directory;
 pub mod exchange;
 mod file_lock;
@@ -131,6 +133,90 @@ pub struct TaskTree {
     pub tasks: Vec<TaskDocument>,
 }
 
+/// Document-local fields and identities, without resolving graph references.
+pub(crate) fn validate_document_fields<'a>(
+    project: &ProjectDocument,
+    tasks: impl IntoIterator<Item = &'a TaskDocument>,
+) -> Result<(), StoreError> {
+    if project.format != FORMAT {
+        return Err(invalid("unsupported task format"));
+    }
+    if project.project_id.0.trim().is_empty() {
+        return Err(invalid("empty project id"));
+    }
+    let mut ids = HashSet::new();
+    let mut blockers = HashSet::new();
+    let mut note_ids = HashSet::new();
+    let mut activity_ids = HashSet::new();
+    for task in tasks {
+        if !ids.insert(task.id) {
+            return Err(invalid("duplicate task id"));
+        }
+        if !project.notes_included && !task.notes.is_empty() {
+            return Err(invalid("shared notes require explicit notes_included"));
+        }
+        notes::validate_note_structure(&task.notes)?;
+        activity::validate_structure(&task.activity, task.id)?;
+        for (machine, entries) in &task.activity {
+            for id in entries.keys() {
+                if !activity_ids.insert((machine, id)) {
+                    return Err(invalid("duplicate origin-qualified activity id"));
+                }
+            }
+        }
+        for note in &task.notes {
+            if !note_ids.insert(&note.id) {
+                return Err(invalid("duplicate shared note id"));
+            }
+        }
+        if (task.lifecycle == WorkLifecycle::Completed) != task.completion.is_some() {
+            return Err(invalid("completion and planning lifecycle disagree"));
+        }
+        if let Some(completion) = &task.completion {
+            validate_shared_actor(&completion.actor)?;
+            if completion.summary.trim().is_empty() {
+                return Err(invalid("empty reported completion"));
+            }
+            if completion.summary.trim() != completion.summary {
+                return Err(invalid("reported completion summary must be normalized"));
+            }
+        }
+        let mut positions = HashSet::new();
+        for binding in &task.acceptance_bindings {
+            if binding.criterion == 0
+                || binding.criterion > task.acceptance.len()
+                || !positions.insert(binding.criterion)
+            {
+                return Err(invalid("invalid or duplicate acceptance binding position"));
+            }
+        }
+        if task
+            .acceptance_bindings
+            .windows(2)
+            .any(|p| p[0].criterion >= p[1].criterion)
+        {
+            return Err(invalid("acceptance bindings must be position ordered"));
+        }
+        if task.prerequisites.windows(2).any(|p| p[0].0 >= p[1].0) {
+            return Err(invalid("prerequisites must be sorted and unique"));
+        }
+        if task
+            .blockers
+            .windows(2)
+            .any(|p| p[0].blocker_id >= p[1].blocker_id)
+        {
+            return Err(invalid("blockers must be sorted and unique"));
+        }
+        for blocker in &task.blockers {
+            if !blockers.insert(&blocker.blocker_id) {
+                return Err(invalid("duplicate blocker id"));
+            }
+            validate_shared_actor(&blocker.created_by)?;
+        }
+    }
+    Ok(())
+}
+
 impl TaskTree {
     /// Validates the complete candidate, including mixed dependency/hierarchy cycles.
     ///
@@ -162,82 +248,7 @@ impl TaskTree {
 
     /// Retained notes keep their recorded meaning when admission policy changes.
     pub(crate) fn validate_stored(&self) -> Result<(), StoreError> {
-        if self.project.format != FORMAT {
-            return Err(invalid("unsupported task format"));
-        }
-        if self.project.project_id.0.trim().is_empty() {
-            return Err(invalid("empty project id"));
-        }
-        let mut ids = HashSet::new();
-        let mut blockers = HashSet::new();
-        let mut note_ids = HashSet::new();
-        let mut activity_ids = HashSet::new();
-        for task in &self.tasks {
-            if !ids.insert(task.id) {
-                return Err(invalid("duplicate task id"));
-            }
-            if !self.project.notes_included && !task.notes.is_empty() {
-                return Err(invalid("shared notes require explicit notes_included"));
-            }
-            notes::validate_note_structure(&task.notes)?;
-            activity::validate_structure(&task.activity, task.id)?;
-            for (machine, entries) in &task.activity {
-                for id in entries.keys() {
-                    if !activity_ids.insert((machine, id)) {
-                        return Err(invalid("duplicate origin-qualified activity id"));
-                    }
-                }
-            }
-            for note in &task.notes {
-                if !note_ids.insert(&note.id) {
-                    return Err(invalid("duplicate shared note id"));
-                }
-            }
-            if (task.lifecycle == WorkLifecycle::Completed) != task.completion.is_some() {
-                return Err(invalid("completion and planning lifecycle disagree"));
-            }
-            if let Some(completion) = &task.completion {
-                validate_shared_actor(&completion.actor)?;
-                if completion.summary.trim().is_empty() {
-                    return Err(invalid("empty reported completion"));
-                }
-                if completion.summary.trim() != completion.summary {
-                    return Err(invalid("reported completion summary must be normalized"));
-                }
-            }
-            let mut positions = HashSet::new();
-            for binding in &task.acceptance_bindings {
-                if binding.criterion == 0
-                    || binding.criterion > task.acceptance.len()
-                    || !positions.insert(binding.criterion)
-                {
-                    return Err(invalid("invalid or duplicate acceptance binding position"));
-                }
-            }
-            if task
-                .acceptance_bindings
-                .windows(2)
-                .any(|p| p[0].criterion >= p[1].criterion)
-            {
-                return Err(invalid("acceptance bindings must be position ordered"));
-            }
-            if task.prerequisites.windows(2).any(|p| p[0].0 >= p[1].0) {
-                return Err(invalid("prerequisites must be sorted and unique"));
-            }
-            if task
-                .blockers
-                .windows(2)
-                .any(|p| p[0].blocker_id >= p[1].blocker_id)
-            {
-                return Err(invalid("blockers must be sorted and unique"));
-            }
-            for blocker in &task.blockers {
-                if !blockers.insert(&blocker.blocker_id) {
-                    return Err(invalid("duplicate blocker id"));
-                }
-                validate_shared_actor(&blocker.created_by)?;
-            }
-        }
+        validate_document_fields(&self.project, &self.tasks)?;
         let items = self.snapshots()?;
         let blockers = self
             .tasks
@@ -444,6 +455,8 @@ pub enum TaskSyncRefusal {
     /// An incremental exchange's recorded basis no longer continues the
     /// store's history, so its changed tasks cannot be named exactly.
     IncrementalBasisUnavailable,
+    /// Local Git could not complete a bounded read; rebuilding cannot fix it.
+    GitQueryFailed,
     /// Another exchange baseline was recorded after the one this exchange
     /// was planned against.
     BaselineHeadMoved,
@@ -492,6 +505,7 @@ task_sync_refusal_codes! {
     DestinationMissingTasks => "task_sync_destination_missing_tasks",
     ImportConflict => "task_sync_import_conflict",
     IncrementalBasisUnavailable => "task_sync_incremental_basis_unavailable",
+    GitQueryFailed => "task_sync_git_query_failed",
     BaselineHeadMoved => "task_sync_baseline_head_moved",
     ReconciliationHeld => "task_sync_reconciliation_held",
 }

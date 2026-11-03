@@ -1,5 +1,12 @@
 //! Hardened local Git query construction for optional task exchange and diagnostics.
 
+mod delta;
+mod query;
+
+pub use delta::{CommitTaskDelta, read_task_delta};
+pub(crate) use query::Failure as QueryFailure;
+pub(crate) use query::run as query;
+
 use std::{
     path::Path,
     process::{Command, Stdio},

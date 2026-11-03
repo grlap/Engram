@@ -133,6 +133,20 @@ pub(in crate::storage::work) fn head(
     SqlView(connection).head(&project.0)
 }
 
+/// Note disclosure stays bound to the admitted exchange baseline. Machine
+/// aliases remain local to each host and are not part of this comparison.
+pub(super) fn validate_note_selection(
+    connection: &Connection,
+    project: &ProjectId,
+    include_notes: bool,
+) -> Result<(), StoreError> {
+    if head(connection, project)?.is_some_and(|head| head.include_notes != include_notes) {
+        return Err(TaskSyncRefusal::DivergentPlanning
+            .invalid("task folder export note selection differs from its complete baseline"));
+    }
+    Ok(())
+}
+
 /// One task's latest baseline entry: the record and project-feed position
 /// that set it, and its document, or `None` once the task left the exchange.
 /// A task with no entry was never shared.

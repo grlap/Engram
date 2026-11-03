@@ -1,0 +1,126 @@
+//! Shared bounded local Git execution; callers supply fixed argument vectors.
+
+use anyhow::{Context, Result, ensure};
+use std::{
+    io::{Read, Write},
+    path::Path,
+    process::{Child, ExitStatus, Stdio},
+    time::{Duration, Instant},
+};
+
+const MAX_BYTES: u64 = 1024 * 1024;
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum Failure {
+    #[error("local Git admission query refused: {command} (exit {code:?})")]
+    Nonzero { command: String, code: Option<i32> },
+    #[error("Git admission output exceeded byte bound")]
+    OutputLimit,
+    #[error("local Git query exceeded its deadline")]
+    Deadline,
+}
+
+pub(crate) fn run(
+    root: &Path,
+    args: &[&str],
+    missing: bool,
+    input: Option<&[u8]>,
+    bound: Duration,
+) -> Result<Vec<u8>> {
+    ensure!(
+        !bound.is_zero() && bound <= Duration::from_secs(30),
+        "invalid local Git query deadline"
+    );
+    ensure!(
+        input.is_none_or(|bytes| bytes.len() as u64 <= MAX_BYTES),
+        "Git admission input exceeded byte bound"
+    );
+    let mut command = super::command(root, args);
+    command.env_remove("GIT_ATTR_SOURCE");
+    command.env("GIT_LITERAL_PATHSPECS", "1");
+    if args.first() == Some(&"check-ignore") {
+        // check-ignore accepts pathname input, not pathspec magic. These inputs
+        // are generated canonical project/task paths, never caller patterns.
+        for name in [
+            "GIT_LITERAL_PATHSPECS",
+            "GIT_GLOB_PATHSPECS",
+            "GIT_NOGLOB_PATHSPECS",
+            "GIT_ICASE_PATHSPECS",
+        ] {
+            command.env_remove(name);
+        }
+    }
+    command.stdout(Stdio::piped());
+    if input.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    let mut child = command.spawn().context("start local Git admission query")?;
+    let input_result = if let Some(input) = input {
+        let input = input.to_vec();
+        let mut stdin = child.stdin.take().context("missing Git stdin")?;
+        let (sender, receiver) = std::sync::mpsc::channel();
+        // A stalled stdin write must not bypass the existing child deadline.
+        std::thread::spawn(move || {
+            let _ = sender.send(stdin.write_all(&input));
+        });
+        Some(receiver)
+    } else {
+        None
+    };
+    let stdout = child.stdout.take().context("missing Git stdout")?;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let result = stdout
+            .take(MAX_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes);
+        let _ = sender.send(result);
+    });
+    let start = Instant::now();
+    let status = wait_for_exit(&mut child, start, bound)?;
+    let bytes = receiver.recv_timeout(
+        bound
+            .saturating_sub(start.elapsed())
+            .max(Duration::from_secs(1)),
+    )??;
+    if let Some(receiver) = input_result {
+        receiver.recv_timeout(
+            bound
+                .saturating_sub(start.elapsed())
+                .max(Duration::from_secs(1)),
+        )??;
+    }
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(Failure::OutputLimit.into());
+    }
+    if !(status.success() || (missing && status.code() == Some(1) && bytes.is_empty())) {
+        return Err(Failure::Nonzero {
+            command: args[0].into(),
+            code: status.code(),
+        }
+        .into());
+    }
+    Ok(bytes)
+}
+
+fn wait_for_exit(child: &mut Child, start: Instant, bound: Duration) -> Result<ExitStatus> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if start.elapsed() < bound => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Failure::Deadline.into());
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error).context("local Git query failed");
+            }
+        }
+    }
+}
