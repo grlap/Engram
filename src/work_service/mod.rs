@@ -974,7 +974,7 @@ fn completion_recovery_result(
         WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. } => "acceptance_needs_human",
     };
     let remedy = if let Some(source) = &recovery.source {
-        source_recovery_remedy(source).into()
+        source_recovery_remedy(source)
     } else if matches!(
         &recovery.cause,
         WorkCompletionRecoveryCause::OpenObligation { .. }

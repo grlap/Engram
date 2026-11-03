@@ -321,7 +321,7 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
             );
             assert_eq!(
                 value["recovery"]["source"]["expected_fingerprint"],
-                bounded_declared
+                long_declared
             );
             assert_eq!(
                 value["recovery"]["source"]["presented_fingerprint"],

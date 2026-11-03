@@ -1583,6 +1583,16 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
         "measure_source_and_retry"
     );
     assert!(unmeasured.text().contains("fresh source measurement"));
+    assert_eq!(
+        unmeasured.value["recovery"]["source"]["expected_fingerprint"],
+        "sha256:worktree-a"
+    );
+    assert!(unmeasured.text().contains("sha256:worktree-a"));
+    assert!(
+        unmeasured
+            .text()
+            .contains("comparison target, not a fresh measurement")
+    );
     assert_eq!(unmeasured.value["code"], "acceptance_evaluation_stale");
     assert!(
         unmeasured.text().contains("--source-fingerprint"),

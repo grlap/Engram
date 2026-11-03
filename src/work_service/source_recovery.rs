@@ -8,8 +8,8 @@ pub(crate) const MEASURE_SOURCE_REMEDY: crate::argument_names::Twin = crate::arg
     mcp: "obtain a fresh source measurement from the host and retry done with it (source_fingerprint); copying the evaluated fingerprint is not a measurement",
 };
 
-pub(crate) fn source_recovery_remedy(cause: &AcceptanceSourceRecoveryCause) -> &'static str {
-    match cause.remedy {
+pub(crate) fn source_recovery_remedy(cause: &AcceptanceSourceRecoveryCause) -> String {
+    let remedy = match cause.remedy {
         AcceptanceSourceRemedy::EndTurnReadAndRetry => {
             "this snapshot does not confirm the declared revision; end the turn, read the same run again, then retry done; matching host confirmation can preserve this judgment, but no future report is promised"
         }
@@ -20,10 +20,16 @@ pub(crate) fn source_recovery_remedy(cause: &AcceptanceSourceRecoveryCause) -> &
         AcceptanceSourceRemedy::EvaluateCurrentSource => {
             "request a new acceptance evaluation of the current source with its host-measured source basis, then retry done; copying an earlier fingerprint is insufficient"
         }
+    };
+    match &cause.expected_fingerprint {
+        Some(expected) => format!(
+            "the newest evaluation requires source fingerprint {expected:?} (a comparison target, not a fresh measurement); {remedy}"
+        ),
+        None => remedy.into(),
     }
 }
 
-/// Bound host-recorded strings in agent receipts; raw storage details stay whole.
+/// Bound descriptive strings; keep the completion comparison target exact.
 pub(crate) fn shown_source_recovery(
     cause: &AcceptanceSourceRecoveryCause,
 ) -> AcceptanceSourceRecoveryCause {
@@ -32,7 +38,6 @@ pub(crate) fn shown_source_recovery(
         &mut shown.workspace_id,
         &mut shown.declared_revision,
         &mut shown.reported_revision,
-        &mut shown.expected_fingerprint,
         &mut shown.presented_fingerprint,
     ]
     .into_iter()
@@ -53,18 +58,15 @@ mod tests {
 
     type Field = fn(&mut AcceptanceSourceRecoveryCause) -> &mut Option<String>;
 
-    /// Each of the five host-recorded strings is bounded on its own at 128
+    /// Descriptive host-recorded strings are bounded on their own at 128
     /// UTF-8 bytes, never inside a character, with the stored byte length
     /// after the cut; the cause it was projected from keeps the whole value.
     #[test]
-    fn every_source_string_is_bounded_at_128_bytes_with_its_stored_length() {
-        let fields: [(&str, Field); 5] = [
+    fn descriptive_source_strings_are_bounded_but_the_required_value_stays_exact() {
+        let fields: [(&str, Field); 4] = [
             ("workspace_id", |cause| &mut cause.workspace_id),
             ("declared_revision", |cause| &mut cause.declared_revision),
             ("reported_revision", |cause| &mut cause.reported_revision),
-            ("expected_fingerprint", |cause| {
-                &mut cause.expected_fingerprint
-            }),
             ("presented_fingerprint", |cause| {
                 &mut cause.presented_fingerprint
             }),
@@ -103,11 +105,19 @@ mod tests {
                     workspace_id: Some("w".into()),
                     declared_revision: Some("d".into()),
                     reported_revision: Some("r".into()),
-                    expected_fingerprint: Some("e".into()),
+                    expected_fingerprint: Some(format!(
+                        "{}\n\"--source-fingerprint\"",
+                        "源".repeat(43)
+                    )),
                     presented_fingerprint: Some("p".into()),
                 };
                 *field(&mut raw) = Some(stored.clone());
                 let mut shown = shown_source_recovery(&raw);
+                assert_eq!(shown.expected_fingerprint, raw.expected_fingerprint);
+                let guidance = super::source_recovery_remedy(&raw);
+                assert!(guidance.contains("comparison target, not a fresh measurement"));
+                assert!(guidance.contains("\\n\\\"--source-fingerprint\\\""));
+                assert!(!guidance.contains('\n'));
                 assert_eq!(
                     field(&mut shown).as_deref(),
                     Some(expected.as_str()),

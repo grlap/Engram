@@ -807,9 +807,13 @@ error message, or transport status. Core completion and agent `done` use
 read exposes the same assessment as `acceptance_evaluation.source_recovery`.
 The context names the minted evaluation id, run and evaluated cut. The deciding
 snapshot supplies the root binding, workspace, declared/reported revisions and
-expected/presented fingerprints only when available. Agent receipts bound each
-host-recorded string at 128 bytes with its stored length; raw errors keep it
-whole. CLI JSON keeps the locked-store phrase escaped without changing decoded
+expected/presented fingerprints only when available. Agent receipts preserve
+`expected_fingerprint` exactly: it is the newest evaluation's required
+`--source-fingerprint` comparison value, not evidence of a fresh measurement.
+This includes registered `git-commit:` and `git-tree:` declarations, which
+completion must match even when optional content-source freshness is off.
+Other descriptive source strings are bounded at 128 bytes with their stored
+length; raw errors keep them whole. CLI JSON keeps the locked-store phrase escaped without changing decoded
 fields. No durable record, schema or acceptance predicate changes.
 
 | Source mismatch | Remedy action | Safe next step |
@@ -1702,8 +1706,15 @@ its audited `set-acceptance-evaluation` transition, the task-level mode
 selection, the freshness rules, completion enforcement with the recovery
 causes above, the `evaluate` word on the CLI and MCP, and the `show` and
 `next` disclosures. Storage tests cover the boundary matrix rows with fixtures,
-including host-minted observed evidence through the control checkpoint
-protocol. The bootstrap policy stays self-asserted. See the
+including historical admitted evidence as stored data. Current producers use
+`execution_observe` for Execution Observability reports and eligible source
+sightings, and `verification_record` for registered host checks and their
+verification evidence. Registered checks may use an explicit `git-commit:` or
+`git-tree:` source declaration; completion presents the same declared source.
+The removed turn-checkpoint protocol is not an evidence producer. There is no
+current environment-evidence producer. Historical execution and environment
+record append helpers compile only for test fixtures; they are not product
+writers. The bootstrap policy stays self-asserted. See the
 [shipped inventory](../shipped.md) for Engram's delivered behavior.
 
 The first read-only review pair (2026-09-17) produced twelve corrections,

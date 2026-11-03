@@ -143,43 +143,68 @@ fn registered_git_input_off_without_sighting_admits_and_completes() {
 
 #[test]
 fn registered_git_input_mismatch_refuses_bound_and_unbound_citations_without_effects() {
-    for bound in [false, true] {
-        for staged in [false, true] {
-            let mut f = prepared(bound, true);
-            if staged {
-                f.request.input = RegisteredVerificationInput::StagedTree {
-                    tree: GitTreeId::parse(object_name("tested tree")).unwrap(),
-                    base_commit: object_name("base"),
-                };
+    for fresh in [false, true] {
+        for bound in [false, true] {
+            for staged in [false, true] {
+                let mut f = prepared(bound, fresh);
+                if staged {
+                    f.request.input = RegisteredVerificationInput::StagedTree {
+                        tree: GitTreeId::parse(object_name("tested tree")).unwrap(),
+                        base_commit: object_name("base"),
+                    };
+                }
+                let receipt = f.record().unwrap();
+                let id = &receipt.verifications[0].record_id;
+                let wrong = format!(
+                    "{}:{}",
+                    if staged { "git-tree" } else { "git-commit" },
+                    object_name("different input")
+                );
+                let input = evaluation(&f, id, &wrong);
+                let before = f.snapshot();
+                let reason = record_evaluation(&mut f, &input).unwrap_err().to_string();
+                assert!(
+                    reason.contains("selected registered verification"),
+                    "{reason}"
+                );
+                assert!(
+                    reason.contains(&format!(
+                        "--source-fingerprint {}",
+                        f.request.input.revision()
+                    )),
+                    "{reason}"
+                );
+                assert!(!reason.contains("is bound to"), "{reason}");
+                assert_eq!(f.snapshot(), before);
+                let revision = f.request.input.revision();
+                let input = evaluation(&f, id, &revision);
+                record_evaluation(&mut f, &input).unwrap();
+                // Completion preflight exposes the exact registered declaration,
+                // including when optional content freshness is disabled.
+                let before_preflight = f.snapshot();
+                for presented in [None, Some(wrong.as_str())] {
+                    let readiness = f
+                        .store
+                        .acceptance_evaluation_readiness(
+                            f.request.registration.binding.work_id,
+                            f.request.registration.binding.run_id,
+                            presented,
+                        )
+                        .unwrap();
+                    let crate::storage::AcceptanceEvaluationReadiness::Blocked(_, context) =
+                        readiness
+                    else {
+                        panic!("missing or wrong registered source must refuse")
+                    };
+                    assert_eq!(
+                        context.source.unwrap().expected_fingerprint.as_deref(),
+                        Some(revision.as_str())
+                    );
+                    assert_eq!(f.snapshot(), before_preflight);
+                }
+                assert!(complete(&mut f, id, &wrong, "wrong-completion").is_err());
+                complete(&mut f, id, &revision, "right-completion").unwrap();
             }
-            let receipt = f.record().unwrap();
-            let id = &receipt.verifications[0].record_id;
-            let wrong = format!(
-                "{}:{}",
-                if staged { "git-tree" } else { "git-commit" },
-                object_name("different input")
-            );
-            let input = evaluation(&f, id, &wrong);
-            let before = f.snapshot();
-            let reason = record_evaluation(&mut f, &input).unwrap_err().to_string();
-            assert!(
-                reason.contains("selected registered verification"),
-                "{reason}"
-            );
-            assert!(
-                reason.contains(&format!(
-                    "--source-fingerprint {}",
-                    f.request.input.revision()
-                )),
-                "{reason}"
-            );
-            assert!(!reason.contains("is bound to"), "{reason}");
-            assert_eq!(f.snapshot(), before);
-            let revision = f.request.input.revision();
-            let input = evaluation(&f, id, &revision);
-            record_evaluation(&mut f, &input).unwrap();
-            assert!(complete(&mut f, id, &wrong, "wrong-completion").is_err());
-            complete(&mut f, id, &revision, "right-completion").unwrap();
         }
     }
 }

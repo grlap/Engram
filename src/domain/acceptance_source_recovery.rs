@@ -39,6 +39,8 @@ pub struct AcceptanceSourceRecoveryCause {
     pub declared_revision: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reported_revision: Option<String>,
+    /// Exact source declaration required by this evaluation at completion.
+    /// This comparison target is not evidence of a fresh host measurement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_fingerprint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

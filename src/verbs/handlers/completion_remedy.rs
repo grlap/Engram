@@ -60,9 +60,11 @@ pub(in crate::verbs) fn completion_recovery_reminder(
                 "{label} acceptance evaluation is stale (source): {}",
                 recovery.source.as_deref().map_or(
                     std::borrow::Cow::Borrowed("read the current source and request a fresh acceptance evaluation, then retry done"),
-                    |source| super::super::argument_wording::respell(
-                        names,
-                        crate::work_service::source_recovery_remedy(source),
+                    |source| std::borrow::Cow::Owned(
+                        super::super::argument_wording::respell(
+                            names,
+                            &crate::work_service::source_recovery_remedy(source),
+                        ).into_owned()
                     ),
                 )
             ),
