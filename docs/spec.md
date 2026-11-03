@@ -415,15 +415,10 @@ commit atomically with activation, and same-key different-intent reuse is a
 conflict. Policy epochs, not wall-clock timestamps, order immutable policy
 history.
 
-Turn gating, the per-turn grants an earlier build issued (turn grants:
-Evaluate/Begin) with its session admission, settlement and recovery, was
-removed. Its canonical records remain readable as stored; the store migration
-retired its operational tables by name with their counts. That conversion is
-complete and its code removed; current import refuses the old tables and
-policy-selector columns by name (see
-[records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
-The full protocol is
-specified in the [Execution Observability brief](features/execution-observability.md).
+The full protocol is specified in the
+[Execution Observability brief](features/execution-observability.md). Its
+[history note](features/execution-observability.md#records-from-earlier-builds)
+describes retained records and completed format conversions.
 
 ## 3. Storage & sync
 
@@ -453,10 +448,8 @@ Delivery progress, the root completion barrier and indexes are mutable
 projections; the barrier's transitions append immutable work events (§2.6).
 Host observations, named-root events and registered verification are
 canonical work records on the project, root and run feeds, which obligations
-and completion read while the run is unfinished (§2.7). The canonical records
-of the removed turn gating remain readable as stored; its operational tables
-were retired by the completed store migration (§2.7). The
-cursor orders peer deltas; it is not an object identity and does not cross
+and completion read while the run is unfinished (§2.7). The cursor orders peer
+deltas; it is not an object identity and does not cross
 stores as a global sequence number.
 
 ```
@@ -659,8 +652,9 @@ audited superseded-by-import disposition; if these cannot finish safely this
 attempt is refused with the candidate retained. Native seals remain immutable.
 Reopen uses a new locally admitted execution generation. The new reconciliation
 transition must be implemented explicitly, not assumed to exist today.
-Changed bindings reach sessions through normal next-admission refresh/rebind;
-begun turns and retained/uncertain requests settle under their original bindings.
+Changed work bindings reach sessions through the work protocol's context
+refresh. Requests with retained or uncertain outcomes keep their original
+intent and binding until the host reconciles them.
 Import never fabricates host/source credit, rebinds a named root, or silently
 clears a pending request. The host receives a structured import cause and remedy.
 Those cases require implementation proof; this specification does not claim
@@ -724,12 +718,9 @@ scope and keyed project identity distinguish them, never object kind alone.
 
 Context-packet construction and delivery are removed. No new packet is
 constructed. The `ContextPacket` type still describes the historical
-serialized format. The `ControlDelivery` type that carried a packet inside a
-turn grant was deleted with turn gating; the store migration that removed
-turn gating retired the tables that held those grants, by name with their
-counts, and the backup holds their rows. The converter has been removed;
-current import refuses those tables by name.
-See [historical context packet format](features/context-packets.md).
+serialized format. See
+[historical context packet format](features/context-packets.md) and the
+[history note](features/execution-observability.md#records-from-earlier-builds).
 
 ## 5. Write path
 
@@ -1016,9 +1007,9 @@ current field set for every operation. Any additive, unknown, or removed
 request field is an `invalid_request` refusal that names the request kind and
 offending field. There is deliberately no version-negotiation or legacy-frame
 shim: the paired TermAl consumer updates its host-frame shapes in step with
-each Engram build. For the build that removed turn gating, that TermAl build
-must be in place before landing, install or cutover; see
-[the paired TermAl build](features/offline-store-cutover.md#paired-termal-build).
+each Engram build. See
+[work-session identifiers](features/cli-and-mcp.md#identifiers-and-fingerprints-on-the-work-session-channel)
+for current field semantics.
 
 An `execution_observe` record binds the exact claim epoch the host observed.
 With `account_if_eligible`, it resolves the obligation rule set its

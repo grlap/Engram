@@ -383,7 +383,7 @@ pub struct ExecutionObservation {
     /// that the change was measured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reported_source_change: Option<SourceChangeDetection>,
-    /// Exact immutable rule set selected by the frozen turn-policy basis.
+    /// Exact immutable rule set retained from the recorded policy basis.
     pub obligation_rule_set: ObjectId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_basis: Option<ExecutionSourceBasis>,

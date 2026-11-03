@@ -114,11 +114,9 @@ processes. Project, root-work, and run-execution feeds each allocate a dense
 typed `FeedPosition` with their event transaction. The work protocol stages
 and acknowledges an exact dense project-feed cursor; that is the only context
 delivery. Global SQLite row ids are not cursors. Work-session operation
-results use noncanonical operational storage. The canonical records of the
-removed turn gating, such as checkpoint events, remain readable as stored; its
-operational tables were retired by the completed store migration. The converter
-has been removed, and current import refuses those tables by name (see
-[records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
+results use noncanonical operational storage. See
+[records from earlier builds](features/execution-observability.md#records-from-earlier-builds)
+for retained historical records and completed format conversions.
 
 ### Optional Git task sync
 

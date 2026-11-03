@@ -1459,7 +1459,7 @@ fn run_authority(
             idempotency_key,
         } => {
             eprintln!(
-                "WARNING: obligation waiver identity is asserted context; this shell path is neither authenticated nor bound to a live control session/run"
+                "WARNING: obligation waiver identity is asserted context; this shell path is neither authenticated nor bound to a host work session or claim"
             );
             let obligation_id = WorkObligationId(
                 uuid::Uuid::parse_str(&obligation_id).context("invalid work obligation id")?,

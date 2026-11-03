@@ -922,13 +922,16 @@ as stored, and an obligation or seal that cites them keeps its recorded
 meaning. Such an observation keeps the `grant_id` it was stored with; a read
 that returns it returns that id as passive data, which names no current grant
 (see [identifiers on the work-session channel](cli-and-mcp.md#identifiers-and-fingerprints-on-the-work-session-channel)).
-The completed store migration retired its four operational tables (sessions,
-turn results, grants and grant supersessions) by name, reporting each with its
-count; the backup holds their original rows. The converter has been removed
-after all live stores were converted. Current import refuses those tables and
-the removed policy-selector columns by name; converting an older backup
-requires the retained converter build. The anchor, change-index and operation-result
-tables stay as passive history. Policy versions written before the removal
-stay readable as stored; a new policy version omits their assurance, effect
+The completed store migration retired `control_sessions`,
+`control_turn_results`, `control_turn_grants` and
+`control_turn_grant_supersessions`, and the `control_policy_state` columns
+`required_assurance`, `supported_effects_json` and `grant_ttl_seconds`, by name,
+reporting each with its count; the backup holds their original rows. The
+converter has been removed after all live stores were converted. Current
+import refuses those tables and the removed policy-selector columns by name;
+converting an older backup requires the retained converter build. The anchor,
+change-index and operation-result tables stay as passive history. Policy
+versions written before the removal stay readable as stored; a new policy
+version omits their assurance, effect
 and grant-lifetime fields. Reading any of these never restores the
 operations that wrote them.

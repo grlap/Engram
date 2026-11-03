@@ -688,8 +688,7 @@ fn named_root_refusals_survive_reopen_and_later_work_lifecycles() {
 }
 
 // Reads and refusals write nothing: every table's rows are byte-identical
-// afterwards, an issued turn grant that has not begun included, which the
-// session status would expire.
+// afterwards, including the claim, named-root events and connection fence.
 #[test]
 fn reads_and_refusals_write_nothing() {
     let (mut fixture, _work, claim, host) = bound_host();
@@ -925,7 +924,7 @@ fn a_run_missing_its_row_is_a_storage_error_not_an_unknown_run() {
 // wherever the read finds a bound root without a sighting, recording an
 // evaluation at that cut is refused for want of one, and wherever it finds
 // no root or a sighting, recording is not refused for that reason. The read
-// writes nothing and needs no routing token or live holder.
+// writes nothing and needs no live holder.
 fn sighting_read(
     store: &SqliteStore,
     work: &WorkItem,
@@ -987,7 +986,7 @@ fn refused_for_no_sighting(answer: &Result<AcceptanceEvaluationReceipt, StoreErr
     }
 }
 
-/// A claimed item with evaluation enabled and a host control session bound
+/// A claimed item with evaluation enabled and a host work session connected
 /// for the runner.
 fn evaluated_fixture() -> (Fixture, WorkItem, WorkClaim, ObjectId) {
     let mut fixture = fixture("project-a");

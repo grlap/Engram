@@ -94,12 +94,13 @@ pub struct TaskSyncImportResult {
     pub dry_run: bool,
 }
 
+#[cfg(test)]
 impl SqliteStore {
     /// Capture shared planning state in one read snapshot, excluding live authority.
     ///
     /// This plain candidate is not the exchange route: `task-sync export`
     /// publishes the folder through [`Self::export_task_sync_folder`]. It
-    /// remains library API for tests and inspection.
+    /// is available only to test fixtures.
     ///
     /// # Errors
     /// Refuses invalid canonical/projection state or an incomplete project graph.
@@ -166,7 +167,7 @@ impl SqliteStore {
     /// This plain candidate import is not the exchange route: `task-sync
     /// import` applies a resolved folder through
     /// [`Self::apply_task_sync_folder`] against a selected destination basis.
-    /// It remains library API for tests.
+    /// It is available only to test fixtures.
     ///
     /// # Errors
     /// Refuses project mismatch, malformed graphs, drift, or existing native work.

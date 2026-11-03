@@ -88,16 +88,11 @@ No old database bytes are rewritten or reclaimed by this format change.
 Existing different-build stores still refuse ordinary open; cutover and any
 live-store operation need a separate operator decision.
 
-The removed turn gating's four operational tables, `control_sessions`,
-`control_turn_results`, `control_turn_grants` and
-`control_turn_grant_supersessions`, were retired by the completed store
-migration, by name with their counts; the backup holds their original rows.
-The converter has been removed. Current import refuses those tables and the
-removed policy-selector columns by name; an unconverted backup requires the
-retained converter build. `control_anchors`, `control_changes` and
-`control_operation_results` stay as passive history: receipts earlier builds
-stored there stay where they were and still replay for their exact key. New
-work-session receipts (`named_root_bind`, `execution_observe`,
+See [records from earlier builds](execution-observability.md#records-from-earlier-builds)
+for the completed conversion and current import refusals. `control_anchors`,
+`control_changes` and `control_operation_results` stay as passive history:
+receipts earlier builds stored there stay where they were and still replay
+for their exact key. New work-session receipts (`named_root_bind`, `execution_observe`,
 `verification_record` and `verification_bind`) are stored in
 `work_operation_results` as `host_<operation>` rows, each an envelope that
 names its project, session, operation, idempotency key, intent and result. An
@@ -122,15 +117,9 @@ record id from bytes and treats no checksum as a corruption check. The
 fingerprints it does recompute and compare are of content: a stored control
 observation's intent is re-fingerprinted from its input and must match the
 intent fingerprint the row carries, which is the same comparison a retried
-operation makes before it replays the stored receipt. A grant carries no
-delivery page: the task's change index that turn reports append to is a
-write-only audit trail, which no grant delivers and no decision reads. Task
-events larger than the single-object limit are rejected before they enter it.
-The `control_sessions` columns `confirmed_cursor`, `tentative_cursor` and
-`blocking_watermark` feed no decision; the loader only checks they are
-non-negative. Only a bind writes them, as zero or null, so a row written
-earlier keeps its last values until it is rebound. They are retained only so
-the schema stays unchanged until the next planned migration drops them.
+operation makes before it replays the stored receipt. The retained
+`control_changes` index is a passive audit trail, separate from work-context
+delivery. No current turn operation appends to or delivers it.
 
 `control_changes.task_cursor` is dense and local to one control anchor; an internal
 `sequence` is only a SQLite row identity. Ordinary open refuses different-build

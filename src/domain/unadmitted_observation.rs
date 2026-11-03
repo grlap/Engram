@@ -573,7 +573,7 @@ pub enum ObservationAccounting {
     },
 }
 
-/// The body of one `execution_observe` request, past its routing token.
+/// The observation payload of one `execution_observe` work-session request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionObserveInput {
@@ -592,7 +592,7 @@ pub struct ExecutionObserveInput {
 pub struct UnadmittedExecutionObservation {
     pub schema_version: u16,
     pub project_id: ProjectId,
-    /// The control session that recorded it, separate from any cause.
+    /// The work session that recorded it, separate from any cause.
     pub observing_session: SessionId,
     pub observer: ActorContext,
     pub binding: ControlWorkBinding,

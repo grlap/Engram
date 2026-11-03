@@ -18,9 +18,9 @@ use crate::domain::{
 pub(crate) const VERIFICATION_BIND_OPERATION: &str = "verification_bind";
 
 /// What a retry must repeat exactly: the session and project it acts for and
-/// every semantic field of the request. The routing token is not part of
-/// it, so a retry under refreshed credentials still replays. The session and
-/// key sit at the top level, where doctor binds every control operation to
+/// every semantic field of the request. The connection fence is not part of
+/// it, so a retry on a replacement connection still replays. The session and
+/// key sit at the top level, where doctor binds every host operation to
 /// its row.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -85,7 +85,7 @@ pub(super) fn verification_bind_row_matches(
 }
 
 impl SqliteStore {
-    /// Binds `input.original` to every target for the bound control session.
+    /// Binds `input.original` to every target for the host's work session.
     ///
     /// A request committed earlier with the same key and intent is replayed
     /// before anything mutable is consulted, even when a claim it named has
@@ -93,8 +93,8 @@ impl SqliteStore {
     ///
     /// # Errors
     ///
-    /// The control session's own refusals for a superseded connection, an
-    /// unbound session or a mismatched project or routing token;
+    /// [`StoreError::ControlConnectionSuperseded`] when the work session's
+    /// connection fence is missing or no longer current;
     /// [`StoreError::VerificationBindRefused`] naming every failing part
     /// when the request does not hold, with nothing written;
     /// [`StoreError::ControlOperationIdempotencyConflict`] when the key was

@@ -12,8 +12,8 @@ deferred capabilities; those belong in the
 ## Deployment checkpoint — 2026-10-29
 
 This dated checkpoint is historical. It does not describe current host
-settings. Turn gating has since been removed; see
-[Execution Observability](features/execution-observability.md).
+settings. See the
+[history note](features/execution-observability.md#records-from-earlier-builds).
 
 The dogfood host completed the verification-applicability barrier and
 readiness checks on all six live stores after the coordinated restart.
@@ -193,12 +193,9 @@ compatibility-task lifecycle and tables are removed. Fenced local-work claims
 remain. Resource leases, host obligation waiver, and the finalizer turn
 purpose/phase are removed. The operator waiver command remains;
 acceptance-binding revision still resolves obsolete bound obligations. The
-context-packet assembly is removed. Turn gating is removed with its
-operations, settings and init flags; its canonical records stay readable and
-its operational tables were retired by the completed store migration. The
-converter has been removed; current import refuses those tables and the
-removed policy-selector columns by name (see
-[records from earlier builds](features/execution-observability.md#records-from-earlier-builds)).
+context-packet assembly is removed. See
+[records from earlier builds](features/execution-observability.md#records-from-earlier-builds)
+for the remaining control history and completed format conversions.
 The unused generic task-memory capture writer and task-memory search/show
 helpers are retired; historical construction and inspection exist only in
 test fixtures. Project `remember`/`memories`/`forget`, live work-memory

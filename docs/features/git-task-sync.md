@@ -603,12 +603,13 @@ claim. The lifecycle table's terminal reconciliation is a separate explicit
 transition, with ordinary claim release consequences. Exact revision/fence
 mapping is part of that transition's implementation contract.
 
-Changed bindings reach sessions through the host's existing refresh/rebind path
-at the next admission. A begun turn keeps its original grant binding until
-checkpoint/settlement. Retained prompts and uncertain begin/evaluate requests
-retain their prepared identity; import cannot clear them, rewrite them or claim
-they were delivered. If incompatible import cannot wait for safe settlement,
-it refuses with its candidate retained. No automatic host Stop is authorized.
+Changed work bindings reach sessions through the work protocol's context
+refresh. Requests with retained or uncertain outcomes keep their original
+intent and binding until the host reconciles them. Queued user prompts remain
+queued until actual delivery; import cannot clear them, rewrite them or claim
+they were delivered. If incompatible import cannot wait for safe reconciliation,
+it refuses with its candidate retained. This import/host reconciliation remains
+to be implemented. No automatic host Stop is authorized.
 Held/read responses name the source commit, changed planning families, affected
 items/sessions and when the new basis applies. Refusals name the required local
 reconciliation, not a generic host-unavailable error. Imported notes never mint

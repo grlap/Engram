@@ -170,12 +170,12 @@ pub(super) fn execution_observe_row_matches(
 }
 
 impl SqliteStore {
-    /// Records one observation for the bound control session.
+    /// Records one observation for the host's work session.
     ///
     /// # Errors
     ///
-    /// The control session's own refusals for a superseded connection, an
-    /// unbound session or a mismatched project or routing token;
+    /// [`StoreError::ControlConnectionSuperseded`] when the work session's
+    /// connection fence is missing or no longer current;
     /// [`StoreError::ExecutionObservationInvalid`] for a malformed or
     /// oversized request; [`StoreError::ExecutionObservationPolicyBasisMismatch`]
     /// when accounting names another policy than the project's current one;

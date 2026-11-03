@@ -11,9 +11,9 @@ impl SqliteStore {
     ///
     /// # Errors
     ///
-    /// Returns the control session's own refusals for a superseded
-    /// connection, an unbound session or a mismatched project or routing
-    /// token; [`StoreError::AcceptanceBindingReadRefused`] with its typed
+    /// Returns [`StoreError::ControlConnectionSuperseded`] when the work
+    /// session's connection fence is missing or no longer current;
+    /// [`StoreError::AcceptanceBindingReadRefused`] with its typed
     /// reason when the item, revision, run or continuation does not hold or
     /// one row does not fit a page; and other [`StoreError`] values when a
     /// record fails its canonical association or cannot be read.

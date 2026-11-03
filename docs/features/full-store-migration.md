@@ -118,13 +118,10 @@ for is never dropped in silence. Canonical objects keep their ids, links and
 bytes. A store written by a design this build no longer knows is refused the
 same way; the build that still reads it is kept beside its backups.
 
-The completed turn-admission conversion is no longer supplied. Current import
-refuses `control_sessions`, `control_turn_results`, `control_turn_grants` and
-`control_turn_grant_supersessions`, and the `control_policy_state` columns
-`required_assurance`, `supported_effects_json` and `grant_ttl_seconds`, by name.
-An unconverted backup needs the retained build that performed that conversion.
-Historical canonical policies, observations and receipts in the current schema
-remain readable and transfer unchanged.
+See [records from earlier builds](execution-observability.md#records-from-earlier-builds)
+for the completed conversion and the tables and columns current import refuses.
+An unconverted backup needs the retained converter build. Historical canonical
+policies, observations and receipts in the current schema transfer unchanged.
 
 Records the store already holds are read as they were stored, including ones
 written by operations this build no longer offers: historical `lease_required`
@@ -220,6 +217,8 @@ converts with the last build that could.
    file holds no data and may stay where it is.
 5. Start the consumers again.
 
-Current work claims, grants and delivery state retain their identities. The
-imported store is the same store on the same host: do not run it beside its
-source, and do not treat it as authority on another host.
+Surviving work claims and delivery state retain their identities. Historical
+canonical records and receipts retain their stored ids, links and bytes. Rows
+explicitly retired by a format conversion remain in the old file, not the
+imported store. The imported store is the same store on the same host: do not
+run it beside its source, and do not treat it as authority on another host.

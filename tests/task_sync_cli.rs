@@ -10,7 +10,10 @@ use std::{
     process::{Command, Output},
 };
 
-use engram::{ProjectId, SqliteStore, project_database_path, task_sync::directory};
+use engram::{
+    ProjectId, SqliteStore, project_database_path,
+    task_sync::{directory, progress::ExportProfile},
+};
 use serde_json::Value;
 
 fn command(home: &Path, marker: &Path) -> Command {
@@ -174,7 +177,20 @@ fn task_sync_cli_round_trips_a_git_folder_without_creating_runtime_state() {
         (&Value::Bool(true), &Value::Bool(true))
     );
     let store = SqliteStore::open(&database).unwrap();
-    assert_eq!(store.export_task_tree(&project).unwrap().tasks, []);
+    assert_eq!(
+        store
+            .export_task_sync_folder(
+                &project,
+                &ExportProfile {
+                    include_notes: false,
+                    origin_machine: None,
+                },
+            )
+            .unwrap()
+            .tree
+            .tasks,
+        []
+    );
     drop(store);
     assert_eq!(feed_rows(&database, true), 0);
     assert_eq!(receipts(&database), no_receipts);

@@ -28,14 +28,14 @@ pub enum NamedRootReadRefusal {
 impl SqliteStore {
     /// Reads `claim_id`'s named-root lifecycle on `run_id` for the bound host
     /// session. The session's own work binding plays no part: any run and
-    /// claim of its project can be read. The state is the one the session
-    /// status and the turn receipts derive, at this read's run-feed cut.
+    /// claim of its project can be read. The state is derived from the run's
+    /// named-root events and lifecycle, at this read's run-feed cut.
     ///
     /// # Errors
     ///
-    /// Returns the control session's own refusals for a superseded
-    /// connection, an unbound session or a mismatched project or routing
-    /// token; [`StoreError::NamedRootReadRefused`] when the run is unknown,
+    /// Returns [`StoreError::ControlConnectionSuperseded`] when the work
+    /// session's connection fence is missing or no longer current;
+    /// [`StoreError::NamedRootReadRefused`] when the run is unknown,
     /// the claim does not belong to it, or it belongs to another project; and
     /// other [`StoreError`] values when a record fails its canonical
     /// association or cannot be read. A refusal is never a named-root state.

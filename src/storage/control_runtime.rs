@@ -16,7 +16,7 @@ pub(in crate::storage) use transaction::control_transaction;
 
 impl SqliteStore {
     /// Records the host's explicit source-root selection for the exact live
-    /// claim on this control session. Agent-facing work operations do not
+    /// claim on this work session. Agent-facing work operations do not
     /// expose this event.
     #[allow(
         clippy::too_many_arguments,
