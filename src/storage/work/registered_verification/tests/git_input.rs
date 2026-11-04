@@ -4,6 +4,8 @@ use super::*;
 use crate::ObjectId;
 use crate::storage::work::test_support::{checkpoint, completion_request};
 
+mod quiet_evaluation;
+
 fn object_name(label: &str) -> String {
     ObjectId::from_canonical_bytes(label.as_bytes()).as_str()[..40].to_owned()
 }
@@ -98,6 +100,15 @@ fn complete(
     input: &str,
     key: &str,
 ) -> Result<CompletionSeal, StoreError> {
+    complete_with_evidence(f, std::slice::from_ref(evidence), input, key)
+}
+
+fn complete_with_evidence(
+    f: &mut Fixture,
+    evidence: &[ObjectId],
+    input: &str,
+    key: &str,
+) -> Result<CompletionSeal, StoreError> {
     let work = f
         .store
         .get_work_item(f.request.registration.binding.work_id)
@@ -110,9 +121,10 @@ fn complete(
         "runner",
         &format!("{key}-checkpoint"),
         13,
-        std::slice::from_ref(evidence),
+        evidence,
     );
-    let mut request = completion_request(&work, &held, "runner", evidence, key, 14);
+    let mut request = completion_request(&work, &held, "runner", &evidence[0], key, 14);
+    request.evidence = evidence.to_vec();
     request.acceptance.clear();
     request.source_fingerprint = Some(input.into());
     f.store.complete_work(&request, &DevelopmentNoopRedactor)
@@ -546,6 +558,8 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
         source_root_state: Some(SourceRootState::Named),
     };
     let binding = f.request.registration.binding.clone();
+    let mut observer = actor("runner");
+    observer.run_id = Some(binding.run_id.0.to_string());
     if !unadmitted {
         let work = f.store.get_work_item(binding.work_id).unwrap();
         let held = f.store.claim_fixture(work.work_id);
@@ -580,7 +594,7 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
             &f.session,
             &f.connection,
             crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
+            &observer,
             ExecutionObserveInput {
                 idempotency_key: "actual-unadmitted-change".into(),
                 binding,

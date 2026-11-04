@@ -478,6 +478,7 @@ fn observe(name: &str, begin: Start, declared: Declared, input: Input<'_>) -> Ou
                 Some(&basis),
                 Some(&root),
                 false,
+                None,
             )
             .expect("movement read")
             .is_some();

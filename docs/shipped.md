@@ -46,6 +46,10 @@ declared [Git input](features/acceptance-evaluation.md#registered-git-input-evid
 without a named-root sighting. Commit identity and staged-tree identity stay
 distinct; failed results and association checks still hold. Historical evidence
 and cross-item binding retain their existing contracts.
+An uncited judgment can corroborate its declared Git input with a stored
+registered-check witness. Before the next evaluation window, every live
+process needs the new build to read that optional canonical member; readiness
+does not detect mixed process builds.
 
 Selected verification evidence can carry a
 [Git-tree applicability restriction](features/verification-applicability.md).

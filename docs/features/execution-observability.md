@@ -730,6 +730,22 @@ this declared-Git-input check. Non-registered verification, including a bound co
 keeps its source-revision matching against the available root sightings, measured
 sightings and latest source changes.
 
+For a new evaluation, a passed registered check in the evaluated run can
+corroborate the exact declared Git input and named root even when an unbound
+judgment cites only notes. The evaluation then stores that check as its source
+witness; it does not assign the check to a criterion. A bound criterion keeps
+its required observed citation. Quiet content sightings while the evaluator
+runs do not change this Git input. A measured edit after the check still needs
+a later check, including after a measured revert. An edit and revert before the
+next measurement remain within the Git cleanliness lane's stated limits.
+Existing evaluations keep their recorded source interpretation; a stored
+witness is validated at its original cut and never replaced by another check.
+A quiet sighting of a different Git input cannot corroborate a new witness
+or leave it current after its cut. Content fingerprints alone do not compare
+with Git identity; the source-change observations remain the change guards.
+Witness selection corroborates identity only: it grants no criterion credit
+and does not hide a newer failed check from the evaluator.
+
 `verification_bind` can copy a credited remote check through its ordinary bound
 branch, under its usual measurement rules. Crediting another item with the result
 itself is a new delivery of the same origin.

@@ -853,8 +853,16 @@ fn admitted_by_an_earlier_build(
         &request.verdicts,
     )
     .expect("the verdicts an earlier build admitted");
-    let receipt = append_evaluation(&transaction, &item, run_id, request, &attempt, verdicts)
-        .expect("append the evaluation");
+    let receipt = append_evaluation(
+        &transaction,
+        &item,
+        run_id,
+        request,
+        &attempt,
+        verdicts,
+        None,
+    )
+    .expect("append the historical evaluation without a source witness");
     transaction.commit().expect("commit the evaluation");
     receipt
 }

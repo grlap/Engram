@@ -21,6 +21,12 @@ use crate::storage::work::feeds::{
 };
 use crate::storage::work::{current_run_feed_cut_on, load_work_run, resolve_work_ref_on};
 
+mod registered_input;
+pub(super) use registered_input::{
+    select_registered_input_witness_on, stored_git_evaluation_on,
+    validate_registered_input_witness_on,
+};
+
 pub(super) struct NamedEvaluationRoot {
     pub(super) position: i64,
     pub(super) event_id: ObjectId,
@@ -1024,6 +1030,7 @@ fn is_bound(connection: &Connection, citation: &ObjectId) -> Result<bool, StoreE
 enum CitationSource<'a> {
     Observed(&'a str),
     RegisteredGit,
+    WitnessGit(&'a str),
 }
 
 /// Whether the run left the revision `producer` ran the check
@@ -1082,6 +1089,17 @@ fn moved_after_check(
                 (ran, recorded),
                 through,
                 root,
+                None,
+            );
+        }
+        CitationSource::WitnessGit(checked) => {
+            return registered_mutation_after_check(
+                connection,
+                &check,
+                (ran, recorded),
+                through,
+                root,
+                Some(checked),
             );
         }
     };
@@ -1144,24 +1162,31 @@ fn moved_after_check(
 
 /// Actual mutations under a registered check's root, including those whose
 /// feed entry predates a late-delivered terminal result. Quiet sightings
-/// carry no mutation floor; their content revision is not a Git identity.
+/// carry no mutation floor. New witnesses additionally retain contradictory
+/// quiet Git identities; content revisions are not Git identities.
 fn registered_mutation_after_check(
     connection: &Connection,
     check: &super::VerificationEvidence,
     (ran, recorded): (i64, i64),
     through: i64,
     root: Option<&NamedEvaluationRoot>,
+    witnessed_input: Option<&str>,
 ) -> Result<Option<Moved>, StoreError> {
     let changes = connection
         .prepare(&format!(
             "SELECT entry.position, entry.object_id FROM work_feed_entries entry
          JOIN objects object ON object.object_id = entry.object_id
          WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-           AND entry.position <= ?2 AND {SOURCE_RECORD_SQL} AND {SOURCE_CHANGED_SQL}
+           AND entry.position <= ?2 AND {SOURCE_RECORD_SQL}
+           AND ({SOURCE_CHANGED_SQL} OR ?3)
          ORDER BY entry.position"
         ))?
         .query_map(
-            params![check.binding.run_id.0.to_string(), through],
+            params![
+                check.binding.run_id.0.to_string(),
+                through,
+                witnessed_input.is_some()
+            ],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
         )?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1172,14 +1197,33 @@ fn registered_mutation_after_check(
             continue;
         };
         if !off_named_root(root, &change)
-            && (ran <= position
-                || recorded <= position
-                || check.run_time() < change.observed_at.unwrap_or(change.recorded_at))
+            && ((change.source_changed
+                && (ran <= position
+                    || recorded <= position
+                    || check.run_time() < change.observed_at.unwrap_or(change.recorded_at)))
+                || quiet_git_input_conflicts(witnessed_input, check.run_time(), &change))
         {
             return Ok(Some(Moved::Mutation(change.label)));
         }
     }
     Ok(None)
+}
+
+/// A Git identity can contradict a witnessed Git input. An unrelated
+/// content fingerprint never substitutes for the checked commit. A delayed
+/// quiet sighting observed before the check cannot contradict that check.
+/// Without an observed time, recording time is the conservative horizon.
+pub(super) fn quiet_git_input_conflicts(
+    witnessed_input: Option<&str>,
+    checked_at: chrono::DateTime<chrono::Utc>,
+    observation: &SourceObservation,
+) -> bool {
+    !observation.source_changed
+        && observation.observed_at.unwrap_or(observation.recorded_at) >= checked_at
+        && observation.source_basis.as_ref().is_some_and(|basis| {
+            crate::domain::is_git_input_revision(&basis.source_revision)
+                && witnessed_input.is_some_and(|input| basis.source_revision != input)
+        })
 }
 
 /// When the run's latest change at `through` is an unadmitted record with a

@@ -77,8 +77,38 @@ if the check completed before it. Dirty input before a
 run is refused and a later commit cannot rehabilitate it. Cross-item binding
 keeps its separate existing sighting contract.
 
-The path is inferred from a genuine registered producer and the explicit Git
-declaration, never from a revision string alone. Legacy observations,
+The source lane is corroborated by a genuine passed registered check on this
+run, within the evaluated cut, at the exact declared input and named root.
+The check must follow the root's naming and every measured source change it
+needs to cover. It need not be a criterion citation: an unbound judgment may
+cite notes, while a bound criterion still needs its required observed check.
+When this separate source decision is needed, a new evaluation records the
+exact check as `registered_input_witness`. Admission, completion and doctor
+validate that witness; they never choose a replacement for a stored witness.
+Records without the member retain their existing citation-derived source lane.
+The evaluator's request and the host's binding-evidence pages do not change.
+
+The witness corroborates source identity, not a criterion's test result. An
+older passing check can corroborate that same input after a newer failed
+check; the failure remains in the evaluator's evidence basis. This does not
+permit selecting an older pass to satisfy a bound verification requirement.
+
+Quiet content sightings before or during evaluation do not replace that Git
+input. Different content fingerprints alone cannot be compared with a Git
+identity; reported source changes still apply. A new witness cannot cross a
+quiet named-root sighting of a different Git input after its check, and such
+a sighting after the evaluated cut refuses admission or stales consumption.
+For quiet sightings this comparison uses the observed time relative to the
+witness check's completion: an older sighting delivered late does not void a
+later check. Without an observed time, recording time is used conservatively.
+Reported source changes retain their separate time and position floors.
+Stored records without a witness keep their prior interpretation.
+A real measured change after the check still needs a later check, even
+if the content is subsequently restored; a real change after the evaluation
+cut still refuses the evaluation. An edit and revert that happen before the
+next measurement are outside that observed history and are accepted within
+the Git cleanliness lane's stated limits. A revision string alone supplies no
+registered provenance. Legacy observations,
 content-based evidence, evaluations and completed seals remain stored as they
 were. An open evaluation already carrying those registered/Git facts remains
 usable while the input matches; otherwise one fresh evaluation is needed.

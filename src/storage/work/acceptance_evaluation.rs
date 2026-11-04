@@ -344,7 +344,7 @@ impl SqliteStore {
                 });
             }
         }
-        let git_input = source::registered_git_evaluation_on(
+        let cited_git_input = source::registered_git_evaluation_on(
             &transaction,
             run_id,
             cut,
@@ -355,6 +355,20 @@ impl SqliteStore {
                 .filter(|verdict| verdict.verdict == AcceptanceVerdict::Pass)
                 .flat_map(|verdict| &verdict.evidence),
         )?;
+        // Preserve the existing cited path's bytes and interpretation. Only
+        // the new independent source decision needs an explicit witness.
+        let registered_input_witness = if cited_git_input {
+            None
+        } else {
+            source::select_registered_input_witness_on(
+                &transaction,
+                run_id,
+                cut,
+                request.source_basis.as_ref(),
+                named_root.as_ref(),
+            )?
+        };
+        let git_input = cited_git_input || registered_input_witness.is_some();
         if let Some(BasisMoveFinding { moved, observation }) = basis_moved_after(
             &transaction,
             run_id,
@@ -362,6 +376,7 @@ impl SqliteStore {
             request.source_basis.as_ref(),
             named_root.as_ref(),
             git_input,
+            registered_input_witness.as_ref(),
         )? {
             let unadmitted_change = observation
                 .as_ref()
@@ -509,7 +524,15 @@ impl SqliteStore {
                 AcceptanceEvaluationAdmissionCause::Reroll(Box::new(cause)),
             ));
         }
-        let receipt = append_evaluation(&transaction, &item, run_id, request, &attempt, verdicts)?;
+        let receipt = append_evaluation(
+            &transaction,
+            &item,
+            run_id,
+            request,
+            &attempt,
+            verdicts,
+            registered_input_witness,
+        )?;
         transaction.commit()?;
         Ok(receipt)
     }
@@ -756,6 +779,7 @@ fn append_evaluation(
     request: &RecordAcceptanceEvaluationRequest,
     attempt: &AttemptIdentity,
     verdicts: Vec<CriterionVerdict>,
+    registered_input_witness: Option<ObjectId>,
 ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
     let cut = request.evaluated_through;
     let record = AcceptanceEvaluation {
@@ -774,6 +798,7 @@ fn append_evaluation(
         evidence_basis: run_evidence_through(transaction, run_id, cut)?,
         source_basis: request.source_basis.clone(),
         named_root_binding: named_root_at_on(transaction, run_id, cut)?.map(|root| root.event_id),
+        registered_input_witness,
         mode: request.mode,
         evaluator: request.evaluator.clone(),
         execution_identity: request.execution_identity.clone(),
@@ -865,6 +890,7 @@ pub(crate) fn validate_completion_seal_acceptance_evaluation_on(
     if evaluation.work_id != seal.work_id || evaluation.run_id != seal.run_id {
         return Err(invalid("is bound to another work item or run"));
     }
+    validate_evaluation_input_witness_on(connection, &evaluation)?;
     match citation_position(connection, seal.run_id, hash)? {
         Some(position) if position <= seal.completion_cut.position => {}
         _ => {
@@ -894,6 +920,15 @@ pub(crate) fn validate_completion_seal_acceptance_evaluation_on(
         return Err(invalid("does not derive the sealed acceptance vector"));
     }
     Ok(Some(evaluation))
+}
+
+/// Doctor and seal reconstruction validate the same immutable source proof
+/// as live consumption, without applying later feed-head freshness to history.
+pub(in crate::storage::work) fn validate_evaluation_input_witness_on(
+    connection: &Connection,
+    evaluation: &AcceptanceEvaluation,
+) -> Result<(), StoreError> {
+    source::validate_registered_input_witness_on(connection, evaluation)
 }
 
 pub(crate) fn validate_request_shape(
@@ -1459,7 +1494,18 @@ fn basis_moved_after(
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
     root: Option<&NamedEvaluationRoot>,
     git_input: bool,
+    witnessed_input: Option<&ObjectId>,
 ) -> Result<Option<BasisMoveFinding>, StoreError> {
+    let witnessed_after = witnessed_input
+        .map(|witness| {
+            load_typed_work_object::<VerificationEvidence>(
+                connection,
+                witness,
+                "verification_evidence",
+            )
+            .map(|check| check.run_time())
+        })
+        .transpose()?;
     let judged_source = judged_source(connection, run_id, position, declared, root)?;
     let judged = judged_source.as_ref().map(|judged| judged.revision.clone());
     let name = |at: i64, observation: &SourceObservation| DecidingObservation {
@@ -1528,6 +1574,18 @@ fn basis_moved_after(
                     continue;
                 }
                 if !observation.source_changed {
+                    if witnessed_after.is_some_and(|checked_at| {
+                        source::quiet_git_input_conflicts(
+                            declared.map(|basis| basis.fingerprint.as_str()),
+                            checked_at,
+                            &observation,
+                        )
+                    }) {
+                        return Ok(Some(BasisMoveFinding {
+                            moved: EvaluationBasisMove::SourceChanged,
+                            observation: Some(name(at, &observation)),
+                        }));
+                    }
                     // A quiet content sighting does not replace a judged
                     // Git input. Actual changes still cross the cut below.
                     if git_input {
@@ -1608,13 +1666,7 @@ fn staleness_named(
         return Ok((Some(reason), StaleRecoveryContext::default()));
     }
     let evaluated_root = named_root_at_on(connection, run_id, record.evaluated_cut.position)?;
-    let git_input = source::registered_git_evaluation_on(
-        connection,
-        run_id,
-        record.evaluated_cut.position,
-        record.source_basis.as_ref(),
-        passing_citations(&record.verdicts).flat_map(|(_, citations, _)| citations),
-    )?;
+    let git_input = source::stored_git_evaluation_on(connection, record)?;
     if let Some(finding) = basis_moved_after(
         connection,
         run_id,
@@ -1622,6 +1674,7 @@ fn staleness_named(
         record.source_basis.as_ref(),
         evaluated_root.as_ref(),
         git_input,
+        record.registered_input_witness.as_ref(),
     )? {
         // An accounted change the host observed without admission is named
         // as such: the content need not have changed for it to void the
@@ -1769,13 +1822,7 @@ fn staleness_after_move(
     source: SourceCheck<'_>,
     evaluated_root: Option<&NamedEvaluationRoot>,
 ) -> Result<(Option<AcceptanceStaleReason>, StaleRecoveryContext), StoreError> {
-    let git_input = source::registered_git_evaluation_on(
-        connection,
-        run_id,
-        record.evaluated_cut.position,
-        record.source_basis.as_ref(),
-        passing_citations(&record.verdicts).flat_map(|(_, citations, _)| citations),
-    )?;
+    let git_input = source::stored_git_evaluation_on(connection, record)?;
     let mut source_context = crate::domain::AcceptanceSourceRecoveryCause {
         mismatch: crate::domain::AcceptanceSourceMismatch::EvaluationSourceBasisMissing,
         remedy: crate::domain::AcceptanceSourceRemedy::EvaluateCurrentSource,

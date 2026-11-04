@@ -198,6 +198,12 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
             "acceptance_evaluation" => object
                 .decode::<crate::domain::AcceptanceEvaluation>()
                 .ok()
+                .filter(|evaluation| {
+                    super::super::acceptance_evaluation::validate_evaluation_input_witness_on(
+                        connection, evaluation,
+                    )
+                    .is_ok()
+                })
                 .and_then(|evaluation| {
                     expected_feeds_for_work(work_items, evaluation.work_id, Some(evaluation.run_id))
                 }),

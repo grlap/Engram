@@ -328,6 +328,11 @@ pub struct AcceptanceEvaluation {
     /// one. A later name or end invalidates the evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub named_root_binding: Option<ObjectId>,
+    /// An automatically selected registered check corroborating the declared
+    /// Git input independently of criterion citations. Absent records retain
+    /// their existing citation-derived source semantics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registered_input_witness: Option<ObjectId>,
     pub mode: AcceptanceEvaluationMode,
     pub evaluator: ActorContext,
     /// Sub-agent mode: the distinct evaluator execution identity.
