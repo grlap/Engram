@@ -301,6 +301,22 @@ The host reads the shared committed-input shape; the additional tree field
 is launcher provenance, not an independent host tree validation. Detached
 workers, recovery and notification retries retain the admitted input lane.
 
+`node scripts/test-launcher.mjs full --request-message-id MESSAGE_ID` selects
+one retained native or relayed FULL request under TermAl. Native
+`mailbox-message-...` and opaque `relay-message-...` spellings are accepted
+without rewriting the selector. The host validates the retained request;
+the launcher requires the existing exact GET to echo the same
+`run.requestMessageId` before capture and again at execution admission,
+including detached workers. A missing or different echo, an unconfirmed host,
+standalone execution or a changed admitted selector refuses execution. The
+flag is full-only and is immutable in registration only when present, so
+ordinary request identities and their fallback behavior stay unchanged.
+
+This selector depends on TermAl's retained-request (K3) producer. Fixture and
+parity checks establish the launcher's refusals and confirmation behavior;
+they do not establish end-to-end remote verification or host credit before
+that producer ships and a real run demonstrates it.
+
 Full mode is the landing validation of a frozen changeset with any non-`.md`
 path, including configuration, lockfiles and fixtures. Focused mode is the
 fast correction check between fixes: it runs the tests that cover a fix before
@@ -496,7 +512,10 @@ owns the registration; a different `--notify` recipient does not change its
 project. Registration and a detached worker's confirmation share an eight-second
 budget. Outside TermAl, or when that handshake is unavailable or unconfirmed,
 the command still executes and retains its ordinary result and notification
-retry behavior.
+retry behavior, unless it selected a retained request with
+`--request-message-id`. Selected runs require confirmed registration and
+matching selection at both launch and execution; they never use standalone
+or unconfirmed fallback. Durable registration need not yet be indexed.
 
 `results.json`, the launch receipt, `summary` and the notification disclose the
 registration disposition. Only `registered` with `native-wait=ready` supports
@@ -971,7 +990,9 @@ tests.
   after-run capture), `input-changed`,
   `new-untracked-only` (every stage passed and the input changed only by new
   untracked paths, as above), `fingerprint-check-failed`, or
-  `launcher-error` for any other refusal. A
+  `request-selection-unconfirmed` (a selected request lacks the exact host
+  confirmation), `request-selection-changed` (the admitted selection changed),
+  or `launcher-error` when no more specific refusal was recorded. A
   prerequisite probe that fails or cannot be started, and a stage's command
   that cannot be found, are `preflight-failed`: every command is looked up
   before any stage runs, so every stage is `skipped`. `spawn-failed` is a

@@ -22,17 +22,20 @@ fn pending() -> RestoreRecord {
         format_version: RECORD_FORMAT_VERSION,
         occurrence_id: *OCCURRENCE.get_or_init(uuid::Uuid::now_v7),
         project: project().0,
-        copy: "20261002T120000Z-copy".into(),
-        sha256: "ab".repeat(32),
-        origin_host: Some("old-host".into()),
-        origin_retired: Statement {
-            by: "greg".into(),
-            at: at(0),
+        source: crate::backup::restore::RestoreSource::Copy {
+            copy: "20261002T120000Z-copy".into(),
+            origin_host: Some("old-host".into()),
+            origin_retired: Statement {
+                by: "greg".into(),
+                at: at(0),
+            },
         },
+        sha256: "ab".repeat(32),
         staging: "staging".into(),
         state: RestoreState::Pending,
         pending_at: at(1),
         completed_at: None,
+        previous_completed: None,
     }
 }
 
@@ -58,6 +61,40 @@ fn a_written_record_reads_back_and_a_missing_one_is_none() {
         read_restore_record(home.path(), &project()),
         RestoreRecords::Recorded(Box::new(completed))
     );
+}
+
+#[test]
+fn typed_local_provenance_is_read_without_inventing_origin_retirement() {
+    let home = temp_home().unwrap();
+    let lock =
+        PushLock::try_acquire(&RecordPaths::new(home.path(), &project(), CopyKind::Store)).unwrap();
+    let mut record = pending();
+    record.source = RestoreSource::LocalFile {
+        path: "/local/source.db".into(),
+        replace: true,
+    };
+    write_restore_record(home.path(), &project(), &lock, &record).unwrap();
+    assert_eq!(
+        read_restore_record(home.path(), &project()),
+        RestoreRecords::Recorded(Box::new(record.clone()))
+    );
+    let value = serde_json::to_value(&record).unwrap();
+    assert_eq!(value["source"]["kind"], "local_file");
+    assert!(value["source"].get("origin_retired").is_none());
+    assert!(record.source.ways_on().contains("--replace"));
+    let path = restore_record_path(home.path(), &project());
+    let mut old_shape = serde_json::to_value(pending()).unwrap();
+    let source = old_shape.as_object_mut().unwrap().remove("source").unwrap();
+    for key in ["copy", "origin_host", "origin_retired"] {
+        old_shape[key] = source[key].clone();
+    }
+    let bytes = serde_json::to_vec(&old_shape).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    assert!(matches!(
+        read_restore_record(home.path(), &project()),
+        RestoreRecords::Unreadable { .. }
+    ));
+    assert_eq!(fs::read(path).unwrap(), bytes);
 }
 
 #[test]
@@ -205,7 +242,7 @@ fn a_completed_record_is_kept_aside_under_its_utc_completion_time_and_never_repl
     );
     assert_eq!(
         read_restore_record(home.path(), &project()),
-        RestoreRecords::None
+        RestoreRecords::Recorded(Box::new(completed.clone()))
     );
     let kept_record: RestoreRecord = serde_json::from_slice(&fs::read(&kept).unwrap()).unwrap();
     assert_eq!(kept_record, completed);
@@ -229,7 +266,7 @@ fn assert_abandoned_archive(home: &Path) {
     let lock = PushLock::try_acquire(&paths).unwrap();
     // Nothing pending: nothing is archived.
     assert!(matches!(
-        archive_abandoned_pending(home, &project(), &lock, "greg", at(5)),
+        archive_abandoned_pending(home, &project(), &lock, "greg", at(5), false),
         Err(AbandonError::Archive(_))
     ));
     // A completed record is never abandoned.
@@ -238,7 +275,7 @@ fn assert_abandoned_archive(home: &Path) {
     completed.completed_at = Some(at(2));
     write_restore_record(home, &project(), &lock, &completed).unwrap();
     assert!(matches!(
-        archive_abandoned_pending(home, &project(), &lock, "greg", at(5)),
+        archive_abandoned_pending(home, &project(), &lock, "greg", at(5), false),
         Err(AbandonError::Archive(_))
     ));
     assert_eq!(
@@ -258,7 +295,7 @@ fn assert_abandoned_archive(home: &Path) {
     let original: serde_json::Value =
         serde_json::from_slice(&fs::read(restore_record_path(home, &project())).unwrap()).unwrap();
     let archived =
-        archive_abandoned_pending(home, &project(), &lock, "Greg O'Neil", at(5)).unwrap();
+        archive_abandoned_pending(home, &project(), &lock, "Greg O'Neil", at(5), false).unwrap();
     assert_eq!(archived.warnings, Vec::<String>::new());
     let archive = archived.archive;
     assert_eq!(archive.parent(), Some(paths.directory.as_path()));
@@ -355,6 +392,118 @@ fn ways_on_commands(copy: &str, by: &str) -> Vec<String> {
 thread_local! {
     static LEAVE_TEMPORARY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static FAIL_TEMPORARY_REMOVAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FAIL_ACTIVE_CHANGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(super) fn active_record_change() -> io::Result<()> {
+    if FAIL_ACTIVE_CHANGE.get() {
+        Err(io::Error::other("active record update stopped by a test"))
+    } else {
+        Ok(())
+    }
+}
+
+#[test]
+fn local_abandonment_reinstates_only_its_explicit_prior_occurrence() {
+    let home = temp_home().unwrap();
+    let lock =
+        PushLock::try_acquire(&RecordPaths::new(home.path(), &project(), CopyKind::Store)).unwrap();
+    let mut original = pending();
+    original.state = RestoreState::Completed;
+    original.completed_at = Some(at(2));
+    write_restore_record(home.path(), &project(), &lock, &original).unwrap();
+    let before = fs::read(restore_record_path(home.path(), &project())).unwrap();
+    let kept = keep_completed_record(home.path(), &project(), &lock, &original).unwrap();
+    assert_eq!(
+        fs::read(restore_record_path(home.path(), &project())).unwrap(),
+        before
+    );
+    let mut next = pending();
+    next.occurrence_id = uuid::Uuid::now_v7();
+    next.previous_completed = Some(PreviousRestore {
+        occurrence_id: original.occurrence_id,
+        file: kept.file_name().unwrap().to_str().unwrap().into(),
+    });
+    let stage = home.path().join("owned-stage.db");
+    fs::write(&stage, b"retained pending bytes").unwrap();
+    next.staging = stage.to_str().unwrap().into();
+    write_restore_record(home.path(), &project(), &lock, &next).unwrap();
+    let pending_bytes = fs::read(restore_record_path(home.path(), &project())).unwrap();
+    FAIL_ACTIVE_CHANGE.set(true);
+    let failed = archive_abandoned_pending(home.path(), &project(), &lock, "operator", at(5), true);
+    FAIL_ACTIVE_CHANGE.set(false);
+    let Err(AbandonError::Clear { archive, .. }) = failed else {
+        panic!("active publication must fail")
+    };
+    assert!(archive.is_file());
+    assert_eq!(
+        fs::read(restore_record_path(home.path(), &project())).unwrap(),
+        pending_bytes
+    );
+    assert_eq!(fs::read(&stage).unwrap(), b"retained pending bytes");
+    let archived =
+        archive_abandoned_pending(home.path(), &project(), &lock, "operator", at(6), true).unwrap();
+    let abandoned: AbandonedRestore =
+        serde_json::from_slice(&fs::read(archived.archive).unwrap()).unwrap();
+    assert_eq!(abandoned.pending, serde_json::to_value(&next).unwrap());
+    assert_eq!(
+        read_restore_record(home.path(), &project()),
+        RestoreRecords::Recorded(Box::new(original))
+    );
+    assert_eq!(
+        fs::read(restore_record_path(home.path(), &project())).unwrap(),
+        before
+    );
+    assert_eq!(fs::read(kept).unwrap(), before);
+}
+
+#[test]
+fn a_missing_or_mismatched_previous_occurrence_keeps_pending_visible() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let lock = PushLock::try_acquire(&paths).unwrap();
+    let mut next = pending();
+    next.previous_completed = Some(PreviousRestore {
+        occurrence_id: uuid::Uuid::now_v7(),
+        file: "store.restore-20261002T120002Z.json".into(),
+    });
+    for file in [None, Some(b"{}".as_slice())] {
+        let path = paths
+            .directory
+            .join(&next.previous_completed.as_ref().unwrap().file);
+        if let Some(bytes) = file {
+            fs::write(path, bytes).unwrap();
+        }
+        write_restore_record(home.path(), &project(), &lock, &next).unwrap();
+        let before = fs::read(restore_record_path(home.path(), &project())).unwrap();
+        assert!(matches!(
+            archive_abandoned_pending(home.path(), &project(), &lock, "operator", at(5), true),
+            Err(AbandonError::Archive(_))
+        ));
+        assert_eq!(
+            fs::read(restore_record_path(home.path(), &project())).unwrap(),
+            before
+        );
+    }
+    let mut other = pending();
+    other.occurrence_id = uuid::Uuid::now_v7();
+    other.state = RestoreState::Completed;
+    other.completed_at = Some(at(2));
+    super::super::target::write_record(
+        &paths
+            .directory
+            .join(&next.previous_completed.as_ref().unwrap().file),
+        &other,
+    )
+    .unwrap();
+    assert!(matches!(
+        archive_abandoned_pending(home.path(), &project(), &lock, "operator", at(5), true),
+        Err(AbandonError::Archive(_))
+    ));
+    assert_eq!(
+        read_restore_record(home.path(), &project()),
+        RestoreRecords::Recorded(Box::new(next))
+    );
 }
 
 /// Puts the temporary file back beside the archive after the move, as the
@@ -393,13 +542,15 @@ fn a_temporary_file_the_archive_move_leaves_is_removed_or_named() {
     };
     LEAVE_TEMPORARY.set(true);
     write_restore_record(home.path(), &project(), &lock, &pending()).unwrap();
-    let removed = archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(5)).unwrap();
+    let removed =
+        archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(5), false).unwrap();
     assert_eq!(removed.warnings, Vec::<String>::new());
     assert_eq!(temporaries(), Vec::<String>::new());
 
     FAIL_TEMPORARY_REMOVAL.set(true);
     write_restore_record(home.path(), &project(), &lock, &pending()).unwrap();
-    let named = archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(6)).unwrap();
+    let named =
+        archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(6), false).unwrap();
     let left = temporaries();
     assert_eq!(left.len(), 1, "{left:?}");
     assert_eq!(named.warnings.len(), 1, "{:?}", named.warnings);

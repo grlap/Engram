@@ -614,11 +614,19 @@ never refuses or delays a word.
 
 ### Restore occurrences and destination admission
 
-Each new `store` restore mints a required opaque UUID `occurrence_id` before
+Both `engram backup restore` and local-file `engram restore --from` use this
+same record owner. Its typed `source` is `copy` with the copy name, origin host
+and asserted retirement statement, or `local_file` with the absolute source
+path and original `replace` intent. Local-file restore makes no retirement
+assertion and keeps its existing manifest output. It still accepts `--replace`,
+whereas backup-copy restore never replaces a destination store. Neither route
+changes canonical store rows to record the occurrence.
+
+Each new restore mints a required opaque UUID `occurrence_id` before
 its first pending record is written. It is recorded in the host-local
 `backup-records/<project digest>/store.restore.json`, outside SQLite. Retries,
 including a refetch before the move or completion after the move, retain the
-same id and original pending provenance. A retry still requires
+same id and original pending provenance. A backup-copy retry still requires
 `--origin-retired-by NAME`, but its name does not replace the original recorded
 statement or time; the receipt shows the original statement. A later restore
 of the same copy gets a different id. Completion and abandonment preserve it. `backup status
@@ -627,6 +635,44 @@ of the same copy gets a different id. Completion and abandonment preserve it. `b
 An old record without the field, or an invalid or nil UUID, is unreadable,
 not an absent restore; consumer admission must remain closed. Historical
 archives are not rewritten. Restored SQLite bytes and authority are unchanged.
+Local-file retries keep the same absolute source selector, recorded bytes and
+replacement intent. Completion and verified staging do not need the original
+source file to remain present or unchanged. Only re-staging needs that file,
+and its bytes must still match the pending occurrence.
+Every pending retry prints a stderr notice naming its occurrence, pending time
+and SHA-256: it finishes the earlier checked bytes, not the selector's current
+bytes. Manifest JSON on stdout is unchanged. Source selectors containing control
+characters are refused before recording or displaying them.
+Pending is published before replacement checkpoints or file installation; an
+installation or completion failure leaves it pending. A retry only completes
+installed bytes matching that occurrence. Every `--replace` installation uses
+rename, even into an absent destination; its staging name disappears on
+installation. With staging gone, an occupied destination is verified and never
+overwritten by a retry. A no-replace move can leave staging behind, but an
+occupied destination still requires verification rather than replacement.
+A second restore
+of the same local file after completion gets a fresh occurrence too.
+
+A local pending occurrence can instead be abandoned with
+`engram restore --from FILE --abandon-pending --abandoned-by NAME`, using the
+recorded absolute selector without opening the source file. It refuses another
+source, an unreadable record, or an occupied destination that may already have
+been installed. Before a replacement rename, retained owned staging proves
+installation has not happened, so abandonment may leave the existing store
+untouched, including after a busy-store refusal. With no destination or store
+sidecars, abandonment is also allowed. It archives the pending record through
+the shared owner. When the untouched destination retains an earlier completed
+restore, the pending record's explicit `previous_completed` filename and UUID
+restore that same completed observation atomically; no kept record is guessed
+from timestamps. With no earlier applicable occurrence the active record is
+cleared. Only then is owned staging removed. An archive or active-record
+replacement failure leaves pending and staging available for another attempt; a
+later cleanup failure is a warning in the successful abandonment receipt, with
+`staging_removed: false`. Keep maintenance until the operator resolves that
+warning and chooses how consumers may resume. A possibly installed occurrence
+must be completed by verification, not hidden through abandonment.
+Arbitrary out-of-band file copies do not run either supported restore command
+and are not detected by this record.
 
 **The destination boundary is a host/operator obligation, not an Engram
 guard.** Before starting restore or reading status for admission, block every
@@ -640,8 +686,10 @@ boundary; the push lock serializes cooperating backup writers only.
 Read status through a nonmutating lane. Pending, unreadable, invalid or
 unavailable restore evidence means **do not start consumers**; a failed read
 or `backup_store_outside_home` is not `restore: null`. Even a legitimate null
-only describes this home's record: fetch precedes pending publication, and a
-crash while archiving the prior completed record can leave no active record.
+only describes this home's record: acquisition precedes pending publication.
+Keeping an earlier completed record leaves it active until the pending successor
+is atomically published; an abandoned pre-install replacement restores that
+explicit predecessor rather than inventing a no-restore observation.
 Keep maintenance through retries or abandonment; the absence of a record
 does not release it.
 

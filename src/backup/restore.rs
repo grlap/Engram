@@ -1,6 +1,6 @@
-//! The provenance record `engram backup restore` leaves under the Engram home:
-//! which copy it installed, that copy's SHA-256 and origin host, and the
-//! operator's statement that the origin store will never run again. It is
+//! The provenance record both supported restore commands leave under the Engram
+//! home: a typed backup-copy or local-file source and its installed SHA-256.
+//! Only a backup-copy source carries an origin-retirement statement. It is
 //! written pending before the store is moved into place and marked completed
 //! after the installed store is checked, so a restore that stopped between the
 //! two stays visible.
@@ -10,8 +10,9 @@
 //! and `doctor` read it without contacting any target.
 //!
 //! A pending restore the operator abandons is archived whole, beside the
-//! active record, in an envelope that names who abandoned it and when, and the
-//! active record is then cleared.
+//! active record, in an envelope that names who abandoned it and when. A local
+//! replacement cancelled before installation can reinstate its earlier completed
+//! record; otherwise the active record is cleared.
 
 use std::{
     fs, io,
@@ -37,7 +38,60 @@ pub enum RestoreState {
     Completed,
 }
 
-/// One restore of a `store` copy into this home.
+/// The source and installation policy of one supported restore.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RestoreSource {
+    /// A configured backup copy, with the operator's retirement statement.
+    Copy {
+        copy: String,
+        origin_host: Option<String>,
+        origin_retired: Statement,
+    },
+    /// A local file; this operation makes no origin-retirement assertion.
+    LocalFile { path: String, replace: bool },
+}
+
+impl RestoreSource {
+    /// The configured copy name, when the restore came from a backup target.
+    #[must_use]
+    pub fn copy(&self) -> Option<&str> {
+        match self {
+            Self::Copy { copy, .. } => Some(copy),
+            Self::LocalFile { .. } => None,
+        }
+    }
+
+    /// How to retry this exact source and installation policy.
+    #[must_use]
+    pub fn ways_on(&self) -> String {
+        match self {
+            Self::Copy {
+                copy,
+                origin_retired,
+                ..
+            } => pending_ways_on(copy, Some(&origin_retired.by)),
+            Self::LocalFile { path, replace } => format!(
+                "run `engram restore --from={}{}` again to finish it, or `engram restore --from={} --abandon-pending --abandoned-by=NAME` to abandon an occurrence that has not installed; keep destination consumers stopped",
+                crate::shell::argument(path),
+                if *replace { " --replace" } else { "" },
+                crate::shell::argument(path)
+            ),
+        }
+    }
+}
+
+/// The completed occurrence a pending restore kept aside before replacement.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviousRestore {
+    /// The unchanged occurrence kept aside before this pending restore.
+    pub occurrence_id: uuid::Uuid,
+    /// Its filename within this project's existing backup-record directory.
+    pub file: String,
+}
+
+/// One restore occurrence into this home, independent of source acquisition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestoreRecord {
@@ -45,18 +99,17 @@ pub struct RestoreRecord {
     /// One restore occurrence, preserved through retries; never a copy identity.
     pub occurrence_id: uuid::Uuid,
     pub project: String,
-    pub copy: String,
+    pub source: RestoreSource,
     /// The SHA-256 of the copy's bytes, which the installed store keeps.
     pub sha256: String,
-    /// The host that captured the copy, as its manifest names it.
-    pub origin_host: Option<String>,
-    /// The operator's statement that the origin store will never run again.
-    pub origin_retired: Statement,
     /// The fetched copy, beside the store, until it is moved into place.
     pub staging: String,
     pub state: RestoreState,
     pub pending_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Only pending records can refer to the completed occurrence they replaced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_completed: Option<PreviousRestore>,
 }
 
 /// An abandoned pending restore, as its archive keeps it: who abandoned it and
@@ -156,6 +209,9 @@ fn parse(bytes: &[u8], project: &ProjectId) -> Result<RestoreRecord, String> {
     if record.project != project.0 {
         return Err("it names another project".into());
     }
+    if record.previous_completed.is_some() && record.state != RestoreState::Pending {
+        return Err("a completed restore retains a predecessor binding".into());
+    }
     match (record.state, record.completed_at) {
         (RestoreState::Pending, None) | (RestoreState::Completed, Some(_)) => Ok(record),
         (RestoreState::Pending, Some(_)) => Err("a pending restore names a completion time".into()),
@@ -198,7 +254,8 @@ pub fn write_restore_record(
 /// # Errors
 ///
 /// Refuses a lock taken for another kind or project, a record that is not a
-/// completed one, and a failed move.
+/// completed one, and a failed write. The active record stays visible until
+/// its successor is published atomically.
 pub fn keep_completed_record(
     home: &Path,
     project: &ProjectId,
@@ -216,6 +273,16 @@ pub fn keep_completed_record(
         });
     };
     let current = restore_record_path(home, project);
+    let bytes = fs::read(&current).map_err(|source| TargetError::Io {
+        path: current,
+        source,
+    })?;
+    let stored = parse(&bytes, project).map_err(|reason| TargetError::Invalid { reason })?;
+    if &stored != record {
+        return Err(TargetError::Invalid {
+            reason: "the completed record no longer matches the occurrence being kept".into(),
+        });
+    }
     let stamp = completed_at.format("%Y%m%dT%H%M%SZ");
     let mut suffix = 0_u32;
     loop {
@@ -228,10 +295,10 @@ pub fn keep_completed_record(
         match fs::symlink_metadata(&kept) {
             Ok(_) => suffix += 1,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                // The push lock serializes every restore, so nothing takes
-                // this name between the check and the move.
-                fs::rename(&current, &kept).map_err(|source| TargetError::Io {
-                    path: current.clone(),
+                // Reuse the atomic record writer without removing the active
+                // observation before its pending successor can be published.
+                super::target::write_record(&kept, record).map_err(|source| TargetError::Io {
+                    path: kept.clone(),
                     source,
                 })?;
                 return Ok(kept);
@@ -253,7 +320,10 @@ fn abandoned_name(at: DateTime<Utc>, suffix: u32) -> String {
 }
 
 /// Archives the project's pending restore record, abandoned by `by` at `at`,
-/// and then clears the active record. The archive is written whole to a
+/// and then clears the active record, or atomically reinstates its explicitly
+/// bound completed predecessor when `restore_previous` is true. The caller
+/// must prove that installation has not happened and the destination is retained.
+/// The archive is written whole to a
 /// temporary file beside the record and then moved, without replacing
 /// anything, to a name stamped with `at` in UTC,
 /// `store.restore-abandoned-<YYYYMMDDTHHMMSSZ>.json`; a name already taken
@@ -275,6 +345,7 @@ pub fn archive_abandoned_pending(
     lock: &PushLock,
     by: &str,
     at: DateTime<Utc>,
+    restore_previous: bool,
 ) -> Result<Archived, AbandonError> {
     let paths = RecordPaths::new(home, project, CopyKind::Store);
     super::target::held(&paths, lock).map_err(AbandonError::Archive)?;
@@ -295,6 +366,45 @@ pub fn archive_abandoned_pending(
     if record.state != RestoreState::Pending {
         return Err(invalid("it is not a pending restore".into()));
     }
+    // Resolve the explicit binding before writing the archive. Never guess the
+    // newest kept file, and never clear pending if that binding cannot be read.
+    let previous = if restore_previous {
+        record
+            .previous_completed
+            .as_ref()
+            .map(|previous| {
+                let file = &previous.file;
+                let Some(stamp) = file
+                    .strip_prefix("store.restore-")
+                    .and_then(|name| name.strip_suffix(".json"))
+                else {
+                    return Err(invalid("its previous completed filename is invalid".into()));
+                };
+                if stamp.is_empty()
+                    || !stamp
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'T' | b'Z' | b'-'))
+                {
+                    return Err(invalid("its previous completed filename is invalid".into()));
+                }
+                let path = paths.directory.join(file);
+                let bytes = fs::read(&path)
+                    .map_err(io_at(&path))
+                    .map_err(AbandonError::Archive)?;
+                let prior = parse(&bytes, project).map_err(invalid)?;
+                if prior.state != RestoreState::Completed
+                    || prior.occurrence_id != previous.occurrence_id
+                {
+                    return Err(invalid(
+                        "its previous completed occurrence does not match".into(),
+                    ));
+                }
+                Ok(prior)
+            })
+            .transpose()?
+    } else {
+        None
+    };
     let pending: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|error| invalid(error.to_string()))?;
     let envelope = AbandonedRestore {
@@ -387,7 +497,19 @@ pub fn archive_abandoned_pending(
             ));
         }
     }
-    fs::remove_file(&current).map_err(|source| AbandonError::Clear {
+    #[cfg(test)]
+    tests::active_record_change().map_err(|source| AbandonError::Clear {
+        archive: archive.clone(),
+        error: TargetError::Io {
+            path: current.clone(),
+            source,
+        },
+    })?;
+    let replace = match previous {
+        Some(previous) => super::target::write_record(&current, &previous),
+        None => fs::remove_file(&current),
+    };
+    replace.map_err(|source| AbandonError::Clear {
         archive: archive.clone(),
         error: TargetError::Io {
             path: current.clone(),

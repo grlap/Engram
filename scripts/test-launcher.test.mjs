@@ -27,6 +27,7 @@ import { registerCountTests } from "./test-launcher-tests/counts.mjs";
 import { registerStopTests } from "./test-launcher-tests/stop.mjs";
 import { registerPosixStopTests } from "./test-launcher-tests/posix-stop.mjs";
 import { registerCommitInputTests } from "./test-launcher-tests/commit-input.mjs";
+import { registerRequestMessageTests } from "./test-launcher-tests/request-message.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
@@ -55,3 +56,4 @@ registerRecoveryProcesses(support);
 registerStopTests(support);
 registerPosixStopTests(support);
 registerCommitInputTests(support);
+registerRequestMessageTests(support);

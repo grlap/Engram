@@ -408,17 +408,20 @@ fn a_recorded_restore_is_shown_pending_restored_or_unreadable_after_the_kinds() 
         format_version: RECORD_FORMAT_VERSION,
         occurrence_id: uuid::Uuid::now_v7(),
         project: "status-project".into(),
-        copy: "20261001T000000Z-copy".into(),
-        sha256: "cd".repeat(32),
-        origin_host: Some("old-host".into()),
-        origin_retired: Statement {
-            by: "greg".into(),
-            at: at(1),
+        source: crate::backup::restore::RestoreSource::Copy {
+            copy: "20261001T000000Z-copy".into(),
+            origin_host: Some("old-host".into()),
+            origin_retired: Statement {
+                by: "greg".into(),
+                at: at(1),
+            },
         },
+        sha256: "cd".repeat(32),
         staging: "staging".into(),
         state: RestoreState::Pending,
         pending_at: at(2),
         completed_at: None,
+        previous_completed: None,
     };
     assert!(RestoreStatus::of(RestoreRecords::None).is_none());
 
@@ -440,7 +443,10 @@ fn a_recorded_restore_is_shown_pending_restored_or_unreadable_after_the_kinds() 
     );
     let value = serde_json::to_value(&status).unwrap();
     assert_eq!(value["restore"]["state"], "pending");
-    assert_eq!(value["restore"]["record"]["copy"], "20261001T000000Z-copy");
+    assert_eq!(
+        value["restore"]["record"]["source"]["copy"],
+        "20261001T000000Z-copy"
+    );
     assert_eq!(
         value["restore"]["record"]["occurrence_id"],
         record.occurrence_id.to_string()

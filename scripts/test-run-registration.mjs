@@ -12,6 +12,21 @@ const unconfirmed = (reason) => ({ state: "unconfirmed", reason, nativeWaitReady
 const immutableFields = ["runId", "root", "stages", "notifyTo", "full", "scope", "detached",
   "creatorPid", "owner", "started", "requiredBinaryEnv", "prerequisiteFiles", "needsCargo", "liveEngram"];
 
+export function validateRequestMessageSelection(request) {
+  const value = request.requestMessageId;
+  if (value === undefined) return;
+  if (request.full !== true) throw new Error("request-selection-full-only");
+  // Check the transport spelling here. The host validates the retained native
+  // or relayed message and publishes the selected id in durable registration.
+  if (typeof value !== "string" || !(/^(?:mailbox-message-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|relay-message-[A-Za-z0-9_-]{1,1024})$/u.test(value))) {
+    throw new Error("invalid-request-message-id");
+  }
+}
+
+export function registrationConfirmed(registration) {
+  return ["registered", "registered-but-not-indexed"].includes(registration?.state);
+}
+
 function requestIdentity(request) {
   const ordered = (value) => Array.isArray(value) ? value.map(ordered)
     : value && typeof value === "object"
@@ -20,6 +35,7 @@ function requestIdentity(request) {
   // Absent input keeps the historical identity byte-for-byte. The host uses
   // an explicit input kind to choose its binding, so that kind is immutable.
   if (request.input !== undefined) fields.input = request.input;
+  if (request.requestMessageId !== undefined) fields.requestMessageId = request.requestMessageId;
   return createHash("sha256").update(JSON.stringify(ordered(fields))).digest("hex");
 }
 
@@ -80,7 +96,10 @@ async function query(request, directory, host, send, signal) {
       || run.creatorPid !== request.creatorPid || run.startedAt !== request.started
       || run.detached !== request.detached || nativePath(run.runDir) !== nativePath(directory)
       || nativePath(run.worktree) !== nativePath(request.root)
-      || !["index", "registration"].includes(source)) throw new Error("query-identity-mismatch");
+      || !["index", "registration"].includes(source)
+      || (request.requestMessageId !== undefined && run.requestMessageId !== request.requestMessageId)) {
+    throw new Error("query-identity-mismatch");
+  }
   return source;
 }
 
@@ -99,13 +118,14 @@ async function bounded(milliseconds, operation) {
 
 function reason(error) {
   return new Set(["partial-context", "invalid-context", "invalid-response", "query-unconfirmed", "query-refused",
-    "query-identity-mismatch", "registration-timeout", "registration-refused", "invalid-acknowledgement"])
+    "query-identity-mismatch", "registration-timeout", "registration-refused", "invalid-acknowledgement",
+    "request-selection-full-only", "invalid-request-message-id"])
     .has(error?.message) ? error.message : "registration-unconfirmed";
 }
 
 export async function registerTestRun(request, directory, env = process.env, options = {}) {
   let host;
-  try { host = configuration(request, env); }
+  try { validateRequestMessageSelection(request); host = configuration(request, env); }
   catch (error) { return unconfirmed(reason(error)); }
   if (host.standalone) return { state: "untracked", reason: "standalone", nativeWaitReady: false };
   const send = options.fetch ?? globalThis.fetch;
@@ -116,7 +136,8 @@ export async function registerTestRun(request, directory, env = process.env, opt
   try {
     const source = await bounded(allowance, async (signal) => {
       const url = new URL(`/api/sessions/${encodeURIComponent(host.session)}/test-runs`, host.base);
-      const body = JSON.stringify({ runId: request.runId, runDirectory: directory });
+      const body = JSON.stringify({ runId: request.runId, runDirectory: directory,
+        ...(request.requestMessageId === undefined ? {} : { requestMessageId: request.requestMessageId }) });
       for (let attempt = 0; attempt < 2; attempt += 1) {
         let response;
         try {
@@ -150,8 +171,9 @@ export async function confirmDetachedRegistration(request, directory, env = proc
   const registration = request.registration;
   // Unconfirmed is sticky: late indexing cannot turn an ambiguous launch
   // into an observed or credited one. Historical/standalone runs keep fallback.
-  if (!["registered", "registered-but-not-indexed"].includes(registration?.state)) return registration;
+  if (!registrationConfirmed(registration)) return registration;
   try {
+    validateRequestMessageSelection(request);
     const host = configuration(request, env);
     if (host.standalone || host.base.origin !== registration.hostOrigin) return unconfirmed("confirmation-unavailable");
     if (registration.requestIdentity !== requestIdentity(request)) return unconfirmed("request-changed");

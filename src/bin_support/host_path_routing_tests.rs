@@ -179,6 +179,8 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
             Command::Restore {
                 from: PathBuf::from("backup.db"),
                 replace: false,
+                abandon_pending: false,
+                abandoned_by: None,
             },
         ),
     ];

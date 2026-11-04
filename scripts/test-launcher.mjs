@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { captureCommitInputStatus, captureFingerprint, classifyInputChange, fingerprintLimitations, isolatedGitEnvironment } from "./review-freeze-fingerprint.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
-import { registerTestRun, confirmDetachedRegistration, registrationLine } from "./test-run-registration.mjs";
+import { registerTestRun, confirmDetachedRegistration, registrationConfirmed, registrationLine,
+  validateRequestMessageSelection } from "./test-run-registration.mjs";
 
 const script = fileURLToPath(import.meta.url);
 const repository = resolve(dirname(script), "..");
@@ -46,6 +47,7 @@ function publishCompletionRequest(runDir, request) {
   save(join(runDir, "completion.request.json"), {
     runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration,
     ...(request.input !== undefined ? { input: request.input, commit: request.commit, tree: request.tree } : {}),
+    ...(request.requestMessageId !== undefined ? { requestMessageId: request.requestMessageId, full: request.full } : {}),
   });
 }
 function publishLaunchRequest(runDir, request) {
@@ -672,8 +674,10 @@ catch {
 }
 
 export async function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false,
-  item, nextTransition, input: runInput, commitInputStatus = captureCommitInputStatus }, env = process.env, registrationOptions = {}) {
+  item, nextTransition, input: runInput, requestMessageId, commitInputStatus = captureCommitInputStatus }, env = process.env, registrationOptions = {}) {
   if (runInput !== undefined && runInput !== "commit") throw usageFailure("unsupported run input; use --input commit");
+  try { validateRequestMessageSelection({ requestMessageId, full }); }
+  catch (error) { throw usageFailure(error.message); }
   validateLaunchMetadata({ item, nextTransition });
   const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
@@ -687,11 +691,13 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
     creatorPid: process.pid, owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
     ...(runInput !== undefined ? { input: runInput } : {}),
+    ...(requestMessageId !== undefined ? { requestMessageId } : {}),
     ...(full && detached && process.platform === "win32" ? { stopProtocol } : {}),
     ...(detached && ["darwin", "linux"].includes(process.platform) ? { stopProtocol: posixStopProtocol } : {}),
     ...(item !== undefined ? { item } : {}), ...(nextTransition !== undefined ? { nextTransition: { ...nextTransition } } : {}) };
   // A worker that never starts leaves this first heartbeat to go stale.
   const initial = { runId, state: "running", started: request.started,
+    ...(requestMessageId !== undefined ? { requestMessageId } : {}),
     heartbeat: { at: request.started, everyMs }, limitations: fingerprintLimitations(),
     stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root })) };
   save(join(runDir, "results.json"), initial);
@@ -705,6 +711,13 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     initial.heartbeat.at = new Date().toISOString();
     save(join(runDir, "results.json"), initial);
   } finally { clearInterval(registrationHeartbeat); }
+  if (requestMessageId !== undefined && !registrationConfirmed(request.registration)) {
+    Object.assign(initial, { state: "failed", exitCode: 1, reason: "request-selection-unconfirmed",
+      ended: new Date().toISOString(), error: `selected FULL request requires confirmed host registration (${request.registration?.reason ?? "unavailable"}); no stage ran` });
+    save(join(runDir, "results.json"), initial);
+    publishLaunchRequest(runDir, request);
+    return runDir;
+  }
   try {
     let committed;
     if (request.input === "commit") {
@@ -994,10 +1007,31 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     save(resultPath, result);
     // The same timer covers a slow host confirmation and long stages.
     heartbeat = startHeartbeat(resultPath, result, everyMs);
-    if (request.detached === true) {
-      result.registration = await confirmDetachedRegistration(request, runDir, env);
+    // The saved selection cannot be removed from request.json to regain the
+    // ordinary unconfirmed-registration fallback. Use the existing frozen intent
+    // and initial result, then recheck the same host GET before probes or stages.
+    let admitted;
+    try { admitted = readJson(join(runDir, "completion.request.json")); }
+    catch { /* Legacy runs retain their fallback when no selection was saved. */ }
+    const selected = request.requestMessageId !== undefined || result.requestMessageId !== undefined
+      || admitted?.requestMessageId !== undefined;
+    let registeredRequest = request;
+    if (selected) {
+      if (!admitted || request.requestMessageId !== result.requestMessageId || request.requestMessageId !== admitted.requestMessageId
+          || request.full !== true || admitted.full !== true
+          || request.registration?.requestIdentity !== admitted.registration?.requestIdentity
+          || result.registration?.requestIdentity !== admitted.registration?.requestIdentity) {
+        throw because("request-selection-changed", new Error("selected request differs from its admitted intent; no stage ran"));
+      }
+      registeredRequest = { ...request, registration: admitted.registration };
+    }
+    if (request.detached === true || selected) {
+      result.registration = await confirmDetachedRegistration(registeredRequest, runDir, env);
       result.heartbeat.at = new Date().toISOString();
       save(resultPath, result);
+      if (selected && !registrationConfirmed(result.registration)) {
+        throw because("request-selection-unconfirmed", new Error(`selected FULL request confirmation failed (${result.registration?.reason ?? "unavailable"}); no stage ran`));
+      }
     }
     await ready();
     control?.check();
@@ -1158,7 +1192,7 @@ export function runLiveness(result, now = Date.now()) {
   return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
 }
 
-const completionReasons = new Set(["input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
+const completionReasons = new Set(["request-selection-unconfirmed", "request-selection-changed", "input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
   "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed",
   "stop-request-invalid", "stop-request-unreadable"]);
 const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
@@ -1567,13 +1601,12 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
     // A worker can finish an already-recorded input refusal before it sends
     // readiness. Preserve that fixed reason instead of calling it a crash.
     let reason = "worker-startup-failed";
-    if (request.input === "commit") {
-      try {
-        const result = readJson(join(runDir, "results.json"));
-        if (isTerminal(result) && result.reason === "input-not-clean"
-            && result.input?.kind === "commit" && result.input.cleanBefore === false) reason = "input-not-clean";
-      } catch { /* unreadable startup artifacts retain the startup diagnosis */ }
-    }
+    try {
+      const result = readJson(join(runDir, "results.json"));
+      if (request.input === "commit" && isTerminal(result) && result.reason === "input-not-clean"
+          && result.input?.kind === "commit" && result.input.cleanBefore === false) reason = "input-not-clean";
+      if (isTerminal(result) && ["request-selection-unconfirmed", "request-selection-changed"].includes(result.reason)) reason = result.reason;
+    } catch { /* unreadable startup artifacts retain the startup diagnosis */ }
     throw Object.assign(error, { runDir, safeCompletionText: reason,
       launcherLog: join(runDir, "launcher.log") });
   } finally { closeSync(fd); }
@@ -1658,14 +1691,20 @@ async function main(args) {
     catch (error) { throw workerFailure(runDir, error); }
     return;
   }
-  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--input commit] [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR | stop RUN_ID --reason TEXT --actor TEXT");
-  let notifyTo, detach = false, item, nextOwner, nextAction, input;
+  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--input commit] [--request-message-id MESSAGE_ID (full only)] [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR | stop RUN_ID --reason TEXT --actor TEXT");
+  let notifyTo, detach = false, item, nextOwner, nextAction, input, requestMessageId;
   const metadataFlags = new Set();
   const requiredBinaryEnv = [];
   while (args.length && args[0] !== "--") {
     const flag = args.shift();
     if (flag === "--detach") detach = true;
     else if (flag === "--input" && input === undefined && args[0] === "commit") input = args.shift();
+    else if (flag === "--request-message-id" && requestMessageId === undefined) {
+      requestMessageId = args.shift();
+      if (requestMessageId === undefined) throw usageFailure("--request-message-id requires a value");
+      try { validateRequestMessageSelection({ requestMessageId, full: mode === "full" }); }
+      catch (error) { throw usageFailure(error.message); }
+    }
     else if (["--item", "--next-owner", "--next-action"].includes(flag)) {
       if (metadataFlags.has(flag)) throw usageFailure(`${flag} may be supplied only once`);
       metadataFlags.add(flag);
@@ -1697,7 +1736,7 @@ async function main(args) {
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
   const stages = mode === "full" ? requiredStages()
     : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
-  const runDir = await createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition, input });
+  const runDir = await createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition, input, requestMessageId });
   if (!detach) { await finish(runDir, { foregroundReceipt: true }); return; }
   try { await startDetached(runDir); }
   catch (error) { throw Object.assign(error, { runDir,

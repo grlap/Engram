@@ -163,6 +163,12 @@ enum Command {
         /// Replace an existing store instead of refusing.
         #[arg(long)]
         replace: bool,
+        /// Abandon a pending local restore that has not installed the destination.
+        #[arg(long, requires = "abandoned_by", conflicts_with = "replace")]
+        abandon_pending: bool,
+        /// Asserted operator name for abandoning the pending occurrence.
+        #[arg(long, requires = "abandon_pending")]
+        abandoned_by: Option<String>,
     },
     /// Save or load the deterministic project work graph.
     Graph {
@@ -1145,7 +1151,22 @@ async fn run_cli() -> Result<ExitCode> {
                 return Ok(ExitCode::FAILURE);
             }
         }
-        Command::Restore { from, replace } => restore(&database, &from, replace)?,
+        Command::Restore {
+            from,
+            replace,
+            abandon_pending,
+            abandoned_by,
+        } => {
+            restore(
+                &home,
+                &project_id,
+                &database,
+                &from,
+                replace,
+                abandon_pending,
+                abandoned_by.as_deref(),
+            )?;
+        }
         Command::Graph {
             actor_id,
             session_id,

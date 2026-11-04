@@ -14,7 +14,7 @@ use super::{
         AcceptedFormats, Collected, CutUnavailable, KindRecords, Mode, Reason, collect, kind_reason,
     },
     record::{Acknowledgement, LastAttempt},
-    restore::{RestoreRecord, RestoreRecords, RestoreState, read_restore_record},
+    restore::{RestoreRecord, RestoreRecords, RestoreSource, RestoreState, read_restore_record},
     target::{AdapterKind, Statement},
 };
 use crate::{ObjectId, ProjectId, WorkGraphSnapshotCut};
@@ -387,14 +387,24 @@ pub fn restore_line(restore: &RestoreStatus) -> String {
             restore.unreadable.as_deref().unwrap_or("")
         );
     };
-    let origin = format!(
-        "{} (sha256 {}) from host {}; origin retired by {} at {} (asserted)",
-        record.copy,
-        record.sha256,
-        record.origin_host.as_deref().unwrap_or("unknown"),
-        record.origin_retired.by,
-        record.origin_retired.at.to_rfc3339()
-    );
+    let origin = match &record.source {
+        RestoreSource::Copy {
+            copy,
+            origin_host,
+            origin_retired,
+        } => format!(
+            "{} (sha256 {}) from host {}; origin retired by {} at {} (asserted)",
+            copy,
+            record.sha256,
+            origin_host.as_deref().unwrap_or("unknown"),
+            origin_retired.by,
+            origin_retired.at.to_rfc3339()
+        ),
+        RestoreSource::LocalFile { path, .. } => format!(
+            "local file {path:?} (sha256 {}); origin retirement not asserted",
+            record.sha256
+        ),
+    };
     match (record.state, record.completed_at) {
         (RestoreState::Completed, Some(at)) => {
             format!("restore: restored {origin}; completed {}", at.to_rfc3339())
@@ -402,7 +412,7 @@ pub fn restore_line(restore: &RestoreStatus) -> String {
         _ => format!(
             "restore: pending since {}: {origin}; {}",
             record.pending_at.to_rfc3339(),
-            super::restore::pending_ways_on(&record.copy, Some(&record.origin_retired.by))
+            record.source.ways_on()
         ),
     }
 }

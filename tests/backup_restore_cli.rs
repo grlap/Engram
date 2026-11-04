@@ -342,7 +342,7 @@ fn a_clean_home_restores_a_checked_copy_reports_its_live_authority_and_changes_n
     )
     .unwrap();
     assert_eq!(status["restore"]["state"], "restored");
-    assert_eq!(status["restore"]["record"]["copy"], copy);
+    assert_eq!(status["restore"]["record"]["source"]["copy"], copy);
 
     // A new session cannot claim an item still held in the copy; that it can
     // once the claim expires is shown with a supplied clock in the restore's
@@ -683,17 +683,20 @@ fn status_and_doctor_show_a_pending_restore_without_contacting_the_target() {
             format_version: RECORD_FORMAT_VERSION,
             occurrence_id: uuid::Uuid::now_v7(),
             project: PROJECT.into(),
-            copy: "20261002T000000Z-pending".into(),
-            sha256: "ef".repeat(32),
-            origin_host: Some("old-host".into()),
-            origin_retired: Statement {
-                by: "greg".into(),
-                at: now,
+            source: engram::backup::restore::RestoreSource::Copy {
+                copy: "20261002T000000Z-pending".into(),
+                origin_host: Some("old-host".into()),
+                origin_retired: Statement {
+                    by: "greg".into(),
+                    at: now,
+                },
             },
+            sha256: "ef".repeat(32),
             staging: "staging".into(),
             state: RestoreState::Pending,
             pending_at: now,
             completed_at: None,
+            previous_completed: None,
         },
     )
     .unwrap();
@@ -722,7 +725,7 @@ fn status_and_doctor_show_a_pending_restore_without_contacting_the_target() {
         record.occurrence_id.to_string()
     );
     assert_eq!(
-        value["backup"]["restore"]["record"]["copy"],
+        value["backup"]["restore"]["record"]["source"]["copy"],
         "20261002T000000Z-pending"
     );
     let doctor = text(&homes.engram("pending", &["doctor"]).stdout);
@@ -834,17 +837,20 @@ fn abandon_pending_without_contacting_target(homes: &Homes, name: &str) -> PathB
                 format_version: RECORD_FORMAT_VERSION,
                 occurrence_id: uuid::Uuid::now_v7(),
                 project: PROJECT.into(),
-                copy: copy.into(),
-                sha256: "ef".repeat(32),
-                origin_host: Some("old-host".into()),
-                origin_retired: Statement {
-                    by: "Greg O'Neil".into(),
-                    at: now,
+                source: engram::backup::restore::RestoreSource::Copy {
+                    copy: copy.into(),
+                    origin_host: Some("old-host".into()),
+                    origin_retired: Statement {
+                        by: "Greg O'Neil".into(),
+                        at: now,
+                    },
                 },
+                sha256: "ef".repeat(32),
                 staging: staging.display().to_string(),
                 state: RestoreState::Pending,
                 pending_at: now,
                 completed_at: None,
+                previous_completed: None,
             },
         )
         .unwrap();

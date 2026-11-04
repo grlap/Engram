@@ -137,17 +137,25 @@ impl Home {
                 format_version: RECORD_FORMAT_VERSION,
                 occurrence_id: uuid::Uuid::now_v7(),
                 project: PROJECT.into(),
-                copy: "20261002T000000Z-receipt".into(),
-                sha256: "ab".repeat(32),
-                origin_host: Some("old-host".into()),
-                origin_retired: Statement {
-                    by: "greg".into(),
-                    at: now,
+                source: engram::backup::restore::RestoreSource::Copy {
+                    copy: "20261002T000000Z-receipt".into(),
+                    origin_host: Some("old-host".into()),
+                    origin_retired: Statement {
+                        by: "greg".into(),
+                        at: now,
+                    },
                 },
+                sha256: "ab".repeat(32),
                 staging: "staging".into(),
                 state,
                 pending_at: now,
                 completed_at: (state == RestoreState::Completed).then_some(now),
+                previous_completed: (state == RestoreState::Pending).then(|| {
+                    engram::backup::restore::PreviousRestore {
+                        occurrence_id: uuid::Uuid::now_v7(),
+                        file: "store.restore-20261002T000000Z.json".into(),
+                    }
+                }),
             },
         )
         .unwrap();
@@ -371,6 +379,17 @@ fn receipts(root: &Path) -> Vec<Value> {
     assert_eq!(restored["restore"]["state"], "restored");
     assert_eq!(restored["restore"]["record"]["state"], "completed");
     receipts.push(restored);
+    let record_path = restore_record_path(&edited.home(), &ProjectId(PROJECT.into()));
+    let mut local: RestoreRecord =
+        serde_json::from_slice(&fs::read(&record_path).unwrap()).unwrap();
+    local.source = engram::backup::restore::RestoreSource::LocalFile {
+        path: edited.home().join("local.db").display().to_string(),
+        replace: true,
+    };
+    let lock = PushLock::try_acquire(&edited.paths()).unwrap();
+    write_restore_record(&edited.home(), &ProjectId(PROJECT.into()), &lock, &local).unwrap();
+    receipts.push(edited.status(false));
+    drop(lock);
     fs::write(
         restore_record_path(&edited.home(), &ProjectId(PROJECT.into())),
         b"not a record",

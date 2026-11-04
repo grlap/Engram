@@ -683,7 +683,11 @@ for the fields named here.
    a failed push.
    Show `restore` when it is not null. Plain `backup status` contacts no
    target; `--check-target` asks the target and is a separate, slower call.
-6. **Keep destination admission closed throughout restore.** Block all
+6. **Keep destination admission closed throughout restore.** This applies to
+   both `engram backup restore` and local-file `engram restore --from`, including
+   replacement. Both report the shared typed occurrence; local-file restore
+   makes no origin-retirement assertion. Arbitrary out-of-band file copies
+   are not detected by these records. Block all
    mutable admission before draining control, MCP, CLI, library, background
    and recovery consumers, across hosts and aliases of the physical file.
    Maintain durable exclusion outside the replaced store, even before the

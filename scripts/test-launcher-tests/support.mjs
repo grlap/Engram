@@ -4,7 +4,7 @@ import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, re
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { executable, requiredStages } from "../test-launcher.mjs";
@@ -18,6 +18,13 @@ const launcherFixtureFiles = ["test-launcher.mjs", ...launcherSupportFiles];
 const stage = (name, source = "") => ({ name, command: process.execPath, args: ["-e", source] });
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 const logPath = (runDir, entry) => isAbsolute(entry.log) ? entry.log : join(runDir, entry.log);
+const withPrependedPath = (environment, directory) => {
+  const path = Object.entries(environment).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
+  const result = { ...environment };
+  for (const key of Object.keys(result)) if (key.toLowerCase() === "path") delete result[key];
+  result.PATH = `${directory}${delimiter}${path}`;
+  return result;
+};
 
 function git(args, cwd) {
   // Fixture Git writes must not start maintenance that outlives cleanup.
@@ -214,5 +221,5 @@ function parkingBroker(t, root) {
 }
 
 
-  return { env, entryUrl, launcher, launcherSupportFiles, launcherFixtureFiles, stage, json, logPath, git, fixtureFailureSnapshot, repository, rustPhaseArgs, rustWrapperFixture, copyLauncher, nodeFixtureExecutable, parseRecord, directoryBytes, rewriteResults, parkingBroker };
+  return { env, entryUrl, launcher, launcherSupportFiles, launcherFixtureFiles, stage, json, logPath, withPrependedPath, git, fixtureFailureSnapshot, repository, rustPhaseArgs, rustWrapperFixture, copyLauncher, nodeFixtureExecutable, parseRecord, directoryBytes, rewriteResults, parkingBroker };
 }

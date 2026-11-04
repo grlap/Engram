@@ -119,16 +119,23 @@ The field table stays here because the receipt contract test reads this path. Th
 | `restore.record.format_version` | integer | The record's format. |
 | `restore.record.occurrence_id` | string | Required opaque UUID for this restore occurrence; retries preserve it, a new restore of the same copy gets a new id. |
 | `restore.record.project` | string | The project. |
-| `restore.record.copy` | string | The restored copy. |
+| `restore.record.source` | object | Typed restore source; only the fields of its kind are present. |
+| `restore.record.source.kind` | string, one of: `copy`, `local_file` | A configured backup copy or a local-file restore. |
+| `restore.record.source.copy` | string | For `copy`, the restored copy. |
+| `restore.record.source.path` | string | For `local_file`, the original absolute source selector; retries need not reopen it. |
+| `restore.record.source.replace` | boolean | For `local_file`, whether the original request allowed replacement; retries keep this intent. |
 | `restore.record.sha256` | string | The copy's SHA-256. |
-| `restore.record.origin_host` | string or null | The host that captured the copy, as its manifest names it. |
-| `restore.record.origin_retired` | object | The operator's statement that the origin will never run again. |
-| `restore.record.origin_retired.by` | string | Who made it, as asserted. |
-| `restore.record.origin_retired.at` | string, an RFC 3339 time | When. |
+| `restore.record.source.origin_host` | string or null | For `copy`, the host that captured it, as its manifest names it. |
+| `restore.record.source.origin_retired` | object | For `copy`, the operator's statement that the origin will never run again. Local-file restore makes no retirement assertion. |
+| `restore.record.source.origin_retired.by` | string | Who made it, as asserted. |
+| `restore.record.source.origin_retired.at` | string, an RFC 3339 time | When. |
 | `restore.record.staging` | string | The staging file the copy was fetched into. |
 | `restore.record.state` | string, one of: `pending`, `completed` | `completed` once the installed store was checked. |
 | `restore.record.pending_at` | string, an RFC 3339 time | When this occurrence's pending record was first written. |
 | `restore.record.completed_at` | string or null | When it was completed. |
+| `restore.record.previous_completed` | object | Optional pending-only binding to the completed occurrence kept aside before replacement. |
+| `restore.record.previous_completed.occurrence_id` | string | The earlier completed occurrence's unchanged UUID. |
+| `restore.record.previous_completed.file` | string | Its filename within this project's backup-record directory. |
 | `restore.unreadable` | string or null | For a record this build cannot use, its path and why. |
 | `checks` | array, only with `--check-target` | One entry per kind checked; absent otherwise. |
 | `checks[].kind` | string, one of: `store` | The kind checked. |

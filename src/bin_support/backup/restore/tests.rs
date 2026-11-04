@@ -207,6 +207,83 @@ impl Fixture {
     }
 }
 
+#[test]
+fn restore_entrypoints_keep_pending_source_and_source_specific_guidance() {
+    let fixture = Fixture::new();
+    let copy = fixture.push_change("cross-entry");
+    let source = fixture.clean.path().join("local.db");
+    fixture.fetch(&copy, &source, false);
+    let mut settings = RestoreSettings::new(ReadSettings::new(Duration::from_secs(5)));
+    settings.stop = Some(Stop::AfterPending);
+    assert!(
+        restore_local(
+            fixture.clean.path(),
+            &fixture.project,
+            &fixture.database(),
+            &source,
+            false,
+            &settings
+        )
+        .is_err()
+    );
+    let pending = fixture.records();
+    for failure in [
+        fixture.restore(&copy, None).unwrap_err(),
+        fixture.abandon(&copy, "operator", None).unwrap_err(),
+    ] {
+        assert_eq!(failure.code, "backup_restore_pending_other");
+        assert!(
+            failure.message.contains("engram restore --from="),
+            "{}",
+            failure.message
+        );
+        assert!(
+            failure.message.contains("--abandon-pending"),
+            "{}",
+            failure.message
+        );
+        assert_eq!(fixture.records(), pending);
+        assert!(!fixture.database().exists());
+    }
+
+    let fixture = Fixture::new();
+    let copy = fixture.push_change("copy-pending");
+    assert!(fixture.restore(&copy, Some(Stop::AfterPending)).is_err());
+    let pending = fixture.records();
+    let missing = fixture.clean.path().join("missing.db");
+    settings.stop = None;
+    let failure = restore_local(
+        fixture.clean.path(),
+        &fixture.project,
+        &fixture.database(),
+        &missing,
+        false,
+        &settings,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        failure.contains("another source or installation policy is pending"),
+        "{failure}"
+    );
+    assert!(failure.contains("engram backup restore"), "{failure}");
+    assert!(failure.contains(&copy), "{failure}");
+    let failure = abandon_local(
+        fixture.clean.path(),
+        &fixture.project,
+        &fixture.database(),
+        &missing,
+        Some("operator"),
+        &settings,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(failure.contains("engram backup restore"), "{failure}");
+    assert!(failure.contains(&copy), "{failure}");
+    assert_eq!(fixture.records(), pending);
+    assert!(!fixture.database().exists());
+}
+
 fn failure_code(outcome: Result<Restored, ReadFailure>) -> &'static str {
     match outcome {
         Ok(restored) => panic!("the restore must be refused: {restored:?}"),
@@ -230,8 +307,11 @@ fn a_restore_stopped_after_its_pending_record_leaves_no_store_and_a_retry_of_the
     assert!(!fixture.database().exists());
     let pending = fixture.record();
     assert_eq!(pending.state, RestoreState::Pending);
-    assert_eq!(pending.copy, first);
-    assert_eq!(pending.origin_retired.by, "greg");
+    assert_eq!(pending.source.copy(), Some(first.as_str()));
+    let RestoreSource::Copy { origin_retired, .. } = &pending.source else {
+        panic!("backup source")
+    };
+    assert_eq!(origin_retired.by, "greg");
     let names = fixture.store_directory_names();
     assert_eq!(names.len(), 1, "{names:?}");
     assert!(names[0].starts_with(STAGING_PREFIX) && names[0].ends_with(STAGING_SUFFIX));
@@ -257,7 +337,7 @@ fn a_restore_stopped_after_its_pending_record_leaves_no_store_and_a_retry_of_the
     assert_eq!(completed.sha256, pending.sha256);
     assert_eq!(completed.occurrence_id, pending.occurrence_id);
     assert_eq!(completed.pending_at, pending.pending_at);
-    assert_eq!(completed.origin_retired, pending.origin_retired);
+    assert_eq!(completed.source, pending.source);
     assert_eq!(fixture.store_directory_names(), ["engram.db"]);
     assert_eq!(fixture.status_state(), Some("restored"));
 }
@@ -378,7 +458,7 @@ fn a_completed_restore_whose_store_is_gone_is_kept_aside_by_the_next_one() {
     );
     let kept_record: RestoreRecord = serde_json::from_slice(&fs::read(&kept).unwrap()).unwrap();
     assert_eq!(kept_record, earlier);
-    assert_eq!(fixture.record().copy, second);
+    assert_eq!(fixture.record().source.copy(), Some(second.as_str()));
     assert_eq!(
         restore_record_path(fixture.clean.path(), &fixture.project).parent(),
         kept.parent()
@@ -395,7 +475,7 @@ fn repeated_restores_of_the_same_copy_have_distinct_occurrences() {
     let restored = fixture.restore(&copy, None).unwrap();
     let second = fixture.record();
     assert_ne!(first.occurrence_id, second.occurrence_id);
-    assert_eq!(first.copy, second.copy);
+    assert_eq!(first.source.copy(), second.source.copy());
     assert_eq!(first.sha256, second.sha256);
     let archived: RestoreRecord =
         serde_json::from_slice(&fs::read(restored.kept_record.unwrap()).unwrap()).unwrap();

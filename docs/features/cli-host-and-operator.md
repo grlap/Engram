@@ -227,6 +227,7 @@ engram control \
 # sensitive as the store; schedule it on the host, never publish it.
 engram backup                      # → <home>/backups/<project>/engram-<utc>.db + manifest
 engram restore --from <backup-file> [--replace]   # stop other Engram processes first
+engram restore --from <backup-file> --abandon-pending --abandoned-by <operator>
 
 # Off-host backup targets: the operator's record of where a kind's copies go.
 # Setting a target copies nothing.
@@ -776,8 +777,16 @@ store, bytes, SHA-256, origin host and statement, `completed_interrupted`,
 
 `backup restore COPY --abandon-pending --abandoned-by NAME [--json]`
 abandons the pending restore of COPY instead, for a restore that cannot be
-finished, for example because its copy is gone from the target. Nothing
-else abandons a restore, and abandoning takes no `--origin-retired-by`.
+finished, for example because its copy is gone from the target. Local-file
+pending occurrences instead use `restore --from FILE --abandon-pending
+--abandoned-by NAME`; see [local restore recovery](off-host-backup.md#restore-occurrences-and-destination-admission).
+Its JSON receipt has `source`, `occurrence_id`, `abandoned_by`, `abandoned_at`
+(an RFC 3339 time), `staging`, `staging_removed`, `archive` and `warnings`.
+It carries no `schema_version`. `source` retains the pending local-file selector
+and replacement intent; `occurrence_id` names the archived attempt, even when
+the active record returns to an earlier completed occurrence. `warnings` is an
+array of strings; `staging_removed` is a boolean. Abandoning takes no
+`--origin-retired-by`.
 Holding the push lock and contacting no target, it refuses without a
 non-blank name free of control characters
 (`backup_restore_abandoner_unstated`), when no restore is pending

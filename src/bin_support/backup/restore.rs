@@ -28,8 +28,9 @@ use engram::{
         CopyKind,
         record::StoredManifest,
         restore::{
-            AbandonError, RestoreRecord, RestoreRecords, RestoreState, archive_abandoned_pending,
-            keep_completed_record, pending_ways_on, read_restore_record, write_restore_record,
+            AbandonError, RestoreRecord, RestoreRecords, RestoreSource, RestoreState,
+            archive_abandoned_pending, keep_completed_record, read_restore_record,
+            write_restore_record,
         },
         target::{PushLock, RECORD_FORMAT_VERSION, RecordPaths, Statement},
     },
@@ -50,6 +51,9 @@ use super::{
 /// take it for a store.
 const STAGING_PREFIX: &str = ".backup-restore-";
 const STAGING_SUFFIX: &str = ".staging";
+
+mod local;
+pub(crate) use local::{abandon_local, restore_local};
 
 /// How a restore runs.
 pub(crate) struct RestoreSettings {
@@ -84,6 +88,8 @@ pub(crate) enum Stop {
     AfterPending,
     /// After the move, before the record is marked completed.
     AfterMove,
+    /// After local replacement checkpoints the old store, before the rename.
+    AfterCheckpoint,
     /// The completed record cannot be written after checking the installed store.
     FailCompletionWrite,
     /// The first pending record cannot be published.
@@ -177,7 +183,7 @@ pub(crate) fn restore(
             return RestoreRun::failed(unreadable_record(&path, &reason));
         }
         RestoreRecords::Recorded(record) if record.state == RestoreState::Pending => {
-            if record.copy != copy {
+            if record.source.copy() != Some(copy) {
                 return RestoreRun::failed(pending_other(&record));
             }
             if !occupied.is_empty() {
@@ -286,7 +292,8 @@ fn switch_staging(
                     "backup_restore_pending_mismatch",
                     format!(
                         "the copy fetched again for the pending restore of {} has SHA-256 {sha256}, not the pending copy's {}; {unchanged}",
-                        record.copy, record.sha256
+                        record.source.copy().unwrap_or("local file"),
+                        record.sha256
                     ),
                 ),
                 staging,
@@ -401,53 +408,26 @@ fn install(
     if let Some(failure) = project_problem(&report, project) {
         return Err(removing_staging(failure, staging));
     }
-    let record = pending.unwrap_or_else(|| RestoreRecord {
+    let mut record = pending.unwrap_or_else(|| RestoreRecord {
         format_version: RECORD_FORMAT_VERSION,
         occurrence_id: uuid::Uuid::now_v7(),
         project: project.0.clone(),
-        copy: manifest.copy.clone(),
-        sha256: report.manifest.file_sha256.clone(),
-        origin_host: manifest.capture.host_name.clone(),
-        origin_retired: Statement {
-            by: by.to_owned(),
-            at: now,
+        source: RestoreSource::Copy {
+            copy: manifest.copy.clone(),
+            origin_host: manifest.capture.host_name.clone(),
+            origin_retired: Statement {
+                by: by.to_owned(),
+                at: now,
+            },
         },
+        sha256: report.manifest.file_sha256.clone(),
         staging: staging.display().to_string(),
         state: RestoreState::Pending,
         pending_at: Utc::now(),
         completed_at: None,
+        previous_completed: None,
     });
-    let kept_record =
-        match earlier.map(|earlier| keep_completed_record(home, project, lock, earlier)) {
-            None => None,
-            Some(Ok(kept)) => Some(kept),
-            Some(Err(error)) => {
-                return Err(removing_staging(
-                    ReadFailure::new(error.code(), error.to_string()),
-                    staging,
-                ));
-            }
-        };
-    #[cfg(test)]
-    if settings.stop == Some(Stop::FailPendingWrite) {
-        return Err(removing_staging(
-            ReadFailure::new("test_stop", "the pending record was not written"),
-            staging,
-        ));
-    }
-    if let Err(error) = write_restore_record(home, project, lock, &record) {
-        return Err(removing_staging(
-            ReadFailure::new(error.code(), error.to_string()),
-            staging,
-        ));
-    }
-    #[cfg(test)]
-    if settings.stop == Some(Stop::AfterPending) {
-        return Err(ReadFailure::new(
-            "test_stop",
-            "stopped after the pending record",
-        ));
-    }
+    let kept_record = publish_pending(home, project, lock, earlier, &mut record, settings)?;
     // A store that appeared since the first look is never replaced.
     let occupied = occupied(database);
     if !occupied.is_empty() {
@@ -481,6 +461,68 @@ fn install(
     })
 }
 
+/// Publishes a checked staging file before either installation policy mutates
+/// the destination. A failure after publication leaves the occurrence pending.
+fn publish_pending(
+    home: &Path,
+    project: &ProjectId,
+    lock: &PushLock,
+    earlier: Option<&RestoreRecord>,
+    record: &mut RestoreRecord,
+    settings: &RestoreSettings,
+) -> Result<Option<PathBuf>, ReadFailure> {
+    #[cfg(not(test))]
+    let _ = settings;
+    let staging = Path::new(&record.staging);
+    let kept_record =
+        match earlier.map(|earlier| keep_completed_record(home, project, lock, earlier)) {
+            None => None,
+            Some(Ok(kept)) => Some(kept),
+            Some(Err(error)) => {
+                return Err(removing_staging(
+                    ReadFailure::new(error.code(), error.to_string()),
+                    staging,
+                ));
+            }
+        };
+    if let (Some(earlier), Some(kept)) = (earlier, &kept_record) {
+        record.previous_completed = Some(engram::backup::restore::PreviousRestore {
+            occurrence_id: earlier.occurrence_id,
+            file: kept
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| {
+                    ReadFailure::new(
+                        "backup_record_invalid",
+                        "the kept restore filename is not Unicode",
+                    )
+                })?
+                .to_owned(),
+        });
+    }
+    #[cfg(test)]
+    if settings.stop == Some(Stop::FailPendingWrite) {
+        return Err(removing_staging(
+            ReadFailure::new("test_stop", "the pending record was not written"),
+            staging,
+        ));
+    }
+    if let Err(error) = write_restore_record(home, project, lock, record) {
+        return Err(removing_staging(
+            ReadFailure::new(error.code(), error.to_string()),
+            staging,
+        ));
+    }
+    #[cfg(test)]
+    if settings.stop == Some(Stop::AfterPending) {
+        return Err(ReadFailure::new(
+            "test_stop",
+            "stopped after the pending record",
+        ));
+    }
+    Ok(kept_record)
+}
+
 /// Finishes a restore whose earlier run moved the copy into place but did not
 /// mark it completed: only when the store holds exactly the recorded bytes,
 /// with nothing beside it but what a read leaves, an empty write-ahead log and
@@ -499,7 +541,8 @@ fn complete_interrupted(
         let mut failure = store_exists(database, occupied);
         failure.message = format!(
             "{}; it is not taken for the pending restore of copy {}: {why}",
-            failure.message, record.copy
+            failure.message,
+            record.source.copy().unwrap_or("local file")
         );
         failure
     };
@@ -556,12 +599,47 @@ fn finish(
     home: &Path,
     project: &ProjectId,
     lock: &PushLock,
-    mut record: RestoreRecord,
+    record: RestoreRecord,
     report: RestoreCopyReport,
     installed: RestoreCopyReport,
     completed_interrupted: bool,
 ) -> Result<Restored, ReadFailure> {
     let installed = installed.manifest;
+    let (copy, origin_host, retired_by) = match &record.source {
+        RestoreSource::Copy {
+            copy,
+            origin_host,
+            origin_retired,
+        } => (copy.clone(), origin_host.clone(), origin_retired.by.clone()),
+        RestoreSource::LocalFile { .. } => {
+            return Err(ReadFailure::new(
+                "backup_restore_pending_other",
+                "the pending restore is a local file",
+            ));
+        }
+    };
+    let record = complete_record(home, project, lock, record, &installed)?;
+    Ok(Restored {
+        copy,
+        store: installed.path,
+        bytes: installed.file_bytes,
+        sha256: record.sha256,
+        origin_host,
+        origin_retired_by: retired_by,
+        report,
+        completed_interrupted,
+        kept_record: None,
+    })
+}
+
+/// Completes the same occurrence only after installation's checked bytes match.
+fn complete_record(
+    home: &Path,
+    project: &ProjectId,
+    lock: &PushLock,
+    mut record: RestoreRecord,
+    installed: &engram::storage::BackupManifest,
+) -> Result<RestoreRecord, ReadFailure> {
     if installed.file_sha256 != record.sha256 {
         return Err(ReadFailure::new(
             "backup_restore_check_failed",
@@ -573,19 +651,10 @@ fn finish(
     }
     record.state = RestoreState::Completed;
     record.completed_at = Some(Utc::now());
+    record.previous_completed = None;
     write_restore_record(home, project, lock, &record)
         .map_err(|error| ReadFailure::new(error.code(), error.to_string()))?;
-    Ok(Restored {
-        copy: record.copy,
-        store: installed.path,
-        bytes: installed.file_bytes,
-        sha256: record.sha256,
-        origin_host: record.origin_host,
-        origin_retired_by: record.origin_retired.by,
-        report,
-        completed_interrupted,
-        kept_record: None,
-    })
+    Ok(record)
 }
 
 /// The operator's statement that the origin store will never run again.
@@ -1051,15 +1120,7 @@ pub(crate) fn abandon_pending(
     abandoned_by: Option<&str>,
     settings: &RestoreSettings,
 ) -> Result<Abandonment, ReadFailure> {
-    let by = match abandoned_by {
-        Some(by) if !by.trim().is_empty() && !by.chars().any(char::is_control) => by,
-        _ => {
-            return Err(ReadFailure::new(
-                "backup_restore_abandoner_unstated",
-                "--abandoned-by must name the operator who abandons the pending restore, without control characters",
-            ));
-        }
-    };
+    let by = abandonment_statement(abandoned_by)?;
     let paths = RecordPaths::new(home, project, CopyKind::Store);
     let lock = PushLock::try_acquire(&paths)
         .map_err(|error| ReadFailure::new(error.code(), error.to_string()))?;
@@ -1075,7 +1136,7 @@ pub(crate) fn abandon_pending(
             ));
         }
     };
-    if record.copy != copy {
+    if record.source.copy() != Some(copy) {
         return Err(pending_other(&record));
     }
     let occupied = occupied(database);
@@ -1087,22 +1148,72 @@ pub(crate) fn abandon_pending(
         );
         return Err(failure);
     }
+    let archived = archive_pending(
+        home,
+        project,
+        &lock,
+        &record,
+        by,
+        settings,
+        AbandonPolicy::EmptyDestination,
+    )?;
+    Ok(Abandonment {
+        copy: copy.to_owned(),
+        abandoned_by: by.to_owned(),
+        abandoned_at: archived.at,
+        staging: archived.staging,
+        staging_removed: archived.staging_removed,
+        archive: archived.archive,
+        warnings: archived.warnings,
+    })
+}
+
+struct PendingArchive {
+    at: DateTime<Utc>,
+    staging: PathBuf,
+    staging_removed: bool,
+    archive: PathBuf,
+    warnings: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+enum AbandonPolicy {
+    EmptyDestination,
+    Local { restore_previous: bool },
+}
+
+/// Source-specific admission precedes the same owned cleanup and archive writer.
+fn archive_pending(
+    home: &Path,
+    project: &ProjectId,
+    lock: &PushLock,
+    record: &RestoreRecord,
+    by: &str,
+    settings: &RestoreSettings,
+    policy: AbandonPolicy,
+) -> Result<PendingArchive, ReadFailure> {
+    let cleanup_after_archive = matches!(policy, AbandonPolicy::Local { .. });
+    let restore_previous = matches!(
+        policy,
+        AbandonPolicy::Local {
+            restore_previous: true
+        }
+    );
     let staging = PathBuf::from(&record.staging);
-    let owned = owned_staging(home, project, &staging).map_err(|mut failure| {
+    let mut owned = owned_staging(home, project, &staging).map_err(|mut failure| {
         failure.message = format!("{}; the restore stays pending", failure.message);
         failure
     })?;
     let stands = owned.is_some();
-    if let Some(owned) = owned {
+    let remove = |owned: OwnedStaging| -> io::Result<()> {
         #[cfg(test)]
-        let removed = if settings.stop == Some(Stop::FailCleanup) {
-            Err(io::Error::other("stopped by a test"))
-        } else {
-            owned.remove(settings)
-        };
-        #[cfg(not(test))]
-        let removed = owned.remove(settings);
-        removed.map_err(|source| {
+        if settings.stop == Some(Stop::FailCleanup) {
+            return Err(io::Error::other("stopped by a test"));
+        }
+        owned.remove(settings)
+    };
+    if !cleanup_after_archive && let Some(owned) = owned.take() {
+        remove(owned).map_err(|source| {
             ReadFailure::new(
                 "backup_io",
                 format!(
@@ -1121,14 +1232,14 @@ pub(crate) fn abandon_pending(
             },
         ))
     } else {
-        archive_abandoned_pending(home, project, &lock, by, at)
+        archive_abandoned_pending(home, project, lock, by, at, restore_previous)
     };
     #[cfg(not(test))]
     let archived = {
         let _ = settings;
-        archive_abandoned_pending(home, project, &lock, by, at)
+        archive_abandoned_pending(home, project, lock, by, at, restore_previous)
     };
-    let removed_note = if stands {
+    let removed_note = if stands && !cleanup_after_archive {
         format!(
             "; its staging file {} was already removed",
             staging.display()
@@ -1137,15 +1248,22 @@ pub(crate) fn abandon_pending(
         String::new()
     };
     match archived {
-        Ok(archived) => Ok(Abandonment {
-            copy: record.copy,
-            abandoned_by: by.to_owned(),
-            abandoned_at: at,
-            staging,
-            staging_removed: stands,
-            archive: archived.archive,
-            warnings: archived.warnings,
-        }),
+        Ok(mut archived) => {
+            let mut staging_removed = stands;
+            if let Some(owned) = owned
+                && let Err(error) = remove(owned)
+            {
+                staging_removed = false;
+                archived.warnings.push(format!("the restore was abandoned, but its staging file {} could not be removed: {error}", staging.display()));
+            }
+            Ok(PendingArchive {
+                at,
+                staging,
+                staging_removed,
+                archive: archived.archive,
+                warnings: archived.warnings,
+            })
+        }
         Err(AbandonError::Archive(error)) => Err(ReadFailure::new(
             error.code(),
             format!(
@@ -1158,6 +1276,16 @@ pub(crate) fn abandon_pending(
                 "the pending restore was archived at {}, but {error}; the restore stays pending and is not abandoned, and abandoning it can be run again{removed_note}",
                 archive.display()
             ),
+        )),
+    }
+}
+
+fn abandonment_statement(by: Option<&str>) -> Result<&str, ReadFailure> {
+    match by {
+        Some(by) if !by.trim().is_empty() && !by.chars().any(char::is_control) => Ok(by),
+        _ => Err(ReadFailure::new(
+            "backup_restore_abandoner_unstated",
+            "--abandoned-by must name the operator who abandons the pending restore, without control characters",
         )),
     }
 }
@@ -1176,10 +1304,13 @@ fn pending_other(record: &RestoreRecord) -> ReadFailure {
     ReadFailure::new(
         "backup_restore_pending_other",
         format!(
-            "a restore of copy {} is pending since {}; {}",
-            record.copy,
+            "a restore of {} is pending since {}; {}",
+            record
+                .source
+                .copy()
+                .map_or_else(|| "a local file".to_owned(), |copy| format!("copy {copy}")),
             record.pending_at.to_rfc3339(),
-            pending_ways_on(&record.copy, Some(&record.origin_retired.by))
+            record.source.ways_on()
         ),
     )
 }
