@@ -9,12 +9,13 @@ export function registerAclReader(test, support) {
     cleanupDeniedResources,
     writeProject,
     daclWithoutAutoInherited,
+    HANG_GUARD_MS,
   } = support;
   test("ACL reader separates delayed startup from each read and reuses one process", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const fixture = fakeAclReader(t);
     const captured = fixture.reader.read("capture");
-    t.mock.timers.tick(14999);
+    t.mock.timers.tick(HANG_GUARD_MS - 1);
     fixture.child.stdout.emit("data", Buffer.from("rea"));
     fixture.child.stdout.emit("data", Buffer.from("dy\r\n"));
     await drainAclEvents();
@@ -53,7 +54,7 @@ export function registerAclReader(test, support) {
       assert.equal(error.cause.code, "ETIMEDOUT");
       return true;
     });
-    t.mock.timers.tick(15000);
+    t.mock.timers.tick(HANG_GUARD_MS);
     await refused;
     assert.equal(denied, false);
     assert.equal(denial.applied, false);
@@ -88,7 +89,7 @@ export function registerAclReader(test, support) {
       deleteRoot: () => { removed.push("root"); }, deleteHome: () => { removed.push("home"); },
     });
     await drainAclEvents();
-    t.mock.timers.tick(15000);
+    t.mock.timers.tick(HANG_GUARD_MS);
     const result = await cleanup;
     assert.equal(setDacl, "D:(A;;FA;;;BA)");
     assert.equal(result.errors[0].code, "ROOT_PROBE_ACL_TIMEOUT");
@@ -157,7 +158,7 @@ export function registerAclReader(test, support) {
       deleteRoot: () => { removed.push("root"); }, deleteHome: () => { removed.push("home"); },
     });
     await drainAclEvents();
-    t.mock.timers.tick(14999);
+    t.mock.timers.tick(HANG_GUARD_MS - 1);
     assert.equal(fixture.kills, 0);
     assert.deepEqual(removed, []);
     fixture.child.emit("close", 0, null);
@@ -173,7 +174,7 @@ export function registerAclReader(test, support) {
     const fixture = fakeAclReader(t, { endCloses: false });
     fixture.child.stdout.emit("data", Buffer.from("ready\n"));
     const closed = fixture.reader.close();
-    t.mock.timers.tick(15000);
+    t.mock.timers.tick(HANG_GUARD_MS);
     await assert.rejects(closed, { code: "ROOT_PROBE_ACL_TIMEOUT", phase: "shutdown" });
     assert.equal(fixture.kills, 1);
     assert.equal(fixture.reader.result.signal, "SIGTERM");
@@ -236,11 +237,11 @@ export function registerAclReader(test, support) {
       assert.match(error.errors[1].message, /closure unconfirmed/u);
       return true;
     });
-    t.mock.timers.tick(15000);
+    t.mock.timers.tick(HANG_GUARD_MS);
     await drainAclEvents();
     t.mock.timers.tick(1000);
     await drainAclEvents();
-    t.mock.timers.tick(1000);
+    t.mock.timers.tick(HANG_GUARD_MS);
     await refused;
     assert.equal(fixture.kills, 2);
     const result = await cleanupDeniedResources({

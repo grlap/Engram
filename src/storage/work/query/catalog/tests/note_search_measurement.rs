@@ -9,6 +9,7 @@
     reason = "the manual acceptance measurement must refuse an unoptimized runner"
 )]
 fn note_index_copy_no_match_measurement() {
+    let _real = crate::storage::search_budget::real_elapsed();
     assert!(
         !cfg!(debug_assertions),
         "use the optimized measurement build"
@@ -124,6 +125,7 @@ fn note_index_copy_no_match_measurement() {
 #[test]
 #[ignore = "explicit supported-copy comparison; private store bytes stay under target/tmp"]
 fn note_search_supported_copy_calibration() {
+    let _real = crate::storage::search_budget::real_elapsed();
     let path = snapshot_path();
     let before = file_digest(&path);
     let project = ProjectId(std::env::var("ENGRAM_NOTE_SEARCH_PROJECT").unwrap());
@@ -268,6 +270,7 @@ fn note_search_backup_source_preflight() {
 #[test]
 #[ignore = "manual query-only copy measurement: supply snapshot, project, text and time"]
 fn note_search_live_copy_measurement() {
+    let _real = crate::storage::search_budget::real_elapsed();
     let path = snapshot_path();
     let before = file_digest(&path);
     let project = ProjectId(std::env::var("ENGRAM_NOTE_SEARCH_PROJECT").unwrap());

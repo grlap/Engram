@@ -132,7 +132,7 @@ thread_local! {
     #[cfg(test)]
     static TEST_LIMITS: std::cell::Cell<Option<Limits>> = const { std::cell::Cell::new(None) };
     #[cfg(test)]
-    static TEST_ELAPSED_FROZEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static TEST_REAL_ELAPSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The same admission allowance follows the request into its blocking worker.
@@ -151,13 +151,16 @@ impl Request {
         let limits = Limits::default();
         #[cfg(test)]
         let limits = TEST_LIMITS.with(std::cell::Cell::get).unwrap_or_default();
-        #[cfg(not(test))]
         let allowance = Allowance::new(limits.elapsed);
+        // How fast the host runs never decides a test's search: elapsed time
+        // stands still, so only the counted dimensions can refuse it. The
+        // elapsed refusal has its own tests, on a zero limit or injected clock,
+        // and one test keeps the real clock through the line above.
         #[cfg(test)]
-        let allowance = if TEST_ELAPSED_FROZEN.with(std::cell::Cell::get) {
-            Allowance::with_clock(limits.elapsed, frozen_instant)
+        let allowance = if TEST_REAL_ELAPSED.with(std::cell::Cell::get) {
+            allowance
         } else {
-            Allowance::new(limits.elapsed)
+            Allowance::with_clock(limits.elapsed, frozen_instant)
         };
         Self {
             allowance,
@@ -224,12 +227,7 @@ impl TestPause {
 
 #[cfg(test)]
 impl Request {
-    /// The test holds a paused search for as long as its other steps take, so
-    /// the hold is scheduling, not search work, and never spends the allowance.
     pub(crate) fn with_pause(mut self, pause: Option<Arc<TestPause>>) -> Self {
-        if pause.is_some() {
-            self.allowance = Allowance::with_clock(self.limits.elapsed, frozen_instant);
-        }
         self.pause = pause;
         self
     }
@@ -241,27 +239,26 @@ fn frozen_instant() -> std::time::Instant {
     *FROZEN.get_or_init(std::time::Instant::now)
 }
 
-/// Keeps the elapsed dimension still for searches started on this thread, for
-/// a test whose subject is not time. The SQL step, record and byte dimensions
-/// stay live; the elapsed refusal has its own injected-clock tests.
+/// Puts searches started on this thread on the real clock, for an explicitly
+/// run measurement of whether a search fits the production elapsed budget.
 #[cfg(test)]
-pub(crate) struct FrozenElapsed {
+pub(crate) struct RealElapsed {
     previous: bool,
     _thread: PhantomData<Rc<()>>,
 }
 
 #[cfg(test)]
-pub(crate) fn freeze_elapsed() -> FrozenElapsed {
-    FrozenElapsed {
-        previous: TEST_ELAPSED_FROZEN.with(|slot| slot.replace(true)),
+pub(crate) fn real_elapsed() -> RealElapsed {
+    RealElapsed {
+        previous: TEST_REAL_ELAPSED.with(|slot| slot.replace(true)),
         _thread: PhantomData,
     }
 }
 
 #[cfg(test)]
-impl Drop for FrozenElapsed {
+impl Drop for RealElapsed {
     fn drop(&mut self) {
-        TEST_ELAPSED_FROZEN.with(|slot| slot.set(self.previous));
+        TEST_REAL_ELAPSED.with(|slot| slot.set(self.previous));
     }
 }
 

@@ -1,10 +1,15 @@
+// Ends a child that will never close. It says nothing about speed: on a loaded
+// host a clean shutdown can take far longer than it does alone.
+const SHUTDOWN_HANG_GUARD_MS = 60000;
+
 // Lifecycle evidence for children owned by the control dogfood fixtures.
 // Attach immediately after spawn, before readiness or any writes.
 export class FixtureChild {
-  constructor(child, label, stderr = () => "") {
+  constructor(child, label, stderr = () => "", { shutdownGuardMs = SHUTDOWN_HANG_GUARD_MS } = {}) {
     this.child = child;
     this.label = label;
     this.stderr = stderr;
+    this.shutdownGuardMs = shutdownGuardMs;
     this.started = performance.now();
     this.events = {};
     this.latestRequest = null;
@@ -94,10 +99,10 @@ export class FixtureChild {
         this.killIfRunning();
         reject(this.error("shutdown timed out", this.firstError));
       };
-      const timer = setTimeout(timeout, 5000);
+      const timer = setTimeout(timeout, this.shutdownGuardMs);
       this.closed.then(() => {
         clearTimeout(timer);
-        if (this.events.close - this.events.close_call > 5000) timeout();
+        if (this.events.close - this.events.close_call > this.shutdownGuardMs) timeout();
         else finish();
       });
       if (!this.hasExited && this.child.exitCode === null && this.child.signalCode === null) {

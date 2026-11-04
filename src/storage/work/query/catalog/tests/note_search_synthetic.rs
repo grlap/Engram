@@ -79,6 +79,7 @@ fn seed_history(store: &mut SqliteStore, items: usize, records: usize) -> (Proje
 #[ignore = "explicit generated-history measurement; no live store or source path"]
 fn note_search_synthetic_history_measurement() {
     const RECORDS: usize = 256;
+    let _real = crate::storage::search_budget::real_elapsed();
     let items = std::env::var("ENGRAM_SYNTHETIC_SEARCH_ITEMS")
         .ok()
         .map_or(512, |value| value.parse::<usize>().unwrap());

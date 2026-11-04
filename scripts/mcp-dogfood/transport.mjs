@@ -39,7 +39,7 @@ test("MCP close watchdog leaves room beyond the rmcp drain bound", async (t) => 
 });
 
 test("MCP close deadline and diagnostic classifications", async (t) => {
-  assert.equal(CLOSE_BUDGET_MS, 30000);
+  assert.equal(CLOSE_BUDGET_MS, 60000);
   async function fixture(context) {
     context.mock.timers.enable({ apis: ["setTimeout"] });
     let milliseconds = 0;
@@ -315,7 +315,7 @@ test("MCP shutdown tracing emits milestones only when enabled", async (t) => {
 }
 
 export function registerPhaseDiagnostics(support) {
-  const { HASH, phaseTraceLine, test, fixtureHome, removeFixtureHomes, structured, receipt, buildAndInit, cliWord, cliJson, McpClient } = support;
+  const { HASH, phaseTraceLine, test, fixtureHome, removeFixtureHomes, structured, receipt, wait, buildAndInit, cliWord, cliJson, McpClient } = support;
 test("compact mutation wire carries one item and shrinks the full-context fixture", async (t) => {
   const engramHome = fixtureHome("engram-mcp-economy-", t);
   const session = "economy-agent";
@@ -650,22 +650,38 @@ test("a client's own stall is not attributed to the server or its send", async (
     await client.initialize();
     const work_ref = receipt(await client.call("add", { title: "Stalled reader", acceptance: ["read"] })).work.short_ref;
     const id = client.nextId;
+    // The client stops reading before it asks and stays stopped until the
+    // server's record of the call has arrived on the other pipe. The server's
+    // phases can then hold none of the client's stall, however long it lasts,
+    // because the record was finished while the stall was still going on.
+    client.child.stdout.pause();
+    let settled = false;
+    let refusal;
+    // A gap since the previous call: a server charging its idle time would then
+    // report more than the window below. Load can only hide that, never cause it.
+    await wait(200);
     const started = performance.now();
-    const answered = client.request("tools/call", { name: "show", arguments: { work_ref } });
-    // The client's event loop stalls. The request may only leave when the
-    // stall ends, so the server's own phases stay short however long the
-    // client waited.
-    const stall = 1500;
-    const until = performance.now() + stall;
-    while (performance.now() < until) { /* busy client */ }
+    const answered = client
+      .request("tools/call", { name: "show", arguments: { work_ref } })
+      .then(() => { settled = true; }, (error) => { refusal = error; });
+    while (!client.phaseRecords.has(id) && refusal === undefined) {
+      await wait(10);
+    }
+    if (refusal !== undefined) throw refusal;
+    // Everything the server timed happened inside this window, which load only widens.
+    const window = performance.now() - started;
+    const record = client.phaseRecords.get(id);
+    assert.equal(settled, false, "the client had read nothing yet");
+    await wait(50);
+    assert.equal(settled, false, "the client is still not reading");
+    client.child.stdout.resume();
     await answered;
+    if (refusal !== undefined) throw refusal;
+    assert.equal(settled, true);
     const elapsed = performance.now() - started;
     await client.close();
-    const record = client.phaseRecords.get(id);
-    assert.ok(record, `no phase record for call ${id}`);
-    assert.ok(elapsed >= stall, `client elapsed ${elapsed}`);
-    assert.ok(record.handler_total_ms < stall / 2, JSON.stringify(record));
-    assert.ok(record.wire_encode_send_inclusive_ms < stall / 2, JSON.stringify(record));
+    assert.ok(record.handler_total_ms <= window, `${window}ms window: ${JSON.stringify(record)}`);
+    assert.ok(record.wire_encode_send_inclusive_ms <= window, `${window}ms window: ${JSON.stringify(record)}`);
     t.diagnostic(`client elapsed ${elapsed.toFixed(1)}ms; server handler ${record.handler_total_ms.toFixed(2)}ms; send ${record.wire_encode_send_inclusive_ms.toFixed(2)}ms`);
   } catch (error) {
     failure = error;

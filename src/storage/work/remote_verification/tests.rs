@@ -1086,6 +1086,52 @@ fn remote_verification_doctor_names_a_forged_decision() {
 }
 
 #[test]
+fn remote_verification_doctor_names_a_missing_origin_without_writing() {
+    let mut f = fixture();
+    let receipt = f.record().unwrap();
+    assert!(receipt.qualification.credited);
+    assert!(receipt.origin.is_some());
+    f.assert_healthy();
+    let missing = ObjectId::mint();
+    let existing: i64 = f
+        .store
+        .connection
+        .query_row(
+            "SELECT count(*) FROM objects WHERE object_id = ?1",
+            [missing.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(existing, 0);
+    tamper(
+        &f,
+        &receipt.operation,
+        &[("/origin", serde_json::json!(missing))],
+    );
+    let before = f.snapshot();
+    assert_doctor_names(&f, "remote_verification:origin_differs");
+    assert_eq!(f.snapshot(), before);
+}
+
+#[test]
+fn remote_verification_doctor_names_an_origin_of_the_wrong_kind_without_writing() {
+    let mut f = fixture();
+    let receipt = f.record().unwrap();
+    assert!(receipt.qualification.credited);
+    assert!(receipt.origin.is_some());
+    assert_ne!(receipt.origin.as_ref(), Some(&receipt.operation));
+    f.assert_healthy();
+    tamper(
+        &f,
+        &receipt.operation,
+        &[("/origin", serde_json::json!(receipt.operation))],
+    );
+    let before = f.snapshot();
+    assert_doctor_names(&f, "remote_verification:origin_differs");
+    assert_eq!(f.snapshot(), before);
+}
+
+#[test]
 fn remote_verification_doctor_finds_credit_with_no_minted_verification() {
     // A real mismatch rewritten to qualify: the decision now agrees with the
     // facts, so only the missing verification shows it never earned credit.

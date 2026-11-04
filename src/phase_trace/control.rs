@@ -278,6 +278,16 @@ pub struct ControlTrace {
     timing: ProgressTiming,
     state: Mutex<State>,
     changed: Condvar,
+    #[cfg(test)]
+    encoded: EncodeCount,
+}
+
+/// Every encoding of a trace line, whether it is emitted or not.
+#[cfg(test)]
+#[derive(Default)]
+struct EncodeCount {
+    calls: std::sync::atomic::AtomicU64,
+    bytes: std::sync::atomic::AtomicU64,
 }
 
 impl std::fmt::Debug for ControlTrace {
@@ -317,6 +327,8 @@ impl ControlTrace {
                 stopped: false,
             }),
             changed: Condvar::new(),
+            #[cfg(test)]
+            encoded: EncodeCount::default(),
         });
         // Without a monitor there are no progress lines; terminal lines
         // still come.
@@ -517,7 +529,7 @@ impl ControlTrace {
             );
         }
         line.insert("dropped_lines".into(), self.lines.dropped().into());
-        bounded(&line)
+        self.bounded(&line)
     }
 
     fn render_terminal(
@@ -559,36 +571,55 @@ impl ControlTrace {
             }
         }
         line.insert("dropped_lines".into(), self.lines.dropped().into());
-        bounded(&line)
+        self.bounded(&line)
+    }
+
+    /// One line within the bound, its newline included. Every field is fixed in
+    /// size, so the fallback never fires in practice.
+    fn bounded(&self, line: &serde_json::Map<String, serde_json::Value>) -> String {
+        let text = self.encode(&serde_json::Value::Object(line.clone()));
+        if text.len() < MAX_LINE_BYTES {
+            return text;
+        }
+        let mut short = serde_json::Map::new();
+        for key in [
+            "engram_control_phase_trace",
+            "pid",
+            "seq",
+            "ordinal",
+            "kind",
+            "state",
+        ] {
+            if let Some(value) = line.get(key) {
+                short.insert(key.into(), value.clone());
+            }
+        }
+        short.insert("oversized".into(), true.into());
+        self.encode(&serde_json::Value::Object(short))
+    }
+
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::unused_self,
+            reason = "the test build counts each encoding on the trace"
+        )
+    )]
+    fn encode(&self, line: &serde_json::Value) -> String {
+        let text = line.to_string();
+        #[cfg(test)]
+        {
+            use std::sync::atomic::Ordering;
+            self.encoded.calls.fetch_add(1, Ordering::SeqCst);
+            let bytes = u64::try_from(text.len()).expect("a line's length fits");
+            self.encoded.bytes.fetch_add(bytes, Ordering::SeqCst);
+        }
+        text
     }
 }
 
 fn millis(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1_000.0
-}
-
-/// One line within the bound, its newline included. Every field is fixed in
-/// size, so the fallback never fires in practice.
-fn bounded(line: &serde_json::Map<String, serde_json::Value>) -> String {
-    let text = serde_json::Value::Object(line.clone()).to_string();
-    if text.len() < MAX_LINE_BYTES {
-        return text;
-    }
-    let mut short = serde_json::Map::new();
-    for key in [
-        "engram_control_phase_trace",
-        "pid",
-        "seq",
-        "ordinal",
-        "kind",
-        "state",
-    ] {
-        if let Some(value) = line.get(key) {
-            short.insert(key.into(), value.clone());
-        }
-    }
-    short.insert("oversized".into(), true.into());
-    serde_json::Value::Object(short).to_string()
 }
 
 /// Writes each progress line when it falls due, under the state lock, until

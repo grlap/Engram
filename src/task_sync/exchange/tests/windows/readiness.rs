@@ -278,8 +278,9 @@ pub(super) fn process_fixture() {
     let mut state = lock_state_or_panic(&root, "grandchild");
     trace.stage(state.stage());
     while state != LockState::Held {
+        // Inside the supervisor's guard, so this report of the state still arrives.
         assert!(
-            start.elapsed() < Duration::from_secs(8),
+            start.elapsed() < HANG_GUARD / 2,
             "root readiness expired ({state:?}): {}",
             snapshot(&root)
         );

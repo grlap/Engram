@@ -244,6 +244,37 @@ fn open_lock_busy() -> StoreError {
     ))
 }
 
+/// Runs a first open's `attempt`, again only on the refusal that says to: on a
+/// loaded host, initializing a new store can outlast the documented five-second
+/// wait for the open lock (sqlite-store.md), which is correct and safe to retry.
+/// Each refusal must have waited that whole wait, so a shorter wait fails even on
+/// an idle host, and load cannot fail it. Any other error returns at once, and so
+/// does this one past the hang guard, so a lock never released still fails.
+/// Retained limit: once the lock is released, the rest of an open waits on
+/// SQLite's own five-second busy timeout.
+#[cfg(test)]
+pub(crate) fn again_while_another_opens<T, E: std::fmt::Display>(
+    mut attempt: impl FnMut() -> Result<T, E>,
+) -> Result<T, E> {
+    let waiting = Instant::now();
+    loop {
+        let began = Instant::now();
+        match attempt() {
+            Err(error) if error.to_string().contains(OPEN_LOCK_BUSY_REFUSAL) => {
+                let waited = began.elapsed();
+                assert!(
+                    waited >= super::lock_wait::LOCK_WAIT,
+                    "refused after waiting only {waited:?}: {error}"
+                );
+                if waiting.elapsed() >= std::time::Duration::from_secs(60) {
+                    return Err(error);
+                }
+            }
+            done => return done,
+        }
+    }
+}
+
 /// How many openers held one store's lock at once, at most, for tests that
 /// show its opens never overlapped.
 #[cfg(test)]

@@ -628,9 +628,10 @@ use: {kind: committed_input, expected_commit, purpose: verification|landing_gate
 `exit` must be stated and may be null; other optional members are omitted when
 missing, never null. Missing facts stay missing and are never guessed. A
 malformed value or an unknown member answers `invalid_request` and records
-nothing. A well-formed finish time ahead of this host's clock is not malformed: it
-stays provisional, visible and uncredited, with a null origin, `result_not_pass`
-and the time in `detail`, and a later delivery settles it under a new key.
+nothing. A well-formed finish time ahead of this host's clock is not malformed:
+it stays provisional, visible and uncredited, with a null origin. If the earlier
+qualification reasons below do not apply, it receives `result_not_pass` and the
+time in `detail`. A later delivery can settle it under a new key.
 
 **Send the complete retained facts the first time.** The first authoritative facts
 are the run's terminal, so a later delivery of the same run with more facts, such
@@ -651,12 +652,13 @@ there.
 A `remote_terminal_origin` holds one run's terminal facts, once per project,
 host and run. Its uniqueness is a `remote_verification_origin` row in
 `work_operation_results`, keyed by project, host and run. Only `terminal` true
-with verdict PASS, FAIL or INTERRUPTED, and a finish time this host's clock has
-reached, settles it, so a running, unknown or inferred snapshot never fixes the
-terminal, and a later real terminal of the same run settles without conflict. The launcher really emits UNKNOWN with `terminal`
-true (`input-unverified`) and INTERRUPTED with `terminal` false
-(`heartbeat-stale`); both stay provisional. Two different terminals for one run
-are `result_conflict`, and the first stays.
+with verdict PASS, FAIL or INTERRUPTED, and no finish time ahead of this host's
+clock, settles it. A missing finish time does not prevent settlement, but it
+prevents credit. A running, unknown or inferred snapshot never fixes the terminal,
+and a later real terminal of the same run settles without conflict. The launcher
+really emits UNKNOWN with `terminal` true (`input-unverified`) and INTERRUPTED
+with `terminal` false (`heartbeat-stale`); both stay provisional. Two different
+terminals for one run are `result_conflict`, and the first stays.
 
 A `remote_verification_association` records one delivery: the request as stated,
 the origin, the decision and the local `associated_at`. The run's own
@@ -679,16 +681,18 @@ One decision serves every use. Reasons apply in this order:
    named root has moved.
 3. `result_conflict`: the run already has different terminal facts.
 4. `not_full_mode`: a focused pass stays visible author evidence only.
-5. `untracked_debris_pending_disposition`: a native FAIL whose reason is
-   `new-untracked-only`.
-6. `result_not_pass`: anything but a terminal PASS with exit 0 and a finish time
-   this host's clock has reached.
-7. `commit_mismatch`: for `committed_input`, the tested commit is missing or
+5. `result_not_pass`: a finish time ahead of this host's clock.
+6. `untracked_debris_pending_disposition`: an authoritative terminal native FAIL
+   whose reason is `new-untracked-only`.
+7. `result_not_pass`: anything else but a terminal PASS with exit 0 and a finish
+   time. The debris case above is the exception checked before these ordinary
+   result predicates.
+8. `commit_mismatch`: for `committed_input`, the tested commit is missing or
    another commit, even with the same tree.
-8. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
+9. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
    another tree.
-9. `fingerprint_missing_or_changed`: for `landing_gate` only, the before and after
-   fingerprints are not both present and equal.
+10. `fingerprint_missing_or_changed`: for `landing_gate` only, the before and after
+    fingerprints are not both present and equal.
 
 `detail` names missing data; there are no further reasons. An ordinary
 `verification` has no fingerprint rule at all, not even for differing optional
@@ -715,8 +719,16 @@ remote finish time with local times, and nothing attests that time. A remote clo
 running behind can withhold credit. A remote clock running ahead can make an old
 run appear to follow a later local change: a run that ended at T, a local change at
 T+30 and a delivery at T+60 pass every guard if the origin's clock is 45 seconds
-ahead. The exact-input guarantee does not depend on clocks: credit names the exact
-commit or tree the run tested, and evaluation and completion compare exactly that.
+ahead. Credit names the exact commit or tree the run tested. Evaluation compares
+that input exactly, independently of clock ordering. When a bound completion
+criterion selects registered Git verification, completion with a declared input
+compares it with that verification. Without a declaration, unevaluated completion
+uses that registered verification's own input for this comparison; it does not
+independently check the checkout's input. The applicable time and position guards
+still apply. A criterion that selects no registered Git verification does not run
+this declared-Git-input check. Non-registered verification, including a bound copy,
+keeps its source-revision matching against the available root sightings, measured
+sightings and latest source changes.
 
 `verification_bind` can copy a credited remote check through its ordinary bound
 branch, under its usual measurement rules. Crediting another item with the result

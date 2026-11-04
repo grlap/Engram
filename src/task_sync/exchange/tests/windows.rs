@@ -11,6 +11,20 @@ pub(in crate::task_sync::exchange) mod readiness;
 use super::super::fixture_diagnostics as diagnostics;
 use readiness::descendant_holds_lock;
 
+/// Ends a stuck fixture. It says nothing about speed: these spawn real processes,
+/// and a loaded host can take far longer over that than an idle one.
+const HANG_GUARD: Duration = Duration::from_secs(60);
+
+/// The supervisor of a whole owned group, whose launch counts bound its work. It
+/// is a hang guard at the highest deadline `RunLimits` accepts, not a limit on
+/// that work; the group's own product requests keep their ordinary deadline.
+fn supervisor_limits() -> RunLimits {
+    RunLimits {
+        deadline: Duration::from_secs(120),
+        ..RunLimits::default()
+    }
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn phase(&self, phase: &str) {
@@ -54,7 +68,7 @@ impl Fixture {
                     break;
                 }
                 assert!(
-                    start.elapsed() < Duration::from_secs(3),
+                    start.elapsed() < HANG_GUARD,
                     "descendant survived job close: {name}"
                 );
                 std::thread::sleep(Duration::from_millis(5));
@@ -136,13 +150,13 @@ async fn task_exchange_windows_cancellation_kills_descendants_and_inherited_pipe
     let fixture = Fixture::new();
     let cancel = Cancellation::default();
     let limits = RunLimits {
-        deadline: Duration::from_secs(15),
+        deadline: HANG_GUARD,
         ..RunLimits::default()
     };
     let command = fixture.command("block");
     let run = super::super::execute(command, limits, &cancel);
     tokio::pin!(run);
-    // The existing 15s execution watchdog bounds startup and cancellation.
+    // The execution watchdog bounds startup and cancellation.
     readiness::while_running(&fixture.0, run.as_mut())
         .await
         .unwrap();
@@ -158,7 +172,7 @@ async fn task_exchange_windows_root_exit_and_output_failure_reap_helpers() {
     for mode in ["root-exits", "flood", "stderr-flood", "secret-error"] {
         let fixture = Fixture::new();
         let limits = RunLimits {
-            deadline: Duration::from_secs(12),
+            deadline: HANG_GUARD,
             stdout_bytes: 4096,
             stderr_bytes: 4096,
         };
@@ -185,19 +199,30 @@ async fn task_exchange_windows_deadline_and_dropped_future_close_the_job() {
     let fixture = Fixture::new();
     let cancel = Cancellation::default();
     let limits = RunLimits {
-        deadline: Duration::from_secs(12),
+        deadline: HANG_GUARD,
         ..RunLimits::default()
     };
-    let result = super::super::execute(fixture.command("block"), limits, &cancel).await;
-    readiness::finished(&fixture.0, &result);
-    assert_eq!(result.unwrap_err(), RunError::Deadline);
+    // The deadline falls once both descendants exist, whatever the host's speed.
+    let both_held = |_: &[u8], _: &[u8]| readiness::descendant_holds_lock(&fixture.0, "grandchild");
+    let output = super::super::process::execute_diagnostic(
+        fixture.command("block"),
+        limits,
+        &cancel,
+        Some(&both_held),
+    )
+    .await;
+    assert_eq!(output.result.unwrap_err(), RunError::Deadline);
     fixture.assert_released();
+    // The clock's own expiry, on a child that never ends, at any host speed.
+    let fixture = Fixture::new();
+    let short = RunLimits {
+        deadline: Duration::from_millis(200),
+        ..RunLimits::default()
+    };
+    let result = super::super::execute(fixture.command("block"), short, &cancel).await;
+    assert_eq!(result.unwrap_err(), RunError::Deadline);
     let fixture = Fixture::new();
     let command = fixture.command("block");
-    let limits = RunLimits {
-        deadline: Duration::from_secs(15),
-        ..RunLimits::default()
-    };
     {
         let run = super::super::execute(command, limits, &cancel);
         tokio::pin!(run);

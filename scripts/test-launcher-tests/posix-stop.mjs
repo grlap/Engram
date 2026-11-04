@@ -28,7 +28,7 @@ test("POSIX absence observation requires ESRCH, including after Darwin EPERM", a
 });
 
 if (["darwin", "linux"].includes(process.platform)) for (const full of [false, true]) {
-  test(`POSIX detached ${full ? "full" : "focused"} stop cleans its group before notification`, { timeout: 60_000 }, async (t) => {
+  test(`POSIX detached ${full ? "full" : "focused"} stop cleans its group before notification`, { timeout: 180_000 }, async (t) => {
     await repository(async (root) => {
       const local = copyLauncher(root, (source) => source.replace("if (request.full) {", "if (false) {"));
       const module = await import(pathToFileURL(local).href);
@@ -84,7 +84,7 @@ if (["darwin", "linux"].includes(process.platform)) for (const full of [false, t
   });
 }
 
-if (["darwin", "linux"].includes(process.platform)) test("POSIX normal command exit cleans residual group members", { timeout: 60_000 }, async (t) => {
+if (["darwin", "linux"].includes(process.platform)) test("POSIX normal command exit cleans residual group members", { timeout: 180_000 }, async (t) => {
   await repository(async (root) => {
     const broker = parkingBroker(t, root);
     const runDir = await createRun({ root, detached: true, stages: [stage("unused")] }, env);
@@ -110,7 +110,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX normal command e
 });
 
 if (["darwin", "linux"].includes(process.platform)) for (const errorCode of ["EPERM", "EACCES"]) {
-  test(`POSIX terminating ${errorCode} needs helper exit and group absence`, { timeout: 60_000 }, async () => {
+  test(`POSIX terminating ${errorCode} needs helper exit and group absence`, { timeout: 180_000 }, async () => {
     await repository(async (root) => {
       copyLauncher(root);
       const helper = join(root, "scripts", "launcher-process-group.mjs");
@@ -135,7 +135,7 @@ if (["darwin", "linux"].includes(process.platform)) for (const errorCode of ["EP
   });
 }
 
-if (["darwin", "linux"].includes(process.platform)) test("POSIX private-channel EOF cleans the helper's owned group", { timeout: 60_000 }, async (t) => {
+if (["darwin", "linux"].includes(process.platform)) test("POSIX private-channel EOF cleans the helper's owned group", { timeout: 180_000 }, async (t) => {
   await repository(async (root) => {
     const broker = parkingBroker(t, root);
     let helper, completion;
@@ -171,7 +171,8 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX private-channel 
       if (helper?.connected) helper.disconnect();
       await broker.close(); // release the parked fixture even if an assertion failed
       if (completion) {
-        try { await wait(completion, AbortSignal.timeout(5000)); }
+        // A hang guard for the parked fixture, which says nothing about speed.
+        try { await wait(completion, AbortSignal.timeout(60000)); }
         catch (error) {
           // Only this test's still-owned child handle, never a recovered PID
           // or process group. Failure remains a failure after fixture cleanup.
@@ -184,7 +185,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX private-channel 
   });
 });
 
-if (["darwin", "linux"].includes(process.platform)) test("POSIX absent helper receipt never becomes confirmed cleanup", { timeout: 60_000 }, async () => {
+if (["darwin", "linux"].includes(process.platform)) test("POSIX absent helper receipt never becomes confirmed cleanup", { timeout: 180_000 }, async () => {
   await repository(async (root) => {
     copyLauncher(root);
     const helper = join(root, "scripts", "launcher-process-group.mjs");
@@ -211,7 +212,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX stop retained be
   });
 });
 
-if (["darwin", "linux"].includes(process.platform)) test("POSIX normal exit isolates IPC and does not wait for an escaped fixture", { timeout: 60_000 }, async (t) => {
+if (["darwin", "linux"].includes(process.platform)) test("POSIX normal exit isolates IPC and does not wait for an escaped fixture", { timeout: 180_000 }, async (t) => {
   await repository(async (root) => {
     // This broker and the detached witness are deliberately outside the
     // helper's group. Fixture cleanup owns them, never the stop adapter.
@@ -258,7 +259,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX normal exit isol
   });
 });
 
-if (["darwin", "linux"].includes(process.platform)) test("POSIX unsolicited helper stop cannot pass a TERM-clean workload", { timeout: 60_000 }, async (t) => {
+if (["darwin", "linux"].includes(process.platform)) test("POSIX unsolicited helper stop cannot pass a TERM-clean workload", { timeout: 180_000 }, async (t) => {
   await repository(async (root) => {
     const broker = parkingBroker(t, root);
     let pending;
@@ -281,7 +282,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX unsolicited help
   });
 });
 
-if (["darwin", "linux"].includes(process.platform)) test("POSIX stop after helper startup prevents workload admission", { timeout: 60_000 }, async () => {
+if (["darwin", "linux"].includes(process.platform)) test("POSIX stop after helper startup prevents workload admission", { timeout: 180_000 }, async () => {
   await repository(async (root) => {
     const local = copyLauncher(root);
     const path = join(root, "scripts", "launcher-stop.mjs");

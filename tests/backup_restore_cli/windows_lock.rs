@@ -22,7 +22,7 @@ fn holder_process() {
     let mut barrier =
         TcpStream::connect(std::env::var("ENGRAM_RESTORE_LOCK_BARRIER").unwrap()).unwrap();
     barrier
-        .set_read_timeout(Some(Duration::from_secs(30)))
+        .set_read_timeout(Some(Duration::from_secs(60)))
         .unwrap();
     let paths = RecordPaths::new(
         std::path::Path::new(&home),
@@ -68,7 +68,7 @@ fn another_process_excludes_restore_until_release_or_process_death() {
                 .spawn()
                 .unwrap(),
         );
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + Duration::from_secs(60);
         let mut barrier = loop {
             match listener.accept() {
                 Ok((stream, _)) => break stream,
@@ -86,7 +86,7 @@ fn another_process_excludes_restore_until_release_or_process_death() {
         // Windows inherits the listener's nonblocking mode on accept.
         barrier.set_nonblocking(false).unwrap();
         barrier
-            .set_read_timeout(Some(Duration::from_secs(30)))
+            .set_read_timeout(Some(Duration::from_secs(60)))
             .unwrap();
         let mut ready = [0];
         barrier.read_exact(&mut ready).unwrap();
@@ -111,7 +111,7 @@ fn another_process_excludes_restore_until_release_or_process_death() {
             holder.0.wait().unwrap();
             // Windows may release a terminated process's lock after wait returns.
             // Bound that wait and permit only the still-held lock to refuse.
-            let release_deadline = Instant::now() + Duration::from_secs(30);
+            let release_deadline = Instant::now() + Duration::from_secs(60);
             loop {
                 match PushLock::try_acquire(&paths) {
                     Ok(lock) => {

@@ -206,7 +206,9 @@ for (const code of ["EPERM", "EACCES", "EBUSY"]) test(`stop lock retries ${code}
   });
 });
 
-test("a leftover stop lock cannot discard a terminal result or its notification", { timeout: 20_000 }, async () => {
+// Retained limit: this waits out the launcher's real 5 s stop lock, which is product
+// behaviour. The test timeout is only a hang guard well above it.
+test("a leftover stop lock cannot discard a terminal result or its notification", { timeout: 120_000 }, async () => {
   await repository(async (root) => {
     const runDir = await createRun({ root, full: true, detached: true, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
     const path = join(runDir, "request.json");
@@ -458,7 +460,7 @@ if (process.platform === "win32") test("helper compilation failure is definite s
   });
 });
 
-if (process.platform === "win32") test("native cleanup confirmation returns an unconfirmed receipt when membership never settles", { timeout: 30_000 }, async () => {
+if (process.platform === "win32") test("native cleanup confirmation returns an unconfirmed receipt when membership never settles", { timeout: 120_000 }, async () => {
   await repository(async (root) => {
     const local = copyLauncher(root);
     const path = join(root, "scripts", "launcher-process-job.cs");
@@ -595,7 +597,8 @@ if (process.platform === "win32") for (const ancestor of ["target", "target/tmp"
   });
 }
 
-if (process.platform === "win32") test("a leftover stop lock after a clean stage preserves the passing terminal save", { timeout: 30_000 }, async () => {
+// Retained limit: the same real 5 s stop lock, under the same hang guard.
+if (process.platform === "win32") test("a leftover stop lock after a clean stage preserves the passing terminal save", { timeout: 120_000 }, async () => {
   await repository(async (root) => {
     const { module, runDir } = await containedFixture(root, (source) => source,
       "require('node:fs').writeFileSync(process.env.FIXTURE_STOP_LOCK, 'stale');");

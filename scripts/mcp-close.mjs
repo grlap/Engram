@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { cpus } from "node:os";
 
-// Locked rmcp 3.1.4 may drain for 5 s; allow headroom for store/runtime close.
-export const CLOSE_BUDGET_MS = 30000;
+// Ends a server that will never close; it says nothing about speed. Locked rmcp
+// 3.1.4 may drain for 5 s, and a loaded host takes longer over the store and
+// runtime close.
+export const CLOSE_BUDGET_MS = 60000;
 const OBSERVATION_MS = 15000;
 const DIAGNOSTIC_MS = 2000;
 const SHUTDOWN_STAGES = new Set([

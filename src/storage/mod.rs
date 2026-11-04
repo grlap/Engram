@@ -30,6 +30,8 @@ mod open_schema;
 #[cfg(test)]
 pub(crate) use open_schema::CopyProbePoint;
 #[cfg(test)]
+pub(crate) use open_schema::again_while_another_opens;
+#[cfg(test)]
 pub(crate) use open_schema::open_lock_overlap;
 pub use open_schema::{
     CopyInterrupt, LiveAuthority, RestoreCopyReport, VerifiedStoreCopy, installed_sidecar_problem,

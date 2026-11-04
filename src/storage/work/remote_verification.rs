@@ -475,11 +475,19 @@ pub(super) fn association_problem_on(
     let conflicting = match &record.origin {
         None => false,
         Some(origin) => {
-            let origin: RemoteTerminalOrigin = super::feeds::load_typed_work_object(
+            let origin: RemoteTerminalOrigin = match super::feeds::load_typed_work_object(
                 connection,
                 origin,
                 REMOTE_TERMINAL_ORIGIN_KIND,
-            )?;
+            ) {
+                Ok(origin) => origin,
+                Err(
+                    StoreError::InvalidWorkProjection(_) | StoreError::ObjectKindMismatch { .. },
+                ) => {
+                    return Ok(Some("origin_differs"));
+                }
+                Err(error) => return Err(error),
+            };
             if origin.project_id != record.project_id
                 || origin_key(&origin.project_id, &origin.completion)?
                     != origin_key(&record.project_id, completion)?

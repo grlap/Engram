@@ -147,7 +147,7 @@ export function registerRequestMessageTests(support) {
     }));
   });
 
-  for (const echo of ["match", "missing", "different"]) test(`request-message actual detached worker handles ${echo} confirmation without fallback`, { timeout: 60_000 }, async () => {
+  for (const echo of ["match", "missing", "different"]) test(`request-message actual detached worker handles ${echo} confirmation without fallback`, { timeout: 120_000 }, async () => {
     await fixture(async ({ root, marker, marking, fixtureEnv }) => host(fixtureEnv, async ({ state, hostEnv }) => {
       const runDir = await createRun({ root, full: true, detached: true, notifyTo: "fixture-parent",
         requestMessageId: relay(), stages: [marking] }, hostEnv);

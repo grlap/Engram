@@ -49,7 +49,9 @@ const JOURNAL_DIAGNOSTIC_LIMIT = 16;
 // exits at end of input.
 const CONTROL_ARGS = ["control", "--work-session", "--actor-id", "probe", "--session-id", "probe-control"];
 const WARNING = "could not probe the filesystem identity";
-const ACL_TIMEOUT_MS = 15000;
+// Ends a wait for what will never come: a deaf watcher, a stuck reader, a child
+// that will not close. It fails the probe then, and says nothing about speed.
+const HANG_GUARD_MS = 60000;
 const RESOLVED_POLICY = /^(case_fold|case_sensitive), windows alias rules (on|off)$/u;
 
 export function childEnv() {
@@ -67,7 +69,7 @@ export function run(home, projectFile, args, extra = {}) {
     cwd: extra.cwd ?? repo,
     env: childEnv(),
     encoding: "utf8",
-    timeout: extra.timeout ?? 30000,
+    timeout: extra.timeout ?? HANG_GUARD_MS,
   });
   if (result.error) throw result.error;
   return result;
@@ -172,7 +174,7 @@ export class RootJournal extends EventEmitter {
     const path = join(this.directory, filename);
     const from = this.cursor();
     const startedAt = performance.now();
-    const deadline = this.startupNow() + 5000;
+    const deadline = this.startupNow() + HANG_GUARD_MS;
     let owned = false;
     let writes = 0;
     let failure;
@@ -195,7 +197,7 @@ export class RootJournal extends EventEmitter {
           let message = "journal startup: timed out waiting for its primary watcher callback";
           try {
             message += `; journal=${JSON.stringify({
-              ...this.timeoutDiagnostic(startedAt, 5000),
+              ...this.timeoutDiagnostic(startedAt, HANG_GUARD_MS),
               startup: { filename, fromIndex: from, writes },
             })}`;
           } catch {
@@ -236,7 +238,7 @@ export class RootJournal extends EventEmitter {
         };
         this.on("event", onEvent);
         this.watcher.once("close", onClose);
-        timeout = setTimeout(expired, 5000);
+        timeout = setTimeout(expired, HANG_GUARD_MS);
         writer = setInterval(pulse, 25);
         pulse();
       });
@@ -367,7 +369,7 @@ export class RootJournal extends EventEmitter {
         this.events.some(
           (event) => event.index >= from && event.filename === filename,
         ),
-      5000,
+      HANG_GUARD_MS,
       `barrier ${label}`,
       { filename, path, fromIndex: from, writeStartedAt, writeFinishedAt },
     );
@@ -383,7 +385,7 @@ export class RootJournal extends EventEmitter {
 export async function waitForChildClose(
   closed,
   kill,
-  { gracefulMs = 10000, forcedMs = 1000 } = {},
+  { gracefulMs = HANG_GUARD_MS, forcedMs = HANG_GUARD_MS } = {},
 ) {
   const timed = async (milliseconds) => {
     let timer;
@@ -512,7 +514,7 @@ export function assertExactOwnedFixture(directory) {
 function pwsh(command, extraEnv) {
   const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], {
     encoding: "utf8",
-    timeout: ACL_TIMEOUT_MS,
+    timeout: HANG_GUARD_MS,
     env: { ...childEnv(), ...extraEnv },
   });
   if (result.error) throw result.error;
@@ -523,7 +525,7 @@ function pwsh(command, extraEnv) {
 }
 
 // One process per fixture; readiness does not spend the ACL operation's allowance.
-// Keep the former 15 s allowance for each observed phase, with no retries.
+// Each observed phase gets the hang guard, with no retries.
 const ACL_READER_COMMAND = `
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $ErrorActionPreference = 'Stop'
@@ -593,7 +595,7 @@ export class WindowsAclReader {
       this.pending = { phase, operation, resolveResponse, reject };
       this.pending.timer = this.setTimer(() => this.fail(Object.assign(new Error("observation deadline elapsed"), {
         code: "ETIMEDOUT",
-      })), ACL_TIMEOUT_MS);
+      })), HANG_GUARD_MS);
     });
   }
 
@@ -638,10 +640,13 @@ export class WindowsAclReader {
       if (!this.result) {
         if (force) this.child.kill();
         else this.child.stdin.end("close\n");
-        if (!await this.waitClosed(force ? 1000 : ACL_TIMEOUT_MS)) {
+        // A forced close only waits a moment before killing again; running out
+        // of it fails nothing. What fails is closure never being confirmed, which
+        // keeps the fixtures: that proves the reader ended, not how fast.
+        if (!await this.waitClosed(force ? 1000 : HANG_GUARD_MS)) {
           const deadline = this.error("shutdown", "closure", Object.assign(new Error("shutdown deadline elapsed"), { code: "ETIMEDOUT" }));
           this.child.kill();
-          if (!await this.waitClosed(1000)) throw this.error("shutdown", "closure", new Error("reader closure unconfirmed after kill"));
+          if (!await this.waitClosed(HANG_GUARD_MS)) throw this.error("shutdown", "closure", new Error("reader closure unconfirmed after kill"));
           if (!force) throw deadline;
         }
       }
@@ -770,7 +775,7 @@ async function calibrateJournal(journal, projectDir) {
   writeFileSync(marker, "calibration");
   await journal.waitFor(
     () => journal.probeEvents(started, journal.cursor()).length > 0,
-    5000,
+    HANG_GUARD_MS,
     "calibration marker",
   );
   rmSync(marker);
@@ -992,7 +997,7 @@ export class McpSession {
       };
       const timer = setTimeout(() => {
         fail(new Error(`MCP timeout ${method}: ${this.stderr}`));
-      }, 15000);
+      }, HANG_GUARD_MS);
       this.pending.set(String(id), {
         resolve: (value) => {
           if (settled) return;
@@ -1166,6 +1171,7 @@ export function registerRootProbeTests(test) {
     addedRef,
     run,
     BARRIER_PREFIX,
+    HANG_GUARD_MS,
     ...createTestSupport({ RootJournal, WindowsAclReader }),
   };
   registerJournalStartup(test, support);

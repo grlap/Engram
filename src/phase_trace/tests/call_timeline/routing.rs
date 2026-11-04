@@ -3,9 +3,7 @@ use rmcp::ServiceExt as _;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
 
 async fn bounded<T>(future: impl Future<Output = T>) -> T {
-    tokio::time::timeout(Duration::from_secs(10), future)
-        .await
-        .unwrap()
+    tokio::time::timeout(HANG_GUARD, future).await.unwrap()
 }
 
 #[tokio::test]

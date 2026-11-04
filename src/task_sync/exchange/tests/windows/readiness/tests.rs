@@ -11,7 +11,7 @@ async fn task_exchange_windows_readiness_reports_early_execution_errors() {
         };
         let cancel = Cancellation::default();
         let limits = RunLimits {
-            deadline: Duration::from_secs(15),
+            deadline: HANG_GUARD,
             ..RunLimits::default()
         };
         let run = crate::task_sync::exchange::execute(command, limits, &cancel);

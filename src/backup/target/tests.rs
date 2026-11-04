@@ -475,7 +475,7 @@ fn start_holder(home: &Path) -> Holder {
 fn after_release<T>(mut holder: Holder, word: impl Fn() -> Result<T, TargetError>) -> T {
     holder.child.kill().unwrap();
     holder.child.wait().unwrap();
-    let give_up = Instant::now() + Duration::from_secs(30);
+    let give_up = Instant::now() + Duration::from_secs(60);
     loop {
         match word() {
             Ok(value) => return value,

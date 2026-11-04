@@ -3,10 +3,11 @@ use crate::{McpServer, ProjectId, SessionId};
 use rmcp::ServiceExt as _;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
 
+/// Ends a stuck test; it says nothing about speed.
+const HANG_GUARD: Duration = Duration::from_secs(60);
+
 async fn bounded<T>(future: impl Future<Output = T>) -> T {
-    tokio::time::timeout(Duration::from_secs(10), future)
-        .await
-        .unwrap()
+    tokio::time::timeout(HANG_GUARD, future).await.unwrap()
 }
 
 async fn line(writer: &mut (impl tokio::io::AsyncWrite + Unpin), value: &serde_json::Value) {
@@ -36,7 +37,7 @@ async fn routed(server: McpServer, observer: Arc<Observer>) -> Vec<String> {
     let (reader, mut writer) = tokio::io::split(client);
     let mut reader = tokio::io::BufReader::new(reader).lines();
     line(&mut writer, &serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"diagnostics-test","version":"0"}}})).await;
-    let _initialized = tokio::time::timeout(Duration::from_secs(10), reader.next_line())
+    let _initialized = tokio::time::timeout(HANG_GUARD, reader.next_line())
         .await
         .unwrap()
         .unwrap()
@@ -59,7 +60,7 @@ async fn routed(server: McpServer, observer: Arc<Observer>) -> Vec<String> {
     ] {
         line(&mut writer, &serde_json::json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":arguments}})).await;
         replies.push(
-            tokio::time::timeout(Duration::from_secs(10), reader.next_line())
+            tokio::time::timeout(HANG_GUARD, reader.next_line())
                 .await
                 .unwrap()
                 .unwrap()
@@ -67,7 +68,7 @@ async fn routed(server: McpServer, observer: Arc<Observer>) -> Vec<String> {
         );
     }
     writer.shutdown().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(10), serving)
+    tokio::time::timeout(HANG_GUARD, serving)
         .await
         .unwrap()
         .unwrap();

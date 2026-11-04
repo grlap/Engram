@@ -211,6 +211,8 @@ fn known_holder_is_identified_without_changing_the_note_budget() {
         else {
             panic!("expected native admission refusal: {error:?}");
         };
+        // Retained limit: each pass really waits out the product's 10 s note
+        // window, and the window's start must leave it some budget.
         assert!(budget_ms > 0 && budget_ms <= 10000);
         assert_eq!(timeout(&store), 5000);
         assert!(store.connection.is_autocommit());

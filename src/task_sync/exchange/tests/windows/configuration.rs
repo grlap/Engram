@@ -24,8 +24,9 @@ struct Group {
     product: usize,
 }
 
-// Each owned child retains the ordinary watchdog. Bound sequential work instead
-// of raising request deadlines when another case needs more Git launches.
+// The launch counts bound each group's work, and its product requests keep their
+// ordinary deadline. Bound sequential work instead of raising those deadlines
+// when another case needs more Git launches. The supervisor is only a hang guard.
 const GROUPS: [Group; 2] = [
     Group {
         name: "capture-helper-drift",
@@ -140,7 +141,7 @@ pub(super) async fn run_groups() {
         let supervisor_before = launches().1;
         let started = Instant::now();
         let result =
-            diagnostics::supervise(command, RunLimits::default(), &Cancellation::default()).await;
+            diagnostics::supervise(command, supervisor_limits(), &Cancellation::default()).await;
         let supervisor_ms = started.elapsed().as_millis();
         if let Err(report) = &result {
             panic!(

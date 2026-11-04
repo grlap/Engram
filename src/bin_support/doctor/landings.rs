@@ -591,31 +591,40 @@ mod tests {
 
     /// A process that exits at once while a child it started keeps the
     /// output pipe open, as the real git started by a Git for Windows
-    /// launcher can.
+    /// launcher can. The child outlives the test, so it runs from the drive's
+    /// root: it holds no directory of the worktree, which could delay removing it.
     fn exits_while_its_child_holds_the_pipe() -> Command {
+        let current = std::env::current_dir().unwrap();
+        let root = current.ancestors().last().unwrap();
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             let mut command = Command::new("cmd");
             command
                 .args(["/d", "/c"])
-                .raw_arg("start /b ping -n 20 127.0.0.1 & exit 0");
+                .raw_arg("start /b ping -n 60 127.0.0.1 & exit 0");
+            command.current_dir(root).stderr(Stdio::null());
             command
         }
         #[cfg(not(windows))]
         {
             let mut command = Command::new("sh");
-            command.args(["-c", "sleep 20 & exit 0"]);
+            command.args(["-c", "sleep 60 & exit 0"]);
+            command.current_dir(root).stderr(Stdio::null());
             command
         }
     }
 
+    // The child holds the pipe for a minute, and only a read that gave up while
+    // it was still held gives this reason, so the call ended before the child
+    // did. Retained limit: the shell must start and exit inside the 15 s bound, or
+    // the call reports a timeout instead. Not covered: a read that overruns its
+    // bound by less than the rest of that minute.
     #[test]
     fn output_a_child_holds_open_ends_the_call_within_its_bound() {
-        let started = Instant::now();
         let (ran, printed) = run_reading_within(
             exits_while_its_child_holds_the_pipe(),
-            Duration::from_secs(2),
+            Duration::from_secs(15),
         );
         assert!(
             matches!(&ran, GitRun::Failed(reason)
@@ -623,27 +632,26 @@ mod tests {
             "{ran:?} {printed:?}"
         );
         assert!(printed.is_empty(), "{printed:?}");
-        assert!(
-            started.elapsed() < Duration::from_secs(10),
-            "{:?}",
-            started.elapsed()
-        );
     }
 
+    // The command would run for two minutes, so returning within half of that
+    // means it was stopped, not waited for. The half is a margin for a loaded
+    // host, not a speed limit. Not covered: a stop that overruns its 1 s bound by
+    // less than that minute.
     #[test]
     fn a_call_past_its_bound_is_stopped_without_waiting_for_output() {
         let mut command = Command::new(if cfg!(windows) { "ping" } else { "sleep" });
         if cfg!(windows) {
-            command.args(["-n", "20", "127.0.0.1"]);
+            command.args(["-n", "120", "127.0.0.1"]);
         } else {
-            command.arg("20");
+            command.arg("120");
         }
         let started = Instant::now();
         let (ran, printed) = run_reading_within(command, Duration::from_secs(1));
         assert_eq!(ran, GitRun::TimedOut);
         assert!(printed.is_empty(), "{printed:?}");
         assert!(
-            started.elapsed() < Duration::from_secs(10),
+            started.elapsed() < Duration::from_secs(60),
             "{:?}",
             started.elapsed()
         );

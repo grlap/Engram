@@ -56,6 +56,8 @@ mod verification_applicability;
 use lock_wait::LockWait;
 use open_guard::OpenGuard;
 #[cfg(test)]
+pub(crate) use open_guard::again_while_another_opens;
+#[cfg(test)]
 pub(crate) use open_guard::overlap as open_lock_overlap;
 use protocol_retry::{OpenPhase, ProtocolRetry};
 pub use restore_copy::{LiveAuthority, RestoreCopyReport, installed_sidecar_problem};

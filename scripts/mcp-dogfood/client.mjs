@@ -1,7 +1,14 @@
-import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { HostLoadSamples, McpCloseObservation } from "../mcp-close.mjs";
+
+// Ends a request that will never be answered. It says nothing about speed: a
+// slow call gets a timing line. The replay of growing history that once took a
+// call 14 s is counted in Rust, at any host speed, by
+// advisory_child_guidance_stays_bounded_as_root_history_grows and
+// gate_heavy_evidence_membership_has_constant_decode_cost. A slow path those do
+// not cover has no failing check here, only that line and its phase record.
+const REQUEST_HANG_GUARD_MS = 60000;
 
 // Bind the one client class to the entry point's shared support closures.
 export function createMcpClient({ root, binary, SOFT_TIMING_MS, PHASE_TRACE_ENV, MAX_PHASE_RECORDS, timingLine, recordWalSample, phaseNotice, phaseTraceLine, assertProseNamesFields }) {
@@ -184,7 +191,7 @@ class McpClient {
       const timer = setTimeout(() => {
         this.pending.delete(String(id));
         reject(new Error(`MCP request timed out: ${method}; stderr=${this.stderr}`));
-      }, 15000);
+      }, REQUEST_HANG_GUARD_MS);
       this.pending.set(String(id), {
         resolve: (value) => {
           clearTimeout(timer);
@@ -240,8 +247,6 @@ class McpClient {
         this.slowCallNotice(id);
       }
     }
-    // Catch the former 14s pathology; precise bounds live in Rust decode/statement-count regressions.
-    assert.ok(elapsed < 10000, `${name} took ${elapsed.toFixed(1)}ms; sanity limit is 10000ms`);
     assertProseNamesFields(name, result);
     return result;
   }

@@ -6,6 +6,10 @@ use std::collections::VecDeque;
 
 mod call_timeline;
 
+/// Ends a stuck test. It says nothing about speed: on a loaded host every wait
+/// here may take far longer than it does alone.
+pub(super) const HANG_GUARD: Duration = Duration::from_secs(60);
+
 fn at(second: i64) -> chrono::DateTime<Utc> {
     Utc.timestamp_opt(1_790_000_000 + second, 0)
         .single()
@@ -155,8 +159,32 @@ fn a_traced_call_times_the_store_and_returns_the_same_result() {
     assert_eq!(peeked.backup_reminder.count, 1, "{peeked:?}");
 }
 
+thread_local! {
+    /// Told when a profiled BEGIN IMMEDIATE on this thread starts running.
+    static ON_BEGIN_IMMEDIATE: RefCell<Option<std::sync::mpsc::Sender<()>>> =
+        const { RefCell::new(None) };
+}
+
+/// SQLite's statement event comes after the profile clock starts and before
+/// the statement's first lock attempt.
+pub(super) fn observe_begin_immediate_start(event: &rusqlite::trace::TraceEvent<'_>) {
+    if let rusqlite::trace::TraceEvent::Stmt(statement, _) = event
+        && statement.sql().trim_start().starts_with("BEGIN IMMEDIATE")
+    {
+        ON_BEGIN_IMMEDIATE.with_borrow(|observer| {
+            if let Some(observer) = observer {
+                let _ = observer.send(());
+            }
+        });
+    }
+}
+
 // A writer holding the lock shows up in begin_immediate, not elsewhere: the
-// call waits in BEGIN IMMEDIATE until the other writer commits.
+// call waits in BEGIN IMMEDIATE until the other writer commits. The hold is
+// counted from that statement's start, so a host too busy to reach it soon
+// cannot shorten the wait it measures. Retained limit: the releaser must commit
+// inside the product's 5 s busy timeout, about 4.6 s after its hold, or the
+// write is refused.
 #[test]
 fn a_contending_writer_raises_begin_immediate() {
     let agent = agent("phase-trace-contention");
@@ -168,16 +196,24 @@ fn a_contending_writer_raises_begin_immediate() {
         .execute_batch("BEGIN IMMEDIATE")
         .expect("hold the write lock");
     let held = Duration::from_millis(400);
+    let (started, waiting) = std::sync::mpsc::channel();
+    ON_BEGIN_IMMEDIATE.with_borrow_mut(|observer| *observer = Some(started));
     let releaser = std::thread::spawn(move || {
+        let observed = waiting.recv_timeout(HANG_GUARD).is_ok();
         std::thread::sleep(held);
         blocker
             .execute_batch("COMMIT")
             .expect("release the write lock");
+        observed
     });
     let ((), phases) = block_on(scoped(async {
         add(&agent, "Waits for the lock", 2);
     }));
-    releaser.join().expect("releaser");
+    ON_BEGIN_IMMEDIATE.with_borrow_mut(|observer| *observer = None);
+    assert!(
+        releaser.join().expect("releaser"),
+        "the BEGIN IMMEDIATE never started: {phases:?}"
+    );
     assert!(
         phases.begin_immediate.max >= Duration::from_millis(250),
         "{phases:?}"
@@ -270,9 +306,9 @@ fn acknowledged_flush_with_backoff(
 }
 
 #[track_caller]
-pub(super) fn assert_flushed(writer: &LineWriter, budget: Duration) {
-    if let Err(failure) = acknowledged_flush(writer, budget) {
-        panic!("phase-trace flush failed: {failure:?} (budget {budget:?})");
+pub(super) fn assert_flushed(writer: &LineWriter) {
+    if let Err(failure) = acknowledged_flush(writer, HANG_GUARD) {
+        panic!("phase-trace flush failed: {failure:?} (hang guard {HANG_GUARD:?})");
     }
 }
 
@@ -313,7 +349,6 @@ fn acknowledged_flush_reports_a_full_queue_without_replacing_its_line() {
 fn acknowledged_flush_retries_a_full_queue_then_observes_acknowledgement() {
     use std::sync::mpsc::{TryRecvError, sync_channel};
 
-    const HANG_GUARD: Duration = Duration::from_secs(60);
     let (sender, queue) = sync_channel(1);
     assert!(sender.try_send(Message::Line("queued".into())).is_ok());
     let writer = writer_with_sender(Some(sender));
@@ -419,14 +454,14 @@ fn a_failed_flush_stops_before_captured_output_is_inspected() {
     let writer = writer_with_sender(None);
     let mut inspected = false;
     let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        assert_flushed(&writer, Duration::ZERO);
+        assert_flushed(&writer);
         inspected = true;
     }))
     .expect_err("missing writer must stop capture assertions");
     let diagnostic = failure.downcast_ref::<String>().expect("flush diagnostic");
     assert_eq!(
         diagnostic,
-        "phase-trace flush failed: NoWriter (budget 0ns)"
+        &format!("phase-trace flush failed: NoWriter (hang guard {HANG_GUARD:?})")
     );
     assert!(!inspected);
 }
@@ -451,7 +486,7 @@ fn line_writer_submits_each_record_with_its_newline() {
     let record_sink = LineWriter::new(Box::new(writes.clone()), 4, "trace-record-write-test");
     let record = serde_json::json!({ "stage": "trace_flush_finished" }).to_string();
     record_sink.emit(record.clone());
-    assert_flushed(&record_sink, Duration::from_secs(5));
+    assert_flushed(&record_sink);
     assert_eq!(
         *writes.0.lock().expect("writes"),
         vec![format!("{record}\n").into_bytes()]
@@ -460,7 +495,7 @@ fn line_writer_submits_each_record_with_its_newline() {
 
 /// The lines written so far, once the writer has caught up.
 fn written(trace: &PhaseTrace, captured: &Captured) -> Vec<serde_json::Value> {
-    assert_flushed(&trace.lines, Duration::from_secs(5));
+    assert_flushed(&trace.lines);
     captured
         .lines()
         .into_iter()
@@ -506,7 +541,7 @@ fn every_record_ends_in_one_line_and_the_wait_is_bounded() {
     for id in 0..300 {
         settle(&trace, id, "note");
         if id % 50 == 49 {
-            assert_flushed(&trace.lines, Duration::from_secs(5));
+            assert_flushed(&trace.lines);
         }
     }
     assert_eq!(trace.pending.lock().unwrap().retained(), MAX_PENDING);
@@ -640,14 +675,14 @@ fn a_reused_id_never_completes_the_newest_record_by_guessing() {
 /// A sink that blocks every write until it is opened, as a stderr nobody
 /// drains does.
 #[derive(Clone)]
-struct Undrained(Arc<(Mutex<bool>, std::sync::Condvar)>);
+pub(super) struct Undrained(Arc<(Mutex<bool>, std::sync::Condvar)>);
 
 impl Undrained {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self(Arc::new((Mutex::new(false), std::sync::Condvar::new())))
     }
 
-    fn open(&self) {
+    pub(super) fn open(&self) {
         let (open, changed) = &*self.0;
         *open.lock().expect("gate") = true;
         changed.notify_all();
@@ -669,27 +704,34 @@ impl std::io::Write for Undrained {
     }
 }
 
-// A stderr nobody drains never stalls the server: settling and sending return
-// at once, the queue stays bounded, and the lines that do not fit are dropped
-// and counted.
+// A stderr nobody drains never stalls the server: the queue stays bounded, and
+// the lines that do not fit are dropped and counted. The sink stays shut until
+// the calls have finished, so finishing at all proves none of them waited on it.
 #[test]
 fn an_undrained_sink_drops_and_counts_lines_without_blocking() {
     let sink = Undrained::new();
     let trace = PhaseTrace::new(Box::new(sink.clone()), 4);
-    let started = Instant::now();
-    for id in 0..40 {
-        settle(&trace, id, "note");
-        send(&trace, id, true);
-    }
-    assert!(
-        started.elapsed() < Duration::from_secs(2),
-        "{:?}",
-        started.elapsed()
-    );
+    let (finished, done) = std::sync::mpsc::channel();
+    let finished_with_sink_shut = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            for id in 0..40 {
+                settle(&trace, id, "note");
+                send(&trace, id, true);
+            }
+            finished.send(()).expect("the test is waiting");
+        });
+        let outcome = done.recv_timeout(HANG_GUARD);
+        if outcome.is_err() {
+            // Let a blocked call return, so this scope can join and report it.
+            sink.open();
+        }
+        outcome.is_ok()
+    });
+    assert!(finished_with_sink_shut, "a call waited on the shut sink");
     // One line may be held by the blocked writer and four queued.
     assert!(trace.dropped() >= 35, "{}", trace.dropped());
     sink.open();
-    assert_flushed(&trace.lines, Duration::from_secs(5));
+    assert_flushed(&trace.lines);
 }
 
 // A record is one bounded line naming phases only. A string request id is
@@ -816,7 +858,7 @@ fn shutdown_milestones_distinguish_input_end_and_a_pending_transport_close() {
             .poll(&mut Context::from_waker(std::task::Waker::noop()))
             .is_pending()
     );
-    assert_flushed(&trace.lines, Duration::from_secs(5));
+    assert_flushed(&trace.lines);
     let before = captured.lines();
     assert_eq!(before.len(), 2);
     assert_eq!(before[0]["stage"], "input_ended");
@@ -824,7 +866,7 @@ fn shutdown_milestones_distinguish_input_end_and_a_pending_transport_close() {
     released.store(true, std::sync::atomic::Ordering::Relaxed);
     block_on(closing).expect("released close");
     trace.shutdown_stage(ShutdownStage::ServiceWaitingReturned);
-    assert_flushed(&trace.lines, Duration::from_secs(5));
+    assert_flushed(&trace.lines);
     let lines = captured.lines();
     let stages: Vec<_> = lines
         .iter()
@@ -905,7 +947,7 @@ fn retained_store_owner_is_released_only_after_the_service_join() {
         .expect("shutdown completed after retained owner release");
     runner.join().expect("shutdown runner");
 
-    assert_flushed(&trace.lines, Duration::from_secs(5));
+    assert_flushed(&trace.lines);
     let stages: Vec<_> = captured
         .lines()
         .into_iter()
@@ -1204,7 +1246,7 @@ fn a_cancelled_call_drained_after_input_ends_keeps_response_and_loses_correlatio
         });
         let (reader, mut writer) = tokio::io::split(client);
         let mut lines = tokio::io::BufReader::new(reader).lines();
-        let bound = Duration::from_secs(20);
+        let bound = HANG_GUARD;
         write_line(
             &mut writer,
             &serde_json::json!({
@@ -1346,7 +1388,7 @@ fn a_busy_timeout_is_unchanged_by_the_trace() {
     blocker
         .execute_batch("BEGIN IMMEDIATE")
         .expect("hold the write lock");
-    let ((traced, phases, traced_elapsed), (untraced, untraced_elapsed)) =
+    let ((traced, phases, traced_elapsed), (untraced, untraced_elapsed, untraced_begins)) =
         std::thread::scope(|scope| {
             let traced = scope.spawn(|| {
                 let started = Instant::now();
@@ -1356,9 +1398,16 @@ fn a_busy_timeout_is_unchanged_by_the_trace() {
                 (result, phases, started.elapsed())
             });
             let untraced = scope.spawn(|| {
+                let cost = crate::storage::work_cost::sqlite::start();
                 let started = Instant::now();
                 let result = try_add(&untraced_verbs, "Times out untraced", 4);
-                (result, started.elapsed())
+                let elapsed = started.elapsed();
+                let begins = cost
+                    .finish()
+                    .by_kind
+                    .get("begin")
+                    .map_or(0, |counters| counters.statements);
+                (result, elapsed, begins)
             });
             (
                 traced.join().expect("traced writer"),
@@ -1375,20 +1424,26 @@ fn a_busy_timeout_is_unchanged_by_the_trace() {
         format!("{:?}", traced.guidance()),
         format!("{:?}", untraced.guidance())
     );
-    // Both waited the store's busy timeout, and about equally long.
+    // Both were refused on the same configured timeout, read from their own
+    // connections, and both really waited it out.
+    let configured = |error: &crate::storage::StoreError| match error {
+        crate::storage::StoreError::WorkWriterAdmissionRefused { budget_ms, .. } => *budget_ms,
+        other => panic!("not a writer admission refusal: {other:?}"),
+    };
+    assert_eq!(configured(&traced.error), 5_000);
+    assert_eq!(configured(&untraced.error), 5_000);
     let bound = Duration::from_secs(4);
     assert!(traced_elapsed >= bound, "{traced_elapsed:?}");
     assert!(untraced_elapsed >= bound, "{untraced_elapsed:?}");
-    let difference = traced_elapsed.abs_diff(untraced_elapsed);
-    assert!(
-        difference < Duration::from_secs(2),
-        "traced {traced_elapsed:?}, untraced {untraced_elapsed:?}"
-    );
     assert_eq!(
         phases.store_open.count, 0,
         "the cached connection: {phases:?}"
     );
-    assert!(phases.begin_immediate.count >= 1, "{phases:?}");
+    // Each refusal waited once: a replayed BEGIN would wait the timeout again,
+    // with the same configured timeout. A stall on the traced path outside the
+    // sink and this statement, such as slow work around it, is not covered here.
+    assert_eq!(phases.begin_immediate.count, 1, "{phases:?}");
+    assert_eq!(untraced_begins, 1);
     assert!(phases.begin_immediate.max >= bound, "{phases:?}");
     // Every connection closes before the home goes: locals drop in reverse
     // order, the blocker and both stores first, the home last.

@@ -298,10 +298,10 @@ fn control_startup_and_admission_do_not_wait_for_build_identity() {
         );
         returned.send((caller, writer)).unwrap();
     });
-    let reader = observed.recv_timeout(Duration::from_secs(10)).unwrap();
+    let reader = observed.recv_timeout(Duration::from_secs(60)).unwrap();
     // This timeout only bounds a broken test: the initializer remains blocked
     // until the test releases it, independent of scheduling or disk speed.
-    let started = ready.recv_timeout(Duration::from_secs(10));
+    let started = ready.recv_timeout(Duration::from_secs(60));
     if let Ok((caller, writer)) = &started {
         assert_ne!(*caller, reader);
         writer.emit(&event());

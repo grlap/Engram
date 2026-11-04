@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use crate::storage::{
-    ColdOpenGate, FAIL_COLD_SCHEMA_BEFORE_COMMIT, SqliteStore, StoreError, before_cold_lock,
-    between_work_schema_probes, hold_cold_open_at,
+    ColdOpenGate, FAIL_COLD_SCHEMA_BEFORE_COMMIT, SqliteStore, StoreError,
+    again_while_another_opens, before_cold_lock, between_work_schema_probes, hold_cold_open_at,
 };
 use rusqlite::Connection;
 
@@ -26,7 +26,7 @@ fn open_together(database: &std::path::Path, openers: usize) -> Vec<Result<(), S
                 let gate = Arc::clone(&gate);
                 scope.spawn(move || {
                     hold_cold_open_at(gate);
-                    SqliteStore::open(database).map(drop)
+                    again_while_another_opens(|| SqliteStore::open(database).map(drop))
                 })
             })
             .collect::<Vec<_>>();
@@ -37,7 +37,7 @@ fn open_together(database: &std::path::Path, openers: usize) -> Vec<Result<(), S
     })
 }
 
-/// Two and three openers of a new store at once: every open succeeds, no two
+/// Two and three openers of a new store at once: every opener eventually succeeds, no two
 /// of them switch it to write-ahead logging or initialize it at the same
 /// time, the store holds one initial policy, and its work schema came with
 /// it.

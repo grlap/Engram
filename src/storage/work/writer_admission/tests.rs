@@ -145,6 +145,34 @@ fn writer_admission_preserves_custom_timeout_and_reports_ordinary_allowance() {
     }
 }
 
+// Production's own clock, with no contention: a second acquisition's allowance
+// is what the shared window has left, at least the sleep below the first. A
+// fresh window per acquisition would show the same allowance twice, breaking
+// the one window sqlite-store.md promises. Slowness only widens the gap.
+#[test]
+fn writer_admission_window_shrinks_on_the_real_clock_across_acquisitions() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let mut store = SqliteStore::open(directory.path().join("admission.db")).unwrap();
+    let budget = Duration::from_hours(1);
+    test_policy::with_writer_admission_test_policy(
+        None,
+        || {},
+        || {
+            let mut scoped = store.note_writer_admission_with_budget(budget);
+            scoped.begin_work_mutation().unwrap().commit().unwrap();
+            let first = last_writer_admission_allowance().unwrap();
+            std::thread::sleep(Duration::from_millis(20));
+            scoped.begin_work_mutation().unwrap().commit().unwrap();
+            let second = last_writer_admission_allowance().unwrap();
+            assert!(first <= budget, "{first:?}");
+            assert!(
+                first.saturating_sub(second) >= Duration::from_millis(10),
+                "first {first:?}, second {second:?}"
+            );
+        },
+    );
+}
+
 #[test]
 fn writer_admission_two_acquisitions_share_the_short_window() {
     let directory = crate::test_support::temp_home().unwrap();
@@ -152,30 +180,40 @@ fn writer_admission_two_acquisitions_share_the_short_window() {
     let mut store = SqliteStore::open(&path).unwrap();
     let contender = rusqlite::Connection::open(&path).unwrap();
     contender.execute_batch("BEGIN IMMEDIATE").unwrap();
-    let mut scoped = store.note_writer_admission_with_budget(Duration::from_millis(30));
-    let first = scoped.begin_work_mutation().unwrap_err();
-    let second = scoped.begin_work_mutation().unwrap_err();
-    let StoreError::WorkWriterAdmissionRefused {
-        budget_ms: first_budget,
-        ..
-    } = first
-    else {
-        panic!("first refusal")
-    };
-    let StoreError::WorkWriterAdmissionRefused {
-        budget_ms: second_budget,
-        ..
-    } = second
-    else {
-        panic!("second refusal")
-    };
-    assert!(first_budget <= 30 && first_budget > 0);
-    assert!(second_budget < first_budget);
-    assert_eq!(timeout(&scoped), 5000);
-    contender.execute_batch("COMMIT").unwrap();
-    // An exhausted contention allowance still permits an immediate acquisition.
-    scoped.begin_work_mutation().unwrap().commit().unwrap();
-    assert_eq!(timeout(&scoped), 5000);
-    drop(scoped);
+    // The test owns this window's time, so a fresh window would show 30 again.
+    let budget = Duration::from_millis(30);
+    test_policy::with_writer_admission_test_policy(
+        Some(budget),
+        || {},
+        || {
+            let mut scoped = store.note_writer_admission_with_budget(budget);
+            let first = scoped.begin_work_mutation().unwrap_err();
+            test_policy::advance_writer_admission_window(Duration::from_millis(10));
+            let second = scoped.begin_work_mutation().unwrap_err();
+            let StoreError::WorkWriterAdmissionRefused {
+                budget_ms: first_budget,
+                ..
+            } = first
+            else {
+                panic!("first refusal")
+            };
+            let StoreError::WorkWriterAdmissionRefused {
+                budget_ms: second_budget,
+                ..
+            } = second
+            else {
+                panic!("second refusal")
+            };
+            assert_eq!(first_budget, 30);
+            assert_eq!(second_budget, 20);
+            assert_eq!(timeout(&scoped), 5000);
+            contender.execute_batch("COMMIT").unwrap();
+            // An exhausted contention allowance still permits an immediate
+            // acquisition.
+            test_policy::advance_writer_admission_window(Duration::from_millis(20));
+            scoped.begin_work_mutation().unwrap().commit().unwrap();
+            assert_eq!(timeout(&scoped), 5000);
+        },
+    );
     assert!(store.writer_admission.is_none());
 }

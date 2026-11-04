@@ -61,10 +61,12 @@ test("registration distinguishes real case-sensitive roots and run directories",
     if (process.platform === "win32") {
       const fsutil = (action) => spawnSync("fsutil.exe", ["file", action, parent,
         ...(action === "setCaseSensitiveInfo" ? ["enable"] : [])], {
-        encoding: "utf8", windowsHide: true, timeout: 5_000, maxBuffer: 4_096,
+        encoding: "utf8", windowsHide: true, timeout: 60_000, maxBuffer: 4_096,
       });
       for (const action of ["setCaseSensitiveInfo", "queryCaseSensitiveInfo"]) {
         const result = fsutil(action);
+        // A hang fails: only fsutil being unavailable may drop this coverage.
+        assert.notEqual(result.error?.code, "ETIMEDOUT", `fsutil ${action} hung`);
         if (result.error || result.status !== 0) {
           const detail = String(result.error?.message ?? [result.stdout, result.stderr].filter(Boolean).join(" "))
             .trim().slice(0, 512);

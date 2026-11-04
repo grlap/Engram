@@ -96,7 +96,7 @@ fn kill_at(fixture: &Fixture, stage: Stage) {
     fs::remove_file(&ready).unwrap();
     // The system releases a killed holder's lock, though not necessarily by
     // the time the wait returns; what the kill left is read only once it has.
-    let give_up = Instant::now() + Duration::from_secs(30);
+    let give_up = Instant::now() + Duration::from_secs(60);
     loop {
         match PushLock::try_acquire(&fixture.paths()) {
             Ok(_) => return,

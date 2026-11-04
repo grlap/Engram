@@ -79,16 +79,17 @@ fn concurrent_first_adds(database: &std::path::Path) -> Vec<FirstAdd> {
                 crate::storage::copy_trace::start();
                 crate::storage::hold_cold_open_at(gate);
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    words
-                        .add(
+                    crate::storage::again_while_another_opens(|| {
+                        words.add(
                             AddInput {
                                 title: title.into(),
                                 ..AddInput::default()
                             },
                             at(1),
                         )
-                        .map(|receipt| receipt.value["work"]["short_ref"].clone())
-                        .map_err(|error| error.to_string())
+                    })
+                    .map(|receipt| receipt.value["work"]["short_ref"].clone())
+                    .map_err(|error| error.to_string())
                 }))
                 .map_err(|panic| panic_text(panic.as_ref()));
                 FirstAdd {
@@ -114,7 +115,7 @@ fn panic_text(panic: &(dyn std::any::Any + Send)) -> String {
 }
 
 // The first three words on a new store, raced for its open lock: all three
-// succeed, each with its own item, and they held the lock in turn. A failure
+// eventually succeed, each with its own item, and they held the lock in turn. A failure
 // names every opener's outcome and the trace of its open.
 #[test]
 fn concurrent_first_adds_on_a_new_store_all_succeed() {

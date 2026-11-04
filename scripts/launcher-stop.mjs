@@ -53,6 +53,7 @@ export async function removeWithRetry(path, { remove = rmSync, attempts = 20, de
 export async function withStopLock(runDir, action, { remove = rmSync, open = openSync,
   onReleaseError = (error) => process.stderr.write(`stop lock removal failed: ${error.code ?? "unknown"}\n`) } = {}) {
   const path = join(runDir, "stop.control.lock");
+  // Product behaviour: how long a stop or a terminal save waits on this lock.
   const deadline = Date.now() + 5000;
   while (true) {
     try { closeSync(open(path, "wx", 0o600)); break; }

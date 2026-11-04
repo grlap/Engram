@@ -259,7 +259,7 @@ test("Cargo frames refuse incomplete or ambiguous ownership and retain readable 
   });
 });
 
-test("Cargo phase execution preserves native exits, failure masking and count records", { timeout: 60_000 }, async () => {
+test("Cargo phase execution preserves native exits, failure masking and count records", { timeout: 120_000 }, async () => {
   await repository(async (root) => {
     const fixture = rustWrapperFixture(root, process.platform === "win32" ? "win32" : "linux");
     const ordinary = requiredStages()[3];

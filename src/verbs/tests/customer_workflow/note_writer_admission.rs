@@ -37,6 +37,18 @@ fn count_notes(verbs: &AgentVerbs, target: &str, text: &str) -> usize {
         .count()
 }
 
+/// Holds a thread until its partner has also arrived, so their admission windows
+/// start together. The hang guard stops a partner that never comes hanging the
+/// test; the main thread's own wait then reports it.
+fn meet(arrived: &std::sync::atomic::AtomicUsize) {
+    use std::sync::atomic::Ordering;
+    arrived.fetch_add(1, Ordering::SeqCst);
+    let waiting = Instant::now();
+    while arrived.load(Ordering::SeqCst) < 2 && waiting.elapsed() < WallDuration::from_secs(60) {
+        std::thread::yield_now();
+    }
+}
+
 #[test]
 fn note_writer_admission_holder_and_non_holder_outlive_old_timeout_exactly_once() {
     let (_directory, holder, path, project) = fixture();
@@ -71,10 +83,12 @@ fn note_writer_admission_holder_and_non_holder_outlive_old_timeout_exactly_once(
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .unwrap();
     let (ready, started) = mpsc::channel();
+    let arrived = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     std::thread::scope(|scope| {
         let owner_ready = ready.clone();
         let owner_target = target.clone();
         let holder_ref = &holder;
+        let owner_arrived = std::sync::Arc::clone(&arrived);
         let owner = scope.spawn(move || {
             let mut first = true;
             with_writer_admission_test_policy(
@@ -82,6 +96,7 @@ fn note_writer_admission_holder_and_non_holder_outlive_old_timeout_exactly_once(
                 move || {
                     if first {
                         first = false;
+                        meet(&owner_arrived);
                         owner_ready.send(()).unwrap();
                     }
                 },
@@ -104,6 +119,7 @@ fn note_writer_admission_holder_and_non_holder_outlive_old_timeout_exactly_once(
                 move || {
                     if first {
                         first = false;
+                        meet(&arrived);
                         ready.send(()).unwrap();
                     }
                 },
@@ -117,13 +133,16 @@ fn note_writer_admission_holder_and_non_holder_outlive_old_timeout_exactly_once(
                 },
             );
         });
-        started.recv_timeout(WallDuration::from_secs(10)).unwrap();
-        started.recv_timeout(WallDuration::from_secs(10)).unwrap();
+        // Hang guards only: each window starts at its note's first acquisition,
+        // right after these hooks meet, so waiting for them spends neither window.
+        started.recv_timeout(WallDuration::from_secs(60)).unwrap();
+        started.recv_timeout(WallDuration::from_secs(60)).unwrap();
         // Both real BEGINs face the same real writer beyond the production 5 s
         // timeout. This is the only long control; all negative cases are short.
         // Product requirement: a note outlives the ordinary 5 s timeout inside
         // its 10 s admission window (sqlite-store.md), so this stays on the real
-        // clock. The only upper limit is that window, 4.75 s past this hold.
+        // clock. Its speed limit is that window: 4.75 s past this hold, less the
+        // skew between the two threads leaving their meeting.
         std::thread::sleep(WallDuration::from_millis(u64::from(old_timeout) + 250));
         transaction.commit().unwrap();
         owner.join().unwrap();

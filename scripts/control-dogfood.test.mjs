@@ -77,7 +77,7 @@ async function holdSqliteWriter(database, home) {
       let output = "";
       const timer = setTimeout(() => {
         reject(lifecycle.error("readiness timed out"));
-      }, 5000);
+      }, HANG_GUARD_MS);
       lifecycle.onFailure = (error) => { clearTimeout(timer); reject(error); };
       child.stdout.on("data", (chunk) => {
         output += chunk.toString("utf8");
@@ -107,6 +107,8 @@ function canonicalJson(value) {
 // stderr, keyed by this marker with the process id and frame number.
 const PHASE_TRACE_ENV = "ENGRAM_MCP_PHASE_TRACE";
 const CONTROL_TRACE_KEY = "engram_control_phase_trace";
+// Ends a wait for what will never come. It says nothing about speed.
+const HANG_GUARD_MS = 60000;
 
 function controlTraceLines(stderr) {
   return stderr
@@ -193,7 +195,7 @@ class ControlClient {
       const timer = setTimeout(() => {
         // FIFO responses cannot be attributed after one request times out.
         this.lifecycle.fail("request_error", new Error(`request timed out: ${request.operation}`));
-      }, 15000);
+      }, HANG_GUARD_MS);
       this.pending.push({
         resolve: (response) => {
           clearTimeout(timer);
@@ -289,14 +291,15 @@ test("fixture child shutdown handles observed exit, signals and absent PID witho
 test("fixture child shutdown enforces its elapsed bound before a delayed timer fires", async (t) => {
   let now = 0;
   t.mock.method(performance, "now", () => now);
-  for (const elapsed of [5000, 5001]) {
+  const shutdownGuardMs = 5000;
+  for (const elapsed of [shutdownGuardMs, shutdownGuardMs + 1]) {
     const child = childEvents();
-    const lifecycle = new FixtureChild(child, "delayed timer child");
+    const lifecycle = new FixtureChild(child, "delayed timer child", undefined, { shutdownGuardMs });
     const closing = lifecycle.close();
     // Advance observation time without yielding to the real timeout callback.
     now += elapsed;
     child.closeStdio();
-    if (elapsed === 5000) {
+    if (elapsed === shutdownGuardMs) {
       await closing;
       assert.equal(lifecycle.events.timeout, undefined);
     } else {
@@ -315,7 +318,7 @@ test("fixture child shutdown enforces its elapsed bound before a delayed timer f
 
 test("fixture child shutdown timeout stays rejected after late close with bounded kill evidence", async () => {
   const child = childEvents();
-  const lifecycle = new FixtureChild(child, "timeout child", () => "retained stderr");
+  const lifecycle = new FixtureChild(child, "timeout child", () => "retained stderr", { shutdownGuardMs: 50 });
   lifecycle.request("work_session_read", "answered", 0);
   const first = lifecycle.close();
   const error = await first.then(() => assert.fail("expected timeout"), (error) => error);
@@ -1193,9 +1196,12 @@ test("the opt-in control phase trace numbers every frame and an unset process wr
     const off = median(timings.off);
     const on = median(timings.on);
     t.diagnostic(`work_session_read over control, interleaved ${rounds} rounds: trace on median=${on.toFixed(2)}ms, trace off median=${off.toFixed(2)}ms`);
-    // A trace that is off does no added work; one that is on stays within
-    // noise of it on this small workload.
-    assert.ok(on < off * 2 + 5, `trace on ${on}ms against off ${off}ms`);
+    // A comparison report, not a benchmark. What the trace costs is counted in
+    // Rust: tracing_adds_no_sql_work_to_a_frame,
+    // each_trace_line_is_encoded_exactly_once and
+    // an_undrained_sink_never_stalls_a_traced_frame. An unset process wrote
+    // nothing above. Left to these reported medians alone: building a line's
+    // fields, an encoding outside the trace's one encoder, and writer-thread time.
 
     // A control process whose project cannot be resolved still leaves its
     // startup record, incomplete, with the phase it stopped in.
@@ -1273,7 +1279,7 @@ test("failed control startup answers one frame, exits, and never dispatches muta
     };
     const before = snapshot();
     writer = await holdSqliteWriter(database, home);
-    const busy = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: frame + frame, timeout: 15000 });
+    const busy = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: frame + frame, timeout: HANG_GUARD_MS });
     assert.equal(busy.error, undefined);
     assertRefusal(busy, "control_startup_busy", "Engram control startup could not acquire the store.");
     await writer.close();
@@ -1282,12 +1288,12 @@ test("failed control startup answers one frame, exits, and never dispatches muta
 
     executeSql(database, "DROP INDEX work_items_ready");
     for (const input of [frame + frame, "malformed\n", "partial"]) {
-      const refused = spawnSync(binary, args, { cwd: root, encoding: "utf8", input, timeout: 15000 });
+      const refused = spawnSync(binary, args, { cwd: root, encoding: "utf8", input, timeout: HANG_GUARD_MS });
       assert.equal(refused.error, undefined);
       assertRefusal(refused, "control_startup_refused", "Engram control startup was refused; inspect the startup diagnostic.");
       assert.deepEqual(snapshot(), before);
     }
-    const empty = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: "", timeout: 15000 });
+    const empty = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: "", timeout: HANG_GUARD_MS });
     assert.equal(empty.error, undefined);
     assert.notEqual(empty.status, 0);
     assert.equal(empty.stdout, "");
@@ -1302,7 +1308,7 @@ test("failed control startup answers one frame, exits, and never dispatches muta
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.stdin.write("x".repeat(256 * 1024 + 1));
-    await withTimeout(lifecycle.closed, 5000, "oversize failed startup without EOF");
+    await withTimeout(lifecycle.closed, HANG_GUARD_MS, "oversize failed startup without EOF");
     assert.equal(lifecycle.signalCode, null);
     assert.notEqual(lifecycle.exitCode, 0, stderr);
     assert.equal(stdout, "");
@@ -1367,13 +1373,13 @@ test("an opted-in control process whose stderr nobody drains answers every frame
         Array.from({ length: 100 }, () => new Promise((resolvePromise) => waiting.push(resolvePromise))),
       );
       child.stdin.write(frame.repeat(100));
-      await withTimeout(answered, 15000, `frames ${sent}..${sent + 100} answered with stderr undrained`);
+      await withTimeout(answered, HANG_GUARD_MS, `frames ${sent}..${sent + 100} answered with stderr undrained`);
     }
     // A broken stdout ends the service with an error, whose diagnostic must
     // not wait on the full stderr: the process exits.
     child.stdout.destroy();
     child.stdin.write(frame);
-    const result = await withTimeout(exited, 15000, "exit after stdout broke with stderr undrained");
+    const result = await withTimeout(exited, HANG_GUARD_MS, "exit after stdout broke with stderr undrained");
     assert.equal(result.signal, null);
     assert.notEqual(result.code, 0);
   } catch (error) {

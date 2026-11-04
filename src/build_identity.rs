@@ -341,12 +341,27 @@ mod tests {
         opened.notify_all();
     }
 
+    /// Ends a stuck test. It says nothing about speed.
+    const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(60);
+    /// A deadline no test here reaches: a bounded call that returns has not
+    /// been ended by it.
+    const FAR_OFF: std::time::Duration = std::time::Duration::from_hours(24);
+
+    /// Runs a bounded call to its end, failing if it has not returned by the
+    /// hang guard, which is far shorter than a [`FAR_OFF`] deadline.
+    fn returned<T: Send + 'static>(call: impl FnOnce() -> T + Send + 'static) -> T {
+        let (sender, answer) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(call());
+        });
+        answer
+            .recv_timeout(HANG_GUARD)
+            .expect("the bounded call is still waiting")
+    }
+
     #[test]
     fn a_waiting_bounded_call_is_woken_by_an_unbounded_callers_fill() {
-        use std::{
-            sync::atomic::{AtomicBool, AtomicUsize, Ordering},
-            time::Duration,
-        };
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
         static OPEN: Mutex<bool> = Mutex::new(false);
         static OPENED: Condvar = Condvar::new();
@@ -365,10 +380,10 @@ mod tests {
         while !STARTED.load(Ordering::SeqCst) {
             std::thread::yield_now();
         }
-        let waiter = std::thread::spawn(|| {
-            let began = Instant::now();
-            let value = LATCH.get_by(Some(began + Duration::from_secs(60)), read_once_opened);
-            (value.copied(), began.elapsed())
+        let (sender, answer) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let value = LATCH.get_by(Some(Instant::now() + FAR_OFF), read_once_opened);
+            let _ = sender.send(value.copied());
         });
         // Release the reading only once the bounded call is waiting, so the
         // fill must wake it rather than find the value already latched.
@@ -376,10 +391,11 @@ mod tests {
             std::thread::yield_now();
         }
         release(&OPEN, &OPENED);
-        let (value, took) = waiter.join().unwrap();
+        // The fill woke it: its deadline is far beyond this guard.
+        let value = answer
+            .recv_timeout(HANG_GUARD)
+            .expect("the fill did not wake the bounded call");
         assert_eq!(value, Some(1));
-        // The fill woke it, not its deadline.
-        assert!(took < Duration::from_secs(30), "{took:?}");
         assert_eq!(filler.join().unwrap(), 1);
         assert_eq!(READINGS.load(Ordering::SeqCst), 1);
     }
@@ -405,28 +421,28 @@ mod tests {
         }
 
         // The reading this call started panicked: it gives up at once rather
-        // than read in its own thread, which no deadline bounds.
-        let began = Instant::now();
-        let value = LATCH.get_by(Some(began + Duration::from_secs(60)), panic_first);
-        let took = began.elapsed();
+        // than read in its own thread, which no deadline bounds. Its deadline
+        // is far beyond this guard, so that did not end the call.
+        let value = returned(|| LATCH.get_by(Some(Instant::now() + FAR_OFF), panic_first));
         assert_eq!(value, None);
-        assert!(took < Duration::from_secs(30), "{took:?}");
         assert_eq!(READINGS.load(Ordering::SeqCst), 1);
 
         // A later call starts a new reading and waits for it only until its
-        // own deadline.
-        let began = Instant::now();
-        let value = LATCH.get_by(Some(began + Duration::from_millis(300)), panic_first);
-        let took = began.elapsed();
+        // own deadline: that reading stays blocked, so only the deadline can
+        // end the call.
+        let (value, took) = returned(|| {
+            let began = Instant::now();
+            let value = LATCH.get_by(Some(began + Duration::from_millis(300)), panic_first);
+            (value, began.elapsed())
+        });
         assert_eq!(value, None);
         assert!(took >= Duration::from_millis(300), "{took:?}");
-        assert!(took < Duration::from_secs(30), "{took:?}");
         // That call's reading runs in a thread it spawned, which need not have
         // begun yet; wait until it has, as no deadline above depends on it.
         let waiting = Instant::now();
         while READINGS.load(Ordering::SeqCst) < 2 {
             assert!(
-                waiting.elapsed() < Duration::from_secs(30),
+                waiting.elapsed() < HANG_GUARD,
                 "the new reading never began"
             );
             std::thread::yield_now();
@@ -438,7 +454,7 @@ mod tests {
 
         // Released, that reading latches for every caller.
         release(&OPEN, &OPENED);
-        let value = LATCH.get_by(Some(Instant::now() + Duration::from_secs(60)), panic_first);
+        let value = returned(|| LATCH.get_by(Some(Instant::now() + FAR_OFF), panic_first));
         assert_eq!(value, Some(&2));
         assert_eq!(READINGS.load(Ordering::SeqCst), 2);
     }

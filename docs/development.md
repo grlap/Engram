@@ -67,8 +67,8 @@ node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
-The MCP dogfood close check keeps an absolute 30,000 ms deadline from stdin
-end. A later clean exit is still a failure. Failure diagnostics distinguish
+The MCP dogfood close check keeps an absolute 60,000 ms hang guard from stdin
+end, not a speed limit. A later clean exit is still a failure. Failure diagnostics distinguish
 exit from stdio close using monotonic callback observation times, and report
 interval host CPU activity sampled before EOF; these samples do not establish
 the cause of a shutdown delay. Missing load evidence is reported as unknown.

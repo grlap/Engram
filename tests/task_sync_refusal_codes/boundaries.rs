@@ -173,7 +173,7 @@ async fn task_sync_real_locked_store_failure_keeps_its_generic_storage_code() {
     let mut command =
         tokio::process::Command::from(fixture.sync_command(&target, "import", &candidate, true));
     command.kill_on_drop(true);
-    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+    let output = tokio::time::timeout(Duration::from_secs(60), command.output())
         .await
         .expect("task-sync import must finish within its bounded SQLite wait and CLI watchdog")
         .unwrap();

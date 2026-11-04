@@ -36,8 +36,8 @@ impl Captured {
     }
 }
 
-/// Progress soon enough for a test, but well after a frame's read and
-/// handler, so only a stall writes it.
+/// Progress soon enough for a test. A descheduled frame can reach it in any
+/// phase, so no test may take a line to mean a stall in one particular phase.
 const FAST: ProgressTiming = ProgressTiming {
     first: Duration::from_millis(150),
     every: Duration::from_millis(50),
@@ -65,6 +65,7 @@ fn traced_without_monitor() -> (Arc<ControlTrace>, Captured) {
             stopped: false,
         }),
         changed: Condvar::new(),
+        encoded: EncodeCount::default(),
     });
     (trace, captured)
 }
@@ -125,7 +126,7 @@ fn sqlite_metrics_do_not_enable_control_phases_on_a_raw_connection() {
 /// close waits only briefly, so a loaded host is given longer here.
 fn written(trace: &ControlTrace, captured: &Captured) -> Vec<serde_json::Value> {
     trace.close();
-    crate::phase_trace::tests::assert_flushed(&trace.lines, Duration::from_secs(10));
+    crate::phase_trace::tests::assert_flushed(&trace.lines);
     captured.lines()
 }
 
@@ -309,6 +310,8 @@ fn a_contending_writer_raises_begin_immediate_at_startup() {
     let startup = terminal(&lines, 0);
     // Release follows the observed BEGIN, so schema startup cannot consume
     // the interval that must be measured as connection-resume contention.
+    // Retained limit: the releaser must commit inside the product's 5 s busy
+    // timeout, about 4.7 s after its hold, or startup is refused.
     assert!(
         startup["begin_immediate"]["max_ms"].as_f64() >= Some(250.0),
         "{startup}"
@@ -325,18 +328,54 @@ fn a_contending_writer_raises_begin_immediate_at_startup() {
     );
 }
 
-/// A response writer that blocks its first write for `stall`, measured from
-/// that write, as a host that stops reading stdout for a while does.
+/// A response writer that blocks its first write, as a host that stops reading
+/// stdout for a while does. The wait lasts `stall` plus all the time the frame
+/// took to get here, so it exceeds any handler time however loaded the host,
+/// and continues until the trace has written a line about it. It starts the
+/// progress schedule over from this write, so a slow frame that already spent
+/// its lines in an earlier phase still gets lines about this one.
 struct Blocked {
     stall: Duration,
+    frame_began: Instant,
+    trace: Arc<ControlTrace>,
+    captured: Captured,
     stalled: bool,
+    /// The last line's ordinal when the schedule restarted: only a line above
+    /// it counts against that schedule's limit.
+    restarted_after: Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl Blocked {
+    fn progress_written(&self) -> bool {
+        self.captured.text().lines().any(|line| {
+            line.contains(r#""state":"in_flight""#)
+                && line.contains(r#""phase":"response_write_flush""#)
+        })
+    }
+
+    fn restart_progress(&self) {
+        if let Some(slot) = self.trace.state.lock().expect("trace state").slot.as_mut() {
+            slot.started = Instant::now();
+            slot.progress = 0;
+            self.restarted_after
+                .store(slot.ordinal, std::sync::atomic::Ordering::SeqCst);
+        }
+        self.trace.changed.notify_all();
+    }
 }
 
 impl Write for Blocked {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         if !self.stalled {
             self.stalled = true;
-            std::thread::sleep(self.stall);
+            let stall = self.stall + self.frame_began.elapsed();
+            self.restart_progress();
+            let waiting = Instant::now();
+            while waiting.elapsed() < crate::phase_trace::tests::HANG_GUARD
+                && (waiting.elapsed() < stall || !self.progress_written())
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
         Ok(bytes.len())
     }
@@ -349,7 +388,8 @@ impl Write for Blocked {
 // A host that stops reading the response shows up as response_write_flush
 // time, not handler time. While the frame waits, it leaves in-flight lines
 // naming that phase, at most ten, in increasing order, and the terminal
-// line comes last.
+// line comes last. A descheduled frame may leave earlier lines first, in
+// earlier phases.
 #[test]
 fn a_blocked_reader_raises_response_write_flush_with_bounded_progress() {
     let home = crate::test_support::temp_home().expect("home");
@@ -358,9 +398,14 @@ fn a_blocked_reader_raises_response_write_flush_with_bounded_progress() {
     trace.install();
     let mut server = open_server(&database);
     trace.startup_finished(None);
+    let restarted_after = Arc::new(std::sync::atomic::AtomicU32::new(0));
     let blocked = Blocked {
         stall: Duration::from_millis(1_000),
+        frame_began: Instant::now(),
+        trace: Arc::clone(&trace),
+        captured: captured.clone(),
         stalled: false,
+        restarted_after: Arc::clone(&restarted_after),
     };
     server
         .serve_traced(Cursor::new(b"{}\n".to_vec()), blocked, &trace)
@@ -372,17 +417,38 @@ fn a_blocked_reader_raises_response_write_flush_with_bounded_progress() {
         .iter()
         .filter(|line| line["state"] == "in_flight")
         .collect::<Vec<_>>();
-    assert!(!progress.is_empty(), "{frame:?}");
+    let in_order = |phase: &serde_json::Value| {
+        [
+            "handler_total",
+            "response_serialize",
+            "response_write_flush",
+        ]
+        .iter()
+        .position(|known| phase == known)
+        .unwrap_or_else(|| panic!("unexpected phase {phase}"))
+    };
+    let phases = progress
+        .iter()
+        .map(|line| in_order(&line["phase"]))
+        .collect::<Vec<_>>();
+    assert!(phases.is_sorted(), "{progress:?}");
+    let waiting = progress
+        .iter()
+        .filter(|line| line["phase"] == "response_write_flush")
+        .collect::<Vec<_>>();
+    assert!(!waiting.is_empty(), "{frame:?}");
+    let restarted_after = u64::from(restarted_after.load(std::sync::atomic::Ordering::SeqCst));
+    let since_restart = waiting
+        .iter()
+        .filter(|line| line["ordinal"].as_u64().expect("ordinal") > restarted_after)
+        .count();
     assert!(
-        progress.len() <= MAX_PROGRESS as usize,
-        "{}",
-        progress.len()
+        since_restart <= MAX_PROGRESS as usize,
+        "{since_restart}: {waiting:?}"
     );
     assert!(
-        progress
-            .iter()
-            .all(|line| line["phase"] == "response_write_flush" && line["operation"] == "invalid"),
-        "{progress:?}"
+        waiting.iter().all(|line| line["operation"] == "invalid"),
+        "{waiting:?}"
     );
     let ordinals = frame
         .iter()
@@ -398,10 +464,139 @@ fn a_blocked_reader_raises_response_write_flush_with_bounded_progress() {
         last["phases"]["response_write_flush_ms"].as_f64() >= Some(990.0),
         "{last}"
     );
+    // The wait is longer than all the frame's earlier time, so only a handler
+    // charged with the wait could reach it.
     assert!(
-        last["phases"]["handler_total_ms"].as_f64() < Some(300.0),
+        last["phases"]["handler_total_ms"].as_f64()
+            < last["phases"]["response_write_flush_ms"].as_f64(),
         "{last}"
     );
+}
+
+// The same store work with the trace on and off: tracing adds no statement and
+// no SQL step, at startup or per frame, so a trace that reads the store or
+// repeats a statement fails here at any host speed.
+#[test]
+fn tracing_adds_no_sql_work_to_a_frame() {
+    use crate::storage::work_cost::sqlite::{Metrics, start};
+
+    const FRAMES: u64 = 20;
+
+    fn work(database: &std::path::Path, trace: Option<&Arc<ControlTrace>>) -> [Metrics; 2] {
+        let frame = b"{\"operation\":\"work_session_read\"}\n";
+        let frames = frame.repeat(usize::try_from(FRAMES).expect("small"));
+        let scope = start();
+        if let Some(trace) = trace {
+            trace.install();
+        }
+        let mut server = open_server(database);
+        if let Some(trace) = trace {
+            trace.startup_finished(None);
+        }
+        let startup = scope.finish();
+        let scope = start();
+        let mut responses = Vec::new();
+        match trace {
+            Some(trace) => {
+                server
+                    .serve_traced(Cursor::new(frames), &mut responses, trace)
+                    .expect("traced serve");
+                trace.close();
+            }
+            None => server
+                .serve(Cursor::new(frames), &mut responses)
+                .expect("untraced serve"),
+        }
+        let answering = scope.finish();
+        assert_eq!(
+            String::from_utf8(responses).expect("UTF-8").lines().count(),
+            usize::try_from(FRAMES).expect("small")
+        );
+        [startup, answering]
+    }
+
+    let home = crate::test_support::temp_home().expect("home");
+    // Work done once per process falls outside both measurements.
+    work(&home.path().join("warmed.sqlite3"), None);
+    let [plain_startup, plain_frames] = work(&home.path().join("plain.sqlite3"), None);
+    let (trace, _captured) = traced(ProgressTiming::DEFAULT);
+    let [startup, frames] = work(&home.path().join("traced.sqlite3"), Some(&trace));
+    // Measured apart from startup, so these statements are the frames' own.
+    assert!(plain_frames.total.statements >= FRAMES, "{plain_frames:?}");
+    assert_eq!(frames.total, plain_frames.total);
+    assert_eq!(frames.by_kind, plain_frames.by_kind);
+    assert_eq!(startup.total, plain_startup.total);
+    assert_eq!(startup.by_kind, plain_startup.by_kind);
+}
+
+// A line is encoded once, and every encoded byte reaches the sink, at any host
+// speed: a trace that encodes a line repeatedly, or encodes lines it never
+// emits, fails here. Not counted: building a line's fields, an encoding outside
+// the trace's one encoder, and the writer thread's time.
+#[test]
+fn each_trace_line_is_encoded_exactly_once() {
+    let home = crate::test_support::temp_home().expect("home");
+    let (trace, captured) = traced(ProgressTiming::DEFAULT);
+    trace.install();
+    let mut server = open_server(&home.path().join("control.sqlite3"));
+    trace.startup_finished(None);
+    let frames = b"{\"operation\":\"work_session_read\"}\n".repeat(20);
+    server
+        .serve_traced(Cursor::new(frames), std::io::sink(), &trace)
+        .expect("traced serve");
+    let lines = written(&trace, &captured);
+    assert!(lines.len() >= 21, "startup and 20 frames: {lines:?}");
+    assert_eq!(trace.lines.dropped(), 0);
+    let order = std::sync::atomic::Ordering::SeqCst;
+    assert_eq!(
+        trace.encoded.calls.load(order),
+        u64::try_from(lines.len()).expect("small")
+    );
+    let text = captured.text();
+    let without_newlines = text.len() - text.lines().count();
+    assert_eq!(
+        trace.encoded.bytes.load(order),
+        u64::try_from(without_newlines).expect("small")
+    );
+}
+
+// Tracing costs a frame no waiting on the trace's reader: with a stderr nobody
+// drains, every frame is still answered. The sink stays shut until the frames
+// have finished, so finishing at all proves none of them waited on it.
+#[test]
+fn an_undrained_sink_never_stalls_a_traced_frame() {
+    use crate::phase_trace::tests::{HANG_GUARD, Undrained};
+
+    let home = crate::test_support::temp_home().expect("home");
+    let database = home.path().join("control.sqlite3");
+    let sink = Undrained::new();
+    let trace = ControlTrace::with_sink(Box::new(sink.clone()), 4, FAST);
+    let (finished, done) = std::sync::mpsc::channel::<()>();
+    let opener = std::thread::spawn(move || {
+        let stalled = matches!(
+            done.recv_timeout(HANG_GUARD),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        );
+        sink.open();
+        stalled
+    });
+    trace.install();
+    let mut server = open_server(&database);
+    trace.startup_finished(None);
+    let mut responses = Vec::new();
+    server
+        .serve_traced(Cursor::new(b"{}\n".repeat(40)), &mut responses, &trace)
+        .expect("traced serve");
+    drop(finished);
+    assert!(
+        !opener.join().expect("opener"),
+        "a frame waited on the sink"
+    );
+    assert_eq!(
+        String::from_utf8(responses).expect("UTF-8").lines().count(),
+        40
+    );
+    trace.close();
 }
 
 /// A response writer whose writes fail, as a closed pipe does.

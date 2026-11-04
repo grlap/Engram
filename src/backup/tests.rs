@@ -424,7 +424,7 @@ fn capture_lets_a_writer_commit_while_the_store_is_copied() {
                 return false;
             }
             let seen = commits.lock().unwrap().len();
-            let until = Instant::now() + Duration::from_secs(30);
+            let until = Instant::now() + Duration::from_secs(60);
             while Instant::now() < until {
                 if commits.lock().unwrap().len() > seen {
                     committed.store(true, Ordering::SeqCst);
@@ -510,7 +510,8 @@ fn capture_fired_at(point: CopyProbePoint) -> (BackupError, bool) {
 fn capture_with_a_deadline_shorter_than_the_copy_fails_typed_and_removes_its_stage() {
     // A real configured deadline that passes while the copy is under way:
     // inside the copy, once the staged file exists, the copy is held past
-    // the deadline. Nothing fires the interrupt but the clock.
+    // the deadline. Nothing fires the interrupt but the clock. Retained limit:
+    // the staged file must exist inside these real 5 s, or the check below fails.
     let (home, project, _database) = fixture(3, 64);
     let deadline = Duration::from_secs(5);
     let began = Instant::now();
@@ -653,7 +654,8 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
     drop(holder);
     println!("capture took {took:?}; copy sub-steps: {trace:?}");
     assert_eq!(error.code(), "backup_capture_deadline", "{error}");
-    // The deadline passed in the wait for the locked store.
+    // The deadline passed in the wait for the locked store. Retained limit: the
+    // steps before the copy must finish inside the real 1.5 s for it to fall there.
     assert!(
         matches!(
             error,
@@ -664,7 +666,8 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
         "{error}; steps began at {:?}; copy sub-steps: {trace:?}",
         steps.borrow()
     );
-    // The ordinary five-second lock wait was cut to the time left.
+    // The ordinary five-second lock wait was cut to the time left. Retained
+    // limit: it is the product's behaviour, with 3.5 s beyond the deadline here.
     assert!(
         took < Duration::from_secs(5),
         "{took:?}: {error}; steps began at {:?}; copy sub-steps: {trace:?}",
@@ -717,7 +720,8 @@ fn capture_waits_for_the_first_identity_reading_only_until_its_deadline() {
         "{error}"
     );
     // It waited out its own deadline, and no longer than the locked-store
-    // capture above may take.
+    // capture above may take. Retained limit: 4.7 s beyond the deadline here;
+    // the held reading means only the deadline can end this call.
     assert!(took >= Duration::from_millis(300), "{took:?}");
     assert!(took < Duration::from_secs(5), "{took:?}");
     assert_eq!(*steps.borrow(), vec![CapturePhase::Space]);

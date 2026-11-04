@@ -234,7 +234,6 @@ fn listing_cursor_refuses_sub_millisecond_clock_reversal_and_outlives_holder_exp
 
 #[test]
 fn listing_continuation_metadata_overflow_is_an_explicit_refusal() {
-    let _elapsed = crate::storage::search_budget::freeze_elapsed();
     let (_directory, verbs, _, _) = fixture();
     let search = "x".repeat(MAX_AGENT_WORK_RESPONSE_BYTES * 2 / 3);
     add(&verbs, &format!("{search} first"), None, false, 0);
@@ -271,7 +270,6 @@ fn listing_continuation_metadata_overflow_is_an_explicit_refusal() {
 
 #[test]
 fn listing_continuation_receipt_budget_overflow_is_an_explicit_refusal() {
-    let _elapsed = crate::storage::search_budget::freeze_elapsed();
     let (_directory, verbs, path, _) = fixture();
     let search = "x".repeat(MAX_AGENT_WORK_RESPONSE_BYTES / 3);
     add(&verbs, &format!("{search} first"), None, false, 0);

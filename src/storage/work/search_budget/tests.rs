@@ -299,6 +299,37 @@ fn search_request_checks_the_same_allowance_before_and_after_work() {
     assert!(REQUEST.with_borrow(Option::is_none));
 }
 
+// The same search, sleeping past the same limit: time stands still by default in
+// test builds, and the production clock line refuses it once asked for.
+#[test]
+fn search_elapsed_stands_still_in_tests_unless_the_real_clock_is_asked_for() {
+    let store = SqliteStore::open_in_memory().unwrap();
+    let limits = Limits {
+        elapsed: Duration::from_millis(1),
+        ..Limits::default()
+    };
+    let past_the_limit = || {
+        std::thread::sleep(Duration::from_millis(20));
+        Ok(())
+    };
+    with_limits(limits, || {
+        run(&store.connection, Some("text"), past_the_limit)
+    })
+    .unwrap();
+    let _real = real_elapsed();
+    let error = with_limits(limits, || {
+        run(&store.connection, Some("text"), past_the_limit)
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        StoreError::SearchBudgetExhausted {
+            dimension: "elapsed_ms",
+            ..
+        }
+    ));
+}
+
 #[test]
 fn search_request_cancellation_interrupts_sql_and_restores_the_connection() {
     let store = SqliteStore::open_in_memory().unwrap();

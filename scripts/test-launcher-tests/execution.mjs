@@ -158,7 +158,7 @@ test("required stages preserve all gates with four independent Rust phases", () 
 for (const platform of ["win32", "linux"]) {
   const supported = platform === "win32" ? process.platform === "win32" : process.platform !== "win32";
   test(`Rust phase wrapper (${platform}) preserves default, selected and Cargo passthrough execution`,
-    { skip: !supported, timeout: 60_000 }, async () => {
+    { skip: !supported, timeout: 120_000 }, async () => {
       await repository(async (root) => {
         const fixture = rustWrapperFixture(root, platform);
         const invoke = (args) => {
@@ -189,7 +189,7 @@ for (const platform of ["win32", "linux"]) {
     });
 
   test(`Rust phase launcher (${platform}) saves the ordinary result before a scale failure`,
-    { skip: !supported, timeout: 60_000 }, async () => {
+    { skip: !supported, timeout: 120_000 }, async () => {
       await repository(async (root) => {
         const fixture = rustWrapperFixture(root, platform);
         const stages = requiredStages(platform).slice(3, 7);

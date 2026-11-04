@@ -208,7 +208,7 @@ export function registerCommitInputTests(support) {
     });
   });
 
-  test("committed-input detached worker executes once and retains its commit record", { timeout: 60_000 }, async () => {
+  test("committed-input detached worker executes once and retains its commit record", { timeout: 120_000 }, async () => {
     await fixture(async ({ root, marker, marking }) => {
       const runDir = await createRun({ root, input: "commit", detached: true, notifyTo: "fixture-parent", stages: [marking()] }, env);
       const request = json(join(runDir, "request.json"));
@@ -247,7 +247,7 @@ export function registerCommitInputTests(support) {
     });
   });
 
-  for (const moved of [false, true]) test(`committed-input detached worker refuses ${moved ? "a moved commit" : "new tracked dirt"} before stages`, { timeout: 60_000 }, async () => {
+  for (const moved of [false, true]) test(`committed-input detached worker refuses ${moved ? "a moved commit" : "new tracked dirt"} before stages`, { timeout: 120_000 }, async () => {
     await fixture(async ({ root, marker, marking }) => {
       const runDir = await createRun({ root, input: "commit", detached: true, notifyTo: "fixture-parent", stages: [marking()] }, env);
       const request = json(join(runDir, "request.json"));
@@ -269,7 +269,7 @@ export function registerCommitInputTests(support) {
     });
   });
 
-  test("committed-input detached CLI names a dirty-input refusal after its worker exits", { timeout: 60_000 }, async () => {
+  test("committed-input detached CLI names a dirty-input refusal after its worker exits", { timeout: 120_000 }, async () => {
     await fixture(async ({ root }) => {
       const local = copyLauncher(root);
       git(["add", "--", "scripts"], root);

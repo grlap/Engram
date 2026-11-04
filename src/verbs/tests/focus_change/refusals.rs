@@ -532,7 +532,7 @@ fn a_refusal_cannot_restore_focus_over_another_connection() {
         );
         crate::work_service::before_note_capture(move || {
             arrived.send(()).unwrap();
-            resumed.recv_timeout(Duration::from_secs(30)).unwrap();
+            resumed.recv_timeout(Duration::from_secs(60)).unwrap();
         });
         verbs
             .note(
@@ -546,7 +546,7 @@ fn a_refusal_cannot_restore_focus_over_another_connection() {
             )
             .unwrap_err()
     });
-    arrival.recv_timeout(Duration::from_secs(30)).unwrap();
+    arrival.recv_timeout(Duration::from_secs(60)).unwrap();
     fixture
         .agent
         .verbs

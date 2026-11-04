@@ -257,6 +257,8 @@ fn record(phase: Phase, elapsed: Duration) {
 pub(crate) fn sql_profile(event: rusqlite::trace::TraceEvent<'_>) {
     #[cfg(test)]
     crate::storage::work_cost::sqlite::observe(&event);
+    #[cfg(test)]
+    tests::observe_begin_immediate_start(&event);
     let rusqlite::trace::TraceEvent::Profile(statement, elapsed) = event else {
         return;
     };

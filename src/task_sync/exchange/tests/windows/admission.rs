@@ -37,7 +37,9 @@ impl ChildWrapper for OpaqueChild {
 #[tokio::test]
 async fn task_exchange_windows_unsupported_controller_kills_suspended_child_before_code_runs() {
     // Positive control: this exact single-process fixture, without suspension,
-    // must execute its first observable action within the same observation bound.
+    // executes its first observable action; only a hung fixture ends this wait.
+    // The suspended twin below is watched for at least 8 s, a lower bound load
+    // cannot fail, and longer when the control itself took long.
     let positive = Fixture::new();
     let mut command = tokio::process::Command::from(positive.command("grandchild"));
     command
@@ -50,11 +52,12 @@ async fn task_exchange_windows_unsupported_controller_kills_suspended_child_befo
         if descendant_holds_lock(&positive.0, "grandchild") {
             break true;
         }
-        if started.elapsed() >= Duration::from_secs(8) {
+        if started.elapsed() >= HANG_GUARD {
             break false;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     };
+    let watch_suspended_for = (started.elapsed() * 5).max(Duration::from_secs(8));
     running.kill().await.unwrap();
     assert!(became_ready, "unsuspended positive control never executed");
 
@@ -75,7 +78,7 @@ async fn task_exchange_windows_unsupported_controller_kills_suspended_child_befo
     assert!(kill_called.load(Ordering::Acquire));
     let child = observed.unwrap();
     let observation = Instant::now();
-    while observation.elapsed() < Duration::from_secs(8) {
+    while observation.elapsed() < watch_suspended_for {
         assert!(child.lock().unwrap().try_wait().unwrap().is_none());
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
@@ -87,7 +90,7 @@ async fn task_exchange_windows_unsupported_controller_kills_suspended_child_befo
             break;
         }
         assert!(
-            started.elapsed() < Duration::from_secs(3),
+            started.elapsed() < HANG_GUARD,
             "unsupported suspended child survived refusal"
         );
         tokio::time::sleep(Duration::from_millis(5)).await;

@@ -9,6 +9,7 @@ export function registerJournalStartup(test, support) {
     withJournal,
     fakeJournalStartup,
     silentWatch,
+    HANG_GUARD_MS,
   } = support;
   test("journal startup observes delayed primary delivery and cleans its marker before the body", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
@@ -45,7 +46,7 @@ export function registerJournalStartup(test, support) {
     const fixture = fakeJournalStartup(t);
     const started = fixture.journal.start();
     const refused = assert.rejects(started, /journal startup: timed out/u);
-    t.mock.timers.tick(4999);
+    t.mock.timers.tick(HANG_GUARD_MS - 1);
     assert.ok(fixture.writes.length > 1);
     assert.equal(fixture.journal.listenerCount("event"), 1);
     t.mock.timers.tick(1);
@@ -65,7 +66,7 @@ export function registerJournalStartup(test, support) {
     const fixture = fakeJournalStartup(t);
     const refused = assert.rejects(fixture.journal.start(), /journal startup: timed out/u);
     // The monotonic deadline expired, although the timer queue has not run.
-    fixture.setNow(5000);
+    fixture.setNow(HANG_GUARD_MS);
     fixture.report("change", basename(fixture.writes[0].path));
     await refused;
     assert.equal(fixture.removals.length, 1);
@@ -86,7 +87,7 @@ export function registerJournalStartup(test, support) {
     await started;
     assert.equal(fixture.removals.length, 1);
     const barrier = assert.rejects(fixture.journal.barrier("calibration-ready"), /barrier calibration-ready: timed out/u);
-    t.mock.timers.tick(4999);
+    t.mock.timers.tick(HANG_GUARD_MS - 1);
     assert.equal(fixture.journal.listenerCount("event"), 1);
     t.mock.timers.tick(1);
     await barrier;
@@ -174,6 +175,7 @@ export function registerJournalEvents(test, support) {
     withJournal,
     fakeJournalStartup,
     silentWatch,
+    HANG_GUARD_MS,
   } = support;
   test("root journal waitFor times out and cleans listeners", async (t) => {
     const dir = fixtureHome("rpj-timeout-", t);
@@ -207,7 +209,7 @@ export function registerJournalEvents(test, support) {
       assert.equal(diagnostic.barrier.filename, ".watch-barrier-calibration-ready");
       assert.equal(diagnostic.barrier.path, join(dir, ".watch-barrier-calibration-ready"));
       assert.equal(diagnostic.barrier.fromIndex, 0);
-      assert.equal(diagnostic.timeoutMs, 5000);
+      assert.equal(diagnostic.timeoutMs, HANG_GUARD_MS);
       assert.ok(diagnostic.sinceWatchMs >= diagnostic.waitElapsedMs);
       assert.ok(diagnostic.barrier.writeFinishedSinceWatchMs >= diagnostic.barrier.writeStartedSinceWatchMs);
       assert.equal(diagnostic.cursor, 40);
@@ -226,7 +228,7 @@ export function registerJournalEvents(test, support) {
       report(index % 2 ? "change" : "rename", `unexpected-${index}-${"x".repeat(1000)}`);
     }
     assert.equal(journal.events.length, 40, "diagnostic bounds do not trim the assertion journal");
-    t.mock.timers.tick(4999);
+    t.mock.timers.tick(HANG_GUARD_MS - 1);
     assert.equal(journal.listenerCount("event"), 1, "the original deadline is retained");
     t.mock.timers.tick(1);
     await refused;

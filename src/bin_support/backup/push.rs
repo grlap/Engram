@@ -86,6 +86,24 @@ pub(crate) struct PushSettings {
     /// Runs immediately before compression of a new copy begins.
     #[cfg(test)]
     pub before_prepare: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Told how the capture's deadline is accounted, as it happens.
+    #[cfg(test)]
+    pub capture_accounting: Option<std::sync::Arc<dyn Fn(CaptureAccounting) + Send + Sync>>,
+}
+
+/// What a test sees of the capture deadline's accounting within one push.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CaptureAccounting {
+    /// Reckoned once the capture returned, before the target is asked.
+    AfterCapture(Duration),
+    /// Still held once the target has answered, before any later local work.
+    AfterAsking(Duration),
+    /// Given to the preparation of the stored file.
+    Preparing {
+        left: Duration,
+        until: Option<Instant>,
+    },
 }
 
 impl PushSettings {
@@ -111,6 +129,8 @@ impl PushSettings {
             after_capture: None,
             #[cfg(test)]
             before_prepare: None,
+            #[cfg(test)]
+            capture_accounting: None,
         }
     }
 }
@@ -487,6 +507,10 @@ impl Push<'_> {
             .settings
             .capture_deadline
             .saturating_sub(capture_started.elapsed());
+        #[cfg(test)]
+        if let Some(hook) = &self.settings.capture_accounting {
+            hook(CaptureAccounting::AfterCapture(capture_left));
+        }
         let captured_at = capture.manifest.capture_started_at;
         self.report.capture_check = Some(capture.check);
         self.stage = Some((capture, None));
@@ -555,6 +579,10 @@ impl Push<'_> {
 
         // A copy that becomes a copy of its own is checked in full first, so
         // its manifest never names a check that was not run for it.
+        #[cfg(test)]
+        if let Some(hook) = &self.settings.capture_accounting {
+            hook(CaptureAccounting::AfterAsking(capture_left));
+        }
         let checking = Instant::now();
         if let Some((capture, _)) = &mut self.stage
             && capture.check != CaptureCheck::Full
@@ -577,17 +605,20 @@ impl Push<'_> {
             let capture = &self.stage.as_ref().expect("captured above").0;
             (capture.staged.clone(), capture.manifest.clone())
         };
+        // A capture deadline too far off for the clock to represent sets no
+        // limit, as it does for the capture itself.
+        let until = Instant::now().checked_add(capture_left);
+        #[cfg(test)]
+        if let Some(hook) = &self.settings.capture_accounting {
+            hook(CaptureAccounting::Preparing {
+                left: capture_left,
+                until,
+            });
+        }
         let (attempt, stored) = self
             .target
             .adapter(self.settings.transport_deadline)
-            .prepare_until(
-                &staged,
-                &manifest,
-                attempt_id,
-                // A capture deadline too far off for the clock to represent
-                // sets no limit, as it does for the capture itself.
-                Instant::now().checked_add(capture_left),
-            )?;
+            .prepare_until(&staged, &manifest, attempt_id, until)?;
         if let Some((_, prepared)) = &mut self.stage {
             *prepared = Some(stored.clone());
         }

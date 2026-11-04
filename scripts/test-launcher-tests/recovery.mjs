@@ -77,7 +77,7 @@ test("a transient rename refusal is retried as I/O, and a persistent or other on
   assert.equal(missing.calls(), 1);
 });
 
-test("a killed launcher's run reads as interrupted once its heartbeat stops", { timeout: 60_000 }, async (t) => {
+test("a killed launcher's run reads as interrupted once its heartbeat stops", { timeout: 180_000 }, async (t) => {
   await repository(async (root) => {
     mkdirSync(join(root, "scripts"));
     for (const name of launcherFixtureFiles) {
@@ -94,7 +94,7 @@ test("a killed launcher's run reads as interrupted once its heartbeat stops", { 
       const runs = path.join('.git', 'review-runs');
       const file = path.join(runs, fs.readdirSync(runs)[0], 'results.json');
       const beat = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')).heartbeat.at; } catch { return undefined; } };
-      const deadline = Date.now() + 20000;
+      const deadline = Date.now() + 60000; // A hang guard: only a heartbeat that never advances ends here.
       let first;
       const wait = () => {
         const now = beat();
@@ -702,7 +702,7 @@ test("a second recovery started while the first holds the lock refuses", async (
 
 // A stage that parks until the broker releases it, and a broker that says
 // when the stage has connected and when it has gone.
-test("a launcher stopped during a Rust scale phase preserves the prior result without rerunning phases", { timeout: 60_000 }, async (t) => {
+test("a launcher stopped during a Rust scale phase preserves the prior result without rerunning phases", { timeout: 120_000 }, async (t) => {
   await repository(async (root) => {
     const broker = parkingBroker(t, root);
     let child, completion;
@@ -754,7 +754,7 @@ test("a launcher stopped during a Rust scale phase preserves the prior result wi
   });
 });
 
-test("recover refuses a living launcher whose heartbeat has gone stale, changing no file", { timeout: 60_000 }, async (t) => {
+test("recover refuses a living launcher whose heartbeat has gone stale, changing no file", { timeout: 120_000 }, async (t) => {
   await repository(async (root) => {
     const broker = parkingBroker(t, root);
     let child, completion;

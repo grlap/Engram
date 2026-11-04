@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 
 use crate::storage::StoreError;
 
+/// Product behaviour (cli-mcp-and-work-protocols.md). Retained limit: a test that
+/// serves frames on the real clock is refused if one frame stalls this long at a
+/// check.
 pub(crate) const CONTROL_REQUEST_ALLOWANCE: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy)]

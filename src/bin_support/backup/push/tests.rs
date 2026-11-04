@@ -18,7 +18,7 @@ use engram::{
     },
 };
 
-use super::{Outcome, PushRun, PushSettings, push};
+use super::{CaptureAccounting, Outcome, PushRun, PushSettings, push};
 use crate::{
     bin_support::backup::directory::copy_name,
     test_support::{TempHome, make_dir_link, remove_dir_link, temp_home},
@@ -910,6 +910,8 @@ fn preparing_the_file_past_the_capture_deadline_fails_and_removes_the_stage() {
     fixture.change("second");
     // The capture returns within its deadline; the hook then spends the
     // whole deadline, so none is left to prepare the compressed file.
+    // Retained limit: the capture itself must finish inside these real 5 s,
+    // or the deadline falls earlier and the message below differs.
     let deadline = Duration::from_secs(5);
     let mut hurried = settings();
     hurried.capture_deadline = deadline;
@@ -1055,6 +1057,12 @@ fn a_failed_write_after_the_put_reports_what_is_recorded_and_the_next_push_recov
 
 #[test]
 fn time_spent_asking_the_target_does_not_count_against_the_capture_deadline() {
+    #[derive(Debug)]
+    enum Seen {
+        Asking,
+        Accounting(CaptureAccounting, std::time::Instant),
+    }
+
     let fixture = fixture();
     assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
     let lost = fixture.state().newest_receipt.unwrap();
@@ -1064,12 +1072,26 @@ fn time_spent_asking_the_target_does_not_count_against_the_capture_deadline() {
             .join(data(&lost.manifest.copy)),
     )
     .unwrap();
-    // The confirmation that finds the copy missing takes longer than the
-    // whole capture deadline; the local capture and preparation do not.
+    // The confirmation that finds the copy missing takes time of its own. What
+    // is left of the deadline is exactly the same on both sides of it, however
+    // slow the host, and the file is then prepared against what is left.
+    let seen = Arc::new(Mutex::new(Vec::new()));
     let mut slow = settings();
-    slow.capture_deadline = Duration::from_secs(3);
+    slow.capture_deadline = Duration::from_hours(1);
+    slow.before_confirm = Some(Arc::new({
+        let seen = Arc::clone(&seen);
+        move || seen.lock().unwrap().push(Seen::Asking)
+    }));
     slow.after_confirm = Some(Arc::new(|| {
-        std::thread::sleep(Duration::from_millis(3_500));
+        std::thread::sleep(Duration::from_millis(50));
+    }));
+    slow.capture_accounting = Some(Arc::new({
+        let seen = Arc::clone(&seen);
+        move |accounting| {
+            seen.lock()
+                .unwrap()
+                .push(Seen::Accounting(accounting, std::time::Instant::now()));
+        }
     }));
     let run = fixture.push_with(&slow);
     assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
@@ -1077,6 +1099,27 @@ fn time_spent_asking_the_target_does_not_count_against_the_capture_deadline() {
         fixture.state().newest_receipt.unwrap().manifest.copy,
         lost.manifest.copy
     );
+    let seen = seen.lock().unwrap();
+    let [
+        Seen::Accounting(CaptureAccounting::AfterCapture(before), _),
+        Seen::Asking,
+        Seen::Accounting(CaptureAccounting::AfterAsking(after), asked),
+        Seen::Accounting(CaptureAccounting::Preparing { left, until }, preparing),
+    ] = seen.as_slice()
+    else {
+        panic!("the accounting did not surround the confirmation: {seen:?}")
+    };
+    assert_eq!(after, before, "asking the target was charged");
+    // Past the confirmation only the check is charged, which took no longer than
+    // everything between these two moments.
+    assert!(
+        after.saturating_sub(*left) <= preparing.duration_since(*asked),
+        "{seen:?}"
+    );
+    // The file's deadline lies what is left past a moment between these two.
+    let until = until.expect("a deadline the clock represents");
+    assert!(*asked + *left <= until, "{seen:?}");
+    assert!(until <= *preparing + *left, "{seen:?}");
 }
 
 #[test]
@@ -1303,6 +1346,8 @@ fn a_retention_removal_past_the_deadline_is_a_warning_and_holds_the_lock() {
     let (release, held) = mpsc::channel::<()>();
     let held = Arc::new(Mutex::new(held));
     let mut hurried = settings();
+    // Retained limit: the put before the held removal must finish inside these
+    // real 2 s, or the deadline falls on the put and the outcome below differs.
     hurried.transport_deadline = Duration::from_secs(2);
     hurried.before_remove = Some(Arc::new(move || {
         let _ = held.lock().unwrap().recv();

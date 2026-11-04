@@ -3,9 +3,7 @@ use rmcp::ServiceExt as _;
 use tokio::sync::{Notify, Semaphore, mpsc};
 
 async fn bounded<T>(future: impl Future<Output = T>) -> T {
-    tokio::time::timeout(Duration::from_secs(10), future)
-        .await
-        .unwrap()
+    tokio::time::timeout(HANG_GUARD, future).await.unwrap()
 }
 
 // Report each new receive attempt and how many input messages were consumed.

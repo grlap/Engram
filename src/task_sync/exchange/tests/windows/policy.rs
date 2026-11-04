@@ -157,12 +157,12 @@ async fn task_exchange_windows_policy_groups_have_bounded_launch_workloads() {
             "task_sync::exchange::tests::windows::policy::policy_configuration_fixture",
         );
         command.env("ENGRAM_EXCHANGE_POLICY_GROUP", group.name);
-        // The watchdog and every product request retain their ordinary deadline;
-        // deterministic launch ceilings are a separate test-workload assertion.
+        // Every product request retains its ordinary deadline; deterministic
+        // launch ceilings bound the workload, so the supervisor is a hang guard.
         let supervisor_before =
             super::super::super::test_support::LAUNCHES.with(std::cell::Cell::get);
         let result =
-            diagnostics::supervise(command, RunLimits::default(), &Cancellation::default()).await;
+            diagnostics::supervise(command, supervisor_limits(), &Cancellation::default()).await;
         if let Err(report) = &result {
             panic!(
                 "{} policy fixture failed at {}:\n{report}",
