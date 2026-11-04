@@ -41,8 +41,7 @@ function configuration(request, env) {
 }
 
 function nativePath(path) {
-  const canonical = realpathSync.native(path).replace(/^\\\\\?\\/u, "").replaceAll("\\", "/");
-  return process.platform === "win32" ? canonical.toLowerCase() : canonical;
+  return realpathSync.native(path).replace(/^\\\\\?\\/u, "").replaceAll("\\", "/");
 }
 
 async function json(response) {

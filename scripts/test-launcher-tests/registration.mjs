@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
@@ -20,6 +21,101 @@ const registrationQuery = (request, runDir, source = "index") => ({ source, run:
 } });
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 const registrationEnv = { ...env, TERMAL_BASE_URL: "http://127.0.0.1:1" };
+
+test("registration confirms the canonical paths of a mixed-case checkout", async () => {
+  await repository(async (root) => {
+    const checkout = join(root, "UpperCaseCheckout");
+    mkdirSync(checkout);
+    git(["init", "--quiet", "--template="], checkout);
+    git(["config", "core.autocrlf", "false"], checkout);
+    writeFileSync(join(checkout, "tracked.txt"), "baseline\n");
+    git(["add", "tracked.txt"], checkout);
+    const canonicalRoot = realpathSync.native(checkout);
+    assert.ok(canonicalRoot.endsWith("UpperCaseCheckout"));
+    let request, directory;
+    const fetch = async (_url, options) => {
+      if (options.method === "POST") {
+        directory = JSON.parse(options.body).runDirectory;
+        request = json(join(directory, "request.json"));
+        return response(registrationAck(request));
+      }
+      const query = registrationQuery(request, realpathSync.native(directory));
+      query.run.worktree = canonicalRoot;
+      return response(query);
+    };
+    const runDir = await createRun({ root: checkout, detached: true, stages: [stage("once")] },
+      registrationEnv, { fetch });
+    request = json(join(runDir, "request.json"));
+    assert.equal(request.registration.state, "registered");
+    assert.equal(request.registration.nativeWaitReady, true);
+    const confirmed = await confirmDetachedRegistration(request, runDir, registrationEnv, { fetch });
+    assert.equal(confirmed.state, "registered");
+    assert.equal(confirmed.nativeWaitReady, true);
+  });
+});
+
+test("registration distinguishes real case-sensitive roots and run directories", async (t) => {
+  await repository(async (root) => {
+    const parent = join(root, "case-sensitive");
+    mkdirSync(parent);
+    if (process.platform === "win32") {
+      const fsutil = (action) => spawnSync("fsutil.exe", ["file", action, parent,
+        ...(action === "setCaseSensitiveInfo" ? ["enable"] : [])], {
+        encoding: "utf8", windowsHide: true, timeout: 5_000, maxBuffer: 4_096,
+      });
+      for (const action of ["setCaseSensitiveInfo", "queryCaseSensitiveInfo"]) {
+        const result = fsutil(action);
+        if (result.error || result.status !== 0) {
+          const detail = String(result.error?.message ?? [result.stdout, result.stderr].filter(Boolean).join(" "))
+            .trim().slice(0, 512);
+          t.skip(`case-sensitive Windows directory unavailable: ${action}: ${detail || result.status}`);
+          return;
+        }
+      }
+    }
+    const worktree = join(parent, "RegistrationRoot"), otherWorktree = join(parent, "registrationroot");
+    const directory = join(parent, "RunDirectory"), otherDirectory = join(parent, "rundirectory");
+    mkdirSync(worktree);
+    try { mkdirSync(otherWorktree); }
+    catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      t.skip(`case-sensitive filesystem unavailable on ${process.platform}: case-only sibling already exists`);
+      return;
+    }
+    mkdirSync(directory);
+    mkdirSync(otherDirectory);
+    for (const [path, marker] of [[worktree, "worktree"], [otherWorktree, "other-worktree"],
+      [directory, "run"], [otherDirectory, "other-run"]]) {
+      writeFileSync(join(path, "marker"), marker);
+      assert.equal(readFileSync(join(path, "marker"), "utf8"), marker);
+    }
+    assert.deepEqual(readdirSync(parent).sort(), ["RegistrationRoot", "RunDirectory", "registrationroot", "rundirectory"]);
+    assert.notEqual(realpathSync.native(worktree), realpathSync.native(otherWorktree));
+    assert.notEqual(realpathSync.native(directory), realpathSync.native(otherDirectory));
+    assert.equal(readFileSync(join(worktree, "marker"), "utf8"), "worktree");
+    assert.equal(readFileSync(join(directory, "marker"), "utf8"), "run");
+    const request = { runId: randomUUID(), root: worktree, owner: "fixture-owner", creatorPid: process.pid,
+      started: new Date().toISOString(), detached: true, stages: [] };
+    const fetch = (change = {}) => async (_url, options) => {
+      const query = registrationQuery(request, realpathSync.native(directory));
+      query.run.worktree = realpathSync.native(worktree);
+      Object.assign(query.run, change);
+      return response(options.method === "POST" ? registrationAck(request) : query);
+    };
+    const wrongRoot = await registerTestRun(request, directory, registrationEnv,
+      { fetch: fetch({ worktree: realpathSync.native(otherWorktree) }) });
+    assert.equal(wrongRoot.state, "unconfirmed");
+    assert.equal(wrongRoot.reason, "query-identity-mismatch");
+    assert.equal(wrongRoot.nativeWaitReady, false);
+    request.registration = await registerTestRun(request, directory, registrationEnv, { fetch: fetch() });
+    assert.equal(request.registration.state, "registered");
+    const wrongDirectory = await confirmDetachedRegistration(request, directory, registrationEnv,
+      { fetch: fetch({ runDir: realpathSync.native(otherDirectory) }) });
+    assert.equal(wrongDirectory.state, "unconfirmed");
+    assert.equal(wrongDirectory.reason, "query-identity-mismatch");
+    assert.equal(wrongDirectory.nativeWaitReady, false);
+  });
+});
 
 test("registration covers all launch modes before fingerprint capture through the supported HTTP contract", async () => {
   await repository(async (root) => {
