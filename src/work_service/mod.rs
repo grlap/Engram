@@ -993,6 +993,56 @@ fn agent_change_object(
                 created_at: producer.recorded_at,
             }))
         }
+        crate::domain::REMOTE_TERMINAL_ORIGIN_KIND => {
+            let origin = serde_json::from_value::<crate::domain::RemoteTerminalOrigin>(object)?;
+            if &origin.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "remote terminal origin is bound outside its project".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: origin.schema_version,
+                object_kind: object_kind.into(),
+                work_id: None,
+                work_ref: None,
+                revision: None,
+                change_kind: object_kind.into(),
+                summary: compact_text(&origin.completion.headline()),
+                actor_id: Some(compact_text(&origin.actor.actor_id)),
+                actor_context: projected_actor_context(&origin.actor),
+                created_at: origin.recorded_at,
+            }))
+        }
+        crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND => {
+            let record = serde_json::from_value::<
+                crate::domain::RemoteVerificationAssociationRecord,
+            >(object)?;
+            if &record.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "remote verification is bound outside its project".into(),
+                ));
+            }
+            // A stale or unsupported delivery names a destination it never
+            // reached, which may not even be an item of this project.
+            let binding = &record.request.association.binding;
+            let item = if record.is_in_item_scope() {
+                Some(store.get_work_item(binding.work_id)?)
+            } else {
+                None
+            };
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: record.schema_version,
+                object_kind: object_kind.into(),
+                work_id: item.as_ref().map(|item| item.work_id),
+                work_ref: item.map(|item| item.short_ref),
+                revision: record.is_in_item_scope().then_some(binding.work_revision),
+                change_kind: object_kind.into(),
+                summary: compact_text(&record.headline()),
+                actor_id: Some(compact_text(&record.actor.actor_id)),
+                actor_context: projected_actor_context(&record.actor),
+                created_at: record.associated_at,
+            }))
+        }
         "verification_evidence" => {
             let evidence = serde_json::from_value::<VerificationEvidence>(object)?;
             let item = store.get_work_item(evidence.binding.work_id)?;

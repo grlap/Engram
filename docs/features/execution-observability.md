@@ -28,6 +28,9 @@ The terms used throughout:
 - **registered verification**: a host-run check, registered before it ran
   and bound to an item, recorded through `verification_record` and credited
   to further items through `verification_bind`.
+- **remote verification**: a test run on another host, delivered as its
+  launcher's completion facts and a stated destination, through
+  `remote_verification_record`.
 - **acceptance evaluation**: the evidence-based judgement of an item's
   criteria before completion. It is **temporarily off** until Execution
   Observability is implemented; see
@@ -58,7 +61,8 @@ session is superseded.
 
 `work_session_read` takes no fields beyond `operation` and returns
 `project_id`, `session_id`, `work_session: true` and capabilities
-`host_work_v1` and `verification_record_v1`. It writes nothing. It also
+`host_work_v1`, `verification_record_v1` and
+`remote_verification_record_v1`. It writes nothing. It also
 advertises `verification_evidence_git_tree_applicability_v1: true` only while
 the serving connection observes the exact current
 [git-tree applicability barrier](verification-applicability.md#schema-barrier-and-cutover).
@@ -67,8 +71,8 @@ credit.
 
 The channel accepts `control_connection_read`, `named_root_bind`,
 `named_root_read`, `named_root_sighting_read`, `acceptance_binding_read`,
-`acceptance_verification_read`, `execution_observe`, `verification_record`
-and `verification_bind`. Connection fencing,
+`acceptance_verification_read`, `execution_observe`, `verification_record`,
+`verification_bind` and `remote_verification_record`. Connection fencing,
 project/work/run/claim association, source validation, exact operation
 retries and evidence eligibility apply to every request. Naming a fresh root
 requires the live claim holder and fence; ending a root and recording an
@@ -587,6 +591,136 @@ requirement never names an environment, and a requirement that names
 evidence to follow the latest mutation at the evaluated run-feed cut, so a
 later source mutation reopens the requirement. Generic agent-recorded
 `work_evidence` remains useful context but never verifies a check.
+
+## Remote verification
+
+The host-private `remote_verification_record` operation records a test run on
+another host, launched by that host's native root and delivered over the
+existing mailbox. Its facts are **asserted by the host, not independently
+proven**: the host correlates them with its retained native run and the original
+request, and mailbox text saying PASS or exit 0 is never evidence. There is no
+log, results bundle, file hash, source remeasurement, extra capture or agent
+import step.
+
+`work_session_read` advertises `remote_verification_record_v1`. **The first
+delivery requires every consumer of the store on a build that has this
+operation.** The change adds no durable schema, table, column or index, so a
+store is ready and the binary is installed as usual, and import needs no
+conversion. But an older build cannot read the two record kinds: its delivery
+page stops at them, it cannot read a verification they produced, and its doctor
+reports them. The capability alone does not prove this, because a control
+sidecar can advertise it while an MCP server still runs the older build until
+the host restarts. A host holds its first delivery until that restart has
+happened. Once a store holds a delivery, reinstalling an older build is unsafe.
+
+```text
+operation_key
+completion: {schema_version: 1, origin: {host_id, runner_session_id}, run_id,
+  mode: full|focused,
+  result: {verdict: PASS|FAIL|INTERRUPTED|RUNNING|UNKNOWN, terminal, exit, reason},
+  input: {commit?, tree?, before_fingerprint?, after_fingerprint?},
+  finished_at?}
+association: {binding, root, use}
+use: {kind: committed_input, expected_commit, purpose: verification|landing_gate}
+   | {kind: authorized_test_ref, ref_name, expected_tree, purpose: landing_gate}
+```
+
+`exit` must be stated and may be null; other optional members are omitted when
+missing, never null. Missing facts stay missing and are never guessed. A
+malformed value or an unknown member answers `invalid_request` and records
+nothing. A well-formed finish time ahead of this host's clock is not malformed: it
+stays provisional, visible and uncredited, with a null origin, `result_not_pass`
+and the time in `detail`, and a later delivery settles it under a new key.
+
+**Send the complete retained facts the first time.** The first authoritative facts
+are the run's terminal, so a later delivery of the same run with more facts, such
+as a fingerprint or finish time left out at first, is `result_conflict`. Only a
+provisional delivery can be followed by fuller facts.
+
+The receipt is `{operation, origin, verifications: [{stage: full, record_id}],
+qualification: {credited, reason?, detail?}}`. `operation` names the delivery's
+record, and `origin` names the run's terminal record or is null. An exact retry
+under the same key returns the same receipt before its destination is judged
+again, even after the claim or root has moved; a changed request under the same
+key conflicts. The same result delivered to the same destination for the same use
+under another key returns the existing delivery, so one result earns one credit
+there.
+
+### One terminal, many deliveries
+
+A `remote_terminal_origin` holds one run's terminal facts, once per project,
+host and run. Its uniqueness is a `remote_verification_origin` row in
+`work_operation_results`, keyed by project, host and run. Only `terminal` true
+with verdict PASS, FAIL or INTERRUPTED, and a finish time this host's clock has
+reached, settles it, so a running, unknown or inferred snapshot never fixes the
+terminal, and a later real terminal of the same run settles without conflict. The launcher really emits UNKNOWN with `terminal`
+true (`input-unverified`) and INTERRUPTED with `terminal` false
+(`heartbeat-stale`); both stay provisional. Two different terminals for one run
+are `result_conflict`, and the first stays.
+
+A `remote_verification_association` records one delivery: the request as stated,
+the origin, the decision and the local `associated_at`. The run's own
+`finished_at` stays apart from that time and is what every time guard reads. The
+delivery stands on its item's project, root and run feeds, and `show` lists it
+among the item's observations with both times, where it cannot be cited as run
+evidence. A stale or unsupported delivery goes on the project feed only, and
+writes nothing in that item's scope, so `show` does not list it: its durable
+visibility is its receipt, which an exact retry returns, and one change delivery
+to each session. A result can serve several items, as one origin with several
+deliveries.
+
+### What earns credit
+
+One decision serves every use. Reasons apply in this order:
+
+1. `producer_unsupported`: this build does not read the completion's
+   `schema_version`.
+2. `association_stale`: the destination's item, revision, claim, fence, run or
+   named root has moved.
+3. `result_conflict`: the run already has different terminal facts.
+4. `not_full_mode`: a focused pass stays visible author evidence only.
+5. `untracked_debris_pending_disposition`: a native FAIL whose reason is
+   `new-untracked-only`.
+6. `result_not_pass`: anything but a terminal PASS with exit 0 and a finish time
+   this host's clock has reached.
+7. `commit_mismatch`: for `committed_input`, the tested commit is missing or
+   another commit, even with the same tree.
+8. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
+   another tree.
+9. `fingerprint_missing_or_changed`: for `landing_gate` only, the before and after
+   fingerprints are not both present and equal.
+
+`detail` names missing data; there are no further reasons. An ordinary
+`verification` has no fingerprint rule at all, not even for differing optional
+fingerprints. The launcher's native reason is kept unchanged. A debris result
+counts toward landing only through the integration owner's existing disposition
+note and run-referenced gate record; neither that gate nor a mailbox message makes
+it verification.
+
+Only a qualifying delivery mints verification: one `test` record, written by the
+same writer as any other, whose producer is the delivery. `committed_input` is the
+input `git-commit:<expected_commit>` and `authorized_test_ref` is
+`git-tree:<expected_tree>`, so it enters the same
+[registered Git input](acceptance-evaluation.md#registered-git-input-evidence)
+decision, and the same root, run, cut, time and mutation guards. The wire names no
+check, so its `check_fingerprint` is derived from the host, run and mode: it
+satisfies a requirement that leaves the check open, and a requirement pinning
+another check stays unmet. It never goes through a local producer, grant, turn,
+sighting or `execution_observe`. Purpose and ref tags grant no authority, and
+credit is not landing authority. Platform coverage stays the integration owner's
+judgment.
+
+**Cross-host time ordering assumes comparable clocks.** The time guards compare the
+remote finish time with local times, and nothing attests that time. A remote clock
+running behind can withhold credit. A remote clock running ahead can make an old
+run appear to follow a later local change: a run that ended at T, a local change at
+T+30 and a delivery at T+60 pass every guard if the origin's clock is 45 seconds
+ahead. The exact-input guarantee does not depend on clocks: credit names the exact
+commit or tree the run tested, and evaluation and completion compare exactly that.
+
+`verification_bind` can copy a credited remote check through its ordinary bound
+branch, under its usual measurement rules. Crediting another item with the result
+itself is a new delivery of the same origin.
 
 ## Obligations from source changes
 

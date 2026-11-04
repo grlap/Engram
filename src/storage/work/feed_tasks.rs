@@ -255,6 +255,8 @@ fn affected(
         | "verification_evidence"
         | "environment_evidence"
         | "registered_host_run"
+        | crate::domain::REMOTE_TERMINAL_ORIGIN_KIND
+        | crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND
         | "work_obligation"
         | "work_obligation_resolution"
         | "memory_version"

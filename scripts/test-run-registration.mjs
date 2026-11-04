@@ -17,6 +17,9 @@ function requestIdentity(request) {
     : value && typeof value === "object"
       ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, ordered(value[key])])) : value;
   const fields = Object.fromEntries(immutableFields.map((key) => [key, request[key] ?? null]));
+  // Absent input keeps the historical identity byte-for-byte. The host uses
+  // an explicit input kind to choose its binding, so that kind is immutable.
+  if (request.input !== undefined) fields.input = request.input;
   return createHash("sha256").update(JSON.stringify(ordered(fields))).digest("hex");
 }
 

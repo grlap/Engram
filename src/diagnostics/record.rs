@@ -336,6 +336,7 @@ pub(super) fn label(value: &str) -> &'static str {
         "execution_observe",
         "verification_bind",
         "verification_record",
+        "remote_verification_record",
         "startup",
     ];
     LABELS

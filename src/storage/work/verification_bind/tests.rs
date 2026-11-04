@@ -504,6 +504,89 @@ fn a_check_binds_to_two_items_on_one_root_with_distinct_generations() {
     assert!(report.is_healthy(), "{report:?}");
 }
 
+/// A remote check can be bound like any native one when the target's root
+/// measures the same input: the copy keeps the ordinary bound branch, and its
+/// producer stays the delivery on the original's run. Crediting another item
+/// directly is a new delivery of the same origin instead.
+#[test]
+fn a_credited_remote_check_binds_through_the_ordinary_branch() {
+    use crate::domain::{
+        REMOTE_COMPLETION_SCHEMA_VERSION, RegisteredVerificationRoot, RemoteRunCompletion,
+        RemoteRunInput, RemoteRunMode, RemoteRunOrigin, RemoteRunResult, RemoteRunVerdict,
+        RemoteVerificationAssociation, RemoteVerificationPurpose, RemoteVerificationRequest,
+        RemoteVerificationUse,
+    };
+    let commit = "c".repeat(40);
+    let revision = format!("git-commit:{commit}");
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let a = held(&mut store, "item-a", HOLDER, 9, &revision, 2);
+    let b = held(&mut store, "item-b", HOLDER, 10, &revision, 4);
+    let delivery = RemoteVerificationRequest {
+        operation_key: "remote:item-a".into(),
+        completion: RemoteRunCompletion {
+            schema_version: REMOTE_COMPLETION_SCHEMA_VERSION,
+            origin: RemoteRunOrigin {
+                host_id: "dl560".into(),
+                runner_session_id: "native-root".into(),
+            },
+            run_id: "test-remote".into(),
+            mode: RemoteRunMode::Full,
+            result: RemoteRunResult {
+                verdict: RemoteRunVerdict::Pass,
+                terminal: true,
+                exit: Some(0),
+                reason: "completed".into(),
+            },
+            input: RemoteRunInput {
+                commit: Some(commit.clone()),
+                ..RemoteRunInput::default()
+            },
+            finished_at: Some(at(20)),
+        },
+        association: RemoteVerificationAssociation {
+            binding: binding_of(&store, &a),
+            root: RegisteredVerificationRoot {
+                workspace_id: ROOT.into(),
+                generation: 9,
+                state: SourceRootState::Named,
+            },
+            intended_use: RemoteVerificationUse::CommittedInput {
+                expected_commit: commit,
+                purpose: RemoteVerificationPurpose::Verification,
+            },
+        },
+    };
+    let transaction = store
+        .connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("delivery transaction");
+    let receipt = super::super::remote_verification::record_remote_verification_on(
+        &transaction,
+        &crate::domain::ProjectId("project-a".into()),
+        &SessionId(HOLDER.into()),
+        &actor(HOLDER),
+        &delivery,
+        at(21),
+    )
+    .expect("delivery");
+    transaction.commit().expect("commit delivery");
+    assert!(receipt.qualification.credited, "{receipt:?}");
+    let original = receipt.verifications[0].record_id.clone();
+    let input = request(
+        &original,
+        &revision,
+        vec![target(&store, &b, &revision, vec![1])],
+    );
+    let VerificationBindOutcome::Bound(bound) = bind(&mut store, &input, 30) else {
+        panic!("the bind is refused")
+    };
+    let record = stored(&store, &bound.bound[0].verification);
+    assert_eq!(record.producer_observation, receipt.operation);
+    assert!(record.bound_from.is_some());
+    let report = store.verify_all().expect("doctor");
+    assert!(report.is_healthy(), "{report:?}");
+}
+
 /// An operator's obligation rule set names its own rules. A bind that
 /// satisfies such a rule returns the operator's rule id, and the receipt
 /// still holds to the host identifier contract (`bind` checks it).

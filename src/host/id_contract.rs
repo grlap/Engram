@@ -131,7 +131,8 @@ pub(crate) fn class_of(field: &str) -> Option<IdClass> {
         | "replacement_decision"
         | "producer"
         | "record_id"
-        | "object_id" => IdClass::RecordId,
+        | "object_id"
+        | "origin" => IdClass::RecordId,
         // Typed identities.
         "task_id" | "root_execution_id" | "work_id" | "run_id" | "run" | "claim_id"
         | "obligation_id" | "root_id" | "memory_id" => IdClass::Uuid,
@@ -146,8 +147,8 @@ pub(crate) fn class_of(field: &str) -> Option<IdClass> {
         // Built-in obligation rules.
         "rule_id" | "obligations_satisfied" => IdClass::RuleId,
         // Git objects the host names.
-        "git_tree" | "tree" => IdClass::GitTree,
-        "commit" | "base_commit" => IdClass::GitCommit,
+        "git_tree" | "tree" | "expected_tree" => IdClass::GitTree,
+        "commit" | "base_commit" | "expected_commit" => IdClass::GitCommit,
         // Identifiers and keys the host mints, and Engram's directive id,
         // which is built from the host's request key.
         "session_id"
@@ -165,10 +166,13 @@ pub(crate) fn class_of(field: &str) -> Option<IdClass> {
         | "host_check_id"
         | "host_turn_ref"
         | "host_evidence_ref"
-        | "external_ref" => IdClass::HostId,
+        | "external_ref"
+        | "host_id"
+        | "runner_session_id" => IdClass::HostId,
         // Host text naming what the host measured or asserted.
         "workspace_id" | "source_revision" | "revision" | "project_id" | "actor_id"
-        | "agent_id" | "namespace" | "stage" => IdClass::HostText,
+        | "agent_id" | "namespace" | "stage" | "ref_name" | "before_fingerprint"
+        | "after_fingerprint" => IdClass::HostText,
         "work_ref" => IdClass::WorkRef,
         // Historical ExecutionObservation records may expose their original
         // grant id. No current host operation mints or admits a grant.
@@ -219,6 +223,10 @@ fn member_class(key: &str, map: &serde_json::Map<String, Value>) -> Option<IdCla
         // An actor context's run id is asserted text; a provenance link's
         // source and reference are host text.
         ("run_id", _, _) if map.contains_key("actor_kind") => Some(IdClass::HostText),
+        // A remote completion names its launcher run, which is the host's own.
+        ("run_id", _, _) if map.contains_key("runner_session_id") || map.contains_key("origin") => {
+            Some(IdClass::HostId)
+        }
         ("source" | "reference", _, _) if map.contains_key("relation") => Some(IdClass::HostText),
         // A historical delivery packet's memory names its version by record
         // id and its authority by a label.
@@ -451,6 +459,17 @@ mod tests {
             "request": {"operation": "verification_record", "operation_key": "termal-run:test-1",
                 "registration": {"host_run_id": "test-1", "request_identity": "request-a", "initiating_session_id": "session-1"},
                 "input": {"kind": "staged_tree", "tree": "d".repeat(40), "base_commit": "e".repeat(40)}},
+            // A remote result's receipt names its records; its completion names
+            // the launcher's own run and host, and Git objects.
+            "remote_receipt": {"operation": minted(), "origin": minted(),
+                "verifications": [{"stage": "full", "record_id": minted()}]},
+            "remote_snapshot_receipt": {"operation": minted(), "origin": null, "verifications": []},
+            "remote_request": {"operation": "remote_verification_record", "operation_key": "remote:1",
+                "completion": {"run_id": "test-1", "origin": {"host_id": uuid.clone(), "runner_session_id": "native root"},
+                    "input": {"commit": "e".repeat(40), "tree": "d".repeat(40),
+                        "before_fingerprint": "f".repeat(64), "after_fingerprint": "f".repeat(64)}},
+                "association": {"use": {"expected_commit": "e".repeat(40), "expected_tree": "d".repeat(64),
+                    "ref_name": "refs/heads/test/x"}}},
             // Host-minted keys, refs and text hold whatever form the host
             // gives them, including one shaped like an identifier.
             "idempotency_key": uuid.clone(),
@@ -492,6 +511,8 @@ mod tests {
             "work_ref": "not-a-ref",
             "registered": {"base_commit": "b".repeat(64)},
             "idempotency_key": "",
+            // A remote receipt's origin is a record id.
+            "remote": {"origin": "not-an-id", "expected_commit": "b".repeat(64)},
         });
         let breaks = contract_breaks(&broken);
         for path in [
@@ -510,12 +531,14 @@ mod tests {
             "/work_ref:",
             "/registered/base_commit:",
             "/idempotency_key:",
+            "/remote/origin:",
+            "/remote/expected_commit:",
         ] {
             assert!(
                 breaks.iter().any(|entry| entry.starts_with(path)),
                 "{path} not reported in {breaks:?}"
             );
         }
-        assert_eq!(breaks.len(), 15, "{breaks:?}");
+        assert_eq!(breaks.len(), 17, "{breaks:?}");
     }
 }

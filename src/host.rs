@@ -117,6 +117,14 @@ pub enum HostControlRequest {
         checks: Vec<crate::domain::RegisteredVerificationCheck>,
         post_run: crate::domain::RegisteredVerificationPostRun,
     },
+    /// Records one delivery of a test result from another host: its immutable
+    /// terminal facts, and the destination and use the host states. Only a
+    /// qualifying delivery mints verification.
+    RemoteVerificationRecord {
+        operation_key: String,
+        completion: Box<crate::domain::RemoteRunCompletion>,
+        association: Box<crate::domain::RemoteVerificationAssociation>,
+    },
 }
 
 impl HostControlRequest {
@@ -134,6 +142,7 @@ impl HostControlRequest {
             Self::ExecutionObserve { .. } => "execution_observe",
             Self::VerificationBind { .. } => "verification_bind",
             Self::VerificationRecord { .. } => "verification_record",
+            Self::RemoteVerificationRecord { .. } => "remote_verification_record",
         }
     }
 }
@@ -168,7 +177,8 @@ fn store_error_reason(error: &StoreError) -> Option<crate::storage::NamedRootRea
 /// The typed parts of `error` a host reads as data, when it has them.
 fn store_error_details(error: &StoreError) -> Option<Value> {
     match error {
-        StoreError::RegisteredVerificationRefused { field, reason } => {
+        StoreError::RegisteredVerificationRefused { field, reason }
+        | StoreError::RemoteVerificationInvalid { field, reason } => {
             Some(serde_json::json!({"field": field, "reason": reason}))
         }
         StoreError::VerificationBindRefused(refusal) => serde_json::to_value(refusal).ok(),
@@ -456,6 +466,27 @@ impl HostControlServer {
                         run,
                         checks,
                         post_run,
+                    },
+                    now,
+                )?)
+                .map_err(StoreError::Json)
+            }
+            HostControlRequest::RemoteVerificationRecord {
+                operation_key,
+                completion,
+                association,
+            } => {
+                let actor = self.actor("remote_verification_record", "record a remote test result");
+                serde_json::to_value(self.store.record_remote_verification(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.connection_token,
+                    crate::storage::HostSessionAuthority::Work,
+                    &actor,
+                    &crate::domain::RemoteVerificationRequest {
+                        operation_key,
+                        completion: *completion,
+                        association: *association,
                     },
                     now,
                 )?)
@@ -856,7 +887,11 @@ impl HostControlServer {
 
     /// The response to one parsed request.
     fn with_verification_applicability(&self, mut value: Value) -> Result<Value, StoreError> {
-        value["capabilities"] = serde_json::json!(["host_work_v1", "verification_record_v1"]);
+        value["capabilities"] = serde_json::json!([
+            "host_work_v1",
+            "verification_record_v1",
+            "remote_verification_record_v1"
+        ]);
         if self.store.verification_git_tree_applicability_available()? {
             value["verification_evidence_git_tree_applicability_v1"] = Value::Bool(true);
         }
@@ -1101,6 +1136,7 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
 pub fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::RegisteredVerificationRefused { .. } => "verification_record_refused",
+        StoreError::RemoteVerificationInvalid { .. } => "invalid_request",
         StoreError::ControlRequestExpired => "control_request_expired",
         StoreError::SearchBudgetExhausted { .. } => "search_budget_exhausted",
         StoreError::SearchCancelled => "search_cancelled",

@@ -386,7 +386,10 @@ The host's **work session** (`engram control --work-session`) carries:
   events, read back with `named_root_read` and `named_root_sighting_read`;
 - **registered verification**: terminal results of a durably registered host
   run, as `verification_record`, credited to further items with
-  `verification_bind`. Registration is asserted by the host, not proven.
+  `verification_bind`. Registration is asserted by the host, not proven;
+- **remote verification**: a test run on another host, delivered as its
+  launcher's completion facts and a stated destination, as
+  `remote_verification_record`, also asserted by the host.
 
 **Assignment** is future intent on a work item; a fenced **claim** schedules
 live execution of one run. Neither grants file or external authority.
@@ -996,6 +999,7 @@ the §2.7 protocol as JSON lines:
 work_session_read   control_connection_read
 named_root_bind   named_root_read   named_root_sighting_read
 execution_observe   verification_record   verification_bind
+remote_verification_record
 acceptance_binding_read   acceptance_verification_read
 ```
 

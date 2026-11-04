@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { captureFingerprint, classifyInputChange, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, captureFingerprint, classifyInputChange, fingerprintLimitations, isolatedGitEnvironment } from "./review-freeze-fingerprint.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registrationLine } from "./test-run-registration.mjs";
 
@@ -45,6 +45,7 @@ function publishCompletionRequest(runDir, request) {
   const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration } = request;
   save(join(runDir, "completion.request.json"), {
     runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration,
+    ...(request.input !== undefined ? { input: request.input, commit: request.commit, tree: request.tree } : {}),
   });
 }
 function publishLaunchRequest(runDir, request) {
@@ -450,7 +451,8 @@ export function machineRecord(request, result) {
     return { state, line };
   });
   const interrupted = result.interrupted === true || described.some(({ state }) => state === "interrupted");
-  const passed = !interrupted && result.state === "passed" && described.every(({ state }) => state === "passed");
+  const passed = !interrupted && result.state === "passed" && described.every(({ state }) => state === "passed")
+    && (request.input !== "commit" || result.input?.eligible === true);
   const overall = interrupted ? "interrupted" : passed ? "passed" : "failed";
   const recorded = recordToken.test(result.reason ?? "") ? result.reason : undefined;
   const reason = result.reason === "stopped" ? "stopped" : interrupted ? "stage-interrupted"
@@ -670,11 +672,13 @@ catch {
 }
 
 export async function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false,
-  item, nextTransition }, env = process.env, registrationOptions = {}) {
+  item, nextTransition, input: runInput, commitInputStatus = captureCommitInputStatus }, env = process.env, registrationOptions = {}) {
+  if (runInput !== undefined && runInput !== "commit") throw usageFailure("unsupported run input; use --input commit");
   validateLaunchMetadata({ item, nextTransition });
   const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
-    { cwd: root, encoding: "utf8", windowsHide: true });
+    { cwd: root, encoding: "utf8", windowsHide: true,
+      ...(runInput === "commit" ? { env: isolatedGitEnvironment(env) } : {}) });
   if (git.error || git.status !== 0) throw usageFailure(
     "git-run-directory-unavailable; run the launcher from a repository worktree with Git available");
   const runId = `test-${randomUUID()}`;
@@ -682,6 +686,7 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
     creatorPid: process.pid, owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
+    ...(runInput !== undefined ? { input: runInput } : {}),
     ...(full && detached && process.platform === "win32" ? { stopProtocol } : {}),
     ...(detached && ["darwin", "linux"].includes(process.platform) ? { stopProtocol: posixStopProtocol } : {}),
     ...(item !== undefined ? { item } : {}), ...(nextTransition !== undefined ? { nextTransition: { ...nextTransition } } : {}) };
@@ -701,7 +706,32 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     save(join(runDir, "results.json"), initial);
   } finally { clearInterval(registrationHeartbeat); }
   try {
-    const input = captureFingerprint(root);
+    let committed;
+    if (request.input === "commit") {
+      committed = await commitInputStatus(root, env);
+      if (!commitInputStatusClean(committed)) {
+        const result = readJson(join(runDir, "results.json"));
+        Object.assign(result, { state: "failed", exitCode: 1, reason: "input-not-clean", ended: new Date().toISOString(),
+          error: `committed-input run refused: checkout is not clean (${commitInputNotCleanReason(committed)}); no stage ran`,
+          input: { kind: "commit", cleanBefore: false, dirtyPaths: committed.entries,
+            skippedPaths: committed.skipped, filters: committed.filters, gitlinks: committed.gitlinks } });
+        save(join(runDir, "results.json"), result);
+        publishLaunchRequest(runDir, request);
+        return runDir;
+      }
+    }
+    const input = captureFingerprint(root, committed ? isolatedGitEnvironment(env) : process.env);
+    if (committed) {
+      const again = await commitInputStatus(root, env);
+      if (input.head !== committed.commit || again.commit !== committed.commit || again.tree !== committed.tree) {
+        throw new Error("committed-input run refused: HEAD moved while input was captured; no stage ran");
+      }
+      if (!commitInputStatusClean(again)) throw new Error("committed-input run refused: checkout changed during input capture; no stage ran");
+      Object.assign(request, { commit: committed.commit, tree: committed.tree });
+      const result = readJson(join(runDir, "results.json"));
+      result.input = { kind: "commit", commit: committed.commit, tree: committed.tree, cleanBefore: true };
+      save(join(runDir, "results.json"), result);
+    }
     save(join(runDir, "input.json"), input);
     request.expectedFingerprint = input.fingerprint;
     // The capture blocks the event loop; beat once it returns.
@@ -807,9 +837,9 @@ async function readDiagnostics(log, failed) {
     ...(fallback ? { fallback: "no recognized diagnostic; bounded failure tail" } : {}) };
 }
 
-function inputDrift(message, root) {
+function inputDrift(message, root, env = process.env) {
   const status = spawnSync("git", ["status", "--short"],
-    { cwd: root, encoding: "utf8", windowsHide: true });
+    { cwd: root, env, encoding: "utf8", windowsHide: true });
   const detail = status.error || status.status !== 0
     ? `status unavailable: ${status.error?.message ?? status.stderr}`
     : status.stdout || "(clean; inspect HEAD/index and the saved input)";
@@ -818,9 +848,30 @@ function inputDrift(message, root) {
     + (detail.length > diagnosticLimit ? "\n[status truncated]" : "")));
 }
 
-function currentCapture(root) {
-  try { return captureFingerprint(root); }
+function currentCapture(root, env = process.env) {
+  try { return captureFingerprint(root, env); }
   catch (error) { throw because("fingerprint-check-failed", error); }
+}
+
+export function commitInputStatusClean(status) {
+  return status.entries.length === 0 && status.skipped.length === 0 && status.filters.length === 0 && status.gitlinks.length === 0;
+}
+
+function commitInputNotCleanReason(status) {
+  return [status.entries.length ? "dirty paths" : "", status.skipped.length ? "skip-worktree or assume-unchanged" : "",
+    status.filters.length ? "configured Git filters" : "", status.gitlinks.length ? "unsupported Gitlinks" : ""].filter(Boolean).join(", ");
+}
+
+export function commitInputOutcome(commit, after) {
+  if (after.commit !== commit || after.skipped.length || after.filters.length || after.gitlinks.length
+      || after.entries.some((entry) => entry.status !== "??")) return "input_changed";
+  return after.entries.length ? "debris_pending_disposition" : "clean";
+}
+
+export function commitInputEligible(result) {
+  return result.input?.outcome === "clean" && result.state === "passed"
+    && typeof result.expectedFingerprint === "string" && result.expectedFingerprint.length > 0
+    && result.after === result.expectedFingerprint;
 }
 
 // The most new paths results.json lists; the admitted and after-run captures
@@ -911,9 +962,11 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   };
   try {
     request = readJson(join(runDir, "request.json"));
+    if (request.input !== undefined && request.input !== "commit") throw inputDrift("unsupported worker input", request.root);
     // What the record says of each stage is what was read here, before any
     // stage ran: a stage can write to the run directory.
-    const plan = { full: request.full === true, stages: (request.stages ?? []).map(({ kind, selects, command, args }) =>
+    const plan = { full: request.full === true, ...(request.input !== undefined ? { input: request.input } : {}),
+      stages: (request.stages ?? []).map(({ kind, selects, command, args }) =>
       ({ kind, selects, command, args: Array.isArray(args) ? [...args] : args })) };
     result.started = request.started;
     result.stages = (request.stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root }));
@@ -975,9 +1028,18 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
         await probe(`cargo-${index}`, cargo, args);
       }
     }
-    const admittedInput = currentCapture(request.root);
+    if (request.input === "commit") {
+      const status = captureCommitInputStatus(request.root, childEnv);
+      if (!commitInputStatusClean(status) || status.commit !== request.commit || status.tree !== request.tree
+          || result.input?.kind !== "commit" || result.input.cleanBefore !== true
+          || result.input.commit !== status.commit || result.input.tree !== status.tree) {
+        throw because("input-changed", new Error("committed-input worker has no matching clean commit; no stages run"));
+      }
+    }
+    const admittedInput = currentCapture(request.root, request.input === "commit" ? isolatedGitEnvironment(childEnv) : process.env);
     const before = admittedInput.fingerprint;
-    if (before !== request.expectedFingerprint) throw inputDrift("input drift before execution; no stages run", request.root);
+    if (before !== request.expectedFingerprint) throw inputDrift("input drift before execution; no stages run", request.root,
+      request.input === "commit" ? isolatedGitEnvironment(childEnv) : process.env);
     result.expectedFingerprint = request.expectedFingerprint;
     result.before = before;
     // The capture blocked the timer; beat with this save.
@@ -1010,14 +1072,33 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       save(resultPath, result);
       if (entry.state === "failed") break;
     }
-    const after = currentCapture(request.root);
-    result.after = after.fingerprint;
-    if (result.after !== result.expectedFingerprint) throw afterRunDrift(runDir, result, admittedInput, after, request.root);
+    const status = request.input === "commit" ? captureCommitInputStatus(request.root, childEnv) : null;
+    // Do not execute a newly configured filter, or enter a newly added
+    // submodule, merely to produce an after fingerprint of refused input.
+    const after = status && (status.filters.length || status.gitlinks.length) ? null
+      : currentCapture(request.root, status ? isolatedGitEnvironment(childEnv) : process.env);
+    if (after) result.after = after.fingerprint;
+    if (request.input === "commit") {
+      result.input.after = { commit: status.commit, tree: status.tree, clean: commitInputStatusClean(status), paths: status.entries,
+        ...(status.skipped.length ? { skippedPaths: status.skipped } : {}),
+        ...(status.filters.length ? { filters: status.filters } : {}), ...(status.gitlinks.length ? { gitlinks: status.gitlinks } : {}) };
+      result.input.outcome = commitInputOutcome(result.input.commit, status);
+      if (result.input.outcome === "debris_pending_disposition") result.input.disposition = null;
+    } else if (result.after !== result.expectedFingerprint) throw afterRunDrift(runDir, result, admittedInput, after, request.root);
     result.state = result.stages.every((stage) => stage.state === "passed") ? "passed" : "failed";
     result.exitCode = result.stages.find((stage) => stage.state === "failed")?.code || (result.state === "passed" ? 0 : 1);
+    if (result.input?.kind === "commit") {
+      result.input.eligible = commitInputEligible(result);
+      if (!result.input.eligible && result.state === "passed") {
+        result.exitCode = 1;
+        result.reason = result.input.outcome === "debris_pending_disposition" ? "new-untracked-only"
+          : result.after ? "input-changed" : "input-unverified";
+      }
+    }
   } catch (error) {
     result.state = "failed"; result.exitCode = 1; result.error = error.message;
     result.reason = error.reason ?? "launcher-error";
+    if (result.input?.kind === "commit") result.input.eligible = false;
     if (error.reason === "stopped") Object.assign(result, { interrupted: true, stop: error.stop });
     for (const stage of result.stages) if (stage.state === "running") { stage.state = "failed"; stage.error = error.message; }
   }
@@ -1038,6 +1119,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       delete result.stop;
     }
     result.ended = new Date().toISOString();
+    if (result.input?.kind === "commit" && (result.state !== "passed" || result.input.outcome !== "clean")) result.input.eligible = false;
     save(resultPath, result);
   };
   try {
@@ -1076,7 +1158,7 @@ export function runLiveness(result, now = Date.now()) {
   return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
 }
 
-const completionReasons = new Set(["input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
+const completionReasons = new Set(["input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
   "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed",
   "stop-request-invalid", "stop-request-unreadable"]);
 const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
@@ -1099,6 +1181,14 @@ function stateCounts(entries, state) {
 // A failed run whose stages all passed and whose input changed only by new
 // untracked paths, as the run itself recorded it.
 function newUntrackedOnly(result) {
+  if (result.input?.kind === "commit") {
+    const paths = result.input.after?.paths;
+    return result.reason === "new-untracked-only" && result.input.outcome === "debris_pending_disposition"
+      && Array.isArray(paths) && paths.length > 0
+      && paths.every((entry) => entry?.status === "??" && typeof entry.path === "string" && entry.path.length > 0)
+      && Array.isArray(result.stages) && result.stages.length > 0
+      && result.stages.every((entry) => entry !== null && typeof entry === "object" && stageState(entry) === "passed");
+  }
   const check = result.inputCheck;
   return result.reason === "new-untracked-only" && check?.outcome === "new-untracked-only"
     && Number.isSafeInteger(check.totalNewPaths) && check.totalNewPaths > 0
@@ -1184,9 +1274,23 @@ function renderCompletion(runDir, request, result, now) {
     `input: ${metadata.input.comparison}; expectedFingerprint=${metadata.input.expected}; boundary comparison only, not host check credit`];
   const registration = registrationLine(result.registration ?? request.registration);
   if (registration) lines.push(registration);
-  if (metadata.reason === "new-untracked-only") {
-    const check = result.inputCheck;
-    lines.push(`input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=${check.totalNewPaths} listed=${check.newPaths.length} omitted=${check.omittedPaths}; the paths are in results.json inputCheck; the integration owner records what they are before a full gate counts`);
+  if (request.input === "commit") {
+    const input = result.input;
+    const objectId = (value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value) ? value : "unknown";
+    const outcome = ["clean", "debris_pending_disposition", "input_changed"].includes(input?.outcome) ? input.outcome
+      : input?.cleanBefore === false ? "refused-not-clean" : "unknown";
+    lines.push(`committed-input: commit=${quote(objectId(input?.commit))} tree=${quote(objectId(input?.tree))} outcome=${quote(outcome)} eligible=${input?.eligible === true}`);
+  }
+  if (metadata.reason === "new-untracked-only" || result.reason === "new-untracked-only") {
+    if (!newUntrackedOnly(result)) {
+      lines.push("input-change: details unavailable; saved debris metadata is incomplete");
+    } else if (result.input?.kind === "commit") {
+      const paths = result.input.after.paths;
+      lines.push(`input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=${paths.length}; the paths are in results.json input.after.paths; the integration owner records what they are before a full gate counts`);
+    } else {
+      const check = result.inputCheck;
+      lines.push(`input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=${check.totalNewPaths} listed=${check.newPaths.length} omitted=${check.omittedPaths}; the paths are in results.json inputCheck; the integration owner records what they are before a full gate counts`);
+    }
   }
   if (["stage", "startup", "between-stages", "finishing"].includes(result.recovered?.phase)) {
     const stage = typeof result.recovered.stage === "string" && recordToken.test(result.recovered.stage)
@@ -1460,7 +1564,17 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
       + `\`node scripts/test-launcher.mjs summary "${runDir}"\` tells which from the heartbeat.\n`);
     return { child, completion };
   } catch (error) {
-    throw Object.assign(error, { runDir, safeCompletionText: "worker-startup-failed",
+    // A worker can finish an already-recorded input refusal before it sends
+    // readiness. Preserve that fixed reason instead of calling it a crash.
+    let reason = "worker-startup-failed";
+    if (request.input === "commit") {
+      try {
+        const result = readJson(join(runDir, "results.json"));
+        if (isTerminal(result) && result.reason === "input-not-clean"
+            && result.input?.kind === "commit" && result.input.cleanBefore === false) reason = "input-not-clean";
+      } catch { /* unreadable startup artifacts retain the startup diagnosis */ }
+    }
+    throw Object.assign(error, { runDir, safeCompletionText: reason,
       launcherLog: join(runDir, "launcher.log") });
   } finally { closeSync(fd); }
 }
@@ -1544,13 +1658,14 @@ async function main(args) {
     catch (error) { throw workerFailure(runDir, error); }
     return;
   }
-  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR | stop RUN_ID --reason TEXT --actor TEXT");
-  let notifyTo, detach = false, item, nextOwner, nextAction;
+  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--input commit] [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR | stop RUN_ID --reason TEXT --actor TEXT");
+  let notifyTo, detach = false, item, nextOwner, nextAction, input;
   const metadataFlags = new Set();
   const requiredBinaryEnv = [];
   while (args.length && args[0] !== "--") {
     const flag = args.shift();
     if (flag === "--detach") detach = true;
+    else if (flag === "--input" && input === undefined && args[0] === "commit") input = args.shift();
     else if (["--item", "--next-owner", "--next-action"].includes(flag)) {
       if (metadataFlags.has(flag)) throw usageFailure(`${flag} may be supplied only once`);
       metadataFlags.add(flag);
@@ -1582,7 +1697,7 @@ async function main(args) {
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
   const stages = mode === "full" ? requiredStages()
     : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
-  const runDir = await createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition });
+  const runDir = await createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition, input });
   if (!detach) { await finish(runDir, { foregroundReceipt: true }); return; }
   try { await startDetached(runDir); }
   catch (error) { throw Object.assign(error, { runDir,

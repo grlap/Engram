@@ -271,6 +271,36 @@ node scripts/test-launcher.mjs focused -- node --test scripts/test-launcher.test
 node scripts/test-launcher.mjs focused -- cargo test --lib control_runtime
 ```
 
+To select the ordinary committed-input lane explicitly, use
+`node scripts/test-launcher.mjs focused --input commit -- COMMAND ARGS...`
+or `node scripts/test-launcher.mjs full --input commit`. The request names
+`input: "commit"`; request and result records include the tested commit and
+tree. Registration still precedes input capture, and the host obtains any
+work binding from its current claim and named root. The launcher supplies no
+claim or credit itself. Without the flag, the existing request identity and
+fingerprint lane are unchanged.
+
+This lane requires a clean Git checkout before capture and worker execution.
+It checks again after fingerprint capture and refuses a moved commit, dirty
+paths, skip-worktree or assume-unchanged entries, configured filters, and
+Gitlinks by name. Gitlinks remain unsupported by the current ordinary host
+lane. Repository ignores and local excludes apply; global ignore and
+attribute files and inherited Git redirection do not. The fingerprint format
+itself is unchanged.
+
+After execution, `results.input` keeps the actual stage outcome separate from
+input eligibility: `clean`, `debris_pending_disposition`, or `input_changed`.
+Only clean input, a matching after fingerprint and passing stages set
+`eligible: true`; missing post-run input never does. An ineligible run exits
+nonzero and its machine record says `overall=failed`, even when `results.state`
+and every stage remain `passed`. Its reason names `input-changed`,
+`new-untracked-only` for debris, or `input-unverified` when capture was unsafe.
+Debris still needs the integration owner's existing
+disposition, and eligibility is not host verification or landing approval.
+The host reads the shared committed-input shape; the additional tree field
+is launcher provenance, not an independent host tree validation. Detached
+workers, recovery and notification retries retain the admitted input lane.
+
 Full mode is the landing validation of a frozen changeset with any non-`.md`
 path, including configuration, lockfiles and fixtures. Focused mode is the
 fast correction check between fixes: it runs the tests that cover a fix before
@@ -936,7 +966,9 @@ tests.
 - `overall` covers validation only: the stages and the input fingerprint check.
   A failed completion notification changes the process's exit status, not the
   record. `reason` is given when the run did not pass: `stage-failed`,
-  `stage-interrupted`, `preflight-failed`, `spawn-failed`, `input-changed`,
+  `stage-interrupted`, `preflight-failed`, `spawn-failed`, `input-not-clean`
+  (the commit lane refused before execution), `input-unverified` (no safe
+  after-run capture), `input-changed`,
   `new-untracked-only` (every stage passed and the input changed only by new
   untracked paths, as above), `fingerprint-check-failed`, or
   `launcher-error` for any other refusal. A

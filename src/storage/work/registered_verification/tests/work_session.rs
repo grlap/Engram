@@ -316,7 +316,11 @@ fn work_session_wire_omits_control_routing_but_keeps_registered_credit_and_exact
     assert_eq!(session["work_session"], true);
     assert_eq!(
         session["capabilities"],
-        serde_json::json!(["host_work_v1", "verification_record_v1"])
+        serde_json::json!([
+            "host_work_v1",
+            "verification_record_v1",
+            "remote_verification_record_v1"
+        ])
     );
     let first = server
         .handle(serde_json::from_value(wire.clone()).unwrap())

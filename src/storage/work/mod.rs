@@ -86,6 +86,8 @@ pub(in crate::storage) use session::register_process_default_in_write;
 pub use writer_admission::WorkWriterAdmissionReason;
 pub(crate) use writer_admission::WriterAdmissionWindow;
 #[cfg(test)]
+pub(crate) use writer_admission::advance_writer_admission_window;
+#[cfg(test)]
 pub(crate) use writer_admission::last_writer_admission_allowance;
 #[cfg(test)]
 pub(crate) use writer_admission::with_writer_admission_test_policy;
@@ -103,6 +105,8 @@ mod verification_producer;
 pub(in crate::storage) use verification_producer::load_verification_producer_on;
 mod registered_verification;
 pub(in crate::storage) use registered_verification::record_registered_verification_on;
+mod remote_verification;
+pub(in crate::storage) use remote_verification::record_remote_verification_on;
 #[cfg(test)]
 pub(crate) use verification_bind::bound_assessment_fixture;
 pub(in crate::storage) use verification_bind::{

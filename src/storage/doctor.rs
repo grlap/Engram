@@ -582,6 +582,11 @@ impl SqliteStore {
                 "verification_record" => super::registered_verification::row_matches(
                     connection, &stored.session_id, intent.clone(), result,
                 )?,
+                super::remote_verification::REMOTE_VERIFICATION_OPERATION => {
+                    super::remote_verification::row_matches(
+                        connection, &stored.session_id, intent.clone(), result,
+                    )?
+                }
                 "turn_begin" | "turn_checkpoint" | "lease_acquire" | "obligation_waive" => result
                     .get("decision")
                     .and_then(serde_json::Value::as_str)

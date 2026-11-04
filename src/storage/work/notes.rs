@@ -93,6 +93,11 @@ pub(super) const NOTE_OBJECTS: &str = "
     FROM work_restored_evidence WHERE work_id = ?1
     UNION ALL
     SELECT observation_id, 'observation', NULL FROM work_observations WHERE work_id = ?1
+    UNION ALL
+    SELECT entry.object_id, 'remote', NULL
+    FROM work_runs run JOIN work_feed_entries entry
+      ON entry.feed_kind = 'run_execution' AND entry.feed_id = run.run_id
+    WHERE run.work_id = ?1 AND entry.object_kind = 'remote_verification_association'
 ";
 
 fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(), StoreError> {
@@ -222,6 +227,22 @@ pub(super) fn load_note(
                     refs: observation.refs,
                     actor: observation.actor,
                     recorded_at: observation.created_at,
+                },
+            )
+        }
+        ("remote", crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND) => {
+            let record: crate::domain::RemoteVerificationAssociationRecord =
+                load_typed_work_object(connection, hash, kind)?;
+            (
+                record.request.association.binding.work_id,
+                WorkNoteRecord {
+                    kind: WorkEvidenceKind::Generic,
+                    summary: record.describe(),
+                    gate: None,
+                    verification: None,
+                    refs: Vec::new(),
+                    actor: record.actor,
+                    recorded_at: record.associated_at,
                 },
             )
         }

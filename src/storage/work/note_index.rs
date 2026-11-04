@@ -67,6 +67,7 @@ pub(super) enum NativeNote<'a> {
     Verification(&'a crate::VerificationEvidence),
     Observation(&'a crate::domain::WorkObservation),
     Restored(&'a crate::RestoredWorkEvidence),
+    RemoteVerification(&'a crate::domain::RemoteVerificationAssociationRecord),
 }
 
 /// The writer supplies its already validated value and appended positions;
@@ -108,6 +109,11 @@ pub(super) fn append_native(
         NativeNote::Observation(note) => (
             note.work_id,
             search_fields(&note.summary, &note.refs, None),
+            WorkRecordFamily::Observations,
+        ),
+        NativeNote::RemoteVerification(record) => (
+            record.request.association.binding.work_id,
+            search_fields(&record.describe(), &[], None),
             WorkRecordFamily::Observations,
         ),
         NativeNote::Restored(note) => (

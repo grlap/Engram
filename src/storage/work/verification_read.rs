@@ -428,7 +428,9 @@ impl CandidateScan<'_> {
             Some((at, kind))
                 if matches!(
                     kind.as_str(),
-                    "execution_observation" | "registered_host_run"
+                    "execution_observation"
+                        | "registered_host_run"
+                        | crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND
                 ) && 0 < at
                     && at < position =>
             {
@@ -496,7 +498,12 @@ pub(super) fn bound_verification_read_on(
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()?;
-    let Some((producer_position, "execution_observation" | "registered_host_run")) = producer_entry
+    let Some((
+        producer_position,
+        "execution_observation"
+        | "registered_host_run"
+        | crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND,
+    )) = producer_entry
         .as_ref()
         .map(|(position, kind)| (*position, kind.as_str()))
     else {

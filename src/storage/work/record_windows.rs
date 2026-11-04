@@ -228,7 +228,7 @@ impl WorkRecordReader<'_> {
         let sql = match kind {
             WorkRecordKind::Notes | WorkRecordKind::NotesWithGates => format!(
                 "SELECT notes.hash, notes.family, entry.position, entry.object_kind,
-                    CASE WHEN notes.family = 'observation' THEN 'observations'
+                    CASE WHEN notes.family IN ('observation', 'remote') THEN 'observations'
                          WHEN notes.family = 'restored' THEN
                              CASE WHEN notes.restored_gate THEN 'gates' ELSE 'notes' END
                          WHEN entry.object_kind = 'work_evidence' THEN

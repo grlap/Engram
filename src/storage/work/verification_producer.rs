@@ -1,4 +1,4 @@
-//! One typed reader for the two genuine verification producer kinds.
+//! One typed reader for the genuine verification producer kinds.
 
 use super::feeds::load_typed_work_object;
 use crate::domain::{
@@ -93,6 +93,9 @@ pub(in crate::storage) fn load_verification_producer_on(
                 actor: producer.actor,
                 recorded_at: producer.recorded_at,
             })
+        }
+        crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND => {
+            super::remote_verification::producer_facts_on(connection, id)
         }
         _ => Err(StoreError::InvalidWorkProjection(format!(
             "verification producer {id} has unsupported kind {kind}"

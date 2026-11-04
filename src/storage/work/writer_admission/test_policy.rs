@@ -1,11 +1,16 @@
 //! Test-only coordination immediately before a real SQLite acquisition.
 use std::cell::RefCell;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 struct Policy {
     budget: Option<Duration>,
     before: Box<dyn FnMut()>,
     last_allowance: Option<Duration>,
+    /// A test that sets its own budget also owns that window's time, so how
+    /// fast the host runs never decides how much of the window is left. Only
+    /// `advance_writer_admission_window` moves it. Without a budget the window
+    /// is the production one, on the real clock.
+    window_now: Option<Instant>,
 }
 
 thread_local! {
@@ -22,6 +27,21 @@ impl Drop for Restore {
 
 pub(super) fn budget() -> Option<Duration> {
     POLICY.with(|slot| slot.borrow().as_ref().and_then(|policy| policy.budget))
+}
+
+pub(super) fn now() -> Option<Instant> {
+    POLICY.with(|slot| slot.borrow().as_ref().and_then(|policy| policy.window_now))
+}
+
+pub(crate) fn advance_writer_admission_window(by: Duration) {
+    POLICY.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let now = slot
+            .as_mut()
+            .and_then(|policy| policy.window_now.as_mut())
+            .expect("the test set its own admission budget");
+        *now += by;
+    });
 }
 
 pub(super) fn before_acquisition() {
@@ -60,6 +80,7 @@ pub(crate) fn with_writer_admission_test_policy<T>(
             budget,
             before: Box::new(before),
             last_allowance: None,
+            window_now: budget.map(|_| Instant::now()),
         })
     }));
     act()

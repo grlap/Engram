@@ -28,6 +28,116 @@ pub fn check_verification_applicability(
     Ok(())
 }
 
+/// Why a remote completion does not qualify for its stated use, by the native
+/// facts first and the input second; `None` when it qualifies. One decision
+/// serves every use: a landing gate only adds the fingerprint predicate, and a
+/// fingerprint never decides an ordinary verification. Only the launcher's own
+/// verdict counts here, whatever its reason says, and `detail` names what is
+/// missing rather than adding reasons. `now` is the local delivery time: a
+/// finish time ahead of it is not yet a settled result.
+#[must_use]
+pub fn remote_result_disqualification(
+    completion: &crate::domain::RemoteRunCompletion,
+    intended_use: &crate::domain::RemoteVerificationUse,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<(crate::domain::RemoteVerificationReason, Option<String>)> {
+    use crate::domain::{
+        NEW_UNTRACKED_ONLY_REASON, RemoteRunMode, RemoteRunVerdict,
+        RemoteVerificationPurpose as Purpose, RemoteVerificationReason as Reason,
+        RemoteVerificationUse as Use,
+    };
+    let result = &completion.result;
+    if completion.mode != RemoteRunMode::Full {
+        return Some((Reason::NotFullMode, None));
+    }
+    if let Some(finished_at) = completion.finished_at.filter(|at| *at > now) {
+        return Some((
+            Reason::ResultNotPass,
+            Some(format!(
+                "the finish time {} is ahead of this host's clock {}",
+                finished_at.to_rfc3339(),
+                now.to_rfc3339()
+            )),
+        ));
+    }
+    if completion.is_authoritative_terminal()
+        && result.verdict == RemoteRunVerdict::Fail
+        && result.reason == NEW_UNTRACKED_ONLY_REASON
+    {
+        return Some((Reason::UntrackedDebrisPendingDisposition, None));
+    }
+    if !completion.is_authoritative_terminal() || result.verdict != RemoteRunVerdict::Pass {
+        return Some((Reason::ResultNotPass, None));
+    }
+    if result.exit != Some(0) {
+        return Some((
+            Reason::ResultNotPass,
+            Some(result.exit.map_or_else(
+                || "the passed run states no exit code".to_owned(),
+                |exit| format!("the passed run states exit {exit}"),
+            )),
+        ));
+    }
+    if completion.finished_at.is_none() {
+        return Some((
+            Reason::ResultNotPass,
+            Some("the passed run states no finish time".to_owned()),
+        ));
+    }
+    let input = &completion.input;
+    match intended_use {
+        Use::CommittedInput {
+            expected_commit, ..
+        } => match &input.commit {
+            None => {
+                return Some((
+                    Reason::CommitMismatch,
+                    Some("the result names no tested commit".to_owned()),
+                ));
+            }
+            Some(commit) if commit != expected_commit => {
+                return Some((Reason::CommitMismatch, None));
+            }
+            Some(_) => {}
+        },
+        Use::AuthorizedTestRef { expected_tree, .. } => match &input.tree {
+            None => {
+                return Some((
+                    Reason::TreeMismatch,
+                    Some("the result names no tested tree".to_owned()),
+                ));
+            }
+            Some(tree) if tree != expected_tree => {
+                return Some((Reason::TreeMismatch, None));
+            }
+            Some(_) => {}
+        },
+    }
+    if intended_use.purpose() == Purpose::LandingGate {
+        match (&input.before_fingerprint, &input.after_fingerprint) {
+            (Some(before), Some(after)) if before == after => {}
+            (Some(_), Some(_)) => {
+                return Some((
+                    Reason::FingerprintMissingOrChanged,
+                    Some("the before and after fingerprints differ".to_owned()),
+                ));
+            }
+            (before, after) => {
+                let missing = match (before, after) {
+                    (None, None) => "before and after fingerprints",
+                    (None, _) => "before fingerprint",
+                    _ => "after fingerprint",
+                };
+                return Some((
+                    Reason::FingerprintMissingOrChanged,
+                    Some(format!("the result names no {missing}")),
+                ));
+            }
+        }
+    }
+    None
+}
+
 /// Immutable inputs for matching typed verification evidence at one exact
 /// dense run-feed cut.
 #[derive(Clone, Copy)]

@@ -58,6 +58,11 @@ const CORE_RECEIPTS: &[(&str, Receipt)] = &[
     ("host_execution_observe", HOST),
     ("host_verification_record", HOST),
     ("host_verification_bind", HOST),
+    ("host_remote_verification_record", HOST),
+    (
+        super::remote_verification::ORIGIN_OPERATION,
+        Receipt::Decoded(decode::<ObjectId>),
+    ),
     ("accept_work_handoff", Receipt::Decoded(decode::<WorkClaim>)),
     ("add_work_blocker", Receipt::Decoded(decode::<WorkBlocker>)),
     (
@@ -288,6 +293,18 @@ pub(super) fn verify_work_operation_results(
             if let Err(error) = super::super::host_session::verify_work_receipt_on(
                 connection,
                 &operation,
+                &key,
+                &request_hash,
+                &receipt,
+            ) {
+                reason = Some(error.to_string());
+            }
+        }
+        if reason.is_none() && operation == super::remote_verification::ORIGIN_OPERATION {
+            let receipt: Vec<u8> = row.get(2)?;
+            let request_hash: String = row.get(3)?;
+            if let Err(error) = super::remote_verification::verify_origin_row(
+                connection,
                 &key,
                 &request_hash,
                 &receipt,

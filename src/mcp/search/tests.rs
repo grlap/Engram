@@ -7,8 +7,13 @@ use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
 
+/// Hang guards only. They end a stuck test and say nothing about speed; a
+/// loaded host took more than 12 s over these calls without anything being wrong.
+const WATCHDOG: Duration = Duration::from_secs(120);
+const RESCUE_AFTER: Duration = Duration::from_secs(240);
+
 async fn bounded<T>(future: impl Future<Output = T>) -> T {
-    tokio::time::timeout(Duration::from_secs(15), future)
+    tokio::time::timeout(WATCHDOG, future)
         .await
         .expect("test watchdog")
 }
@@ -39,26 +44,31 @@ fn fixture() -> (crate::test_support::TempHome, McpServer, String) {
 }
 
 /// Independent rescue only: assertions use message/scan ordering, never sleeps.
+/// Dropping it always releases the pause, so a failing assertion cannot leave
+/// the worker parked while the runtime waits to join it.
 struct Rescue {
     stop: Option<std::sync::mpsc::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
     fired: Arc<std::sync::atomic::AtomicBool>,
+    pause: Arc<TestPause>,
 }
 impl Rescue {
     fn new(pause: Arc<TestPause>) -> Self {
         let (stop, recv) = std::sync::mpsc::channel();
         let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let observed = Arc::clone(&fired);
+        let timed = Arc::clone(&pause);
         let thread = std::thread::spawn(move || {
-            if recv.recv_timeout(Duration::from_secs(12)).is_err() {
+            if recv.recv_timeout(RESCUE_AFTER).is_err() {
                 observed.store(true, std::sync::atomic::Ordering::SeqCst);
-                pause.release.notify_one();
+                timed.release.notify_one();
             }
         });
         Self {
             stop: Some(stop),
             thread: Some(thread),
             fired,
+            pause,
         }
     }
     fn assert_not_used(&self) {
@@ -69,6 +79,7 @@ impl Drop for Rescue {
     fn drop(&mut self) {
         let _ = self.stop.take().unwrap().send(());
         self.thread.take().unwrap().join().unwrap();
+        self.pause.release.notify_one();
     }
 }
 

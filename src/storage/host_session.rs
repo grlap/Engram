@@ -27,6 +27,7 @@ fn work_operation(operation: &str) -> Result<&'static str, StoreError> {
         "execution_observe" => Ok("host_execution_observe"),
         "verification_record" => Ok("host_verification_record"),
         "verification_bind" => Ok("host_verification_bind"),
+        "remote_verification_record" => Ok("host_remote_verification_record"),
         _ => Err(StoreError::InvalidWorkProjection(
             "unknown ordinary host operation".into(),
         )),
@@ -63,6 +64,7 @@ pub(super) fn verify_work_receipt_on(
         "execution_observe" => "observation",
         "verification_record" => "producer",
         "verification_bind" => "original",
+        "remote_verification_record" => "operation",
         _ => {
             return Err(StoreError::InvalidWorkProjection(
                 "unknown ordinary host operation".into(),

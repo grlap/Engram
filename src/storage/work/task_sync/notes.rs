@@ -76,7 +76,9 @@ pub(super) fn capture(
         let note =
             super::super::notes::load_note(connection, item.work_id, &id, &family, &kind, false)?;
         let excluded = match kind.as_str() {
-            "verification_evidence" => Some("host verification"),
+            "verification_evidence" | crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND => {
+                Some("host verification")
+            }
             "environment_evidence" => Some("environment"),
             "work_evidence" | "work_restored_evidence" if note.gate.is_some() => Some("gate"),
             "work_evidence" | "work_restored_evidence" | "work_observation" => None,

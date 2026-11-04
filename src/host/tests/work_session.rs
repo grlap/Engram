@@ -43,7 +43,11 @@ fn work_session_capabilities_track_the_actual_git_tree_barrier() {
         );
         assert_eq!(
             context["capabilities"],
-            serde_json::json!(["host_work_v1", "verification_record_v1"])
+            serde_json::json!([
+                "host_work_v1",
+                "verification_record_v1",
+                "remote_verification_record_v1"
+            ])
         );
         assert_eq!(context["work_session"], true);
         if available {

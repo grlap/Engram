@@ -945,7 +945,8 @@ run, how the source changed and which
 registered checks passed, over the host-private work session
 (`engram control --work-session`): `named_root_bind` before stating a root
 generation, `execution_observe` for host observations, and
-`verification_record` for registered verification. Every frame is strict:
+`verification_record` for registered verification, and
+`remote_verification_record` for a test run on another host. Every frame is strict:
 exactly the current field set, no additive or legacy fields. Nothing in this
 tier admits, delays or refuses a model turn. Hosts send only current frames;
 [historical records](features/execution-observability.md#records-from-earlier-builds)

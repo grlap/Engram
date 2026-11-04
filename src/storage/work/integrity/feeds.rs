@@ -135,6 +135,43 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
                         Some(producer.request.registration.binding.run_id),
                     )
                 }),
+            crate::domain::REMOTE_TERMINAL_ORIGIN_KIND => {
+                match object.decode::<crate::domain::RemoteTerminalOrigin>() {
+                    Ok(origin)
+                        if crate::storage::work::remote_verification::origin_is_consistent_on(
+                            connection, &hash, &origin,
+                        )? =>
+                    {
+                        Some(HashSet::from([format!("project:{}", origin.project_id.0)]))
+                    }
+                    _ => None,
+                }
+            }
+            crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND => {
+                match object.decode::<crate::domain::RemoteVerificationAssociationRecord>() {
+                    Ok(record) => {
+                        if let Some(problem) =
+                            crate::storage::work::remote_verification::association_problem_on(
+                                connection, &hash, &record,
+                            )?
+                        {
+                            invalid.push(format!("{label}:remote_verification:{problem}"));
+                            continue;
+                        }
+                        if record.is_in_item_scope() {
+                            let binding = &record.request.association.binding;
+                            expected_feeds_for_work(
+                                work_items,
+                                binding.work_id,
+                                Some(binding.run_id),
+                            )
+                        } else {
+                            Some(HashSet::from([format!("project:{}", record.project_id.0)]))
+                        }
+                    }
+                    Err(_) => None,
+                }
+            }
             "work_event" => object
                 .decode::<WorkEvent>()
                 .ok()
@@ -387,6 +424,7 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
          WHERE object.object_kind IN (
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
               'verification_evidence', 'environment_evidence', 'named_root_binding', 'registered_host_run',
+             'remote_terminal_origin', 'remote_verification_association',
              'work_obligation', 'work_obligation_resolution', 'unadmitted_execution_observation',
              'task_sync_import_planning', 'task_sync_reconciliation_hold',
              'task_sync_shared_import_version'

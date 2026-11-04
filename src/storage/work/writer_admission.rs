@@ -111,6 +111,13 @@ impl WriterAdmissionWindow {
     }
 
     fn remaining(&self) -> Duration {
+        #[cfg(test)]
+        if let Some(now) = test_policy::now() {
+            let started = *self.started.get_or_init(|| now);
+            return self
+                .budget
+                .saturating_sub(now.saturating_duration_since(started));
+        }
         self.budget
             .saturating_sub(self.started.get_or_init(Instant::now).elapsed())
     }
@@ -259,6 +266,8 @@ fn millis(duration: Duration) -> u64 {
 mod test_policy;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use test_policy::advance_writer_admission_window;
 #[cfg(test)]
 pub(crate) use test_policy::last_writer_admission_allowance;
 #[cfg(test)]

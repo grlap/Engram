@@ -131,6 +131,8 @@ thread_local! {
     static REQUEST: RefCell<Option<Request>> = const { RefCell::new(None) };
     #[cfg(test)]
     static TEST_LIMITS: std::cell::Cell<Option<Limits>> = const { std::cell::Cell::new(None) };
+    #[cfg(test)]
+    static TEST_ELAPSED_FROZEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The same admission allowance follows the request into its blocking worker.
@@ -149,8 +151,16 @@ impl Request {
         let limits = Limits::default();
         #[cfg(test)]
         let limits = TEST_LIMITS.with(std::cell::Cell::get).unwrap_or_default();
+        #[cfg(not(test))]
+        let allowance = Allowance::new(limits.elapsed);
+        #[cfg(test)]
+        let allowance = if TEST_ELAPSED_FROZEN.with(std::cell::Cell::get) {
+            Allowance::with_clock(limits.elapsed, frozen_instant)
+        } else {
+            Allowance::new(limits.elapsed)
+        };
         Self {
-            allowance: Allowance::new(limits.elapsed),
+            allowance,
             cancel,
             limits,
             #[cfg(test)]
@@ -214,9 +224,44 @@ impl TestPause {
 
 #[cfg(test)]
 impl Request {
+    /// The test holds a paused search for as long as its other steps take, so
+    /// the hold is scheduling, not search work, and never spends the allowance.
     pub(crate) fn with_pause(mut self, pause: Option<Arc<TestPause>>) -> Self {
+        if pause.is_some() {
+            self.allowance = Allowance::with_clock(self.limits.elapsed, frozen_instant);
+        }
         self.pause = pause;
         self
+    }
+}
+
+#[cfg(test)]
+fn frozen_instant() -> std::time::Instant {
+    static FROZEN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    *FROZEN.get_or_init(std::time::Instant::now)
+}
+
+/// Keeps the elapsed dimension still for searches started on this thread, for
+/// a test whose subject is not time. The SQL step, record and byte dimensions
+/// stay live; the elapsed refusal has its own injected-clock tests.
+#[cfg(test)]
+pub(crate) struct FrozenElapsed {
+    previous: bool,
+    _thread: PhantomData<Rc<()>>,
+}
+
+#[cfg(test)]
+pub(crate) fn freeze_elapsed() -> FrozenElapsed {
+    FrozenElapsed {
+        previous: TEST_ELAPSED_FROZEN.with(|slot| slot.replace(true)),
+        _thread: PhantomData,
+    }
+}
+
+#[cfg(test)]
+impl Drop for FrozenElapsed {
+    fn drop(&mut self) {
+        TEST_ELAPSED_FROZEN.with(|slot| slot.set(self.previous));
     }
 }
 

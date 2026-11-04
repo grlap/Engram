@@ -1,6 +1,7 @@
 use super::*;
 use crate::storage::{
-    WorkWriterAdmissionReason, last_writer_admission_allowance, with_writer_admission_test_policy,
+    WorkWriterAdmissionReason, advance_writer_admission_window, last_writer_admission_allowance,
+    with_writer_admission_test_policy,
 };
 use std::sync::mpsc;
 use std::time::{Duration as WallDuration, Instant};
@@ -120,6 +121,9 @@ fn note_writer_admission_holder_and_non_holder_outlive_old_timeout_exactly_once(
         started.recv_timeout(WallDuration::from_secs(10)).unwrap();
         // Both real BEGINs face the same real writer beyond the production 5 s
         // timeout. This is the only long control; all negative cases are short.
+        // Product requirement: a note outlives the ordinary 5 s timeout inside
+        // its 10 s admission window (sqlite-store.md), so this stays on the real
+        // clock. The only upper limit is that window, 4.75 s past this hold.
         std::thread::sleep(WallDuration::from_millis(u64::from(old_timeout) + 250));
         transaction.commit().unwrap();
         owner.join().unwrap();
@@ -425,7 +429,7 @@ fn note_writer_admission_fresh_process_registration_uses_the_short_window() {
     .unwrap_err();
     let wire = crate::store_error_value(&error.error);
     assert_eq!(wire["error"]["details"]["reason"], "busy_budget_exhausted");
-    assert!(wire["error"]["details"]["budget_ms"].as_u64().unwrap() <= 30);
+    assert_eq!(wire["error"]["details"]["budget_ms"], 30);
     inspect.execute_batch("COMMIT").unwrap();
     assert_eq!(
         inspect
@@ -453,7 +457,10 @@ fn note_writer_admission_word_scope_restores_after_return_and_unwind() {
         || {},
         || {
             verbs.note(&input(&target, "Normal note"), at(1)).unwrap();
-            assert!(last_writer_admission_allowance().unwrap() <= WallDuration::from_millis(30));
+            assert_eq!(
+                last_writer_admission_allowance(),
+                Some(WallDuration::from_millis(30))
+            );
             add(&verbs, "Ordinary word after note", None, false, 2);
             assert_eq!(
                 last_writer_admission_allowance(),
@@ -493,7 +500,7 @@ fn note_writer_admission_nested_word_reuses_exhausted_window() {
                 verbs
                     .note(&input(&target, "First nested note"), at(1))
                     .unwrap();
-                std::thread::sleep(WallDuration::from_millis(35));
+                advance_writer_admission_window(WallDuration::from_millis(30));
                 blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
                 let error = verbs
                     .note(&input(&target, "Second nested note"), at(2))

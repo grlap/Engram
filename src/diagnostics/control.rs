@@ -41,7 +41,10 @@ impl Frame {
             | HostControlRequest::VerificationBind {
                 idempotency_key, ..
             } => Some(idempotency_key),
-            HostControlRequest::VerificationRecord { operation_key, .. } => Some(operation_key),
+            HostControlRequest::VerificationRecord { operation_key, .. }
+            | HostControlRequest::RemoteVerificationRecord { operation_key, .. } => {
+                Some(operation_key)
+            }
             HostControlRequest::WorkSessionRead {}
             | HostControlRequest::ControlConnectionRead {}
             | HostControlRequest::NamedRootRead { .. }

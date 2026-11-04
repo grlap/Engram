@@ -40,6 +40,7 @@ mod schema_diagnostics;
 mod sqlite_path;
 pub use sqlite_path::{open_sqlite_file, validate_sqlite_file_path};
 mod registered_verification;
+mod remote_verification;
 mod store_file;
 pub use store_file::{canonical_store_path, store_path_text};
 mod task_memory;
@@ -50,6 +51,8 @@ mod work;
 pub(crate) use project_memory::{validate_forget_request, validate_remember_request};
 pub(crate) use work::PendingWorkProtocolAttempt;
 pub(crate) use work::WriterAdmissionWindow;
+#[cfg(test)]
+pub(crate) use work::advance_writer_admission_window;
 #[cfg(test)]
 pub(crate) use work::before_refused_retirement;
 #[cfg(test)]
@@ -1167,6 +1170,8 @@ pub struct MissingMemorySection {
 pub enum StoreError {
     #[error("registered verification refused ({field}): {reason}")]
     RegisteredVerificationRefused { field: String, reason: String },
+    #[error("remote verification request is invalid ({field}): {reason}")]
+    RemoteVerificationInvalid { field: String, reason: String },
     #[error("could not read {} ({utf16_length} UTF-16 units): {source}", .path.display())]
     StoreFileIo {
         path: PathBuf,

@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
+import { devNull } from "node:os";
 import { fileURLToPath } from "node:url";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
@@ -60,13 +61,13 @@ function safeRelativePath(root, path) {
   return { absolute, normalized: path.replaceAll("\\", "/") };
 }
 
-function untrackedEntries(root) {
+function untrackedEntries(root, env = process.env) {
   const listing = git(root, [
     "ls-files",
     "--others",
     "--exclude-standard",
     "-z",
-  ]).stdout;
+  ], { env }).stdout;
   return listing
     .toString("utf8")
     .split("\0")
@@ -125,9 +126,9 @@ export function defaultGlobalFiles(name, env = process.env) {
 
 // The ignored paths Git reports, with every ignored directory collapsed to
 // one `dir/` entry, sorted; null when Git cannot list them.
-function ignoredEntries(root) {
+function ignoredEntries(root, env = process.env) {
   try {
-    return git(root, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])
+    return git(root, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"], { env })
       .stdout.toString("utf8").split("\0").filter(Boolean)
       .sort((left, right) => Buffer.from(left).compare(Buffer.from(right)));
   } catch {
@@ -146,7 +147,7 @@ function ignoredEntries(root) {
 // a new rule file is such a change. Tracked rule files are covered by the
 // tracked diffs. Null when a source cannot be read, so a capture without it
 // never qualifies.
-function ruleSourcesDigest(root, untracked, ignored) {
+function ruleSourcesDigest(root, untracked, ignored, env = process.env) {
   try {
     if (ignored === null) throw new Error("cannot list ignored paths");
     const hash = createHash("sha256");
@@ -162,19 +163,19 @@ function ruleSourcesDigest(root, untracked, ignored) {
       if (bytes !== null) addChunk(hash, `${label}-content`, bytes);
     };
     for (const name of ["exclude", "attributes"]) {
-      const info = git(root, ["rev-parse", "--path-format=absolute", "--git-path", `info/${name}`])
+      const info = git(root, ["rev-parse", "--path-format=absolute", "--git-path", `info/${name}`], { env })
         .stdout.toString("utf8").trim();
       source(`info-${name}`, info);
     }
     for (const [setting, name] of [["core.excludesFile", "ignore"], ["core.attributesFile", "attributes"]]) {
-      const configured = git(root, ["config", "--path", "--get", setting], { allowFailure: true });
+      const configured = git(root, ["config", "--path", "--get", setting], { allowFailure: true, env });
       if (configured.status === 0) {
         const value = configured.stdout.toString("utf8").replace(/\r?\n$/u, "");
         addChunk(hash, `${setting}-setting`, Buffer.from(`configured:${value}`, "utf8"));
         if (value) source(setting, resolve(root, value));
       } else if (configured.status === 1) {
         addChunk(hash, `${setting}-setting`, Buffer.from("unset", "ascii"));
-        for (const candidate of defaultGlobalFiles(name)) source(setting, candidate);
+        for (const candidate of defaultGlobalFiles(name, env)) source(setting, candidate);
       } else {
         throw new Error(`cannot read ${setting}`);
       }
@@ -188,8 +189,8 @@ function ruleSourcesDigest(root, untracked, ignored) {
   }
 }
 
-function worktreeRoot(startDirectory) {
-  const topLevelResult = git(startDirectory, ["rev-parse", "--show-toplevel"]);
+function worktreeRoot(startDirectory, env = process.env) {
+  const topLevelResult = git(startDirectory, ["rev-parse", "--show-toplevel"], { env });
   return realpathSync.native(topLevelResult.stdout.toString("utf8").trim());
 }
 
@@ -248,17 +249,72 @@ function admitManifestLocation(root, snapshotPath) {
   }
 }
 
-export function captureFingerprint(startDirectory = process.cwd()) {
-  return captureWorktree(worktreeRoot(startDirectory));
+export function captureFingerprint(startDirectory = process.cwd(), env = process.env) {
+  return captureWorktree(worktreeRoot(startDirectory, env), env);
 }
 
-function captureWorktree(root) {
+// The explicit committed-input lane shares TermAl's ordinary Git-status
+// contract. Keep it separate from the existing fingerprint encoding.
+export function isolatedGitEnvironment(source = process.env) {
+  const env = { ...source };
+  for (const key of Object.keys(env)) if (key.toUpperCase().startsWith("GIT_")) delete env[key];
+  Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : devNull,
+    GIT_ATTR_NOSYSTEM: "1", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" });
+  // Fingerprint calls in this lane use the same pinned settings as status.
+  // The legacy lane continues to use its original environment unchanged.
+  Object.assign(env, { GIT_CONFIG_COUNT: "3", GIT_CONFIG_KEY_0: "core.fsmonitor", GIT_CONFIG_VALUE_0: "false",
+    GIT_CONFIG_KEY_1: "core.excludesFile", GIT_CONFIG_VALUE_1: env.GIT_CONFIG_GLOBAL,
+    GIT_CONFIG_KEY_2: "core.attributesFile", GIT_CONFIG_VALUE_2: env.GIT_CONFIG_GLOBAL });
+  return env;
+}
+
+export function captureCommitInputStatus(startDirectory = process.cwd(), sourceEnv = process.env) {
+  const env = isolatedGitEnvironment(sourceEnv);
+  const nullDevice = process.platform === "win32" ? "NUL" : devNull;
+  const args = (values) => ["-c", "core.fsmonitor=false", "-c", `core.excludesFile=${nullDevice}`,
+    "-c", `core.attributesFile=${nullDevice}`, ...values];
+  const run = (root, values, allowFailure = false) => git(root, args(values), { env, allowFailure });
+  const text = (root, values) => run(root, values).stdout.toString("utf8").trim();
+  const root = realpathSync.native(text(startDirectory, ["rev-parse", "--show-toplevel"]));
+  const head = () => text(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
+  const commit = head();
+  const tree = text(root, ["rev-parse", "--verify", `${commit}^{tree}`]);
+  const configured = run(root, ["config", "--null", "--get-regexp", "^filter\\..*\\.(clean|smudge|process)$"], true);
+  if (![0, 1].includes(configured.status)) throw new Error("committed-input filter configuration could not be read");
+  const filters = configured.stdout.toString("utf8").split("\0").filter(Boolean).map((entry) => entry.split("\n", 1)[0]);
+  // Read index metadata before status: status could otherwise execute a
+  // submodule's filters. The current ordinary host lane refuses Gitlinks.
+  const gitlinks = run(root, ["ls-files", "--stage", "-z"]).stdout.toString("utf8")
+    .split("\0").filter((entry) => entry.startsWith("160000 ")).map((entry) => entry.slice(entry.indexOf("\t") + 1));
+  if (filters.length || gitlinks.length) return { root, commit, tree, entries: [], skipped: [], filters, gitlinks };
+  const skipped = run(root, ["ls-files", "-v", "-z"]).stdout.toString("utf8").split("\0")
+    .filter((entry) => /^[a-zS] /u.test(entry)).map((entry) => ({ tag: entry[0], path: entry.slice(2) }));
+  const records = run(root, ["status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none", "-z"])
+    .stdout.toString("utf8").split("\0");
+  if (records.at(-1) === "") records.pop();
+  const entries = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (record.length < 4 || record[2] !== " ") throw new Error("committed-input status returned malformed porcelain");
+    const entry = { status: record.slice(0, 2), path: record.slice(3) };
+    if (/[RC]/u.test(entry.status)) {
+      if (++index >= records.length) throw new Error("committed-input rename has no origin path");
+      entry.origin = records[index];
+    }
+    entries.push(entry);
+  }
+  if (head() !== commit) throw new Error("HEAD moved while committed-input status was captured");
+  return { root, commit, tree, entries, skipped, filters, gitlinks };
+}
+
+function captureWorktree(root, env = process.env) {
   const headResult = git(root, ["rev-parse", "--verify", "HEAD"], {
     allowFailure: true,
+    env,
   });
   const head = headResult.status === 0 ? headResult.stdout.toString("utf8").trim() : null;
-  const staged = git(root, ["diff", "--cached", "--binary", "--full-index", "--no-ext-diff"]).stdout;
-  const unstaged = git(root, ["diff", "--binary", "--full-index", "--no-ext-diff"]).stdout;
+  const staged = git(root, ["diff", "--cached", "--binary", "--full-index", "--no-ext-diff"], { env }).stdout;
+  const unstaged = git(root, ["diff", "--binary", "--full-index", "--no-ext-diff"], { env }).stdout;
 
   const hash = createHash("sha256");
   addChunk(hash, "schema", Buffer.from(String(SNAPSHOT_SCHEMA_VERSION), "ascii"));
@@ -266,9 +322,9 @@ function captureWorktree(root) {
   addChunk(hash, "staged-diff", staged);
   addChunk(hash, "unstaged-diff", unstaged);
 
-  const paths = untrackedEntries(root);
+  const paths = untrackedEntries(root, env);
   const untracked = paths.map((path) => hashUntracked(root, hash, path));
-  const ignored = ignoredEntries(root);
+  const ignored = ignoredEntries(root, env);
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     root,
@@ -277,7 +333,7 @@ function captureWorktree(root) {
     // Digests of the two tracked parts the aggregate covers, for telling which
     // part of an input changed. They are not part of the aggregate.
     components: { stagedDiff: sha256(staged), unstagedDiff: sha256(unstaged),
-      ruleSources: ruleSourcesDigest(root, paths, ignored) },
+      ruleSources: ruleSourcesDigest(root, paths, ignored, env) },
     untracked,
     // The ignored paths at this capture, for telling a newly created path
     // from one that was already there and only became visible. Not part of
