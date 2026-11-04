@@ -53,6 +53,12 @@ their presence in a file alone does not prove delivery.
   `.evidence/`, never a live worktree's run files, which leave only when that
   worktree is removed. Engram's notes, gates and seals stay the lasting record:
   what a decision rests on is quoted there, never left only in a raw file.
+- Finishing work includes cleaning up after it, without waiting for a disk to
+  fill. When a worktree, build output or temporary file has served its purpose,
+  its owner removes it, after the path check below, and records it; the Merger
+  does so for a landed candidate. To keep one longer, record on an open item
+  the concrete need and when it ends, then remove it then. A periodic sweep
+  doesn't replace this.
 - Outside the repository only tools write, as part of their own work: Engram
   to its store home, TermAl through its tools, Cargo to its caches. Installing
   a build as Authority and Git describes is the one write an agent makes
