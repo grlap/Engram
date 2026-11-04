@@ -1,8 +1,12 @@
 use super::{
+    MAX_PROJECT_MEMORY_FULL_BYTES, ProjectMemoryFull, READ_REMINDER_RESERVE, WorkLifecycle,
+    render_agent_receipt_text, terminal_safe_multiline, work_lifecycle_word,
+};
+
+use super::{
     DateTime, DevelopmentNoopRedactor, ForgetProjectMemoryRequest, LocalWorkService,
     ProjectMemoryFullResponse, ProjectMemoryList, ProjectMemoryListingCut,
     ProjectMemoryMutationReceipt, RememberProjectMemoryRequest, StoreError, Utc,
-    ensure_project_memory_full_is_admissible, project_memory_full_response,
 };
 
 impl LocalWorkService {
@@ -259,3 +263,156 @@ impl LocalWorkService {
 
 #[cfg(test)]
 mod tests;
+
+/// The reminder a full read of the current version gives when a revision
+/// dropped the retirement target without a clear, naming the arguments that
+/// keep or clear it as the caller passes them.
+pub(crate) fn retiring_target_dropped_reminder(
+    dropped: &crate::domain::ProjectMemoryRetiringTargetDropped,
+    names: crate::argument_names::ArgumentNames,
+) -> String {
+    let (retires_with, clear) = match names {
+        crate::argument_names::ArgumentNames::Cli => ("--retires-with", "--clear-retires-with"),
+        crate::argument_names::ArgumentNames::Mcp => ("retires_with", "clear_retires_with"),
+    };
+    format!(
+        "revision {} dropped the retirement target without a clear; to keep it, revise with {retires_with} {}, or to let it go, revise with {clear}",
+        dropped.revision,
+        retiring_target_command_form(&dropped.target)
+    )
+}
+
+/// The `--retires-with` form of a stored target as shown to a reader,
+/// terminal-safe, with a local item's short ref.
+pub(crate) fn retiring_target_form(target: &crate::domain::ProjectMemoryRetiringTarget) -> String {
+    match target {
+        crate::domain::ProjectMemoryRetiringTarget::Local { work_ref, .. } => {
+            format!("local:{}", terminal_safe_multiline(work_ref))
+        }
+        crate::domain::ProjectMemoryRetiringTarget::External { project, reference } => format!(
+            "external:{}#{}",
+            terminal_safe_multiline(project),
+            terminal_safe_multiline(reference)
+        ),
+    }
+}
+
+/// The `--retires-with` argument that restores a stored target. A local item
+/// is named by its work id, which never becomes ambiguous the way a short ref
+/// can once more items share its prefix.
+pub(crate) fn retiring_target_command_form(
+    target: &crate::domain::ProjectMemoryRetiringTarget,
+) -> String {
+    match target {
+        crate::domain::ProjectMemoryRetiringTarget::Local { work_id, .. } => {
+            format!("local:{}", work_id.0)
+        }
+        external @ crate::domain::ProjectMemoryRetiringTarget::External { .. } => {
+            retiring_target_form(external)
+        }
+    }
+}
+
+/// The text lines that list rows and full reads show for a memory's retiring
+/// target: the target with its item state read now, or a target a revision
+/// dropped without a clear. Only a read of the current version calls a
+/// completed target a forget candidate: an older version's target may since
+/// have been replaced or cleared.
+pub(crate) fn retiring_target_lines(
+    target: Option<&crate::domain::ProjectMemoryRetiringTarget>,
+    state: Option<&crate::domain::ProjectMemoryRetiringState>,
+    dropped: Option<&crate::domain::ProjectMemoryRetiringTargetDropped>,
+    current: bool,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(target) = target {
+        let status = state.map_or_else(
+            || "status in the other tracker is not observed".to_owned(),
+            |state| {
+                format!(
+                    "item {} since {}{}",
+                    work_lifecycle_word(state.lifecycle),
+                    state.updated_at.format("%Y-%m-%d %H:%M UTC"),
+                    if current && state.lifecycle == WorkLifecycle::Completed {
+                        " — forget candidate after review"
+                    } else {
+                        ""
+                    }
+                )
+            },
+        );
+        lines.push(format!(
+            "workaround retires with {}: {status}",
+            retiring_target_form(target)
+        ));
+    }
+    if let Some(dropped) = dropped {
+        lines.push(format!(
+            "retirement target {} dropped by revision {} without a clear",
+            retiring_target_form(&dropped.target),
+            dropped.revision
+        ));
+    }
+    lines
+}
+
+pub(crate) fn project_memory_full_response(
+    memory: ProjectMemoryFull,
+    names: crate::argument_names::ArgumentNames,
+) -> Result<ProjectMemoryFullResponse, StoreError> {
+    project_memory_full_response_within(memory, names, MAX_PROJECT_MEMORY_FULL_BYTES)
+}
+
+fn project_memory_full_response_within(
+    memory: ProjectMemoryFull,
+    names: crate::argument_names::ArgumentNames,
+    limit: usize,
+) -> Result<ProjectMemoryFullResponse, StoreError> {
+    let response = ProjectMemoryFullResponse::new(memory, names);
+    let bytes = serde_json::to_vec(&response)?.len();
+    if bytes > limit {
+        return Err(StoreError::InvalidProjectMemory(format!(
+            "serialized full memory response requires {bytes} bytes, exceeding the {limit}-byte limit"
+        )));
+    }
+    let terminal_bytes = render_agent_receipt_text(
+        &response.terminal_lines(),
+        &response.reminders,
+        &response.next,
+    )
+    .len();
+    if terminal_bytes > limit {
+        return Err(StoreError::InvalidProjectMemory(format!(
+            "terminal-safe full memory response requires {terminal_bytes} bytes, exceeding the {limit}-byte limit"
+        )));
+    }
+    Ok(response)
+}
+
+pub(crate) fn ensure_project_memory_full_is_admissible(
+    memory: &ProjectMemoryFull,
+    admission: crate::storage::ProjectMemoryAdmission,
+) -> Result<(), StoreError> {
+    // Reserve the largest numeric/history-navigation envelope up front: a
+    // later revision must not make an accepted earlier body unreadable. A
+    // new version also leaves room for a read reminder; a stored version
+    // keeps the bound it was admitted under, so history admitted before the
+    // reserve never blocks a revision or an exact retry.
+    let mut historical = memory.clone();
+    historical.revision = u64::MAX - 1;
+    historical.current_revision = u64::MAX;
+    let limit = match admission {
+        crate::storage::ProjectMemoryAdmission::NewVersion => {
+            MAX_PROJECT_MEMORY_FULL_BYTES - READ_REMINDER_RESERVE
+        }
+        crate::storage::ProjectMemoryAdmission::Retained => MAX_PROJECT_MEMORY_FULL_BYTES,
+    };
+    for names in [
+        crate::argument_names::ArgumentNames::Cli,
+        crate::argument_names::ArgumentNames::Mcp,
+    ] {
+        project_memory_full_response_within(memory.clone(), names, limit)?;
+        project_memory_full_response_within(historical.clone(), names, limit)?;
+    }
+    Ok(())
+}

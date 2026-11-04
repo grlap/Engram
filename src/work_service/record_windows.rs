@@ -1,7 +1,11 @@
 //! Explicit show windows: select newest records, retain canonical membership
 //! and feed ordering, and let verbs fit the final emitted representation.
 
-use super::*;
+use super::{
+    ActorContext, DateTime, Deserialize, LocalWorkService, MAX_AGENT_WORK_RESPONSE_BYTES, ObjectId,
+    ProjectId, Serialize, SqliteStore, StoreError, Utc, WorkFocusView, WorkId, WorkRunId,
+    compact_text,
+};
 use crate::domain::WorkCatalogReadCut;
 use crate::storage::{
     WorkRecordAddress, WorkRecordContent, WorkRecordFamily, WorkRecordIndex, WorkRecordKind,

@@ -1,6 +1,12 @@
 //! Event facts for receipt history, read once and shared by the transient
 //! display and the stored delivery summary, whose bytes stay fixed.
 
+use super::{
+    MAX_HISTORY_BLOCKER_DETAIL_BYTES, MAX_HISTORY_DETAIL_BYTES, MAX_HISTORY_TITLE_BYTES,
+    WorkBlockerKind, WorkChangeSummary, WorkEvidenceKind, WorkLifecycle, blocker_selector,
+    compact_text, compact_text_to, projected_actor_context,
+};
+
 use super::{FeedPosition, SqliteStore, StoreError, WorkEvent, WorkTransition};
 
 #[derive(Clone, Debug)]
@@ -56,7 +62,7 @@ impl HistoryDisplay {
     /// The stored delivery summary, built from the same facts as the
     /// transient display, so neither reads the planning or blocker rows twice.
     pub(super) fn stored_summary(&self) -> super::WorkChangeSummary {
-        super::agent_work_event_summary_with(&self.event, &self.fields, self.cleared.as_ref())
+        agent_work_event_summary_with(&self.event, &self.fields, self.cleared.as_ref())
     }
 
     pub(crate) fn summary(&self, include_title: bool) -> String {
@@ -114,9 +120,9 @@ fn transition_detail(
         T::PrerequisiteRemoved {
             prerequisite_id, ..
         } => format!("removed prerequisite {}", work_ref(*prerequisite_id)),
-        T::Blocked { blocker_id } => super::history_blocker(blocker_id, event.blocker.as_ref()),
+        T::Blocked { blocker_id } => history_blocker(blocker_id, event.blocker.as_ref()),
         T::Unblocked { blocker_id } => {
-            format!("cleared {}", super::history_blocker(blocker_id, cleared))
+            format!("cleared {}", history_blocker(blocker_id, cleared))
         }
         T::Claimed { recovered, .. } => {
             if *recovered {
@@ -179,3 +185,203 @@ pub(super) fn hydrate(
 
 #[cfg(test)]
 mod tests;
+
+pub(super) fn project_work_event(
+    store: &SqliteStore,
+    event: &WorkEvent,
+    position: &FeedPosition,
+) -> Result<WorkChangeSummary, StoreError> {
+    Ok(HistoryDisplay::load(store, event, position)?.stored_summary())
+}
+
+#[cfg(test)]
+pub(super) fn agent_work_event_summary(
+    event: &WorkEvent,
+    revised_fields: &[&str],
+) -> WorkChangeSummary {
+    agent_work_event_summary_with(event, revised_fields, None)
+}
+
+fn agent_work_event_summary_with(
+    event: &WorkEvent,
+    revised_fields: &[&str],
+    cleared: Option<&crate::WorkBlocker>,
+) -> WorkChangeSummary {
+    let change_kind = work_transition_kind(&event.transition);
+    WorkChangeSummary {
+        schema_version: event.schema_version,
+        object_kind: "work_event".into(),
+        work_id: Some(event.work_id),
+        work_ref: Some(event.work.short_ref.clone()),
+        revision: Some(event.revision),
+        change_kind: change_kind.into(),
+        summary: compact_text(&format!(
+            "{change_kind}: {}",
+            work_transition_summary(event, revised_fields, cleared)
+        )),
+        actor_id: Some(compact_text(&event.actor.actor_id)),
+        actor_context: projected_actor_context(&event.actor),
+        created_at: event.created_at,
+    }
+}
+
+/// One blocker as history names it: its selector first, whole, then its kind
+/// and a bounded preview of the detail it was raised with.
+fn history_blocker(blocker_id: &str, blocker: Option<&crate::WorkBlocker>) -> String {
+    let selector = blocker_selector::encode(blocker_id);
+    blocker.map_or_else(
+        || format!("blocker {selector}"),
+        |blocker| {
+            format!(
+                "blocker {selector} ({}) \"{}\"",
+                blocker_kind_word(blocker.kind),
+                compact_text_to(&blocker.detail, MAX_HISTORY_BLOCKER_DETAIL_BYTES)
+            )
+        },
+    )
+}
+
+/// The stored spelling of a blocker kind, as `show` names it beside a
+/// blocker's selector.
+pub(crate) fn blocker_kind_word(kind: WorkBlockerKind) -> &'static str {
+    match kind {
+        WorkBlockerKind::Manual => "manual",
+        WorkBlockerKind::HumanDecision => "human_decision",
+        WorkBlockerKind::ExternalInput => "external_input",
+        WorkBlockerKind::Policy => "policy",
+    }
+}
+
+fn work_transition_summary(
+    event: &WorkEvent,
+    revised_fields: &[&str],
+    cleared: Option<&crate::WorkBlocker>,
+) -> String {
+    let title = compact_text_to(&event.work.title, MAX_HISTORY_TITLE_BYTES);
+    let detail = |value: &str| compact_text_to(value, MAX_HISTORY_DETAIL_BYTES);
+    match &event.transition {
+        WorkTransition::Created { .. }
+            if event
+                .actor
+                .provenance_chain
+                .iter()
+                .any(crate::domain::is_peer_child_proposal_marker) =>
+        {
+            format!("peer optional-child proposal: \"{title}\"")
+        }
+        WorkTransition::Created { prerequisites } if prerequisites.is_empty() => {
+            format!("without prerequisites: \"{title}\"")
+        }
+        WorkTransition::Created { prerequisites } => {
+            format!("with {} prerequisite(s): \"{title}\"", prerequisites.len())
+        }
+        WorkTransition::Decomposed { children, .. } => {
+            format!("added {} child item(s): \"{title}\"", children.len())
+        }
+        WorkTransition::Revised { .. } => {
+            let fields = if revised_fields.is_empty() {
+                "no planning change".into()
+            } else {
+                revised_fields.join(", ")
+            };
+            format!("{fields}: \"{title}\"")
+        }
+        WorkTransition::PrerequisiteAdded { .. } => {
+            format!("added one prerequisite: \"{title}\"")
+        }
+        WorkTransition::PrerequisiteRemoved { .. } => {
+            format!("removed one prerequisite: \"{title}\"")
+        }
+        WorkTransition::Blocked { blocker_id } => format!(
+            "{}: \"{title}\"",
+            history_blocker(blocker_id, event.blocker.as_ref())
+        ),
+        WorkTransition::Unblocked { blocker_id } => format!(
+            "cleared {}: \"{title}\"",
+            history_blocker(blocker_id, cleared)
+        ),
+        WorkTransition::Claimed {
+            recovered: true, ..
+        } => format!("after recovery by a session: \"{title}\""),
+        WorkTransition::Claimed {
+            recovered: false, ..
+        } => format!("by a session: \"{title}\""),
+        WorkTransition::ClaimRenewed { .. } => format!("renewed by its holder: \"{title}\""),
+        WorkTransition::Released { reason, .. }
+        | WorkTransition::HandoffCancelled { reason, .. }
+        | WorkTransition::Reopened { reason, .. }
+        | WorkTransition::SupersededByImport { reason, .. }
+        | WorkTransition::ReconciliationHoldAbandoned { reason, .. } => {
+            format!("because {}: \"{title}\"", detail(reason))
+        }
+        WorkTransition::Checkpointed { .. } => format!("progress: \"{title}\""),
+        WorkTransition::HandoffOffered { .. } => {
+            format!("to another session: \"{title}\"")
+        }
+        WorkTransition::HandoffExpired { .. } => format!("expired: \"{title}\""),
+        WorkTransition::HandedOff { .. } => {
+            format!("from one session to another: \"{title}\"")
+        }
+        WorkTransition::EvidenceAdded { .. } => format!("for: \"{title}\""),
+        WorkTransition::MemoryCaptured { .. } => {
+            format!("shared work memory: \"{title}\"")
+        }
+        WorkTransition::TypedEvidenceAdded { evidence_kind, .. } => {
+            format!(
+                "{} evidence: \"{title}\"",
+                work_evidence_kind_word(*evidence_kind)
+            )
+        }
+        WorkTransition::Completed { .. } => format!("\"{title}\""),
+        WorkTransition::Disposed {
+            lifecycle, reason, ..
+        } => format!(
+            "to {} because {}: \"{title}\"",
+            work_lifecycle_word(*lifecycle),
+            detail(reason)
+        ),
+        WorkTransition::RequiredChildWaived { reason, .. } => {
+            format!(
+                "waived one required child because {}: \"{title}\"",
+                detail(reason)
+            )
+        }
+    }
+}
+
+pub(super) fn work_evidence_kind_word(kind: WorkEvidenceKind) -> &'static str {
+    kind.word()
+}
+
+pub(super) fn work_lifecycle_word(lifecycle: WorkLifecycle) -> &'static str {
+    lifecycle.word()
+}
+
+fn work_transition_kind(transition: &WorkTransition) -> &'static str {
+    match transition {
+        WorkTransition::Created { .. } => "created",
+        WorkTransition::Decomposed { .. } => "decomposed",
+        WorkTransition::Revised { .. } => "revised",
+        WorkTransition::PrerequisiteAdded { .. } => "prerequisite_added",
+        WorkTransition::PrerequisiteRemoved { .. } => "prerequisite_removed",
+        WorkTransition::Blocked { .. } => "blocked",
+        WorkTransition::Unblocked { .. } => "unblocked",
+        WorkTransition::Claimed { .. } => "claimed",
+        WorkTransition::ClaimRenewed { .. } => "claim_renewed",
+        WorkTransition::Released { .. } => "released",
+        WorkTransition::Checkpointed { .. } => "checkpointed",
+        WorkTransition::HandoffOffered { .. } => "handoff_offered",
+        WorkTransition::HandoffExpired { .. } => "handoff_expired",
+        WorkTransition::HandoffCancelled { .. } => "handoff_cancelled",
+        WorkTransition::HandedOff { .. } => "handed_off",
+        WorkTransition::EvidenceAdded { .. } => "evidence_added",
+        WorkTransition::MemoryCaptured { .. } => "memory_captured",
+        WorkTransition::TypedEvidenceAdded { .. } => "typed_evidence_added",
+        WorkTransition::Completed { .. } => "completed",
+        WorkTransition::Disposed { .. } => "disposed",
+        WorkTransition::RequiredChildWaived { .. } => "required_child_waived",
+        WorkTransition::Reopened { .. } => "reopened",
+        WorkTransition::SupersededByImport { .. } => "superseded_by_import",
+        WorkTransition::ReconciliationHoldAbandoned { .. } => "reconciliation_hold_abandoned",
+    }
+}

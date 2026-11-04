@@ -1,7 +1,10 @@
 //! Transient diagnostics and historical navigation; never staged as durable
 //! delivery bytes and never fed back into completion or accounting.
 
-use super::*;
+use super::{
+    DateTime, Deserialize, FeedId, LocalWorkService, ObjectId, ProjectId, SealedSourceView,
+    Serialize, SqliteStore, StoreError, Utc, WorkFeedEntry, WorkId, WorkRunId, compact_text,
+};
 
 pub(super) type ViewCache = std::collections::HashMap<ObjectId, SealedSourceView>;
 

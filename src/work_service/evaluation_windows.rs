@@ -3,7 +3,10 @@
 //! newest record; completion is untouched.
 
 use super::focus::WorkAuthoredVerdict;
-use super::*;
+use super::{
+    DateTime, Deserialize, FeedId, LocalWorkService, ObjectId, ProjectId, Serialize, StoreError,
+    Utc, WorkId, WorkRunId, compact_text,
+};
 use crate::domain::WorkCatalogReadCut;
 use crate::storage::AssessedAcceptanceEvaluation;
 

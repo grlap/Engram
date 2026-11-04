@@ -1,5 +1,19 @@
 use super::service::ImplicitTargetRule;
-use super::*;
+use super::{
+    AcceptanceResult, ActorContext, AssuranceLevel, BeginWorkProtocolAttempt,
+    COMPLETED_WORK_LATE_FINDING_REFUSAL, CanonicalObject, CheckpointWorkRequest,
+    CompleteWorkRequest, CompleteWorkStorageResult, CompletionDrainAttestation,
+    CompletionEvidencePlan, CompletionRemedyModes, CompletionSeal, DateTime,
+    DevelopmentNoopRedactor, FeedId, FeedPosition, LocalWorkService, ObjectId,
+    PreparedCompletionEvidence, RecordWorkEvidenceRequest, Serialize, SqliteStore, StoreError, Utc,
+    WorkAcceptanceEvidence, WorkAcceptanceInput, WorkClaim, WorkCompleteInput, WorkCompleteRefusal,
+    WorkCompleteResult, WorkCompletedReceipt, WorkCompletionAttemptKey, WorkCompletionCaptureKey,
+    WorkCompletionRecovery, WorkCompletionRecoveryCause, WorkEvidence, WorkId, WorkItem,
+    WorkLifecycle, WorkObligationPage, WorkProtocolBasis, WorkProtocolIntent, acceptance,
+    advisory_error_class, completion_basis_refresh_is_safe, ensure_protocol_basis,
+    normalize_completion_acceptance_shape, parse_record_ids, retry_stable_basis_matches,
+    sealed_work_obligation_page, source_recovery_remedy, work_completion_recovery_page,
+};
 
 mod links;
 
@@ -884,3 +898,217 @@ impl LocalWorkService {
 
 #[cfg(test)]
 mod tests;
+
+fn completion_result(
+    store: &SqliteStore,
+    seal: &CompletionSeal,
+) -> Result<WorkCompleteResult, StoreError> {
+    // The seal's id is the one the completed run records. It was minted when
+    // the seal was written and cannot be re-derived from the seal's content.
+    let seal_id = store
+        .get_work_run(seal.run_id)?
+        .completion_seal
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection("a completed run records no completion seal".into())
+        })?;
+    Ok(WorkCompleteResult::Completed(WorkCompletedReceipt {
+        seal: seal_id,
+        work_id: seal.work_id,
+        run_id: seal.run_id,
+        completed_at: seal.completed_at,
+        acceptance_criteria_asserted: seal.acceptance.len(),
+        acceptance_evidence: Some(WorkAcceptanceEvidence::from_seal(seal).with_previews(store)),
+        acceptance_evidence_error_class: None,
+        acceptance_provenance: acceptance::provenance(store, seal).ok(),
+        landing: seal.landing.clone(),
+        landing_unavailable: None,
+        obligation_page: sealed_work_obligation_page(store, seal)?,
+    }))
+}
+
+pub(super) fn completion_attempt_key(
+    base_key: &str,
+    run_feed_cut: &FeedPosition,
+) -> Result<String, StoreError> {
+    let key = CanonicalObject::freeze(&WorkCompletionAttemptKey {
+        base_key,
+        run_feed_cut,
+    })?;
+    Ok(format!("attempt:{}", key.key().as_str()))
+}
+
+pub(super) fn completion_capture_key(
+    base_key: &str,
+    work: &WorkItem,
+    claim: &WorkClaim,
+) -> Result<String, StoreError> {
+    let key = CanonicalObject::freeze(&WorkCompletionCaptureKey {
+        base_key,
+        work_id: work.work_id,
+        work_revision: work.revision,
+        run_id: claim.run_id,
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+    })?;
+    Ok(format!("capture:{}", key.key().as_str()))
+}
+
+fn ensure_completion_replay_target(
+    basis: &WorkProtocolBasis,
+    actual: WorkId,
+    key: &str,
+) -> Result<(), StoreError> {
+    if basis
+        .focused_work
+        .as_ref()
+        .is_some_and(|work| work.work_id == actual)
+    {
+        return Ok(());
+    }
+    Err(StoreError::WorkOperationIdempotencyConflict {
+        operation: "work_complete".into(),
+        key: key.into(),
+    })
+}
+
+/// What to do about a missing acceptance evaluation, by the task's mark and
+/// the modes the project admits (`admitted` empty when unread): an
+/// evaluation is requested from the host, independent unless the task is
+/// marked for another mode or the project admits no independent one, and
+/// never recorded by the executor itself; only a task marked for
+/// same-session, or a project that admits no other mode, is evaluated with
+/// the evaluate word by the completing session. It never asks for a mode the
+/// project does not admit.
+pub(crate) fn missing_evaluation_remedy(
+    mark: Option<crate::domain::AcceptanceEvaluationMode>,
+    admitted: &[crate::domain::AcceptanceEvaluationMode],
+) -> &'static str {
+    use crate::domain::AcceptanceEvaluationMode as Mode;
+    let admits = |mode: Mode| admitted.is_empty() || admitted.contains(&mode);
+    match mark {
+        Some(mark) if !admits(mark) => {
+            "it is marked for a mode this project does not admit: change the mark to a mode the project admits, then request an evaluation in that mode; only a change to same_session needs a session that never held or executed this run"
+        }
+        Some(Mode::SameSession) => {
+            "it is marked for same-session evaluation: if a session that never held or executed this run set the mark, record one in that mode with evaluate, then retry done; otherwise such a session must first clear the mark and set it again"
+        }
+        Some(Mode::SubAgent) => {
+            "request a sub-agent acceptance evaluation of every current criterion from the host, then retry done"
+        }
+        _ if admits(Mode::IndependentSession) => {
+            "request an independent acceptance evaluation of every current criterion from the host, then retry done; do not record one yourself"
+        }
+        _ if admits(Mode::SubAgent) => {
+            "request a sub-agent acceptance evaluation of every current criterion from the host, then retry done; do not record one yourself"
+        }
+        _ => {
+            "this project admits only same-session evaluation: record one in that mode with evaluate, then retry done"
+        }
+    }
+}
+
+/// Every cause behind an evaluation stale with reason policy, which the
+/// refusal does not tell apart: the mode, the session or a mark's author is
+/// no longer admitted, or the policy now requires observed passes while the
+/// record holds an asserted one.
+pub(crate) const POLICY_STALE_CAUSES: &str = "the project's policy or the task's mark no longer admits it: its mode, the session it was recorded from or the mark's author is no longer admitted, or the policy now requires observed passes and it holds an asserted one";
+
+fn completion_recovery_result(
+    work_id: WorkId,
+    recovery: WorkCompletionRecovery,
+    obligation_page: WorkObligationPage,
+    required_child_successor: Option<Box<crate::storage::RequiredChildSuccessor>>,
+    modes: &CompletionRemedyModes,
+) -> WorkCompleteResult {
+    let code = match &recovery.cause {
+        WorkCompletionRecoveryCause::OpenObligation { .. } => "open_work_obligations",
+        WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => "required_child_unsealed",
+        WorkCompletionRecoveryCause::MissingContribution { .. } => "missing_contribution",
+        WorkCompletionRecoveryCause::MissingAcceptance { .. } => "missing_acceptance",
+        WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. } => {
+            "missing_acceptance_evaluation"
+        }
+        WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. } => {
+            "acceptance_evaluation_stale"
+        }
+        WorkCompletionRecoveryCause::AcceptanceFailed { .. } => "acceptance_failed",
+        WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { .. } => {
+            "acceptance_insufficient_evidence"
+        }
+        WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. } => "acceptance_needs_human",
+    };
+    let remedy = if let Some(source) = &recovery.source {
+        source_recovery_remedy(source)
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::OpenObligation { .. }
+    ) {
+        "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
+            .into()
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. }
+    ) {
+        format!(
+            "{}; evaluator absence never falls back to self-asserted completion",
+            missing_evaluation_remedy(modes.mark, &modes.admitted)
+        )
+    } else if let WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+        reason: crate::AcceptanceStaleReason::Policy,
+    } = &recovery.cause
+    {
+        format!(
+            "{}: {}; evaluator absence never falls back to self-asserted completion",
+            POLICY_STALE_CAUSES,
+            missing_evaluation_remedy(modes.mark, &modes.admitted)
+        )
+    } else if let WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+        reason: crate::AcceptanceStaleReason::Identity,
+    } = &recovery.cause
+    {
+        format!(
+            "{}; evaluator absence never falls back to self-asserted completion",
+            missing_evaluation_remedy(modes.mark, &modes.admitted)
+        )
+    } else if let WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+        reason: crate::AcceptanceStaleReason::UnadmittedChange,
+    } = &recovery.cause
+    {
+        "a source change the host observed without admission followed the evaluated cut and is a barrier whatever revision it reports, the declared one included; record a fresh acceptance evaluation of every current criterion in a mode the project admits and the task's mark allows, then retry completion; evaluator absence never falls back to self-asserted completion"
+            .into()
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. }
+    ) {
+        "record a fresh acceptance evaluation of every current criterion in a mode the project admits and the task's mark allows, then retry completion; evaluator absence never falls back to self-asserted completion"
+            .into()
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::AcceptanceFailed { .. }
+            | WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { .. }
+    ) {
+        "do the corrective work or record the missing evidence, then record a new acceptance evaluation and retry completion"
+            .into()
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. }
+    ) {
+        "obtain a human decision on the criterion; only a separately authorized revision or cancellation changes the requirement, and a new evaluation follows that decision"
+            .into()
+    } else {
+        format!(
+            "resolve {} for {} {:?}, then retry completion",
+            code.replace('_', " "),
+            recovery.item.short_ref,
+            recovery.item.title
+        )
+    };
+    WorkCompleteResult::Refused(WorkCompleteRefusal {
+        code: code.into(),
+        work_id,
+        obligation_page,
+        remedy,
+        recovery,
+        required_child_successor,
+    })
+}

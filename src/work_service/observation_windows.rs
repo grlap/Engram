@@ -3,7 +3,10 @@
 //! active, those on other workspaces included, newest first from the cursor's
 //! boundary. A read that records nothing, on one read-only snapshot.
 
-use super::*;
+use super::{
+    DateTime, Deserialize, LocalWorkService, ObjectId, ProjectId, Serialize, StoreError, Utc,
+    WorkId, WorkRunId, compact_text,
+};
 use crate::domain::WorkCatalogReadCut;
 
 /// Observations decoded for one window page; verbs fit the rest.

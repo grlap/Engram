@@ -1,4 +1,11 @@
-use super::*;
+use super::{
+    AcceptWorkHandoffRequest, BeginWorkProtocolAttempt, COMPLETED_WORK_LATE_FINDING_REFUSAL,
+    CancelWorkHandoffRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS, DateTime, DevelopmentNoopRedactor,
+    LocalWorkService, OfferWorkHandoffRequest, SessionId, SqliteStore, StoreError, Utc,
+    WorkHandoffInput, WorkHandoffResult, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
+    WorkProtocolBasis, compact_mutation_receipt, compact_obligations, ensure_agent_response_budget,
+    ensure_protocol_basis, handoff_metadata, retry_stable_basis_matches, unique_offer,
+};
 
 impl LocalWorkService {
     /// Offers, accepts, or cancels a checkpoint-coupled ambient handoff.

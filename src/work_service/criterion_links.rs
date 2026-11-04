@@ -1,7 +1,10 @@
 //! Recorded criterion associations from one immutable native completion seal.
 //! Navigation retains that seal after reopen; it grants no execution authority.
 
-use super::*;
+use super::{
+    DateTime, Deserialize, LocalWorkService, ObjectId, ProjectId, Serialize, StoreError, Utc,
+    WorkId, WorkLifecycle, WorkRunId, WorkRunState, compact_text,
+};
 
 const MAX_WINDOW_ROWS: usize = 16;
 

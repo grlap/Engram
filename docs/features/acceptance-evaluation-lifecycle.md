@@ -230,7 +230,7 @@ fresh host measurement; an actual source mismatch or missing evaluation
 source basis needs a new judgment. The word cannot safely promise that copying
 the evaluation's fingerprint will fix any source refusal.
 
-The relevant adapters are [service recovery](../../src/work_service/mod.rs),
+The relevant adapters are [service recovery](../../src/work_service/completion.rs),
 [word recovery](../../src/verbs/handlers/completion_remedy.rs), and
 [generic word guidance](../../src/verbs/receipts.rs). The latter still uses
 prose inference for generic completion evidence/checkpoint failures; that is

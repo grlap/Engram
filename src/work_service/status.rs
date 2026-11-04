@@ -1,6 +1,9 @@
 //! Bounded advisory status projection; no claim is inferred from a read.
 
-use super::*;
+use super::{
+    DateTime, Deserialize, LocalWorkService, SAME_ACTOR_OTHER_SESSION, Serialize, SqliteStore,
+    StoreError, Utc, WorkId,
+};
 
 /// Advisory projection of an immutable, capture-qualified note, not authority.
 /// Selection follows project-feed order (inherited members precede native
