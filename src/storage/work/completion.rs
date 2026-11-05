@@ -64,9 +64,9 @@ use crate::{
 };
 
 mod acceptance_bindings;
-use acceptance_bindings::bind_acceptance_to_obligations_on;
 #[cfg(test)]
 use acceptance_bindings::binding_freshness_mismatch;
+use acceptance_bindings::{bind_acceptance_to_obligations_on, bound_live_input_consumed_on};
 mod assessment;
 pub(crate) use assessment::{
     AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
@@ -156,6 +156,29 @@ impl SqliteStore {
             landing.validate().map_err(StoreError::InvalidWork)?;
         }
         let request_object = request_object(request)?;
+        let replay_exists = {
+            let snapshot = self.connection.unchecked_transaction()?;
+            replay_operation::<CompletionSeal>(
+                &snapshot,
+                "complete_work",
+                &request.idempotency_key,
+                request_object.key(),
+            )?
+            .is_some()
+        };
+        let needs_live_input = !replay_exists
+            && super::query::on_one_snapshot(&self.connection, |connection| {
+                completion_needs_live_input_on(connection, request)
+            })?;
+        let currency = if needs_live_input {
+            super::registered_commit_currency::LiveCurrency::measure(
+                self,
+                request.work_id,
+                request.run_id,
+            )?
+        } else {
+            super::registered_commit_currency::LiveCurrency::default()
+        };
         let transaction = self.begin_work_mutation()?;
         if let Some(seal) = replay_operation::<CompletionSeal>(
             &transaction,
@@ -184,6 +207,12 @@ impl SqliteStore {
             request.completed_at,
             false,
         )?;
+        if !currency.active() && completion_needs_live_input_on(&transaction, request)? {
+            return Err(StoreError::WorkCompletionRefused {
+                work: item.work_id,
+                reason: "completion requirements changed before the Git decision; read the current item and retry".into(),
+            });
+        }
         let offered_handoffs = transaction.query_row(
             "SELECT COUNT(*) FROM work_handoff_offers WHERE run_id = ?1 AND state = 'offered'",
             [run.run_id.0.to_string()],
@@ -248,12 +277,13 @@ impl SqliteStore {
                     reason: "explicit acceptance results are not accepted under an evaluated acceptance policy; record an acceptance evaluation with evaluate instead".into(),
                 });
             }
-            let assessment = super::acceptance_evaluation::assess_on(
+            let assessment = super::acceptance_evaluation::assess_live_on(
                 &transaction,
                 &item,
                 run.run_id,
                 &acceptance_policy,
                 request.source_fingerprint.as_deref(),
+                &currency,
             )?;
             // A fresh, all-pass evaluation is the only path to a sealed vector;
             // everything else is a recovery cause the evaluator must resolve.
@@ -347,6 +377,50 @@ impl SqliteStore {
             (results, None)
         };
         let acceptance = acceptance_results;
+        let mut live_commit_consumed = acceptance_evaluation
+            .as_ref()
+            .map(|id| {
+                load_typed_work_object::<crate::domain::AcceptanceEvaluation>(
+                    &transaction,
+                    id,
+                    "acceptance_evaluation",
+                )
+            })
+            .transpose()?
+            .is_some_and(|evaluation| evaluation.registered_input_decision.is_some());
+        for citation in acceptance
+            .iter()
+            .filter(|result| result.satisfied)
+            .flat_map(|result| &result.evidence)
+        {
+            let kind: Option<String> = transaction
+                .query_row(
+                    "SELECT object_kind FROM objects WHERE object_id=?1",
+                    [citation.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if kind.as_deref() == Some("verification_evidence")
+                && currency.check_on(&transaction, citation)?
+            {
+                live_commit_consumed = true;
+                let checked: VerificationEvidence =
+                    load_typed_work_object(&transaction, citation, "verification_evidence")?;
+                if request
+                    .source_fingerprint
+                    .as_ref()
+                    .is_some_and(|declared| declared != &checked.source_basis.source_revision)
+                {
+                    return Err(StoreError::WorkCompletionRefused {
+                        work: item.work_id,
+                        reason: format!(
+                            "completion declares an input other than its current registered check; use --source-fingerprint {} or omit the declaration for unevaluated completion; otherwise run a check on the intended commit",
+                            checked.source_basis.source_revision
+                        ),
+                    });
+                }
+            }
+        }
         let drain = request.drain.clone();
         if !drain.reconciled_action_outcomes.is_empty()
             || !drain.released_resource_leases.is_empty()
@@ -493,15 +567,36 @@ impl SqliteStore {
         // record. A refusal below rolls these resolutions back with the rest,
         // and a recovery answer is read from the state before them.
         transaction.execute_batch(&format!("SAVEPOINT {UNTESTED_WAIVERS_SAVEPOINT}"))?;
+        resolve_live_registered_obligations_on(
+            &transaction,
+            &item,
+            run.run_id,
+            &currency,
+            &request.actor,
+            request.completed_at,
+        )?;
+        // A bound criterion can consume a live check without the caller
+        // citing it directly. Preflight only that live source decision;
+        // full binding validation keeps its original position below.
+        let binding_cut = current_run_feed_cut_on(&transaction, run.run_id)?;
+        live_commit_consumed |=
+            bound_live_input_consumed_on(&transaction, &item, &claim, &binding_cut, &currency)?;
         resolve_source_change_obligations_on(
             &transaction,
             &item,
             run.run_id,
             claim.claim_id,
+            live_commit_consumed,
             &request.actor,
             request.completed_at,
         )?;
-        refuse_unresolved_named_root_changes_on(&transaction, &item, run.run_id, claim.claim_id)?;
+        refuse_unresolved_named_root_changes_on(
+            &transaction,
+            &item,
+            run.run_id,
+            claim.claim_id,
+            live_commit_consumed,
+        )?;
         let completion_cut = FeedPosition {
             position: feed_head(&transaction, &run_feed)?,
             feed: run_feed,
@@ -539,6 +634,7 @@ impl SqliteStore {
             acceptance_evaluation.is_some(),
             request.source_fingerprint.as_deref(),
             acceptance,
+            &currency,
         )?;
         let environment =
             completion_environment_basis_on(&transaction, run.run_id, &completion_cut)?;
@@ -783,6 +879,7 @@ impl SqliteStore {
             )));
         }
         let event = WorkObligationResolutionEvent {
+            registered_input_decision: None,
             schema_version: SCHEMA_VERSION,
             project_id: record.obligation.project_id.clone(),
             obligation_id: record.obligation.obligation_id,
@@ -1323,6 +1420,13 @@ fn validate_obligation_resolution_projection(
     }
     let resolution_position =
         run_feed_position_for_object_on(connection, obligation.run_id, resolution_id)?;
+    if event.registered_input_decision.is_some()
+        && !matches!(event.resolution, WorkObligationResolution::Satisfied { .. })
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "registered input decision is not attached to an eligible satisfied obligation".into(),
+        ));
+    }
     match &event.resolution {
         WorkObligationResolution::Satisfied {
             evidence,
@@ -1344,27 +1448,51 @@ fn validate_obligation_resolution_projection(
                 evidence,
                 "verification_evidence",
             )?;
-            let at_cut = assessment::VerificationAtCut::load_on(
-                connection,
-                verification,
-                evidence,
-                evaluated_cut.clone(),
-            )?;
-            match at_cut.assess_on(connection, obligation)? {
-                crate::control::ObligationAssessment::Matches => {}
-                crate::control::ObligationAssessment::Skipped(
-                    crate::control::ObligationSkip::ForeignOrDisplaced,
-                ) => {
-                    return Err(StoreError::InvalidWorkProjection(format!(
-                        "satisfied obligation {} belongs to a foreign workspace",
-                        obligation.obligation_id.0
-                    )));
+            if let Some(decision) = &event.registered_input_decision {
+                if &decision.verification != evidence {
+                    return Err(StoreError::InvalidWorkProjection(
+                        "obligation input decision names another verification".into(),
+                    ));
                 }
-                _ => {
-                    return Err(StoreError::InvalidWorkProjection(format!(
-                        "satisfied obligation {} does not match its verification evidence",
-                        obligation.obligation_id.0
-                    )));
+                super::registered_commit_currency::validate_decision_on(
+                    connection,
+                    decision,
+                    obligation.work_id,
+                    obligation.run_id,
+                    evaluated_cut.position,
+                    Some(&obligation.requirement),
+                )?;
+                if !registered_obligation_matches_on(
+                    connection,
+                    decision,
+                    obligation,
+                    evaluated_cut.position,
+                )? {
+                    return Err(StoreError::InvalidWorkProjection("registered input decision crosses an obligation's definition or named-root scope".into()));
+                }
+            } else {
+                let at_cut = assessment::VerificationAtCut::load_on(
+                    connection,
+                    verification,
+                    evidence,
+                    evaluated_cut.clone(),
+                )?;
+                match at_cut.assess_on(connection, obligation)? {
+                    crate::control::ObligationAssessment::Matches => {}
+                    crate::control::ObligationAssessment::Skipped(
+                        crate::control::ObligationSkip::ForeignOrDisplaced,
+                    ) => {
+                        return Err(StoreError::InvalidWorkProjection(format!(
+                            "satisfied obligation {} belongs to a foreign workspace",
+                            obligation.obligation_id.0
+                        )));
+                    }
+                    _ => {
+                        return Err(StoreError::InvalidWorkProjection(format!(
+                            "satisfied obligation {} does not match its verification evidence",
+                            obligation.obligation_id.0
+                        )));
+                    }
                 }
             }
         }
@@ -1920,6 +2048,7 @@ pub(super) fn waive_unbound_obligations_on(
             "no longer requires this verification"
         };
         let event = WorkObligationResolutionEvent {
+            registered_input_decision: None,
             schema_version: SCHEMA_VERSION,
             project_id: item.project_id.clone(),
             obligation_id: record.obligation.obligation_id,
@@ -1976,6 +2105,146 @@ fn recovery_before_untested_waivers(
     Ok(CompleteWorkStorageResult::Recovery(recovery))
 }
 
+fn completion_needs_live_input_on(
+    connection: &Connection,
+    request: &CompleteWorkRequest,
+) -> Result<bool, StoreError> {
+    let item = load_work_item(connection, request.work_id)?;
+    if SqliteStore::load_acceptance_evaluation_policy_on(connection)?.is_evaluated()
+        || !item.acceptance_bindings.is_empty()
+    {
+        return Ok(true);
+    }
+    let citations: Vec<_> = if request.acceptance.is_empty() {
+        request.evidence.iter().collect()
+    } else {
+        request
+            .acceptance
+            .iter()
+            .filter(|result| result.satisfied)
+            .flat_map(|result| &result.evidence)
+            .collect()
+    };
+    for id in citations {
+        let kind: Option<String> = connection
+            .query_row(
+                "SELECT object_kind FROM objects WHERE object_id=?1",
+                [id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if kind.as_deref() != Some("verification_evidence") {
+            continue;
+        }
+        let evidence: VerificationEvidence =
+            load_typed_work_object(connection, id, "verification_evidence")?;
+        if super::load_verification_producer_on(connection, &evidence)?
+            .registered_git_basis(&evidence)
+            .is_some_and(|basis| basis.source_revision.starts_with("git-commit:"))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn resolve_live_registered_obligations_on(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    currency: &super::registered_commit_currency::LiveCurrency,
+    actor: &crate::ActorContext,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let cut = current_run_feed_cut_on(transaction, run_id)?;
+    for record in load_complete_work_obligation_records_on(transaction, run_id)? {
+        if record.state != WorkObligationState::Open {
+            continue;
+        }
+        let obligation = &record.obligation;
+        let source_change = crate::control::is_source_change_obligation(&obligation.rule);
+        if source_change
+            && !crate::control::is_stock_source_change_obligation(
+                &obligation.rule,
+                &obligation.requirement,
+            )
+        {
+            // Operator rules keep the post-change check required by the
+            // ordinary matcher when verification is recorded.
+            continue;
+        }
+        let selected = if source_change {
+            currency.select_current_on(transaction, &obligation.requirement, cut.position)?
+        } else {
+            currency.select_on(transaction, &obligation.requirement, cut.position)?
+        };
+        let Some(decision) = selected else {
+            continue;
+        };
+        super::registered_commit_currency::validate_decision_on(
+            transaction,
+            &decision,
+            item.work_id,
+            run_id,
+            cut.position,
+            Some(&obligation.requirement),
+        )?;
+        if !registered_obligation_matches_on(transaction, &decision, obligation, cut.position)? {
+            continue;
+        }
+        let event = WorkObligationResolutionEvent {
+            registered_input_decision: Some(decision.clone()),
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            obligation_id: obligation.obligation_id,
+            definition: record.definition_id.clone(),
+            run_id,
+            resolution: WorkObligationResolution::Satisfied {
+                evidence: decision.verification,
+                evaluated_cut: cut.clone(),
+            },
+            actor: actor.clone(),
+            created_at: now,
+        };
+        append_obligation_resolution_on(transaction, &record, &event)?;
+    }
+    Ok(())
+}
+
+fn registered_obligation_matches_on(
+    connection: &Connection,
+    decision: &crate::domain::RegisteredInputDecision,
+    obligation: &WorkObligation,
+    cut: i64,
+) -> Result<bool, StoreError> {
+    if obligation.trigger_position.position > cut {
+        return Ok(false);
+    }
+    let evidence: VerificationEvidence =
+        load_typed_work_object(connection, &decision.verification, "verification_evidence")?;
+    let position =
+        run_feed_position_for_object_on(connection, obligation.run_id, &decision.verification)?
+            .position;
+    if crate::control::acceptance_binding_criterion(&obligation.rule).is_some() {
+        // Currency cannot make a check precede a criterion's definition.
+        return Ok(position > obligation.trigger_position.position);
+    }
+    let root = named_root_context_on(
+        connection,
+        obligation.run_id,
+        evidence.binding.claim_id,
+        cut,
+    )?;
+    if !named_root::obligation_matches_named_root(connection, obligation, root.as_ref())? {
+        return Ok(false);
+    }
+    // The live endpoint decides this root's currency even when a turn report
+    // cannot locate its change. Located foreign/displaced changes remain
+    // excluded by obligation_matches_named_root above. The legacy matcher
+    // retains its position and completion-time floors.
+    Ok(true)
+}
+
 fn satisfy_open_obligations_on(
     transaction: &Transaction<'_>,
     evidence: &VerificationEvidence,
@@ -2005,6 +2274,7 @@ fn satisfy_open_obligations_on(
     let mut resolution_hashes = Vec::new();
     for record in satisfied {
         let event = WorkObligationResolutionEvent {
+            registered_input_decision: None,
             schema_version: SCHEMA_VERSION,
             project_id: evidence.project_id.clone(),
             obligation_id: record.obligation.obligation_id,

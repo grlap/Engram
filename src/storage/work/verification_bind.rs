@@ -68,6 +68,7 @@ struct ValidTarget<'a> {
 /// # Errors
 ///
 /// Storage failures only; every request fault is a refusal.
+#[cfg(test)]
 pub(in crate::storage) fn bind_verification_on(
     transaction: &Transaction<'_>,
     project_id: &ProjectId,
@@ -76,19 +77,44 @@ pub(in crate::storage) fn bind_verification_on(
     input: &VerificationBindInput,
     now: DateTime<Utc>,
 ) -> Result<VerificationBindOutcome, StoreError> {
+    bind_verification_live_on(
+        transaction,
+        project_id,
+        session_id,
+        binder,
+        input,
+        now,
+        &super::registered_commit_currency::LiveCurrency::default(),
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "live currency is measured outside the bind transaction"
+)]
+pub(in crate::storage) fn bind_verification_live_on(
+    transaction: &Transaction<'_>,
+    project_id: &ProjectId,
+    session_id: &SessionId,
+    binder: &ActorContext,
+    input: &VerificationBindInput,
+    now: DateTime<Utc>,
+    currency: &super::registered_commit_currency::LiveCurrency,
+) -> Result<VerificationBindOutcome, StoreError> {
     let mut refusal = VerificationBindRefusal {
         original: None,
         request: None,
         targets: Vec::new(),
     };
     refusal.request = request_refusal(transaction, project_id, session_id, input, now)?;
-    let original = match validate_original(transaction, project_id, session_id, input, now)? {
-        Ok(original) => Some(original),
-        Err(reason) => {
-            refusal.original = Some(reason);
-            None
-        }
-    };
+    let original =
+        match validate_original(transaction, project_id, session_id, input, now, currency)? {
+            Ok(original) => Some(original),
+            Err(reason) => {
+                refusal.original = Some(reason);
+                None
+            }
+        };
     if refusal.request.is_none()
         && let Some(original) = &original
     {
@@ -242,6 +268,7 @@ fn validate_original(
     session_id: &SessionId,
     input: &VerificationBindInput,
     now: DateTime<Utc>,
+    currency: &super::registered_commit_currency::LiveCurrency,
 ) -> Result<Result<Original, VerificationBindOriginalRefusal>, StoreError> {
     use VerificationBindOriginalRefusal as Refused;
     let kind: Option<String> = transaction
@@ -333,23 +360,32 @@ fn validate_original(
             .and_then(|(_, sighting)| sighting.source_basis.as_ref()),
     )
     .is_ok();
+    let live_commit = match currency.check_on(transaction, &input.original) {
+        Ok(live_commit) => live_commit,
+        Err(StoreError::WorkCompletionRefused { .. }) => {
+            return Ok(Err(Refused::RootNotCurrent));
+        }
+        Err(error) => return Err(error),
+    };
     let root_current = root.is_some_and(|root| {
         root.workspace_id == evidence.source_basis.workspace_id
             && root.generation == generation
-            && root
-                .unknown_change_position
-                .is_none_or(|unknown| unknown < producer_position)
+            && (live_commit
+                || root
+                    .unknown_change_position
+                    .is_none_or(|unknown| unknown < producer_position))
     });
     if !root_current
         || !applicable
-        || check_moved_on(
-            transaction,
-            evidence.binding.run_id,
-            &input.original,
-            &evidence.producer_observation,
-            &evidence.source_basis.source_revision,
-            run_head,
-        )?
+        || (!live_commit
+            && check_moved_on(
+                transaction,
+                evidence.binding.run_id,
+                &input.original,
+                &evidence.producer_observation,
+                &evidence.source_basis.source_revision,
+                run_head,
+            )?)
     {
         return Ok(Err(Refused::RootNotCurrent));
     }

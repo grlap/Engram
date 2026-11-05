@@ -801,7 +801,6 @@ test("a stage ended by a signal is interrupted, and nothing about such a run is 
 
 test("a run in a linked worktree lives under that worktree's Git directory and prints the same record", async () => {
   await repository(async (root) => {
-    git(["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "baseline"], root);
     const linked = join(root, "linked");
     git(["worktree", "add", "--quiet", linked], root);
     const runDir = await createRun({ root: linked, stages: [printing("unit", "test", libtest(2, 0, 1, 0))] }, env);

@@ -348,6 +348,9 @@ position places it against the binding event, and it is never displaced.
 Recorded while a root was bound, it needs a fresh check in the claim's active
 named root or an explicit human waiver, even after that root ended, was
 released or was renamed, and `done` on an unbound claim refuses it.
+After a [live registered-input decision](acceptance-evaluation.md#registered-git-input-evidence)
+has checked the named root, an unlocated stock report instead records an untested
+waiver; it does not require a Test-kind check. Located foreign guards remain.
 
 After a claim has named a root, the optional positive
 `source_root_generation` and `source_root_state` (`named` or `ended`) travel
@@ -720,31 +723,21 @@ running behind can withhold credit. A remote clock running ahead can make an old
 run appear to follow a later local change: a run that ended at T, a local change at
 T+30 and a delivery at T+60 pass every guard if the origin's clock is 45 seconds
 ahead. Credit names the exact commit or tree the run tested. Evaluation compares
-that input exactly, independently of clock ordering. When a bound completion
-criterion selects registered Git verification, completion with a declared input
-compares it with that verification. Without a declaration, unevaluated completion
-uses that registered verification's own input for this comparison; it does not
-independently check the checkout's input. The applicable time and position guards
-still apply. A criterion that selects no registered Git verification does not run
-this declared-Git-input check. Non-registered verification, including a bound copy,
-keeps its source-revision matching against the available root sightings, measured
-sightings and latest source changes.
+that input exactly. Native committed-input decisions also read the named Git root
+at evaluation and completion, requiring it clean at that exact commit. Accounted
+reports stay history; reverted edits can pass, while dirty, missing and
+different-commit roots refuse even with a cached completion fingerprint.
+Test-bound criteria take this path with evaluations on or off, including a direct
+registered-check citation. Unevaluated prose-only completion without such a
+citation adds no Git read. See the full
+[registered Git-input rule](acceptance-evaluation.md#registered-git-input-evidence).
 
-For a new evaluation, a passed registered check in the evaluated run can
-corroborate the exact declared Git input and named root even when an unbound
-judgment cites only notes. The evaluation then stores that check as its source
-witness; it does not assign the check to a criterion. A bound criterion keeps
-its required observed citation. Quiet content sightings while the evaluator
-runs do not change this Git input. A measured edit after the check still needs
-a later check, including after a measured revert. An edit and revert before the
-next measurement remain within the Git cleanliness lane's stated limits.
-Existing evaluations keep their recorded source interpretation; a stored
-witness is validated at its original cut and never replaced by another check.
-A quiet sighting of a different Git input cannot corroborate a new witness
-or leave it current after its cut. Content fingerprints alone do not compare
-with Git identity; the source-change observations remain the change guards.
-Witness selection corroborates identity only: it grants no criterion credit
-and does not hide a newer failed check from the evaluator.
+New internally minted decisions let historical readers validate the exact
+producer and root provenance at the stored cut without today's filesystem.
+Existing evaluations, obligation resolutions and seals retain their bytes and
+interpretation. Existing witnesses and staged-tree inputs keep their historical
+report-based rules. Non-registered verification, including bound copies, keeps
+its revision matching against the applicable observations.
 
 `verification_bind` can copy a credited remote check through its ordinary bound
 branch, under its usual measurement rules. Crediting another item with the result
@@ -788,6 +781,9 @@ waiver-only until a later basis-bearing mutation and passed test establish a
 newer verifiable state. Under a named root, a change with no source basis
 never becomes the root's newest mutation; a fresh check in the root that ran
 after it accounts for it instead.
+The [live registered-input lane](acceptance-evaluation.md#registered-git-input-evidence)
+instead uses Git's current named-root state, so an unlocated report does not
+require a later check; a change outside that root is not seen by its Git read.
 
 On a finished run, records are audit only: an observation opens no
 obligation, a verification satisfies none, and no record becomes a

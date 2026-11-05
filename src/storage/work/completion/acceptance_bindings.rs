@@ -31,6 +31,7 @@ pub(super) fn bind_acceptance_to_obligations_on(
     evaluated: bool,
     source_fingerprint: Option<&str>,
     mut acceptance: Vec<AcceptanceResult>,
+    currency: &super::super::registered_commit_currency::LiveCurrency,
 ) -> Result<Vec<AcceptanceResult>, StoreError> {
     if item.acceptance_bindings.is_empty() {
         return Ok(acceptance);
@@ -64,13 +65,37 @@ pub(super) fn bind_acceptance_to_obligations_on(
             continue;
         };
         let mut carried_by = satisfying.clone();
-        if let Some((position, newest, evidence)) = newest_verification_of_kind_on(
+        let newest = newest_verification_of_kind_on(
             connection,
             run_id,
             &binding.requirement,
             cut,
             root.as_ref(),
-        )? {
+        )?;
+        let newest = if let Some((_, _, evidence)) = &newest
+            && super::super::load_verification_producer_on(connection, evidence)?
+                .registered_git_basis(evidence)
+                .is_some_and(|basis| basis.source_revision.starts_with("git-commit:"))
+        {
+            if let Some(decision) =
+                select_bound_live_input_on(connection, item, binding, &records, cut, currency)?
+            {
+                let evidence = load_typed_work_object(
+                    connection,
+                    &decision.verification,
+                    "verification_evidence",
+                )?;
+                let position =
+                    run_feed_position_for_object_on(connection, run_id, &decision.verification)?
+                        .position;
+                Some((position, decision.verification, evidence))
+            } else {
+                newest
+            }
+        } else {
+            newest
+        };
+        if let Some((position, newest, evidence)) = newest {
             let kind = encode_state(binding.requirement.check_kind)?;
             if evidence.result != crate::domain::VerificationResult::Passed {
                 return Err(StoreError::WorkBoundVerificationRefused {
@@ -94,6 +119,7 @@ pub(super) fn bind_acceptance_to_obligations_on(
             }
             let producer = super::super::load_verification_producer_on(connection, &evidence)?;
             let registered_git = producer.registered_git_basis(&evidence).is_some();
+            let live_commit = currency.check_on(connection, &newest)?;
             if registered_git
                 && let Some(supplied) = source_fingerprint
                 && producer.matches_registered_git_input(&evidence, supplied) != Some(true)
@@ -133,17 +159,22 @@ pub(super) fn bind_acceptance_to_obligations_on(
                     assessment::producer_position_on_run(connection, &evidence, position)?;
                 // The floors of every unadmitted change on the run hold too,
                 // not only the latest change's.
-                let barrier = assessment::unadmitted_barrier(
-                    connection,
-                    run_id,
-                    (producer_position, position),
-                    evidence.completed_at,
-                    cut.position,
-                    root.as_ref(),
-                )?;
-                if let Some((mismatch, decider)) = binding_freshness_mismatch(
+                let barrier = if live_commit {
+                    None
+                } else {
+                    assessment::unadmitted_barrier(
+                        connection,
+                        run_id,
+                        (producer_position, position),
+                        evidence.completed_at,
+                        cut.position,
+                        root.as_ref(),
+                    )?
+                };
+                if let Some((mismatch, decider)) = binding_freshness_mismatch_live(
                     latest_mutation
                         .as_ref()
+                        .filter(|_| !live_commit)
                         .map(|(position, mutation)| (mutation, *position)),
                     (&evidence, position),
                     (&producer, producer_position),
@@ -151,8 +182,10 @@ pub(super) fn bind_acceptance_to_obligations_on(
                     root.as_ref(),
                     measured
                         .as_ref()
+                        .filter(|_| !live_commit)
                         .map(|(position, basis)| (basis, *position)),
                     judged_basis.as_ref(),
+                    live_commit,
                 )
                 .or_else(|| barrier.map(|mismatch| (mismatch, None)))
                 {
@@ -227,6 +260,84 @@ pub(super) fn bind_acceptance_to_obligations_on(
     Ok(acceptance)
 }
 
+/// Performs only the live source decision for satisfied native commit
+/// bindings before stock report accounting. Full binding validation stays
+/// after the source barrier, preserving the legacy refusal order. It still
+/// validates every criterion before sealing; any refusal rolls back the
+/// report accounting as well.
+pub(super) fn bound_live_input_consumed_on(
+    connection: &Connection,
+    item: &WorkItem,
+    claim: &WorkClaim,
+    cut: &FeedPosition,
+    currency: &super::super::registered_commit_currency::LiveCurrency,
+) -> Result<bool, StoreError> {
+    if item.acceptance_bindings.is_empty() {
+        return Ok(false);
+    }
+    let records = load_complete_work_obligation_records_on(connection, claim.run_id)?;
+    let root = named_root_context_on(connection, claim.run_id, claim.claim_id, cut.position)?;
+    let mut consumed = false;
+    for binding in &item.acceptance_bindings {
+        if satisfied_binding(&records, binding).is_none() {
+            continue;
+        }
+        let Some((_, _, evidence)) = newest_verification_of_kind_on(
+            connection,
+            claim.run_id,
+            &binding.requirement,
+            cut,
+            root.as_ref(),
+        )?
+        else {
+            continue;
+        };
+        if super::super::load_verification_producer_on(connection, &evidence)?
+            .registered_git_basis(&evidence)
+            .is_some_and(|basis| basis.source_revision.starts_with("git-commit:"))
+            && select_bound_live_input_on(connection, item, binding, &records, cut, currency)?
+                .is_some()
+        {
+            consumed = true;
+        }
+    }
+    Ok(consumed)
+}
+
+/// A current source does not carry evidence across a criterion's definition.
+/// Both the early source preflight and the final binder use the same floor
+/// as resolution of a newly opened binding obligation.
+fn select_bound_live_input_on(
+    connection: &Connection,
+    item: &WorkItem,
+    binding: &crate::domain::AcceptanceBinding,
+    records: &[super::super::WorkObligationRecord],
+    cut: &FeedPosition,
+    currency: &super::super::registered_commit_currency::LiveCurrency,
+) -> Result<Option<crate::domain::RegisteredInputDecision>, StoreError> {
+    let Some(decision) = currency.select_on(connection, &binding.requirement, cut.position)? else {
+        return Ok(None);
+    };
+    let record = super::binding_obligation(records, binding).ok_or_else(|| {
+        StoreError::InvalidWorkProjection("a satisfied acceptance binding has no obligation".into())
+    })?;
+    if !super::registered_obligation_matches_on(
+        connection,
+        &decision,
+        &record.obligation,
+        cut.position,
+    )? {
+        return Err(StoreError::WorkCompletionRefused {
+            work: item.work_id,
+            reason: format!(
+                "criterion {} requires a check recorded after its current binding definition; run a fresh passing check of the current input",
+                binding.criterion
+            ),
+        });
+    }
+    Ok(Some(decision))
+}
+
 /// Why the newest verification of a bound kind does not carry its criterion
 /// past the run's latest source change, or `None` when it does. Recording
 /// order alone proves nothing about what was checked: a record appended after
@@ -235,7 +346,36 @@ pub(super) fn bind_acceptance_to_obligations_on(
 /// with no source revision or time gives that rule nothing to compare, and
 /// would refuse every verification forever; recording order is then all that
 /// can be said, and it is what is asked.
+#[cfg(test)]
 pub(super) fn binding_freshness_mismatch(
+    mutation: Option<(&crate::domain::SourceObservation, i64)>,
+    evidence: (&VerificationEvidence, i64),
+    producer: (&dyn crate::domain::VerificationProducer, i64),
+    requirement: &crate::domain::VerificationRequirement,
+    root: Option<&NamedRootContext>,
+    measured_sighting: Option<(&crate::domain::ExecutionSourceBasis, i64)>,
+    judged_basis: Option<&crate::domain::ExecutionSourceBasis>,
+) -> Option<(
+    crate::domain::VerificationEvidenceMismatch,
+    Option<crate::domain::StaleSourceDecider>,
+)> {
+    binding_freshness_mismatch_live(
+        mutation,
+        evidence,
+        producer,
+        requirement,
+        root,
+        measured_sighting,
+        judged_basis,
+        false,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "live currency supplements the existing matching context"
+)]
+fn binding_freshness_mismatch_live(
     mutation: Option<(&crate::domain::SourceObservation, i64)>,
     (evidence, evidence_position): (&VerificationEvidence, i64),
     (producer, producer_position): (&dyn crate::domain::VerificationProducer, i64),
@@ -243,6 +383,7 @@ pub(super) fn binding_freshness_mismatch(
     root: Option<&NamedRootContext>,
     measured_sighting: Option<(&crate::domain::ExecutionSourceBasis, i64)>,
     judged_basis: Option<&crate::domain::ExecutionSourceBasis>,
+    live_commit: bool,
 ) -> Option<(
     crate::domain::VerificationEvidenceMismatch,
     Option<crate::domain::StaleSourceDecider>,
@@ -268,7 +409,14 @@ pub(super) fn binding_freshness_mismatch(
         evidence: Some(evidence),
         producer: Some(producer),
         latest_mutation: mutation,
-        named_root: root.map(NamedRootContext::match_input),
+        named_root: root.map(|root| {
+            let mut input = root.match_input();
+            if live_commit {
+                input.latest_sighting = None;
+                input.unknown_change_position = None;
+            }
+            input
+        }),
         evidence_position,
         producer_position: Some(producer_position),
         measured_sighting,

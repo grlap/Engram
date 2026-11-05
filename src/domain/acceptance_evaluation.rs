@@ -333,6 +333,9 @@ pub struct AcceptanceEvaluation {
     /// their existing citation-derived source semantics.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registered_input_witness: Option<ObjectId>,
+    /// A fresh Git decision. Absence preserves the original record's rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registered_input_decision: Option<super::RegisteredInputDecision>,
     pub mode: AcceptanceEvaluationMode,
     pub evaluator: ActorContext,
     /// Sub-agent mode: the distinct evaluator execution identity.

@@ -259,12 +259,14 @@ export function isolatedGitEnvironment(source = process.env) {
   const env = { ...source };
   for (const key of Object.keys(env)) if (key.toUpperCase().startsWith("GIT_")) delete env[key];
   Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : devNull,
-    GIT_ATTR_NOSYSTEM: "1", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" });
+    GIT_ATTR_NOSYSTEM: "1", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1" });
   // Fingerprint calls in this lane use the same pinned settings as status.
   // The legacy lane continues to use its original environment unchanged.
-  Object.assign(env, { GIT_CONFIG_COUNT: "3", GIT_CONFIG_KEY_0: "core.fsmonitor", GIT_CONFIG_VALUE_0: "false",
-    GIT_CONFIG_KEY_1: "core.excludesFile", GIT_CONFIG_VALUE_1: env.GIT_CONFIG_GLOBAL,
-    GIT_CONFIG_KEY_2: "core.attributesFile", GIT_CONFIG_VALUE_2: env.GIT_CONFIG_GLOBAL });
+  const settings = [["core.fsmonitor", "false"], ["core.excludesFile", env.GIT_CONFIG_GLOBAL],
+    ["core.attributesFile", env.GIT_CONFIG_GLOBAL], ["core.checkStat", "default"], ["core.trustctime", "true"],
+    ["core.ignoreStat", "false"], ["core.untrackedCache", "false"], ["status.showUntrackedFiles", "all"], ["diff.ignoreSubmodules", "none"]];
+  env.GIT_CONFIG_COUNT = String(settings.length);
+  settings.forEach(([key, value], index) => { env[`GIT_CONFIG_KEY_${index}`] = key; env[`GIT_CONFIG_VALUE_${index}`] = value; });
   return env;
 }
 
@@ -276,6 +278,10 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
   const run = (root, values, allowFailure = false) => git(root, args(values), { env, allowFailure });
   const text = (root, values) => run(root, values).stdout.toString("utf8").trim();
   const root = realpathSync.native(text(startDirectory, ["rev-parse", "--show-toplevel"]));
+  if (root !== realpathSync.native(startDirectory)) {
+    throw Object.assign(new Error("committed input requires the exact Git worktree top level"),
+      { code: "ENGRAM_INPUT_ROOT_MISMATCH" });
+  }
   const head = () => text(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
   const commit = head();
   const tree = text(root, ["rev-parse", "--verify", `${commit}^{tree}`]);

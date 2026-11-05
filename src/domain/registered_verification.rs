@@ -124,6 +124,19 @@ pub struct RegisteredVerificationRecord {
     pub record_id: ObjectId,
 }
 
+/// A live input decision recorded only on a newly admitted evaluation or
+/// obligation resolution. The links identify the immutable producer and root;
+/// cleanliness records an endpoint observation, not a reproducible disk proof.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegisteredInputDecision {
+    pub verification: ObjectId,
+    pub named_root_binding: ObjectId,
+    pub source_revision: String,
+    pub clean: bool,
+    pub measured_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegisteredVerificationReceipt {

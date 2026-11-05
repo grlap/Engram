@@ -19,6 +19,7 @@ use super::query::{
     canonical_work_mark_events_for_item, load_work_claim_optional, load_work_item, load_work_run,
     on_one_snapshot,
 };
+use super::registered_commit_currency::LiveCurrency;
 use super::{
     CanonicalObject, DETACH_PROVENANCE_SOURCE, FeedPosition, ObjectId, SCHEMA_VERSION, SessionId,
     WorkCompletionRecoveryCause, WorkId, WorkItem, WorkRunId,
@@ -77,9 +78,9 @@ pub struct AcceptanceEvaluationStatus {
     pub stale_observation: Option<DecidingObservation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_recovery: Option<Box<crate::domain::AcceptanceSourceRecoveryCause>>,
-    /// True when the policy requires source freshness and this read could
-    /// not measure a fingerprint: the recorded basis is checked against the
-    /// fingerprint `done` presents, and this read does not call it stale.
+    /// Current source currency is unmeasured here and checked at done:
+    /// by Git for a stored committed-input decision, otherwise against the
+    /// supplied fingerprint when the policy requires it.
     pub source_checked_at_done: bool,
     /// The failing evaluation whose criteria were revised on this run, which
     /// the next evaluation must see and, after the executor's revision, name.
@@ -218,6 +219,24 @@ impl SqliteStore {
             .cloned()
             .ok_or_else(|| refused(request.work_id, "the evaluator must carry a session id"))?;
         validate_request_shape(request)?;
+        let before = load_work_item(&self.connection, request.work_id)?;
+        let before_run = before
+            .active_run_id
+            .or(latest_run_id_on(&self.connection, before.work_id)?);
+        let has_pass = request
+            .verdicts
+            .iter()
+            .any(|verdict| verdict.verdict == AcceptanceVerdict::Pass);
+        let currency = if let Some(run) = before_run.filter(|_| has_pass) {
+            let attempt = attempt_identity(request, run)?;
+            if self.replay_acceptance_evaluation(&attempt)?.is_some() {
+                LiveCurrency::default()
+            } else {
+                LiveCurrency::measure(self, request.work_id, run)?
+            }
+        } else {
+            LiveCurrency::default()
+        };
         let transaction = self.begin_work_mutation()?;
         if let Some((session_id, now)) = register {
             super::session::register_process_default_work_session_on(
@@ -249,6 +268,12 @@ impl SqliteStore {
             transaction.commit()?;
             receipt.replayed = true;
             return Ok(receipt);
+        }
+        if before_run != Some(attempt_run) {
+            return Err(refused(
+                item.work_id,
+                "the active run changed during the Git read; read the current item and retry",
+            ));
         }
         super::task_sync::reconciliation::refuse_held_on(&transaction, item.work_id)?;
         if item.lifecycle != WorkLifecycle::Open {
@@ -368,8 +393,27 @@ impl SqliteStore {
                 named_root.as_ref(),
             )?
         };
-        let git_input = cited_git_input || registered_input_witness.is_some();
-        if let Some(BasisMoveFinding { moved, observation }) = basis_moved_after(
+        let registered_staged = request.source_basis.as_ref().is_some_and(|basis| {
+            basis.fingerprint.starts_with("git-tree:")
+                && (cited_git_input || registered_input_witness.is_some())
+        });
+        let live_commit = has_pass
+            && !registered_staged
+            && currency.require_declared_on(
+                &transaction,
+                request
+                    .source_basis
+                    .as_ref()
+                    .map(|basis| basis.fingerprint.as_str()),
+                cut,
+            )?;
+        let registered_input_witness = if live_commit {
+            None
+        } else {
+            registered_input_witness
+        };
+        let git_input = cited_git_input || registered_input_witness.is_some() || live_commit;
+        if let Some(BasisMoveFinding { moved, observation }) = basis_moved_after_live(
             &transaction,
             run_id,
             cut,
@@ -377,6 +421,7 @@ impl SqliteStore {
             named_root.as_ref(),
             git_input,
             registered_input_witness.as_ref(),
+            live_commit,
         )? {
             let unadmitted_change = observation
                 .as_ref()
@@ -409,7 +454,7 @@ impl SqliteStore {
             request.source_basis.as_ref(),
             named_root.as_ref(),
         )?;
-        let stale = stale_bound_citation(
+        let stale = source::stale_bound_citation_live(
             &transaction,
             &item,
             run_id,
@@ -417,10 +462,15 @@ impl SqliteStore {
             cut,
             passing_citations(&verdicts),
             named_root.as_ref(),
+            &currency,
+            false,
         )?;
         // A registered citation without a Git declaration needs the exact
         // declaration remedy, not the legacy missing-sighting remedy.
-        if !git_input
+        let nonpass_commit = !has_pass
+            && super::registered_commit_currency::has_committed_run_on(&transaction, run_id, cut)?;
+        if !nonpass_commit
+            && !git_input
             && !stale
                 .as_ref()
                 .is_some_and(|stale| matches!(stale.cause, StaleCause::RegisteredGit { .. }))
@@ -532,6 +582,18 @@ impl SqliteStore {
             &attempt,
             verdicts,
             registered_input_witness,
+            if live_commit {
+                request
+                    .source_basis
+                    .as_ref()
+                    .map(|basis| {
+                        currency.matching_decision_on(&transaction, &basis.fingerprint, cut)
+                    })
+                    .transpose()?
+                    .flatten()
+            } else {
+                None
+            },
         )?;
         transaction.commit()?;
         Ok(receipt)
@@ -551,6 +613,9 @@ impl SqliteStore {
         work_id: WorkId,
         source_fingerprint: Option<&str>,
     ) -> Result<Option<AcceptanceEvaluationStatus>, StoreError> {
+        // Status is a historical read in every calling context. Git currency
+        // is measured at evaluate and done, never inside a read snapshot.
+        let currency = LiveCurrency::default();
         // The item, the policy and the newest record are compared, so they
         // come from one commit.
         on_one_snapshot(&self.connection, |connection| {
@@ -570,8 +635,9 @@ impl SqliteStore {
             let source = source_fingerprint.map_or(SourceCheck::Unmeasured, |fingerprint| {
                 SourceCheck::AtCompletion(Some(fingerprint))
             });
-            let (stale, context) =
-                staleness_named(connection, &item, run_id, &policy, &hash, &record, source)?;
+            let (stale, context) = staleness_named_live(
+                connection, &item, run_id, &policy, &hash, &record, source, &currency,
+            )?;
             let carried_failure = carried_failure_on(connection, &item, run_id)?;
             let reroll = if item.active_run_id == Some(run_id) {
                 let head = feed_head(connection, &FeedId::RunExecution(run_id))?;
@@ -587,9 +653,10 @@ impl SqliteStore {
                 stale_observation: context.deciding_observation.map(|value| *value),
                 source_recovery: context.source,
                 evaluation: hash,
-                source_checked_at_done: policy.require_source_freshness
-                    && record.source_basis.is_some()
-                    && matches!(source, SourceCheck::Unmeasured),
+                source_checked_at_done: record.registered_input_decision.is_some()
+                    || (policy.require_source_freshness
+                        && record.source_basis.is_some()
+                        && matches!(source, SourceCheck::Unmeasured)),
                 record,
                 stale,
             }))
@@ -611,15 +678,32 @@ impl SqliteStore {
         run_id: WorkRunId,
         source_fingerprint: Option<&str>,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
+        let policy_before = SqliteStore::load_acceptance_evaluation_policy_on(&self.connection)?;
+        let currency = if policy_before.is_self_asserted() {
+            LiveCurrency::default()
+        } else {
+            LiveCurrency::measure(self, work_id, run_id)?
+        };
         // The policy, the item and the newest record are compared, so they
         // come from one commit; a concurrent revision and re-evaluation must
         // not make the pre-check refuse a store that was consistent.
         on_one_snapshot(&self.connection, |connection| {
+            if !currency.active()
+                && !SqliteStore::load_acceptance_evaluation_policy_on(connection)?
+                    .is_self_asserted()
+            {
+                return Err(StoreError::WorkCompletionRefused {
+                    work: work_id,
+                    reason: "the evaluation policy changed before the Git read; retry completion"
+                        .into(),
+                });
+            }
             Self::acceptance_evaluation_readiness_on(
                 connection,
                 work_id,
                 run_id,
                 source_fingerprint,
+                &currency,
             )
         })
     }
@@ -629,6 +713,7 @@ impl SqliteStore {
         work_id: WorkId,
         run_id: WorkRunId,
         source_fingerprint: Option<&str>,
+        currency: &LiveCurrency,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
         let policy = SqliteStore::load_acceptance_evaluation_policy_on(connection)?;
         if policy.is_self_asserted() {
@@ -636,7 +721,14 @@ impl SqliteStore {
         }
         let item = load_work_item(connection, work_id)?;
         Ok(
-            match assess_on(connection, &item, run_id, &policy, source_fingerprint)? {
+            match assess_live_on(
+                connection,
+                &item,
+                run_id,
+                &policy,
+                source_fingerprint,
+                currency,
+            )? {
                 AcceptanceEvaluationAssessment::Absent => AcceptanceEvaluationReadiness::Blocked(
                     WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
                         criterion: item.acceptance.first().cloned().unwrap_or_default(),
@@ -772,6 +864,10 @@ pub(crate) fn attempt_identity(
 /// an exact resend replays. Every admission check has already passed; only
 /// the byte cap is checked here, on the frozen bytes before any write, so a
 /// refused record leaves the feed and the newest record untouched.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the optional live decision is recorded beside the admitted verdicts"
+)]
 fn append_evaluation(
     transaction: &Transaction<'_>,
     item: &WorkItem,
@@ -780,6 +876,7 @@ fn append_evaluation(
     attempt: &AttemptIdentity,
     verdicts: Vec<CriterionVerdict>,
     registered_input_witness: Option<ObjectId>,
+    registered_input_decision: Option<crate::domain::RegisteredInputDecision>,
 ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
     let cut = request.evaluated_through;
     let record = AcceptanceEvaluation {
@@ -799,6 +896,7 @@ fn append_evaluation(
         source_basis: request.source_basis.clone(),
         named_root_binding: named_root_at_on(transaction, run_id, cut)?.map(|root| root.event_id),
         registered_input_witness,
+        registered_input_decision,
         mode: request.mode,
         evaluator: request.evaluator.clone(),
         execution_identity: request.execution_identity.clone(),
@@ -928,6 +1026,27 @@ pub(in crate::storage::work) fn validate_evaluation_input_witness_on(
     connection: &Connection,
     evaluation: &AcceptanceEvaluation,
 ) -> Result<(), StoreError> {
+    if let Some(decision) = &evaluation.registered_input_decision {
+        super::registered_commit_currency::validate_decision_on(
+            connection,
+            decision,
+            evaluation.work_id,
+            evaluation.run_id,
+            evaluation.evaluated_cut.position,
+            None,
+        )?;
+        if evaluation.registered_input_witness.is_some()
+            || !evaluation.evidence_basis.contains(&decision.verification)
+            || evaluation
+                .source_basis
+                .as_ref()
+                .is_none_or(|basis| basis.fingerprint != decision.source_revision)
+            || evaluation.named_root_binding.as_ref() != Some(&decision.named_root_binding)
+        {
+            return Err(StoreError::InvalidWorkProjection("evaluation registered input decision does not match its declared input and evidence basis".into()));
+        }
+        return Ok(());
+    }
     source::validate_registered_input_witness_on(connection, evaluation)
 }
 
@@ -1487,6 +1606,7 @@ pub(super) fn newest_evaluation_through(
 /// a passed check on the declared revision with its own environment record
 /// and the obligation resolutions it satisfied (see `same_turn`). A move the
 /// evaluator did not see wins over a check.
+#[cfg(test)]
 fn basis_moved_after(
     connection: &Connection,
     run_id: WorkRunId,
@@ -1495,6 +1615,32 @@ fn basis_moved_after(
     root: Option<&NamedEvaluationRoot>,
     git_input: bool,
     witnessed_input: Option<&ObjectId>,
+) -> Result<Option<BasisMoveFinding>, StoreError> {
+    basis_moved_after_live(
+        connection,
+        run_id,
+        position,
+        declared,
+        root,
+        git_input,
+        witnessed_input,
+        false,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a live guard augments the existing historical assessment"
+)]
+fn basis_moved_after_live(
+    connection: &Connection,
+    run_id: WorkRunId,
+    position: i64,
+    declared: Option<&crate::domain::AcceptanceSourceBasis>,
+    root: Option<&NamedEvaluationRoot>,
+    git_input: bool,
+    witnessed_input: Option<&ObjectId>,
+    live_commit: bool,
 ) -> Result<Option<BasisMoveFinding>, StoreError> {
     let witnessed_after = witnessed_input
         .map(|witness| {
@@ -1547,7 +1693,8 @@ fn basis_moved_after(
         .collect::<Result<Vec<_>, _>>()?;
     // Collected first: a report lands its environment records before the
     // checks that link them.
-    let exempt = same_turn::ExemptChecks::after(connection, run_id, position, declared, root)?;
+    let exempt =
+        same_turn::ExemptChecks::after(connection, run_id, position, declared, root, live_commit)?;
     let mut seen = std::collections::BTreeSet::new();
     let mut check = false;
     // The newest sighting at another revision than the judged one, while no
@@ -1571,6 +1718,10 @@ fn basis_moved_after(
                     continue;
                 };
                 if off_named_root(root, &observation) {
+                    continue;
+                }
+                if live_commit {
+                    seen.insert(hash);
                     continue;
                 }
                 if !observation.source_changed {
@@ -1622,6 +1773,23 @@ fn basis_moved_after(
                     check = true;
                 }
             }
+            "work_obligation_resolution" if live_commit => {
+                // A source report's accounting is history in this lane.
+                // Resolutions of other obligations still move the basis.
+                let resolution: crate::domain::WorkObligationResolutionEvent =
+                    load_typed_work_object(connection, &hash, "work_obligation_resolution")?;
+                let obligation: WorkObligation =
+                    load_typed_work_object(connection, &resolution.definition, "work_obligation")?;
+                if !crate::control::is_source_change_obligation(&obligation.rule)
+                    || source_observation_if_accounted_on(
+                        connection,
+                        &obligation.triggering_observation,
+                    )?
+                    .is_none()
+                {
+                    check = true;
+                }
+            }
             _ => check = true,
         }
     }
@@ -1662,12 +1830,57 @@ fn staleness_named(
     record: &AcceptanceEvaluation,
     source: SourceCheck<'_>,
 ) -> Result<(Option<AcceptanceStaleReason>, StaleRecoveryContext), StoreError> {
+    staleness_named_live(
+        connection,
+        item,
+        run_id,
+        policy,
+        evaluation,
+        record,
+        source,
+        &LiveCurrency::default(),
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "live currency is separate from historical assessment"
+)]
+fn staleness_named_live(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    policy: &AcceptanceEvaluationPolicy,
+    evaluation: &ObjectId,
+    record: &AcceptanceEvaluation,
+    source: SourceCheck<'_>,
+    currency: &LiveCurrency,
+) -> Result<(Option<AcceptanceStaleReason>, StaleRecoveryContext), StoreError> {
+    let legacy = LiveCurrency::default();
+    let currency = if record.registered_input_decision.is_some() {
+        currency
+    } else {
+        &legacy
+    };
     if let Some(reason) = staleness_before_move(connection, item, run_id, policy, record)? {
         return Ok((Some(reason), StaleRecoveryContext::default()));
     }
     let evaluated_root = named_root_at_on(connection, run_id, record.evaluated_cut.position)?;
     let git_input = source::stored_git_evaluation_on(connection, record)?;
-    if let Some(finding) = basis_moved_after(
+    let live_commit = (!currency.active() && record.registered_input_decision.is_some())
+        || record
+            .source_basis
+            .as_ref()
+            .map(|basis| {
+                currency.matching_on(
+                    connection,
+                    &basis.fingerprint,
+                    record.evaluated_cut.position,
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
+    if let Some(finding) = basis_moved_after_live(
         connection,
         run_id,
         record.evaluated_cut.position,
@@ -1675,6 +1888,7 @@ fn staleness_named(
         evaluated_root.as_ref(),
         git_input,
         record.registered_input_witness.as_ref(),
+        live_commit,
     )? {
         // An accounted change the host observed without admission is named
         // as such: the content need not have changed for it to void the
@@ -1702,6 +1916,7 @@ fn staleness_named(
         record,
         source,
         evaluated_root.as_ref(),
+        currency,
     )
 }
 
@@ -1821,8 +2036,22 @@ fn staleness_after_move(
     record: &AcceptanceEvaluation,
     source: SourceCheck<'_>,
     evaluated_root: Option<&NamedEvaluationRoot>,
+    currency: &LiveCurrency,
 ) -> Result<(Option<AcceptanceStaleReason>, StaleRecoveryContext), StoreError> {
-    let git_input = source::stored_git_evaluation_on(connection, record)?;
+    let live_commit = (!currency.active() && record.registered_input_decision.is_some())
+        || record
+            .source_basis
+            .as_ref()
+            .map(|basis| {
+                currency.matching_on(
+                    connection,
+                    &basis.fingerprint,
+                    record.evaluated_cut.position,
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
+    let git_input = live_commit || source::stored_git_evaluation_on(connection, record)?;
     let mut source_context = crate::domain::AcceptanceSourceRecoveryCause {
         mismatch: crate::domain::AcceptanceSourceMismatch::EvaluationSourceBasisMissing,
         remedy: crate::domain::AcceptanceSourceRemedy::EvaluateCurrentSource,
@@ -1888,7 +2117,7 @@ fn staleness_after_move(
         source_context.reported_revision = reported;
         return Ok(refused_source(source_context));
     }
-    if stale_bound_citation(
+    if source::stale_bound_citation_live(
         connection,
         item,
         run_id,
@@ -1896,6 +2125,8 @@ fn staleness_after_move(
         record.evaluated_cut.position,
         passing_citations(&record.verdicts),
         evaluated_root,
+        currency,
+        record.registered_input_decision.is_some(),
     )?
     .is_some()
     {
@@ -1916,7 +2147,19 @@ fn staleness_after_move(
             StaleRecoveryContext::default(),
         ));
     }
-    if policy.require_source_freshness || git_input {
+    if live_commit
+        && let SourceCheck::AtCompletion(Some(presented)) = source
+        && record
+            .source_basis
+            .as_ref()
+            .map(|basis| basis.fingerprint.as_str())
+            != Some(presented)
+    {
+        source_context.mismatch =
+            crate::domain::AcceptanceSourceMismatch::CompletionFingerprintMismatch;
+        return Ok(refused_source(source_context));
+    }
+    if !live_commit && (policy.require_source_freshness || git_input) {
         let evaluated = record
             .source_basis
             .as_ref()
@@ -1948,12 +2191,13 @@ fn staleness_after_move(
 /// Completion-side assessment of the newest evaluation on `run_id`, under an
 /// evaluated policy. An item with no acceptance criteria is refused first:
 /// no evaluation of it can exist, so no recovery cause could name one.
-pub(super) fn assess_on(
+pub(super) fn assess_live_on(
     connection: &Connection,
     item: &WorkItem,
     run_id: WorkRunId,
     policy: &AcceptanceEvaluationPolicy,
     source_fingerprint: Option<&str>,
+    currency: &LiveCurrency,
 ) -> Result<AcceptanceEvaluationAssessment, StoreError> {
     if item.acceptance.is_empty() {
         return Err(StoreError::AcceptanceCriteriaRequired { work: item.work_id });
@@ -1962,7 +2206,7 @@ pub(super) fn assess_on(
         return Ok(AcceptanceEvaluationAssessment::Absent);
     };
     Ok(
-        match staleness_named(
+        match staleness_named_live(
             connection,
             item,
             run_id,
@@ -1970,6 +2214,7 @@ pub(super) fn assess_on(
             &hash,
             &record,
             SourceCheck::AtCompletion(source_fingerprint),
+            currency,
         )? {
             (Some(reason), context) => AcceptanceEvaluationAssessment::Stale(reason, context),
             (None, _) => AcceptanceEvaluationAssessment::Fresh {

@@ -1,8 +1,17 @@
-//! Evaluation identity is corroborated by a registered run, independently of
-//! which evidence an unbound judgment cites. No production policy is changed.
+//! The staged-tree and stored-witness lane keeps its historical report-based
+//! interpretation. The committed endpoint lane is exercised in `live_currency`.
 
 use super::*;
 use crate::storage::work::test_support::{evidence, host_verification_from_basis};
+
+fn prepared(bound: bool, fresh: bool) -> Fixture {
+    let mut fixture = super::prepared(bound, fresh);
+    fixture.request.input = RegisteredVerificationInput::StagedTree {
+        tree: GitTreeId::parse(object_name("staged checked input")).unwrap(),
+        base_commit: object_name("staged provenance"),
+    };
+    fixture
+}
 
 fn content_revision() -> String {
     format!(
@@ -11,7 +20,7 @@ fn content_revision() -> String {
     )
 }
 
-fn quiet_sighting(f: &mut Fixture, key: &str, second: i64) -> ObjectId {
+pub(super) fn quiet_sighting(f: &mut Fixture, key: &str, second: i64) -> ObjectId {
     source_sighting(f, key, second, &content_revision())
 }
 
@@ -88,7 +97,7 @@ fn source_sighting_delivered(
     receipt.observation
 }
 
-fn note(f: &mut Fixture) -> ObjectId {
+pub(super) fn note(f: &mut Fixture) -> ObjectId {
     let work = f
         .store
         .get_work_item(f.request.registration.binding.work_id)
@@ -97,7 +106,7 @@ fn note(f: &mut Fixture) -> ObjectId {
     evidence(&mut f.store, &work, &held, "runner", "review-note", 10)
 }
 
-fn judgment(f: &Fixture, note: &ObjectId) -> RecordAcceptanceEvaluationRequest {
+pub(super) fn judgment(f: &Fixture, note: &ObjectId) -> RecordAcceptanceEvaluationRequest {
     let mut input = evaluation(f, note, &f.request.input.revision());
     input.verdicts[0].basis = AcceptanceBasis::Judgment;
     input.verdicts[0].rationale =
@@ -164,19 +173,19 @@ fn quiet_during_evaluation(cited: bool, bound: bool) {
 }
 
 #[test]
-fn registered_git_input_quiet_evaluation_accepts_an_uncited_check() {
+fn registered_staged_input_quiet_evaluation_accepts_an_uncited_check() {
     quiet_during_evaluation(false, false);
 }
 
 #[test]
-fn registered_git_input_quiet_evaluation_accepts_a_cited_check() {
+fn registered_staged_input_quiet_evaluation_accepts_a_cited_check() {
     for bound in [false, true] {
         quiet_during_evaluation(true, bound);
     }
 }
 
 #[test]
-fn registered_git_input_quiet_git_identity_before_cut_cannot_corroborate() {
+fn registered_staged_input_quiet_git_identity_before_cut_cannot_corroborate() {
     let mut f = prepared(false, true);
     let receipt = f.record().unwrap();
     let check = &receipt.verifications[0].record_id;
@@ -197,7 +206,7 @@ fn registered_git_input_quiet_git_identity_before_cut_cannot_corroborate() {
 }
 
 #[test]
-fn registered_git_input_quiet_git_identity_after_cut_refuses_admission() {
+fn registered_staged_input_quiet_git_identity_after_cut_refuses_admission() {
     let mut f = prepared(false, true);
     f.record().unwrap();
     let note = note(&mut f);
@@ -224,7 +233,7 @@ fn registered_git_input_quiet_git_identity_after_cut_refuses_admission() {
 }
 
 #[test]
-fn registered_git_input_quiet_git_identity_after_recording_stales_witness() {
+fn registered_staged_input_quiet_git_identity_after_recording_stales_witness() {
     let mut f = prepared(false, true);
     let receipt = f.record().unwrap();
     let check = &receipt.verifications[0].record_id;
@@ -316,22 +325,22 @@ fn earlier_quiet_git_sighting(delivery: &str) {
 }
 
 #[test]
-fn registered_git_input_earlier_quiet_git_before_check_is_accepted() {
+fn registered_staged_input_earlier_quiet_git_before_check_is_accepted() {
     earlier_quiet_git_sighting("before-check");
 }
 
 #[test]
-fn registered_git_input_earlier_quiet_git_delivered_before_cut_is_accepted() {
+fn registered_staged_input_earlier_quiet_git_delivered_before_cut_is_accepted() {
     earlier_quiet_git_sighting("before-cut");
 }
 
 #[test]
-fn registered_git_input_earlier_quiet_git_delivered_after_cut_is_accepted() {
+fn registered_staged_input_earlier_quiet_git_delivered_after_cut_is_accepted() {
     earlier_quiet_git_sighting("after-cut");
 }
 
 #[test]
-fn registered_git_input_quiet_evaluation_does_not_invent_a_bound_citation() {
+fn registered_staged_input_quiet_evaluation_does_not_invent_a_bound_citation() {
     let mut f = prepared(true, true);
     f.record().unwrap();
     let note = note(&mut f);
@@ -346,7 +355,7 @@ fn registered_git_input_quiet_evaluation_does_not_invent_a_bound_citation() {
 }
 
 #[test]
-fn registered_git_input_quiet_evaluation_requires_registered_provenance() {
+fn registered_staged_input_quiet_evaluation_requires_registered_provenance() {
     for legacy in [false, true] {
         let mut f = prepared(false, true);
         let declared = f.request.input.revision();
@@ -366,7 +375,7 @@ fn registered_git_input_quiet_evaluation_requires_registered_provenance() {
                 VerificationResult::Passed,
                 9,
                 ExecutionSourceBasis {
-                    workspace_id: "workspace-a".into(),
+                    workspace_id: f.request.registration.root.workspace_id.clone(),
                     source_revision: declared.clone(),
                     source_root_generation: Some(1),
                     source_root_state: Some(SourceRootState::Named),
@@ -397,15 +406,16 @@ fn registered_git_input_quiet_evaluation_requires_registered_provenance() {
 }
 
 #[test]
-fn registered_git_input_quiet_evaluation_rejects_a_different_or_late_input() {
+fn registered_staged_input_quiet_evaluation_rejects_a_different_or_late_input() {
     for late in [false, true] {
         let mut f = prepared(false, true);
         let note = note(&mut f);
         let mut input = judgment(&f, &note);
         let declared = input.source_basis.as_ref().unwrap().fingerprint.clone();
         if !late {
-            f.request.input = RegisteredVerificationInput::Commit {
-                commit: object_name("another checked commit"),
+            f.request.input = RegisteredVerificationInput::StagedTree {
+                tree: GitTreeId::parse(object_name("another checked tree")).unwrap(),
+                base_commit: object_name("staged provenance"),
             };
         }
         f.record().unwrap();
@@ -441,7 +451,7 @@ fn registered_git_input_quiet_evaluation_rejects_a_different_or_late_input() {
 }
 
 #[test]
-fn registered_git_input_quiet_evaluation_keeps_real_change_and_revert_barriers() {
+fn registered_staged_input_quiet_evaluation_keeps_real_change_and_revert_barriers() {
     for cited in [false, true] {
         for before_cut in [false, true] {
             for reverted in [false, true] {
@@ -535,7 +545,7 @@ fn assert_unconfirmed_at_done(f: &mut Fixture, check: &ObjectId) {
 }
 
 #[test]
-fn registered_git_input_note_only_pre_cut_change_does_not_seal() {
+fn registered_staged_input_note_only_pre_cut_change_does_not_seal() {
     let mut f = prepared(false, true);
     let receipt = f.record().unwrap();
     let check = &receipt.verifications[0].record_id;
@@ -553,7 +563,7 @@ fn registered_git_input_note_only_pre_cut_change_does_not_seal() {
 }
 
 #[test]
-fn registered_git_input_note_only_change_needs_a_later_check() {
+fn registered_staged_input_note_only_change_needs_a_later_check() {
     let mut f = prepared(false, true);
     let old = f.record().unwrap();
     let note = note(&mut f);
@@ -567,8 +577,9 @@ fn registered_git_input_note_only_change_needs_a_later_check() {
     f.request.operation_key = "termal-run:test-after-edit".into();
     f.request.registration.host_run_id = "test-after-edit".into();
     f.request.registration.registered_at = at(14);
-    f.request.input = RegisteredVerificationInput::Commit {
-        commit: object_name("new commit after the measured edit"),
+    f.request.input = RegisteredVerificationInput::StagedTree {
+        tree: GitTreeId::parse(object_name("new tree after the measured edit")).unwrap(),
+        base_commit: object_name("staged provenance"),
     };
     f.request.run.started_at = at(14);
     f.request.run.finished_at = at(15);
@@ -625,7 +636,7 @@ fn registered_git_input_note_only_change_needs_a_later_check() {
 }
 
 #[test]
-fn registered_git_input_later_check_recovers_from_a_quiet_git_conflict() {
+fn registered_staged_input_later_check_recovers_from_a_quiet_git_conflict() {
     let mut f = prepared(false, true);
     let old = f.record().unwrap();
     let note = note(&mut f);
@@ -703,7 +714,7 @@ fn registered_git_input_later_check_recovers_from_a_quiet_git_conflict() {
 }
 
 #[test]
-fn registered_git_input_uncited_witness_rejects_other_roots_and_generations() {
+fn registered_staged_input_uncited_witness_rejects_other_roots_and_generations() {
     for moved_workspace in [false, true] {
         let mut f = prepared(false, true);
         f.record().unwrap();
@@ -742,7 +753,7 @@ fn registered_git_input_uncited_witness_rejects_other_roots_and_generations() {
 }
 
 #[test]
-fn registered_git_input_uncited_witness_needs_a_passed_run_on_this_run() {
+fn registered_staged_input_uncited_witness_needs_a_passed_run_on_this_run() {
     for foreign_run in [false, true] {
         let mut f = prepared(false, true);
         if foreign_run {
@@ -772,7 +783,7 @@ fn registered_git_input_uncited_witness_needs_a_passed_run_on_this_run() {
                     crate::storage::HostSessionAuthority::Work,
                     held.claim_id,
                     held.fence,
-                    "workspace-a",
+                    &f.request.registration.root.workspace_id,
                     1,
                     at(10),
                     NamedRootBindingKind::Bound,
@@ -796,7 +807,7 @@ fn registered_git_input_uncited_witness_needs_a_passed_run_on_this_run() {
 }
 
 #[test]
-fn registered_git_input_uncited_witness_validates_the_exact_saved_proof() {
+fn registered_staged_input_uncited_witness_validates_the_exact_saved_proof() {
     let mut f = prepared(false, true);
     let receipt = f.record().unwrap();
     let check = &receipt.verifications[0].record_id;
@@ -857,7 +868,7 @@ fn registered_git_input_uncited_witness_validates_the_exact_saved_proof() {
 }
 
 #[test]
-fn registered_git_input_uncited_witness_requires_completion_input_with_freshness_off() {
+fn registered_staged_input_uncited_witness_requires_completion_input_with_freshness_off() {
     let mut f = prepared(false, false);
     let receipt = f.record().unwrap();
     let check = receipt.verifications[0].record_id.clone();
@@ -928,7 +939,7 @@ fn registered_git_input_uncited_witness_requires_completion_input_with_freshness
 }
 
 #[test]
-fn registered_git_input_uncited_witness_stales_after_a_recorded_change() {
+fn registered_staged_input_uncited_witness_stales_after_a_recorded_change() {
     for unadmitted in [false, true] {
         let mut f = prepared(false, true);
         let receipt = f.record().unwrap();
@@ -979,7 +990,7 @@ fn registered_git_input_uncited_witness_stales_after_a_recorded_change() {
 }
 
 #[test]
-fn registered_git_input_uncited_witness_keeps_a_sealed_historical_cut() {
+fn registered_staged_input_uncited_witness_keeps_a_sealed_historical_cut() {
     use crate::storage::work::test_support::{
         ExecutionObservationInput, HistoricalCapture, append_historical_capture,
     };
@@ -1011,7 +1022,7 @@ fn registered_git_input_uncited_witness_keeps_a_sealed_historical_cut() {
         source_changed: true,
         reported_source_change: None,
         source_basis: Some(ExecutionSourceBasis {
-            workspace_id: "workspace-a".into(),
+            workspace_id: f.request.registration.root.workspace_id.clone(),
             source_revision: content_revision(),
             source_root_generation: Some(1),
             source_root_state: Some(SourceRootState::Named),
@@ -1043,7 +1054,7 @@ fn registered_git_input_uncited_witness_keeps_a_sealed_historical_cut() {
 }
 
 #[test]
-fn registered_git_input_uncited_witness_is_source_identity_not_check_selection() {
+fn registered_staged_input_uncited_witness_is_source_identity_not_check_selection() {
     let mut f = prepared(false, true);
     let passed = f.record().unwrap();
     let check = &passed.verifications[0].record_id;
@@ -1087,7 +1098,7 @@ fn registered_git_input_uncited_witness_is_source_identity_not_check_selection()
 }
 
 #[test]
-fn registered_git_input_old_note_only_record_keeps_its_citation_source_lane() {
+fn registered_staged_input_old_note_only_record_keeps_its_citation_source_lane() {
     let mut f = prepared(false, true);
     f.record().unwrap();
     let note = note(&mut f);
@@ -1131,7 +1142,7 @@ fn registered_git_input_old_note_only_record_keeps_its_citation_source_lane() {
 }
 
 #[test]
-fn registered_git_input_old_and_witness_records_round_trip_without_rewriting() {
+fn registered_staged_input_old_and_witness_records_round_trip_without_rewriting() {
     for cited in [false, true] {
         let directory = crate::test_support::temp_home().unwrap();
         let source = directory.path().join("source.db");

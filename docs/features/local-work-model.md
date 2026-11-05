@@ -500,6 +500,8 @@ after that root ended or the claim was released; an unknown-root change
 recorded while a root was bound needs a fresh check in the claim's active
 named root or that waiver, and with no root active `done` refuses it. In the
 ordinary unbound case,
+or after a [live registered-input decision](acceptance-evaluation.md#registered-git-input-evidence)
+has checked the named root for an unlocated stock report,
 a source change with no matching passing test is recorded as untested instead
 of refusing ([obligations from source
 changes](execution-observability.md#obligations-from-source-changes)). Any other open
@@ -719,6 +721,9 @@ while a root was bound needs a fresh check in the active named root or that
 waiver; until then `done` refuses, even after that root ended or the claim was
 released. The verdict an acceptance evaluation
 records per criterion is `AcceptanceVerdict`.
+The [live registered-input lane](acceptance-evaluation.md#registered-git-input-evidence)
+excepts an unlocated report from that barrier: Git's named-root read decides,
+and changes outside that root are not seen by it. Located foreign guards remain.
 
 ```mermaid
 stateDiagram-v2
@@ -767,7 +772,7 @@ flowchart TD
     DONE -->|"required_child_unsealed (RequiredChildUnsealed)"| CHILD["seal or waive the required child"] --> DONE
     DONE -->|"missing_contribution (MissingContribution)"| ROOT["account for the participant in the root execution"] --> DONE
     DONE -->|"open_obligation (OpenObligation)"| WORK
-    DONE -->|"work_completion_refused: a foreign or unknown-root source change a named root holds open"| WORK
+    DONE -->|"work_completion_refused: a foreign change, or an unknown-root change outside the live registered-input lane"| WORK
     DONE -->|"missing_acceptance (MissingAcceptance), self-asserted policy"| DONE
     DONE -->|"missing_acceptance_evaluation (MissingAcceptanceEvaluation)"| EVAL
     DONE -->|"acceptance_criteria_required"| ACCEPT["update --accept criterion"] --> EVAL

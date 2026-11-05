@@ -751,7 +751,11 @@ fn evaluation_lines(
             "  source fingerprint: {}{}",
             super::terminal_safe_line(fingerprint),
             if projected.source_checked_at_done {
-                "; checked when done presents --source-fingerprint"
+                if status.record.registered_input_decision.is_some() {
+                    "; source currency checked at done"
+                } else {
+                    "; present --source-fingerprint at done"
+                }
             } else {
                 ""
             }

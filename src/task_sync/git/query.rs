@@ -50,6 +50,26 @@ pub(crate) fn run(
             command.env_remove(name);
         }
     }
+    run_command(command, args[0], missing, input, bound)
+}
+
+/// Run an already isolated local query with the same output and time bounds.
+/// The caller owns its Git configuration and fixed argument vector.
+pub(crate) fn run_command(
+    mut command: std::process::Command,
+    command_name: &str,
+    missing: bool,
+    input: Option<&[u8]>,
+    bound: Duration,
+) -> Result<Vec<u8>> {
+    ensure!(
+        !bound.is_zero() && bound <= Duration::from_secs(30),
+        "invalid local Git query deadline"
+    );
+    ensure!(
+        input.is_none_or(|bytes| bytes.len() as u64 <= MAX_BYTES),
+        "Git admission input exceeded byte bound"
+    );
     command.stdout(Stdio::piped());
     if input.is_some() {
         command.stdin(Stdio::piped());
@@ -96,7 +116,7 @@ pub(crate) fn run(
     }
     if !(status.success() || (missing && status.code() == Some(1) && bytes.is_empty())) {
         return Err(Failure::Nonzero {
-            command: args[0].into(),
+            command: command_name.into(),
             code: status.code(),
         }
         .into());

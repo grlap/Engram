@@ -103,6 +103,7 @@ pub(in crate::storage) use unadmitted::{
 mod verification_bind;
 mod verification_producer;
 pub(in crate::storage) use verification_producer::load_verification_producer_on;
+pub(in crate::storage) mod registered_commit_currency;
 mod registered_verification;
 pub(in crate::storage) use registered_verification::record_registered_verification_on;
 mod remote_verification;
@@ -110,7 +111,7 @@ pub(in crate::storage) use remote_verification::record_remote_verification_on;
 #[cfg(test)]
 pub(crate) use verification_bind::bound_assessment_fixture;
 pub(in crate::storage) use verification_bind::{
-    VerificationBindOutcome, bind_verification_on, bound_receipt_matches_on,
+    VerificationBindOutcome, bind_verification_live_on, bound_receipt_matches_on,
 };
 
 pub(crate) use discovery::{DISCOVERY_ROWS, WorkDiscoveryRow};

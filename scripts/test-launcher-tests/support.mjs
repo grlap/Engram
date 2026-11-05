@@ -76,6 +76,10 @@ async function repository(callback, prefix = "engram-launcher-") {
     copyFileSync(join(dirname(launcher), "..", ".gitignore"), join(root, ".gitignore"));
     writeFileSync(join(root, "tracked.txt"), "baseline\n");
     git(["add", "tracked.txt", ".gitignore"], root);
+    // CLI input selection needs a real commit. Individual lifecycle fixtures
+    // remain dirty when they add their launcher/scripts, so they use plain input.
+    git(["-c", "user.name=Engram Test", "-c", "user.email=test@example.invalid",
+      "commit", "--quiet", "--no-gpg-sign", "-m", "fixture baseline"], root);
     // Track the invoked run explicitly: directory order does not identify it.
     await callback(root, (runDir, binary) => { lastChild = { runDir, binary }; });
   } catch (error) {

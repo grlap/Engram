@@ -7,6 +7,7 @@ mod git_input;
 mod work_session;
 
 struct Fixture {
+    source: Option<crate::test_support::TempHome>,
     store: SqliteStore,
     project: ProjectId,
     session: SessionId,
@@ -33,14 +34,6 @@ fn fixture_with_root(store: SqliteStore, offset: i64, pin_root: bool) -> Fixture
         &root_request("project-a", "registered-work", 1 + offset),
         pin_root,
     )
-}
-
-fn fixture_with_create(
-    store: SqliteStore,
-    offset: i64,
-    create: &crate::domain::CreateWorkRequest,
-) -> Fixture {
-    fixture_with_create_and_root(store, offset, create, true)
 }
 
 fn fixture_with_create_and_root(
@@ -134,6 +127,7 @@ fn fixture_with_create_and_root(
         },
     };
     Fixture {
+        source: None,
         store,
         project,
         session,

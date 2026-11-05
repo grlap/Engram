@@ -674,15 +674,23 @@ catch {
 }
 
 export async function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false,
-  item, nextTransition, input: runInput, requestMessageId, commitInputStatus = captureCommitInputStatus }, env = process.env, registrationOptions = {}) {
+  item, nextTransition, input: runInput, requestMessageId, selectInput = false, commitInputStatus = captureCommitInputStatus }, env = process.env, registrationOptions = {}) {
   if (runInput !== undefined && runInput !== "commit") throw usageFailure("unsupported run input; use --input commit");
   try { validateRequestMessageSelection({ requestMessageId, full }); }
   catch (error) { throw usageFailure(error.message); }
   validateLaunchMetadata({ item, nextTransition });
   const everyMs = heartbeatEveryMs(env);
+  let selectionError;
+  if (selectInput) {
+    try { runInput = selectDefaultInput(root, env); }
+    catch (error) {
+      if (error.reason === "git-run-directory-unavailable") throw error;
+      selectionError = error;
+    }
+  }
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
     { cwd: root, encoding: "utf8", windowsHide: true,
-      ...(runInput === "commit" ? { env: isolatedGitEnvironment(env) } : {}) });
+      ...(runInput === "commit" || selectInput ? { env: isolatedGitEnvironment(env) } : {}) });
   if (git.error || git.status !== 0) throw usageFailure(
     "git-run-directory-unavailable; run the launcher from a repository worktree with Git available");
   const runId = `test-${randomUUID()}`;
@@ -719,6 +727,7 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     return runDir;
   }
   try {
+    if (selectionError) throw selectionError;
     let committed;
     if (request.input === "commit") {
       committed = await commitInputStatus(root, env);
@@ -1736,11 +1745,29 @@ async function main(args) {
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
   const stages = mode === "full" ? requiredStages()
     : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
-  const runDir = await createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition, input, requestMessageId });
+  const runDir = await createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition, input, requestMessageId, selectInput: input === undefined });
   if (!detach) { await finish(runDir, { foregroundReceipt: true }); return; }
   try { await startDetached(runDir); }
   catch (error) { throw Object.assign(error, { runDir,
     safeCompletionText: error.safeCompletionText ?? "worker-startup-failed", launcherLog: join(runDir, "launcher.log") }); }
+}
+
+// Select once before immutable request creation. A failed capture must not
+// turn an unavailable repository into a plain run; only known dirt does.
+export function selectDefaultInput(root, env = process.env) {
+  let status;
+  try { status = captureCommitInputStatus(root, env); }
+  catch (error) {
+    if (error.code === "ENGRAM_INPUT_ROOT_MISMATCH") {
+      throw because("git-run-directory-unavailable", usageFailure(
+        "git-run-directory-unavailable; run the launcher from a repository worktree with Git available"));
+    }
+    throw error;
+  }
+  if (status.filters.length || status.gitlinks.length || status.skipped.length) {
+    throw because("input-capture-failed", new Error("committed input is unavailable: filters, Gitlinks or hidden index paths are unsupported"));
+  }
+  return commitInputStatusClean(status) ? "commit" : undefined;
 }
 
 // Node resolves this module's own path through links (macOS temp paths run

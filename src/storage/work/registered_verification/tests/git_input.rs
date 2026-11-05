@@ -4,6 +4,7 @@ use super::*;
 use crate::ObjectId;
 use crate::storage::work::test_support::{checkpoint, completion_request};
 
+mod live_currency;
 mod quiet_evaluation;
 
 fn object_name(label: &str) -> String {
@@ -21,10 +22,9 @@ fn unevaluated(bound: bool) -> Fixture {
             },
         }];
     }
-    let mut f = fixture_with_create(SqliteStore::open_in_memory().unwrap(), 0, &create);
-    f.request.input = RegisteredVerificationInput::Commit {
-        commit: object_name("tested commit"),
-    };
+    let mut f =
+        fixture_with_create_and_root(SqliteStore::open_in_memory().unwrap(), 0, &create, false);
+    live_currency::attach_root(&mut f);
     f
 }
 
@@ -70,7 +70,7 @@ fn evaluation(
         parent_session: None,
         evaluator_model: None,
         source_basis: Some(AcceptanceSourceBasis {
-            workspace_id: Some("workspace-a".into()),
+            workspace_id: Some(f.request.registration.root.workspace_id.clone()),
             fingerprint: revision.into(),
         }),
         verdicts: vec![CriterionVerdictInput {
@@ -125,7 +125,13 @@ fn complete_with_evidence(
     );
     let mut request = completion_request(&work, &held, "runner", &evidence[0], key, 14);
     request.evidence = evidence.to_vec();
-    request.acceptance.clear();
+    if f.store
+        .acceptance_evaluation_policy()
+        .unwrap()
+        .is_evaluated()
+    {
+        request.acceptance.clear();
+    }
     request.source_fingerprint = Some(input.into());
     f.store.complete_work(&request, &DevelopmentNoopRedactor)
 }
@@ -176,14 +182,11 @@ fn registered_git_input_mismatch_refuses_bound_and_unbound_citations_without_eff
                 let before = f.snapshot();
                 let reason = record_evaluation(&mut f, &input).unwrap_err().to_string();
                 assert!(
-                    reason.contains("selected registered verification"),
-                    "{reason}"
-                );
-                assert!(
-                    reason.contains(&format!(
-                        "--source-fingerprint {}",
-                        f.request.input.revision()
-                    )),
+                    reason.contains(if staged {
+                        "selected registered verification"
+                    } else {
+                        "no registered check at the evaluated cut"
+                    }),
                     "{reason}"
                 );
                 assert!(!reason.contains("is bound to"), "{reason}");
@@ -203,6 +206,13 @@ fn registered_git_input_mismatch_refuses_bound_and_unbound_citations_without_eff
                             presented,
                         )
                         .unwrap();
+                    if !staged && presented.is_none() {
+                        assert!(matches!(
+                            readiness,
+                            crate::storage::AcceptanceEvaluationReadiness::Ready(_)
+                        ));
+                        continue;
+                    }
                     let crate::storage::AcceptanceEvaluationReadiness::Blocked(_, context) =
                         readiness
                     else {
@@ -344,7 +354,7 @@ fn registered_git_input_content_observations_do_not_replace_the_judged_commit() 
             second,
             Some(ExecutionSourceBasis {
                 git_tree: None,
-                workspace_id: "workspace-a".into(),
+                workspace_id: f.request.registration.root.workspace_id.clone(),
                 source_revision: format!(
                     "content-v1:{}",
                     ObjectId::from_canonical_bytes(key.as_bytes())
@@ -414,13 +424,18 @@ fn registered_git_input_late_registration_cannot_test_a_later_change() {
             11,
             Some(ExecutionSourceBasis {
                 git_tree: None,
-                workspace_id: "workspace-a".into(),
+                workspace_id: f.request.registration.root.workspace_id.clone(),
                 source_revision: "content-v1:later-change".into(),
                 source_root_generation: Some(1),
                 source_root_state: Some(SourceRootState::Named),
             }),
             None,
         );
+        std::fs::write(
+            std::path::Path::new(&f.request.registration.root.workspace_id).join("tracked"),
+            "edited after check\n",
+        )
+        .unwrap();
         let receipt = f
             .store
             .record_registered_verification(
@@ -527,16 +542,10 @@ fn registered_git_input_missing_declaration_names_the_exact_remedy_for_unbound_p
     let before = f.snapshot();
     let reason = record_evaluation(&mut f, &input).unwrap_err().to_string();
     assert!(
-        reason.contains("criterion 1 selected registered verification"),
+        reason.contains("registered committed-input evidence"),
         "{reason}"
     );
-    assert!(
-        reason.contains(&format!(
-            "--source-fingerprint {}",
-            f.request.input.revision()
-        )),
-        "{reason}"
-    );
+    assert!(reason.contains("--source-fingerprint"), "{reason}");
     assert!(!reason.contains("is bound to"), "{reason}");
     assert_eq!(f.snapshot(), before);
 }
@@ -549,7 +558,7 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
     };
     let basis = ExecutionSourceBasis {
         git_tree: None,
-        workspace_id: "workspace-a".into(),
+        workspace_id: f.request.registration.root.workspace_id.clone(),
         source_revision: format!(
             "content-v1:{}",
             ObjectId::from_canonical_bytes(b"changed content")
@@ -609,9 +618,9 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
                 },
                 occurrence: ObservedOccurrence::InterTurnChange {
                     source_change: ObservedSourceChange::ContentComparison {
-                        workspace_id: "workspace-a".into(),
+                        workspace_id: f.request.registration.root.workspace_id.clone(),
                         baseline: MeasuredBaseline {
-                            workspace_id: "workspace-a".into(),
+                            workspace_id: f.request.registration.root.workspace_id.clone(),
                             source_revision: "content-before".into(),
                             observed_at: at(second - 2),
                         },
@@ -641,7 +650,7 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
 }
 
 #[test]
-fn registered_git_input_citations_retain_change_floors_despite_late_terminal_arrival() {
+fn registered_git_input_citations_accept_late_reports_at_the_current_checked_commit() {
     for bound in [false, true] {
         for unadmitted in [false, true] {
             for change_before_check in [false, true] {
@@ -662,26 +671,17 @@ fn registered_git_input_citations_retain_change_floors_despite_late_terminal_arr
                 let id = &receipt.verifications[0].record_id;
                 let mut input = evaluation(&f, id, &f.request.input.revision());
                 input.recorded_at = at(13);
-                let before = f.snapshot();
-                let recorded = record_evaluation(&mut f, &input);
-                if change_before_check {
-                    recorded.unwrap();
-                } else {
-                    let reason = recorded.unwrap_err().to_string();
-                    assert!(
-                        reason.contains("which the check did not follow"),
-                        "{reason}"
-                    );
-                    assert_eq!(f.snapshot(), before);
-                }
+                let recorded = record_evaluation(&mut f, &input).unwrap();
+                assert!(recorded.record.registered_input_decision.is_some());
+                let revision = f.request.input.revision();
+                complete(&mut f, id, &revision, "after-late-report").unwrap();
             }
         }
     }
 }
 
 #[test]
-fn registered_git_input_post_cut_actual_changes_refuse_admission_and_stale_consumption() {
-    use crate::domain::AcceptanceStaleReason;
+fn registered_git_input_post_cut_actual_edits_refuse_admission_and_consumption() {
     for bound in [false, true] {
         for unadmitted in [false, true] {
             for fresh in [false, true] {
@@ -695,6 +695,12 @@ fn registered_git_input_post_cut_actual_changes_refuse_admission_and_stale_consu
                         record_evaluation(&mut f, &input).unwrap();
                     }
                     actual_change(&mut f, unadmitted, if after_recording { 13 } else { 11 });
+                    std::fs::write(
+                        std::path::Path::new(&f.request.registration.root.workspace_id)
+                            .join("tracked"),
+                        "real edit\n",
+                    )
+                    .unwrap();
                     if after_recording {
                         let status = f
                             .store
@@ -704,24 +710,15 @@ fn registered_git_input_post_cut_actual_changes_refuse_admission_and_stale_consu
                             )
                             .unwrap()
                             .unwrap();
-                        assert_eq!(
-                            status.stale,
-                            Some(if unadmitted {
-                                AcceptanceStaleReason::UnadmittedChange
-                            } else {
-                                AcceptanceStaleReason::Mutation
-                            })
-                        );
-                        assert!(complete(&mut f, id, &revision, "changed-after-cut").is_err());
+                        assert!(status.source_checked_at_done);
+                        assert_eq!(status.stale, None, "Git currency is checked at done");
+                        let error =
+                            complete(&mut f, id, &revision, "changed-after-cut").unwrap_err();
+                        assert!(error.to_string().contains("dirty"), "{error}");
                     } else {
                         let before = f.snapshot();
-                        assert!(matches!(
-                            record_evaluation(&mut f, &input),
-                            Err(StoreError::AcceptanceEvaluationBasisMoved {
-                                moved: crate::storage::EvaluationBasisMove::SourceChanged,
-                                ..
-                            })
-                        ));
+                        let error = record_evaluation(&mut f, &input).unwrap_err();
+                        assert!(error.to_string().contains("dirty"), "{error}");
                         assert_eq!(f.snapshot(), before);
                     }
                 }

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { captureCommitInputStatus } from "../review-freeze-fingerprint.mjs";
-import { commitInputEligible, createRun, executeRun, machineRecord, startDetached, summarize } from "../test-launcher.mjs";
+import { commitInputEligible, createRun, executeRun, machineRecord, selectDefaultInput, startDetached, summarize } from "../test-launcher.mjs";
 import { registerTestRun } from "../test-run-registration.mjs";
 
 export function registerCommitInputTests(support) {
@@ -20,6 +20,67 @@ export function registerCommitInputTests(support) {
     const marker = join(admin, "stage-ran");
     const marking = (extra = "") => stage("fixture", `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'x');${extra}`);
     await callback({ root, admin, marker, marking });
+  });
+
+  test("implicit input selects commit only while clean, and never downgrades an unavailable capture", async () => {
+    await fixture(async ({ root }) => {
+      assert.equal(selectDefaultInput(root, env), "commit");
+      writeFileSync(join(root, "tracked.txt"), "changed");
+      assert.equal(selectDefaultInput(root, env), undefined);
+      git(["restore", "tracked.txt"], root);
+      assert.equal(selectDefaultInput(root, env), "commit");
+      git(["update-index", "--skip-worktree", "tracked.txt"], root);
+      assert.throws(() => selectDefaultInput(root, env), /hidden index paths/u);
+      assert.throws(() => selectDefaultInput(join(root, "absent"), env));
+    });
+  });
+
+  test("default selection rejects a nested directory and retains capture refusal without executing", async () => {
+    await fixture(async ({ root, marking, marker }) => {
+      const nested = join(root, "nested");
+      mkdirSync(nested);
+      assert.throws(() => selectDefaultInput(nested, env), /git-run-directory-unavailable/u);
+      let nestedRun;
+      await assert.rejects(() => createRun({ root: nested, input: "commit", stages: [marking()] }, env), (error) => {
+        assert.equal(error.reason, "input-capture-failed");
+        nestedRun = error.runDir;
+        return true;
+      });
+      assert.equal(json(join(nestedRun, "results.json")).stages[0].state, "unrun");
+      git(["config", "filter.refuse.clean", "must-not-execute"], root);
+      let runDir;
+      await assert.rejects(() => createRun({ root, selectInput: true, stages: [marking()] }, env), (error) => {
+        assert.equal(error.reason, "input-capture-failed");
+        runDir = error.runDir;
+        return true;
+      });
+      // createRun keeps its existing saved failure and recovery path. An
+      // unavailable selection never becomes an executing plain request.
+      const result = json(join(runDir, "results.json"));
+      assert.equal(result.state, "failed");
+      assert.equal(result.reason, "input-capture-failed");
+      assert.equal(result.stages[0].state, "unrun");
+      assert.equal(existsSync(marker), false);
+      assert.equal(existsSync(join(runDir, "input.json")), false);
+    });
+  });
+
+  test("implicit selection executes a clean commit and an unchanged dirty plain input", async () => {
+    await fixture(async ({ root, marking }) => {
+      let runDir = await createRun({ root, selectInput: true, stages: [marking()] }, env);
+      assert.equal(json(join(runDir, "request.json")).input, "commit");
+      let result = await executeRun(runDir, env);
+      assert.equal(result.state, "passed", result.error);
+      assert.equal(result.input.kind, "commit");
+      assert.equal(result.input.eligible, true);
+      writeFileSync(join(root, "tracked.txt"), "uncommitted correction\n");
+      runDir = await createRun({ root, selectInput: true, stages: [marking()] }, env);
+      assert.equal(Object.hasOwn(json(join(runDir, "request.json")), "input"), false);
+      result = await executeRun(runDir, env);
+      assert.equal(result.state, "passed", result.error);
+      assert.equal(result.input, undefined);
+      assert.equal(result.before, result.after);
+    });
   });
 
   test("committed-input eligibility requires its after fingerprint even when status is clean", () => {

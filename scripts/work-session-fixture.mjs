@@ -37,7 +37,7 @@ export async function ensureRoot({ request, binding, key, source }) {
   return root;
 }
 
-export async function recordCheck({ request, binding, session, key, source, checkFingerprint }) {
+export async function recordCheck({ request, binding, session, key, source, checkFingerprint, input }) {
   const root = await ensureRoot({ request, binding, key, source });
   const time = new Date().toISOString();
   const command = "fixture registered check";
@@ -47,7 +47,7 @@ export async function recordCheck({ request, binding, session, key, source, chec
     registration: { host_run_id: hostRun, request_identity: key, registered_at: time,
       initiating_session_id: session, owning_session_id: session, binding,
       root: { workspace_id: source.workspace_id, generation: root.named_root.generation, state: "named" } },
-    input: { kind: "commit", commit: source.source_revision.slice("git-commit:".length) },
+    input: input ?? { kind: "commit", commit: source.source_revision.slice("git-commit:".length) },
     run: { mode: "focused", command, started_at: time, finished_at: time, outcome: "passed" },
     checks: [{ stage: "focused", check_kind: "test", command,
       check_fingerprint: checkFingerprint ?? createHash("sha256").update(command).digest("hex"),

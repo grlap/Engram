@@ -277,8 +277,11 @@ or `node scripts/test-launcher.mjs full --input commit`. The request names
 `input: "commit"`; request and result records include the tested commit and
 tree. Registration still precedes input capture, and the host obtains any
 work binding from its current claim and named root. The launcher supplies no
-claim or credit itself. Without the flag, the existing request identity and
-fingerprint lane are unchanged.
+claim or credit itself. Without the flag, the CLI selects once before registration:
+a positively clean supported root uses commit input and a positively dirty root
+uses a plain run. Unavailable or unsupported capture refuses instead of silently
+downgrading. The saved selection is immutable through worker execution and retry.
+Programmatic callers omitting `input` retain the plain request shape.
 
 This lane requires a clean Git checkout before capture and worker execution.
 It checks again after fingerprint capture and refuses a moved commit, dirty

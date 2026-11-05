@@ -241,6 +241,7 @@ pub(super) fn forge_resolution(
     .find(|record| &record.obligation.triggering_observation == change)
     .expect("the change's open obligation");
     let event = WorkObligationResolutionEvent {
+        registered_input_decision: None,
         schema_version: SCHEMA_VERSION,
         project_id: record.obligation.project_id.clone(),
         obligation_id: record.obligation.obligation_id,

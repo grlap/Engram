@@ -609,7 +609,7 @@ test("source drift before execution refuses to run the captured input", async ()
     assert.equal(result.stages[0].state, "unrun");
     assert.match(result.error, /^input drift before execution; no stages run\n/u);
     assert.match(result.error, /^Current Git status.*$/mu);
-    assert.match(result.error, /^AM tracked\.txt$/mu);
+    assert.match(result.error, /^ M tracked\.txt$/mu);
   });
 });
 
@@ -622,7 +622,7 @@ test("source drift during execution cannot be reported as a passing run", async 
     assert.notEqual(result.exitCode, 0);
     assert.match(result.error, /^input drift: results do not validate the current source\n/u);
     assert.match(result.error, /^Current Git status.*$/mu);
-    assert.match(result.error, /^AM tracked\.txt$/mu);
+    assert.match(result.error, /^ M tracked\.txt$/mu);
   });
 });
 

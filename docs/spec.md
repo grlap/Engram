@@ -1062,6 +1062,9 @@ receives a terminal `displaced` resolution under any source-change rule and
 is disclosed in the seal. A foreign change recorded under a bound name, or an
 unknown-root change recorded while a root was bound, stays open and refuses
 completion, even after that root ended or the claim was released. Completion
+with a [live registered-input decision](features/acceptance-evaluation.md#registered-git-input-evidence)
+instead uses the named root's Git state for an unlocated report; located
+foreign changes keep their separate guard. Completion
 then evaluates the cut-aware set at the exact pre-seal run-feed position. Any
 other open definition returns a bounded `open_work_obligations` protocol
 result recomputed from one coherent current snapshot. A new seal declares

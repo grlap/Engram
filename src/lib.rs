@@ -8,6 +8,7 @@ pub mod argument_names;
 pub mod backup;
 pub mod build_identity;
 pub mod canonical;
+mod committed_input;
 pub mod control;
 pub mod diagnostics;
 pub mod domain;

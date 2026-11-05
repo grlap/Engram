@@ -816,6 +816,34 @@ pub(super) fn stale_bound_citation<'a>(
     passes: impl IntoIterator<Item = (usize, &'a [ObjectId], bool)>,
     root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<StaleCitation>, StoreError> {
+    stale_bound_citation_live(
+        connection,
+        item,
+        run_id,
+        judged,
+        through,
+        passes,
+        root,
+        &super::LiveCurrency::default(),
+        false,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "live currency augments the existing citation context"
+)]
+pub(super) fn stale_bound_citation_live<'a>(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    judged: Option<&JudgedSource>,
+    through: i64,
+    passes: impl IntoIterator<Item = (usize, &'a [ObjectId], bool)>,
+    root: Option<&NamedEvaluationRoot>,
+    currency: &super::LiveCurrency,
+    recorded_current: bool,
+) -> Result<Option<StaleCitation>, StoreError> {
     for (criterion, citations, observed) in passes {
         let bound = item
             .acceptance_bindings
@@ -881,6 +909,11 @@ pub(super) fn stale_bound_citation<'a>(
                 };
                 let cause = match cause {
                     Some(cause) => Some(cause),
+                    None if recorded_current
+                        || (currency.active() && currency.check_on(connection, citation)?) =>
+                    {
+                        None
+                    }
                     None => moved_after_check(
                         connection,
                         run_id,

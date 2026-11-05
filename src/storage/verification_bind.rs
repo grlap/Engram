@@ -113,8 +113,39 @@ impl SqliteStore {
         input: &VerificationBindInput,
         now: DateTime<Utc>,
     ) -> Result<VerificationBindReceipt, StoreError> {
+        super::control_runtime::request_budget::check_current()?;
         let intent =
             CanonicalObject::freeze(&VerificationBindIntent::new(project_id, session_id, input))?;
+        let original_scope = {
+            let snapshot = self.connection.unchecked_transaction()?;
+            authority.verify_on(&snapshot, project_id, session_id, connection_token)?;
+            if let Some(mut replay) = Self::replay_host_operation::<VerificationBindReceipt>(
+                &snapshot,
+                project_id,
+                session_id,
+                VERIFICATION_BIND_OPERATION,
+                &input.idempotency_key,
+                intent.key(),
+            )? {
+                super::control_runtime::request_budget::check_current()?;
+                snapshot.commit()?;
+                replay.replayed = true;
+                return Ok(replay);
+            }
+            let scope = work::registered_commit_currency::LiveCurrency::scope_on(
+                &snapshot,
+                &input.original,
+                project_id,
+            )?;
+            snapshot.commit()?;
+            scope
+        };
+        let currency = match original_scope {
+            Some((work, run)) => {
+                work::registered_commit_currency::LiveCurrency::measure(self, work, run)?
+            }
+            None => work::registered_commit_currency::LiveCurrency::default(),
+        };
         control_lifecycle_transaction(&mut self.connection, |transaction| {
             authority.verify_on(transaction, project_id, session_id, connection_token)?;
             if let Some(mut replay) = Self::replay_host_operation::<VerificationBindReceipt>(
@@ -128,13 +159,14 @@ impl SqliteStore {
                 replay.replayed = true;
                 return Ok(replay);
             }
-            match work::bind_verification_on(
+            match work::bind_verification_live_on(
                 transaction,
                 project_id,
                 session_id,
                 binder,
                 input,
                 now,
+                &currency,
             )? {
                 work::VerificationBindOutcome::Bound(receipt) => {
                     authority.persist(

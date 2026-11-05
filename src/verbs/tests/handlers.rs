@@ -1035,7 +1035,7 @@ fn open_test_obligation_becomes_the_test_reminder() {
         ),
         (
             Action::CheckOrWaiver,
-            "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it",
+            "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it; for an unlocated stock change, a current registered Git check consumed at done instead records it as untested",
         ),
         (
             Action::NameRootCheckOrWaiver,

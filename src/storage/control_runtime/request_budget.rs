@@ -84,6 +84,12 @@ pub(super) fn current() -> Option<ControlRequestBudget> {
     CURRENT.with(Cell::get)
 }
 
+/// Read-only preflight and replay paths share the existing frame's budget.
+/// No frame means no new allowance is introduced here.
+pub(in crate::storage) fn check_current() -> Result<(), StoreError> {
+    current().map_or(Ok(()), ControlRequestBudget::check)
+}
+
 /// This synchronous scope restores the previous frame on return or unwind.
 /// It carries no work claim, timestamp, retry key, or note admission policy.
 pub(crate) struct ControlRequestScope {

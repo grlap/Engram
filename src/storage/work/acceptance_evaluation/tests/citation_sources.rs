@@ -861,6 +861,7 @@ fn admitted_by_an_earlier_build(
         &attempt,
         verdicts,
         None,
+        None,
     )
     .expect("append the historical evaluation without a source witness");
     transaction.commit().expect("commit the evaluation");

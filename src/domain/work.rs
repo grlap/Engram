@@ -1088,6 +1088,8 @@ pub struct WorkObligationResolutionEvent {
     pub definition: ObjectId,
     pub run_id: WorkRunId,
     pub resolution: WorkObligationResolution,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registered_input_decision: Option<super::RegisteredInputDecision>,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
 }

@@ -750,6 +750,9 @@ test("ordinary observations owe checks and registered evidence satisfies them", 
 test("evaluation admission causes survive the native CLI and host-recorded evidence", async (t) => {
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr);
+  // These transport cases retain the historical source/cut admission rules.
+  // Committed input's live Git decision is exercised separately below.
+  const revisionFor = (label) => gitRevision(label).replace("git-commit:", "git-tree:");
   for (const caseName of ["eligibility", "source_root", "wrong_run", "beyond_cut", "wrong_source"]) {
     const engramHome = fixtureHome(`engram-admission-${caseName.replaceAll("_", "-")}-`, t);
     const clients = [];
@@ -792,9 +795,11 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         const report = async (revision, check) => {
           const key = `admission-report-${++sequence}`;
           if (!revision) return;
-          const source = { workspace_id: "admission-workspace", source_revision: gitRevision(revision),
+          const source = { workspace_id: "admission-workspace", source_revision: revisionFor(revision),
             source_root_generation: 1, source_root_state: "named" };
-          if (check) return recordCheck({ request, binding, session, key, source });
+          if (check) return recordCheck({ request, binding, session, key, source,
+            input: { kind: "staged_tree", tree: source.source_revision.slice("git-tree:".length),
+              base_commit: gitRevision("admission-base").slice("git-commit:".length) } });
           return observeSource({ request, policy, binding, key, source, changed: true });
         };
         return { client, binding, report };
@@ -825,7 +830,7 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
       }
       const shown = jsonWord(actor, "show", ref);
       const cut = caseName === "beyond_cut" ? beforeCheck : shown.evidence_basis;
-      const revision = gitRevision(caseName === "wrong_source" ? "admission-S" : "admission-R");
+      const revision = revisionFor(caseName === "wrong_source" ? "admission-S" : "admission-R");
       const result = word(actor, "evaluate", ref, "--mode", "same-session", "--acceptance-basis", String(shown.acceptance_basis),
         "--evidence-basis", String(cut), "--verdict", `1=pass:${bound ? "observed" : "judgment"}`,
         "--rationale", "1=judge the supplied evidence", "--evidence", `1=${citation}`,
@@ -863,6 +868,86 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
     } finally {
       await finishFixture(failure, clients, () => removeFixtureHomes(engramHome));
     }
+  }
+});
+
+test("committed input admission reads real Git through the native CLI", async (t) => {
+  const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
+  assert.equal(built.status, 0, built.stderr);
+  for (const state of ["clean", "dirty", "new-commit", "missing"]) {
+    const home = fixtureHome("engram-live-admission-", t);
+    const sourceRoot = fixtureHome("engram-live-source-", t);
+    const actor = `live-admission-${state}`;
+    const word = (...args) => spawnSync(binary,
+      ["--home", home, "work", "--actor-id", actor, "--session-id", actor, ...args],
+      { cwd: root, encoding: "utf8" });
+    const jsonWord = (...args) => {
+      const result = word(...args, "--json");
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const git = (...args) => {
+      const result = spawnSync("git", args, { cwd: sourceRoot, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    const commit = () => git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+      "commit", "--no-gpg-sign", "--allow-empty", "-qm", "fixture");
+    let client;
+    let failure;
+    try {
+      git("init", "-q");
+      writeFileSync(join(sourceRoot, "tracked"), "checked\n");
+      git("add", "tracked");
+      commit();
+      const revision = `git-commit:${git("rev-parse", "HEAD")}`;
+      const initialized = spawnSync(binary, ["--home", home, "init"], { cwd: root, encoding: "utf8" });
+      assert.equal(initialized.status, 0, initialized.stderr);
+      const policy = spawnSync(binary, ["--home", home, "control-policy", "set-acceptance-evaluation",
+        "--modes", "same-session", "--mechanical-basis", "observed", "--authorized-by", "operator",
+        "--idempotency-key", "live-admission-policy"], { cwd: root, encoding: "utf8" });
+      assert.equal(policy.status, 0, policy.stderr);
+      const ref = jsonWord("add", "Live commit admission", "--accept", "the test passed", "--bind", "1=test").work.short_ref;
+      jsonWord("claim", ref);
+      const binding = cliWorkFocus(home, actor, ref).control_binding;
+      client = new ControlClient(home, actor);
+      assert.equal(ok(await client.request({ operation: "work_session_read" })).work_session, true);
+      const request = async (frame) => ok(await client.request(frame));
+      const source = { workspace_id: realpathSync.native(sourceRoot), source_revision: revision,
+        source_root_generation: 1, source_root_state: "named" };
+      await ensureRoot({ request, binding, key: "live-admission", source });
+      const before = jsonWord("show", ref).evidence_basis;
+      const citation = (await recordCheck({ request, binding, session: actor, key: "live-admission", source })).verifications[0].record_id;
+      const shown = jsonWord("show", ref);
+      const evaluate = (cut) => word("evaluate", ref, "--mode", "same-session",
+        "--acceptance-basis", String(shown.acceptance_basis), "--evidence-basis", String(cut),
+        "--verdict", "1=pass:observed", "--rationale", "1=registered check on this commit",
+        "--evidence", `1=${citation}`, "--source-fingerprint", revision, "--json");
+      // No check inside the cut cannot mint a live source decision, even
+      // when the declared commit is currently clean and its check is later.
+      const staleCut = evaluate(before);
+      assert.equal(staleCut.status, 1, staleCut.stderr);
+      assert.equal(JSON.parse(staleCut.stderr).error.code, "work_completion_refused");
+      assert.match(staleCut.stderr, /no registered check at the evaluated cut/u);
+      assert.deepEqual(jsonWord("show", ref, "--evaluations").evaluations, []);
+      if (state === "dirty") writeFileSync(join(sourceRoot, "tracked"), "changed\n");
+      if (state === "new-commit") commit();
+      if (state === "missing") removeFixtureHomes(sourceRoot);
+      const result = evaluate(shown.evidence_basis);
+      if (state === "clean") {
+        assert.equal(result.status, 0, result.stderr);
+        const sealed = jsonWord("done", ref, "Delivered", "--source-fingerprint", revision);
+        assert.equal(sealed.work.lifecycle, "completed");
+      } else {
+        assert.equal(result.status, 1, `${state}: ${result.stderr}`);
+        assert.equal(JSON.parse(result.stderr).error.code, "work_completion_refused");
+        assert.match(result.stderr, state === "dirty" ? /dirty/u : state === "missing" ? /unavailable/u : /named root is at/u);
+        assert.deepEqual(jsonWord("show", ref, "--evaluations").evaluations, []);
+      }
+      const doctor = spawnSync(binary, ["--home", home, "doctor"], { cwd: root, encoding: "utf8" });
+      assert.equal(doctor.status, 0, doctor.stderr);
+    } catch (error) { failure = error; }
+    finally { await finishFixture(failure, [client], () => removeFixtureHomes(home, sourceRoot)); }
   }
 });
 

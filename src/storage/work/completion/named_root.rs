@@ -331,11 +331,15 @@ pub(super) fn obligation_matches_named_root(
 /// waived in the completing actor's name, with a reason naming the change and
 /// its source revision for the host record. An operator rule's obligation
 /// stays open for its check or an operator waiver.
+/// After a live committed-input decision, the stock rule also waives an
+/// unlocated report as untested. That decision does not satisfy a Test rule
+/// or change the disposition of a located foreign source.
 pub(super) fn resolve_source_change_obligations_on(
     transaction: &Transaction<'_>,
     item: &WorkItem,
     run_id: WorkRunId,
     claim_id: WorkClaimId,
+    live_commit_consumed: bool,
     actor: &crate::domain::ActorContext,
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
@@ -372,9 +376,11 @@ pub(super) fn resolve_source_change_obligations_on(
             // keeps blocking until its check or an operator waiver.
             continue;
         }
-        if matches!(class, ForeignChange::Open | ForeignChange::Unlocated) {
+        if class == ForeignChange::Open
+            || (class == ForeignChange::Unlocated && !live_commit_consumed)
+        {
             // A foreign change recorded under a bound name, or an unknown-root
-            // change captured while a root was bound, has no automatic
+            // change outside the consumed live lane, has no automatic
             // disposition: it cannot be relabeled as an ordinary untested
             // change. The barrier that follows refuses completion until a
             // fresh named-root check or an explicit human waiver accounts for
@@ -386,6 +392,7 @@ pub(super) fn resolve_source_change_obligations_on(
             |basis| format!("source revision {}", basis.source_revision),
         );
         let event = WorkObligationResolutionEvent {
+            registered_input_decision: None,
             schema_version: SCHEMA_VERSION,
             project_id: item.project_id.clone(),
             obligation_id: record.obligation.obligation_id,
@@ -411,6 +418,7 @@ pub(super) fn refuse_unresolved_named_root_changes_on(
     item: &WorkItem,
     run_id: WorkRunId,
     claim_id: WorkClaimId,
+    live_commit_consumed: bool,
 ) -> Result<(), StoreError> {
     let root = named_root_context_on(connection, run_id, claim_id, i64::MAX)?;
     for record in
@@ -431,6 +439,7 @@ pub(super) fn refuse_unresolved_named_root_changes_on(
             record.obligation.trigger_position.position,
         )?;
         let reason = match (class, change.source_basis.as_ref()) {
+            (ForeignChange::Unlocated, _) if live_commit_consumed => continue,
             (ForeignChange::Open, Some(basis)) => {
                 format!(
                     "source change {} was captured in foreign workspace {} while a named root was bound; a named-root check cannot satisfy it, so an explicit human waiver is required",

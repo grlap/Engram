@@ -1514,7 +1514,8 @@ impl LocalWorkService {
             (None, None)
         };
         // The newest evaluation is agent-show detail for open items; it is
-        // read with the freshness completion would apply at this moment.
+        // read with its historical staleness. Committed-input currency is
+        // explicitly unmeasured here and checked at evaluate and done.
         // A completed item discloses where its sealed acceptance came from,
         // read from the frozen seal through the shared binding check.
         // A readable seal whose evaluation binding fails that check is
@@ -1558,7 +1559,8 @@ impl LocalWorkService {
         }
         // Agent detail for an open item under an evaluated policy: the
         // evidence basis an evaluator passes back, and the newest record with
-        // the freshness completion would apply now. Self-asserted projects keep their
+        // its historical staleness; current Git currency is checked at done.
+        // Self-asserted projects keep their
         // unchanged show shape.
         let evaluated_policy = status.work.lifecycle == crate::domain::WorkLifecycle::Open
             && store.acceptance_evaluation_policy()?.is_evaluated();

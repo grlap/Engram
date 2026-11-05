@@ -748,6 +748,9 @@ a named root changes its disposition. Pre-binding foreign changes are
 displaced and disclosed, while foreign changes recorded under a bound name and
 unknown-root changes recorded while a root was bound retain the
 [barriers](local-work-model.md#completion-seal-and-report-assembly-claim), even after that root ended or the claim was released.
+In the [live registered-input lane](acceptance-evaluation.md#registered-git-input-evidence),
+an unlocated report instead leaves currency to Git's read of the named root;
+outside-root changes are not seen by that read, and located foreign guards remain.
 
 The page exposes immutable obligation and definition identities, the required
 selected rule-set id, rule, requirement, trigger, state, terminal

@@ -131,7 +131,7 @@ impl EvaluationObligation {
                 "no action before evaluation; done records the source change as displaced"
             }
             WorkObligationCompletionAction::CheckOrWaiver => {
-                "run the credited check or obtain an authorized waiver before evaluation"
+                "run the credited check or obtain an authorized waiver before evaluation; for an unlocated stock change, a current registered Git check consumed at done instead records it as untested"
             }
             WorkObligationCompletionAction::NameRootCheckOrWaiver => {
                 "name a source root and run its credited check, or obtain an authorized waiver before evaluation"
@@ -173,7 +173,7 @@ pub(super) fn stock_source_change_reminder(
             "a source change made in another workspace before the root was named is open — no action is needed; done records it as displaced"
         }
         Some(Action::CheckOrWaiver) => {
-            "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it"
+            "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it; for an unlocated stock change, a current registered Git check consumed at done instead records it as untested"
         }
         Some(Action::NameRootCheckOrWaiver) => {
             "tests have not run since a source change whose workspace is unknown — name a source root and run its credited check, or obtain an authorized waiver; done refuses until one of them resolves it"

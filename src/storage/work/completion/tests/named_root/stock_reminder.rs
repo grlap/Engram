@@ -7,7 +7,7 @@ use crate::storage::WorkObligationCompletionAction as Action;
 
 const DONE_WAIVES: &str = "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one";
 const DONE_DISPLACES: &str = "a source change made in another workspace before the root was named is open — no action is needed; done records it as displaced";
-const CHECK_OR_WAIVER: &str = "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it";
+const CHECK_OR_WAIVER: &str = "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it; for an unlocated stock change, a current registered Git check consumed at done instead records it as untested";
 const NAME_ROOT: &str = "tests have not run since a source change whose workspace is unknown — name a source root and run its credited check, or obtain an authorized waiver; done refuses until one of them resolves it";
 const WAIVER_ONLY: &str = "a source change made outside the named root while it was bound is open — only an authorized human waiver resolves it, since no check in a named root can; done refuses until then";
 const STOCK_WORDS: [&str; 5] = [

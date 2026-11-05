@@ -208,6 +208,7 @@ fn source_recovery_undeclared_unsighted_cut_requests_a_new_judgment() {
         &record,
         SourceCheck::Unmeasured,
         Some(&root),
+        &LiveCurrency::default(),
     )
     .unwrap();
     assert_eq!(reason, Some(AcceptanceStaleReason::Source));

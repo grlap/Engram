@@ -61,60 +61,74 @@ model itself.
 
 A native, item-bound check from the
 [registered verification producer](execution-observability.md#registered-verification)
-can support an evaluation without a named-root sighting. The evaluator declares `source_basis.fingerprint` as
-`git-commit:<full commit>` or `git-tree:<full tree>` for the staged lane.
-Each selected registered check must match that exact input. Different commits
-never become interchangeable because their trees match; a staged input's base
-commit is provenance, not its identity. Completion presents the same declared
-input, even when the optional source-freshness policy is off.
+names an exact `git-commit:<full commit>` or, for the staged lane,
+`git-tree:<full tree>`. Equal trees do not make different commits interchangeable.
+A staged input's base commit is provenance. A revision string alone supplies
+no registered provenance.
 
-For this path, Git input replaces the sighting and content-freshness
-prerequisites described in R3, R5 and F3 below. Work/run/claim/root scope,
-root rebinding, failed aggregate results, required check kinds, evidence cuts,
-mutation/trigger time and position floors, policy, independence and citation
-closure still apply. A result delivered after a change cannot test that change
-if the check completed before it. Dirty input before a
-run is refused and a later commit cannot rehabilitate it. Cross-item binding
-keeps its separate existing sighting contract.
+For a new passing evaluation on a run carrying registered committed-input evidence,
+Engram reads the named root itself, outside its SQLite write transaction.
+The evaluator must declare a commit. A genuine passed registered check at the
+evaluated cut must have tested that commit, and Git must report the root clean
+at exactly that commit now. This includes prose-only judgments citing notes.
+Completion consumes the evaluation with another live Git read. A test-bound
+criterion, including a direct registered-check citation, also takes this path
+when evaluations are off. Unevaluated completion without a test-bound criterion
+makes no new Git read or refusal. A completion declaration, when supplied,
+must match; it never replaces Engram's measurement.
 
-The source lane is corroborated by a genuine passed registered check on this
-run, within the evaluated cut, at the exact declared input and named root.
-The check must follow the root's naming and every measured source change it
-needs to cover. It need not be a criterion citation: an unbound judgment may
-cite notes, while a bound criterion still needs its required observed check.
-When this separate source decision is needed, a new evaluation records the
-exact check as `registered_input_witness`. Admission, completion and doctor
-validate that witness; they never choose a replacement for a stored witness.
-Records without the member retain their existing citation-derived source lane.
-The evaluator's request and the host's binding-evidence pages do not change.
+Fail, insufficient-evidence and needs-human verdicts remain recordable without a
+current passing check. They earn no passing decision proof or completion credit.
+An explicit registered `git-tree:` declaration keeps the staged lane even if the
+same run contains an earlier commit check; missing or content declarations do not
+fall back. Read-only status and history do not read Git and disclose that current
+currency is checked at done.
 
-The witness corroborates source identity, not a criterion's test result. An
-older passing check can corroborate that same input after a newer failed
-check; the failure remains in the evaluator's evidence basis. This does not
-permit selecting an older pass to satisfy a bound verification requirement.
+Accounted turn reports remain history in this committed lane. Their fingerprints,
+assumed or measured changes and arrival order do not decide currency. An edit
+whose report names no located source is treated the same way: Git's read of
+the named root decides. An edit outside that root is not seen by this check;
+located foreign and displaced changes retain their separate guards. An edit
+reverted to the checked clean commit before the decision is accepted. Dirty,
+missing, unreachable or different-commit roots refuse, including after a passing
+evaluation and with a cached old completion fingerprint. Complete before removing
+the worktree. An endpoint check cannot prove the absence of transient edits.
 
-Quiet content sightings before or during evaluation do not replace that Git
-input. Different content fingerprints alone cannot be compared with a Git
-identity; reported source changes still apply. A new witness cannot cross a
-quiet named-root sighting of a different Git input after its check, and such
-a sighting after the evaluated cut refuses admission or stales consumption.
-For quiet sightings this comparison uses the observed time relative to the
-witness check's completion: an older sighting delivered late does not void a
-later check. Without an observed time, recording time is used conservatively.
-Reported source changes retain their separate time and position floors.
-Stored records without a witness keep their prior interpretation.
-A real measured change after the check still needs a later check, even
-if the content is subsequently restored; a real change after the evaluation
-cut still refuses the evaluation. An edit and revert that happen before the
-next measurement are outside that observed history and are accepted within
-the Git cleanliness lane's stated limits. A revision string alone supplies no
-registered provenance. Legacy observations,
-content-based evidence, evaluations and completed seals remain stored as they
-were. An open evaluation already carrying those registered/Git facts remains
-usable while the input matches; otherwise one fresh evaluation is needed.
-Exact retries keep their original intent and receipt; completed seals stay frozen.
-Without an evaluation policy, completion may omit a source declaration and use
-the check's recorded input; any declaration it does supply must match exactly.
+The bounded reader matches the launcher's committed-input predicate. It requires
+exact worktree-top-level equality, isolates inherited Git redirection and global
+configuration, pins hiding settings, and refuses configured filters, Gitlinks,
+sparse input, skip-worktree and assume-unchanged entries before comparison.
+SHA-256 repositories remain unsupported. Git's file-mode and line-ending rules,
+repository ignores, local excludes and attributes, and the documented stat-cache
+limits remain part of this predicate; it is not a raw-byte identity claim.
+The reader has a shared eight-second deadline and a 1 MiB bound per command's
+output; exceeding either reports the root unavailable rather than clean.
+
+Original producer attribution and current operation authority remain separate.
+Work/run, root generation, producer, criterion, kind, pinned-check, evidence-cut,
+result and newer-failed-check constraints remain. Recovery on the same run and
+generation does not retag the old check with the new fence; a new generation
+requires a check there. The transaction revalidates captured scope after Git.
+Staged-tree, cross-item bound-copy and non-registered paths keep their own rules.
+
+New passing evaluations and newly satisfied obligations in this lane carry an internally minted
+`registered_input_decision`: exact verification and named-root record links,
+commit, clean endpoint and measurement time. Doctor, import and seal reconstruction
+validate its immutable provenance at its recorded cut without reading today's
+filesystem or discovering a replacement check. Malformed decisions never fall
+back to another lane. The input protocol and SQLite schema do not change.
+
+Existing records without that decision retain their original bytes and validator.
+An existing `registered_input_witness`, and the staged-tree lane, keep the
+historical report-based source rules, including their time and position floors.
+Exact operation replay returns the original receipt before reading Git, and
+completed seals remain frozen.
+
+Every live process must use the new build before the next evaluation window.
+An older permissive decoder can ignore the optional decision and apply its old
+rules; universal old-reader refusal is not promised. Schema readiness does not
+detect mixed process builds. Canonical export/import preserves ids, links and
+bytes for both shapes; no conversion or DDL change is required.
 
 ## Later source observations after completion
 
@@ -667,11 +681,16 @@ stale reason named.
   Equality of two caller-supplied strings is asserted freshness, not
   independent verification; under the host channel the observation's source
   basis is authoritative.
+  A new registered committed-input decision instead reads Git at `done`;
+  it does not require a caller-supplied fingerprint (see
+  [Registered Git-input evidence](#registered-git-input-evidence)). Records
+  without that decision retain the fingerprint requirement above.
 - **F5 policy.** Every effective requirement is re-read from the current
   policy at completion: the evaluation's mode is still allowed and, when the
   task selects a mode, still equals it; under `mechanical_basis: observed` no
   `pass` may rest on an `asserted` basis; and F4 applies whenever
-  `require_source_freshness` is on now, even if it was off when the record was
+  `require_source_freshness` is on now, with F4's registered-decision exception,
+  even if it was off when the record was
   made. A strengthened policy never lets an older, weaker record seal.
 - **F6 relied-on evidence.** No gate record with the name of a gate cited by a
   `pass` was appended after `evaluated_cut`. A newer record of the same check
@@ -731,6 +750,9 @@ claim was released. An unknown-root source change recorded while a root was
 bound requires a fresh check in the claim's active named root or a waiver,
 even after that root ended, was released or was renamed. Neither the
 evaluator nor the core infers workspace identity from a path string.
+For a new [live registered-input decision](#registered-git-input-evidence),
+an unlocated report instead leaves currency to Git's read of the named root;
+outside-root edits are not seen by that read and located foreign guards remain.
 
 A host reports a source change it observed as a
 [host observation](execution-observability.md#host-observations).
@@ -1010,7 +1032,7 @@ tests cite the row identifier in a nearby comment.
 | B39 | `set-acceptance-evaluation` with an empty mode list and non-default other fields, from self-asserted and from an evaluated policy | normalizes to the self-asserted policy; requested, stored (bytes omit the field), and read policies agree; `changed: false` when already self-asserted |
 | B40 | `work_run_evidence.verification_result` disagrees with the canonical `VerificationEvidence` | `evaluate` refuses with an invalid-projection error; nothing is admitted from the column |
 | B41 | citations as `show --notes --gates` prints them: a gate and a holder note together (judgment); a non-holder observation; another item's note; an artifact path | accepted, the record keeps the full ids / refused naming the locator and "observation" / refused ("not a note/gate on this item") / refused ("not the recorded evidence identity") |
-| B42 | `require_source_freshness`; `show` after an evaluation with a fingerprint; `done` without one | `show` reports the fingerprint as checked at `done`, not stale; `done` refuses `source` and the remedy names `--source-fingerprint` |
+| B42 | `require_source_freshness`; `show` after an evaluation with a fingerprint; `done` without one | without a registered committed-input decision, `show` reports the fingerprint as checked at `done`, not stale; `done` refuses `source` and the remedy names `--source-fingerprint`; a new registered decision instead reads Git at `done` and needs no caller fingerprint |
 | B43 | self-asserted and evaluated completions read through `done`, completed `show`, and `next --peek` on the focused evaluated item | `acceptance: self-asserted` in `done` and `show` text with `provenance: self_asserted` in both `done` and completed `show` JSON / `acceptance: evaluated (same_session; recorded under asserted identity) by <evaluator>` with the JSON `acceptance` block in both; `next` prints `evaluation: <mode> P/N pass, fresh` under the focus |
 | B44 | `update --evaluation-mode same_session`, then `--clear-evaluation-mode`, then a clear on the already unpinned item | `show` history and a peer's `next` deltas carry two `revised` entries naming `evaluation mode` and one reading `no planning change` |
 | B45 | `add` with an empty or whitespace `--evaluation-mode` for a root and for a `--under` child; omitted; a valid word | refused before any effect (no item, project feed and focus unchanged) / created without a pin / created pinned |
@@ -1504,7 +1526,11 @@ follow retires it, as does a change that carries no revision, or a newest
 source record under the root at another revision; a later record back at
 the check's revision leaves it standing, since the revision fingerprints
 the whole content. Binding never restores credit those rules retired; such
-an original is refused as `root_not_current`. The request must name 1 to 16 targets,
+an original is refused as `root_not_current`.
+The [live registered committed-input lane](#registered-git-input-evidence)
+uses Git for the original's currency instead of these report floors, including
+unlocated reports; it does not observe edits outside the named root. The
+remaining authority and target requirements still apply. The request names 1 to 16 targets,
 no more than the session's other live claims, and a measurement of the
 original's workspace and revision. Each target must be another open item
 the session holds, named once: every field of its binding equals its

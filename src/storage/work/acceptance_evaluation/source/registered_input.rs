@@ -159,6 +159,10 @@ pub(in crate::storage::work::acceptance_evaluation) fn stored_git_evaluation_on(
     connection: &Connection,
     record: &AcceptanceEvaluation,
 ) -> Result<bool, StoreError> {
+    if record.registered_input_decision.is_some() {
+        super::super::validate_evaluation_input_witness_on(connection, record)?;
+        return Ok(true);
+    }
     if record.registered_input_witness.is_some() {
         validate_registered_input_witness_on(connection, record)?;
         return Ok(true);

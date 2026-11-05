@@ -7,7 +7,9 @@
 //! itself, the environment record it links, and an obligation resolution it
 //! satisfied. A failed or indeterminate check, a check on another revision,
 //! or any other record after the cut still asks for a resubmission, as does a
-//! passed check when the run was last sighted at another revision.
+//! passed check when the run was last sighted at another revision in the
+//! historical report-based lane. A live committed-input decision uses the
+//! registered check's exact input instead of a turn sighting.
 
 use std::collections::BTreeSet;
 
@@ -40,13 +42,15 @@ impl ExemptChecks {
         position: i64,
         declared: Option<&AcceptanceSourceBasis>,
         root: Option<&NamedEvaluationRoot>,
+        live_commit: bool,
     ) -> Result<Self, StoreError> {
         let mut exempt = Self::default();
         let Some(declared) = declared else {
             return Ok(exempt);
         };
-        if revision_seen_through(connection, run_id, i64::MAX, root)?.as_deref()
-            != Some(declared.fingerprint.as_str())
+        if !live_commit
+            && revision_seen_through(connection, run_id, i64::MAX, root)?.as_deref()
+                != Some(declared.fingerprint.as_str())
         {
             return Ok(exempt);
         }
@@ -69,7 +73,18 @@ impl ExemptChecks {
             if check.result != VerificationResult::Passed || !on_declared(&check, declared, root) {
                 continue;
             }
-            if check.applicability.is_some() {
+            if live_commit {
+                let producer =
+                    crate::storage::work::load_verification_producer_on(connection, &check)?;
+                if producer.registered_git_basis(&check).is_none()
+                    || producer.matches_registered_git_input(&check, &declared.fingerprint)
+                        != Some(true)
+                    || producer.outcome != crate::domain::ExecutionOutcome::Succeeded
+                    || producer.run_outcome != Some(crate::domain::ExecutionOutcome::Succeeded)
+                {
+                    continue;
+                }
+            } else if check.applicability.is_some() {
                 let judged =
                     super::source::measured_source_at_on(connection, run_id, i64::MAX, root)?;
                 if crate::control::check_verification_applicability(
