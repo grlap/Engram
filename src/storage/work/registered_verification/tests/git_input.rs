@@ -6,6 +6,7 @@ use crate::storage::work::test_support::{checkpoint, completion_request};
 
 mod live_currency;
 mod quiet_evaluation;
+mod submodules;
 
 fn object_name(label: &str) -> String {
     ObjectId::from_canonical_bytes(label.as_bytes()).as_str()[..40].to_owned()

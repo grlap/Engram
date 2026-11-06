@@ -46,7 +46,7 @@ at exactly the registered check's commit. Accounted reports remain history;
 reverted edits can pass, while dirty, missing and different-commit roots refuse.
 New immutable decisions retain provenance for historical validation without
 filesystem reads. Existing records and staged-tree or bound-copy lanes retain
-their interpretation. See [registered Git input](features/acceptance-evaluation.md#registered-git-input-evidence).
+their interpretation. See [registered Git input](features/acceptance-evaluation.md#registered-git-input-evidence). The live reader admits clean initialized submodules, including nested ones, at their pins through recursive submodule status and one root dirt check. It reads no complete file or index list; edits hidden by assume-unchanged or skip-worktree flags can be missed.
 Every live process needs the new build before the next evaluation window: older
 permissive readers may ignore the optional decision, and schema readiness does
 not detect mixed process builds. No DDL or canonical conversion is introduced.

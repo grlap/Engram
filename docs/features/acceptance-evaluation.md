@@ -94,15 +94,23 @@ missing, unreachable or different-commit roots refuse, including after a passing
 evaluation and with a cached old completion fingerprint. Complete before removing
 the worktree. An endpoint check cannot prove the absence of transient edits.
 
-The bounded reader matches the launcher's committed-input predicate. It requires
-exact worktree-top-level equality, isolates inherited Git redirection and global
-configuration, pins hiding settings, and refuses configured filters, Gitlinks,
-sparse input, skip-worktree and assume-unchanged entries before comparison.
+The bounded reader checks the registered committed input at the endpoint. It
+requires worktree-top-level equality and a SHA-1 root commit, isolates inherited
+Git redirection and global configuration, and refuses root and child filter
+drivers before the dirt comparison. `git submodule status --recursive` supplies
+initialization and pinned-commit checks, including nested submodules. Every row
+must be clean: an uninitialized, off-pin or conflicted child, or a failed Git
+query such as a missing `.gitmodules` mapping, refuses with its cause and path.
+One root `git status --ignore-submodules=none --untracked-files=all` judges dirt.
+The reader then rechecks root HEAD and worktree/admin paths. It never reads a
+complete file or index list. Ignored generated output stays outside the verdict,
+with no project-specific exception list. Git can hide edits under assume-unchanged
+or skip-worktree flags; this is an accepted limitation of the status check.
 SHA-256 repositories remain unsupported. Git's file-mode and line-ending rules,
-repository ignores, local excludes and attributes, and the documented stat-cache
-limits remain part of this predicate; it is not a raw-byte identity claim.
-The reader has a shared eight-second deadline and a 1 MiB bound per command's
-output; exceeding either reports the root unavailable rather than clean.
+repository ignores, local excludes and attributes, and stat-cache limits remain
+part of this predicate; it is not a raw-byte identity claim. All queries share
+an eight-second deadline and a 1 MiB output bound. Exceeding either reports the
+root unavailable rather than clean.
 
 Original producer attribution and current operation authority remain separate.
 Work/run, root generation, producer, criterion, kind, pinned-check, evidence-cut,

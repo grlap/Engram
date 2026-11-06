@@ -26,8 +26,9 @@ pub(crate) struct CommittedInput {
     pub(crate) measured_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Match the launcher's committed-input predicate, without consulting turn
-/// reports. An unsupported repository is unavailable, never implicitly clean.
+/// Read the live registered input without consulting turn reports. Unlike
+/// Engram's Node launcher, this reader admits eligible pinned submodules.
+/// An unsupported repository is unavailable, never implicitly clean.
 pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
     #[cfg(test)]
     READS.set(READS.get() + 1);
@@ -69,22 +70,28 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
         filters.is_empty(),
         "configured Git filters are unsupported for committed input"
     );
-    // Refuse before status: comparing worktree bytes could execute a filter
-    // in a child repository. This is the launcher's current Gitlink policy.
-    let index = run(&["ls-files", "--stage", "-z"], false)?;
-    ensure!(
-        !index
-            .split(|byte| *byte == 0)
-            .any(|entry| entry.starts_with(b"160000 ")),
-        "Gitlinks are unsupported for committed input"
-    );
-    let flags = run(&["ls-files", "-v", "-z"], false)?;
-    ensure!(
-        !flags.split(|byte| *byte == 0).any(|entry| entry
-            .first()
-            .is_some_and(|tag| tag.is_ascii_lowercase() || *tag == b'S')),
-        "skip-worktree, assume-unchanged and sparse inputs are unsupported"
-    );
+    let modules = run(&["submodule", "status", "--recursive"], false)
+        .map_err(|error| anyhow::anyhow!("cannot read recursive submodule status: {error:#}"))?;
+    let children = submodules(&modules)?;
+    // Read filter configuration before root status can invoke child filters.
+    for name in &children {
+        let filters = query(
+            &root.join(name),
+            &[
+                "config",
+                "--null",
+                "--get-regexp",
+                "^filter\\..*\\.(clean|smudge|process)$",
+            ],
+            true,
+            deadline,
+        )
+        .with_context(|| format!("submodule '{name}': cannot read filter configuration"))?;
+        ensure!(
+            filters.is_empty(),
+            "submodule '{name}': configured Git filters are unsupported"
+        );
+    }
     let status = run(
         &[
             "status",
@@ -95,6 +102,16 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
         ],
         false,
     )?;
+    for name in &children {
+        ensure!(
+            !status.split(|byte| *byte == 0).any(|entry| {
+                entry.get(3..).is_some_and(|path| {
+                    path == name.as_bytes() || path.starts_with(format!("{name}/").as_bytes())
+                })
+            }),
+            "submodule '{name}': working tree is dirty"
+        );
+    }
     ensure!(
         head()? == commit,
         "HEAD moved during the committed-input read"
@@ -112,6 +129,43 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
         clean: status.is_empty(),
         measured_at: chrono::Utc::now(),
     })
+}
+
+fn submodules(bytes: &[u8]) -> Result<Vec<String>> {
+    let text = std::str::from_utf8(bytes).context("Git returned non-UTF-8 submodule status")?;
+    let mut children = Vec::new();
+    for line in text.lines() {
+        let prefix = *line
+            .as_bytes()
+            .first()
+            .context("empty submodule status row")?;
+        let row = line.get(1..).context("malformed submodule status")?;
+        let (pin, path) = row
+            .split_once(' ')
+            .context("malformed submodule status row")?;
+        let name = if path.ends_with(')') {
+            path.rsplit_once(" (").map_or(path, |(name, _)| name)
+        } else {
+            path
+        };
+        ensure!(
+            !name.is_empty()
+                && Path::new(name)
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_)))
+                && pin.len() == 40
+                && pin.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "submodule '{name}': malformed path or commit"
+        );
+        match prefix {
+            b' ' => children.push(name.to_owned()),
+            b'-' => bail!("submodule '{name}': uninitialized"),
+            b'+' => bail!("submodule '{name}': HEAD differs from its pin"),
+            b'U' => bail!("submodule '{name}': conflicted gitlink"),
+            _ => bail!("submodule '{name}': malformed status"),
+        }
+    }
+    Ok(children)
 }
 
 fn path_output(bytes: Vec<u8>) -> Result<PathBuf> {
@@ -151,7 +205,11 @@ fn query(root: &Path, args: &[&str], missing: bool, deadline: Instant) -> Result
     command
         .args(args)
         .stdin(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(if args[0] == "submodule" {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     for (name, _) in std::env::vars_os() {
         if name
             .to_string_lossy()
@@ -175,7 +233,24 @@ mod tests {
     use super::*;
 
     fn git(root: &Path, args: &[&str]) -> Vec<u8> {
-        let output = Command::new("git")
+        let mut command = Command::new("git");
+        for (name, _) in std::env::vars_os() {
+            if name
+                .to_string_lossy()
+                .to_ascii_uppercase()
+                .starts_with("GIT_")
+            {
+                command.env_remove(name);
+            }
+        }
+        // Checkouts and restores must use the same config scope as the reader.
+        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        let output = command
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", null)
+            .env("GIT_ATTR_NOSYSTEM", "1")
+            .args(["-c", &format!("core.attributesFile={null}")])
+            .args(["-c", &format!("core.excludesFile={null}")])
             .current_dir(root)
             .args(args)
             .output()
@@ -230,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn hiding_flags_and_filters_are_unavailable_before_comparison() {
+    fn configured_filters_are_unavailable_before_comparison() {
         let scratch = crate::test_support::temp_home().unwrap();
         let root = scratch.path();
         git(root, &["init", "-q"]);
@@ -249,15 +324,31 @@ mod tests {
                 "fixture",
             ],
         );
-        git(root, &["update-index", "--assume-unchanged", "tracked"]);
-        assert!(
-            read(root)
-                .unwrap_err()
-                .to_string()
-                .contains("assume-unchanged")
-        );
-        git(root, &["update-index", "--no-assume-unchanged", "tracked"]);
         git(root, &["config", "filter.test.clean", "must-not-run"]);
         assert!(read(root).unwrap_err().to_string().contains("filters"));
+    }
+
+    #[test]
+    fn recursive_submodule_status_names_refusals() {
+        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
+        let pin = &pin[..40];
+        assert_eq!(
+            submodules(
+                format!(" {pin} child (heads/main)\n {pin} child/nested (heads/main)\n").as_bytes()
+            )
+            .unwrap(),
+            ["child", "child/nested"]
+        );
+        for (prefix, reason) in [
+            ('?', "malformed"),
+            ('-', "uninitialized"),
+            ('+', "HEAD differs"),
+            ('U', "conflicted"),
+        ] {
+            let error = submodules(format!("{prefix}{pin} child\n").as_bytes())
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("child") && error.contains(reason), "{error}");
+        }
     }
 }

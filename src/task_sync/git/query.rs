@@ -75,6 +75,18 @@ pub(crate) fn run_command(
         command.stdin(Stdio::piped());
     }
     let mut child = command.spawn().context("start local Git admission query")?;
+    let stderr_result = child.stderr.take().map(|stderr| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = stderr
+                .take(MAX_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
+            let _ = sender.send(result);
+        });
+        receiver
+    });
     let input_result = if let Some(input) = input {
         let input = input.to_vec();
         let mut stdin = child.stdin.take().context("missing Git stdin")?;
@@ -115,11 +127,19 @@ pub(crate) fn run_command(
         return Err(Failure::OutputLimit.into());
     }
     if !(status.success() || (missing && status.code() == Some(1) && bytes.is_empty())) {
-        return Err(Failure::Nonzero {
+        let error = anyhow::Error::from(Failure::Nonzero {
             command: command_name.into(),
             code: status.code(),
+        });
+        if let Some(receiver) = stderr_result {
+            let bytes = receiver.recv_timeout(bound.saturating_sub(start.elapsed()))??;
+            ensure!(
+                bytes.len() as u64 <= MAX_BYTES,
+                "Git admission error output exceeded byte bound"
+            );
+            return Err(error.context(String::from_utf8_lossy(&bytes).trim().to_owned()));
         }
-        .into());
+        return Err(error);
     }
     Ok(bytes)
 }

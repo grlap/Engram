@@ -7,7 +7,24 @@ use std::{
 };
 
 pub(super) fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    for (name, _) in std::env::vars_os() {
+        if name
+            .to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("GIT_")
+        {
+            command.env_remove(name);
+        }
+    }
+    // Checkouts and restores must use the same config scope as the reader.
+    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let output = command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", null)
+        .env("GIT_ATTR_NOSYSTEM", "1")
+        .args(["-c", &format!("core.attributesFile={null}")])
+        .args(["-c", &format!("core.excludesFile={null}")])
         .current_dir(root)
         .args(args)
         .output()
@@ -71,7 +88,7 @@ pub(super) fn attach_root(f: &mut Fixture) {
     f.source = Some(home);
 }
 
-fn live_fixture(bound: bool, evaluated: bool) -> (PathBuf, Fixture) {
+pub(super) fn live_fixture(bound: bool, evaluated: bool) -> (PathBuf, Fixture) {
     let f = if evaluated {
         prepared(bound, true)
     } else {

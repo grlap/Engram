@@ -286,8 +286,14 @@ Programmatic callers omitting `input` retain the plain request shape.
 This lane requires a clean Git checkout before capture and worker execution.
 It checks again after fingerprint capture and refuses a moved commit, dirty
 paths, skip-worktree or assume-unchanged entries, configured filters, and
-Gitlinks by name. Gitlinks remain unsupported by the current ordinary host
-lane. Repository ignores and local excludes apply; global ignore and
+Gitlinks by name in Engram's Node launcher. The live Engram reader at evaluate
+and done also accepts initialized, clean submodules at their pins, including
+nested submodules. Recursive submodule status supplies the pin and initialization
+checks; root and child filter configuration is checked before the single root
+dirt check. No complete file or index list is read by the live reader. Edits hidden
+by assume-unchanged or skip-worktree flags can be missed by Git status. Questly
+and Phoenix use TermAl's launcher for capture;
+Engram's Node launcher remains unchanged. Repository ignores and local excludes apply; global ignore and
 attribute files and inherited Git redirection do not. The fingerprint format
 itself is unchanged.
 
