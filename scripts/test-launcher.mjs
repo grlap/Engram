@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { captureCommitInputStatus, captureFingerprint, classifyInputChange, fingerprintLimitations, isolatedGitEnvironment } from "./review-freeze-fingerprint.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
-import { registerTestRun, confirmDetachedRegistration, registrationConfirmed, registrationLine,
+import { registerTestRun, confirmDetachedRegistration, registerOwnRunWait, ownRunWaitLine, registrationConfirmed, registrationLine,
   validateRequestMessageSelection } from "./test-run-registration.mjs";
 
 const script = fileURLToPath(import.meta.url);
@@ -43,9 +43,9 @@ function validateLaunchMetadata({ item, nextTransition }) {
 // Saved once before admission, for every completion projection. The execution
 // request remains separate; stages may rewrite it without changing this intent.
 function publishCompletionRequest(runDir, request) {
-  const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration } = request;
+  const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration, detached } = request;
   save(join(runDir, "completion.request.json"), {
-    runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration,
+    runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration, detached,
     ...(request.input !== undefined ? { input: request.input, commit: request.commit, tree: request.tree } : {}),
     ...(request.requestMessageId !== undefined ? { requestMessageId: request.requestMessageId, full: request.full } : {}),
   });
@@ -926,7 +926,7 @@ function afterRunDrift(runDir, result, before, after, root) {
 function validateNotification(request, env) {
   if (!request.notifyTo) throw usageFailure("no notification target recorded");
   if (!request.owner || env.TERMAL_SESSION_ID !== request.owner) throw usageFailure("TERMAL_SESSION_ID must match the sender recorded at run creation (asserted context, not authentication)");
-  if (request.notifyTo === request.owner) throw usageFailure("self-send is not supported; use a genuine worker and coordinator, or foreground host completion wait");
+  if (request.notifyTo === request.owner) throw usageFailure("self-send is not supported; use --detach without --notify for the host's own-run completion wait");
   if (!env.TERMAL_CLI || !isAbsolute(env.TERMAL_CLI)) throw usageFailure("TERMAL_CLI must name the inherited absolute executable");
   try { return executable(env.TERMAL_CLI, request.root, env); }
   catch { throw usageFailure("notification-cli-unavailable"); }
@@ -1040,6 +1040,16 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       save(resultPath, result);
       if (selected && !registrationConfirmed(result.registration)) {
         throw because("request-selection-unconfirmed", new Error(`selected FULL request confirmation failed (${result.registration?.reason ?? "unavailable"}); no stage ran`));
+      }
+    }
+    // The execution lock makes this the sole wait creator. Confirmation can
+    // downgrade registration; never install a wait from the stale launch copy.
+    const ownWait = (admitted ?? request).detached === true && !(admitted ?? request).notifyTo;
+    if (ownWait) {
+      result.hostWait = await registerOwnRunWait({ ...registeredRequest, registration: result.registration }, runDir, env);
+      save(resultPath, result);
+      if (result.hostWait.state !== "registered") {
+        throw because(result.hostWait.reason, new Error(`${result.hostWait.reason}; no stage ran; retain this run's results before recovery`));
       }
     }
     await ready();
@@ -1201,7 +1211,7 @@ export function runLiveness(result, now = Date.now()) {
   return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
 }
 
-const completionReasons = new Set(["request-selection-unconfirmed", "request-selection-changed", "input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
+const completionReasons = new Set(["own-run-registration-unconfirmed", "test-run-wait-refused", "test-run-wait-unconfirmed", "request-selection-unconfirmed", "request-selection-changed", "input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
   "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed",
   "stop-request-invalid", "stop-request-unreadable"]);
 const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
@@ -1315,8 +1325,10 @@ function renderCompletion(runDir, request, result, now) {
     ...["stages", "preflight"].map((kind) => `${kind}: ${Object.entries(metadata[kind]).map(([name, count]) => `${name}=${count}`).join(" ")}`),
     `elapsed: ms=${metadata.elapsed.ms} basis=${metadata.elapsed.basis}`,
     `input: ${metadata.input.comparison}; expectedFingerprint=${metadata.input.expected}; boundary comparison only, not host check credit`];
-  const registration = registrationLine(result.registration ?? request.registration);
+  const registration = registrationLine(result.registration ?? request.registration, result.hostWait);
   if (registration) lines.push(registration);
+  const hostWait = ownRunWaitLine(result.hostWait);
+  if (hostWait) lines.push(hostWait);
   if (request.input === "commit") {
     const input = result.input;
     const objectId = (value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value) ? value : "unknown";
@@ -1541,9 +1553,11 @@ export async function notifyRun(runDir, env = process.env, send = runCommand, la
 
 function startupReceipt(runDir, pid, completion) {
   const request = readJson(join(runDir, "request.json"));
-  const registration = registrationLine(readJson(join(runDir, "results.json")).registration ?? request.registration);
+  const result = readJson(join(runDir, "results.json"));
+  const registration = registrationLine(result.registration ?? request.registration, result.hostWait);
+  const hostWait = ownRunWaitLine(result.hostWait);
   return `STARTED ${runDir}\npid=${pid} completion=${completion}\nmanifest=${join(runDir, "input.json")}\nexpectedFingerprint=${request.expectedFingerprint}\n`
-    + (registration ? `${registration}\n` : "");
+    + (registration ? `${registration}\n` : "") + (hostWait ? `${hostWait}\n` : "");
 }
 
 async function finish(runDir, { foregroundReceipt = false, workerHandshake = false } = {}) {
@@ -1575,7 +1589,7 @@ async function finish(runDir, { foregroundReceipt = false, workerHandshake = fal
 export async function startDetached(runDir, env = process.env, write = (text) => process.stdout.write(text)) {
   const request = readJson(join(runDir, "request.json"));
   if (request.detached !== true) throw new Error("detached launch requires a run created with detached: true");
-  validateNotification(request, env);
+  if (request.notifyTo) validateNotification(request, env);
   // No inherited terminal handles: process lifetime is independent of the turn.
   const fd = openSync(join(runDir, "launcher.log"), "wx", 0o600);
   try {
@@ -1602,7 +1616,7 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
       });
     });
     child.unref();
-    write(startupReceipt(runDir, child.pid, `mailbox:${request.notifyTo}`)
+    write(startupReceipt(runDir, child.pid, request.notifyTo ? `mailbox:${request.notifyTo}` : "host-test-run-wait")
       + "End your turn; do not poll. Missing terminal results mean running/interrupted, not PASS; "
       + `\`node scripts/test-launcher.mjs summary "${runDir}"\` tells which from the heartbeat.\n`);
     return { child, completion };
@@ -1615,6 +1629,7 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
       if (request.input === "commit" && isTerminal(result) && result.reason === "input-not-clean"
           && result.input?.kind === "commit" && result.input.cleanBefore === false) reason = "input-not-clean";
       if (isTerminal(result) && ["request-selection-unconfirmed", "request-selection-changed"].includes(result.reason)) reason = result.reason;
+      if (isTerminal(result) && ["own-run-registration-unconfirmed", "test-run-wait-refused", "test-run-wait-unconfirmed"].includes(result.reason)) reason = result.reason;
     } catch { /* unreadable startup artifacts retain the startup diagnosis */ }
     throw Object.assign(error, { runDir, safeCompletionText: reason,
       launcherLog: join(runDir, "launcher.log") });
@@ -1741,7 +1756,6 @@ async function main(args) {
   if ((nextOwner === undefined) !== (nextAction === undefined)) throw usageFailure("--next-owner and --next-action must be supplied together");
   const nextTransition = nextOwner === undefined ? undefined : { owner: nextOwner, action: nextAction };
   if ((mode === "full" && args.length) || (mode === "focused" && !args.length)) throw usageFailure("full takes no command; focused requires -- COMMAND ARGS");
-  if (detach && !notifyTo) throw usageFailure("detached mode requires a different coordinator --notify SESSION; otherwise use foreground host completion wait");
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
   const stages = mode === "full" ? requiredStages()
     : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
@@ -1775,7 +1789,8 @@ export function selectDefaultInput(root, env = process.env) {
 if (process.argv[1] && realpathSync(process.argv[1]) === script) {
   main(process.argv.slice(2)).catch(async (error) => {
     if (error.runDir) {
-      if (error.reason === "input-capture-failed") {
+      if (error.reason === "input-capture-failed"
+          || ["own-run-registration-unconfirmed", "test-run-wait-refused", "test-run-wait-unconfirmed"].includes(error.safeCompletionText)) {
         try { process.stdout.write(await summarize(error.runDir)); } catch { /* the artifact locator remains available */ }
       }
       process.stderr.write(`FAIL launcher: ${error.safeCompletionText ?? error.reason ?? "request-or-runtime-failed"}\nresults: ${join(error.runDir, "results.json")}\n`);

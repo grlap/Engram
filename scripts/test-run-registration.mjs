@@ -204,7 +204,68 @@ export async function confirmDetachedRegistration(request, directory, env = proc
   } catch (error) { return unconfirmed(reason(error)); }
 }
 
-export function registrationLine(registration) {
+// Called once by the admitted detached executor, never by a reader or notifier.
+// Unlike run registration, this POST has no host idempotency contract: even a
+// lost response must not be retried, since it could create a second wake.
+export async function registerOwnRunWait(request, directory, env = process.env, options = {}) {
+  const unavailable = { state: "unavailable", reason: "own-run-registration-unconfirmed" };
+  if (request.detached !== true || request.notifyTo || !registrationConfirmed(request.registration)) return unavailable;
+  let host;
+  try { host = configuration(request, env); }
+  catch { return unavailable; }
+  if (host.standalone || host.base.origin !== request.registration.hostOrigin) return unavailable;
+  const send = options.fetch ?? globalThis.fetch;
+  let refusal;
+  try {
+    return await bounded(Math.max(0, Math.min(budgetMs, options.budgetMs ?? budgetMs)), async (signal) => {
+      const url = new URL(`/api/sessions/${encodeURIComponent(host.session)}/test-run-waits`, host.base);
+      const response = await send(url, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runIds: [request.runId], mode: "all" }), signal, redirect: "manual" });
+      if (!response.ok) {
+        refusal = { httpStatus: httpStatus(response.status), hostMessage: null };
+        try { refusal.hostMessage = hostMessage((await json(response))?.error); }
+        catch { /* Retain only the status if the bounded body is unavailable. */ }
+        if (signal.aborted) throw new Error("registration-timeout");
+        throw new Error("test-run-wait-refused");
+      }
+      const ack = await json(response);
+      const wait = ack?.wait;
+      const run = wait?.runs?.[0];
+      const token = (value) => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(value);
+      const singleton = (value) => Array.isArray(value) && value.length === 1 && value[0] === request.runId;
+      if (response.status !== 201 || !token(ack?.waitId) || !token(ack.serverInstanceId)
+          || !Number.isSafeInteger(ack.revision) || ack.revision < 0 || !singleton(ack.runIds) || ack.mode !== "all"
+          || typeof ack.resumePromptQueued !== "boolean" || typeof ack.resumeDispatchRequested !== "boolean"
+          || wait?.id !== ack.waitId || wait.sessionId !== host.session || !singleton(wait.runIds) || wait.mode !== "all"
+          || !Array.isArray(wait.runs) || wait.runs.length !== 1 || run?.runId !== request.runId
+          || run.ownerSessionId !== host.session || run.startedAt !== request.started
+          || run.preset !== (request.full === true ? "full" : "focused")
+          || nativePath(run.runDir) !== nativePath(directory) || nativePath(run.worktree) !== nativePath(request.root)) {
+        throw new Error("invalid-wait-acknowledgement");
+      }
+      return { state: "registered", waitId: ack.waitId, runId: request.runId, sessionId: host.session,
+        hostOrigin: host.base.origin };
+    });
+  } catch (error) {
+    return { state: error?.message === "test-run-wait-refused" ? "refused" : "unconfirmed",
+      reason: error?.message === "test-run-wait-refused" ? "test-run-wait-refused" : "test-run-wait-unconfirmed",
+      ...(refusal ? { ...refusal } : {}) };
+  }
+}
+
+export function ownRunWaitLine(wait) {
+  if (!wait) return null;
+  if (wait.state === "registered" && typeof wait.waitId === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(wait.waitId)) {
+    return `host-wait: registered; waitId=${wait.waitId}; host resumes the initiating session`;
+  }
+  const state = wait.state === "refused" ? "refused" : wait.state === "unavailable" ? "unavailable" : "unconfirmed";
+  const status = httpStatus(wait.httpStatus);
+  const message = hostMessage(wait.hostMessage);
+  return `host-wait: ${state}; ${state === "unconfirmed" ? "a wait may already exist; do not retry automatically" : "no confirmed completion wake"}`
+    + (status === undefined ? "" : `; POST HTTP ${status}; ${message === null ? "host message unavailable" : `host message=${JSON.stringify(message)}`}`);
+}
+
+export function registrationLine(registration, wait) {
   if (!registration) return null; // Preserve historical notification bodies.
   const state = states.has(registration.state) ? registration.state : "unconfirmed";
   const credit = registrationConfirmed({ state })
@@ -213,5 +274,7 @@ export function registrationLine(registration) {
   const message = hostMessage(registration.hostMessage);
   const detail = status === undefined ? ""
     : `; POST HTTP ${status}; ${message === null ? "host message unavailable" : `host message=${JSON.stringify(message)}`}`;
-  return `registration: ${state}; native-wait=${state === "registered" && registration.nativeWaitReady === true ? "ready" : "unavailable; use --notify"}; ${credit}${detail}`;
+  const nativeWait = wait ? wait.state === "registered" ? "registered" : "unconfirmed"
+    : state === "registered" && registration.nativeWaitReady === true ? "ready" : "unavailable; use --notify";
+  return `registration: ${state}; native-wait=${nativeWait}; ${credit}${detail}`;
 }

@@ -367,7 +367,7 @@ if (process.platform === "win32") test("a job cleans a detached descendant after
 
 if (process.platform === "win32") test("a retained stop before admission starts no preflight or stage", async () => {
   await repository(async (root) => {
-    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("never")] }, env);
+    const runDir = await createRun({ root, full: true, detached: true, notifyTo: "fixture-parent", stages: [stage("never")] }, env);
     await requestStop(basename(runDir), { root, actor: "fixture-owner", reason: "superseded before spawn" });
     const result = await executeRun(runDir, env);
     assert.deepEqual([result.state, result.interrupted, result.reason], ["failed", true, "stopped"]);

@@ -270,7 +270,7 @@ test("registration and detached confirmation keep short-cadence heartbeats fresh
       }
       return response(registrationQuery(request, directory));
     };
-    const runDir = await createRun({ root, detached: true, stages: [stage("once")] }, hostEnv, { fetch });
+    const runDir = await createRun({ root, detached: true, notifyTo: "fixture-parent", stages: [stage("once")] }, hostEnv, { fetch });
     t.mock.method(globalThis, "fetch", async () => {
       const before = Date.parse(json(join(runDir, "results.json")).heartbeat.at);
       t.mock.timers.tick(4000);

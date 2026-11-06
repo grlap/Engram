@@ -141,9 +141,17 @@ commit and record its identity, before starting the foreground launcher
 under the host's background execution (for example a background shell task
 that reports when it exits). Spawn both reviewers
 (section 4) on the same input while the gate runs (Greg, 2026-09-26).
-The launcher refuses `--detach` without a
-different session to notify, so `--detach --notify PARENT_SESSION` is only for
-a bounded worker that delivers completion to the parent. The yield or blocking
+For a TermAl root session's own run, `--detach` without `--notify` registers
+the host's test-run wait in the admitted worker before startup is acknowledged.
+Retain the `completion=host-test-run-wait` receipt and wait id, then end the
+turn; TermAl resumes that session with the result. Do not also register a
+manual run wait, mail yourself, relay through another session, or poll.
+`--detach --notify PARENT_SESSION` remains for a root worker notifying a
+different session; direct self-send stays forbidden. An unavailable registration
+or refused/unconfirmed wait has a named startup failure and retained artifacts,
+never a silent completion wait. Do not retry an ambiguous wait POST: it may
+already have persisted. Delegation children run checks in the foreground.
+The yield or blocking
 wait described below comes under section 5, only after the reviewers are
 spawned. A host without background execution cannot overlap them: it runs the
 gate after section 3, then section 4. The launcher's automatic before/after
@@ -163,7 +171,7 @@ them as gate passes for the corrected input.
 Use the maintained `scripts/test-launcher.mjs` entrypoint, including its Windows
 substitution; `scripts/check.sh` forwards to its full mode. See
 [launcher usage](../../docs/development.md#test-launcher) for focused checks,
-detached root-worker delivery and notification-only retries. Launch one
+own-run host waits, detached root-worker delivery and notification-only retries. Launch one
 batch, retaining each command's full output and its exit code, start/end times,
 and log path in a compact result file. Halt the remaining commands at the first
 failure so the parent can investigate. Inspect the summary at completion;

@@ -583,7 +583,8 @@ Under TermAl, both full and focused runs register through the host's existing
 test-run endpoint before capturing the input fingerprint. The initiating session
 owns the registration; a different `--notify` recipient does not change its
 project. Registration and a detached worker's confirmation share an eight-second
-budget. Outside TermAl, or when that handshake is unavailable or unconfirmed,
+budget. For foreground and different-session notification runs, outside TermAl
+or when that handshake is unavailable or unconfirmed,
 the command still executes and retains its ordinary result and notification
 retry behavior, unless it selected a retained request with
 `--request-message-id`. Selected runs require confirmed registration and
@@ -591,12 +592,41 @@ matching selection at both launch and execution; they never use standalone
 or unconfirmed fallback. Durable registration need not yet be indexed.
 
 `results.json`, the launch receipt, `summary` and the notification disclose the
-registration disposition. Only `registered` with `native-wait=ready` supports
-the native test-run wait. `registered-but-not-indexed` means durable registration
-was confirmed but the host index was not; use `--notify` for that run, as for
-`untracked` or `unconfirmed`. An ambiguous reply stays unconfirmed even if the
-host indexes the run later. Registration, indexing, completion delivery and
-host check credit are separate; a registration receipt promises no credit.
+registration disposition. `registered-but-not-indexed` means durable registration
+was confirmed but the host index was not; TermAl can admit a wait from that
+durable registration. An ambiguous registration reply stays unconfirmed even
+if the host indexes the run later. Registration, indexing, completion delivery
+and host check credit are separate; a registration receipt promises no credit.
+
+For a TermAl root session starting its own run:
+
+```bash
+node scripts/test-launcher.mjs full --detach
+node scripts/test-launcher.mjs focused --detach -- node --test scripts/test-launcher.test.mjs
+```
+
+The worker confirms registration, then registers exactly one wait through
+`POST /api/sessions/{TERMAL_SESSION_ID}/test-run-waits` before announcing
+readiness or running stages. It saves the acknowledgement as `results.json`
+`hostWait`. Both indexed and registration-only runs use this route. The
+receipt says `completion=host-test-run-wait` and names the wait. End the turn;
+the host resumes the initiating session with the result. Do not also call
+`termal_resume_after_test_runs`, mail yourself, relay through a peer, or poll.
+Pending waits survive host restart; Stop and archive still consume them.
+This route requires the genuine inherited `TERMAL_SESSION_ID` and
+`TERMAL_BASE_URL`, but no mailbox executable. Delegation children cannot use
+host run waits; they run checks in the foreground.
+
+Own-run detachment refuses before stages when registration is unavailable
+(`own-run-registration-unconfirmed`), the wait is refused
+(`test-run-wait-refused`), or its acknowledgement is uncertain
+(`test-run-wait-unconfirmed`). The receipt retains result/log paths and any
+bounded HTTP refusal diagnostic instead of claiming a completion wake.
+The wait request has its own eight-second budget and a 65,536-byte response
+limit. A timeout or lost response may mean the wait was persisted. Wait POSTs
+have no deduplication contract: do not retry them automatically or rerun tests
+to repair delivery. Retain the original run and report the uncertain outcome.
+`summary`, `recover` and `notify` never register another wait.
 
 For an existing root worker delivering completion to a different coordinator:
 
@@ -622,9 +652,9 @@ These describe the same run, not two executions; use its run directory to
 inspect the failure before deciding what needs correction.
 Actual survival after turn end and wake delivery must be verified on the host;
 `STARTED` alone is not proof of either. User Stop and host dispatch restrictions
-still apply. If the coordinator launches its own command, use foreground mode
-and the host's supported process-completion wait; do not pretend self-mailbox
-notifications work. Where no completion wake exists, disclose that limitation.
+still apply. For one's own detached run, use the host-wait route above.
+Foreground mode remains available for a blocking process-completion wait.
+Where no completion wake exists, disclose that limitation.
 
 Stop a superseded detached run from the worktree that launched it:
 

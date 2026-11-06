@@ -202,7 +202,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX absent helper re
 
 if (["darwin", "linux"].includes(process.platform)) test("POSIX stop retained before admission starts no command", async () => {
   await repository(async (root) => {
-    const runDir = await createRun({ root, full: true, detached: true, stages: [stage("never", "throw Error('must not run')")] }, env);
+    const runDir = await createRun({ root, full: true, detached: true, notifyTo: "fixture-parent", stages: [stage("never", "throw Error('must not run')")] }, env);
     await requestStop(basename(runDir), { root, actor: "before-owner", reason: "superseded before admission" });
     const result = await executeRun(runDir, env);
     assert.deepEqual([result.state, result.reason, result.interrupted], ["failed", "stopped", true]);
@@ -267,7 +267,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX unsolicited help
       assert.equal((await broker.next())[0], "listening");
       const source = `process.on('SIGTERM', () => process.exit(0)); ${broker.parked}
         socket.once('connect', () => process.kill(process.ppid, 'SIGTERM'));`;
-      const runDir = await createRun({ root, detached: true, stages: [stage("interrupted", source), stage("later")] }, env);
+      const runDir = await createRun({ root, detached: true, notifyTo: "fixture-parent", stages: [stage("interrupted", source), stage("later")] }, env);
       pending = executeRun(runDir, env);
       const result = await pending;
       assert.deepEqual([result.state, result.exitCode], ["failed", 1]);
@@ -294,7 +294,7 @@ if (["darwin", "linux"].includes(process.platform)) test("POSIX stop after helpe
     writeFileSync(path, changed);
     const module = await import(pathToFileURL(local).href);
     const marker = join(root, ".git", "workload-ran");
-    const runDir = await module.createRun({ root, detached: true,
+    const runDir = await module.createRun({ root, detached: true, notifyTo: "fixture-parent",
       stages: [stage("never", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`)] }, env);
     const result = await module.executeRun(runDir, env);
     assert.deepEqual([result.state, result.reason, result.interrupted, result.stop.actor], ["failed", "stopped", true, "startup-owner"]);

@@ -341,7 +341,8 @@ $cache = $env:PSModuleAnalysisCachePath
 if (![IO.Path]::IsPathRooted($cache)) { throw 'cache is not pinned' }
 [Console]::WriteLine('fixture-stage-cache:' + (@{ cache = $cache; cwd = [IO.Directory]::GetCurrentDirectory() } | ConvertTo-Json -Compress))`;
       for (const contained of [false, true]) {
-        const runDir = await module.createRun({ root, full: contained, detached: contained,
+        // The cache fixture uses the different-session notification route.
+        const runDir = await module.createRun({ root, full: contained, detached: contained, notifyTo: "fixture-parent",
           stages: [{ name: "powershell", command: powerShell, args: ["-NoProfile", "-NonInteractive", "-Command", script] }] }, inherited);
         const result = await module.executeRun(runDir, inherited);
         assert.equal(result.state, "passed", result.error);

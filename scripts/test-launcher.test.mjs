@@ -19,6 +19,7 @@ import {
 import { fixtureHome, fixtureRoot, removeFixtureHomes, removeFixturePath, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { createSupport } from "./test-launcher-tests/support.mjs";
 import { registerRegistrationTests } from "./test-launcher-tests/registration.mjs";
+import { registerOwnRunWaitTests } from "./test-launcher-tests/own-run-wait.mjs";
 import { registerExecutionFixtures, registerExecutionAdmission, registerExecutionEnvironment } from "./test-launcher-tests/execution.mjs";
 import { registerLifecycleTests } from "./test-launcher-tests/lifecycle.mjs";
 import { registerCompletionDiagnostics, registerCompletionReceipts } from "./test-launcher-tests/completion.mjs";
@@ -44,6 +45,7 @@ const support = createSupport({ env, entryUrl: import.meta.url });
 
 // Preserve the original registration order, including interleaved responsibilities.
 registerRegistrationTests(support);
+registerOwnRunWaitTests(support);
 registerExecutionFixtures(support);
 registerLifecycleTests(support);
 registerCompletionDiagnostics(support);

@@ -265,6 +265,18 @@ Any other path requires `node scripts/test-launcher.mjs full` for the following
 gates. Full logs stay on disk; see
 [launcher usage](../../../docs/development.md#test-launcher) for completion delivery.
 
+For your own run in a TermAl root session, use launcher `full --detach` or
+`focused --detach -- COMMAND ARGS...` without `--notify`. The admitted worker
+registers one host test-run wait and saves its acknowledgement before printing
+`completion=host-test-run-wait`. Retain the receipt and expected fingerprint,
+then end the turn: the host resumes you with the result. Do not register a
+second manual wait, mail yourself, relay through a peer, or poll. A named
+registration/wait failure retains the original run for diagnosis; an uncertain
+wait POST may have persisted and must not be retried automatically. A root
+worker notifying a different session still uses `--detach --notify SESSION`.
+Delegation children run checks in the foreground, since the host refuses their
+run waits. Standalone foreground execution remains available.
+
 ```bash
 cargo fmt --check
 cargo check
