@@ -9,6 +9,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod delta;
+
 #[cfg(test)]
 thread_local! {
     static READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -44,6 +46,7 @@ struct Capture {
     input: CommittedInput,
     tree: Option<String>,
     entries: Vec<crate::source::Entry>,
+    source_id: Option<crate::source::SourceId>,
 }
 
 pub(crate) fn observe(root: &Path, budget: Duration) -> crate::source::Observation {
@@ -70,6 +73,7 @@ pub(crate) fn observe(root: &Path, budget: Duration) -> crate::source::Observati
             tree: value.tree,
             entries: value.entries,
             refusal: None,
+            source_id: value.source_id,
             deadline: Some(deadline),
         },
         Err(error) => {
@@ -176,7 +180,11 @@ fn capture(
     );
     let modules = run(&["submodule", "status", "--recursive"], false)
         .context("cannot read recursive submodule status")?;
-    let children = submodules(&modules)?;
+    let child_states = submodule_states(&modules, details)?;
+    let children: Vec<_> = child_states
+        .iter()
+        .map(|child| child.path.clone())
+        .collect();
     // Read filter configuration before root status can invoke child filters.
     guard_child_filters(
         &git,
@@ -197,7 +205,23 @@ fn capture(
         ],
         false,
     )?;
-    guard_child_dirt(&children, &status)?;
+    let source_id = if details {
+        Some(delta::capture(
+            &Query {
+                git: &git,
+                global,
+                deadline,
+            },
+            &root,
+            &commit,
+            tree.as_deref().context("missing captured tree")?,
+            &status,
+            &child_states,
+        )?)
+    } else {
+        guard_child_dirt(&children, &status)?;
+        None
+    };
     ensure!(
         head()? == commit,
         "HEAD moved during the committed-input read"
@@ -225,6 +249,7 @@ fn capture(
             },
             tree,
             entries,
+            source_id,
         }),
     )
 }
@@ -354,7 +379,20 @@ fn resolve_git(root: &Path) -> Result<PathBuf> {
     bail!("a trusted absolute Git executable outside the inspected root is unavailable")
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Child {
+    path: String,
+    commit: String,
+    off_pin: bool,
+}
+
+#[cfg(test)]
 fn submodules(bytes: &[u8]) -> Result<Vec<String>> {
+    submodule_states(bytes, false)
+        .map(|children| children.into_iter().map(|child| child.path).collect())
+}
+
+fn submodule_states(bytes: &[u8], allow_off_pin: bool) -> Result<Vec<Child>> {
     let text = std::str::from_utf8(bytes).context("Git returned non-UTF-8 submodule status")?;
     let mut children = Vec::new();
     for line in text.lines() {
@@ -381,8 +419,17 @@ fn submodules(bytes: &[u8]) -> Result<Vec<String>> {
             "submodule '{name}': malformed path or commit"
         );
         match prefix {
-            b' ' => children.push(name.to_owned()),
+            b' ' => children.push(Child {
+                path: name.to_owned(),
+                commit: pin.to_owned(),
+                off_pin: false,
+            }),
             b'-' => bail!("submodule '{name}': uninitialized"),
+            b'+' if allow_off_pin => children.push(Child {
+                path: name.to_owned(),
+                commit: pin.to_owned(),
+                off_pin: true,
+            }),
             b'+' => bail!("submodule '{name}': HEAD differs from its pin"),
             b'U' => bail!("submodule '{name}': conflicted gitlink"),
             _ => bail!("submodule '{name}': malformed status"),
@@ -406,6 +453,38 @@ fn query(
     deadline: Instant,
     global: Option<&Path>,
 ) -> Result<Vec<u8>> {
+    query_with_input(git, root, args, missing, deadline, global, None)
+}
+
+struct Query<'a> {
+    git: &'a Path,
+    global: Option<&'a Path>,
+    deadline: Instant,
+}
+
+impl Query<'_> {
+    fn run(&self, root: &Path, args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
+        query_with_input(
+            self.git,
+            root,
+            args,
+            false,
+            self.deadline,
+            self.global,
+            input,
+        )
+    }
+}
+
+fn query_with_input(
+    git: &Path,
+    root: &Path,
+    args: &[&str],
+    missing: bool,
+    deadline: Instant,
+    global: Option<&Path>,
+    input: Option<&[u8]>,
+) -> Result<Vec<u8>> {
     let mut command = git_command(git, root);
     if let Some(global) = global {
         // Git's config reader needs the plain Windows spelling, while Rust
@@ -413,7 +492,7 @@ fn query(
         command.env("GIT_CONFIG_GLOBAL", crate::storage::store_path_text(global));
     }
     command.args(args);
-    run_query(command, args[0], missing, deadline)
+    run_query_with_input(command, args[0], missing, deadline, input)
 }
 
 fn git_command(git: &Path, root: &Path) -> Command {
@@ -464,6 +543,16 @@ fn git_command(git: &Path, root: &Path) -> Command {
 }
 
 fn run_query(command: Command, name: &str, missing: bool, deadline: Instant) -> Result<Vec<u8>> {
+    run_query_with_input(command, name, missing, deadline, None)
+}
+
+fn run_query_with_input(
+    command: Command,
+    name: &str,
+    missing: bool,
+    deadline: Instant,
+    input: Option<&[u8]>,
+) -> Result<Vec<u8>> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
         return Err(crate::task_sync::git::QueryFailure::Deadline.into());
@@ -472,7 +561,7 @@ fn run_query(command: Command, name: &str, missing: bool, deadline: Instant) -> 
         command,
         name,
         missing,
-        None,
+        input,
         remaining,
         crate::task_sync::git::QueryStderrPolicy::RequireEmpty,
     );

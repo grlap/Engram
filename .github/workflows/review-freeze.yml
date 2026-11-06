@@ -20,6 +20,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Engram for launcher tests
+        run: cargo build --bin engram
       - name: Test review input fingerprinting and completion launcher
         run: node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
       - name: Check documentation links

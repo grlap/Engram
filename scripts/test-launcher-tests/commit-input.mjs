@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { captureCommitInputStatus, sourceBinaryPath } from "../review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, classifySourceIdChange, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "../review-freeze-fingerprint.mjs";
 import { createSourceFixture, sourceCases } from "../source-input-fixtures.mjs";
 import { fixtureHome } from "../test-temp.mjs";
 import { commitInputEligible, createRun, executeRun, machineRecord, selectDefaultInput, startDetached, summarize } from "../test-launcher.mjs";
@@ -25,6 +25,7 @@ export function registerCommitInputTests(support) {
   });
 
   for (const scenario of sourceCases) test(`launcher owner conformance: ${scenario.id}`, async (t) => {
+    if (scenario.skipOn?.includes(process.platform)) return t.skip("fixture requires Unix filename or mode semantics");
     const input = createSourceFixture(fixtureHome("lc-", t), scenario.id);
     const root = input.root;
     const marker = join(git(["rev-parse", "--absolute-git-dir"], root).trim(), "stage-ran");
@@ -44,6 +45,7 @@ export function registerCommitInputTests(support) {
       assert.equal(captured.status, scenario.status);
       assert.equal(captured.commit, input.commit);
       assert.equal(captured.tree, input.tree);
+      assert.deepEqual(captured.sourceId, input.sourceId);
       assert.equal(selectDefaultInput(root, env), scenario.status === "clean" ? "commit" : undefined);
       const runDir = await createRun({ root, input: "commit", stages }, env);
       const result = await executeRun(runDir, env);
@@ -64,7 +66,7 @@ export function registerCommitInputTests(support) {
     await fixture(async ({ root }) => {
       const measured = captureCommitInputStatus(root, env);
       const observation = { version: 1, status: "clean", root: measured.root,
-        source: `git-commit:${measured.commit}`, tree: measured.tree, entries: [], refusal: null };
+        source: `git-commit:${measured.commit}`, tree: measured.tree, entries: [], refusal: null, source_id: measured.sourceId };
       const response = (value = observation, status = 0) => ({ status, signal: null,
         stdout: Buffer.from(JSON.stringify(value) + "\n"), stderr: Buffer.alloc(0) });
       const capture = (result) => captureCommitInputStatus(root, env, { run: (binary, args, options) => {
@@ -78,7 +80,7 @@ export function registerCommitInputTests(support) {
       } });
       assert.deepEqual(capture(response()), measured);
       const refused = { ...observation, status: "unavailable", source: null, tree: null,
-        refusal: { code: "deadline", message: "reader deadline" } };
+        refusal: { code: "deadline", message: "reader deadline" }, source_id: null };
       assert.throws(() => capture(response(refused, 1)), (error) => error.refusal?.code === "deadline");
       for (const result of [
         response({ ...observation, version: 2 }), response({ ...observation, extra: true }),
@@ -99,6 +101,43 @@ export function registerCommitInputTests(support) {
       const renamed = { ...observation, status: "not_clean", entries: [{ status: "R ", path: "new", origin: "old" }] };
       assert.deepEqual(capture(response(renamed)).entries, renamed.entries);
       assert.throws(() => capture(response({ ...renamed, entries: [{ status: "R ", path: "new" }] })), /malformed changed-path/u);
+      const change = { path: "file", status: " M", origin: null, blob: measured.commit, mode: "100644" };
+      const identified = { ...measured.sourceId, changes: [change] };
+      assert.ok(sourceIdsEqual(identified, { changes: [{ mode: change.mode, blob: change.blob, origin: null,
+        status: change.status, path: change.path }], submodules: [], tree: identified.tree, commit: identified.commit }));
+      assert.equal(sourceIdsEqual(identified, measured.sourceId), false);
+      const added = { ...change, path: "new.txt", status: "??" };
+      assert.deepEqual(classifySourceIdChange(identified, { ...identified, changes: [change, added] }),
+        { outcome: "new-untracked-only", newPaths: ["new.txt"] });
+      const child = { path: "child", commit: measured.commit, changes: [change] };
+      const withChild = { ...identified, submodules: [child] };
+      assert.deepEqual(classifySourceIdChange(withChild, { ...withChild,
+        submodules: [{ ...child, changes: [change, added] }] }),
+      { outcome: "new-untracked-only", newPaths: ["child/new.txt"] });
+      for (const changed of [
+        { ...identified, commit: measured.tree },
+        { ...identified, changes: [added] },
+        { ...identified, changes: [{ ...change, blob: measured.tree }, added] },
+        { ...identified, changes: [change, { ...added, status: " A" }] },
+        { ...identified, changes: [{ ...added, path: change.path }, change] },
+      ]) assert.equal(classifySourceIdChange(identified, changed).outcome, "input-changed");
+      assert.equal(classifySourceIdChange(withChild, { ...withChild,
+        submodules: [{ ...child, commit: measured.tree }] }).outcome, "input-changed");
+      const detail = sourceIdDifference(identified, { ...identified, changes: [{ ...change, blob: measured.tree }] });
+      assert.match(detail, /file.*\[ M\]/u);
+      assert.ok(detail.includes(change.blob) && detail.includes(measured.tree));
+      assert.ok(Buffer.byteLength(sourceIdDifference(measured.sourceId, { ...measured.sourceId,
+        changes: [{ ...added, path: "long".repeat(2000) }] })) < 4300);
+      for (const source_id of [null, { ...measured.sourceId, extra: true },
+        { ...measured.sourceId, tree: "invalid" }, { ...measured.sourceId, changes: [{ ...change, origin: undefined }] },
+        { ...measured.sourceId, changes: [{ ...change, blob: null }] },
+        { ...measured.sourceId, changes: [{ ...change, path: "../outside" }] },
+        { ...measured.sourceId, changes: [{ ...change, mode: 100644 }] },
+        { ...measured.sourceId, changes: [change, change] },
+        { ...measured.sourceId, changes: [{ ...change, path: "z" }, { ...change, path: "a" }] },
+        { ...measured.sourceId, submodules: [{ path: "child", commit: measured.commit, changes: [], extra: true }] },
+      ]) assert.throws(() => capture(response({ ...observation, source_id })), /source_id/u);
+      assert.throws(() => capture(response({ ...refused, source_id: measured.sourceId }, 1)), /unavailable envelope/u);
     });
   });
 
@@ -131,6 +170,7 @@ export function registerCommitInputTests(support) {
       writeFileSync(path, JSON.stringify({ ...json(path), sourceBinary: join(root, "different-owner") }));
       const result = await executeRun(runDir, env);
       assert.equal(result.reason, "input-capture-failed");
+      assert.match(result.error, /source owner or identity differs from the admitted snapshot/u);
       assert.equal(result.stages[0].state, "unrun");
       assert.equal(existsSync(marker), false);
     });
@@ -148,6 +188,9 @@ export function registerCommitInputTests(support) {
       else unlinkSync(path);
       const result = await executeRun(runDir, env);
       assert.equal(result.reason, "input-capture-failed");
+      assert.match(result.error, snapshot === "missing owner"
+        ? /source owner or identity differs from the admitted snapshot/u
+        : /admitted source snapshot is missing or unreadable/u);
       assert.equal(result.stages[0].state, "unrun");
       assert.equal(existsSync(marker), false);
     });
@@ -227,23 +270,46 @@ export function registerCommitInputTests(support) {
       assert.equal(result.state, "passed", result.error);
       assert.equal(result.input, undefined);
       assert.equal(result.before, result.after);
+      assert.deepEqual(result.sourceIdBefore, result.sourceIdAfter);
     });
+  });
+
+  test("launcher compares dirty child contents even when its old fingerprint stays equal", async (t) => {
+    const fixture = createSourceFixture(fixtureHome("source-child-drift-", t), "child-dirty");
+    const command = stage("edit-child", `require('node:fs').writeFileSync(${JSON.stringify(join(fixture.child, "tracked file.txt"))}, 'different child content\\n');`);
+    const runDir = await createRun({ root: fixture.root, stages: [command] }, env);
+    const result = await executeRun(runDir, env);
+    assert.equal(result.stages[0].state, "passed", result.error);
+    assert.equal(result.before, result.after, "legacy dirty-submodule marker cannot identify child bytes");
+    assert.equal(result.sourceIdBefore.commit, result.sourceIdAfter.commit);
+    assert.notDeepEqual(result.sourceIdBefore, result.sourceIdAfter);
+    assert.equal(result.state, "failed");
+    assert.equal(result.reason, "input-changed");
+    assert.equal(result.exitCode, 1);
   });
 
   test("committed-input eligibility requires its after fingerprint even when status is clean", () => {
     const expected = createHash("sha256").update("admitted fixture input").digest("hex");
     const changed = createHash("sha256").update("changed fixture input").digest("hex");
-    const result = { state: "passed", input: { outcome: "clean" }, expectedFingerprint: expected, after: expected };
+    const sourceId = { commit: expected.slice(0, 40), tree: changed.slice(0, 40), submodules: [], changes: [] };
+    const result = { state: "passed", input: { outcome: "clean" }, expectedFingerprint: expected, after: expected,
+      sourceIdBefore: sourceId, sourceIdAfter: sourceId };
     assert.equal(commitInputEligible(result), true);
     assert.equal(commitInputEligible({ ...result, after: changed }), false);
     assert.equal(commitInputEligible({ ...result, after: undefined }), false);
     assert.equal(commitInputEligible({ ...result, state: "failed" }), false);
+    assert.equal(commitInputEligible({ ...result, sourceIdAfter: { ...sourceId, commit: changed.slice(0, 40) } }), false);
   });
 
-  test("committed-input debris summary survives a damaged snapshot and malformed path metadata", async () => {
+  test("historical committed-input debris summary survives a damaged snapshot and malformed path metadata", async () => {
     await fixture(async ({ root, marking }) => {
       const runDir = await createRun({ root, input: "commit", stages: [marking("require('node:fs').writeFileSync('new.txt', 'debris');")] }, env);
       const result = await executeRun(runDir, env);
+      // Retained results from the previous launcher remain readable as stored.
+      Object.assign(result, { state: "passed", reason: "new-untracked-only" });
+      delete result.sourceIdBefore;
+      delete result.sourceIdAfter;
+      writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
       assert.equal(result.input.outcome, "debris_pending_disposition");
       writeFileSync(join(runDir, "completion.request.json"), "{damaged");
       assert.match(await summarize(runDir), /FAIL .*exit=1/u);
@@ -319,20 +385,23 @@ export function registerCommitInputTests(support) {
     await fixture(async ({ root, marking }) => {
       const runDir = await createRun({ root, input: "commit", stages: [marking(code)] }, env);
       const result = await executeRun(runDir, env);
-      assert.equal(result.state, "passed", result.error);
+      assert.equal(result.state, "failed");
+      assert.equal(result.stages[0].state, "passed");
       assert.equal(result.stages[0].code, 0);
       assert.equal(result.input.outcome, outcome);
       assert.equal(result.input.eligible, false);
       assert.equal(result.input.after.clean, false);
       assert.equal(result.exitCode, 1);
-      const reason = outcome === "debris_pending_disposition" ? "new-untracked-only" : "input-changed";
+      const reason = name === "new debris" ? "new-untracked-only" : "input-changed";
       assert.equal(result.reason, reason);
       assert.match(machineRecord(json(join(runDir, "request.json")), result), new RegExp(`overall=failed .*reason=${reason}`, "u"));
       assert.match(await summarize(runDir), /FAIL .*exit=1/u);
       assert.match(await summarize(runDir), new RegExp(`reason: ${reason}`, "u"));
-      if (outcome === "debris_pending_disposition") {
-        assert.match(await summarize(runDir), /input-change: new-untracked-only;.*total=1;.*input.after.paths/u);
+      if (name === "new debris") {
+        assert.match(await summarize(runDir), /input-change: new-untracked-only;.*total=1;.*input\.after\.paths/u);
+        assert.deepEqual(result.input.after.paths, [{ status: "??", path: "new.txt" }]);
       }
+      assert.notDeepEqual(result.sourceIdBefore, result.sourceIdAfter);
     });
   });
 
@@ -361,7 +430,7 @@ export function registerCommitInputTests(support) {
       commit(root);
       const result = await executeRun(runDir, env);
       assert.equal(result.state, "failed");
-      assert.match(result.error, /matching clean commit/u);
+      assert.match(result.error, /source_id changed before execution/u);
       assert.equal(existsSync(marker), false);
     });
   });
@@ -507,7 +576,9 @@ export function registerCommitInputTests(support) {
       const runDir = await createRun({ root, input: "commit", stages: [marking(advance)] }, env);
       const before = json(join(runDir, "request.json")).commit;
       const result = await executeRun(runDir, env);
-      assert.equal(result.state, "passed", result.error);
+      assert.equal(result.state, "failed", result.error);
+      assert.equal(result.stages[0].state, "passed");
+      assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
       assert.notEqual(result.input.after.commit, before);
       assert.equal(result.input.outcome, "input_changed");
       assert.equal(result.input.eligible, false);
@@ -552,9 +623,16 @@ export function registerCommitInputTests(support) {
       const directory = /^results: (.+)[\\/]results.json$/mu.exec(launched.stdout)?.[1];
       assert.ok(directory, launched.stdout);
       const result = json(join(directory, "results.json"));
-      assert.equal(result.state, "passed");
+      assert.equal(result.state, "failed");
+      assert.equal(result.stages[0].state, "passed");
       assert.equal(result.stages[0].code, 0);
       assert.equal(result.input.eligible, false);
+      if (name === "new debris") {
+        assert.equal(result.input.outcome, "debris_pending_disposition");
+        assert.deepEqual(result.input.after.paths, [{ status: "??", path: "new.txt" }]);
+        assert.match(launched.stdout, /input-change: new-untracked-only;.*total=1;.*input\.after\.paths/u);
+        assert.notDeepEqual(result.sourceIdBefore, result.sourceIdAfter);
+      }
     });
   });
 
@@ -575,7 +653,8 @@ export function registerCommitInputTests(support) {
       const source = `require('node:child_process').execFileSync('git', ${JSON.stringify(args)});require('node:fs').writeFileSync('tracked.txt', 'changed');`;
       const runDir = await createRun({ root, input: "commit", stages: [stage("configure", source)] }, env);
       const result = await executeRun(runDir, env);
-      assert.equal(result.state, "passed", result.error);
+      assert.equal(result.state, "failed");
+      assert.equal(result.stages[0].state, "passed");
       assert.equal(result.input.outcome, "input_changed");
       assert.equal(result.input.eligible, false);
       assert.equal(result.after, undefined);

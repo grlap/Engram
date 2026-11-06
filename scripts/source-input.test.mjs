@@ -38,11 +38,12 @@ function run(args, env = {}) {
 
 for (const scenario of sourceCases) {
   test(`source owner conformance: ${scenario.id}`, (t) => {
+    if (scenario.skipOn?.includes(process.platform)) return t.skip("fixture requires Unix filename or mode semantics");
     const fixture = createSourceFixture(fixtureHome("s-", t), scenario.id);
     const result = run(["--root", fixture.root, "--json"]);
     assert.equal(result.status, scenario.status === "unavailable" ? 1 : 0, result.stderr || result.stdout);
     const observation = JSON.parse(result.stdout);
-    assert.deepEqual(Object.keys(observation).sort(), ["entries", "refusal", "root", "source", "status", "tree", "version"]);
+    assert.deepEqual(Object.keys(observation).sort(), ["entries", "refusal", "root", "source", "source_id", "status", "tree", "version"]);
     assert.equal(observation.version, 1);
     assert.equal(observation.status, scenario.status, result.stdout);
     if (scenario.id === "root-autocrlf-clean") assert.equal(result.stderr, "");
@@ -52,17 +53,17 @@ for (const scenario of sourceCases) {
       assert.equal(observation.source, null);
       assert.equal(observation.tree, null);
       assert.deepEqual(observation.entries, []);
+      assert.equal(observation.source_id, null);
       assert.ok(sourceRefusalCodes.includes(observation.refusal.code));
       assert.equal(observation.refusal.code, "input_unavailable");
       assert.ok(observation.refusal.message);
-      if (scenario.id === "child-off-pin") assert.match(observation.refusal.message,
-        /submodule 'c': HEAD differs from its pin/u);
       if (scenario.id === "child-uninitialized") assert.match(observation.refusal.message,
         /submodule 'c': uninitialized/u);
     } else {
       assert.equal(observation.source, `git-commit:${fixture.commit}`);
       assert.equal(observation.tree, fixture.tree);
       assert.equal(observation.refusal, null);
+      assert.deepEqual(observation.source_id, fixture.sourceId);
       assert.equal(observation.entries.length === 0, observation.status === "clean");
       if (scenario.id === "rename") assert.deepEqual(observation.entries,
         [{ status: "R ", path: "renamed file.txt", origin: "tracked file.txt" }]);
@@ -98,17 +99,54 @@ for (const scenario of machineEolCases) {
     assert.equal(result.stderr, "");
     const observation = JSON.parse(result.stdout);
     assert.equal(observation.status, scenario.status, result.stdout);
-    assert.deepEqual(Object.keys(observation).sort(), ["entries", "refusal", "root", "source", "status", "tree", "version"]);
+    assert.deepEqual(Object.keys(observation).sort(), ["entries", "refusal", "root", "source", "source_id", "status", "tree", "version"]);
     if (scenario.status === "unavailable") {
+      assert.equal(observation.source_id, null);
       assert.equal(observation.refusal.code, "input_unavailable");
       if (scenario.mismatch) assert.match(observation.refusal.message, /submodule 'c s': contextual machine line-ending fallback differs/u);
-      if (scenario.dirty === "child") assert.match(observation.refusal.message, /submodule 'c s': working tree is dirty/u);
-      if (scenario.dirty === "long-child") assert.match(observation.refusal.message, /submodule 'c': working tree is dirty/u);
       if (scenario.insideScratch) assert.match(observation.refusal.message, /source EOL scratch is inside the inspected tree/u);
+    } else {
+      assert.equal(observation.source, `git-commit:${observation.source_id.commit}`);
+      assert.equal(observation.tree, observation.source_id.tree);
+      if (scenario.dirty) {
+        const changes = scenario.dirty === "root" ? observation.source_id.changes
+          : observation.source_id.submodules.find((child) => child.path === fixture.childName).changes;
+        assert.equal(changes.find((change) => change.path === fixture.dirtyPath).blob, fixture.expectedDirtyBlob,
+          "dirty blob hashing must preserve the same effective machine EOL policy as status");
+      }
     }
     assert.deepEqual(fixture.scratchEntries(), [], "owner-private EOL scratch must be removed after success or refusal");
   });
 }
+test("source dirty identity compares the complete delta at one unchanged commit", (t) => {
+  const fixture = createSourceFixture(fixtureHome("source-delta-", t), "root-dirty");
+  const observe = () => {
+    const result = run(["--root", fixture.root, "--json"]);
+    assert.equal(result.status, 0, result.stdout || result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const before = observe();
+  assert.equal(before.status, "not_clean");
+  assert.deepEqual(observe().source_id, before.source_id);
+  writeFileSync(join(fixture.root, "tracked file.txt"), "different dirty content\n");
+  const after = observe();
+  assert.equal(after.source, before.source);
+  assert.equal(after.tree, before.tree);
+  assert.notDeepEqual(after.source_id, before.source_id);
+});
+
+test("source symlink identity hashes link text and excludes ignored target contents", { skip: process.platform === "win32" }, (t) => {
+  const fixture = createSourceFixture(fixtureHome("source-link-", t), "root-symlink");
+  const observe = () => {
+    const result = run(["--root", fixture.root, "--json"]);
+    assert.equal(result.status, 0, result.stdout || result.stderr);
+    return JSON.parse(result.stdout).source_id;
+  };
+  const before = observe();
+  assert.deepEqual(before, fixture.sourceId);
+  writeFileSync(join(fixture.root, "ignored", "result.txt"), "different target bytes\n");
+  assert.deepEqual(observe(), before);
+});
 
 test("source refuses invalid invocation and unavailable roots without requiring a store", (t) => {
   const parent = fixtureHome("source-cli-", t);

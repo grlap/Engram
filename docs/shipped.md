@@ -55,9 +55,12 @@ for a dirty root; explicit commit selection still refuses dirt.
 
 The store-independent `engram source --root <absolute-worktree> --json`
 command exposes that same committed-input reader as bounded JSON v1, with
-clean/not-clean/unavailable status, canonical root, source/tree metadata and
-changed porcelain entries. It opens no store and grants no execution credit.
-Launcher committed-input admission calls this command through a bounded adapter;
+clean/not-clean/unavailable status, canonical root, source/tree metadata,
+changed porcelain entries, and a complete `source_id` object containing root
+commit/tree, actual submodule HEADs and local deltas with Git blob ids and modes.
+Dirty and off-pin children are described; uninitialized/conflicted children
+refuse. It opens no store and grants no execution credit. The launcher records
+and compares the full object, including unchanged dirty plain runs, through a bounded adapter;
 the separate schema-1 run fingerprint and its file hashing are unchanged.
 See the [source command](development.md#read-only-committed-input-command).
 

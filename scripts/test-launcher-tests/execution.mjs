@@ -342,8 +342,11 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
     const binary = join(bin, process.platform === "win32" ? "fixture-gate.exe" : "fixture-gate");
     nodeFixtureExecutable(binary);
     const fixtureEnv = { ...env };
+    const trustedPath = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
     for (const key of Object.keys(fixtureEnv)) if (key.toLowerCase() === "path") delete fixtureEnv[key];
-    fixtureEnv.PATH = `${join(root, "absent-path-entry")}${delimiter}${bin}`;
+    // Keep trusted Git available for source capture while the fixture executable
+    // still resolves from the first matching absolute, relative or quoted entry.
+    fixtureEnv.PATH = `${join(root, "absent-path-entry")}${delimiter}${bin}${delimiter}${trustedPath}`;
     const runDir = await createRun({ root, stages: [{ name: "path-command", command: "fixture-gate", args: ["-e", "console.log('resolved-binary')"] }] }, env);
     observe(runDir, binary);
     const result = await executeRun(runDir, fixtureEnv);
@@ -351,7 +354,7 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
     assert.equal(result.stages[0].command[0], binary);
     assert.equal(readFileSync(result.stages[0].log, "utf8"), "resolved-binary\n");
     assert.notEqual(realpathSync.native(root), realpathSync.native(process.cwd()));
-    const relativeEnv = { ...fixtureEnv, PATH: relative(root, bin) };
+    const relativeEnv = { ...fixtureEnv, PATH: `${relative(root, bin)}${delimiter}${trustedPath}` };
     const relativeRun = await createRun({ root, stages: [{ name: "relative-path", command: "fixture-gate", args: ["-e", "console.log('relative-binary')"] }] }, env);
     observe(relativeRun, binary);
     const relativeResult = await executeRun(relativeRun, relativeEnv);
@@ -361,7 +364,7 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
     if (process.platform === "win32") {
       const quotedRun = await createRun({ root, stages: [{ name: "quoted-path", command: "fixture-gate", args: ["-e", "console.log('quoted-binary')"] }] }, env);
       observe(quotedRun, binary);
-      const quotedResult = await executeRun(quotedRun, { ...fixtureEnv, PATH: `"${bin}"` });
+      const quotedResult = await executeRun(quotedRun, { ...fixtureEnv, PATH: `"${bin}"${delimiter}${trustedPath}` });
       assert.equal(quotedResult.state, "passed");
       assert.equal(quotedResult.stages[0].command[0], binary);
       assert.equal(readFileSync(quotedResult.stages[0].log, "utf8"), "quoted-binary\n");
@@ -607,9 +610,9 @@ test("source drift before execution refuses to run the captured input", async ()
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "failed");
     assert.equal(result.stages[0].state, "unrun");
-    assert.match(result.error, /^input drift before execution; no stages run\n/u);
-    assert.match(result.error, /^Current Git status.*$/mu);
-    assert.match(result.error, /^ M tracked\.txt$/mu);
+    assert.equal(result.reason, "input-changed");
+    assert.match(result.error, /^source_id changed before execution; no stages run\n/u);
+    assert.match(result.error, /tracked\.txt.*\[ M\]/u);
   });
 });
 
@@ -620,9 +623,11 @@ test("source drift during execution cannot be reported as a passing run", async 
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "failed");
     assert.notEqual(result.exitCode, 0);
-    assert.match(result.error, /^input drift: results do not validate the current source\n/u);
-    assert.match(result.error, /^Current Git status.*$/mu);
-    assert.match(result.error, /^ M tracked\.txt$/mu);
+    assert.equal(result.reason, "input-changed");
+    assert.match(result.error, /^source_id changed during execution; stage results do not validate the current source\n/u);
+    assert.match(result.error, /tracked\.txt.*\[ M\]/u);
+    assert.equal(result.stages[0].state, "passed");
+    assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
   });
 });
 
@@ -645,7 +650,7 @@ describe("an input that changed only by new untracked paths after every stage pa
     });
   });
 
-  test("new untracked paths alone are reported as such, not as a pass or an input change", async () => {
+  test("new untracked paths retain the landing debris lane and preserve passing stages", async () => {
     await repository(async (root) => {
       const { runDir, result } = await run(root, writes(["debris-a.log", "a\n"], ["debris-b.log", "b\n"]));
       assert.equal(result.state, "failed");
@@ -653,16 +658,13 @@ describe("an input that changed only by new untracked paths after every stage pa
       assert.equal(result.reason, "new-untracked-only");
       assert.notEqual(result.after, result.before);
       assert.deepEqual(result.stages.map(({ state, code }) => [state, code]), [["passed", 0]]);
-      assert.deepEqual(result.inputCheck, { outcome: "new-untracked-only", newPaths: ["debris-a.log", "debris-b.log"],
-        totalNewPaths: 2, omittedPaths: 0, admittedInput: join(runDir, "admitted-input.json"),
-        afterInput: join(runDir, "after-input.json") });
-      assert.equal(json(join(runDir, "admitted-input.json")).fingerprint, result.before);
-      assert.equal(json(join(runDir, "after-input.json")).fingerprint, result.after);
+      assert.deepEqual(result.inputCheck.newPaths, ["debris-a.log", "debris-b.log"]);
+      assert.deepEqual(result.sourceIdBefore.changes, []);
+      assert.deepEqual(result.sourceIdAfter.changes.map(({ path }) => path), ["debris-a.log", "debris-b.log"]);
       const summary = await summarize(runDir);
       assert.match(summary, /^FAIL .* exit=1$/mu);
       assert.match(summary, /^reason: new-untracked-only$/mu);
       assert.match(summary, /^input: mismatch;/mu);
-      assert.match(summary, /^input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=2 listed=2 omitted=0;/mu);
       const request = json(join(runDir, "request.json"));
       assert.deepEqual(completionMetadata(request, result).blocker, { reason: "runner-failed", exit: 1 });
       // A result that claims a pass names the same classification as its reason.
@@ -671,19 +673,18 @@ describe("an input that changed only by new untracked paths after every stage pa
     });
   });
 
-  test("more new untracked paths than the listing holds are counted, with the rest left out", async () => {
+  test("the complete source identity retains all changed paths within its aggregate bound", async () => {
     await repository(async (root) => {
       const source = "for (let i = 0; i < 201; i += 1) require('node:fs').writeFileSync('debris-' + String(i).padStart(3, '0') + '.log', 'x');";
       const { runDir, result } = await run(root, source);
       assert.equal(result.reason, "new-untracked-only");
-      assert.equal(result.inputCheck.totalNewPaths, 201);
       assert.equal(result.inputCheck.newPaths.length, 200);
       assert.equal(result.inputCheck.omittedPaths, 1);
-      assert.equal(result.inputCheck.newPaths[0], "debris-000.log");
-      assert.equal(result.inputCheck.newPaths.at(-1), "debris-199.log");
-      // The complete captures still hold every path.
-      assert.equal(json(join(runDir, "after-input.json")).untracked.length, 201);
-      assert.match(await summarize(runDir), /^input-change: new-untracked-only; .* total=201 listed=200 omitted=1;/mu);
+      assert.equal(result.sourceIdAfter.changes.length, 201);
+      assert.equal(result.sourceIdAfter.changes[0].path, "debris-000.log");
+      assert.equal(result.sourceIdAfter.changes.at(-1).path, "debris-200.log");
+      assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
+      assert.match(await summarize(runDir), /^reason: new-untracked-only$/mu);
     });
   });
 
@@ -706,7 +707,7 @@ describe("an input that changed only by new untracked paths after every stage pa
         const { runDir, result } = await run(root, source, setup);
         assert.equal(result.reason, "input-changed");
         assert.equal(result.inputCheck, undefined);
-        assert.match(result.error, /^input drift: results do not validate the current source\n/u);
+        assert.match(result.error, /source_id changed during execution|input drift: results do not validate the current source/u);
         const request = json(join(runDir, "request.json"));
         assert.deepEqual(completionMetadata(request, result).blocker, { reason: "runner-failed", exit: 1 });
         assert.equal(completionMetadata(request, { ...result, state: "passed" }).blocker.basis, "input-changed");

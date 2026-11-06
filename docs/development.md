@@ -51,13 +51,13 @@ This project tracks its work in Engram — the fourteen agent words, documented 
 ## Read-only committed-input command
 
 `engram source --root <absolute-worktree> --json` observes the shared
-committed-input predicate without selecting a project, opening a store or
-creating a session. It uses the root commit, recursive submodule pins,
-root/child filter guards and one root Git status. It neither lists the whole
+source state without selecting a project, opening a store or
+creating a session. It uses the root commit, recursive submodule HEADs,
+root/child filter guards and root Git status. It neither lists the whole
 index nor fetches, initializes or repairs repositories.
 
 The JSON v1 envelope contains `version`, `status`, `root`, `source`, `tree`,
-`entries` and `refusal`. Status is `clean`, `not_clean` or `unavailable`.
+`entries`, `refusal` and `source_id`. Status is `clean`, `not_clean` or `unavailable`.
 Completed supported measurements contain the canonical root, one
 `git-commit:<full-SHA-1>` source and that commit's tree. On Windows, `root`
 uses the plain drive or UNC form (`C:\...` or `\\server\share\...`), without
@@ -66,10 +66,43 @@ same NUL-delimited porcelain status and contain `status`, `path` and, for a
 rename or copy, `origin`. They are changed entries, not a complete file list.
 An unavailable measurement has no usable source/tree, empty entries and a
 bounded refusal with `code` and `message`; its root is present when resolved.
-Existing named child-dirt refusals remain unavailable rather than silently
-changing live-currency error semantics. Off-pin and uninitialized children
-deterministically return `unavailable` / `input_unavailable`, with the child
-and cause in the message and no usable source/tree or entry data.
+The `source` string is commit provenance. The complete comparison value is
+`source_id`: `{commit, tree, submodules, changes}`. Every key is required.
+Each child is `{path, commit, changes}`, with its actual HEAD and a root-relative
+path; expected pins are implied by the committed parent trees. Dirty and
+off-pin children are described, including nested children. Uninitialized or
+conflicted children are unavailable. A failed capture has `source_id: null`,
+with no partial child or file identity.
+
+Each change is `{path, status, origin, blob, mode}`, with all keys required.
+Paths are relative to the owning repository. `origin` is a rename/copy origin,
+otherwise null. Present regular files use a non-writing
+`git hash-object --stdin-paths` batch over only the reported changed paths in
+that repository, with Git's clean/EOL normalization. Deleted paths have null
+blob and mode. A staged deletion whose file still exists hashes that current
+file, retaining its deletion status; distinct porcelain records for one path
+are preserved. A rename is one record for the new path and origin. Ignored
+files are excluded. Gitlinks are represented by child HEADs and child deltas,
+rather than ordinary root file records.
+
+Mode is a string: `100644` for regular files, `100755` for an executable on Unix,
+or `120000` for a symlink. Windows regular files use `100644`; equality is measured
+on the same host. Symlinks use the Git blob id of their link text, computed in
+memory without following the target. Newline, carriage-return and non-UTF-8
+changed paths are unavailable. Each regular hash input is prefixed with `./`
+so a leading quote cannot select Git's quoted-path decoder.
+An untracked nested repository that is not a registered submodule is also
+unavailable: Git reports its directory as one untracked path, which has no
+supported file or symlink blob. Register it as a submodule or keep it outside
+the inspected input through the repository's ignore policy. The reader never
+traverses that directory or hashes its `.git`. Since every launcher run requires
+a usable source observation, this refusal applies to focused and plain runs too.
+
+Children are ordered by path UTF-8 bytes. Changes are ordered by path, status
+and origin UTF-8 bytes (null origin precedes a string). The object includes clean
+children with empty changes, while extra status calls recurse only into dirty
+or off-pin children. Status, HEAD and changed-path metadata checks refuse
+detected drift during capture. They do not establish an atomic snapshot.
 
 The closed v1 refusal-code set is `input_unavailable`, `deadline`,
 `output_limit`. The bounded message names the root, child, configured filter,
@@ -92,7 +125,7 @@ removed and the existing isolated settings retained.
 On Windows every reader query sets `core.longpaths=true` for that invocation,
 including inherited submodule helpers. This fixes refusal of otherwise clean
 deep worktrees such as Phoenix's Roslyn child, without writing user or repository
-configuration; dirty children still refuse.
+configuration.
 Every reader query requires complete, empty stderr even when Git exits 0;
 diagnostic or partial stderr refuses with a bounded named cause rather than
 yielding usable input. The existing byte and deadline refusals remain distinct.
@@ -358,6 +391,13 @@ reads no complete file or index list. Edits hidden by assume-unchanged or
 skip-worktree flags can be missed by Git status. Repository ignores and local
 excludes apply; global ignore and attribute files and inherited Git redirection
 do not. The separate schema-1 run fingerprint and its file hashing are unchanged.
+Every run also records the complete owner value in `request.sourceId` and the
+frozen completion request, with `results.sourceIdBefore` and `sourceIdAfter`.
+The adapter validates the closed additive v1 shape and compares the entire
+object structurally at capture, worker admission and completion. An unchanged
+dirty plain run is supported; a changed or unavailable source value refuses
+eligibility while preserving the actual stage results. This adds no consumer
+filesystem traversal or second source hash.
 
 The owner executable defaults to `$CARGO_HOME/bin/engram` (`engram.exe` on
 Windows). Only when `CARGO_HOME` is unset does it use `~/.cargo/bin`. Set
@@ -409,16 +449,46 @@ machine configuration or system temp folder.
 
 After execution, `results.input` keeps the actual stage outcome separate from
 input eligibility: `clean`, `debris_pending_disposition`, or `input_changed`.
-Only clean input, a matching after fingerprint and passing stages set
+Only clean input, an unchanged full source identity, a matching after fingerprint and passing stages set
 `eligible: true`; missing post-run input never does. An ineligible run exits
-nonzero and its machine record says `overall=failed`, even when `results.state`
-and every stage remain `passed`. Its reason names `input-changed`,
-`new-untracked-only` for debris, or `input-unverified` when capture was unsafe.
-Debris still needs the integration owner's existing
-disposition, and eligibility is not host verification or landing approval.
+nonzero and its machine record says `overall=failed`, even when every stage
+passed. Its reason names `input-changed`, or `input-unverified` when capture was
+unsafe. The existing landing exception remains `new-untracked-only`: root
+commit/tree, child commits and every earlier source record are unchanged, and
+the only new records are `??` paths. The separate fingerprint classifier must
+also confirm those same new paths, unchanged tracked/index input and unchanged
+pre-existing untracked and ignore/attribute inputs. Every stage must pass.
+Such a run remains failed and ineligible pending the integration owner's recorded
+disposition that these paths are non-input debris; it grants no EO equality
+credit. Other source differences never enter this lane. Before/after identities
+remain complete in `results.json`, with a bounded changed-path/child summary in
+the mismatch diagnostic.
+Eligibility is not host verification or landing approval.
 The host reads the shared committed-input shape; the additional tree field
 is launcher provenance, not an independent host tree validation. Detached
 workers, recovery and notification retries retain the admitted input lane.
+
+The extended JSON v1 contract requires a coordinated owner/launcher cutover.
+For this change's gate, first use a clean checkout of the last shipped launcher
+with its compatible owner to build the candidate binary by absolute
+`--manifest-path`, writing the build target outside the inspected source root.
+This bootstrap is operational setup, not candidate validation. Then run the
+candidate's own launcher with an absolute `ENGRAM_SOURCE_BINARY` pointing to
+that exact candidate build. Tests select that candidate build too. Admission
+never builds an owner or searches PATH; unavailable source observations refuse
+focused as well as full runs.
+
+Land and install the new owner in the agreed window with the TermAl consumer
+change. Refresh each remote runner's repository-local pin to the landed owner
+and record its build and executable identity. Preserve the previous compatible
+pin for already admitted runs and older seven-field launchers/test refs: those
+launchers reject the added field, while this launcher requires it. Give each
+such run its explicit compatible immutable owner path through completion;
+finish or stop any run using a mutable installed path before replacing that
+binary. Do not change an admitted run's saved owner path. No compatibility shim
+or automatic fallback is provided. The landing record names the install order,
+runner pin updates and remaining older candidates; retire each old pin when its
+last recorded run or consumer need ends.
 
 `node scripts/test-launcher.mjs full --request-message-id MESSAGE_ID` selects
 one retained native or relayed FULL request under TermAl. Native

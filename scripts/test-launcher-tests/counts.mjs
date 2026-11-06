@@ -762,7 +762,7 @@ test("any other refusal and a fingerprint that cannot be checked each have their
     const unreadable = await recordOf(root, [{ name: "breaks-git", kind: "test", command: process.execPath, args: ["-e",
       `require('node:fs').writeFileSync('.git/HEAD', 'not a ref\\n'); process.stdout.write(${JSON.stringify(libtest(2, 0, 0, 0))})`] }]);
     assert.equal(unreadable.record.state, "failed");
-    assert.equal(unreadable.record.reason, "fingerprint-check-failed");
+    assert.equal(unreadable.record.reason, "input-unverified");
     assert.deepEqual(unreadable.record.stages.map(({ state, executed }) => [state, executed]), [["passed", "2"]]);
   });
 });

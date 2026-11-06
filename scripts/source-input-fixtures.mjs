@@ -1,7 +1,7 @@
 // Shared real-Git conformance fixtures for the owner command and its adapters.
 // The caller owns a fresh parent directory and its cleanup. No production
 // admission logic lives here; expected verdicts describe the agreed contract.
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -11,30 +11,38 @@ export const sourceCases = [
   { id: "clean", layout: "plain", status: "clean" },
   { id: "root-dirty", layout: "plain", status: "not_clean" },
   { id: "root-untracked", layout: "plain", status: "not_clean" },
+  { id: "root-delete", layout: "plain", status: "not_clean" },
+  { id: "staged-delete-present", layout: "plain", status: "not_clean" },
+  { id: "root-mode", layout: "plain", status: "not_clean", skipOn: ["win32"] },
+  { id: "root-symlink", layout: "plain", status: "not_clean", skipOn: ["win32"] },
+  { id: "root-leading-quote", layout: "plain", status: "not_clean", skipOn: ["win32"] },
+  { id: "root-newline", layout: "plain", status: "unavailable", skipOn: ["win32"] },
   { id: "root-ignored", layout: "plain", status: "clean" },
   { id: "rename", layout: "plain", status: "not_clean" },
   { id: "root-filter", layout: "plain", status: "unavailable" },
   { id: "root-assume-unchanged", layout: "plain", status: "clean" },
   { id: "root-skip-worktree", layout: "plain", status: "clean" },
   { id: "child-clean", layout: "child", status: "clean" },
-  { id: "child-dirty", layout: "child", status: "unavailable" },
-  { id: "child-untracked", layout: "child", status: "unavailable" },
+  { id: "child-dirty", layout: "child", status: "not_clean" },
+  { id: "child-untracked", layout: "child", status: "not_clean" },
   { id: "child-ignored", layout: "child", status: "clean" },
-  { id: "child-off-pin", layout: "child", status: "unavailable" },
+  { id: "child-off-pin", layout: "child", status: "not_clean" },
+  { id: "child-off-pin-dirty", layout: "child", status: "not_clean" },
   { id: "child-uninitialized", layout: "child", status: "unavailable" },
   { id: "child-filter", layout: "child", status: "unavailable" },
-  { id: "child-hide-untracked", layout: "child", status: "unavailable" },
+  { id: "child-hide-untracked", layout: "child", status: "not_clean" },
   { id: "child-assume-unchanged", layout: "child", status: "clean" },
   { id: "child-skip-worktree", layout: "child", status: "clean" },
   { id: "nested-clean", layout: "nested", status: "clean" },
-  { id: "nested-untracked", layout: "nested", status: "unavailable" },
+  { id: "nested-untracked", layout: "nested", status: "not_clean" },
+  { id: "nested-off-pin", layout: "nested", status: "not_clean" },
   { id: "child-long-path-clean", layout: "child", status: "clean" },
-  { id: "child-long-path-dirty", layout: "child", status: "unavailable" },
+  { id: "child-long-path-dirty", layout: "child", status: "not_clean" },
   { id: "root-autocrlf-clean", layout: "plain", status: "clean" },
   { id: "root-autocrlf-dirty", layout: "plain", status: "not_clean" },
 ];
 
-function git(root, args, machineEnvironment) {
+function git(root, args, machineEnvironment, input) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.toUpperCase().startsWith("GIT_")) delete env[key];
   const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
@@ -44,7 +52,7 @@ function git(root, args, machineEnvironment) {
   const result = spawnSync("git", ["-c", "user.name=Source Fixture", "-c", "user.email=fixture@example.invalid",
     ...(!machineEnvironment ? ["-c", "core.autocrlf=false"] : []),
     "-c", "core.longpaths=true", "-c", `core.hooksPath=${nullDevice}`, "-c", "commit.gpgsign=false",
-    "-c", "protocol.file.allow=always", ...args], { cwd: root, env, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
+    "-c", "protocol.file.allow=always", ...args], { cwd: root, env, input, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`fixture git ${args.join(" ")}: ${result.error ?? result.stderr}`);
   return result.stdout.trim();
 }
@@ -115,6 +123,16 @@ export function createSourceFixture(parent, id) {
     case "root-dirty": change(root); break;
     case "root-autocrlf-dirty": writeFileSync(join(root, "tracked file.txt"), "modified CRLF content\r\n"); break;
     case "root-untracked": untracked(root); break;
+    case "root-delete": unlinkSync(join(root, "tracked file.txt")); break;
+    case "staged-delete-present": git(root, ["rm", "--cached", "--", "tracked file.txt"]); break;
+    case "root-mode":
+      git(root, ["config", "core.fileMode", "true"]);
+      chmodSync(join(root, "tracked file.txt"), 0o755); break;
+    case "root-symlink":
+      ignored(root);
+      symlinkSync("ignored/result.txt", join(root, "link")); break;
+    case "root-leading-quote": writeFileSync(join(root, '\"quoted.txt'), "quoted\n"); break;
+    case "root-newline": writeFileSync(join(root, "line\nbreak.txt"), "newline\n"); break;
     case "root-ignored": ignored(root); break;
     case "rename": git(root, ["mv", "tracked file.txt", "renamed file.txt"]); break;
     case "root-filter": git(root, ["config", "filter.fixture.clean", "must-not-run"]); break;
@@ -123,6 +141,9 @@ export function createSourceFixture(parent, id) {
     case "child-untracked": untracked(child); break;
     case "child-ignored": ignored(child); break;
     case "child-off-pin": git(child, ["commit", "--no-gpg-sign", "--allow-empty", "-qm", "Move child HEAD"]); break;
+    case "child-off-pin-dirty":
+      git(child, ["commit", "--no-gpg-sign", "--allow-empty", "-qm", "Move child HEAD"]);
+      change(child); break;
     case "child-uninitialized": git(root, ["submodule", "deinit", "-f", "--", childName]); break;
     case "child-filter": git(child, ["config", "filter.fixture.process", "must-not-run"]); break;
     case "child-hide-untracked":
@@ -130,6 +151,7 @@ export function createSourceFixture(parent, id) {
       git(child, ["config", "diff.ignoreSubmodules", "all"]);
       untracked(child); break;
     case "nested-untracked": untracked(nested); break;
+    case "nested-off-pin": git(nested, ["commit", "--no-gpg-sign", "--allow-empty", "-qm", "Move nested HEAD"]); break;
     case "root-assume-unchanged": case "root-skip-worktree":
     case "child-assume-unchanged": case "child-skip-worktree": {
       const where = id.startsWith("child-") ? child : root;
@@ -138,7 +160,34 @@ export function createSourceFixture(parent, id) {
     }
     default: break;
   }
-  return { ...scenario, root, child, nested, commit, tree, longTracked };
+  const changes = [], childChanges = [], nestedChanges = [];
+  const record = (where, path, status, origin = null, mode = "100644") => ({ path, status, origin,
+    blob: git(where, ["-c", `core.autocrlf=${id.startsWith("root-autocrlf-") ? "true" : "false"}`,
+      "hash-object", "--", path]), mode });
+  switch (id) {
+    case "root-dirty": case "root-autocrlf-dirty": changes.push(record(root, "tracked file.txt", " M")); break;
+    case "root-untracked": changes.push(record(root, "new file.txt", "??")); break;
+    case "root-delete": changes.push({ path: "tracked file.txt", status: " D", origin: null, blob: null, mode: null }); break;
+    case "staged-delete-present":
+      changes.push(record(root, "tracked file.txt", "??"), record(root, "tracked file.txt", "D ")); break;
+    case "root-mode": changes.push(record(root, "tracked file.txt", " M", null, "100755")); break;
+    case "root-symlink": changes.push({ path: "link", status: "??", origin: null,
+      blob: git(root, ["hash-object", "--stdin"], undefined, "ignored/result.txt"), mode: "120000" }); break;
+    case "root-leading-quote": changes.push(record(root, '\"quoted.txt', "??")); break;
+    case "rename": changes.push(record(root, "renamed file.txt", "R ", "tracked file.txt")); break;
+    case "child-dirty": case "child-off-pin-dirty": childChanges.push(record(child, "tracked file.txt", " M")); break;
+    case "child-long-path-dirty": childChanges.push(record(child, longTracked.replaceAll("\\", "/"), " M")); break;
+    case "child-untracked": case "child-hide-untracked": childChanges.push(record(child, "new file.txt", "??")); break;
+    case "nested-untracked": nestedChanges.push(record(nested, "new file.txt", "??")); break;
+    default: break;
+  }
+  const submodules = [];
+  if (scenario.status !== "unavailable" && scenario.layout !== "plain") {
+    submodules.push({ path: childName, commit: git(child, ["rev-parse", "HEAD"]), changes: childChanges });
+    if (scenario.layout === "nested") submodules.push({ path: `${childName}/n`, commit: git(nested, ["rev-parse", "HEAD"]), changes: nestedChanges });
+  }
+  return { ...scenario, root, child, childName, nested, commit, tree, longTracked,
+    sourceId: scenario.status === "unavailable" ? null : { commit, tree, submodules, changes } };
 }
 
 // Machine policy is opt-in for callers: pass the returned environment to the
@@ -157,9 +206,9 @@ export const machineEolCases = [
   { id: "root-global-false-child-true", autocrlf: "false", child: true, childLocal: "true" },
   { id: "nested-global-true", autocrlf: "true", nested: true },
   { id: "global-long-path-clean", autocrlf: "true", child: true, longPath: true },
-  { id: "global-long-path-dirty", autocrlf: "true", child: true, longPath: true, dirty: "long-child", status: "unavailable" },
+  { id: "global-long-path-dirty", autocrlf: "true", child: true, longPath: true, dirty: "long-child", status: "not_clean" },
   { id: "global-root-content-change", autocrlf: "true", dirty: "root", status: "not_clean" },
-  { id: "global-child-content-change", autocrlf: "true", child: true, dirty: "child", status: "unavailable" },
+  { id: "global-child-content-change", autocrlf: "true", child: true, dirty: "child", status: "not_clean" },
   { id: "global-context-mismatch", autocrlf: "true", child: true, mismatch: true, status: "unavailable" },
   { id: "global-invalid", autocrlf: "true", invalid: true, status: "unavailable" },
   { id: "global-scratch-inside-root", autocrlf: "true", insideScratch: true, status: "unavailable" },
@@ -224,6 +273,9 @@ export function createMachineEolFixture(parent, id) {
   if (scenario.dirty === "long-child") writeFileSync(join(fixture.child, fixture.longTracked), "changed actual long content\r\n");
   else if (scenario.dirty) writeFileSync(join(scenario.dirty === "child" ? fixture.child : fixture.root,
     "tracked file.txt"), "changed actual content\r\n");
+  const dirtyPath = scenario.dirty === "long-child" ? fixture.longTracked.replaceAll("\\", "/") : "tracked file.txt";
+  const expectedDirtyBlob = scenario.dirty ? git(scenario.dirty === "root" ? fixture.root : fixture.child,
+    ["-c", "core.safecrlf=false", "hash-object", "--", dirtyPath], environment) : undefined;
   let contextualFallback;
   if (scenario.mismatch) {
     const childAdmin = git(fixture.child, ["rev-parse", "--absolute-git-dir"]).replaceAll("\\", "/");
@@ -249,5 +301,6 @@ export function createMachineEolFixture(parent, id) {
     Object.assign(environment, { TMP: inside, TEMP: inside, TMPDIR: inside });
   }
   return { ...fixture, ...scenario, environment, scratch, ordinaryStatus, isolatedStatus, checkoutBytes, contextualFallback, longCheckoutBytes,
+    dirtyPath, expectedDirtyBlob,
     scratchEntries: () => readdirSync(scratch) };
 }

@@ -30,6 +30,8 @@ test("registration confirms the canonical paths of a mixed-case checkout", async
     git(["config", "core.autocrlf", "false"], checkout);
     writeFileSync(join(checkout, "tracked.txt"), "baseline\n");
     git(["add", "tracked.txt"], checkout);
+    git(["-c", "user.name=Engram Test", "-c", "user.email=test@example.invalid",
+      "commit", "--quiet", "--no-gpg-sign", "-m", "fixture baseline"], checkout);
     const canonicalRoot = realpathSync.native(checkout);
     assert.ok(canonicalRoot.endsWith("UpperCaseCheckout"));
     let request, directory;

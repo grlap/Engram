@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { captureCommitInputStatus, captureFingerprint, classifyInputChange, fingerprintLimitations, isolatedGitEnvironment, sourceBinaryPath } from "./review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, captureFingerprint, classifyInputChange, classifySourceIdChange, fingerprintLimitations, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "./review-freeze-fingerprint.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registerOwnRunWait, ownRunWaitLine, registrationConfirmed, registrationLine,
   validateRequestMessageSelection } from "./test-run-registration.mjs";
@@ -43,9 +43,9 @@ function validateLaunchMetadata({ item, nextTransition }) {
 // Saved once before admission, for every completion projection. The execution
 // request remains separate; stages may rewrite it without changing this intent.
 function publishCompletionRequest(runDir, request) {
-  const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration, detached } = request;
+  const { runId, root, owner, started, expectedFingerprint, sourceId, item, nextTransition, notifyTo, registration, detached } = request;
   save(join(runDir, "completion.request.json"), {
-    runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration, detached,
+    runId, root, owner, started, expectedFingerprint, sourceId, item, nextTransition, notifyTo, registration, detached,
     ...(request.sourceBinary ? { sourceBinary: request.sourceBinary } : {}),
     ...(request.input !== undefined ? { input: request.input, commit: request.commit, tree: request.tree } : {}),
     ...(request.requestMessageId !== undefined ? { requestMessageId: request.requestMessageId, full: request.full } : {}),
@@ -64,8 +64,9 @@ function publishLaunchRequest(runDir, request) {
 }
 function completionRequest(runDir) {
   const snapshot = join(runDir, "completion.request.json");
-  // Legacy runs have no admitted snapshot. A damaged new snapshot must not
-  // fall back to a mutable request and silently change the launch intent.
+  // Historical completion projection can read a pre-snapshot request. New
+  // execution admission separately requires the immutable admitted snapshot.
+  // A damaged snapshot never falls back to the mutable execution request.
   return readJson(existsSync(snapshot) ? snapshot : join(runDir, "request.json"));
 }
 
@@ -683,10 +684,8 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   const everyMs = heartbeatEveryMs(env);
   let selectionError;
   let sourceBinary;
-  if (runInput === "commit" || selectInput) {
-    try { sourceBinary = sourceBinaryPath(env); }
-    catch (error) { selectionError = error; }
-  }
+  try { sourceBinary = sourceBinaryPath(env); }
+  catch (error) { selectionError = error; }
   const sourceEnv = sourceBinary ? { ...env, ENGRAM_SOURCE_BINARY: sourceBinary } : env;
   if (selectInput) {
     try { if (!selectionError) runInput = selectDefaultInput(root, sourceEnv); }
@@ -739,9 +738,10 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   }
   try {
     if (selectionError) throw selectionError;
+    const sourceBefore = await commitInputStatus(root, sourceEnv);
     let committed;
     if (request.input === "commit") {
-      committed = await commitInputStatus(root, sourceEnv);
+      committed = sourceBefore;
       if (!commitInputStatusClean(committed)) {
         const result = readJson(join(runDir, "results.json"));
         Object.assign(result, { state: "failed", exitCode: 1, reason: "input-not-clean", ended: new Date().toISOString(),
@@ -753,8 +753,12 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
       }
     }
     const input = captureFingerprint(root, committed ? isolatedGitEnvironment(env) : process.env);
+    const again = await commitInputStatus(root, sourceEnv);
+    if (!sourceIdsEqual(sourceBefore.sourceId, again.sourceId)) {
+      throw new Error("source_id changed while input was captured; no stage ran");
+    }
+    request.sourceId = sourceBefore.sourceId;
     if (committed) {
-      const again = await commitInputStatus(root, sourceEnv);
       if (input.head !== committed.commit || again.commit !== committed.commit || again.tree !== committed.tree) {
         throw new Error("committed-input run refused: HEAD moved while input was captured; no stage ran");
       }
@@ -768,6 +772,7 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     request.expectedFingerprint = input.fingerprint;
     // The capture blocks the event loop; beat once it returns.
     const created = readJson(join(runDir, "results.json"));
+    created.sourceIdBefore = sourceBefore.sourceId;
     created.heartbeat.at = new Date().toISOString();
     save(join(runDir, "results.json"), created);
   } catch (error) {
@@ -900,6 +905,7 @@ export function commitInputOutcome(commit, after) {
 
 export function commitInputEligible(result) {
   return result.input?.outcome === "clean" && result.state === "passed"
+    && sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter)
     && typeof result.expectedFingerprint === "string" && result.expectedFingerprint.length > 0
     && result.after === result.expectedFingerprint;
 }
@@ -1030,11 +1036,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     // and initial result, then recheck the same host GET before probes or stages.
     let admitted;
     try { admitted = readJson(join(runDir, "completion.request.json")); }
-    catch { /* Legacy runs retain their fallback when no selection was saved. */ }
-    if ((admitted && request.sourceBinary !== admitted.sourceBinary)
-        || (!admitted && request.input === "commit" && request.sourceBinary !== undefined)) {
-      throw because("input-capture-failed", new Error("source owner differs from the admitted executable; no stage ran"));
-    }
+    catch { /* Guards below report a missing or unreadable admitted snapshot. */ }
     const selected = request.requestMessageId !== undefined || result.requestMessageId !== undefined
       || admitted?.requestMessageId !== undefined;
     let registeredRequest = request;
@@ -1046,6 +1048,13 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
         throw because("request-selection-changed", new Error("selected request differs from its admitted intent; no stage ran"));
       }
       registeredRequest = { ...request, registration: admitted.registration };
+    }
+    if (!admitted) {
+      throw because("input-capture-failed", new Error("admitted source snapshot is missing or unreadable; no stage ran"));
+    }
+    if (request.sourceBinary !== admitted.sourceBinary
+        || !sourceIdsEqual(request.sourceId, admitted.sourceId)) {
+      throw because("input-capture-failed", new Error("source owner or identity differs from the admitted snapshot; no stage ran"));
     }
     if (request.detached === true || selected) {
       result.registration = await confirmDetachedRegistration(registeredRequest, runDir, env);
@@ -1094,13 +1103,18 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
         await probe(`cargo-${index}`, cargo, args);
       }
     }
+    let sourceBefore;
+    try { sourceBefore = captureCommitInputStatus(request.root, childEnv); }
+    catch (error) { throw because("input-capture-failed", error); }
+    if (!sourceIdsEqual(request.sourceId, sourceBefore.sourceId)) {
+      throw because("input-changed", new Error("source_id changed before execution; no stages run\n"
+        + sourceIdDifference(request.sourceId, sourceBefore.sourceId)));
+    }
+    result.sourceIdBefore = sourceBefore.sourceId;
     if (request.input === "commit") {
-      let status;
-      try { status = captureCommitInputStatus(request.root, childEnv); }
-      catch (error) { throw because("input-capture-failed", error); }
-      if (!commitInputStatusClean(status) || status.commit !== request.commit || status.tree !== request.tree
+      if (!commitInputStatusClean(sourceBefore) || sourceBefore.commit !== request.commit || sourceBefore.tree !== request.tree
           || result.input?.kind !== "commit" || result.input.cleanBefore !== true
-          || result.input.commit !== status.commit || result.input.tree !== status.tree) {
+          || result.input.commit !== sourceBefore.commit || result.input.tree !== sourceBefore.tree) {
         throw because("input-changed", new Error("committed-input worker has no matching clean commit; no stages run"));
       }
     }
@@ -1141,28 +1155,53 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       if (entry.state === "failed") break;
     }
     let status, sourceRefusal;
-    if (request.input === "commit") {
-      try { status = captureCommitInputStatus(request.root, childEnv); }
-      catch (error) {
-        sourceRefusal = error.refusal ?? { code: "input_unavailable", message: error.message.slice(0, 4096) };
-      }
+    try { status = captureCommitInputStatus(request.root, childEnv); }
+    catch (error) {
+      sourceRefusal = error.refusal ?? { code: "input_unavailable", message: error.message.slice(0, 4096) };
     }
+    result.sourceIdAfter = sourceRefusal ? null : status.sourceId;
     // An unavailable owner observation cannot authorize a fingerprint that
     // might execute newly configured filters. Keep actual stage results.
     const after = sourceRefusal ? null
-      : currentCapture(request.root, status ? isolatedGitEnvironment(childEnv) : process.env);
+      : currentCapture(request.root, request.input === "commit" ? isolatedGitEnvironment(childEnv) : process.env);
     if (after) result.after = after.fingerprint;
     if (request.input === "commit") {
       result.input.after = sourceRefusal ? { clean: false, refusal: sourceRefusal }
         : { commit: status.commit, tree: status.tree, clean: commitInputStatusClean(status), paths: status.entries };
       result.input.outcome = sourceRefusal ? "input_changed" : commitInputOutcome(result.input.commit, status);
       if (result.input.outcome === "debris_pending_disposition") result.input.disposition = null;
-    } else if (result.after !== result.expectedFingerprint) throw afterRunDrift(runDir, result, admittedInput, after, request.root);
+    }
+    const sourceChange = classifySourceIdChange(result.sourceIdBefore, result.sourceIdAfter);
+    const fingerprintChange = after ? classifyInputChange(admittedInput, after) : null;
+    const addedSourcePaths = new Set(sourceChange.newPaths);
+    const onlyNewUntracked = result.stages.every((stage) => stage.state === "passed")
+      && admittedInput.fingerprint === result.expectedFingerprint
+      && sourceChange.outcome === "new-untracked-only" && fingerprintChange?.outcome === "new-untracked-only"
+      && sourceChange.newPaths.length === fingerprintChange.newPaths.length
+      && fingerprintChange.newPaths.every((path) => addedSourcePaths.has(path));
+    // Keep the governed landing-debris lane, independently of EO's full-value
+    // equality rule. Both captures must agree that only new untracked paths
+    // appeared. A pre-existing change, rule edit or failed stage cannot qualify.
+    if (request.input === "commit" && !sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter)) {
+      result.input.outcome = onlyNewUntracked ? "debris_pending_disposition" : "input_changed";
+      if (onlyNewUntracked) result.input.disposition = null;
+      else delete result.input.disposition;
+    }
+    if (!sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter) && !onlyNewUntracked) {
+      throw because(sourceRefusal ? "input-unverified" : "input-changed",
+        new Error(sourceRefusal ? `source_id unavailable after execution: ${sourceRefusal.message}`
+          : "source_id changed during execution; stage results do not validate the current source\n"
+            + sourceIdDifference(result.sourceIdBefore, result.sourceIdAfter)));
+    }
+    if (request.input !== "commit" && result.after !== result.expectedFingerprint) {
+      throw afterRunDrift(runDir, result, admittedInput, after, request.root);
+    }
     result.state = result.stages.every((stage) => stage.state === "passed") ? "passed" : "failed";
     result.exitCode = result.stages.find((stage) => stage.state === "failed")?.code || (result.state === "passed" ? 0 : 1);
     if (result.input?.kind === "commit") {
       result.input.eligible = commitInputEligible(result);
       if (!result.input.eligible && result.state === "passed") {
+        result.state = "failed";
         result.exitCode = 1;
         result.reason = result.input.outcome === "debris_pending_disposition" ? "new-untracked-only"
           : result.after ? "input-changed" : "input-unverified";

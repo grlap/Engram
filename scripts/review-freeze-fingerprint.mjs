@@ -292,6 +292,119 @@ const fieldsExactly = (value, fields) => value !== null && typeof value === "obj
   && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
 const sourceText = (value) => typeof value === "string" && value.length > 0 && !value.includes("\0")
   && Buffer.from(value).toString("utf8") === value;
+const sourceOid = (value) => typeof value === "string" && /^[a-f0-9]{40}$/u.test(value);
+const sourcePath = (value) => sourceText(value) && !isAbsolute(value) && !/[\r\n]/u.test(value)
+  && value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+const byteOrder = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
+const changeOrder = (a, b) => byteOrder(a.path, b.path) || byteOrder(a.status, b.status)
+  || byteOrder(a.origin ?? "", b.origin ?? "");
+
+function sourceChanges(changes) {
+  if (!Array.isArray(changes)) return null;
+  const result = [];
+  for (const change of changes) {
+    if (!fieldsExactly(change, ["path", "status", "origin", "blob", "mode"])
+        || !sourcePath(change.path) || typeof change.status !== "string"
+        || !/^[ MADRCUT?!]{2}$/u.test(change.status) || ["  ", "!!"].includes(change.status)
+        || (/[RC]/u.test(change.status) ? !sourcePath(change.origin) : change.origin !== null)
+        || (change.blob === null ? change.mode !== null || !change.status.includes("D")
+          : !sourceOid(change.blob) || !["100644", "100755", "120000"].includes(change.mode))) return null;
+    if (result.length && changeOrder(result.at(-1), change) >= 0) return null;
+    result.push({ path: change.path, status: change.status, origin: change.origin, blob: change.blob, mode: change.mode });
+  }
+  return result;
+}
+
+// Rebuild only object key order. Array/path order is validated, never repaired.
+// This compares the owner's complete value without introducing another hash.
+function sourceValue(value) {
+  if (!fieldsExactly(value, ["commit", "tree", "submodules", "changes"])
+      || !sourceOid(value.commit) || !sourceOid(value.tree) || !Array.isArray(value.submodules)) return null;
+  const changes = sourceChanges(value.changes);
+  if (changes === null) return null;
+  const submodules = [];
+  for (const child of value.submodules) {
+    if (!fieldsExactly(child, ["path", "commit", "changes"]) || !sourcePath(child.path) || !sourceOid(child.commit)
+        || (submodules.length && byteOrder(submodules.at(-1).path, child.path) >= 0)) return null;
+    const local = sourceChanges(child.changes);
+    if (local === null) return null;
+    submodules.push({ path: child.path, commit: child.commit, changes: local });
+  }
+  return { commit: value.commit, tree: value.tree, submodules, changes };
+}
+
+export function sourceIdsEqual(before, after) {
+  const a = sourceValue(before), b = sourceValue(after);
+  return a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b);
+}
+
+// This is the landing policy's debris classification, not EO credit. Every
+// previously observed record must remain identical; only new ?? paths qualify.
+export function classifySourceIdChange(before, after) {
+  const a = sourceValue(before), b = sourceValue(after);
+  const changed = { outcome: "input-changed", newPaths: [] };
+  if (!a || !b || a.commit !== b.commit || a.tree !== b.tree
+      || a.submodules.length !== b.submodules.length) return changed;
+  const repositories = [["", a.changes, b.changes]];
+  for (let index = 0; index < a.submodules.length; index += 1) {
+    const earlier = a.submodules[index], later = b.submodules[index];
+    if (earlier.path !== later.path || earlier.commit !== later.commit) return changed;
+    repositories.push([`${earlier.path}/`, earlier.changes, later.changes]);
+  }
+  const newPaths = [];
+  const key = (entry) => JSON.stringify([entry.path, entry.status, entry.origin]);
+  for (const [prefix, earlier, later] of repositories) {
+    const remaining = new Map(later.map((entry) => [key(entry), entry]));
+    const oldPaths = new Set(earlier.map((entry) => entry.path));
+    for (const entry of earlier) {
+      const previous = remaining.get(key(entry));
+      if (!previous || JSON.stringify(previous) !== JSON.stringify(entry)) return changed;
+      remaining.delete(key(entry));
+    }
+    for (const entry of remaining.values()) {
+      if (entry.status !== "??" || oldPaths.has(entry.path)) return changed;
+      newPaths.push(prefix + entry.path);
+    }
+  }
+  return { outcome: newPaths.length ? "new-untracked-only" : "unchanged", newPaths: newPaths.sort(byteOrder) };
+}
+
+// Investigation context from the already captured values; never query Git or
+// emit the potentially large complete identities into a diagnostic.
+export function sourceIdDifference(before, after) {
+  const a = sourceValue(before), b = sourceValue(after);
+  if (!a || !b) return "source identity unavailable or malformed; inspect results.json";
+  const lines = [];
+  const add = (text) => { if (lines.length < 12) lines.push(text); };
+  if (a.commit !== b.commit) add(`root commit: ${a.commit} -> ${b.commit}`);
+  if (a.tree !== b.tree) add(`root tree: ${a.tree} -> ${b.tree}`);
+  const repositories = [["", a.changes, b.changes]];
+  const children = new Map(b.submodules.map((child) => [child.path, child]));
+  const label = (path) => JSON.stringify(path.slice(0, 160)) + (path.length > 160 ? "…" : "");
+  for (const child of a.submodules) {
+    const later = children.get(child.path);
+    if (!later) add(`child removed: ${label(child.path)}`);
+    else {
+      if (child.commit !== later.commit) add(`child ${label(child.path)} commit: ${child.commit} -> ${later.commit}`);
+      repositories.push([`${child.path}/`, child.changes, later.changes]);
+      children.delete(child.path);
+    }
+  }
+  for (const child of children.values()) add(`child added: ${label(child.path)} at ${child.commit}`);
+  const key = (entry) => JSON.stringify([entry.path, entry.status, entry.origin]);
+  for (const [prefix, earlier, later] of repositories) {
+    const remaining = new Map(later.map((entry) => [key(entry), entry]));
+    for (const entry of earlier) {
+      const next = remaining.get(key(entry));
+      if (!next || JSON.stringify(entry) !== JSON.stringify(next)) {
+        add(`${label(prefix + entry.path)} [${entry.status}]: ${entry.blob ?? "deleted"}/${entry.mode ?? "-"} -> ${next ? `${next.blob ?? "deleted"}/${next.mode ?? "-"}` : "record removed"}`);
+      }
+      remaining.delete(key(entry));
+    }
+    for (const entry of remaining.values()) add(`${label(prefix + entry.path)} [${entry.status}]: record added (${entry.blob ?? "deleted"}/${entry.mode ?? "-"})`);
+  }
+  return Buffer.from(lines.join("\n")).subarray(0, 4096).toString("utf8") + "\nComplete observations: results.json sourceIdBefore/sourceIdAfter";
+}
 
 export function captureCommitInputStatus(startDirectory = process.cwd(), sourceEnv = process.env, { run = spawnSync } = {}) {
   const binary = sourceBinaryPath(sourceEnv);
@@ -318,12 +431,13 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
     if (Buffer.byteLength(json.replace(/\n$/u, "")) > SOURCE_JSON_BYTES) throw new Error("JSON byte limit");
     observation = JSON.parse(json);
   } catch { throw unavailable("owner returned malformed, non-UTF-8 or oversized JSON"); }
-  if (!fieldsExactly(observation, ["version", "status", "root", "source", "tree", "entries", "refusal"])
+  if (!fieldsExactly(observation, ["version", "status", "root", "source", "tree", "entries", "refusal", "source_id"])
       || observation.version !== 1 || !["clean", "not_clean", "unavailable"].includes(observation.status)
       || !Array.isArray(observation.entries)) throw unavailable("owner returned an unsupported JSON v1 envelope");
   const refused = observation.status === "unavailable";
   if (refused) {
     if (result.status !== 1 || observation.source !== null || observation.tree !== null || observation.entries.length !== 0
+        || observation.source_id !== null
         || !(observation.root === null || (sourceText(observation.root) && isAbsolute(observation.root)))
         || !fieldsExactly(observation.refusal, ["code", "message"]) || !sourceCodes.has(observation.refusal.code)
         || !sourceText(observation.refusal.message) || Buffer.byteLength(observation.refusal.message) > 4096) {
@@ -337,6 +451,13 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
       || (observation.status === "clean") !== (observation.entries.length === 0)) {
     throw unavailable("owner returned an inconsistent completed envelope");
   }
+  const sourceId = sourceValue(observation.source_id);
+  if (sourceId === null || sourceId.commit !== observation.source.slice("git-commit:".length)
+      || sourceId.tree !== observation.tree
+      || (observation.status === "clean" && (sourceId.changes.length
+        || sourceId.submodules.some((child) => child.changes.length)))) {
+    throw unavailable("owner returned an inconsistent source_id");
+  }
   for (const entry of observation.entries) {
     const renamed = /[RC]/u.test(entry?.status ?? "");
     if (!fieldsExactly(entry, renamed ? ["status", "path", "origin"] : ["status", "path"])
@@ -349,7 +470,7 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
     if (realpathSync.native(observation.root) !== realpathSync.native(root)) throw new Error("root mismatch");
   } catch { throw unavailable("owner canonical root differs from the requested root or cannot be resolved"); }
   return { root: observation.root, commit: observation.source.slice("git-commit:".length), tree: observation.tree,
-    status: observation.status, entries: observation.entries };
+    status: observation.status, entries: observation.entries, sourceId };
 }
 
 function captureWorktree(root, env = process.env) {
