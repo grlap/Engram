@@ -57,8 +57,9 @@ The store-independent `engram source --root <absolute-worktree> --json`
 command exposes that same committed-input reader as bounded JSON v1, with
 clean/not-clean/unavailable status, canonical root, source/tree metadata and
 changed porcelain entries. It opens no store and grants no execution credit.
-Launcher admission and fingerprints retain their existing implementation until
-their separate migration. See the [source command](development.md#read-only-committed-input-command).
+Launcher committed-input admission calls this command through a bounded adapter;
+the separate schema-1 run fingerprint and its file hashing are unchanged.
+See the [source command](development.md#read-only-committed-input-command).
 
 Selected verification evidence can carry a
 [Git-tree applicability restriction](features/verification-applicability.md).

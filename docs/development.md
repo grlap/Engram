@@ -103,13 +103,13 @@ accepted through a warning-text whitelist.
 This is endpoint evidence, not a byte inventory or execution attestation.
 Git-ignored output and changes hidden by index flags can be missed; captures
 can miss transient change-and-restore. Existing execution, authority and
-before/after rules remain the consumer's responsibility. The source command
-ships before launcher admission migrates to it; the launcher's current
-fingerprint format and admission are unchanged by this command.
+before/after rules remain the consumer's responsibility. Launcher committed-input
+admission calls this command through the bounded adapter described below;
+the separate schema-1 run fingerprint and its file hashing are unchanged.
 
 The shared real-Git constructor and expected table are
 `scripts/source-input-fixtures.mjs`; `scripts/source-input.test.mjs` exercises
-them through the command. Later adapters use the same cases. Fixture IDs and
+them through the command. Launcher conformance uses the same cases. Fixture IDs and
 commit/tree values are created at runtime under the caller's owned test root.
 
 ## Quality gates
@@ -348,18 +348,34 @@ downgrading. The saved selection is immutable through worker execution and retry
 Programmatic callers omitting `input` retain the plain request shape.
 
 This lane requires a clean Git checkout before capture and worker execution.
-It checks again after fingerprint capture and refuses a moved commit, dirty
-paths, skip-worktree or assume-unchanged entries, configured filters, and
-Gitlinks by name in Engram's Node launcher. The live Engram reader at evaluate
-and done also accepts initialized, clean submodules at their pins, including
-nested submodules. Recursive submodule status supplies the pin and initialization
-checks; root and child filter configuration is checked before the single root
-dirt check. No complete file or index list is read by the live reader. Edits hidden
-by assume-unchanged or skip-worktree flags can be missed by Git status. Questly
-and Phoenix use TermAl's launcher for capture;
-Engram's Node launcher remains unchanged. Repository ignores and local excludes apply; global ignore and
-attribute files and inherited Git redirection do not. The fingerprint format
-itself is unchanged.
+Its input checks call `engram source --root ABS --json`, using the same reader
+as evaluate and done. The launcher validates the JSON v1 envelope, canonical
+root, status and exit-code pairing; it has no fallback Git predicate. Initialized,
+clean submodules at their pins are supported, including nested submodules.
+Recursive submodule status supplies pin and initialization checks; root and child
+filter configuration is checked before the single root dirt check. The predicate
+reads no complete file or index list. Edits hidden by assume-unchanged or
+skip-worktree flags can be missed by Git status. Repository ignores and local
+excludes apply; global ignore and attribute files and inherited Git redirection
+do not. The separate schema-1 run fingerprint and its file hashing are unchanged.
+
+The owner executable defaults to `$CARGO_HOME/bin/engram` (`engram.exe` on
+Windows). Only when `CARGO_HOME` is unset does it use `~/.cargo/bin`. Set
+`ENGRAM_SOURCE_BINARY` to one absolute executable path to override it, for example
+a repository-local runner pin. The launcher neither searches PATH nor builds an
+owner during input capture. A missing executable, an older build without `source`,
+invalid output, timeout or unavailable observation refuses input; it never selects
+a plain run. The selected path is recorded as `request.sourceBinary`, retained in
+the completion request and used by detached workers even if their environment
+offers a different override. Stage processes inherit that selected override too.
+A supported owner must be prepared before launching.
+
+Launcher conformance tests always select this checkout's built
+`$CARGO_TARGET_DIR/debug/engram` (or `target/debug/engram` when unset), never an
+installed binary. A standalone focused Node test therefore needs a prior
+`cargo build --bin engram` on the same input. The full gate's ordinary Rust phase
+already builds that executable before the Node suites. Questly and Phoenix use
+TermAl's launcher; their switch to this owner is validated separately.
 
 After execution, `results.input` keeps the actual stage outcome separate from
 input eligibility: `clean`, `debris_pending_disposition`, or `input_changed`.

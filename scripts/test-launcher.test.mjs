@@ -39,6 +39,10 @@ for (const key of Object.keys(process.env)) if ((key.toUpperCase().startsWith("G
 // out into this checkout.
 Object.assign(process.env, { GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : devNull,
   GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0", GIT_CEILING_DIRECTORIES: fixtureRoot });
+// Candidate conformance must use the binary built from this checkout, even
+// when the outer launcher used an installed owner to admit its own input.
+process.env.ENGRAM_SOURCE_BINARY = resolve(import.meta.dirname, "..", process.env.CARGO_TARGET_DIR || "target",
+  "debug", process.platform === "win32" ? "engram.exe" : "engram");
 const env = { ...process.env, TERMAL_SESSION_ID: "fixture-owner", TERMAL_CLI: process.execPath };
 
 const support = createSupport({ env, entryUrl: import.meta.url });

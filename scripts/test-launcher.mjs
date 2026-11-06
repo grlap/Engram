@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { captureCommitInputStatus, captureFingerprint, classifyInputChange, fingerprintLimitations, isolatedGitEnvironment } from "./review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, captureFingerprint, classifyInputChange, fingerprintLimitations, isolatedGitEnvironment, sourceBinaryPath } from "./review-freeze-fingerprint.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registerOwnRunWait, ownRunWaitLine, registrationConfirmed, registrationLine,
   validateRequestMessageSelection } from "./test-run-registration.mjs";
@@ -46,6 +46,7 @@ function publishCompletionRequest(runDir, request) {
   const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration, detached } = request;
   save(join(runDir, "completion.request.json"), {
     runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo, registration, detached,
+    ...(request.sourceBinary ? { sourceBinary: request.sourceBinary } : {}),
     ...(request.input !== undefined ? { input: request.input, commit: request.commit, tree: request.tree } : {}),
     ...(request.requestMessageId !== undefined ? { requestMessageId: request.requestMessageId, full: request.full } : {}),
   });
@@ -681,22 +682,32 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   validateLaunchMetadata({ item, nextTransition });
   const everyMs = heartbeatEveryMs(env);
   let selectionError;
+  let sourceBinary;
+  if (runInput === "commit" || selectInput) {
+    try { sourceBinary = sourceBinaryPath(env); }
+    catch (error) { selectionError = error; }
+  }
+  const sourceEnv = sourceBinary ? { ...env, ENGRAM_SOURCE_BINARY: sourceBinary } : env;
   if (selectInput) {
-    try { runInput = selectDefaultInput(root, env); }
+    try { if (!selectionError) runInput = selectDefaultInput(root, sourceEnv); }
     catch (error) {
-      if (error.reason === "git-run-directory-unavailable") throw error;
       selectionError = error;
     }
   }
+  const directoryEnv = isolatedGitEnvironment(env);
+  // The caller's discovery ceiling bounds where artifacts may be allocated.
+  // It does not redirect Git and is not part of the owner's input measurement.
+  if (env.GIT_CEILING_DIRECTORIES !== undefined) directoryEnv.GIT_CEILING_DIRECTORIES = env.GIT_CEILING_DIRECTORIES;
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
     { cwd: root, encoding: "utf8", windowsHide: true,
-      ...(runInput === "commit" || selectInput ? { env: isolatedGitEnvironment(env) } : {}) });
+      ...(runInput === "commit" || selectInput ? { env: directoryEnv } : {}) });
   if (git.error || git.status !== 0) throw usageFailure(
     "git-run-directory-unavailable; run the launcher from a repository worktree with Git available");
   const runId = `test-${randomUUID()}`;
   const runDir = join(git.stdout.trim(), runId);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
+    ...(sourceBinary ? { sourceBinary } : {}),
     creatorPid: process.pid, owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
     ...(runInput !== undefined ? { input: runInput } : {}),
     ...(requestMessageId !== undefined ? { requestMessageId } : {}),
@@ -730,13 +741,12 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     if (selectionError) throw selectionError;
     let committed;
     if (request.input === "commit") {
-      committed = await commitInputStatus(root, env);
+      committed = await commitInputStatus(root, sourceEnv);
       if (!commitInputStatusClean(committed)) {
         const result = readJson(join(runDir, "results.json"));
         Object.assign(result, { state: "failed", exitCode: 1, reason: "input-not-clean", ended: new Date().toISOString(),
           error: `committed-input run refused: checkout is not clean (${commitInputNotCleanReason(committed)}); no stage ran`,
-          input: { kind: "commit", cleanBefore: false, dirtyPaths: committed.entries,
-            skippedPaths: committed.skipped, filters: committed.filters, gitlinks: committed.gitlinks } });
+          input: { kind: "commit", cleanBefore: false, dirtyPaths: committed.entries } });
         save(join(runDir, "results.json"), result);
         publishLaunchRequest(runDir, request);
         return runDir;
@@ -744,7 +754,7 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
     }
     const input = captureFingerprint(root, committed ? isolatedGitEnvironment(env) : process.env);
     if (committed) {
-      const again = await commitInputStatus(root, env);
+      const again = await commitInputStatus(root, sourceEnv);
       if (input.head !== committed.commit || again.commit !== committed.commit || again.tree !== committed.tree) {
         throw new Error("committed-input run refused: HEAD moved while input was captured; no stage ran");
       }
@@ -876,17 +886,15 @@ function currentCapture(root, env = process.env) {
 }
 
 export function commitInputStatusClean(status) {
-  return status.entries.length === 0 && status.skipped.length === 0 && status.filters.length === 0 && status.gitlinks.length === 0;
+  return status.status === "clean";
 }
 
 function commitInputNotCleanReason(status) {
-  return [status.entries.length ? "dirty paths" : "", status.skipped.length ? "skip-worktree or assume-unchanged" : "",
-    status.filters.length ? "configured Git filters" : "", status.gitlinks.length ? "unsupported Gitlinks" : ""].filter(Boolean).join(", ");
+  return status.status === "not_clean" ? "dirty paths" : "owner did not report clean input";
 }
 
 export function commitInputOutcome(commit, after) {
-  if (after.commit !== commit || after.skipped.length || after.filters.length || after.gitlinks.length
-      || after.entries.some((entry) => entry.status !== "??")) return "input_changed";
+  if (after.commit !== commit || after.entries.some((entry) => entry.status !== "??")) return "input_changed";
   return after.entries.length ? "debris_pending_disposition" : "clean";
 }
 
@@ -984,6 +992,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   };
   try {
     request = readJson(join(runDir, "request.json"));
+    if (request.sourceBinary) childEnv.ENGRAM_SOURCE_BINARY = request.sourceBinary;
     if (request.input !== undefined && request.input !== "commit") throw inputDrift("unsupported worker input", request.root);
     // What the record says of each stage is what was read here, before any
     // stage ran: a stage can write to the run directory.
@@ -1022,6 +1031,10 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     let admitted;
     try { admitted = readJson(join(runDir, "completion.request.json")); }
     catch { /* Legacy runs retain their fallback when no selection was saved. */ }
+    if ((admitted && request.sourceBinary !== admitted.sourceBinary)
+        || (!admitted && request.input === "commit" && request.sourceBinary !== undefined)) {
+      throw because("input-capture-failed", new Error("source owner differs from the admitted executable; no stage ran"));
+    }
     const selected = request.requestMessageId !== undefined || result.requestMessageId !== undefined
       || admitted?.requestMessageId !== undefined;
     let registeredRequest = request;
@@ -1082,7 +1095,9 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       }
     }
     if (request.input === "commit") {
-      const status = captureCommitInputStatus(request.root, childEnv);
+      let status;
+      try { status = captureCommitInputStatus(request.root, childEnv); }
+      catch (error) { throw because("input-capture-failed", error); }
       if (!commitInputStatusClean(status) || status.commit !== request.commit || status.tree !== request.tree
           || result.input?.kind !== "commit" || result.input.cleanBefore !== true
           || result.input.commit !== status.commit || result.input.tree !== status.tree) {
@@ -1125,17 +1140,22 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       save(resultPath, result);
       if (entry.state === "failed") break;
     }
-    const status = request.input === "commit" ? captureCommitInputStatus(request.root, childEnv) : null;
-    // Do not execute a newly configured filter, or enter a newly added
-    // submodule, merely to produce an after fingerprint of refused input.
-    const after = status && (status.filters.length || status.gitlinks.length) ? null
+    let status, sourceRefusal;
+    if (request.input === "commit") {
+      try { status = captureCommitInputStatus(request.root, childEnv); }
+      catch (error) {
+        sourceRefusal = error.refusal ?? { code: "input_unavailable", message: error.message.slice(0, 4096) };
+      }
+    }
+    // An unavailable owner observation cannot authorize a fingerprint that
+    // might execute newly configured filters. Keep actual stage results.
+    const after = sourceRefusal ? null
       : currentCapture(request.root, status ? isolatedGitEnvironment(childEnv) : process.env);
     if (after) result.after = after.fingerprint;
     if (request.input === "commit") {
-      result.input.after = { commit: status.commit, tree: status.tree, clean: commitInputStatusClean(status), paths: status.entries,
-        ...(status.skipped.length ? { skippedPaths: status.skipped } : {}),
-        ...(status.filters.length ? { filters: status.filters } : {}), ...(status.gitlinks.length ? { gitlinks: status.gitlinks } : {}) };
-      result.input.outcome = commitInputOutcome(result.input.commit, status);
+      result.input.after = sourceRefusal ? { clean: false, refusal: sourceRefusal }
+        : { commit: status.commit, tree: status.tree, clean: commitInputStatusClean(status), paths: status.entries };
+      result.input.outcome = sourceRefusal ? "input_changed" : commitInputOutcome(result.input.commit, status);
       if (result.input.outcome === "debris_pending_disposition") result.input.disposition = null;
     } else if (result.after !== result.expectedFingerprint) throw afterRunDrift(runDir, result, admittedInput, after, request.root);
     result.state = result.stages.every((stage) => stage.state === "passed") ? "passed" : "failed";
@@ -1769,18 +1789,7 @@ async function main(args) {
 // Select once before immutable request creation. A failed capture must not
 // turn an unavailable repository into a plain run; only known dirt does.
 export function selectDefaultInput(root, env = process.env) {
-  let status;
-  try { status = captureCommitInputStatus(root, env); }
-  catch (error) {
-    if (error.code === "ENGRAM_INPUT_ROOT_MISMATCH") {
-      throw because("git-run-directory-unavailable", usageFailure(
-        "git-run-directory-unavailable; run the launcher from a repository worktree with Git available"));
-    }
-    throw error;
-  }
-  if (status.filters.length || status.gitlinks.length || status.skipped.length) {
-    throw because("input-capture-failed", new Error("committed input is unavailable: filters, Gitlinks or hidden index paths are unsupported"));
-  }
+  const status = captureCommitInputStatus(root, env);
   return commitInputStatusClean(status) ? "commit" : undefined;
 }
 

@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
-import { devNull } from "node:os";
+import { devNull, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
@@ -270,47 +270,86 @@ export function isolatedGitEnvironment(source = process.env) {
   return env;
 }
 
-export function captureCommitInputStatus(startDirectory = process.cwd(), sourceEnv = process.env) {
-  const env = isolatedGitEnvironment(sourceEnv);
-  const nullDevice = process.platform === "win32" ? "NUL" : devNull;
-  const args = (values) => ["-c", "core.fsmonitor=false", "-c", `core.excludesFile=${nullDevice}`,
-    "-c", `core.attributesFile=${nullDevice}`, ...values];
-  const run = (root, values, allowFailure = false) => git(root, args(values), { env, allowFailure });
-  const text = (root, values) => run(root, values).stdout.toString("utf8").trim();
-  const root = realpathSync.native(text(startDirectory, ["rev-parse", "--show-toplevel"]));
-  if (root !== realpathSync.native(startDirectory)) {
-    throw Object.assign(new Error("committed input requires the exact Git worktree top level"),
-      { code: "ENGRAM_INPUT_ROOT_MISMATCH" });
-  }
-  const head = () => text(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
-  const commit = head();
-  const tree = text(root, ["rev-parse", "--verify", `${commit}^{tree}`]);
-  const configured = run(root, ["config", "--null", "--get-regexp", "^filter\\..*\\.(clean|smudge|process)$"], true);
-  if (![0, 1].includes(configured.status)) throw new Error("committed-input filter configuration could not be read");
-  const filters = configured.stdout.toString("utf8").split("\0").filter(Boolean).map((entry) => entry.split("\n", 1)[0]);
-  // Read index metadata before status: status could otherwise execute a
-  // submodule's filters. The current ordinary host lane refuses Gitlinks.
-  const gitlinks = run(root, ["ls-files", "--stage", "-z"]).stdout.toString("utf8")
-    .split("\0").filter((entry) => entry.startsWith("160000 ")).map((entry) => entry.slice(entry.indexOf("\t") + 1));
-  if (filters.length || gitlinks.length) return { root, commit, tree, entries: [], skipped: [], filters, gitlinks };
-  const skipped = run(root, ["ls-files", "-v", "-z"]).stdout.toString("utf8").split("\0")
-    .filter((entry) => /^[a-zS] /u.test(entry)).map((entry) => ({ tag: entry[0], path: entry.slice(2) }));
-  const records = run(root, ["status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none", "-z"])
-    .stdout.toString("utf8").split("\0");
-  if (records.at(-1) === "") records.pop();
-  const entries = [];
-  for (let index = 0; index < records.length; index += 1) {
-    const record = records[index];
-    if (record.length < 4 || record[2] !== " ") throw new Error("committed-input status returned malformed porcelain");
-    const entry = { status: record.slice(0, 2), path: record.slice(3) };
-    if (/[RC]/u.test(entry.status)) {
-      if (++index >= records.length) throw new Error("committed-input rename has no origin path");
-      entry.origin = records[index];
+// Binary selection is setup, not another source predicate. Never search PATH or
+// build an owner during admission. Tests explicitly select their current build.
+export function sourceBinaryPath(env = process.env) {
+  if (Object.hasOwn(env, "ENGRAM_SOURCE_BINARY")) {
+    if (typeof env.ENGRAM_SOURCE_BINARY !== "string" || !isAbsolute(env.ENGRAM_SOURCE_BINARY)) {
+      throw new Error("ENGRAM_SOURCE_BINARY must name an absolute engram executable");
     }
-    entries.push(entry);
+    return resolve(env.ENGRAM_SOURCE_BINARY);
   }
-  if (head() !== commit) throw new Error("HEAD moved while committed-input status was captured");
-  return { root, commit, tree, entries, skipped, filters, gitlinks };
+  const cargoHome = Object.hasOwn(env, "CARGO_HOME") ? env.CARGO_HOME : resolve(homedir(), ".cargo");
+  if (typeof cargoHome !== "string" || !isAbsolute(cargoHome)) {
+    throw new Error("CARGO_HOME must be absolute, or set ENGRAM_SOURCE_BINARY explicitly");
+  }
+  return resolve(cargoHome, "bin", process.platform === "win32" ? "engram.exe" : "engram");
+}
+
+const SOURCE_JSON_BYTES = 1024 * 1024;
+const sourceCodes = new Set(["input_unavailable", "deadline", "output_limit"]);
+const fieldsExactly = (value, fields) => value !== null && typeof value === "object" && !Array.isArray(value)
+  && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
+const sourceText = (value) => typeof value === "string" && value.length > 0 && !value.includes("\0")
+  && Buffer.from(value).toString("utf8") === value;
+
+export function captureCommitInputStatus(startDirectory = process.cwd(), sourceEnv = process.env, { run = spawnSync } = {}) {
+  const binary = sourceBinaryPath(sourceEnv);
+  const root = resolve(startDirectory);
+  const unavailable = (message, refusal) => Object.assign(new Error(
+    `committed input unavailable (${binary}; set ENGRAM_SOURCE_BINARY to select an owner): ${message.slice(0, 4096)}`),
+  { code: "ENGRAM_SOURCE_UNAVAILABLE", ...(refusal ? { refusal } : {}) });
+  const result = run(binary, ["source", "--root", root, "--json"], {
+    cwd: root, env: sourceEnv, encoding: null, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+    // The owner enforces eight seconds. Allow bounded process startup and a
+    // final unavailable envelope, without extending the owner's usable budget.
+    timeout: 10_000, maxBuffer: SOURCE_JSON_BYTES + 1,
+  });
+  if (result.error || result.signal || ![0, 1].includes(result.status)) {
+    throw unavailable(result.error?.message ?? `owner exited ${result.status ?? "without a status"}${result.signal ? ` (${result.signal})` : ""}`);
+  }
+  const output = result.stdout;
+  if (!Buffer.isBuffer(output) || output.length > SOURCE_JSON_BYTES + 1 || result.stderr?.length) {
+    throw unavailable("owner output exceeded its bound or carried process stderr");
+  }
+  let observation;
+  try {
+    const json = new TextDecoder("utf-8", { fatal: true }).decode(output);
+    if (Buffer.byteLength(json.replace(/\n$/u, "")) > SOURCE_JSON_BYTES) throw new Error("JSON byte limit");
+    observation = JSON.parse(json);
+  } catch { throw unavailable("owner returned malformed, non-UTF-8 or oversized JSON"); }
+  if (!fieldsExactly(observation, ["version", "status", "root", "source", "tree", "entries", "refusal"])
+      || observation.version !== 1 || !["clean", "not_clean", "unavailable"].includes(observation.status)
+      || !Array.isArray(observation.entries)) throw unavailable("owner returned an unsupported JSON v1 envelope");
+  const refused = observation.status === "unavailable";
+  if (refused) {
+    if (result.status !== 1 || observation.source !== null || observation.tree !== null || observation.entries.length !== 0
+        || !(observation.root === null || (sourceText(observation.root) && isAbsolute(observation.root)))
+        || !fieldsExactly(observation.refusal, ["code", "message"]) || !sourceCodes.has(observation.refusal.code)
+        || !sourceText(observation.refusal.message) || Buffer.byteLength(observation.refusal.message) > 4096) {
+      throw unavailable("owner returned an inconsistent unavailable envelope");
+    }
+    throw unavailable(`${observation.refusal.code}: ${observation.refusal.message}`, observation.refusal);
+  }
+  if (result.status !== 0 || observation.refusal !== null || !sourceText(observation.root) || !isAbsolute(observation.root)
+      || typeof observation.source !== "string" || !/^git-commit:[a-f0-9]{40}$/u.test(observation.source)
+      || typeof observation.tree !== "string" || !/^[a-f0-9]{40}$/u.test(observation.tree)
+      || (observation.status === "clean") !== (observation.entries.length === 0)) {
+    throw unavailable("owner returned an inconsistent completed envelope");
+  }
+  for (const entry of observation.entries) {
+    const renamed = /[RC]/u.test(entry?.status ?? "");
+    if (!fieldsExactly(entry, renamed ? ["status", "path", "origin"] : ["status", "path"])
+        || typeof entry.status !== "string" || !/^[ A-Z?!]{2}$/u.test(entry.status)
+        || !sourceText(entry.path) || (renamed && !sourceText(entry.origin))) {
+      throw unavailable("owner returned malformed changed-path metadata");
+    }
+  }
+  try {
+    if (realpathSync.native(observation.root) !== realpathSync.native(root)) throw new Error("root mismatch");
+  } catch { throw unavailable("owner canonical root differs from the requested root or cannot be resolved"); }
+  return { root: observation.root, commit: observation.source.slice("git-commit:".length), tree: observation.tree,
+    status: observation.status, entries: observation.entries };
 }
 
 function captureWorktree(root, env = process.env) {

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import test from "node:test";
-import { captureCommitInputStatus } from "../review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, sourceBinaryPath } from "../review-freeze-fingerprint.mjs";
+import { createSourceFixture, sourceCases } from "../source-input-fixtures.mjs";
+import { fixtureHome } from "../test-temp.mjs";
 import { commitInputEligible, createRun, executeRun, machineRecord, selectDefaultInput, startDetached, summarize } from "../test-launcher.mjs";
 import { registerTestRun } from "../test-run-registration.mjs";
 
@@ -22,6 +24,151 @@ export function registerCommitInputTests(support) {
     await callback({ root, admin, marker, marking });
   });
 
+  for (const scenario of sourceCases) test(`launcher owner conformance: ${scenario.id}`, async (t) => {
+    const input = createSourceFixture(fixtureHome("lc-", t), scenario.id);
+    const root = input.root;
+    const marker = join(git(["rev-parse", "--absolute-git-dir"], root).trim(), "stage-ran");
+    const stages = [stage("fixture", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');`)];
+    if (scenario.status === "unavailable") {
+      assert.throws(() => captureCommitInputStatus(root, env), /committed input unavailable/u);
+      assert.throws(() => selectDefaultInput(root, env), /committed input unavailable/u);
+      let runDir;
+      await assert.rejects(createRun({ root, input: "commit", stages }, env), (error) => {
+        runDir = error.runDir;
+        return error.reason === "input-capture-failed";
+      });
+      assert.equal(json(join(runDir, "results.json")).stages[0].state, "unrun");
+      assert.equal(existsSync(join(runDir, "input.json")), false);
+    } else {
+      const captured = captureCommitInputStatus(root, env);
+      assert.equal(captured.status, scenario.status);
+      assert.equal(captured.commit, input.commit);
+      assert.equal(captured.tree, input.tree);
+      assert.equal(selectDefaultInput(root, env), scenario.status === "clean" ? "commit" : undefined);
+      const runDir = await createRun({ root, input: "commit", stages }, env);
+      const result = await executeRun(runDir, env);
+      if (scenario.status === "clean") {
+        assert.equal(result.state, "passed", result.error);
+        assert.equal(result.input.eligible, true);
+        assert.equal(readFileSync(marker, "utf8"), "ran");
+      } else {
+        assert.equal(result.state, "failed");
+        assert.equal(result.reason, "input-not-clean");
+        assert.equal(result.stages[0].state, "unrun");
+      }
+    }
+    if (scenario.status !== "clean") assert.equal(existsSync(marker), false);
+  });
+
+  test("source adapter validates bounded JSON and exit pairing without a fallback predicate", async () => {
+    await fixture(async ({ root }) => {
+      const measured = captureCommitInputStatus(root, env);
+      const observation = { version: 1, status: "clean", root: measured.root,
+        source: `git-commit:${measured.commit}`, tree: measured.tree, entries: [], refusal: null };
+      const response = (value = observation, status = 0) => ({ status, signal: null,
+        stdout: Buffer.from(JSON.stringify(value) + "\n"), stderr: Buffer.alloc(0) });
+      const capture = (result) => captureCommitInputStatus(root, env, { run: (binary, args, options) => {
+        assert.equal(binary, env.ENGRAM_SOURCE_BINARY);
+        assert.deepEqual(args, ["source", "--root", resolve(root), "--json"]);
+        assert.equal(options.timeout, 10_000);
+        assert.equal(options.maxBuffer, 1024 * 1024 + 1);
+        assert.equal(options.windowsHide, true);
+        assert.deepEqual(options.stdio, ["ignore", "pipe", "pipe"]);
+        return result;
+      } });
+      assert.deepEqual(capture(response()), measured);
+      const refused = { ...observation, status: "unavailable", source: null, tree: null,
+        refusal: { code: "deadline", message: "reader deadline" } };
+      assert.throws(() => capture(response(refused, 1)), (error) => error.refusal?.code === "deadline");
+      for (const result of [
+        response({ ...observation, version: 2 }), response({ ...observation, extra: true }),
+        response({ ...observation, source: [observation.source] }), response({ ...observation, tree: null }),
+        response({ ...observation, root: join(root, "missing") }), response({ ...observation, entries: [{}] }),
+        response({ ...observation, status: "not_clean" }), response({ ...observation, status: "future_status" }),
+        response({ ...refused, refusal: { code: "future_code", message: "unknown" } }, 1),
+        response({ ...refused, source: observation.source }, 1), response({ ...refused, entries: [{}] }, 1),
+        response({ ...refused, refusal: { code: "deadline", message: "x".repeat(4097) } }, 1),
+        response(observation, 1), response(refused, 0), response(observation, 2),
+        { ...response(), stdout: Buffer.from("{truncated") },
+        { ...response(), stdout: Buffer.from([0xff]) },
+        { ...response(), stdout: Buffer.alloc(1024 * 1024 + 2, 32) },
+        { ...response(), stderr: Buffer.from("warning") },
+        { ...response(), signal: "SIGTERM" },
+        { ...response(), error: Object.assign(new Error("owner timed out"), { code: "ETIMEDOUT" }) },
+      ]) assert.throws(() => capture(result), /committed input unavailable/u);
+      const renamed = { ...observation, status: "not_clean", entries: [{ status: "R ", path: "new", origin: "old" }] };
+      assert.deepEqual(capture(response(renamed)).entries, renamed.entries);
+      assert.throws(() => capture(response({ ...renamed, entries: [{ status: "R ", path: "new" }] })), /malformed changed-path/u);
+    });
+  });
+
+  test("source adapter chooses one installed path or an absolute override and refuses missing owners", async () => {
+    await fixture(async ({ root, marker, marking }) => {
+      const { ENGRAM_SOURCE_BINARY: _override, ...installedEnv } = env;
+      const cargoHome = join(root, "missing-cargo-home");
+      const missing = { ...installedEnv, CARGO_HOME: cargoHome };
+      const expected = join(cargoHome, "bin", process.platform === "win32" ? "engram.exe" : "engram");
+      assert.equal(sourceBinaryPath(missing), expected);
+      assert.equal(sourceBinaryPath({ ...missing, ENGRAM_SOURCE_BINARY: env.ENGRAM_SOURCE_BINARY }), env.ENGRAM_SOURCE_BINARY);
+      assert.throws(() => sourceBinaryPath({ ...missing, ENGRAM_SOURCE_BINARY: "relative-owner" }), /absolute/u);
+      assert.throws(() => sourceBinaryPath({ ...missing, CARGO_HOME: "" }), /CARGO_HOME must be absolute/u);
+      assert.throws(() => selectDefaultInput(root, missing), /ENGRAM_SOURCE_BINARY/u);
+      let runDir;
+      await assert.rejects(createRun({ root, selectInput: true, stages: [marking()] }, missing), (error) => {
+        runDir = error.runDir;
+        return error.reason === "input-capture-failed";
+      });
+      assert.equal(json(join(runDir, "request.json")).sourceBinary, expected);
+      assert.equal(json(join(runDir, "results.json")).stages[0].state, "unrun");
+      assert.equal(existsSync(marker), false);
+    });
+  });
+
+  test("worker refuses a changed recorded owner before executing a stage", async () => {
+    await fixture(async ({ root, marker, marking }) => {
+      const runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
+      const path = join(runDir, "request.json");
+      writeFileSync(path, JSON.stringify({ ...json(path), sourceBinary: join(root, "different-owner") }));
+      const result = await executeRun(runDir, env);
+      assert.equal(result.reason, "input-capture-failed");
+      assert.equal(result.stages[0].state, "unrun");
+      assert.equal(existsSync(marker), false);
+    });
+  });
+
+  for (const snapshot of ["missing owner", "malformed", "missing"]) test(`worker refuses a ${snapshot} completion owner snapshot before executing a stage`, async () => {
+    await fixture(async ({ root, marker, marking }) => {
+      const runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
+      const path = join(runDir, "completion.request.json");
+      if (snapshot === "missing owner") {
+        const admitted = json(path);
+        delete admitted.sourceBinary;
+        writeFileSync(path, JSON.stringify(admitted));
+      } else if (snapshot === "malformed") writeFileSync(path, "{truncated");
+      else unlinkSync(path);
+      const result = await executeRun(runDir, env);
+      assert.equal(result.reason, "input-capture-failed");
+      assert.equal(result.stages[0].state, "unrun");
+      assert.equal(existsSync(marker), false);
+    });
+  });
+
+  test("worker refuses an unavailable recorded owner before executing a stage", async () => {
+    await fixture(async ({ root, marker, marking }) => {
+      const runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
+      const request = json(join(runDir, "request.json"));
+      assert.equal(json(join(runDir, "completion.request.json")).sourceBinary, request.sourceBinary);
+      // The executable stays fixed; its observation becomes unavailable only
+      // after launch admission, before the worker's own capture.
+      git(["config", "filter.refuse.clean", "must-not-execute"], root);
+      const result = await executeRun(runDir, env);
+      assert.equal(result.reason, "input-capture-failed");
+      assert.match(result.error, /committed input unavailable/u);
+      assert.equal(result.stages[0].state, "unrun");
+      assert.equal(existsSync(marker), false);
+    });
+  });
+
   test("implicit input selects commit only while clean, and never downgrades an unavailable capture", async () => {
     await fixture(async ({ root }) => {
       assert.equal(selectDefaultInput(root, env), "commit");
@@ -30,7 +177,7 @@ export function registerCommitInputTests(support) {
       git(["restore", "tracked.txt"], root);
       assert.equal(selectDefaultInput(root, env), "commit");
       git(["update-index", "--skip-worktree", "tracked.txt"], root);
-      assert.throws(() => selectDefaultInput(root, env), /hidden index paths/u);
+      assert.equal(selectDefaultInput(root, env), "commit", "the owner's documented hidden-index limitation is shared");
       assert.throws(() => selectDefaultInput(join(root, "absent"), env));
     });
   });
@@ -39,7 +186,7 @@ export function registerCommitInputTests(support) {
     await fixture(async ({ root, marking, marker }) => {
       const nested = join(root, "nested");
       mkdirSync(nested);
-      assert.throws(() => selectDefaultInput(nested, env), /git-run-directory-unavailable/u);
+      assert.throws(() => selectDefaultInput(nested, env), /committed input unavailable/u);
       let nestedRun;
       await assert.rejects(() => createRun({ root: nested, input: "commit", stages: [marking()] }, env), (error) => {
         assert.equal(error.reason, "input-capture-failed");
@@ -234,29 +381,27 @@ export function registerCommitInputTests(support) {
     });
   });
 
-  for (const flag of ["--assume-unchanged", "--skip-worktree"]) test(`committed-input refuses ${flag}`, async () => {
+  for (const flag of ["--assume-unchanged", "--skip-worktree"]) test(`committed-input shares the owner's ${flag} limitation`, async () => {
     await fixture(async ({ root, marker, marking }) => {
       git(["update-index", flag, "tracked.txt"], root);
       writeFileSync(join(root, "tracked.txt"), "hidden edit");
       const runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
-      const result = json(join(runDir, "results.json"));
-      assert.equal(result.state, "failed");
-      assert.equal(result.input.skippedPaths[0].path, "tracked.txt");
-      assert.equal(existsSync(marker), false);
+      const result = await executeRun(runDir, env);
+      assert.equal(result.state, "passed", result.error);
+      assert.equal(result.input.eligible, true);
+      assert.equal(existsSync(marker), true);
     });
   });
 
-  test("committed-input names configured filters and unsupported Gitlinks", async () => {
+  test("committed-input retains the owner's configured-filter refusal before stages", async () => {
     await fixture(async ({ root, marker, marking }) => {
       git(["config", "filter.fixture.clean", "unused-filter"], root);
-      let runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
-      assert.match(json(join(runDir, "results.json")).error, /configured Git filters/u);
-      git(["config", "--remove-section", "filter.fixture"], root);
-      const head = captureCommitInputStatus(root, env).commit;
-      git(["update-index", "--add", "--cacheinfo", `160000,${head},child`], root);
-      runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
-      assert.match(json(join(runDir, "results.json")).error, /unsupported Gitlinks/u);
-      assert.deepEqual(json(join(runDir, "results.json")).input.gitlinks, ["child"]);
+      let runDir;
+      await assert.rejects(createRun({ root, input: "commit", stages: [marking()] }, env), (error) => {
+        runDir = error.runDir;
+        return error.reason === "input-capture-failed";
+      });
+      assert.match(json(join(runDir, "results.json")).error, /input_unavailable:.*filter/iu);
       assert.equal(existsSync(marker), false);
     });
   });
@@ -273,7 +418,10 @@ export function registerCommitInputTests(support) {
     await fixture(async ({ root, marker, marking }) => {
       const runDir = await createRun({ root, input: "commit", detached: true, notifyTo: "fixture-parent", stages: [marking()] }, env);
       const request = json(join(runDir, "request.json"));
-      const { child, completion } = await startDetached(runDir, env, () => {});
+      assert.equal(request.sourceBinary, env.ENGRAM_SOURCE_BINARY);
+      assert.equal(json(join(runDir, "completion.request.json")).sourceBinary, request.sourceBinary);
+      const { child, completion } = await startDetached(runDir,
+        { ...env, ENGRAM_SOURCE_BINARY: join(root, "must-not-switch-owner") }, () => {});
       child.ref();
       const outcome = await completion;
       assert.equal(outcome.code, 0, readFileSync(join(runDir, "launcher.log"), "utf8"));
@@ -433,8 +581,8 @@ export function registerCommitInputTests(support) {
       assert.equal(result.after, undefined);
       assert.equal(result.exitCode, 1);
       assert.equal(result.reason, "input-unverified");
-      if (kind === "filter") assert.notEqual(result.input.after.filters.length, 0);
-      else assert.deepEqual(result.input.after.gitlinks, ["child"]);
+      assert.equal(result.input.after.refusal.code, "input_unavailable");
+      assert.ok(result.input.after.refusal.message);
       assert.equal(existsSync(filterMarker), false);
       assert.match(await summarize(runDir), /reason: input-unverified/u);
     });
