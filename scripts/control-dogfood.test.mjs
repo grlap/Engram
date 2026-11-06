@@ -7,6 +7,7 @@ import { EventEmitter } from "node:events";
 import {
   readFileSync,
   existsSync,
+  mkdirSync,
   realpathSync,
   writeFileSync,
 } from "node:fs";
@@ -17,12 +18,46 @@ import { join, resolve } from "node:path";
 import test, { after } from "node:test";
 
 const tempBefore = tempSnapshot();
-after(() => assertTempClean(tempBefore));
+const machineHome = fixtureHome("control-machine-");
+const machineTemp = join(machineHome, "tmp");
+mkdirSync(machineTemp);
+after(() => {
+  removeFixtureHomes(machineHome);
+  assertTempClean(tempBefore);
+});
 
 const root = resolve(import.meta.dirname, "..");
 const target = resolve(root, process.env.CARGO_TARGET_DIR || "target");
 const binary = join(target, "debug", "engram");
 const projectId = readFileSync(join(root, ".engram-project"), "utf8").trim();
+
+// Native CLI and control processes execute the production source reader.
+// Keep its machine policy and temporary files separate from the developer's;
+// Cargo retains its ordinary toolchain/cache environment.
+function nativeEnvironment(overrides = {}) {
+  const environment = { ...process.env, ...overrides };
+  for (const key of Object.keys(environment)) {
+    if (/^GIT_/iu.test(key)) delete environment[key];
+  }
+  delete environment.ENGRAM_HOME;
+  delete environment.ENGRAM_PROJECT_FILE;
+  Object.assign(environment, {
+    HOME: machineHome, USERPROFILE: machineHome, XDG_CONFIG_HOME: machineHome,
+    GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES,
+    TMP: machineTemp, TEMP: machineTemp, TMPDIR: machineTemp,
+  });
+  return environment;
+}
+
+function spawnNative(args, options) {
+  return spawnSync(binary, args, { ...options, env: nativeEnvironment(options?.env) });
+}
+
+function spawnNativeControl(args, options) {
+  return spawn(binary, args, { ...options, env: nativeEnvironment(options?.env) });
+}
+
 function fingerprint(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -127,7 +162,7 @@ class ControlClient {
     this.pending = [];
     this.buffer = "";
     this.stderr = "";
-    const environment = { ...process.env };
+    const environment = nativeEnvironment();
     if (phaseTrace) environment[PHASE_TRACE_ENV] = "1";
     else delete environment[PHASE_TRACE_ENV];
     this.child = spawn(
@@ -441,7 +476,7 @@ test("fixture SQLite writer rolls back and cleans up setup failure", async (t) =
 });
 
 function readPolicy(home) {
-  const result = spawnSync(binary, ["--home", home, "control-policy", "show"], { cwd: root, encoding: "utf8" });
+  const result = spawnNative(["--home", home, "control-policy", "show"], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);
 }
@@ -450,14 +485,14 @@ test("obligation rule policy CLI rejects malformed input and preserves pinned re
   const home = fixtureHome("engram-rule-policy-input-", t);
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr);
-  const initialized = spawnSync(binary, ["--home", home, "init"], { cwd: root, encoding: "utf8" });
+  const initialized = spawnNative(["--home", home, "init"], { cwd: root, encoding: "utf8" });
   assert.equal(initialized.status, 0, initialized.stderr);
   const initial = readPolicy(home);
   const set = (input, key, expected = initial.policy) => {
     const args = ["--home", home, "control-policy", "set-obligation-rule-set", "--input", input,
       "--authorized-by", "rule-policy-operator", "--idempotency-key", key,
       "--expected-policy-hash", expected];
-    return spawnSync(binary, args, { cwd: root, encoding: "utf8" });
+    return spawnNative(args, { cwd: root, encoding: "utf8" });
   };
   const rule = {
     rule: { rule_id: "source_mutation_requires_pinned_test", rule_version: 1 },
@@ -523,7 +558,7 @@ function cliWork(
     operation,
   ];
   if (input !== undefined) args.push("--input", JSON.stringify(input));
-  const executed = spawnSync(binary, args, {
+  const executed = spawnNative(args, {
     cwd: root,
     encoding: "utf8",
   });
@@ -532,9 +567,7 @@ function cliWork(
 }
 
 function cliWorkFocus(engramHome, actorId, workRef) {
-  const focused = spawnSync(
-    binary,
-    [
+  const focused = spawnNative([
       "--home",
       engramHome,
       "work",
@@ -560,14 +593,12 @@ test("doctor recovery reports a corrupt policy through a read-only surface", (t)
       encoding: "utf8",
     });
     assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
+    const initialized = spawnNative(["--home", engramHome, "init"], {
       cwd: root,
       encoding: "utf8",
     });
     assert.equal(initialized.status, 0, initialized.stderr);
-    const healthy = spawnSync(
-      binary,
-      ["--home", engramHome, "doctor", "--json"],
+    const healthy = spawnNative(["--home", engramHome, "doctor", "--json"],
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(healthy.status, 0, healthy.stderr);
@@ -585,14 +616,12 @@ test("doctor recovery reports a corrupt policy through a read-only surface", (t)
     );
     const before = readFileSync(database);
 
-    const ordinary = spawnSync(binary, ["--home", engramHome, "doctor"], {
+    const ordinary = spawnNative(["--home", engramHome, "doctor"], {
       cwd: root,
       encoding: "utf8",
     });
     assert.notEqual(ordinary.status, 0);
-    const recovery = spawnSync(
-      binary,
-      ["--home", engramHome, "doctor", "--recover-policy", "--json"],
+    const recovery = spawnNative(["--home", engramHome, "doctor", "--recover-policy", "--json"],
       { cwd: root, encoding: "utf8" },
     );
     assert.notEqual(recovery.status, 0);
@@ -627,7 +656,7 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
       encoding: "utf8",
     });
     assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
+    const initialized = spawnNative(["--home", engramHome, "init"], {
       cwd: root,
       encoding: "utf8",
     });
@@ -644,7 +673,7 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
     );
     const before = readFileSync(database);
 
-    const ordinary = spawnSync(binary, ["--home", engramHome, "doctor"], {
+    const ordinary = spawnNative(["--home", engramHome, "doctor"], {
       cwd: root,
       encoding: "utf8",
     });
@@ -652,7 +681,7 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
     assert.match(ordinary.stdout, /^remedy: "engram doctor --repair-projections"$/mu);
     assert.match(ordinary.stdout, /^code: "projection_repair_required"$/mu);
     assert.deepEqual(readFileSync(database), before);
-    const ordinaryJson = spawnSync(binary, ["--home", engramHome, "doctor", "--json"], {
+    const ordinaryJson = spawnNative(["--home", engramHome, "doctor", "--json"], {
       cwd: root,
       encoding: "utf8",
     });
@@ -666,9 +695,7 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
     ]);
     assert.deepEqual(readFileSync(database), before);
 
-    const readiness = spawnSync(
-      binary,
-      ["--home", engramHome, "readiness", "--json"],
+    const readiness = spawnNative(["--home", engramHome, "readiness", "--json"],
       { cwd: root, encoding: "utf8" },
     );
     assert.notEqual(readiness.status, 0);
@@ -680,9 +707,7 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
     ]);
     assert.deepEqual(readFileSync(database), before);
 
-    const repaired = spawnSync(
-      binary,
-      ["--home", engramHome, "doctor", "--repair-projections", "--json"],
+    const repaired = spawnNative(["--home", engramHome, "doctor", "--repair-projections", "--json"],
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(repaired.status, 0, repaired.stderr);
@@ -690,7 +715,7 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
     assert.equal(report.mode, "projection_repair");
     assert.equal(report.mutation_enabled, true);
     assert.equal(report.healthy, true);
-    const healthy = spawnSync(binary, ["--home", engramHome, "doctor"], {
+    const healthy = spawnNative(["--home", engramHome, "doctor"], {
       cwd: root,
       encoding: "utf8",
     });
@@ -708,7 +733,7 @@ test("ordinary observations owe checks and registered evidence satisfies them", 
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
     assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", home, "init"], { cwd: root, encoding: "utf8" });
+    const initialized = spawnNative(["--home", home, "init"], { cwd: root, encoding: "utf8" });
     assert.equal(initialized.status, 0, initialized.stderr);
     const item = cliWork(home, actor, "propose", { kind: "root", title: "Observe ordinary work",
       outcome: "Evidence follows the exact live claim", acceptance: ["the recorded check passes"],
@@ -741,7 +766,7 @@ test("ordinary observations owe checks and registered evidence satisfies them", 
     const successor = cliWork(home, actor, "update", { kind: "claim", ttl_seconds: 300,
       idempotency_key: "ordinary-reclaim" }).receipt.control_binding;
     assert.ok(successor.claim_fence > binding.claim_fence);
-    const doctor = spawnSync(binary, ["--home", home, "doctor"], { cwd: root, encoding: "utf8" });
+    const doctor = spawnNative(["--home", home, "doctor"], { cwd: root, encoding: "utf8" });
     assert.equal(doctor.status, 0, doctor.stderr);
   } catch (error) { failure = error; }
   finally { await finishFixture(failure, [client], () => removeFixtureHomes(home)); }
@@ -758,8 +783,7 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
     const clients = [];
     let failure;
     const actor = `admission-${caseName}`;
-    const word = (session, ...args) => spawnSync(binary,
-      ["--home", engramHome, "work", "--actor-id", session, "--session-id", session, ...args],
+    const word = (session, ...args) => spawnNative(["--home", engramHome, "work", "--actor-id", session, "--session-id", session, ...args],
       { cwd: root, encoding: "utf8" });
     const jsonWord = (session, ...args) => {
       const result = word(session, ...args, "--json");
@@ -767,9 +791,9 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
       return JSON.parse(result.stdout);
     };
     try {
-      const init = spawnSync(binary, ["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
+      const init = spawnNative(["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
       assert.equal(init.status, 0, init.stderr);
-      const policy = spawnSync(binary, ["--home", engramHome, "control-policy", "set-acceptance-evaluation",
+      const policy = spawnNative(["--home", engramHome, "control-policy", "set-acceptance-evaluation",
         "--modes", caseName === "eligibility" ? "same-session,independent-session" : "same-session",
         "--mechanical-basis", "observed", "--authorized-by", "operator", "--idempotency-key", "admission-policy"],
       { cwd: root, encoding: "utf8" });
@@ -878,8 +902,7 @@ test("committed input admission reads real Git through the native CLI", async (t
     const home = fixtureHome("engram-live-admission-", t);
     const sourceRoot = fixtureHome("engram-live-source-", t);
     const actor = `live-admission-${state}`;
-    const word = (...args) => spawnSync(binary,
-      ["--home", home, "work", "--actor-id", actor, "--session-id", actor, ...args],
+    const word = (...args) => spawnNative(["--home", home, "work", "--actor-id", actor, "--session-id", actor, ...args],
       { cwd: root, encoding: "utf8" });
     const jsonWord = (...args) => {
       const result = word(...args, "--json");
@@ -887,7 +910,7 @@ test("committed input admission reads real Git through the native CLI", async (t
       return JSON.parse(result.stdout);
     };
     const git = (...args) => {
-      const result = spawnSync("git", args, { cwd: sourceRoot, encoding: "utf8" });
+      const result = spawnSync("git", args, { cwd: sourceRoot, env: nativeEnvironment(), encoding: "utf8" });
       assert.equal(result.status, 0, result.stderr);
       return result.stdout.trim();
     };
@@ -901,9 +924,9 @@ test("committed input admission reads real Git through the native CLI", async (t
       git("add", "tracked");
       commit();
       const revision = `git-commit:${git("rev-parse", "HEAD")}`;
-      const initialized = spawnSync(binary, ["--home", home, "init"], { cwd: root, encoding: "utf8" });
+      const initialized = spawnNative(["--home", home, "init"], { cwd: root, encoding: "utf8" });
       assert.equal(initialized.status, 0, initialized.stderr);
-      const policy = spawnSync(binary, ["--home", home, "control-policy", "set-acceptance-evaluation",
+      const policy = spawnNative(["--home", home, "control-policy", "set-acceptance-evaluation",
         "--modes", "same-session", "--mechanical-basis", "observed", "--authorized-by", "operator",
         "--idempotency-key", "live-admission-policy"], { cwd: root, encoding: "utf8" });
       assert.equal(policy.status, 0, policy.stderr);
@@ -944,7 +967,7 @@ test("committed input admission reads real Git through the native CLI", async (t
         assert.match(result.stderr, state === "dirty" ? /dirty/u : state === "missing" ? /unavailable/u : /named root is at/u);
         assert.deepEqual(jsonWord("show", ref, "--evaluations").evaluations, []);
       }
-      const doctor = spawnSync(binary, ["--home", home, "doctor"], { cwd: root, encoding: "utf8" });
+      const doctor = spawnNative(["--home", home, "doctor"], { cwd: root, encoding: "utf8" });
       assert.equal(doctor.status, 0, doctor.stderr);
     } catch (error) { failure = error; }
     finally { await finishFixture(failure, [client], () => removeFixtureHomes(home, sourceRoot)); }
@@ -957,7 +980,7 @@ test("a host reads what satisfied each bound criterion and lists its candidates 
   const engramHome = fixtureHome("engram-binding-read-", t);
   const actor = "binding-read-runner";
   const jsonWord = (...args) => {
-    const result = spawnSync(binary, ["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor,
+    const result = spawnNative(["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor,
       ...args, "--json"], { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
@@ -965,7 +988,7 @@ test("a host reads what satisfied each bound criterion and lists its candidates 
   let client;
   let failure;
   try {
-    const init = spawnSync(binary, ["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
+    const init = spawnNative(["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
     assert.equal(init.status, 0, init.stderr);
     const ref = jsonWord("add", "Read bound evidence", "--accept", "1. the tests pass", "--accept", "2. the docs say so",
       "--bind", "1=test").work.short_ref;
@@ -1057,8 +1080,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
   const engramHome = fixtureHome("engram-source-recovery-", t);
   const actor = "source-recovery-runner";
   let failure;
-  const word = (...args) => spawnSync(binary,
-    ["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor, ...args],
+  const word = (...args) => spawnNative(["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor, ...args],
     { cwd: root, encoding: "utf8" });
   const jsonWord = (...args) => {
     const result = word(...args, "--json");
@@ -1066,7 +1088,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
     return JSON.parse(result.stdout);
   };
   const setPolicy = (fresh) => {
-    const result = spawnSync(binary, ["--home", engramHome, "control-policy", "set-acceptance-evaluation",
+    const result = spawnNative(["--home", engramHome, "control-policy", "set-acceptance-evaluation",
       "--modes", "same-session", "--mechanical-basis", "asserted",
       ...(fresh ? ["--require-source-freshness"] : []), "--authorized-by", "operator",
       "--idempotency-key", `source-policy-${fresh}`], { cwd: root, encoding: "utf8" });
@@ -1101,7 +1123,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
   };
   let client;
   try {
-    const init = spawnSync(binary, ["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
+    const init = spawnNative(["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
     assert.equal(init.status, 0, init.stderr);
     setPolicy(false);
     const ref = create("Declared root confirmation");
@@ -1224,9 +1246,7 @@ test("the opt-in control phase trace numbers every frame and an unset process wr
       encoding: "utf8",
     });
     assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(
-      binary,
-      [
+    const initialized = spawnNative([
         "--home",
         engramHome,
         "init",
@@ -1290,9 +1310,7 @@ test("the opt-in control phase trace numbers every frame and an unset process wr
 
     // A control process whose project cannot be resolved still leaves its
     // startup record, incomplete, with the phase it stopped in.
-    const refused = spawnSync(
-      binary,
-      [
+    const refused = spawnNative([
         "--home",
         engramHome,
         "--project-file",
@@ -1341,7 +1359,7 @@ test("failed control startup answers one frame, exits, and never dispatches muta
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
     assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", home, "init"], { cwd: root, encoding: "utf8" });
+    const initialized = spawnNative(["--home", home, "init"], { cwd: root, encoding: "utf8" });
     assert.equal(initialized.status, 0, initialized.stderr);
     const database = join(home, "projects", fingerprint(projectId), "engram.db");
     const { DatabaseSync } = await import("node:sqlite");
@@ -1364,7 +1382,7 @@ test("failed control startup answers one frame, exits, and never dispatches muta
     };
     const before = snapshot();
     writer = await holdSqliteWriter(database, home);
-    const busy = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: frame + frame, timeout: HANG_GUARD_MS });
+    const busy = spawnNative(args, { cwd: root, encoding: "utf8", input: frame + frame, timeout: HANG_GUARD_MS });
     assert.equal(busy.error, undefined);
     assertRefusal(busy, "control_startup_busy", "Engram control startup could not acquire the store.");
     await writer.close();
@@ -1373,19 +1391,19 @@ test("failed control startup answers one frame, exits, and never dispatches muta
 
     executeSql(database, "DROP INDEX work_items_ready");
     for (const input of [frame + frame, "malformed\n", "partial"]) {
-      const refused = spawnSync(binary, args, { cwd: root, encoding: "utf8", input, timeout: HANG_GUARD_MS });
+      const refused = spawnNative(args, { cwd: root, encoding: "utf8", input, timeout: HANG_GUARD_MS });
       assert.equal(refused.error, undefined);
       assertRefusal(refused, "control_startup_refused", "Engram control startup was refused; inspect the startup diagnostic.");
       assert.deepEqual(snapshot(), before);
     }
-    const empty = spawnSync(binary, args, { cwd: root, encoding: "utf8", input: "", timeout: HANG_GUARD_MS });
+    const empty = spawnNative(args, { cwd: root, encoding: "utf8", input: "", timeout: HANG_GUARD_MS });
     assert.equal(empty.error, undefined);
     assert.notEqual(empty.status, 0);
     assert.equal(empty.stdout, "");
 
     // Keep stdin open after oversized, newline-free input: draining would
     // wait forever. Closing it only in finally must not be needed for exit.
-    const child = spawn(binary, args, { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawnNativeControl(args, { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     lifecycle = new FixtureChild(child, "failed startup control server", () => stderr);
@@ -1418,9 +1436,7 @@ test("an opted-in control process whose stderr nobody drains answers every frame
       encoding: "utf8",
     });
     assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(
-      binary,
-      [
+    const initialized = spawnNative([
         "--home",
         engramHome,
         "init",
@@ -1428,9 +1444,7 @@ test("an opted-in control process whose stderr nobody drains answers every frame
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(initialized.status, 0, initialized.stderr);
-    child = spawn(
-      binary,
-      ["--home", engramHome, "control", "--work-session", "--actor-id", "undrained", "--session-id", "undrained"],
+    child = spawnNativeControl(["--home", engramHome, "control", "--work-session", "--actor-id", "undrained", "--session-id", "undrained"],
       { cwd: root, env: { ...process.env, [PHASE_TRACE_ENV]: "1" }, stdio: ["pipe", "pipe", "pipe"] },
     );
     lifecycle = new FixtureChild(child, "undrained control server");

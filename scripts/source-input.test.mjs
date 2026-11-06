@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
-import { fixtureHome, tempSnapshot, assertTempClean } from "./test-temp.mjs";
-import { createSourceFixture, sourceCases, sourceRefusalCodes } from "./source-input-fixtures.mjs";
+import { fixtureHome, removeFixtureHomes, tempSnapshot, assertTempClean } from "./test-temp.mjs";
+import { createSourceFixture, sourceCases, sourceRefusalCodes,
+  createMachineEolFixture, machineEolCases } from "./source-input-fixtures.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
@@ -15,15 +16,24 @@ const binary = join(resolve(repository, process.env.CARGO_TARGET_DIR || "target"
 const normalized = (path) => realpathSync.native(path).replace(/^\\\\\?\\/u, "");
 
 function run(args, env = {}) {
+  const sandbox = fixtureHome("source-env-");
+  const scratch = join(sandbox, "tmp");
+  mkdirSync(scratch);
   const environment = { ...process.env };
   delete environment.ENGRAM_HOME;
   delete environment.ENGRAM_PROJECT_FILE;
-  Object.assign(environment, env);
-  const result = spawnSync(binary, ["source", ...args], {
-    cwd: repository, env: environment, encoding: "utf8", timeout: 15_000, maxBuffer: 1024 * 1024 + 4096,
-  });
-  assert.ifError(result.error);
-  return result;
+  Object.assign(environment, { HOME: sandbox, USERPROFILE: sandbox, XDG_CONFIG_HOME: sandbox,
+    GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    TMP: scratch, TEMP: scratch, TMPDIR: scratch }, env);
+  try {
+    const result = spawnSync(binary, ["source", ...args], {
+      cwd: repository, env: environment, encoding: "utf8", timeout: 15_000, maxBuffer: 1024 * 1024 + 4096,
+    });
+    assert.ifError(result.error);
+    return result;
+  } finally {
+    removeFixtureHomes(sandbox);
+  }
 }
 
 for (const scenario of sourceCases) {
@@ -59,6 +69,44 @@ for (const scenario of sourceCases) {
       if (scenario.id === "root-untracked") assert.deepEqual(observation.entries,
         [{ status: "??", path: "new file.txt" }]);
     }
+  });
+}
+
+for (const scenario of machineEolCases) {
+  test(`source machine EOL conformance: ${scenario.id}`, (t) => {
+    const fixture = createMachineEolFixture(fixtureHome("e-", t), scenario.id);
+    assert.equal(fixture.ordinaryStatus, "", "the actual checkout must be clean under ordinary machine policy");
+    if (["global-true", "system-true", "xdg-and-home", "xdg-only"].includes(scenario.id)) {
+      assert.equal(fixture.checkoutBytes[0], "original\r\n", "checkout, not a byte rewrite, supplies CRLF");
+      assert.match(fixture.isolatedStatus, /tracked file.txt/u,
+        "dropping machine policy must expose the forced-rehash false-dirty regression");
+    }
+    if (scenario.id === "root-false-child-global-true") assert.deepEqual(fixture.checkoutBytes, ["original\n", "original\r\n"]);
+    if (scenario.id === "root-global-true-child-false") assert.deepEqual(fixture.checkoutBytes, ["original\r\n", "original\n"]);
+    if (scenario.id === "root-global-false-child-true") assert.deepEqual(fixture.checkoutBytes, ["original\n", "original\r\n"]);
+    if (scenario.mismatch) assert.deepEqual(fixture.contextualFallback, { root: "true", child: "false" },
+      "ordinary Git must prove the conditional machine fallback differs before testing the owner refusal");
+    if (scenario.eol) {
+      const effectiveEol = scenario.eol.toLowerCase();
+      const crlf = effectiveEol === "crlf" || (effectiveEol === "native" && process.platform === "win32");
+      assert.equal(fixture.checkoutBytes[0], crlf ? "original\r\n" : "original\n");
+    }
+    if (scenario.longPath) assert.equal(fixture.longCheckoutBytes, "long tracked original\r\n",
+      "active machine fallback must govern the actual long-path child checkout");
+    const result = run(["--root", fixture.root, "--json"], fixture.environment);
+    assert.equal(result.status, scenario.status === "unavailable" ? 1 : 0, result.stderr || result.stdout);
+    assert.equal(result.stderr, "");
+    const observation = JSON.parse(result.stdout);
+    assert.equal(observation.status, scenario.status, result.stdout);
+    assert.deepEqual(Object.keys(observation).sort(), ["entries", "refusal", "root", "source", "status", "tree", "version"]);
+    if (scenario.status === "unavailable") {
+      assert.equal(observation.refusal.code, "input_unavailable");
+      if (scenario.mismatch) assert.match(observation.refusal.message, /submodule 'c s': contextual machine line-ending fallback differs/u);
+      if (scenario.dirty === "child") assert.match(observation.refusal.message, /submodule 'c s': working tree is dirty/u);
+      if (scenario.dirty === "long-child") assert.match(observation.refusal.message, /submodule 'c': working tree is dirty/u);
+      if (scenario.insideScratch) assert.match(observation.refusal.message, /source EOL scratch is inside the inspected tree/u);
+    }
+    assert.deepEqual(fixture.scratchEntries(), [], "owner-private EOL scratch must be removed after success or refusal");
   });
 }
 

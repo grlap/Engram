@@ -2,6 +2,7 @@
 //! evidence, never a durable identity or a historical seal validator.
 
 use anyhow::{Context, Result, bail, ensure};
+mod eol;
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -125,7 +126,11 @@ fn capture(
         *known_root = Some(text);
     }
     let git = resolve_git(&root)?;
-    let run = |args: &[&str], missing| query(&git, &root, args, missing, deadline);
+    let environment = eol::Environment::for_read();
+    let policy = eol::Policy::read(&git, &root, deadline, &environment)?;
+    let fallback = policy.materialize(&root, deadline, &environment)?;
+    let global = fallback.as_ref().map(|value| value.file.as_path());
+    let run = |args: &[&str], missing| query(&git, &root, args, missing, deadline, global);
     let top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?;
     ensure!(
         top.canonicalize()? == root,
@@ -173,7 +178,15 @@ fn capture(
         .context("cannot read recursive submodule status")?;
     let children = submodules(&modules)?;
     // Read filter configuration before root status can invoke child filters.
-    guard_child_filters(&git, &root, &children, deadline)?;
+    guard_child_filters(
+        &git,
+        &root,
+        &children,
+        deadline,
+        &policy,
+        global,
+        &environment,
+    )?;
     let status = run(
         &[
             "status",
@@ -221,8 +234,17 @@ fn guard_child_filters(
     root: &Path,
     children: &[String],
     deadline: Instant,
+    policy: &eol::Policy,
+    global: Option<&Path>,
+    environment: &eol::Environment,
 ) -> Result<()> {
     for name in children {
+        ensure!(
+            eol::Policy::read(git, &root.join(name), deadline, environment).with_context(
+                || format!("submodule '{name}': cannot read machine line-ending policy")
+            )? == *policy,
+            "submodule '{name}': contextual machine line-ending fallback differs from the root"
+        );
         let filters = query(
             git,
             &root.join(name),
@@ -234,6 +256,7 @@ fn guard_child_filters(
             ],
             true,
             deadline,
+            global,
         )
         .with_context(|| format!("submodule '{name}': cannot read filter configuration"))?;
         ensure!(
@@ -381,11 +404,19 @@ fn query(
     args: &[&str],
     missing: bool,
     deadline: Instant,
+    global: Option<&Path>,
 ) -> Result<Vec<u8>> {
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    if remaining.is_zero() {
-        return Err(crate::task_sync::git::QueryFailure::Deadline.into());
+    let mut command = git_command(git, root);
+    if let Some(global) = global {
+        // Git's config reader needs the plain Windows spelling, while Rust
+        // keeps the canonical native path for file ownership and cleanup.
+        command.env("GIT_CONFIG_GLOBAL", crate::storage::store_path_text(global));
     }
+    command.args(args);
+    run_query(command, args[0], missing, deadline)
+}
+
+fn git_command(git: &Path, root: &Path) -> Command {
     let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
     let mut command = Command::new(git);
     command
@@ -413,7 +444,7 @@ fn query(
         "-c",
         &format!("core.attributesFile={null}"),
     ]);
-    command.args(args).stdin(Stdio::null());
+    command.stdin(Stdio::null());
     for (name, _) in std::env::vars_os() {
         if name
             .to_string_lossy()
@@ -429,9 +460,17 @@ fn query(
         .env("GIT_ATTR_NOSYSTEM", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_NO_LAZY_FETCH", "1");
+    command
+}
+
+fn run_query(command: Command, name: &str, missing: bool, deadline: Instant) -> Result<Vec<u8>> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err(crate::task_sync::git::QueryFailure::Deadline.into());
+    }
     let result = crate::task_sync::git::run_query_command(
         command,
-        args[0],
+        name,
         missing,
         None,
         remaining,

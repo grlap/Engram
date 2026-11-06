@@ -377,6 +377,36 @@ installed binary. A standalone focused Node test therefore needs a prior
 already builds that executable before the Node suites. Questly and Phoenix use
 TermAl's launcher; their switch to this owner is validated separately.
 
+The shared Rust reader preserves machine line-ending defaults without importing
+other machine policy. It snapshots only effective system/global `core.autocrlf`
+and `core.eol`, including both XDG and home Git configuration and conditional
+includes. The root and each initialized recursive child must resolve the same
+normalized fallback pair; a contextual difference or unsupported value returns
+`input_unavailable`. Repository-local and worktree values still override that
+fallback independently in every child. EOL defaults are never passed as `-c`
+overrides. Windows long-path handling and `core.safecrlf=false` remain explicit
+per-invocation settings.
+
+When a fallback value exists, the reader gives Git a fresh owner-private global
+file containing only those validated EOL values, outside the inspected tree and
+Engram home. No inspected or machine configuration is changed. The file and its
+unique directory are removed on success and refusal; deletion is best-effort and
+does not change the verdict or emit diagnostics. With no fallback values, no
+file is created. A configured process temp folder inside the inspected tree or
+Engram home refuses as `input_unavailable` when a fallback is needed; configure
+temp outside those locations for the production reader. Unix directories use
+0700 permissions; on Windows they inherit the temp folder's ACL, so that folder
+must be private to the user. Configuration discovery and every Git query share the existing
+eight-second deadline, output bound and empty-stderr requirement. The JSON v1
+shape and refusal codes are unchanged. Shared real-Git fixtures exercise actual
+CRLF checkouts with forced stat rechecks, local overrides, system/global/XDG
+precedence and changed-content controls; adapters consume the owner's verdict.
+Unit-test readers inject isolated null machine scopes and scratch under `target/`;
+CLI conformance and control-dogfood native processes use explicit homes,
+configuration and temp there. They
+exercise production discovery without consulting or writing the developer's
+machine configuration or system temp folder.
+
 After execution, `results.input` keeps the actual stage outcome separate from
 input eligibility: `clean`, `debris_pending_disposition`, or `input_changed`.
 Only clean input, a matching after fingerprint and passing stages set

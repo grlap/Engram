@@ -1,7 +1,7 @@
 // Shared real-Git conformance fixtures for the owner command and its adapters.
 // The caller owns a fresh parent directory and its cleanup. No production
 // admission logic lives here; expected verdicts describe the agreed contract.
-import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -34,14 +34,16 @@ export const sourceCases = [
   { id: "root-autocrlf-dirty", layout: "plain", status: "not_clean" },
 ];
 
-function git(root, args) {
+function git(root, args, machineEnvironment) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.toUpperCase().startsWith("GIT_")) delete env[key];
   const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
   Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: nullDevice,
     GIT_ATTR_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" });
+  Object.assign(env, machineEnvironment);
   const result = spawnSync("git", ["-c", "user.name=Source Fixture", "-c", "user.email=fixture@example.invalid",
-    "-c", "core.autocrlf=false", "-c", "core.longpaths=true", "-c", `core.hooksPath=${nullDevice}`, "-c", "commit.gpgsign=false",
+    ...(!machineEnvironment ? ["-c", "core.autocrlf=false"] : []),
+    "-c", "core.longpaths=true", "-c", `core.hooksPath=${nullDevice}`, "-c", "commit.gpgsign=false",
     "-c", "protocol.file.allow=always", ...args], { cwd: root, env, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`fixture git ${args.join(" ")}: ${result.error ?? result.stderr}`);
   return result.stdout.trim();
@@ -136,5 +138,116 @@ export function createSourceFixture(parent, id) {
     }
     default: break;
   }
-  return { ...scenario, root, child, nested, commit, tree };
+  return { ...scenario, root, child, nested, commit, tree, longTracked };
+}
+
+// Machine policy is opt-in for callers: pass the returned environment to the
+// owner process, including its scratch directory, without changing host config.
+export const machineEolCases = [
+  { id: "global-true", autocrlf: "true" },
+  { id: "system-true", autocrlf: "true", systemOnly: true },
+  { id: "xdg-and-home", autocrlf: "true", xdg: true },
+  { id: "xdg-only", autocrlf: "true", xdgOnly: true },
+  { id: "global-input", autocrlf: "input" },
+  { id: "global-false", autocrlf: "false" },
+  ...["lf", "crlf", "native"].map((eol) => ({ id: `global-eol-${eol}`, autocrlf: "false", eol })),
+  { id: "global-eol-uppercase", autocrlf: "false", eol: "CRLF" },
+  { id: "root-false-child-global-true", autocrlf: "true", child: true, rootLocal: "false" },
+  { id: "root-global-true-child-false", autocrlf: "true", child: true, childLocal: "false" },
+  { id: "root-global-false-child-true", autocrlf: "false", child: true, childLocal: "true" },
+  { id: "nested-global-true", autocrlf: "true", nested: true },
+  { id: "global-long-path-clean", autocrlf: "true", child: true, longPath: true },
+  { id: "global-long-path-dirty", autocrlf: "true", child: true, longPath: true, dirty: "long-child", status: "unavailable" },
+  { id: "global-root-content-change", autocrlf: "true", dirty: "root", status: "not_clean" },
+  { id: "global-child-content-change", autocrlf: "true", child: true, dirty: "child", status: "unavailable" },
+  { id: "global-context-mismatch", autocrlf: "true", child: true, mismatch: true, status: "unavailable" },
+  { id: "global-invalid", autocrlf: "true", invalid: true, status: "unavailable" },
+  { id: "global-scratch-inside-root", autocrlf: "true", insideScratch: true, status: "unavailable" },
+  { id: "unrelated-global-policy-isolated", autocrlf: "true", unrelated: true, status: "not_clean" },
+].map((entry) => ({ status: "clean", ...entry }));
+
+export function createMachineEolFixture(parent, id) {
+  const scenario = machineEolCases.find((entry) => entry.id === id);
+  if (!scenario || !isAbsolute(parent)) throw new Error(`invalid machine EOL fixture ${id}`);
+  const layout = scenario.longPath ? "child-long-path-clean" : scenario.nested ? "nested-clean" : scenario.child ? "child-clean" : "clean";
+  const fixture = createSourceFixture(parent, layout);
+  const base = dirname(fixture.root);
+  const home = join(base, "h");
+  const xdg = join(base, "x");
+  const scratch = join(base, "tmp");
+  for (const path of [home, join(xdg, "git"), scratch]) mkdirSync(path, { recursive: true });
+  const global = join(home, ".gitconfig");
+  const system = join(base, "system.config");
+  const policy = `[core]\nautocrlf = ${scenario.autocrlf}\n${scenario.eol ? `eol = ${scenario.eol}\n` : ""}`;
+  writeFileSync(system, scenario.systemOnly ? policy : "[core]\nautocrlf = false\n");
+  writeFileSync(global, scenario.systemOnly || scenario.xdgOnly ? "" : policy);
+  if (scenario.xdg) writeFileSync(join(xdg, "git", "config"), "[core]\nautocrlf = false\neol = lf\n");
+  if (scenario.xdgOnly) writeFileSync(join(xdg, "git", "config"), policy);
+  const environment = { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: xdg,
+    GIT_CONFIG_NOSYSTEM: "0", GIT_CONFIG_SYSTEM: system, GIT_CONFIG_GLOBAL: undefined,
+    TMPDIR: scratch, TMP: scratch, TEMP: scratch };
+  const repositories = [fixture.root, ...(scenario.child || scenario.nested ? [fixture.child] : []),
+    ...(scenario.nested ? [fixture.nested] : [])];
+  if (scenario.eol) {
+    for (const root of repositories) {
+      writeFileSync(join(root, ".gitattributes"), "* text=auto\n");
+      git(root, ["add", ".gitattributes"]);
+      git(root, ["commit", "--no-gpg-sign", "-qm", "Set text conversion policy"]);
+    }
+  }
+  if (scenario.rootLocal) git(fixture.root, ["config", "core.autocrlf", scenario.rootLocal]);
+  if (scenario.childLocal) git(fixture.child, ["config", "core.autocrlf", scenario.childLocal]);
+  if (scenario.longPath) {
+    for (const root of repositories) git(root, ["config", "core.safecrlf", "warn"]);
+  }
+  // Real checkout performs conversion; changing only timestamps afterwards
+  // defeats the index-stat shortcut without editing bytes or refreshing it.
+  const checkoutBytes = [];
+  let longCheckoutBytes;
+  for (const root of repositories) {
+    for (const name of ["tracked file.txt", ".gitignore", ".gitmodules", ".gitattributes",
+      ...(scenario.longPath && root === fixture.child ? [fixture.longTracked] : [])]) {
+      if (existsSync(join(root, name))) unlinkSync(join(root, name));
+    }
+    git(root, ["-c", "core.safecrlf=false", "checkout", "--", "."], environment);
+    const path = join(root, "tracked file.txt");
+    checkoutBytes.push(readFileSync(path, "utf8"));
+    utimesSync(path, new Date("2001-01-01T00:00:00Z"), new Date("2001-01-01T00:00:00Z"));
+    if (scenario.longPath && root === fixture.child) {
+      const longPath = join(root, fixture.longTracked);
+      longCheckoutBytes = readFileSync(longPath, "utf8");
+      utimesSync(longPath, new Date("2001-01-01T00:00:00Z"), new Date("2001-01-01T00:00:00Z"));
+    }
+  }
+  const ordinaryStatus = git(fixture.root, ["--no-optional-locks", "status", "--porcelain=v1", "--ignore-submodules=none"], environment);
+  const isolatedStatus = git(fixture.root, ["--no-optional-locks", "status", "--porcelain=v1", "--ignore-submodules=none"]);
+  if (scenario.dirty === "long-child") writeFileSync(join(fixture.child, fixture.longTracked), "changed actual long content\r\n");
+  else if (scenario.dirty) writeFileSync(join(scenario.dirty === "child" ? fixture.child : fixture.root,
+    "tracked file.txt"), "changed actual content\r\n");
+  let contextualFallback;
+  if (scenario.mismatch) {
+    const childAdmin = git(fixture.child, ["rev-parse", "--absolute-git-dir"]).replaceAll("\\", "/");
+    const childConfig = join(base, "child.config");
+    writeFileSync(childConfig, "[core]\nautocrlf = false\n");
+    // Match this admin directory itself, rather than repositories below it.
+    writeFileSync(global, `${policy}[includeIf "gitdir/i:${childAdmin}"]\npath = ${childConfig.replaceAll("\\", "/")}\n`);
+    contextualFallback = {
+      root: git(fixture.root, ["config", "--get", "core.autocrlf"], environment),
+      child: git(fixture.child, ["config", "--get", "core.autocrlf"], environment),
+    };
+  }
+  if (scenario.invalid) writeFileSync(global, "[core]\nautocrlf = unrepresentable\n");
+  if (scenario.unrelated) {
+    const excludes = join(base, "excludes");
+    writeFileSync(excludes, "untracked.txt\n");
+    writeFileSync(global, `${policy}[core]\nfsmonitor = must-not-run\nexcludesFile = ${excludes.replaceAll("\\", "/")}\n[filter "outside"]\nprocess = must-not-run\n`);
+    writeFileSync(join(fixture.root, "untracked.txt"), "must remain visible\n");
+  }
+  if (scenario.insideScratch) {
+    const inside = join(fixture.root, "ignored", "scratch");
+    mkdirSync(inside, { recursive: true });
+    Object.assign(environment, { TMP: inside, TEMP: inside, TMPDIR: inside });
+  }
+  return { ...fixture, ...scenario, environment, scratch, ordinaryStatus, isolatedStatus, checkoutBytes, contextualFallback, longCheckoutBytes,
+    scratchEntries: () => readdirSync(scratch) };
 }
