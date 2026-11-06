@@ -30,6 +30,82 @@ pub(crate) struct CommittedInput {
 /// Engram's Node launcher, this reader admits eligible pinned submodules.
 /// An unsupported repository is unavailable, never implicitly clean.
 pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
+    capture(
+        root,
+        Instant::now() + crate::source::MAX_BUDGET,
+        false,
+        &mut None,
+    )
+    .map(|value| value.input)
+}
+
+struct Capture {
+    input: CommittedInput,
+    tree: Option<String>,
+    entries: Vec<crate::source::Entry>,
+}
+
+pub(crate) fn observe(root: &Path, budget: Duration) -> crate::source::Observation {
+    use crate::source::{Observation, RefusalCode, Status};
+    if budget.is_zero() || budget > crate::source::MAX_BUDGET {
+        return Observation::unavailable(
+            None,
+            RefusalCode::InputUnavailable,
+            "source budget must be between one and 8000 milliseconds".to_owned(),
+        );
+    }
+    let deadline = Instant::now() + budget;
+    let mut known_root = None;
+    let mut observed = match capture(root, deadline, true, &mut known_root) {
+        Ok(value) => Observation {
+            version: 1,
+            status: if value.input.clean {
+                Status::Clean
+            } else {
+                Status::NotClean
+            },
+            root: known_root.clone(),
+            source: Some(format!("git-commit:{}", value.input.commit)),
+            tree: value.tree,
+            entries: value.entries,
+            refusal: None,
+            deadline: Some(deadline),
+        },
+        Err(error) => {
+            Observation::unavailable(known_root, refusal_code(&error), format!("{error:#}"))
+        }
+    };
+    observed.deadline = Some(deadline);
+    observed
+}
+
+fn refusal_code(error: &anyhow::Error) -> crate::source::RefusalCode {
+    use crate::{source::RefusalCode, task_sync::git::QueryFailure};
+    error
+        .chain()
+        .find_map(|cause| match cause.downcast_ref::<QueryFailure>() {
+            Some(QueryFailure::Deadline) => Some(RefusalCode::Deadline),
+            Some(QueryFailure::OutputLimit) => Some(RefusalCode::OutputLimit),
+            _ => None,
+        })
+        .unwrap_or(RefusalCode::InputUnavailable)
+}
+
+// The shared process helper may return after its allowance (for example while
+// draining a closed child's pipe). An overdue result is never usable here.
+fn before_deadline<T>(deadline: Instant, result: Result<T>) -> Result<T> {
+    if Instant::now() >= deadline {
+        return Err(crate::task_sync::git::QueryFailure::Deadline.into());
+    }
+    result
+}
+
+fn capture(
+    root: &Path,
+    deadline: Instant,
+    details: bool,
+    known_root: &mut Option<String>,
+) -> Result<Capture> {
     #[cfg(test)]
     READS.set(READS.get() + 1);
     ensure!(
@@ -39,8 +115,17 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
     let root = root
         .canonicalize()
         .context("the registered root is unavailable")?;
-    let deadline = Instant::now() + Duration::from_secs(8);
-    let run = |args: &[&str], missing| query(&root, args, missing, deadline);
+    if details {
+        root.to_str().context("the registered root is not UTF-8")?;
+        let text = crate::storage::store_path_text(&root);
+        ensure!(
+            Path::new(&text).is_absolute(),
+            "the registered root has no plain absolute path"
+        );
+        *known_root = Some(text);
+    }
+    let git = resolve_git(&root)?;
+    let run = |args: &[&str], missing| query(&git, &root, args, missing, deadline);
     let top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?;
     ensure!(
         top.canonicalize()? == root,
@@ -57,6 +142,20 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
         Ok(value.to_owned())
     };
     let commit = head()?;
+    let tree = if details {
+        let bytes = run(
+            &["rev-parse", "--verify", &format!("{commit}^{{tree}}")],
+            false,
+        )?;
+        let value = std::str::from_utf8(&bytes)?.trim();
+        ensure!(
+            value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "Git returned a malformed committed tree"
+        );
+        Some(value.to_owned())
+    } else {
+        None
+    };
     let filters = run(
         &[
             "config",
@@ -71,11 +170,61 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
         "configured Git filters are unsupported for committed input"
     );
     let modules = run(&["submodule", "status", "--recursive"], false)
-        .map_err(|error| anyhow::anyhow!("cannot read recursive submodule status: {error:#}"))?;
+        .context("cannot read recursive submodule status")?;
     let children = submodules(&modules)?;
     // Read filter configuration before root status can invoke child filters.
-    for name in &children {
+    guard_child_filters(&git, &root, &children, deadline)?;
+    let status = run(
+        &[
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+            "-z",
+        ],
+        false,
+    )?;
+    guard_child_dirt(&children, &status)?;
+    ensure!(
+        head()? == commit,
+        "HEAD moved during the committed-input read"
+    );
+    let end_top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?.canonicalize()?;
+    let end_admin =
+        path_output(run(&["rev-parse", "--absolute-git-dir"], false)?)?.canonicalize()?;
+    ensure!(
+        end_top == root && end_admin == admin,
+        "the registered Git worktree changed during the read"
+    );
+    let entries = if details {
+        status_entries(&status)?
+    } else {
+        Vec::new()
+    };
+    before_deadline(
+        deadline,
+        Ok(Capture {
+            input: CommittedInput {
+                root,
+                commit,
+                clean: status.is_empty(),
+                measured_at: chrono::Utc::now(),
+            },
+            tree,
+            entries,
+        }),
+    )
+}
+
+fn guard_child_filters(
+    git: &Path,
+    root: &Path,
+    children: &[String],
+    deadline: Instant,
+) -> Result<()> {
+    for name in children {
         let filters = query(
+            git,
             &root.join(name),
             &[
                 "config",
@@ -92,17 +241,11 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
             "submodule '{name}': configured Git filters are unsupported"
         );
     }
-    let status = run(
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--ignore-submodules=none",
-            "-z",
-        ],
-        false,
-    )?;
-    for name in &children {
+    Ok(())
+}
+
+fn guard_child_dirt(children: &[String], status: &[u8]) -> Result<()> {
+    for name in children {
         ensure!(
             !status.split(|byte| *byte == 0).any(|entry| {
                 entry.get(3..).is_some_and(|path| {
@@ -112,23 +255,80 @@ pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
             "submodule '{name}': working tree is dirty"
         );
     }
+    Ok(())
+}
+
+fn status_entries(bytes: &[u8]) -> Result<Vec<crate::source::Entry>> {
+    use crate::source::Entry;
     ensure!(
-        head()? == commit,
-        "HEAD moved during the committed-input read"
+        bytes.is_empty() || bytes.last() == Some(&0),
+        "Git returned truncated porcelain"
     );
-    let end_top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?.canonicalize()?;
-    let end_admin =
-        path_output(run(&["rev-parse", "--absolute-git-dir"], false)?)?.canonicalize()?;
-    ensure!(
-        end_top == root && end_admin == admin,
-        "the registered Git worktree changed during the read"
-    );
-    Ok(CommittedInput {
-        root,
-        commit,
-        clean: status.is_empty(),
-        measured_at: chrono::Utc::now(),
-    })
+    let mut records = bytes
+        .strip_suffix(&[0])
+        .unwrap_or(bytes)
+        .split(|byte| *byte == 0);
+    let mut entries = Vec::new();
+    if bytes.is_empty() {
+        return Ok(entries);
+    }
+    while let Some(record) = records.next() {
+        ensure!(
+            record.len() >= 4 && record[2] == b' ',
+            "Git returned malformed porcelain"
+        );
+        let status = std::str::from_utf8(&record[..2])?;
+        ensure!(
+            status.bytes().all(|byte| b" MADRCUT?!".contains(&byte)) && status != "  ",
+            "Git returned malformed porcelain status"
+        );
+        let path =
+            std::str::from_utf8(&record[3..]).context("Git returned a non-UTF-8 changed path")?;
+        ensure!(!path.is_empty(), "Git returned an empty changed path");
+        let origin = if status.bytes().any(|byte| matches!(byte, b'R' | b'C')) {
+            let value = records
+                .next()
+                .context("Git rename/copy has no origin path")?;
+            let value =
+                std::str::from_utf8(value).context("Git returned a non-UTF-8 origin path")?;
+            ensure!(!value.is_empty(), "Git returned an empty origin path");
+            Some(value.to_owned())
+        } else {
+            None
+        };
+        entries.push(Entry {
+            status: status.to_owned(),
+            path: path.to_owned(),
+            origin,
+        });
+    }
+    Ok(entries)
+}
+
+// Resolve before setting Git's cwd. In particular, Windows must never search
+// an inspected checkout for git.exe. Relative PATH entries confer no trust.
+fn resolve_git(root: &Path) -> Result<PathBuf> {
+    let name = if cfg!(windows) { "git.exe" } else { "git" };
+    for directory in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+        if !directory.is_absolute() {
+            continue;
+        }
+        let Ok(path) = directory.join(name).canonicalize() else {
+            continue;
+        };
+        if path.starts_with(root) || !path.is_file() {
+            continue;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if path.metadata()?.permissions().mode() & 0o111 == 0 {
+                continue;
+            }
+        }
+        return Ok(path);
+    }
+    bail!("a trusted absolute Git executable outside the inspected root is unavailable")
 }
 
 fn submodules(bytes: &[u8]) -> Result<Vec<String>> {
@@ -175,22 +375,33 @@ fn path_output(bytes: Vec<u8>) -> Result<PathBuf> {
     Ok(PathBuf::from(text))
 }
 
-fn query(root: &Path, args: &[&str], missing: bool, deadline: Instant) -> Result<Vec<u8>> {
+fn query(
+    git: &Path,
+    root: &Path,
+    args: &[&str],
+    missing: bool,
+    deadline: Instant,
+) -> Result<Vec<u8>> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
-        bail!("the committed-input read exceeded its deadline");
+        return Err(crate::task_sync::git::QueryFailure::Deadline.into());
     }
     let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
-    let mut command = Command::new("git");
+    let mut command = Command::new(git);
     command
         .current_dir(root)
         .args(["--no-pager", "--no-optional-locks", "--no-replace-objects"]);
+    // Command-scoped configuration also reaches Git's submodule helpers.
+    // Deep checked-out children must not depend on user or repository config.
+    #[cfg(windows)]
+    command.args(["-c", "core.longpaths=true"]);
     for setting in [
         "core.fsmonitor=false",
         "core.checkStat=default",
         "core.trustctime=true",
         "core.ignoreStat=false",
         "core.untrackedCache=false",
+        "core.safecrlf=false",
         "status.showUntrackedFiles=all",
         "diff.ignoreSubmodules=none",
     ] {
@@ -202,14 +413,7 @@ fn query(root: &Path, args: &[&str], missing: bool, deadline: Instant) -> Result
         "-c",
         &format!("core.attributesFile={null}"),
     ]);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stderr(if args[0] == "submodule" {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        });
+    command.args(args).stdin(Stdio::null());
     for (name, _) in std::env::vars_os() {
         if name
             .to_string_lossy()
@@ -225,12 +429,61 @@ fn query(root: &Path, args: &[&str], missing: bool, deadline: Instant) -> Result
         .env("GIT_ATTR_NOSYSTEM", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_NO_LAZY_FETCH", "1");
-    crate::task_sync::git::run_query_command(command, args[0], missing, None, remaining)
+    let result = crate::task_sync::git::run_query_command(
+        command,
+        args[0],
+        missing,
+        None,
+        remaining,
+        crate::task_sync::git::QueryStderrPolicy::RequireEmpty,
+    );
+    before_deadline(deadline, result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn late_query_or_postprocessing_result_refuses_and_typed_failures_survive_context() {
+        use crate::{source::RefusalCode, task_sync::git::QueryFailure};
+        let deadline = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+        for result in [Ok(Vec::<u8>::new()), Ok(b"?? changed\0".to_vec())] {
+            let error = before_deadline(deadline, result).unwrap_err();
+            assert_eq!(refusal_code(&error), RefusalCode::Deadline);
+        }
+        let error = anyhow::Error::from(QueryFailure::OutputLimit)
+            .context("cannot read recursive submodule status");
+        assert_eq!(refusal_code(&error), RefusalCode::OutputLimit);
+        let error = anyhow::Error::from(QueryFailure::Deadline).context("final Git query");
+        assert_eq!(refusal_code(&error), RefusalCode::Deadline);
+        let error = anyhow::Error::from(QueryFailure::Stderr {
+            command: "status".to_owned(),
+            message: "child path: Filename too long".to_owned(),
+        })
+        .context("registered input");
+        assert_eq!(refusal_code(&error), RefusalCode::InputUnavailable);
+        assert!(format!("{error:#}").contains("Filename too long"));
+    }
+
+    #[test]
+    fn porcelain_preserves_rename_origins_and_refuses_incomplete_or_lossy_paths() {
+        let entries = status_entries(b"R  new name\0old name\0?? added\0").unwrap();
+        assert_eq!(entries[0].status, "R ");
+        assert_eq!(entries[0].path, "new name");
+        assert_eq!(entries[0].origin.as_deref(), Some("old name"));
+        assert_eq!(entries[1].status, "??");
+        for bytes in [
+            b"?? missing terminator".as_slice(),
+            b"R  new\0",
+            b"?? \xff\0",
+            b"zz path\0",
+        ] {
+            assert!(status_entries(bytes).is_err(), "{bytes:?}");
+        }
+    }
 
     fn git(root: &Path, args: &[&str]) -> Vec<u8> {
         let mut command = Command::new("git");

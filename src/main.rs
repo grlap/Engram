@@ -92,6 +92,16 @@ fn resolve_host_path_identity(
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Observe a local committed input without opening a project or store.
+    Source {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long, required = true)]
+        json: bool,
+        /// Shorten the eight-second reader budget; never raises it.
+        #[arg(long, default_value_t = 8000, value_parser = clap::value_parser!(u64).range(1..=8000))]
+        timeout_ms: u64,
+    },
     /// Move a whole store between formats as plain JSON: export, then import.
     Migration {
         #[command(subcommand)]
@@ -999,7 +1009,8 @@ fn command_resolves_host_path_identity(command: &Command) -> bool {
         | Command::Control { .. }
         | Command::Authority { .. }
         | Command::ControlPolicy { .. } => true,
-        Command::Migration { .. }
+        Command::Source { .. }
+        | Command::Migration { .. }
         | Command::Import { .. }
         | Command::Work { .. }
         | Command::Mcp { .. }
@@ -1024,6 +1035,26 @@ async fn run_cli() -> Result<ExitCode> {
         }
         Err(error) => error.exit(),
     };
+    if let Command::Source {
+        root,
+        timeout_ms,
+        json,
+    } = &cli.command
+    {
+        if !*json || !root.is_absolute() {
+            eprintln!("source requires --json and an absolute --root worktree path");
+            return Ok(ExitCode::from(2));
+        }
+        let observation =
+            engram::source::inspect(root, std::time::Duration::from_millis(*timeout_ms));
+        let (status, json) = observation.json()?;
+        println!("{json}");
+        return Ok(if status == engram::source::Status::Unavailable {
+            ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
+        });
+    }
     // Migration operates on an explicit file, including stores that ordinary
     // current-build open refuses. It must not resolve or probe the active home.
     if let Command::Migration { operation } = &cli.command {
@@ -1086,6 +1117,7 @@ async fn run_cli() -> Result<ExitCode> {
         None
     };
     match cli.command {
+        Command::Source { .. } => unreachable!("source dispatched before project resolution"),
         Command::Migration { operation } => return bin_support::migration::run(&operation),
         Command::Import {
             actor_id,

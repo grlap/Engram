@@ -20,6 +20,7 @@ pub mod phase_trace;
 pub mod project;
 pub mod schema;
 pub mod shell;
+pub mod source;
 pub mod storage;
 pub mod task_sync;
 pub mod verbs;

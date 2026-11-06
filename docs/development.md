@@ -48,6 +48,70 @@ This project tracks its work in Engram — the fourteen agent words, documented 
   TermAl update that removes the `obligation_waive` operation; do not land either side alone and
   do not add a legacy-frame compatibility shim.
 
+## Read-only committed-input command
+
+`engram source --root <absolute-worktree> --json` observes the shared
+committed-input predicate without selecting a project, opening a store or
+creating a session. It uses the root commit, recursive submodule pins,
+root/child filter guards and one root Git status. It neither lists the whole
+index nor fetches, initializes or repairs repositories.
+
+The JSON v1 envelope contains `version`, `status`, `root`, `source`, `tree`,
+`entries` and `refusal`. Status is `clean`, `not_clean` or `unavailable`.
+Completed supported measurements contain the canonical root, one
+`git-commit:<full-SHA-1>` source and that commit's tree. On Windows, `root`
+uses the plain drive or UNC form (`C:\...` or `\\server\share\...`), without
+the internal verbatim prefix, matching readiness's path formatter. Entries come from the
+same NUL-delimited porcelain status and contain `status`, `path` and, for a
+rename or copy, `origin`. They are changed entries, not a complete file list.
+An unavailable measurement has no usable source/tree, empty entries and a
+bounded refusal with `code` and `message`; its root is present when resolved.
+Existing named child-dirt refusals remain unavailable rather than silently
+changing live-currency error semantics. Off-pin and uninitialized children
+deterministically return `unavailable` / `input_unavailable`, with the child
+and cause in the message and no usable source/tree or entry data.
+
+The closed v1 refusal-code set is `input_unavailable`, `deadline`,
+`output_limit`. The bounded message names the root, child, configured filter,
+Git or pathname problem for `input_unavailable`; consumers never derive
+eligibility by parsing that text. A new code requires a new version or an
+explicitly agreed additive rule. Consumers fail closed on unknown codes.
+
+Clean and not-clean measurements exit 0; unavailable exits 1; invalid invocation
+exits 2. Consumers validate version, status and canonical root identity: exit 0
+alone is never credit. The reader retains its eight-second budget and one-MiB
+Git output bound; `--timeout-ms 1..8000` can shorten the budget. JSON expansion
+beyond one MiB refuses rather than truncating usable entries; the bound excludes
+the final newline. The same absolute deadline is checked after Git queries,
+final parsing and JSON serialization: an overdue result is unavailable, never
+usable source credit. Filesystem and OS scheduling delays can postpone the
+refusal itself; this is not a hard real-time process termination guarantee. Non-UTF-8 or
+malformed path records refuse without lossy conversion. Git resolves to an
+absolute executable outside the inspected tree, with inherited Git redirection
+removed and the existing isolated settings retained.
+On Windows every reader query sets `core.longpaths=true` for that invocation,
+including inherited submodule helpers. This fixes refusal of otherwise clean
+deep worktrees such as Phoenix's Roslyn child, without writing user or repository
+configuration; dirty children still refuse.
+Every reader query requires complete, empty stderr even when Git exits 0;
+diagnostic or partial stderr refuses with a bounded named cause rather than
+yielding usable input. The existing byte and deadline refusals remain distinct.
+Per-command `core.safecrlf=false` suppresses conversion warnings without
+changing conversion or Git's clean/dirty comparison; diagnostics are never
+accepted through a warning-text whitelist.
+
+This is endpoint evidence, not a byte inventory or execution attestation.
+Git-ignored output and changes hidden by index flags can be missed; captures
+can miss transient change-and-restore. Existing execution, authority and
+before/after rules remain the consumer's responsibility. The source command
+ships before launcher admission migrates to it; the launcher's current
+fingerprint format and admission are unchanged by this command.
+
+The shared real-Git constructor and expected table are
+`scripts/source-input-fixtures.mjs`; `scripts/source-input.test.mjs` exercises
+them through the command. Later adapters use the same cases. Fixture IDs and
+commit/tree values are created at runtime under the caller's owned test root.
+
 ## Quality gates
 
 Run `node scripts/test-launcher.mjs full` before landing any changeset with a

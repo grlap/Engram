@@ -53,6 +53,13 @@ not detect mixed process builds. No DDL or canonical conversion is introduced.
 The launcher CLI selects commit input for a clean supported root and plain input
 for a dirty root; explicit commit selection still refuses dirt.
 
+The store-independent `engram source --root <absolute-worktree> --json`
+command exposes that same committed-input reader as bounded JSON v1, with
+clean/not-clean/unavailable status, canonical root, source/tree metadata and
+changed porcelain entries. It opens no store and grants no execution credit.
+Launcher admission and fingerprints retain their existing implementation until
+their separate migration. See the [source command](development.md#read-only-committed-input-command).
+
 Selected verification evidence can carry a
 [Git-tree applicability restriction](features/verification-applicability.md).
 Its declared rebuildable schema barrier requires the documented coordinated

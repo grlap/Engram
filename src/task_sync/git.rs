@@ -5,6 +5,7 @@ mod query;
 
 pub use delta::{CommitTaskDelta, read_task_delta};
 pub(crate) use query::Failure as QueryFailure;
+pub(crate) use query::StderrPolicy as QueryStderrPolicy;
 pub(crate) use query::run as query;
 pub(crate) use query::run_command as run_query_command;
 
