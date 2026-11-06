@@ -143,7 +143,7 @@ fn submodules(bytes: &[u8]) -> Result<Vec<String>> {
         let (pin, path) = row
             .split_once(' ')
             .context("malformed submodule status row")?;
-        let name = if path.ends_with(')') {
+        let name = if matches!(prefix, b' ' | b'+') && path.ends_with(')') {
             path.rsplit_once(" (").map_or(path, |(name, _)| name)
         } else {
             path
@@ -349,6 +349,52 @@ mod tests {
                 .unwrap_err()
                 .to_string();
             assert!(error.contains("child") && error.contains(reason), "{error}");
+        }
+    }
+
+    #[test]
+    fn uninitialized_submodule_paths_keep_parenthesized_text() {
+        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
+        let pin = &pin[..40];
+        for name in ["child (vendor)", " (vendor)", "child (vendor) (edition)"] {
+            assert_eq!(
+                submodules(format!("-{pin} {name}\n").as_bytes())
+                    .unwrap_err()
+                    .to_string(),
+                format!("submodule '{name}': uninitialized")
+            );
+        }
+    }
+
+    #[test]
+    fn conflicted_submodule_paths_keep_parenthesized_text() {
+        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
+        let pin = &pin[..40];
+        for name in ["child (vendor)", " (vendor)", "child (vendor) (edition)"] {
+            assert_eq!(
+                submodules(format!("U{pin} {name}\n").as_bytes())
+                    .unwrap_err()
+                    .to_string(),
+                format!("submodule '{name}': conflicted gitlink")
+            );
+        }
+    }
+
+    #[test]
+    fn initialized_submodule_paths_remove_only_revision_annotation() {
+        let pin = crate::ObjectId::from_canonical_bytes(b"fixture commit").to_string();
+        let pin = &pin[..40];
+        for name in ["child (vendor)", " (vendor)", "child (vendor) (edition)"] {
+            assert_eq!(
+                submodules(format!(" {pin} {name} (heads/main)\n").as_bytes()).unwrap(),
+                [name]
+            );
+            assert_eq!(
+                submodules(format!("+{pin} {name} (heads/main)\n").as_bytes())
+                    .unwrap_err()
+                    .to_string(),
+                format!("submodule '{name}': HEAD differs from its pin")
+            );
         }
     }
 }
