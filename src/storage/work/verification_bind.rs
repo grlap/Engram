@@ -121,7 +121,7 @@ pub(in crate::storage) fn bind_verification_live_on(
         let basis = &original.evidence.source_basis;
         if input.measurement.workspace_id != basis.workspace_id {
             refusal.request = Some(VerificationBindRequestRefusal::MeasurementWorkspaceDiffers);
-        } else if input.measurement.source_revision != basis.source_revision {
+        } else if Some(input.measurement.source_revision.as_str()) != basis.legacy_revision() {
             refusal.request = Some(VerificationBindRequestRefusal::MeasurementRevisionDiffers);
         }
     }
@@ -214,7 +214,8 @@ pub(in crate::storage) fn bound_receipt_matches_on(
             || &evidence.session_id != session_id
             || &source.verification != original
             || source.sighting != target.sighting.observation
-            || target.sighting.source_revision != evidence.source_basis.source_revision
+            || Some(target.sighting.source_revision.as_str())
+                != evidence.source_basis.legacy_revision()
             || &source.measurement != measurement
             || source.criteria != target.criteria
             || position != Some(bound.run_position)
@@ -293,6 +294,9 @@ fn validate_original(
     }
     if evidence.result != VerificationResult::Passed {
         return Ok(Err(Refused::NotPassed));
+    }
+    if evidence.source_basis.source_id().is_some() {
+        return Ok(Err(Refused::SourceIdUnsupported));
     }
     let producer = super::load_verification_producer_on(transaction, &evidence)?;
     if producer.outcome != ExecutionOutcome::Succeeded
@@ -383,7 +387,11 @@ fn validate_original(
                 evidence.binding.run_id,
                 &input.original,
                 &evidence.producer_observation,
-                &evidence.source_basis.source_revision,
+                evidence.source_basis.legacy_revision().ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "bound input requires a legacy revision".into(),
+                    )
+                })?,
                 run_head,
             )?)
     {
@@ -505,8 +513,9 @@ fn validate_target<'a>(
     else {
         return refuse(Reason::NoNamedRoot, None, None);
     };
-    let original_basis = original.map(|original| &original.evidence.source_basis);
-    if let Some(basis) = original_basis
+    let original_basis =
+        original.and_then(|original| original.evidence.source_basis.legacy_basis());
+    if let Some(basis) = &original_basis
         && root.workspace_id != basis.workspace_id
     {
         return refuse(
@@ -553,7 +562,7 @@ fn validate_target<'a>(
             Some(target.sighting.source_revision.clone()),
         );
     }
-    if let Some(basis) = original_basis
+    if let Some(basis) = &original_basis
         && basis.source_revision != sighting_basis.source_revision
     {
         return refuse(
@@ -667,13 +676,22 @@ fn write_target(
         binding: binding.clone(),
         session_id: session_id.clone(),
         producer_observation: source.producer_observation.clone(),
-        source_basis: ExecutionSourceBasis {
+        source_basis: (ExecutionSourceBasis {
             git_tree: target.git_tree.clone(),
             workspace_id: source.source_basis.workspace_id.clone(),
-            source_revision: source.source_basis.source_revision.clone(),
+            source_revision: source
+                .source_basis
+                .legacy_revision()
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "bound input requires a legacy revision".into(),
+                    )
+                })?
+                .to_owned(),
             source_root_generation: Some(target.generation),
             source_root_state: Some(SourceRootState::Named),
-        },
+        })
+        .into(),
         environment: source.environment.clone(),
         check_kind: source.check_kind,
         check_fingerprint: source.check_fingerprint.clone(),

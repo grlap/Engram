@@ -386,7 +386,10 @@ fn registered_staged_input_quiet_evaluation_requires_registered_provenance() {
             let producer =
                 crate::storage::work::load_verification_producer_on(&f.store.connection, &evidence)
                     .unwrap();
-            assert_eq!(evidence.source_basis.source_revision, declared);
+            assert_eq!(
+                evidence.source_basis.legacy_revision(),
+                Some(declared.as_str())
+            );
             assert!(producer.registered_git_basis(&evidence).is_none());
         }
         let note = note(&mut f);

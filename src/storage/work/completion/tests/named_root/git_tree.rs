@@ -169,7 +169,9 @@ fn git_tree_stored_reader_refuses_unknown_members_without_rewriting_legacy_bytes
     let evidence = store.load_verification_evidence(&check).unwrap();
     let mut legacy = evidence.clone();
     legacy.applicability = None;
-    legacy.source_basis.git_tree = None;
+    let mut legacy_basis = legacy.source_basis.legacy_basis().unwrap();
+    legacy_basis.git_tree = None;
+    legacy.source_basis = legacy_basis.into();
     let mut old = serde_json::to_value(&legacy).unwrap();
     old.as_object_mut().unwrap().remove("applicability");
     old["source_basis"]

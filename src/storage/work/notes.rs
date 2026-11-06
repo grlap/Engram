@@ -80,7 +80,7 @@ impl WorkNoteRecord {
 pub(crate) struct VerificationFacts {
     pub result: VerificationResult,
     pub check_kind: VerificationKind,
-    pub source_revision: String,
+    pub source: Box<crate::domain::VerificationSourceIdentity>,
     pub producer_outcome: ExecutionOutcome,
     pub source_workspace: String,
 }
@@ -145,7 +145,7 @@ pub(super) fn load_note(
                 Some(VerificationFacts {
                     result: evidence.result,
                     check_kind: evidence.check_kind,
-                    source_revision: evidence.source_basis.source_revision.clone(),
+                    source: Box::new(evidence.source_basis.identity.clone()),
                     producer_outcome: producer.outcome,
                     source_workspace: evidence.source_basis.workspace_id.clone(),
                 })

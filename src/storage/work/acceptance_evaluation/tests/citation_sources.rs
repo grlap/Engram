@@ -542,7 +542,7 @@ mod citable {
             "bound-candidate-policy",
             40,
         );
-        let mut foreign_basis = bound.source_basis.clone();
+        let mut foreign_basis = bound.source_basis.legacy_basis().unwrap();
         foreign_basis.workspace_id = "foreign-root".into();
         foreign_basis.source_revision = "R0".into();
         let bad = host_verification_from_basis(

@@ -553,16 +553,48 @@ registration: {host_run_id, request_identity, registered_at,
   initiating_session_id, owning_session_id?, binding, root}
 root: {workspace_id, generation, state: named}
 input: {kind: commit, commit} | {kind: staged_tree, tree, base_commit}
+  | {kind: source_id, source_id}
 run: {mode, command, started_at, finished_at, outcome}
 checks: [{stage, check_kind, command, check_fingerprint, started_at?,
   completed_at?, outcome, summary?, refs?, counts?}]
 post_run: {outcome, clean_before, clean_after, dirty_paths?, disposition?}
+  | {source_id}
 ```
 
-Ordinary input names its full commit; staged input names its exact tree,
-with base commit as provenance. Only input clean before and after execution
-is admitted here. A dirty-input disposition does not waive this rule or
-change landing requirements.
+Commit input names its full commit; staged input names its exact tree,
+with base commit as provenance. These two historical representations retain
+their clean-before/after rule. The `source_id` input instead carries the
+complete object returned by the shared source reader, and requires exactly
+the matching `{source_id}` post-run shape. Both objects must validate and be
+equal in full. Equal local changes and off-pin initialized submodules qualify;
+cleanliness and watcher reports add no source condition. Landing policy is
+separate.
+
+Native shared-input verification stores the complete object in its canonical
+producer and evidence. Its mapped revision column stays null. At consumption,
+the shared reader measures the named root outside the SQLite transaction;
+the decision compares the whole object and revalidates the work, run and root
+binding. Saved decisions retain that object and are reconstructed without a
+later filesystem read. Existing records retain their original representation,
+ids, links and interpretation.
+
+Agent note windows and details show only the shared identity's commit, tree
+and root/child change counts. The complete object remains in the canonical
+producer, evidence and decision records; the display summary is not an input
+identity or a substitute for full-object comparison.
+
+This additive native route introduces no capability entry or handshake. Install
+the consumer before or together with producer activation; an older consumer
+visibly refuses the unknown input kind, with no fallback.
+After the first shared record, keep every store reader on a build that reads
+that representation: an older backup binary cannot read those records merely
+because schema readiness is unchanged. Reinstalling it is not a supported
+rollback of a store containing shared records.
+The existing frame limits remain: oversized input is unavailable, never truncated. Observation
+admission and retirement of new legacy submissions remain separate coordinated
+rollout steps. The string-based evaluation declaration and cross-item bind
+protocol do not declare a shared object; they must not substitute a commit or
+digest for it.
 
 An immutable `registered_host_run` preserves the aggregate and individual
 stage results. Completed checks enter canonical verification with that
@@ -580,7 +612,7 @@ moved association returns `verification_record_refused` with
 `details.field` and `details.reason`, recording nothing; the host retains it
 as not credited, without changing the key or substituting a later claim.
 
-`verification_bind` credits one registered check to several items: the check
+For legacy input, `verification_bind` credits one registered check to several items: the check
 runs once, on one item's run, and binding gives every other item a record of
 it on its own run; see
 [binding one check to several items](acceptance-evaluation.md#binding-one-check-to-several-items).

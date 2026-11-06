@@ -6,6 +6,7 @@ use crate::storage::work::test_support::{checkpoint, completion_request};
 
 mod live_currency;
 mod quiet_evaluation;
+mod shared_input;
 mod submodules;
 
 fn object_name(label: &str) -> String {
@@ -255,7 +256,7 @@ fn registered_git_input_staged_identity_ignores_base_provenance() {
 #[test]
 fn registered_git_input_dirty_before_cannot_be_rehabilitated_by_a_later_commit() {
     let mut f = prepared(true, true);
-    f.request.post_run.clean_before = false;
+    f.request.post_run.legacy_mut().clean_before = false;
     let before = f.snapshot();
     assert!(f.record().is_err());
     f.request.input = RegisteredVerificationInput::Commit {

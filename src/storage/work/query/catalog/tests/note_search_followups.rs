@@ -89,7 +89,9 @@ fn note_search_trusts_projection_while_detail_and_doctor_validate_producer() {
     let facts = note.verification.unwrap();
     assert_eq!(facts.result, VerificationResult::Passed);
     assert_eq!(facts.check_kind, VerificationKind::Test);
-    assert_eq!(facts.source_revision, "revision-as-it-stands");
+    assert!(matches!(facts.source.as_ref(),
+        crate::domain::VerificationSourceIdentity::Legacy { source_revision, .. }
+            if source_revision == "revision-as-it-stands"));
     assert_eq!(facts.producer_outcome, ExecutionOutcome::Succeeded);
 
     let verification: crate::domain::VerificationEvidence =

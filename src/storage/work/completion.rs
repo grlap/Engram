@@ -406,16 +406,25 @@ impl SqliteStore {
                 live_commit_consumed = true;
                 let checked: VerificationEvidence =
                     load_typed_work_object(&transaction, citation, "verification_evidence")?;
-                if request
-                    .source_fingerprint
-                    .as_ref()
-                    .is_some_and(|declared| declared != &checked.source_basis.source_revision)
+                if request.source_fingerprint.is_some()
+                    && checked.source_basis.source_id().is_some()
                 {
+                    return Err(StoreError::WorkCompletionRefused {
+                        work: item.work_id,
+                        reason: "source_fingerprint cannot declare a source_id input; omit the declaration for unevaluated completion".into(),
+                    });
+                }
+                if request.source_fingerprint.as_ref().is_some_and(|declared| {
+                    checked
+                        .source_basis
+                        .legacy_revision()
+                        .is_some_and(|revision| declared != revision)
+                }) {
                     return Err(StoreError::WorkCompletionRefused {
                         work: item.work_id,
                         reason: format!(
                             "completion declares an input other than its current registered check; use --source-fingerprint {} or omit the declaration for unevaluated completion; otherwise run a check on the intended commit",
-                            checked.source_basis.source_revision
+                            checked.source_basis.legacy_revision().unwrap_or_default()
                         ),
                     });
                 }
@@ -1566,7 +1575,7 @@ struct TypedEvidenceProjection<'a> {
     note: Option<&'a VerificationEvidence>,
     kind: WorkEvidenceKind,
     workspace_id: &'a str,
-    source_revision: &'a str,
+    source_revision: Option<&'a str>,
     producer_session_id: &'a SessionId,
     producer_observation: Option<&'a ObjectId>,
     check_fingerprint: Option<&'a ObjectId>,
@@ -1585,7 +1594,7 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
         SqliteStore::require_verification_applicability_on(transaction)?;
         crate::control::check_verification_applicability(
             evidence.applicability.as_ref(),
-            Some(&evidence.source_basis),
+            evidence.source_basis.legacy_basis().as_ref(),
         )
         .map_err(|_| {
             StoreError::InvalidWork(
@@ -1607,7 +1616,7 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
             note: Some(evidence),
             kind: WorkEvidenceKind::Verification,
             workspace_id: &evidence.source_basis.workspace_id,
-            source_revision: &evidence.source_basis.source_revision,
+            source_revision: evidence.source_basis.legacy_revision(),
             producer_session_id: &evidence.session_id,
             producer_observation: Some(&evidence.producer_observation),
             check_fingerprint: Some(&evidence.check_fingerprint),
@@ -1644,7 +1653,7 @@ pub(in crate::storage) fn append_control_environment_evidence_on(
             note: None,
             kind: WorkEvidenceKind::Environment,
             workspace_id: &evidence.source_basis.workspace_id,
-            source_revision: &evidence.source_basis.source_revision,
+            source_revision: Some(&evidence.source_basis.source_revision),
             producer_session_id: &evidence.session_id,
             producer_observation: None,
             check_fingerprint: None,
@@ -2139,8 +2148,7 @@ fn completion_needs_live_input_on(
         let evidence: VerificationEvidence =
             load_typed_work_object(connection, id, "verification_evidence")?;
         if super::load_verification_producer_on(connection, &evidence)?
-            .registered_git_basis(&evidence)
-            .is_some_and(|basis| basis.source_revision.starts_with("git-commit:"))
+            .has_registered_live_input(&evidence)
         {
             return Ok(true);
         }

@@ -207,7 +207,7 @@ pub(crate) fn append_historical_capture(
             binding: capture.binding.clone(),
             session_id: capture.session.clone(),
             producer_observation: producer,
-            source_basis,
+            source_basis: source_basis.into(),
             environment,
             check_kind: input.check_kind,
             check_fingerprint: observation.action_fingerprint,

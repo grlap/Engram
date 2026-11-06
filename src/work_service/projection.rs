@@ -753,7 +753,7 @@ pub(super) fn work_evidence_summary(
                 non_holder: false,
                 gate: None,
                 workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
-                source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
+                source_revision: evidence.source_basis.legacy_revision().map(compact_text),
                 producer_session_id: Some(evidence.session_id),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 actor_context: projected_actor_context(&evidence.actor),

@@ -659,7 +659,7 @@ fn naming_mismatch(
             load_typed_work_object(connection, citation, "verification_evidence")?;
         let producer_basis =
             super::super::load_verification_producer_on(connection, &evidence)?.source_basis;
-        let Some(producer_basis) = producer_basis else {
+        let Some(producer_basis) = producer_basis.and_then(|basis| basis.legacy_basis()) else {
             return Ok(Some(NamingMismatch::ProducerUnsourced));
         };
         if let Some(mismatch) = basis_naming_mismatch(&producer_basis, root) {
@@ -876,20 +876,25 @@ pub(super) fn stale_bound_citation_live<'a>(
                 continue;
             }
             if let Some((evidence, producer)) = registered {
+                let basis = evidence.source_basis.legacy_basis().ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "legacy registered input has no revision".into(),
+                    )
+                })?;
                 let naming = match root {
                     Some(root) => naming_mismatch(
                         connection,
                         run_id,
                         citation,
                         &evidence.producer_observation,
-                        &evidence.source_basis,
+                        &basis,
                         root,
                     )?,
                     None => None,
                 };
                 let cause = if let Some(mismatch) = naming {
                     Some(StaleCause::RegisteredGit {
-                        checked: evidence.source_basis.clone(),
+                        checked: basis.clone(),
                         naming: Some(mismatch),
                     })
                 } else if judged.is_some_and(|judged| {
@@ -903,7 +908,7 @@ pub(super) fn stale_bound_citation_live<'a>(
                     None
                 } else {
                     Some(StaleCause::RegisteredGit {
-                        checked: evidence.source_basis.clone(),
+                        checked: basis.clone(),
                         naming: None,
                     })
                 };
@@ -924,7 +929,7 @@ pub(super) fn stale_bound_citation_live<'a>(
                         root,
                     )?
                     .map(|moved| StaleCause::MovedAfter {
-                        checked: evidence.source_basis.source_revision.clone(),
+                        checked: basis.source_revision.clone(),
                         moved,
                     }),
                 };

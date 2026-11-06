@@ -161,7 +161,7 @@ pub(super) fn stale_verification_source(
         revision,
         root_generation,
         verification_workspace: evidence.source_basis.workspace_id.clone(),
-        verification_revision: evidence.source_basis.source_revision.clone(),
+        verification_revision: evidence.source_basis.legacy_revision()?.to_owned(),
     })
 }
 
@@ -285,6 +285,7 @@ impl VerificationAtCut {
         // bound criterion.
         if assessment == ObligationAssessment::Matches
             && acceptance_binding_criterion(&obligation.rule).is_some()
+            && self.evidence.source_basis.source_id().is_none()
             && let Some(mismatch) = self.unadmitted_barrier_on(connection)?
         {
             assessment = ObligationAssessment::Mismatch(mismatch);

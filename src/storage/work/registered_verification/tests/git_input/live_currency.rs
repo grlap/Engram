@@ -127,7 +127,7 @@ fn another_check(
         .clone()
 }
 
-fn unlocated_change(f: &mut Fixture) {
+pub(super) fn unlocated_change(f: &mut Fixture) {
     unlocated_change_at(f, 11);
 }
 
@@ -1822,11 +1822,19 @@ fn live_git_currency_validates_saved_decisions_without_rediscovery() {
         let mut bad = recorded.record.clone();
         let proof = bad.registered_input_decision.as_mut().unwrap();
         match damage {
-            "clean" => proof.clean = false,
+            "clean" => {
+                let RegisteredDecisionSource::Legacy { clean, .. } = &mut proof.source else {
+                    panic!("legacy decision")
+                };
+                *clean = false;
+            }
             "check" => proof.verification = note.clone(),
             "root" => proof.named_root_binding = note.clone(),
             "input" => {
-                proof.source_revision = format!("git-commit:{}", object_name("another input"));
+                proof.source = RegisteredDecisionSource::Legacy {
+                    source_revision: format!("git-commit:{}", object_name("another input")),
+                    clean: true,
+                };
             }
             _ => unreachable!(),
         }

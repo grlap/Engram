@@ -74,8 +74,7 @@ pub(super) fn bind_acceptance_to_obligations_on(
         )?;
         let newest = if let Some((_, _, evidence)) = &newest
             && super::super::load_verification_producer_on(connection, evidence)?
-                .registered_git_basis(evidence)
-                .is_some_and(|basis| basis.source_revision.starts_with("git-commit:"))
+                .has_registered_live_input(evidence)
         {
             if let Some(decision) =
                 select_bound_live_input_on(connection, item, binding, &records, cut, currency)?
@@ -118,8 +117,16 @@ pub(super) fn bind_acceptance_to_obligations_on(
                 });
             }
             let producer = super::super::load_verification_producer_on(connection, &evidence)?;
+            let legacy_basis = evidence.source_basis.legacy_basis();
             let registered_git = producer.registered_git_basis(&evidence).is_some();
+            let registered_shared = producer.registered_source_id_basis(&evidence).is_some();
             let live_commit = currency.check_on(connection, &newest)?;
+            if source_fingerprint.is_some() && registered_shared {
+                return Err(StoreError::WorkCompletionRefused {
+                    work: item.work_id,
+                    reason: "source_fingerprint cannot declare a source_id input; omit the declaration for unevaluated completion".into(),
+                });
+            }
             if registered_git
                 && let Some(supplied) = source_fingerprint
                 && producer.matches_registered_git_input(&evidence, supplied) != Some(true)
@@ -129,12 +136,13 @@ pub(super) fn bind_acceptance_to_obligations_on(
                     reason: format!(
                         "criterion {} selected registered verification {newest} ran on {}, but completion supplied {supplied}; supply --source-fingerprint {} if that is the input being completed, or omit the declaration for unevaluated completion; otherwise run a check on the intended input",
                         binding.criterion,
-                        evidence.source_basis.source_revision,
-                        evidence.source_basis.source_revision,
+                        evidence.source_basis.legacy_revision().unwrap_or_default(),
+                        evidence.source_basis.legacy_revision().unwrap_or_default(),
                     ),
                 });
             }
             if registered_git
+                || registered_shared
                 || root.is_some()
                 || latest_mutation.is_some()
                 || evidence.applicability.is_some()
@@ -146,9 +154,16 @@ pub(super) fn bind_acceptance_to_obligations_on(
                         // Evaluated completion requires its declared input
                         // separately in acceptance assessment.
                         source_revision: source_fingerprint
-                            .unwrap_or(&evidence.source_basis.source_revision)
+                            .unwrap_or_else(|| {
+                                evidence.source_basis.legacy_revision().unwrap_or_default()
+                            })
                             .to_owned(),
-                        ..evidence.source_basis.clone()
+                        ..legacy_basis.clone().ok_or_else(|| {
+                            StoreError::InvalidWorkProjection(
+                                "registered legacy producer has non-legacy verification evidence"
+                                    .into(),
+                            )
+                        })?
                     })
                 } else if evidence.applicability.is_some() {
                     assessment::judged_basis_on(connection, run_id, root.as_ref(), cut.position)?
@@ -293,8 +308,7 @@ pub(super) fn bound_live_input_consumed_on(
             continue;
         };
         if super::super::load_verification_producer_on(connection, &evidence)?
-            .registered_git_basis(&evidence)
-            .is_some_and(|basis| basis.source_revision.starts_with("git-commit:"))
+            .has_registered_live_input(&evidence)
             && select_bound_live_input_on(connection, item, binding, &records, cut, currency)?
                 .is_some()
         {

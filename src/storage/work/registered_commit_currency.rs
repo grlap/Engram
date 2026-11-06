@@ -26,9 +26,18 @@ impl Candidate {
     fn is_commit(&self) -> bool {
         self.evidence
             .source_basis
-            .source_revision
-            .starts_with("git-commit:")
+            .legacy_revision()
+            .is_some_and(|revision| revision.starts_with("git-commit:"))
     }
+
+    fn is_live(&self) -> bool {
+        self.is_commit() || self.evidence.source_basis.source_id().is_some()
+    }
+}
+
+struct SharedMeasurement {
+    source_id: crate::source::SourceId,
+    measured_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Default)]
@@ -36,6 +45,7 @@ pub(in crate::storage) struct LiveCurrency {
     work: Option<(WorkId, WorkRunId, i64)>,
     candidates: Vec<Candidate>,
     roots: BTreeMap<String, Result<crate::committed_input::CommittedInput, String>>,
+    shared_roots: BTreeMap<String, Result<SharedMeasurement, String>>,
 }
 
 impl LiveCurrency {
@@ -85,7 +95,9 @@ impl LiveCurrency {
                 let evidence: VerificationEvidence =
                     load_typed_work_object(connection, &id, "verification_evidence")?;
                 let producer = load_verification_producer_on(connection, &evidence)?;
-                if producer.registered_git_basis(&evidence).is_none() {
+                if producer.registered_git_basis(&evidence).is_none()
+                    && producer.registered_source_id_basis(&evidence).is_none()
+                {
                     continue;
                 }
                 let root = latest_named_root_binding_on(
@@ -106,6 +118,7 @@ impl LiveCurrency {
                 work: Some((work, run, item.revision)),
                 candidates,
                 roots: BTreeMap::new(),
+                shared_roots: BTreeMap::new(),
             })
         })?;
         for candidate in result
@@ -119,7 +132,52 @@ impl LiveCurrency {
                     .map_err(|error| format!("{error:#}"))
             });
         }
+        for candidate in result.candidates.iter().filter(|candidate| {
+            candidate.evidence.source_basis.source_id().is_some() && candidate.root.is_some()
+        }) {
+            let workspace = &candidate.evidence.source_basis.workspace_id;
+            result
+                .shared_roots
+                .entry(workspace.clone())
+                .or_insert_with(|| {
+                    let observation = crate::source::inspect(
+                        std::path::Path::new(workspace),
+                        crate::source::MAX_BUDGET,
+                    );
+                    observation
+                        .source_id
+                        .map(|source_id| SharedMeasurement {
+                            source_id,
+                            measured_at: chrono::Utc::now(),
+                        })
+                        .ok_or_else(|| {
+                            observation.refusal.map_or_else(
+                                || "source identity unavailable".into(),
+                                |refusal| refusal.message,
+                            )
+                        })
+                });
+        }
         Ok(result)
+    }
+
+    fn is_current(&self, candidate: &Candidate) -> bool {
+        let basis = &candidate.evidence.source_basis;
+        if let Some(source_id) = basis.source_id() {
+            self.shared_roots
+                .get(&basis.workspace_id)
+                .and_then(|result| result.as_ref().ok())
+                .is_some_and(|measured| &measured.source_id == source_id)
+        } else {
+            self.roots
+                .get(&basis.workspace_id)
+                .and_then(|result| result.as_ref().ok())
+                .is_some_and(|measured| {
+                    measured.clean
+                        && basis.legacy_revision()
+                            == Some(format!("git-commit:{}", measured.commit).as_str())
+                })
+        }
     }
 
     /// The sole live commit currency decision. `false` means the record
@@ -132,9 +190,11 @@ impl LiveCurrency {
         let evidence: VerificationEvidence =
             load_typed_work_object(connection, id, "verification_evidence")?;
         let producer = load_verification_producer_on(connection, &evidence)?;
-        if producer
-            .registered_git_basis(&evidence)
-            .is_none_or(|basis| !basis.source_revision.starts_with("git-commit:"))
+        let shared = producer.registered_source_id_basis(&evidence);
+        if shared.is_none()
+            && producer
+                .registered_git_basis(&evidence)
+                .is_none_or(|basis| !basis.source_revision.starts_with("git-commit:"))
         {
             return Ok(false);
         }
@@ -170,8 +230,18 @@ impl LiveCurrency {
         {
             return Err(refused("the registered check's named root is unavailable or has been rebound; name the intended root and run a new check".into()));
         }
-        if producer.matches_registered_git_input(&evidence, &evidence.source_basis.source_revision)
-            != Some(true)
+        let input_matches = shared.map_or_else(
+            || {
+                evidence
+                    .source_basis
+                    .legacy_revision()
+                    .is_some_and(|revision| {
+                        producer.matches_registered_git_input(&evidence, revision) == Some(true)
+                    })
+            },
+            |basis| basis == &evidence.source_basis,
+        );
+        if !input_matches
             || producer.outcome != ExecutionOutcome::Succeeded
             || producer.run_outcome != Some(ExecutionOutcome::Succeeded)
         {
@@ -180,6 +250,24 @@ impl LiveCurrency {
             ));
         }
         refuse_newer_failed_on(connection, id, &evidence, i64::MAX)?;
+        if let Some(expected) = evidence.source_basis.source_id() {
+            let measured = self
+                .shared_roots
+                .get(&evidence.source_basis.workspace_id)
+                .ok_or_else(|| {
+                    refused("the registered source root was not measured; retry".into())
+                })?
+                .as_ref()
+                .map_err(|reason| {
+                    refused(format!(
+                        "registered source root is unavailable: {reason}; restore access and retry"
+                    ))
+                })?;
+            if expected != &measured.source_id {
+                return Err(refused("the named root's full source_id changed since the registered check; run a check on the current source state".into()));
+            }
+            return Ok(true);
+        }
         let measured = self
             .roots
             .get(&evidence.source_basis.workspace_id)
@@ -197,10 +285,13 @@ impl LiveCurrency {
                 evidence.source_basis.workspace_id
             )));
         }
-        if evidence.source_basis.source_revision != format!("git-commit:{}", measured.commit) {
+        if evidence.source_basis.legacy_revision()
+            != Some(format!("git-commit:{}", measured.commit).as_str())
+        {
             return Err(refused(format!(
                 "registered check ran on {}, but the named root is at git-commit:{}; run a check on the current commit",
-                evidence.source_basis.source_revision, measured.commit
+                evidence.source_basis.legacy_revision().unwrap_or_default(),
+                measured.commit
             )));
         }
         Ok(true)
@@ -267,7 +358,7 @@ impl LiveCurrency {
             )?
             .position;
             if position <= cut {
-                if !candidate.is_commit() {
+                if !candidate.is_live() {
                     return Ok(None);
                 }
                 break;
@@ -279,18 +370,9 @@ impl LiveCurrency {
             .candidates
             .iter()
             .rev()
-            .filter(|candidate| candidate.is_commit())
+            .filter(|candidate| candidate.is_live())
             .filter(relevant)
-            .filter(|candidate| {
-                self.roots
-                    .get(&candidate.evidence.source_basis.workspace_id)
-                    .and_then(|measured| measured.as_ref().ok())
-                    .is_some_and(|measured| {
-                        measured.clean
-                            && candidate.evidence.source_basis.source_revision
-                                == format!("git-commit:{}", measured.commit)
-                    })
-            })
+            .filter(|candidate| self.is_current(candidate))
         {
             let position = super::feeds::run_feed_position_for_object_on(
                 connection,
@@ -308,7 +390,7 @@ impl LiveCurrency {
             .candidates
             .iter()
             .rev()
-            .filter(|candidate| candidate.is_commit())
+            .filter(|candidate| candidate.is_live())
             .filter(relevant)
         {
             let position = super::feeds::run_feed_position_for_object_on(
@@ -340,14 +422,34 @@ impl LiveCurrency {
         Ok(Some(crate::domain::RegisteredInputDecision {
             verification: id.clone(),
             named_root_binding: candidate.root.clone().expect("checked root"),
-            source_revision: candidate.evidence.source_basis.source_revision.clone(),
-            clean: true,
-            measured_at: self
-                .roots
-                .get(&candidate.evidence.source_basis.workspace_id)
-                .and_then(|result| result.as_ref().ok())
-                .expect("checked measurement")
-                .measured_at,
+            source: if let Some(source_id) = candidate.evidence.source_basis.source_id() {
+                crate::domain::RegisteredDecisionSource::SourceId {
+                    source_id: source_id.clone(),
+                }
+            } else {
+                crate::domain::RegisteredDecisionSource::Legacy {
+                    source_revision: candidate
+                        .evidence
+                        .source_basis
+                        .legacy_revision()
+                        .expect("checked legacy input")
+                        .to_owned(),
+                    clean: true,
+                }
+            },
+            measured_at: if candidate.evidence.source_basis.source_id().is_some() {
+                self.shared_roots
+                    .get(&candidate.evidence.source_basis.workspace_id)
+                    .and_then(|result| result.as_ref().ok())
+                    .expect("checked measurement")
+                    .measured_at
+            } else {
+                self.roots
+                    .get(&candidate.evidence.source_basis.workspace_id)
+                    .and_then(|result| result.as_ref().ok())
+                    .expect("checked measurement")
+                    .measured_at
+            },
         }))
     }
 
@@ -361,22 +463,14 @@ impl LiveCurrency {
         cut: i64,
     ) -> Result<Option<crate::domain::RegisteredInputDecision>, StoreError> {
         for candidate in self.candidates.iter().rev().filter(|candidate| {
-            candidate.is_commit()
+            candidate.is_live()
                 && candidate.root.is_some()
                 && candidate.evidence.check_kind == requirement.check_kind
                 && requirement
                     .check_fingerprint
                     .as_ref()
                     .is_none_or(|required| required == &candidate.evidence.check_fingerprint)
-                && self
-                    .roots
-                    .get(&candidate.evidence.source_basis.workspace_id)
-                    .and_then(|measured| measured.as_ref().ok())
-                    .is_some_and(|measured| {
-                        measured.clean
-                            && candidate.evidence.source_basis.source_revision
-                                == format!("git-commit:{}", measured.commit)
-                    })
+                && self.is_current(candidate)
         }) {
             let position = super::feeds::run_feed_position_for_object_on(
                 connection,
@@ -397,11 +491,10 @@ impl LiveCurrency {
         revision: &str,
         through: i64,
     ) -> Result<Option<crate::domain::RegisteredInputDecision>, StoreError> {
-        for candidate in self
-            .candidates
-            .iter()
-            .rev()
-            .filter(|candidate| candidate.evidence.source_basis.source_revision == revision)
+        for candidate in
+            self.candidates.iter().rev().filter(|candidate| {
+                candidate.evidence.source_basis.legacy_revision() == Some(revision)
+            })
         {
             let position = super::feeds::run_feed_position_for_object_on(
                 connection,
@@ -476,8 +569,23 @@ pub(super) fn validate_decision_on(
         &decision.named_root_binding,
     )?
     .position;
-    if !decision.clean
-        || !decision.source_revision.starts_with("git-commit:")
+    let identity_matches = match &decision.source {
+        crate::domain::RegisteredDecisionSource::Legacy {
+            source_revision,
+            clean,
+        } => {
+            *clean
+                && source_revision.starts_with("git-commit:")
+                && producer.matches_registered_git_input(&evidence, source_revision) == Some(true)
+        }
+        crate::domain::RegisteredDecisionSource::SourceId { source_id } => {
+            producer
+                .registered_source_id_basis(&evidence)
+                .is_some_and(|basis| basis == &evidence.source_basis)
+                && evidence.source_basis.source_id() == Some(source_id)
+        }
+    };
+    if !identity_matches
         || evidence.binding.work_id != work
         || evidence.binding.run_id != run
         || evidence_position > cut
@@ -490,7 +598,6 @@ pub(super) fn validate_decision_on(
         || root.claim_id != evidence.binding.claim_id
         || root.claim_fence != evidence.binding.claim_fence
         || root.kind != NamedRootBindingKind::Bound
-        || producer.matches_registered_git_input(&evidence, &decision.source_revision) != Some(true)
         || latest_named_root_binding_on(connection, run, root.claim_id, cut)?
             .as_ref()
             .map(|(_, id, _)| id)
@@ -503,7 +610,7 @@ pub(super) fn validate_decision_on(
         check_fingerprint: Some(evidence.check_fingerprint.clone()),
     };
     crate::control::match_verification_evidence(&crate::control::VerificationEvidenceMatchInput {
-        judged_basis: Some(&evidence.source_basis),
+        judged_basis: evidence.source_basis.legacy_basis().as_ref(),
         candidate_kind: crate::domain::WorkEvidenceKind::Verification,
         evidence: Some(&evidence),
         producer: Some(&producer),
@@ -585,7 +692,9 @@ fn newer_failed_on(
             continue;
         }
         let producer = load_verification_producer_on(connection, &newer)?;
-        if producer.registered_git_basis(&newer).is_some() {
+        if producer.registered_git_basis(&newer).is_some()
+            || producer.registered_source_id_basis(&newer).is_some()
+        {
             if newer.result != crate::domain::VerificationResult::Passed
                 || producer.run_outcome != Some(ExecutionOutcome::Succeeded)
             {

@@ -181,7 +181,7 @@ fn a_target_observed_during_a_check_binds_replays_and_passes_evaluation() {
     assert!(bound.criteria[0].eligible);
     let record = stored(&f.store, &bound.verification);
     assert_eq!(record.binding, binding_of(&f.store, &f.b));
-    assert_eq!(record.source_basis, basis("R1", f.b.generation));
+    assert_eq!(record.source_basis, basis("R1", f.b.generation).into());
     assert_eq!(record.producer_observation, native.producer_observation);
     assert_eq!(record.check_kind, native.check_kind);
     assert_eq!(record.check_fingerprint, native.check_fingerprint);

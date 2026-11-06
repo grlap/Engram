@@ -122,7 +122,7 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
                                     .to_string()
                                     .as_str(),
                             )
-                        && crate::storage::work::registered_verification::validate_request(
+                        && crate::storage::work::registered_verification::validate_stored_request(
                             &producer.request,
                             producer.recorded_at,
                         )

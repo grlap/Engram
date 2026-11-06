@@ -21,6 +21,9 @@ pub enum RegisteredVerificationInput {
         tree: GitTreeId,
         base_commit: String,
     },
+    SourceId {
+        source_id: crate::source::SourceId,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -96,7 +99,7 @@ pub enum RegisteredVerificationInputOutcome {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RegisteredVerificationPostRun {
+pub struct LegacyRegisteredVerificationPostRun {
     pub outcome: RegisteredVerificationInputOutcome,
     pub clean_before: bool,
     pub clean_after: bool,
@@ -104,6 +107,29 @@ pub struct RegisteredVerificationPostRun {
     pub dirty_paths: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disposition: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum RegisteredVerificationPostRun {
+    Legacy(LegacyRegisteredVerificationPostRun),
+    SourceId { source_id: crate::source::SourceId },
+}
+
+impl From<LegacyRegisteredVerificationPostRun> for RegisteredVerificationPostRun {
+    fn from(value: LegacyRegisteredVerificationPostRun) -> Self {
+        Self::Legacy(value)
+    }
+}
+
+impl RegisteredVerificationPostRun {
+    #[cfg(test)]
+    pub(crate) fn legacy_mut(&mut self) -> &mut LegacyRegisteredVerificationPostRun {
+        let Self::Legacy(value) = self else {
+            panic!("expected a legacy fixture")
+        };
+        value
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -128,13 +154,75 @@ pub struct RegisteredVerificationRecord {
 /// obligation resolution. The links identify the immutable producer and root;
 /// cleanliness records an endpoint observation, not a reproducible disk proof.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "DecisionWire")]
 pub struct RegisteredInputDecision {
     pub verification: ObjectId,
     pub named_root_binding: ObjectId,
-    pub source_revision: String,
-    pub clean: bool,
+    #[serde(flatten)]
+    pub source: RegisteredDecisionSource,
     pub measured_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum RegisteredDecisionSource {
+    Legacy {
+        source_revision: String,
+        clean: bool,
+    },
+    SourceId {
+        source_id: crate::source::SourceId,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum DecisionWire {
+    Legacy(LegacyDecisionWire),
+    SourceId(SharedDecisionWire),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyDecisionWire {
+    verification: ObjectId,
+    named_root_binding: ObjectId,
+    source_revision: String,
+    clean: bool,
+    measured_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SharedDecisionWire {
+    verification: ObjectId,
+    named_root_binding: ObjectId,
+    source_id: crate::source::SourceId,
+    measured_at: DateTime<Utc>,
+}
+
+impl From<DecisionWire> for RegisteredInputDecision {
+    fn from(value: DecisionWire) -> Self {
+        match value {
+            DecisionWire::Legacy(value) => Self {
+                verification: value.verification,
+                named_root_binding: value.named_root_binding,
+                source: RegisteredDecisionSource::Legacy {
+                    source_revision: value.source_revision,
+                    clean: value.clean,
+                },
+                measured_at: value.measured_at,
+            },
+            DecisionWire::SourceId(value) => Self {
+                verification: value.verification,
+                named_root_binding: value.named_root_binding,
+                source: RegisteredDecisionSource::SourceId {
+                    source_id: value.source_id,
+                },
+                measured_at: value.measured_at,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -161,10 +249,42 @@ pub struct RegisteredHostRun {
 
 impl RegisteredVerificationInput {
     #[must_use]
-    pub fn revision(&self) -> String {
+    pub fn legacy_revision(&self) -> Option<String> {
         match self {
-            Self::Commit { commit } => format!("git-commit:{commit}"),
-            Self::StagedTree { tree, .. } => format!("git-tree:{}", tree.as_str()),
+            Self::Commit { commit } => Some(format!("git-commit:{commit}")),
+            Self::StagedTree { tree, .. } => Some(format!("git-tree:{}", tree.as_str())),
+            Self::SourceId { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn revision(&self) -> String {
+        self.legacy_revision().expect("legacy input fixture")
+    }
+
+    #[must_use]
+    pub fn source_basis(
+        &self,
+        root: &RegisteredVerificationRoot,
+    ) -> super::VerificationSourceBasis {
+        use super::VerificationSourceIdentity as Identity;
+        super::VerificationSourceBasis {
+            workspace_id: root.workspace_id.clone(),
+            source_root_generation: Some(root.generation),
+            source_root_state: Some(root.state),
+            identity: match self {
+                Self::Commit { commit } => Identity::Legacy {
+                    source_revision: format!("git-commit:{commit}"),
+                    git_tree: None,
+                },
+                Self::StagedTree { tree, .. } => Identity::Legacy {
+                    source_revision: format!("git-tree:{}", tree.as_str()),
+                    git_tree: Some(tree.clone()),
+                },
+                Self::SourceId { source_id } => Identity::SourceId {
+                    source_id: source_id.clone(),
+                },
+            },
         }
     }
 }
@@ -181,7 +301,7 @@ pub struct VerificationProducerFacts {
     /// The registered run's aggregate result, when this is a host-run
     /// producer. A passing subcheck never makes a failed run a passed gate.
     pub run_outcome: Option<super::ExecutionOutcome>,
-    pub source_basis: Option<super::ExecutionSourceBasis>,
+    pub source_basis: Option<super::VerificationSourceBasis>,
     pub observed_at: Option<DateTime<Utc>>,
     pub actor: ActorContext,
     pub recorded_at: DateTime<Utc>,
@@ -204,12 +324,12 @@ impl VerificationProducerFacts {
     pub fn registered_git_basis(
         &self,
         evidence: &super::VerificationEvidence,
-    ) -> Option<&super::ExecutionSourceBasis> {
-        self.source_basis.as_ref().filter(|basis| {
-            self.run_outcome.is_some()
-                && evidence.bound_from.is_none()
-                && is_git_input_revision(&basis.source_revision)
-        })
+    ) -> Option<super::ExecutionSourceBasis> {
+        let basis = self.source_basis.as_ref()?.legacy_basis()?;
+        (self.run_outcome.is_some()
+            && evidence.bound_from.is_none()
+            && is_git_input_revision(&basis.source_revision))
+        .then_some(basis)
     }
 
     /// The common input decision for registered evidence. A revision string
@@ -220,8 +340,30 @@ impl VerificationProducerFacts {
         evidence: &super::VerificationEvidence,
         judged: &str,
     ) -> Option<bool> {
-        self.registered_git_basis(evidence)
-            .map(|basis| basis == &evidence.source_basis && basis.source_revision == judged)
+        self.registered_git_basis(evidence).map(|basis| {
+            Some(basis.clone()) == evidence.source_basis.legacy_basis()
+                && basis.source_revision == judged
+        })
+    }
+
+    #[must_use]
+    pub fn has_registered_live_input(&self, evidence: &super::VerificationEvidence) -> bool {
+        self.registered_source_id_basis(evidence).is_some()
+            || self
+                .registered_git_basis(evidence)
+                .is_some_and(|basis| basis.source_revision.starts_with("git-commit:"))
+    }
+
+    #[must_use]
+    pub fn registered_source_id_basis<'a>(
+        &'a self,
+        evidence: &super::VerificationEvidence,
+    ) -> Option<&'a super::VerificationSourceBasis> {
+        self.source_basis.as_ref().filter(|basis| {
+            self.run_outcome.is_some()
+                && evidence.bound_from.is_none()
+                && basis.source_id().is_some()
+        })
     }
 }
 
@@ -245,7 +387,7 @@ impl VerificationProducer for super::ExecutionObservation {
             action_fingerprint: self.action_fingerprint.clone(),
             outcome: self.outcome,
             run_outcome: None,
-            source_basis: self.source_basis.clone(),
+            source_basis: self.source_basis.clone().map(Into::into),
             observed_at: self.observed_at,
             actor: self.actor.clone(),
             recorded_at: self.recorded_at,

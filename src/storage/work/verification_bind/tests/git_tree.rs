@@ -27,7 +27,10 @@ fn git_tree_binding_checks_each_target_and_preserves_the_restriction() {
                 record.applicability,
                 stored(&store, &original).applicability
             );
-            assert_eq!(record.source_basis.git_tree, b.git_tree);
+            assert_eq!(
+                record.source_basis.legacy_basis().unwrap().git_tree,
+                b.git_tree
+            );
             // This core helper has no host-operation replay wrapper. A
             // second application refuses the existing bound copy.
             let after = crate::storage::test_database_shape_snapshot(&store.connection).unwrap();

@@ -2,7 +2,7 @@
 
 use crate::CanonicalObject;
 use crate::domain::{
-    ExecutionSourceBasis, NamedRootBindingKind, RegisteredHostRun, RegisteredVerificationInput,
+    NamedRootBindingKind, RegisteredHostRun, RegisteredVerificationInput,
     RegisteredVerificationInputOutcome, RegisteredVerificationOutcome,
     RegisteredVerificationReceipt, RegisteredVerificationRecord, RegisteredVerificationRequest,
     SCHEMA_VERSION, SourceRootState, VerificationEvidence, VerificationResult,
@@ -57,16 +57,7 @@ pub(in crate::storage) fn record_registered_verification_on(
         "registered_host_run",
         &object,
     )?;
-    let source_basis = ExecutionSourceBasis {
-        workspace_id: registration.root.workspace_id.clone(),
-        source_revision: request.input.revision(),
-        git_tree: match &request.input {
-            RegisteredVerificationInput::Commit { .. } => None,
-            RegisteredVerificationInput::StagedTree { tree, .. } => Some(tree.clone()),
-        },
-        source_root_generation: Some(registration.root.generation),
-        source_root_state: Some(SourceRootState::Named),
-    };
+    let source_basis = request.input.source_basis(&registration.root);
     let mut verifications = Vec::new();
     for check in &request.checks {
         let Some(completed_at) = check.completed_at else {
@@ -163,6 +154,21 @@ pub(super) fn validate_request(
     request: &RegisteredVerificationRequest,
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    validate_stored_request(request, now)?;
+    if let RegisteredVerificationInput::SourceId { source_id } = &request.input {
+        source_id
+            .validate()
+            .map_err(|_| refused("input.source_id", "invalid shared source identity"))?;
+    }
+    Ok(())
+}
+
+/// Stored producer facts retain their original admission rules. In particular,
+/// retiring a producer later must not apply its new-write policy to history.
+pub(super) fn validate_stored_request(
+    request: &RegisteredVerificationRequest,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
     let registration = &request.registration;
     let label = |text: &str, limit: usize| {
         !text.trim().is_empty()
@@ -174,11 +180,9 @@ pub(super) fn validate_request(
         .owning_session_id
         .as_ref()
         .is_some_and(|text| !label(text, 512))
-        || request
-            .post_run
-            .disposition
-            .as_ref()
-            .is_some_and(|text| !label(text, 2048))
+        || matches!(&request.post_run,
+            crate::domain::RegisteredVerificationPostRun::Legacy(post)
+                if post.disposition.as_ref().is_some_and(|text| !label(text, 2048)))
     {
         return Err(refused(
             "registration",
@@ -205,25 +209,52 @@ pub(super) fn validate_request(
         ));
     }
     let commit = match &request.input {
-        RegisteredVerificationInput::Commit { commit } => commit,
-        RegisteredVerificationInput::StagedTree { base_commit, .. } => base_commit,
+        RegisteredVerificationInput::Commit { commit } => Some(commit),
+        RegisteredVerificationInput::StagedTree { base_commit, .. } => Some(base_commit),
+        RegisteredVerificationInput::SourceId { .. } => None,
     };
-    if commit.len() != 40
-        || !commit
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    {
+    if commit.is_some_and(|commit| {
+        commit.len() != 40
+            || !commit
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }) {
         return Err(refused("input", "a full lowercase commit id is required"));
     }
-    if !request.post_run.clean_before
-        || !request.post_run.clean_after
-        || request.post_run.outcome != RegisteredVerificationInputOutcome::Clean
-        || !request.post_run.dirty_paths.is_empty()
-    {
-        return Err(refused(
-            "post_run",
-            "only unchanged clean inputs are eligible",
-        ));
+    match (&request.input, &request.post_run) {
+        (
+            RegisteredVerificationInput::SourceId { source_id: before },
+            crate::domain::RegisteredVerificationPostRun::SourceId { source_id: after },
+        ) => {
+            if before != after {
+                return Err(refused(
+                    "post_run.source_id",
+                    "shared source identity changed during the run",
+                ));
+            }
+        }
+        (
+            RegisteredVerificationInput::Commit { .. }
+            | RegisteredVerificationInput::StagedTree { .. },
+            crate::domain::RegisteredVerificationPostRun::Legacy(post),
+        ) => {
+            if !post.clean_before
+                || !post.clean_after
+                || post.outcome != RegisteredVerificationInputOutcome::Clean
+                || !post.dirty_paths.is_empty()
+            {
+                return Err(refused(
+                    "post_run",
+                    "only unchanged clean inputs are eligible",
+                ));
+            }
+        }
+        _ => {
+            return Err(refused(
+                "post_run",
+                "post-run source representation must match input.kind",
+            ));
+        }
     }
     if registration.registered_at > request.run.finished_at
         || request.run.started_at > request.run.finished_at

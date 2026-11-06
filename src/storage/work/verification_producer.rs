@@ -2,9 +2,8 @@
 
 use super::feeds::load_typed_work_object;
 use crate::domain::{
-    ExecutionObservation, ExecutionOutcome, ExecutionSourceBasis, RegisteredHostRun,
-    RegisteredVerificationInput, RegisteredVerificationOutcome, VerificationEvidence,
-    VerificationProducer, VerificationProducerFacts, VerificationResult,
+    ExecutionObservation, ExecutionOutcome, RegisteredHostRun, RegisteredVerificationOutcome,
+    VerificationEvidence, VerificationProducer, VerificationProducerFacts, VerificationResult,
 };
 use crate::storage::StoreError;
 use rusqlite::{Connection, params};
@@ -67,6 +66,7 @@ pub(in crate::storage) fn load_verification_producer_on(
                 }
             };
             let root = &producer.request.registration.root;
+            let source_basis = producer.request.input.source_basis(root);
             Ok(VerificationProducerFacts {
                 project_id: producer.project_id,
                 binding: producer.request.registration.binding,
@@ -79,16 +79,7 @@ pub(in crate::storage) fn load_verification_producer_on(
                     RegisteredVerificationOutcome::Indeterminate
                     | RegisteredVerificationOutcome::NotRun => ExecutionOutcome::Unknown,
                 }),
-                source_basis: Some(ExecutionSourceBasis {
-                    git_tree: match &producer.request.input {
-                        RegisteredVerificationInput::StagedTree { tree, .. } => Some(tree.clone()),
-                        RegisteredVerificationInput::Commit { .. } => None,
-                    },
-                    workspace_id: root.workspace_id.clone(),
-                    source_revision: producer.request.input.revision(),
-                    source_root_generation: Some(root.generation),
-                    source_root_state: Some(root.state),
-                }),
+                source_basis: Some(source_basis),
                 observed_at: check.completed_at,
                 actor: producer.actor,
                 recorded_at: producer.recorded_at,

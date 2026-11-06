@@ -1040,7 +1040,7 @@ pub(in crate::storage::work) fn validate_evaluation_input_witness_on(
             || evaluation
                 .source_basis
                 .as_ref()
-                .is_none_or(|basis| basis.fingerprint != decision.source_revision)
+                .is_none_or(|basis| !matches!(&decision.source, crate::domain::RegisteredDecisionSource::Legacy {source_revision, ..} if &basis.fingerprint == source_revision))
             || evaluation.named_root_binding.as_ref() != Some(&decision.named_root_binding)
         {
             return Err(StoreError::InvalidWorkProjection("evaluation registered input decision does not match its declared input and evidence basis".into()));

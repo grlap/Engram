@@ -118,13 +118,14 @@ fn fixture_with_create_and_root(
             refs: vec![],
             counts: None,
         }],
-        post_run: RegisteredVerificationPostRun {
+        post_run: crate::domain::LegacyRegisteredVerificationPostRun {
             outcome: RegisteredVerificationInputOutcome::Clean,
             clean_before: true,
             clean_after: true,
             dirty_paths: vec![],
             disposition: None,
-        },
+        }
+        .into(),
     };
     Fixture {
         source: None,
@@ -200,7 +201,7 @@ fn registered_verification_wire_and_replay_survive_root_movement() {
 #[test]
 fn registered_verification_dirty_input_never_records_credit() {
     let mut f = fixture();
-    f.request.post_run.clean_before = false;
+    f.request.post_run.legacy_mut().clean_before = false;
     let snapshot = f.snapshot();
     assert!(
         matches!(f.record(), Err(StoreError::RegisteredVerificationRefused { field, .. }) if field == "post_run")
@@ -219,7 +220,7 @@ fn registered_verification_safe_text_refusals_have_no_effects() {
             1 => f.request.checks[0].refs = vec![" untrimmed".into()],
             2 => f.request.checks[0].summary = Some("bad\u{202e}text".into()),
             3 => f.request.registration.owning_session_id = Some("x".repeat(513)),
-            4 => f.request.post_run.disposition = Some("bad\u{202e}text".into()),
+            4 => f.request.post_run.legacy_mut().disposition = Some("bad\u{202e}text".into()),
             _ => {
                 f.request.checks[0].counts =
                     Some(std::collections::BTreeMap::from([("x".repeat(129), 1)]));
@@ -295,8 +296,8 @@ fn registered_verification_uses_ordinary_receipts_and_replays() {
         super::super::load_verification_producer_on(&f.store.connection, &evidence).unwrap();
     assert_eq!(producer.outcome, ExecutionOutcome::Succeeded);
     assert_eq!(
-        producer.source_basis.unwrap().source_revision,
-        f.request.input.revision()
+        producer.source_basis.unwrap().legacy_revision(),
+        Some(f.request.input.revision().as_str())
     );
     assert_eq!(f.store.connection.query_row("SELECT count(*) FROM objects WHERE object_kind IN ('execution_observation', 'turn_grant')", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
     assert!(f.store.verify_all().unwrap().is_healthy());

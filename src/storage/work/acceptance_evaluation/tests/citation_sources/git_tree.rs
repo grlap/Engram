@@ -48,8 +48,8 @@ fn registered_git_input_does_not_relabel_legacy_content_evidence() {
             .load_verification_evidence(&check)
             .unwrap()
             .source_basis
-            .source_revision,
-        host.basis.source_revision
+            .legacy_revision(),
+        Some(host.basis.source_revision.as_str())
     );
 }
 

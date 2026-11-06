@@ -986,7 +986,11 @@ fn agent_change_object(
                 summary: compact_text(&format!(
                     "host-asserted registered run {:?}; input={}",
                     producer.request.run.outcome,
-                    producer.request.input.revision()
+                    producer
+                        .request
+                        .input
+                        .legacy_revision()
+                        .unwrap_or_else(|| "source_id recorded".into())
                 )),
                 actor_id: Some(compact_text(&producer.actor.actor_id)),
                 actor_context: projected_actor_context(&producer.actor),
@@ -1059,10 +1063,13 @@ fn agent_change_object(
                 revision: Some(evidence.binding.work_revision),
                 change_kind: "verification_evidence".into(),
                 summary: compact_text(&format!(
-                    "{:?} {:?}; source_revision={}; environment={}",
+                    "{:?} {:?}; {}; environment={}",
                     evidence.check_kind,
                     evidence.result,
-                    evidence.source_basis.source_revision,
+                    evidence.source_basis.legacy_revision().map_or_else(
+                        || "source_id recorded".into(),
+                        |revision| format!("source_revision={revision}")
+                    ),
                     evidence
                         .environment
                         .as_ref()

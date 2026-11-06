@@ -13,8 +13,8 @@ fn record_checked_environment(
     use crate::domain::{
         NamedRootBindingKind, RegisteredVerificationAssociation, RegisteredVerificationCheck,
         RegisteredVerificationInput, RegisteredVerificationInputOutcome,
-        RegisteredVerificationOutcome, RegisteredVerificationPostRun,
-        RegisteredVerificationRequest, RegisteredVerificationRoot, RegisteredVerificationRun,
+        RegisteredVerificationOutcome, RegisteredVerificationRequest, RegisteredVerificationRoot,
+        RegisteredVerificationRun,
     };
     use crate::storage::HostSessionAuthority;
     let run = load_work_run(&store.connection, claim.run_id).unwrap();
@@ -85,13 +85,14 @@ fn record_checked_environment(
             refs: vec!["command:cargo-test".into()],
             counts: None,
         }],
-        post_run: RegisteredVerificationPostRun {
+        post_run: crate::domain::LegacyRegisteredVerificationPostRun {
             outcome: RegisteredVerificationInputOutcome::Clean,
             clean_before: true,
             clean_after: true,
             dirty_paths: vec![],
             disposition: None,
-        },
+        }
+        .into(),
     };
     let receipt = store
         .record_registered_verification(
@@ -123,7 +124,7 @@ fn record_checked_environment(
         project_id: work.project_id.clone(),
         binding,
         session_id: session,
-        source_basis: verification.source_basis.clone(),
+        source_basis: verification.source_basis.legacy_basis().unwrap(),
         environment_fingerprint: CanonicalObject::freeze(&components).unwrap().key().clone(),
         components: Some(components),
         observed_at: at(15),

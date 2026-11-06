@@ -300,7 +300,7 @@ fn check_with(
             binding,
             session_id: SessionId(HOLDER.into()),
             producer_observation: producer,
-            source_basis,
+            source_basis: source_basis.into(),
             environment,
             check_kind: VerificationKind::Test,
             check_fingerprint: check_fingerprint("suite"),
@@ -477,7 +477,7 @@ fn a_check_binds_to_two_items_on_one_root_with_distinct_generations() {
         );
         assert_eq!(record.environment, original_record.environment);
         // Its basis is the original's content under this item's own name.
-        assert_eq!(record.source_basis, basis("R1", held.generation));
+        assert_eq!(record.source_basis, basis("R1", held.generation).into());
         assert_eq!(record.binding.run_id, held.claim.run_id);
         assert_eq!(record.recorded_at, at(30));
         let source = record.bound_from.expect("a bound record");
@@ -1279,7 +1279,10 @@ fn readers_expose_the_bound_branch_only_on_bound_records() {
     assert_eq!(bound.work_ref, a.work.short_ref);
     assert_eq!(bound.run, a.claim.run_id);
     assert_eq!(bound.original_position, original_on_a);
-    assert_eq!(bound.original_basis, original_record.source_basis);
+    assert_eq!(
+        bound.original_basis,
+        original_record.source_basis.legacy_basis().unwrap()
+    );
     assert_eq!(bound.original_completed_at, at(20));
     assert_eq!(bound.bound_at, at(30));
     assert_eq!(bound.binder.actor_id, actor(HOLDER).actor_id);

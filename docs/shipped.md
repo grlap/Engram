@@ -34,6 +34,11 @@ reusing canonical verification and exact-intent settlement. Host emission
 requires the connected producer's capability advertisement; registration alone
 is not credit. See [registered verification](features/execution-observability.md#registered-verification).
 
+The native registered input also accepts the complete shared `source_id`.
+Equal clean or dirty endpoints qualify, and live currency compares the whole
+object. Observations, string-based evaluation declarations and cross-item
+binding retain their legacy representations during the coordinated rollout.
+
 A test run on another host can enter typed verification through the private
 `remote_verification_record` operation, from the launcher's completion facts and a
 stated destination, with one immutable terminal per project, host and run and a

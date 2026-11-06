@@ -640,7 +640,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
                     binding: child_binding,
                     session_id: SessionId("child-agent".into()),
                     producer_observation: producer,
-                    source_basis: child_basis,
+                    source_basis: (child_basis).into(),
                     environment: None,
                     check_kind: VerificationKind::Test,
                     check_fingerprint: ObjectId::from_canonical_bytes(b"cargo test required child"),

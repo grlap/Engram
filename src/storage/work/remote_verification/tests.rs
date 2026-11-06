@@ -294,8 +294,11 @@ fn remote_verification_credits_a_full_pass_in_each_use() {
         )
         .unwrap();
         assert_eq!(evidence.producer_observation, receipt.operation);
-        assert_eq!(evidence.source_basis.source_revision, revision);
-        assert_eq!(evidence.source_basis.git_tree, tree);
+        assert_eq!(
+            evidence.source_basis.legacy_revision(),
+            Some(revision.as_str())
+        );
+        assert_eq!(evidence.source_basis.legacy_basis().unwrap().git_tree, tree);
         assert_eq!(evidence.check_kind, VerificationKind::Test);
         assert_eq!(evidence.result, VerificationResult::Passed);
         // The run's own finish is the execution time; the association's is local.

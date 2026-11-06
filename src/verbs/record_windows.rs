@@ -856,10 +856,29 @@ fn verification_value(facts: &crate::storage::VerificationFacts) -> Value {
     let mut value = json!({
         "result": word(json!(facts.result)),
         "check_kind": word(json!(facts.check_kind)),
-        "source_revision": facts.source_revision,
         "producer_outcome": word(json!(facts.producer_outcome)),
         "source_workspace": facts.source_workspace,
     });
+    match facts.source.as_ref() {
+        crate::domain::VerificationSourceIdentity::Legacy {
+            source_revision, ..
+        } => {
+            value["source_revision"] = json!(source_revision);
+        }
+        crate::domain::VerificationSourceIdentity::SourceId { source_id } => {
+            // Agent receipts have a smaller budget than the native producer
+            // frame. Keep the complete identity in its canonical records;
+            // these facts are explicitly a display summary, never an input.
+            value["source_id_summary"] = json!({
+                "commit": source_id.commit,
+                "tree": source_id.tree,
+                "submodules": source_id.submodules.len(),
+                "changes": source_id.changes.len(),
+                "submodule_changes": source_id.submodules.iter()
+                    .map(|child| child.changes.len()).sum::<usize>(),
+            });
+        }
+    }
     // Why an indeterminate verification does not count, in plain words.
     if facts.result == crate::domain::VerificationResult::Indeterminate {
         value["meaning"] = json!(format!(
@@ -896,11 +915,16 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value, family: WorkRecordFami
         let field = |key: &str| {
             super::terminal_safe_line(facts.get(key).and_then(Value::as_str).unwrap_or_default())
         };
+        let source = if facts.contains_key("source_id_summary") {
+            "shared source_id (summary)".to_owned()
+        } else {
+            format!("source revision {}", field("source_revision"))
+        };
         lines.push(format!(
-            "    verification: {} {} on source revision {}; producer outcome {}",
+            "    verification: {} {} on {}; producer outcome {}",
             field("result"),
             field("check_kind"),
-            field("source_revision"),
+            source,
             field("producer_outcome")
         ));
         if facts.contains_key("meaning") {

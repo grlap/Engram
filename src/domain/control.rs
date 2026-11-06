@@ -444,7 +444,7 @@ pub struct VerificationEvidence {
     pub binding: ControlWorkBinding,
     pub session_id: SessionId,
     pub producer_observation: ObjectId,
-    pub source_basis: ExecutionSourceBasis,
+    pub source_basis: super::VerificationSourceBasis,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<ObjectId>,
     pub check_kind: VerificationKind,

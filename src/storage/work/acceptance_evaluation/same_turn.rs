@@ -137,7 +137,7 @@ fn on_declared(
     root: Option<&NamedEvaluationRoot>,
 ) -> bool {
     let basis = &check.source_basis;
-    basis.source_revision == declared.fingerprint
+    basis.legacy_revision() == Some(declared.fingerprint.as_str())
         && declared
             .workspace_id
             .as_ref()

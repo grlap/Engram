@@ -528,7 +528,9 @@ pub(super) fn bound_verification_read_on(
             work_ref: original_item.short_ref,
             run: source.run_id,
             original_position,
-            original_basis: original.source_basis,
+            original_basis: original.source_basis.legacy_basis().ok_or_else(|| {
+                damaged("bound verification requires a legacy source basis".into())
+            })?,
             original_completed_at: original.completed_at,
             binder: evidence.actor.clone(),
             bound_at: evidence.recorded_at,
@@ -702,7 +704,8 @@ mod tests {
                 source_revision: "revision".into(),
                 source_root_generation: None,
                 source_root_state: None,
-            },
+            }
+            .into(),
             producer: AcceptanceBindingProducer {
                 record: ObjectId::from_canonical_bytes(format!("producer {position}").as_bytes()),
                 position: position - 1,

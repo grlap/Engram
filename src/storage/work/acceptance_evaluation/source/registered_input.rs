@@ -59,6 +59,9 @@ fn qualifies_on(
     let evidence: VerificationEvidence =
         load_typed_work_object(connection, witness, "verification_evidence")?;
     let producer = crate::storage::work::load_verification_producer_on(connection, &evidence)?;
+    let Some(basis) = evidence.source_basis.legacy_basis() else {
+        return Ok(false);
+    };
     let binding = &evidence.binding;
     if evidence.project_id != root.event.project_id
         || binding.run_id != run_id
@@ -72,7 +75,7 @@ fn qualifies_on(
             run_id,
             witness,
             &evidence.producer_observation,
-            &evidence.source_basis,
+            &basis,
             root,
         )?
         .is_some()

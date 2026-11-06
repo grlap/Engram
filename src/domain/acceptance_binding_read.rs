@@ -134,7 +134,7 @@ pub struct AcceptanceBindingVerification {
     pub check_kind: VerificationKind,
     pub check_fingerprint: ObjectId,
     pub result: VerificationResult,
-    pub source_basis: ExecutionSourceBasis,
+    pub source_basis: super::VerificationSourceBasis,
     /// For a bound record, the original's producer: its record and position
     /// are on the original's run, not this one.
     pub producer: AcceptanceBindingProducer,

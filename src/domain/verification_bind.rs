@@ -128,6 +128,7 @@ pub enum VerificationBindOriginalRefusal {
     Rootless,
     ClaimNotHeld,
     RootNotCurrent,
+    SourceIdUnsupported,
 }
 
 impl VerificationBindOriginalRefusal {
@@ -142,6 +143,7 @@ impl VerificationBindOriginalRefusal {
             Self::Rootless => "rootless",
             Self::ClaimNotHeld => "claim_not_held",
             Self::RootNotCurrent => "root_not_current",
+            Self::SourceIdUnsupported => "source_id_unsupported",
         }
     }
 }

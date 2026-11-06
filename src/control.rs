@@ -232,7 +232,15 @@ pub fn explain_verification_evidence(
     if evidence.check_kind != input.requirement.check_kind {
         return Err(plain(VerificationEvidenceMismatch::CheckKindMismatch));
     }
+    let shared = evidence.source_basis.source_id().is_some();
+    let revision = evidence.source_basis.legacy_revision();
     let registered_git = producer.registered_git_basis(evidence).is_some();
+    if shared && producer.registered_source_id_basis(evidence) != Some(&evidence.source_basis) {
+        return Err(plain(VerificationEvidenceMismatch::StaleSourceRevision));
+    }
+    if shared && input.named_root.is_none() {
+        return Err(plain(VerificationEvidenceMismatch::InvalidProducer));
+    }
     let mutation = input
         .latest_mutation
         .map(|(latest_mutation, position)| {
@@ -285,35 +293,52 @@ pub fn explain_verification_evidence(
     // behind; the check must still run after the change.
     let mut revision_from_root = false;
     if let Some(root) = input.named_root {
-        let correct_root = |basis: &crate::domain::ExecutionSourceBasis| {
-            basis.workspace_id == root.workspace_id
-                && basis.source_root_generation == Some(root.generation)
-                && basis.source_root_state == Some(SourceRootState::Named)
+        let correct_root = |workspace: &str, generation, state| {
+            workspace == root.workspace_id
+                && generation == Some(root.generation)
+                && state == Some(SourceRootState::Named)
         };
         let producer_position =
             producer_position.ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
-        if !correct_root(&evidence.source_basis)
-            || (bound.is_none() && !producer.source_basis.as_ref().is_some_and(correct_root))
+        if !correct_root(
+            &evidence.source_basis.workspace_id,
+            evidence.source_basis.source_root_generation,
+            evidence.source_basis.source_root_state,
+        ) || (bound.is_none()
+            && !producer.source_basis.as_ref().is_some_and(|basis| {
+                correct_root(
+                    &basis.workspace_id,
+                    basis.source_root_generation,
+                    basis.source_root_state,
+                )
+            }))
             || input.evidence_position <= root.binding_position
             || producer_position <= root.binding_position
         {
             return Err(stale(StaleSourceDecider::RootBinding));
         }
-        if !registered_git && let Some((sighting, _)) = root.latest_sighting {
+        if !shared
+            && !registered_git
+            && let Some((sighting, _)) = root.latest_sighting
+        {
             let basis = sighting
                 .source_basis
                 .as_ref()
                 .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
-            if !correct_root(basis)
-                || evidence.source_basis.source_revision != basis.source_revision
+            if !correct_root(
+                &basis.workspace_id,
+                basis.source_root_generation,
+                basis.source_root_state,
+            ) || revision != Some(basis.source_revision.as_str())
             {
                 return Err(stale(StaleSourceDecider::RootSighting));
             }
             revision_from_root = true;
         }
-        if root
-            .unknown_change_position
-            .is_some_and(|unknown| producer_position <= unknown)
+        if !shared
+            && root
+                .unknown_change_position
+                .is_some_and(|unknown| producer_position <= unknown)
         {
             return Err(plain(VerificationEvidenceMismatch::NotAfterMutation));
         }
@@ -330,14 +355,12 @@ pub fn explain_verification_evidence(
         if !latest_mutation.source_changed {
             return Err(stale(StaleSourceDecider::LatestChange));
         }
-        if !registered_git && !revision_from_root {
+        if !shared && !registered_git && !revision_from_root {
             match measured {
-                Some((sighting, _))
-                    if evidence.source_basis.source_revision != sighting.source_revision =>
-                {
+                Some((sighting, _)) if revision != Some(sighting.source_revision.as_str()) => {
                     return Err(stale(StaleSourceDecider::MeasuredSighting));
                 }
-                None if evidence.source_basis.source_revision != latest_basis.source_revision => {
+                None if revision != Some(latest_basis.source_revision.as_str()) => {
                     return Err(stale(StaleSourceDecider::LatestChange));
                 }
                 _ => {}
@@ -356,6 +379,7 @@ pub fn explain_verification_evidence(
         ));
     }
     if evidence.result != VerificationResult::Passed
+        || (shared && producer.outcome != crate::domain::ExecutionOutcome::Succeeded)
         || producer
             .run_outcome
             .is_some_and(|outcome| outcome != crate::domain::ExecutionOutcome::Succeeded)
@@ -392,10 +416,17 @@ pub fn explain_verification_evidence(
         // Obligation reconstruction has no judged input: it validates the
         // producer's recorded input. Admission and evaluated completion supply
         // the separately declared input to compare against it.
-        let judged = input.judged_basis.unwrap_or(&evidence.source_basis);
-        if producer.matches_registered_git_input(evidence, &judged.source_revision) != Some(true) {
+        let judged = input
+            .judged_basis
+            .map(|basis| basis.source_revision.as_str())
+            .or(revision)
+            .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
+        if producer.matches_registered_git_input(evidence, judged) != Some(true) {
             return Err(stale(StaleSourceDecider::LatestChange));
         }
+    }
+    if shared && evidence.applicability.is_some() {
+        return Err(plain(VerificationEvidenceMismatch::GitTreeMissing));
     }
     check_verification_applicability(evidence.applicability.as_ref(), input.judged_basis)
         .map_err(plain)
@@ -572,11 +603,9 @@ pub fn explain_obligation_satisfaction(
     input: &ObligationSatisfactionInput<'_>,
     obligation: &WorkObligation,
 ) -> (ObligationAssessment, Option<StaleSourceDecider>) {
-    let registered_git = input
-        .producer
-        .verification_facts()
-        .registered_git_basis(input.evidence)
-        .is_some();
+    let facts = input.producer.verification_facts();
+    let registered_git = facts.registered_git_basis(input.evidence).is_some()
+        || facts.registered_source_id_basis(input.evidence).is_some();
     let git_source_rule = registered_git
         && (acceptance_binding_criterion(&obligation.rule).is_some()
             || is_stock_source_change_obligation(&obligation.rule, &obligation.requirement));
@@ -763,7 +792,7 @@ mod tests {
             binding,
             session_id,
             producer_observation: hash("producer observation"),
-            source_basis: producer.source_basis.clone().unwrap(),
+            source_basis: (producer.source_basis.clone().unwrap()).into(),
             environment: None,
             check_kind: VerificationKind::Test,
             check_fingerprint: producer.action_fingerprint.clone(),

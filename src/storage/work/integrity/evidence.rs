@@ -16,16 +16,24 @@ pub(in crate::storage::work) fn expected_verification_projection(
         evidence_id,
         "verification_evidence",
     )?;
+    let basis = &evidence.source_basis;
+    let shared = basis.source_id().is_some();
     let producer = crate::storage::work::load_verification_producer_on(connection, &evidence)?;
+    if shared
+        && (evidence.bound_from.is_some()
+            || evidence.environment.is_some()
+            || evidence.applicability.is_some()
+            || producer.registered_source_id_basis(&evidence).is_none())
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "shared-input verification requires its native registered producer".into(),
+        ));
+    }
     // The check ran under the original's binding and basis. A bound record
     // carries the original's facts unchanged and its own run, generation,
     // binder and binding time; it is checked against its original here.
     let (check_binding, check_basis, original_matches) = match &evidence.bound_from {
-        None => (
-            evidence.binding.clone(),
-            evidence.source_basis.clone(),
-            true,
-        ),
+        None => (evidence.binding.clone(), basis.clone(), true),
         Some(source) => {
             let original = load_typed_work_object::<VerificationEvidence>(
                 connection,
@@ -36,6 +44,16 @@ pub(in crate::storage::work) fn expected_verification_projection(
                 run_feed_position_for_object_on(connection, source.run_id, &source.verification)
                     .map(|position| position.position)
                     .ok();
+            let original_basis = original.source_basis.legacy_basis().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "bound verification changed source representation".into(),
+                )
+            })?;
+            let basis = basis.legacy_basis().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "bound verification requires a legacy source basis".into(),
+                )
+            })?;
             let matches = original.bound_from.is_none()
                 && original.result == crate::domain::VerificationResult::Passed
                 && original.project_id == evidence.project_id
@@ -49,15 +67,13 @@ pub(in crate::storage::work) fn expected_verification_projection(
                 && original.result == evidence.result
                 && original.completed_at == evidence.completed_at
                 && original.environment == evidence.environment
-                && original.source_basis.workspace_id == evidence.source_basis.workspace_id
-                && original.source_basis.source_revision == evidence.source_basis.source_revision
-                && original.source_basis.source_root_state
-                    == Some(crate::domain::SourceRootState::Named)
-                && evidence.source_basis.source_root_generation.is_some()
-                && evidence.source_basis.source_root_state
-                    == Some(crate::domain::SourceRootState::Named)
-                && source.measurement.workspace_id == evidence.source_basis.workspace_id
-                && source.measurement.source_revision == evidence.source_basis.source_revision
+                && original_basis.workspace_id == basis.workspace_id
+                && original_basis.source_revision == basis.source_revision
+                && original_basis.source_root_state == Some(crate::domain::SourceRootState::Named)
+                && basis.source_root_generation.is_some()
+                && basis.source_root_state == Some(crate::domain::SourceRootState::Named)
+                && source.measurement.workspace_id == basis.workspace_id
+                && source.measurement.source_revision == basis.source_revision
                 && original.summary == evidence.summary
                 && original.refs == evidence.refs
                 && source.criteria.first().is_none_or(|first| *first >= 1)
@@ -79,7 +95,8 @@ pub(in crate::storage::work) fn expected_verification_projection(
             && environment.binding.root_execution_id == check_binding.root_execution_id
             && environment.binding.work_id == check_binding.work_id
             && environment.binding.run_id == check_binding.run_id
-            && environment.source_basis.source_revision == check_basis.source_revision
+            && Some(environment.source_basis.source_revision.as_str())
+                == check_basis.legacy_revision()
     } else {
         true
     };
@@ -103,7 +120,7 @@ pub(in crate::storage::work) fn expected_verification_projection(
         && original_matches
         && crate::control::check_verification_applicability(
             evidence.applicability.as_ref(),
-            Some(&check_basis),
+            check_basis.legacy_basis().as_ref(),
         )
         .is_ok()
         && producer.project_id == evidence.project_id
@@ -127,8 +144,8 @@ pub(in crate::storage::work) fn expected_verification_projection(
         work_id: evidence.binding.work_id.0.to_string(),
         run_id,
         evidence_kind: "verification".into(),
-        workspace_id: Some(evidence.source_basis.workspace_id),
-        source_revision: Some(evidence.source_basis.source_revision),
+        workspace_id: Some(basis.workspace_id.clone()),
+        source_revision: basis.legacy_revision().map(str::to_owned),
         producer_session_id: Some(evidence.session_id.0),
         producer_observation_id: Some(evidence.producer_observation.to_string()),
         check_fingerprint: Some(evidence.check_fingerprint.to_string()),
@@ -165,7 +182,9 @@ fn bound_sighting_matches(
     else {
         return Ok(false);
     };
-    let basis = &evidence.source_basis;
+    let Some(basis) = evidence.source_basis.legacy_basis() else {
+        return Ok(false);
+    };
     let Some((sighting_position, sighting)) = &root.latest_sighting else {
         return Ok(false);
     };

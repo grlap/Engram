@@ -236,7 +236,10 @@ pub(super) fn classify_citation(
                     applicability: evidence.applicability,
                     kind: evidence.check_kind,
                     check_fingerprint: evidence.check_fingerprint,
-                    source_basis: evidence.source_basis,
+                    source_basis: evidence.source_basis.legacy_basis().ok_or_else(|| StoreError::WorkCompletionRefused {
+                        work: evidence.binding.work_id,
+                        reason: "source_id verification requires the shared-object evaluation protocol; a source-fingerprint string cannot declare that input".into(),
+                    })?,
                     producer: evidence.producer_observation,
                 }
             } else {
