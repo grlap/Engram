@@ -6,7 +6,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import test, { after } from "node:test";
-import { registerTestRun, confirmDetachedRegistration } from "../test-run-registration.mjs";
+import { registerTestRun, confirmDetachedRegistration, registrationLine } from "../test-run-registration.mjs";
 import { createRun, executeRun, notifyRun, summarize } from "../test-launcher.mjs";
 
 export function registerRegistrationTests(support) {
@@ -169,7 +169,7 @@ test("registration covers all launch modes before fingerprint capture through th
           assert.equal(result.before, request.expectedFingerprint);
           assert.equal(result.after, result.before);
           assert.equal(calls.length, before + (detached ? 1 : 0));
-          assert.match(await summarize(runDir), /registration: registered; native-wait=ready; not host check credit/u);
+          assert.match(await summarize(runDir), /registration: registered; native-wait=ready; registration succeeded; host check credit decided at delivery/u);
         }
       }
       assert.deepEqual(errors, []);
@@ -296,11 +296,99 @@ test("registration distinguishes durable registration from indexing and keeps am
     request.registration = await registerTestRun(request, root, registrationEnv, { fetch });
     assert.equal(request.registration.state, "registered-but-not-indexed");
     assert.equal(request.registration.nativeWaitReady, false);
+    assert.equal(registrationLine(request.registration), "registration: registered-but-not-indexed; native-wait=unavailable; use --notify; registration succeeded; host check credit decided at delivery");
+    let savedDirectory;
+    const runDir = await createRun({ root, stages: [stage("once")] }, registrationEnv,
+      { fetch: async (_url, options) => {
+        if (options.method === "POST") savedDirectory = JSON.parse(options.body).runDirectory;
+        const saved = json(join(savedDirectory, "request.json"));
+        return response(options.method === "POST" ? registrationAck(saved) : registrationQuery(saved, savedDirectory, "registration"));
+      } });
+    assert.match(await summarize(runDir), /registration: registered-but-not-indexed; native-wait=unavailable; use --notify; registration succeeded; host check credit decided at delivery/u);
     const indexed = async () => response(registrationQuery(request, root));
     assert.equal((await confirmDetachedRegistration(request, root, registrationEnv, { fetch: indexed })).nativeWaitReady, false);
     request.registration = { state: "unconfirmed", nativeWaitReady: false };
     assert.deepEqual(await confirmDetachedRegistration(request, root, registrationEnv,
       { fetch: () => assert.fail("ambiguous registration cannot be promoted by a late query") }), request.registration);
+  });
+});
+
+test("registration wording preserves untracked and ordinary unconfirmed messages", () => {
+  for (const state of ["untracked", "unconfirmed"]) {
+    assert.equal(registrationLine({ state }), `registration: ${state}; native-wait=unavailable; use --notify; not host check credit`);
+  }
+});
+
+test("registration preserves bounded POST refusal diagnostics in metadata and summary", async () => {
+  await repository(async (root) => {
+    let calls = 0;
+    const runDir = await createRun({ root, stages: [stage("once")] }, registrationEnv,
+      { fetch: async (_url, options) => {
+        calls++;
+        assert.equal(options.method, "POST");
+        return response({ error: "Registration does not match the current work root", secret: "never-print-this-secret" }, 409);
+      } });
+    const registration = json(join(runDir, "request.json")).registration;
+    assert.equal(calls, 1);
+    assert.equal(registration.state, "unconfirmed");
+    assert.equal(registration.reason, "registration-refused");
+    assert.equal(registration.nativeWaitReady, false);
+    assert.equal(registration.httpStatus, 409);
+    assert.equal(registration.hostMessage, "Registration does not match the current work root");
+    assert.deepEqual(json(join(runDir, "results.json")).registration, registration);
+    assert.match(await summarize(runDir), /POST HTTP 409; host message="Registration does not match the current work root"/u);
+    assert.doesNotMatch(JSON.stringify(registration) + await summarize(runDir), /never-print-this-secret/u);
+    assert.equal((await executeRun(runDir, registrationEnv)).state, "passed");
+    assert.deepEqual(json(join(runDir, "results.json")).registration, registration);
+  });
+});
+
+test("registration refusal bodies are bounded and never dumped as diagnostics", async () => {
+  await repository(async (root) => {
+    const request = { runId: randomUUID(), root, owner: "fixture-owner" };
+    for (const reply of [() => new Response(null, { status: 403 }),
+      () => new Response("private raw body", { status: 403 }),
+      () => response({ error: { secret: "private" }, message: "private" }, 403),
+      () => response({ error: "x".repeat(65_537) }, 403)]) {
+      let calls = 0;
+      const result = await registerTestRun(request, root, registrationEnv, { fetch: async () => { calls++; return reply(); } });
+      assert.deepEqual(result, { state: "unconfirmed", reason: "registration-refused", nativeWaitReady: false,
+        httpStatus: 403, hostMessage: null });
+      assert.equal(calls, 1);
+      assert.match(registrationLine(result), /POST HTTP 403; host message unavailable$/u);
+      assert.doesNotMatch(registrationLine(result), /private/u);
+    }
+    const result = await registerTestRun(request, root, registrationEnv, { fetch: async () => response({
+      error: `\u001b[31mfirst\nsecond\u2028${"z".repeat(500)}`, secret: "never-print-this-secret",
+      registrationState: "durabilityPending", retryAfterMs: 1,
+    }, 503) });
+    assert.equal(result.reason, "registration-refused");
+    assert.equal(result.httpStatus, 503);
+    assert.equal(result.hostMessage.length, 384);
+    assert.match(result.hostMessage, /^\[31mfirst second /u);
+    assert.doesNotMatch(result.hostMessage, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+    assert.doesNotMatch(registrationLine(result), /never-print-this-secret/u);
+    const persisted = { ...result, hostMessage: `\u001b${"y".repeat(800)}` };
+    assert.ok(registrationLine(persisted).length < 600);
+    assert.doesNotMatch(registrationLine(persisted), /\u001b/u);
+    assert.doesNotMatch(registrationLine({ ...result, httpStatus: "503\nprivate" }), /POST HTTP/u);
+  });
+});
+
+test("registration retains refusal status when its body exhausts the shared budget", async () => {
+  await repository(async (root) => {
+    let signal, calls = 0;
+    const result = await registerTestRun({ runId: randomUUID(), root, owner: "fixture-owner" }, root, registrationEnv,
+      { budgetMs: 10, fetch: async (_url, options) => {
+        calls++;
+        signal = options.signal;
+        return new Response(new ReadableStream({ start() {} }), { status: 503 });
+      } });
+    assert.equal(calls, 1);
+    assert.equal(signal.aborted, true);
+    assert.deepEqual(result, { state: "unconfirmed", reason: "registration-timeout", nativeWaitReady: false,
+      httpStatus: 503, hostMessage: null });
+    assert.match(registrationLine(result), /POST HTTP 503; host message unavailable$/u);
   });
 });
 

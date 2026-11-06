@@ -6,9 +6,16 @@ const contract = "termal-durable-test-run-registration";
 const version = 1;
 const budgetMs = 8_000;
 const responseLimit = 65_536;
+const hostMessageLimit = 384;
 const contextKeys = ["TERMAL_BASE_URL", "TERMAL_SESSION_ID", "TERMAL_CLI"];
 const states = new Set(["untracked", "unconfirmed", "registered-but-not-indexed", "registered"]);
 const unconfirmed = (reason) => ({ state: "unconfirmed", reason, nativeWaitReady: false });
+const httpStatus = (value) => Number.isInteger(value) && value >= 300 && value <= 599 ? value : undefined;
+function hostMessage(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").trim();
+  return normalized ? Array.from(normalized).slice(0, hostMessageLimit).join("") : null;
+}
 const immutableFields = ["runId", "root", "stages", "notifyTo", "full", "scope", "detached",
   "creatorPid", "owner", "started", "requiredBinaryEnv", "prerequisiteFiles", "needsCargo", "liveEngram"];
 
@@ -133,6 +140,7 @@ export async function registerTestRun(request, directory, env = process.env, opt
   const allowance = Math.max(0, Math.min(budgetMs, options.budgetMs ?? budgetMs));
   const started = performance.now();
   const identity = requestIdentity(request);
+  let refusal;
   try {
     const source = await bounded(allowance, async (signal) => {
       const url = new URL(`/api/sessions/${encodeURIComponent(host.session)}/test-runs`, host.base);
@@ -150,7 +158,15 @@ export async function registerTestRun(request, directory, env = process.env, opt
           }
           continue;
         }
-        if (!response.ok) throw new Error("registration-refused");
+        if (!response.ok) {
+          // Keep known status even if the bounded error body cannot be read.
+          // Only the host's error string is diagnostic; never echo its raw body.
+          refusal = { httpStatus: httpStatus(response.status), hostMessage: null };
+          try { refusal.hostMessage = hostMessage((await json(response))?.error); }
+          catch { /* Malformed, oversized or interrupted body: status only. */ }
+          if (signal.aborted) throw new Error("registration-timeout");
+          throw new Error("registration-refused");
+        }
         const ack = await json(response);
         if (ack.contract !== contract || ack.version !== version || ack.runId !== request.runId || ack.registered !== true) {
           throw new Error("invalid-acknowledgement");
@@ -164,7 +180,7 @@ export async function registerTestRun(request, directory, env = process.env, opt
       reason: source === "index" ? "confirmed-index" : "registration-only",
       nativeWaitReady: source === "index", hostOrigin: host.base.origin,
       remainingMs: Math.max(0, allowance - (performance.now() - started)) };
-  } catch (error) { return unconfirmed(reason(error)); }
+  } catch (error) { return { ...unconfirmed(reason(error)), ...(refusal ?? {}) }; }
 }
 
 export async function confirmDetachedRegistration(request, directory, env = process.env, options = {}) {
@@ -191,5 +207,11 @@ export async function confirmDetachedRegistration(request, directory, env = proc
 export function registrationLine(registration) {
   if (!registration) return null; // Preserve historical notification bodies.
   const state = states.has(registration.state) ? registration.state : "unconfirmed";
-  return `registration: ${state}; native-wait=${state === "registered" && registration.nativeWaitReady === true ? "ready" : "unavailable; use --notify"}; not host check credit`;
+  const credit = registrationConfirmed({ state })
+    ? "registration succeeded; host check credit decided at delivery" : "not host check credit";
+  const status = state === "unconfirmed" ? httpStatus(registration.httpStatus) : undefined;
+  const message = hostMessage(registration.hostMessage);
+  const detail = status === undefined ? ""
+    : `; POST HTTP ${status}; ${message === null ? "host message unavailable" : `host message=${JSON.stringify(message)}`}`;
+  return `registration: ${state}; native-wait=${state === "registered" && registration.nativeWaitReady === true ? "ready" : "unavailable; use --notify"}; ${credit}${detail}`;
 }
