@@ -55,7 +55,10 @@ pub(crate) fn observe(root: &Path, budget: Duration) -> crate::source::Observati
         return Observation::unavailable(
             None,
             RefusalCode::InputUnavailable,
-            "source budget must be between one and 8000 milliseconds".to_owned(),
+            format!(
+                "source budget must be between one and {} milliseconds",
+                crate::source::MAX_BUDGET_MS
+            ),
         );
     }
     let deadline = Instant::now() + budget;

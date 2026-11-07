@@ -6,7 +6,6 @@ import { once } from "node:events";
 import { basename, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
-import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "../review-freeze-fingerprint.mjs";
 import { completionMetadata, createRun, diagnostics, executeRun, inspectFailure, notifyRun, requiredStages, summarize } from "../test-launcher.mjs";
 
 export function registerCompletionDiagnostics(support) {
@@ -83,12 +82,6 @@ test("successful Node warning headers remain visible without passing names", asy
     assert.equal(result.stages[0].diagnostics.text, `${warnings.join("\n")}\n`);
     assert.doesNotMatch(await summarize(runDir), /passing name/u);
   });
-});
-
-test("normalization limitations are platform-independent with a separate Windows caveat", () => {
-  assert.deepEqual(fingerprintLimitations("linux"), [NORMALIZATION_LIMITATION]);
-  assert.deepEqual(fingerprintLimitations("darwin"), [NORMALIZATION_LIMITATION]);
-  assert.deepEqual(fingerprintLimitations("win32"), [NORMALIZATION_LIMITATION, WINDOWS_LIMITATION]);
 });
 
 }
@@ -170,19 +163,21 @@ test("sign-off carries exact transition metadata for pass, failure, interruption
     const nextTransition = { owner: "fixture-owner", action: "Review the frozen input and consolidate the pair." };
     const runDir = await createRun({ root, stages: [stage("first"), stage("later")], item: "release validation", nextTransition }, env);
     const request = json(join(runDir, "request.json"));
-    const fingerprint = request.expectedFingerprint;
+    const sourceId = request.sourceId;
     const passed = { runId: basename(runDir), state: "passed", exitCode: 0,
       started: request.started, ended: new Date(Date.parse(request.started) + 2000).toISOString(),
-      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint,
+      sourceIdBefore: sourceId, sourceIdAfter: sourceId,
       stages: request.stages.map(({ name }) => ({ name, state: "passed", code: 0 })) };
     for (const [expected, result] of [
       ["PASS", passed],
       ["FAIL", { ...passed, state: "failed", exitCode: 13, stages: [{ name: "first", state: "failed", code: 13 }, { name: "later", state: "unrun" }] }],
       ["INTERRUPTED", { ...passed, state: "failed", exitCode: 1, interrupted: true, recovered: { phase: "stage", stage: "first" } }],
       ["INTERRUPTED", { ...passed, stages: [{ name: "first", state: "failed", signal: "SIGTERM", code: null }] }],
-      ["FAIL", { ...passed, after: `${fingerprint[0] === "0" ? "1" : "0"}${fingerprint.slice(1)}` }],
-      ["FAIL", { ...passed, reason: "input-changed", expectedFingerprint: undefined, before: undefined, after: undefined }],
-      ["UNKNOWN", { ...passed, after: undefined }],
+      ["FAIL", { ...passed, sourceIdAfter: { ...sourceId, tree: sourceId.commit } }],
+      ["FAIL", { ...passed, reason: "input-changed", sourceIdBefore: undefined, sourceIdAfter: undefined }],
+      ["UNKNOWN", { ...passed, sourceIdAfter: undefined }],
+      ["UNKNOWN", { ...passed, sourceIdBefore: null }],
+      ["UNKNOWN", { ...passed, sourceIdAfter: { ...sourceId, extra: true } }],
       ["UNKNOWN", { ...passed, state: "running", ended: undefined, heartbeat: undefined }],
       ["FAIL", { ...passed, preflight: [{ name: "probe", code: 0, error: "fixture diagnostic" }] }],
       ["FAIL", { ...passed, stages: [{ name: "first", state: "failed", code: 0, tests: { failures: 1 } }] }],
@@ -430,9 +425,9 @@ test("all default summaries are metadata-only and preserve boundary evidence", a
   await repository(async (root) => {
     const runDir = await createRun({ root, stages: requiredStages(), notifyTo: "fixture-parent" }, env);
     const result = json(join(runDir, "results.json"));
-    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    const sourceId = json(join(runDir, "input.json")).sourceId;
     Object.assign(result, { state: "passed", ended: new Date().toISOString(), exitCode: 0,
-      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint,
+      sourceIdBefore: sourceId, sourceIdAfter: sourceId,
       preflight: ["cargo-version", "cargo-fmt", "cargo-clippy"].map((name) => ({ name, code: 0,
         log: join(runDir, `preflight-${name}.log`) })) });
     for (const entry of result.stages) Object.assign(entry, { state: "passed", code: 0,
@@ -463,9 +458,9 @@ test("focused completion puts its exact stage line after the unchanged verdict a
       [name, `${name}-${randomUUID()}`]));
     for (const marker of Object.values(markers)) assert.equal(runDir.includes(marker), false);
     const result = json(join(runDir, "results.json"));
-    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    const sourceId = json(join(runDir, "input.json")).sourceId;
     Object.assign(result, { ended: new Date().toISOString(),
-      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint });
+      sourceIdBefore: sourceId, sourceIdAfter: sourceId });
     for (const code of [0, 19]) {
       const state = code === 0 ? "passed" : "failed";
       Object.assign(result, { state, exitCode: code });
@@ -536,7 +531,7 @@ test("saved passed stages normalize contradictions and preserve higher-priority 
     assert.equal(runDir.includes(marker), false);
     const passed = { ...original, state: "passed", exitCode: 0,
       ended: new Date(Date.parse(request.started) + 1000).toISOString(),
-      expectedFingerprint: request.expectedFingerprint, before: request.expectedFingerprint, after: request.expectedFingerprint };
+      sourceIdBefore: request.sourceId, sourceIdAfter: request.sourceId };
     for (const [label, changes, state, verdict] of [
       ["clean", { tests: { failed: 0, failures: 0 } }, "passed", "PASS"],
       ["missing exit", { code: undefined }, "unknown", "FAIL"],
@@ -659,10 +654,10 @@ test("compact summaries preserve running, interrupted, recovered and unknown out
     delete result.heartbeat;
     saveResult();
     assert.match(await summarize(runDir, { compact: true }), /^UNKNOWN .* exit=unknown/mu);
-    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    const sourceId = json(join(runDir, "input.json")).sourceId;
     Object.assign(result, { state: "failed", ended: new Date(at).toISOString(), exitCode: 1, interrupted: true,
       recovered: { phase: "stage", stage: "unfinished", at: new Date(at).toISOString() },
-      expectedFingerprint: fingerprint, before: fingerprint, after: `${fingerprint}-changed` });
+      sourceIdBefore: sourceId, sourceIdAfter: { ...sourceId, tree: sourceId.commit } });
     Object.assign(result.stages[0], { state: "failed", outcome: "unknown", error: "interrupted: outcome unknown" });
     saveResult();
     const recovered = await summarize(runDir, { compact: true });
@@ -671,7 +666,7 @@ test("compact summaries preserve running, interrupted, recovered and unknown out
     assert.match(recovered, /elapsed: ms=unknown basis=recovery-end/u);
     assert.doesNotMatch(recovered, /interrupted: outcome unknown/u);
     assert.match(recovered, /input: mismatch/u);
-    delete result.after;
+    delete result.sourceIdAfter;
     saveResult();
     assert.match(await summarize(runDir, { compact: true }), /input: unknown/u);
     let sent = false;
@@ -689,9 +684,9 @@ test("retained failure stays in the artifact and requires explicit inspection", 
     const diagnostic = "test doctor_cli_refusals_are_json_and_leave_the_store_unchanged ... FAILED\n\nfailures:\n\n---- doctor_cli_refusals_are_json_and_leave_the_store_unchanged stdout ----\n\nthread 'doctor_cli_refusals_are_json_and_leave_the_store_unchanged' (79612) panicked at tests\\diagnostics_cli.rs:673:17:\nassertion `left == right` failed\n  left: Array [String(\"indexes\"), String(\"triggers\"), String(\"fts\"), String(\"derived_tables\")]\n right: Array [String(\"indexes\"), String(\"triggers\"), String(\"fts\")]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nfailures:\n    doctor_cli_refusals_are_json_and_leave_the_store_unchanged\n\ntest result: FAILED. 25 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.46s\n\nerror: test failed, to rerun pass `--test diagnostics_cli`\nTemp audit: run=<fixture scratch>; before=0 after=0; new=0; remaining=0";
     const runDir = await createRun({ root, stages: requiredStages() }, env);
     const result = json(join(runDir, "results.json"));
-    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    const sourceId = json(join(runDir, "input.json")).sourceId;
     Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 101,
-      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint,
+      sourceIdBefore: sourceId, sourceIdAfter: sourceId,
       clearedToolchainOverrides: ["RUSTUP_TOOLCHAIN"],
       preflight: ["cargo-version", "cargo-fmt", "cargo-clippy"].map((name) => ({ name, code: 0,
         log: join(runDir, `preflight-${name}.log`), diagnostics: { text: "", truncated: false } })) });

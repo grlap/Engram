@@ -85,14 +85,12 @@ their presence in a file alone does not prove delivery.
   commit to Greg afterwards:
   - the full gate's required checks pass on the exact commit being landed
     (for the staged-tree lane, the exact tree being committed); its
-    completion input check confirms either unchanged input, or unchanged
-    HEAD, staged index and tracked content with only newly created
-    untracked, non-ignored paths and no changed pre-existing untracked
-    input. In the latter case the integration owner records on the item
-    what those paths contain and why they are non-input debris; the
-    committed tree excludes them. No input has changed since the run; a
-    changeset touching only `.md` files instead passes the link check on
-    that tree, with its input fingerprint checked at completion;
+    completion input check confirms equal complete `source_id` values at
+    admission, before execution and after execution. Any difference,
+    including a new non-ignored untracked file, fails that check. No input
+    has changed since the run; a changeset touching only `.md` files instead
+    passes the link check on that tree, with its input
+    `source_id` checked at completion;
   - the latest review round from two independent read-only reviewers of
     different vendors, Codex and Claude, on a verified freeze of that same
     tree, has no outstanding in-scope finding of Medium or higher, and every
@@ -272,9 +270,10 @@ their presence in a file alone does not prove delivery.
   Git. A focused run on a test ref is evidence only. A full gate run by the
   standard launcher on the exact test ref counts as the landing gate for that
   tree on any host, with the same weight as one run on Windows, when its
-  results record the same fingerprint before and after and the integration
-  owner has recorded on the item the run id, host, commit, tree id and the
-  launcher's before and after fingerprints from that run's results; it gates
+  results record equal complete `source_id` values before and after and the
+  integration owner has recorded on the item the run id, host, commit, tree id
+  and the launcher's admitted, before and after `source_id` values from that
+  run's records; it gates
   only a landing whose master commit has that tree id, and until then it is
   evidence only. A test-ref commit is also a candidate commit for the
   candidate-commits bullet's fast-forward landing: its push under this bullet
@@ -476,8 +475,8 @@ The launcher has two modes, for two different jobs:
   in context; diagnostics require explicit bounded inspection. It runs on
   the frozen tree that is to be committed, or on the candidate commit to
   be landed, beside that tree's reviews; for any changeset with a non-`.md`
-  path, only its pass, or its `new-untracked-only` outcome under the standing
-  approval's gate clause, counts toward landing.
+  path, only its pass counts toward landing. The launcher's input check uses
+  complete `source_id` equality; there is no separate untracked-debris outcome.
 - **Fast correction check:** `node scripts/test-launcher.mjs focused --
   COMMAND ARGS...` runs one command, typically the tests that cover what a
   fix touched, such as `focused -- cargo test --lib planning::detach`. Run
@@ -506,7 +505,7 @@ phases without the Unix-only file-descriptor-limit adjustment.
 A changeset touching only `.md` files (docs, AGENTS.md, CLAUDE.md, skills,
 commands) runs the link check instead of this sequence: no build step or
 test reads Markdown except the link checker. Run it through
-`node scripts/test-launcher.mjs focused -- …`, so that its input fingerprint
+`node scripts/test-launcher.mjs focused -- …`, so that its complete `source_id`
 is checked at completion; `/review-changes` gives the command. Both
 reviewers still review it.
 
@@ -519,6 +518,12 @@ behavior (Greg, 2026-11-07, relayed by Engram::Asistant in mailbox 43498a6e
 ich niedodawac', and #490: 'Zero tautologi. Tak marnujemy cykle. Te testy
 nic nie wnosza. Teraz kazda zmiana wymusza zmiane testow. Czyli edycja 2
 razy. O ile zlapiemy to odrazu. Absurd! Nigdy wiecej.').
+
+No test reads a Markdown file to check that it contains given phrases
+(Greg, 2026-11-07, relayed by Engram::Asistant in mailbox 43498a6e #495:
+'Nie ma testów czytających pliki md i sprawdzania czy mają okreslone frazy.
+Usunąć natychmiast.'). General-purpose checks that process Markdown uniformly,
+such as link validation or review input fingerprinting, are not such tests.
 
 Choose landing validation by changed file type:
 
@@ -553,9 +558,7 @@ work gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
 opaque-reference` for bounded failure evidence. For a late gate on completed
 work, any project-bound session records it once with `engram work gate NAME
 --work-ref REF ...`, without claiming or reopening the item. Bare `gate NAME`
-always means pass; A full gate with the `new-untracked-only` outcome is
-recorded as a pass only by the integration owner, after its disposition note,
-with `--ref` naming the run; when a failed check has no test id, use the check
+always means pass; when a failed check has no test id, use the check
 command or check name as its `--failed` label. A failed gate is an
 investigation, never a stop. For every failing test or check, classify the
 cause and act in the same
@@ -674,9 +677,7 @@ waiting to integrate its documentation does not postpone it.
 Review scheduling:
 
 - Run the full gate and both reviews in parallel on the same frozen input. A
-  failed gate discards those reviews; a full gate whose `new-untracked-only`
-  outcome the integration owner records under the standing approval's gate
-  clause does not.
+  failed gate discards those reviews.
 - A changeset touching only `.md` files skips the full gate, as Required
   Quality Gates describes; both reviewers still review it.
 - Before coding an item, run a design review with Engram::Fable and a

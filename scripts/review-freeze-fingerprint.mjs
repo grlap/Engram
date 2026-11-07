@@ -20,6 +20,10 @@ import { fileURLToPath } from "node:url";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 
+// Independent hang guard for the child process. The owner alone chooses and
+// enforces its source-read budget.
+const ownerProcessHangGuardMs = 60_000;
+
 function git(root, args, { allowFailure = false, env = process.env } = {}) {
   // The test launcher's detached worker has no console. Without windowsHide,
   // Windows opens a visible terminal window for every git call it makes.
@@ -305,7 +309,7 @@ function sourceChanges(changes) {
   for (const change of changes) {
     if (!fieldsExactly(change, ["path", "status", "origin", "blob", "mode"])
         || !sourcePath(change.path) || typeof change.status !== "string"
-        || !/^[ MADRCUT?!]{2}$/u.test(change.status) || ["  ", "!!"].includes(change.status)
+        || !/^[ MADRCUT?]{2}$/u.test(change.status) || change.status === "  "
         || (/[RC]/u.test(change.status) ? !sourcePath(change.origin) : change.origin !== null)
         || (change.blob === null ? change.mode !== null || !change.status.includes("D")
           : !sourceOid(change.blob) || !["100644", "100755", "120000"].includes(change.mode))) return null;
@@ -338,36 +342,9 @@ export function sourceIdsEqual(before, after) {
   return a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b);
 }
 
-// This is the landing policy's debris classification, not EO credit. Every
-// previously observed record must remain identical; only new ?? paths qualify.
-export function classifySourceIdChange(before, after) {
-  const a = sourceValue(before), b = sourceValue(after);
-  const changed = { outcome: "input-changed", newPaths: [] };
-  if (!a || !b || a.commit !== b.commit || a.tree !== b.tree
-      || a.submodules.length !== b.submodules.length) return changed;
-  const repositories = [["", a.changes, b.changes]];
-  for (let index = 0; index < a.submodules.length; index += 1) {
-    const earlier = a.submodules[index], later = b.submodules[index];
-    if (earlier.path !== later.path || earlier.commit !== later.commit) return changed;
-    repositories.push([`${earlier.path}/`, earlier.changes, later.changes]);
-  }
-  const newPaths = [];
-  const key = (entry) => JSON.stringify([entry.path, entry.status, entry.origin]);
-  for (const [prefix, earlier, later] of repositories) {
-    const remaining = new Map(later.map((entry) => [key(entry), entry]));
-    const oldPaths = new Set(earlier.map((entry) => entry.path));
-    for (const entry of earlier) {
-      const previous = remaining.get(key(entry));
-      if (!previous || JSON.stringify(previous) !== JSON.stringify(entry)) return changed;
-      remaining.delete(key(entry));
-    }
-    for (const entry of remaining.values()) {
-      if (entry.status !== "??" || oldPaths.has(entry.path)) return changed;
-      newPaths.push(prefix + entry.path);
-    }
-  }
-  return { outcome: newPaths.length ? "new-untracked-only" : "unchanged", newPaths: newPaths.sort(byteOrder) };
-}
+export const sourceIdLimitations = () => [
+  "Source identity limitation: ordinary Git normalization and ignored-path policy apply; boundary equality does not prove the absence of transient edits or provide raw-byte coverage.",
+];
 
 // Investigation context from the already captured values; never query Git or
 // emit the potentially large complete identities into a diagnostic.
@@ -414,9 +391,8 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
   { code: "ENGRAM_SOURCE_UNAVAILABLE", ...(refusal ? { refusal } : {}) });
   const result = run(binary, ["source", "--root", root, "--json"], {
     cwd: root, env: sourceEnv, encoding: null, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-    // The owner enforces eight seconds. Allow bounded process startup and a
-    // final unavailable envelope, without extending the owner's usable budget.
-    timeout: 10_000, maxBuffer: SOURCE_JSON_BYTES + 1,
+    // Stop a hung child without supplying or extending the owner's source budget.
+    timeout: ownerProcessHangGuardMs, maxBuffer: SOURCE_JSON_BYTES + 1,
   });
   if (result.error || result.signal || ![0, 1].includes(result.status)) {
     throw unavailable(result.error?.message ?? `owner exited ${result.status ?? "without a status"}${result.signal ? ` (${result.signal})` : ""}`);
@@ -506,69 +482,6 @@ function captureWorktree(root, env = process.env) {
     // the aggregate.
     ignored,
   };
-}
-
-const DIGEST = /^[a-f0-9]{64}$/u;
-const OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
-const pathList = (paths) => paths.every((path) => typeof path === "string" && path !== "") &&
-  new Set(paths).size === paths.length;
-// Whether a capture has every part this module produces, in its own shape: a
-// capture that does not is never compared part by part.
-const completeCapture = (capture) =>
-  capture !== null && typeof capture === "object" && capture.schemaVersion === SNAPSHOT_SCHEMA_VERSION &&
-  typeof capture.root === "string" && capture.root !== "" &&
-  (capture.head === null || OBJECT_ID.test(capture.head ?? "")) &&
-  DIGEST.test(capture.fingerprint ?? "") && DIGEST.test(capture.components?.stagedDiff ?? "") &&
-  DIGEST.test(capture.components?.unstagedDiff ?? "") &&
-  DIGEST.test(capture.components?.ruleSources ?? "") && Array.isArray(capture.untracked) &&
-  capture.untracked.every((entry) => DIGEST.test(entry?.digest ?? "")) &&
-  pathList(capture.untracked.map((entry) => entry.path)) &&
-  Array.isArray(capture.ignored) && pathList(capture.ignored);
-
-// One spelling for comparing paths: Unicode-composed (NFC) and lowercase, so
-// neither a case nor a composition difference makes an old path look new.
-// Folding more spellings together can only refuse more.
-const comparable = (path) => path.normalize("NFC").toLowerCase();
-
-// Whether a path was ignored at a capture: it is one of the ignored paths, or
-// lies inside an ignored directory, compared in one spelling.
-function ignoredAt(capture) {
-  const ignored = new Set(capture.ignored.map(comparable));
-  return (path) => {
-    const lower = comparable(path);
-    if (ignored.has(lower)) return true;
-    for (let slash = lower.indexOf("/"); slash !== -1; slash = lower.indexOf("/", slash + 1)) {
-      if (ignored.has(lower.slice(0, slash + 1))) return true;
-    }
-    return false;
-  };
-}
-
-// How the input captured after a run differs from the one captured before
-// it: "unchanged" when the fingerprints are equal; "new-untracked-only" when
-// the root, HEAD, staged and unstaged tracked content and every ignore and
-// attribute source outside the tracked tree are unchanged, every path
-// untracked before is still there with the same digest, and the only
-// difference is new untracked, non-ignored paths, listed in `newPaths`, none
-// of which was ignored before (so none was already there, however it became
-// visible); "input-changed" for every other difference, and whenever either
-// capture is not complete in this module's shape, even with equal
-// fingerprints. Tracked content is compared as Git normalizes it, as the
-// fingerprint does.
-export function classifyInputChange(before, after) {
-  const changed = { outcome: "input-changed", newPaths: [] };
-  if (!completeCapture(before) || !completeCapture(after)) return changed;
-  if (before.fingerprint === after.fingerprint) return { outcome: "unchanged", newPaths: [] };
-  if (before.root !== after.root || before.head !== after.head ||
-    before.components.stagedDiff !== after.components.stagedDiff ||
-    before.components.unstagedDiff !== after.components.unstagedDiff ||
-    before.components.ruleSources !== after.components.ruleSources) return changed;
-  const later = new Map(after.untracked.map((entry) => [entry.path, entry.digest]));
-  if (before.untracked.some((entry) => later.get(entry.path) !== entry.digest)) return changed;
-  const earlier = new Set(before.untracked.map((entry) => entry.path));
-  const newPaths = after.untracked.map((entry) => entry.path).filter((path) => !earlier.has(path));
-  if (newPaths.some(ignoredAt(before))) return changed;
-  return newPaths.length ? { outcome: "new-untracked-only", newPaths } : changed;
 }
 
 function parseArguments(arguments_) {

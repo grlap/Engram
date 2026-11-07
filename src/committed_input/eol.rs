@@ -225,7 +225,6 @@ impl Drop for Fallback {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     #[test]
     fn private_global_preserves_hardening_scope_and_local_precedence() {
@@ -233,7 +232,7 @@ mod tests {
         let root = scratch.path().join("repo");
         fs::create_dir(&root).unwrap();
         let git = super::super::resolve_git(&root).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(8);
+        let deadline = Instant::now() + crate::source::MAX_BUDGET;
         super::super::query(
             &git,
             &root,
@@ -362,7 +361,7 @@ mod tests {
             autocrlf: Some("input".to_owned()),
             eol: Some("lf".to_owned()),
         };
-        let deadline = Instant::now() + Duration::from_secs(8);
+        let deadline = Instant::now() + crate::source::MAX_BUDGET;
         for failure in [
             None,
             Some(QueryFailure::Deadline),

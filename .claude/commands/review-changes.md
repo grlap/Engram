@@ -115,7 +115,7 @@ A changeset whose every changed path is a `.md` file (docs, AGENTS.md,
 CLAUDE.md, skills, commands) runs the link check instead of the full batch
 (Greg, 2026-09-26): no build step or test reads Markdown except the link
 checker. Run it through
-the launcher, so that its automatic input fingerprint is checked at completion
+the launcher, so that its complete `source_id` is checked at completion
 as for the full gate. Review identity uses the separate Git tree id in section 3:
 
 ```bash
@@ -154,15 +154,13 @@ The yield or blocking
 wait described below comes under section 5, only after the reviewers are
 spawned. A host without background execution cannot overlap them: it runs the
 gate after section 3, then section 4. The launcher's automatic before/after
-fingerprint is unchanged and is separate from the review's Git tree id; never
+`source_id` comparison is separate from the review's Git tree id; never
 compare those values for equality. Validation and review cover the same
-unchanged input. A failed gate discards the reviews of that input; a
-`new-untracked-only` outcome the integration owner records under this
-section's exception does not.
+unchanged input. A failed gate discards the reviews of that input.
 When a review finding will change the
 input while the gate still runs, the gate's result can no longer be used: the
 parent stops or discards it and starts the next round on the corrected input.
-It notes which stages finished and on which fingerprint, and does not record
+It notes which stages finished and on which `source_id`, and does not record
 them as gate passes for the corrected input.
 
 ### Completion-driven execution: do not babysit tests
@@ -184,31 +182,23 @@ Record the exact runner command, execution owner, completion handle and artifact
 paths in the parent work status before yielding. A PID alone is not a durable
 completion handle; use the host job/session identity and recorded start time.
 
-The launcher captures the input using the existing freeze implementation in
-`input.json`, saves the expected value in `request.json`, and checks it before
-execution and at completion. Before yielding, the parent retains that exact
-`expectedFingerprint` literal in its own work status, alongside the run directory
-and manifest path. Foreground and detached launch receipts print it for this
-purpose, before waiting for completion.
-Do not recover the comparison value from the run's files at completion.
+The launcher captures the owner's complete `source_id` in `input.json` and
+`request.json`, freezes it in `completion.request.json`, and compares it with
+the observations before execution and at completion. Before yielding, retain
+the run directory, input manifest path and execution receipt in the work status.
 Hold source and index unchanged during execution. At completion, and before
-reusing recovered results, require the launcher's automatic before/after
-fingerprints to equal the parent-held `expectedFingerprint` and repeat
-section 3's applicable Git identity checks. A mismatch or missing independently
-retained identity is an evidence gap, not a current pass. The one exception is a
-full gate whose launcher reason is `new-untracked-only`: under the standing
-approval's gate clause it counts only once the integration owner records on the
-item what the new paths contain and why they are non-input debris, and the
-committed tree excludes them. Its before fingerprint must still equal the
-parent-held value and section 3's identity checks must still pass; only the new
-untracked paths may differ.
+reusing recovered results, require a matched comparison of the complete admitted,
+before and after `source_id` values, and repeat section 3's applicable Git
+identity checks. A mismatch or unavailable identity is an evidence gap, not a
+current pass. A new non-ignored untracked file is an ordinary mismatch; there
+is no separate debris disposition.
 These boundary checks do not prove the absence of transient
 edits; a known intervening edit invalidates the run. This gate-input snapshot
 is separate from the review freeze in section 3, although both cover the same
 tree.
 Tracked content follows Git's clean/eol normalization, so changes erased by
 that conversion (including line-ending-only edits) are not detected by the
-fingerprint on any platform. Do not claim raw-byte coverage for tracked files.
+source identity on any platform. Do not claim raw-byte coverage for tracked files.
 
 Use a completion notification or supported resume-on-completion mechanism, then
 yield the turn. If none is available, wait on the same runner's completion using
@@ -237,9 +227,7 @@ it a pass. Rerun for a concrete correction, changed input, or stated diagnostic
 question, never merely to chase green. These execution rules do not remove any
 required gate or weaken assertions and failure investigation below.
 
-On any failure other than a `new-untracked-only` outcome the integration
-owner records under this section's exception, the reviews of that input no
-longer count. A failed gate is
+On any failure, the reviews of that input no longer count. A failed gate is
 an investigation, never a stop: classify every failing test or check in this
 same turn.
 Record every executed gate on the focused open item you hold: `engram work
@@ -344,9 +332,14 @@ method, comparison value and actual coverage limits; a Git-normalized
 fingerprint is not raw-byte proof. Do not require capture or the compiled
 checker in the ordinary flow.
 
-The launcher's automatic input capture and before/after fingerprints remain
-unchanged, as do the remote test-ref and gate-record requirements. Keep its
-fingerprint separate from the review's Git tree id.
+The launcher's automatic input check compares complete `source_id` values.
+The explicit review-freeze fingerprint, remote test-ref naming and trailer
+remain separate and unchanged. Keep each separate from the review's Git tree id.
+
+Activate the launcher that omits `expectedFingerprint` only after TermAl's
+readers accepting the complete `source_id` records are running following its
+restart. Preparing a candidate does not activate it. Hold its landing until
+that condition holds; the restart need not wait for this candidate.
 
 ## 4. Spawn the two reviewers
 
@@ -390,17 +383,15 @@ Call `termal_resume_after_delegations` with the pair's delegation ids and
 fan-in never leads to section 6 by itself. Report the wait id and child
 session ids, then end the turn.
 The gate's completion may resume the parent first; handle it under section
-2. On a gate failure other than a `new-untracked-only` outcome recorded under
-section 2's exception, the reviews of that input no longer count: cancel the
+2. On a gate failure, the reviews of that input no longer count: cancel the
 running reviewers or discard their results. Do not continue to section 6
 until TermAl resumes the parent with the pair's fan-in prompt.
 
 ## 6. Verify the freeze and collect results
 
 Accept reviewer output only once the gate has finished and passed on the same
-unchanged input tree, with its automatic before/after fingerprints matching
-the parent-held launcher value, or with the `new-untracked-only` exception of
-section 2.
+unchanged input tree, with its complete admitted, before and after `source_id`
+values matching.
 For a changeset touching only `.md` files, that means once the link check
 passed on that tree. When the reviews arrive first, verify
 the freeze as below. They may be read, and a justified finding may start the
@@ -459,7 +450,7 @@ Deduplicate overlapping findings and tracker suggestions.
 When the reviewed change touches authority text — the text whose change
 conditions (a), (b) and (c) of the Authority and Git section of AGENTS.md and
 CLAUDE.md cover — the parent sends the final frozen change against its recorded
-base, the review Git identity, the separate launcher results and fingerprints,
+base, the review Git identity, the separate launcher results and `source_id` values,
 and the list of recorded messages that word each changed
 passage of authority text to the auditing coordinator by TermAl mailbox. The
 parent also sends the auditing coordinator the recorded message that carried
@@ -588,8 +579,8 @@ of the full integration tree.
 Adoption carries no gate, Markdown check, readiness or acceptance evaluation.
 Run the required full gate, or the applicable Markdown-only checks, on the
 exact final integration tree, or in the candidate lane on the exact final
-integration commit, with matching input fingerprints before and after, or with
-the `new-untracked-only` exception of section 2. A
+integration commit, with matching complete admitted, before and after `source_id`
+values. A
 missing or failing check is not a pass. Diagnose a failure through its
 existing owner; a resulting content correction needs the Coder's required
 review before READY and applicable validation of the new final input. Adding

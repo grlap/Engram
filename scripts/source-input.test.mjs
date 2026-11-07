@@ -152,7 +152,7 @@ test("source refuses invalid invocation and unavailable roots without requiring 
   const parent = fixtureHome("source-cli-", t);
   const fixture = createSourceFixture(parent, "clean");
   for (const args of [[], ["--root", ".", "--json"], ["--root", fixture.root],
-    ["--root", fixture.root, "--json", "--timeout-ms", "8001"],
+    ["--root", fixture.root, "--json", "--timeout-ms", "18446744073709551615"],
     ["--root", fixture.root, "--json", "--timeout-ms", "0"],
     ["--root", fixture.root, "--json", "--unknown"]]) assert.equal(run(args).status, 2);
   for (const root of [parent, join(parent, "missing"), join(fixture.root, "ignored")]) {

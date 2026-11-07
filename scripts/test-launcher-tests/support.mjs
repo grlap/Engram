@@ -142,7 +142,7 @@ function rustWrapperFixture(root, platform) {
 
 function copyLauncher(root, transform = (source) => source) {
   const scripts = join(root, "scripts");
-  mkdirSync(scripts);
+  mkdirSync(scripts, { recursive: true });
   const local = join(scripts, "test-launcher.mjs");
   writeFileSync(local, transform(readFileSync(launcher, "utf8")));
   for (const name of launcherSupportFiles) copyFileSync(join(dirname(launcher), name), join(scripts, name));

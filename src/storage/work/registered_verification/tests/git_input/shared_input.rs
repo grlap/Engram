@@ -294,7 +294,7 @@ fn shared_input_completion_refuses_string_declarations_for_cited_and_selected_ch
 }
 
 #[test]
-fn shared_input_late_registration_does_not_resolve_later_source_change_obligations() {
+fn shared_input_unadmitted_reports_do_not_gate_equal_source() {
     for operator in [false, true] {
         for unadmitted in [false, true] {
             let (root, mut f, _) = shared_fixture(false, true);
@@ -323,21 +323,27 @@ fn shared_input_late_registration_does_not_resolve_later_source_change_obligatio
                     )
                     .unwrap();
             }
-            // The check completed at 9, but the change is recorded before the
-            // producer arrives at 10. Feed order cannot make the check fresh.
-            std::fs::write(root.join("tracked"), "later untested content\n").unwrap();
+            // The report arrives after the check finished. Shared equality
+            // decides currency; an unadmitted report adds no ordering gate.
+            if !unadmitted {
+                std::fs::write(root.join("tracked"), "later untested content\n").unwrap();
+            }
             actual_change(&mut f, unadmitted, 10);
-            f.record().unwrap();
+            let receipt = f.record().unwrap();
             let obligations = f
                 .store
                 .work_run_obligations(f.request.registration.binding.run_id)
                 .unwrap();
             assert_eq!(obligations.len(), 1);
-            assert!(
-                obligations
-                    .iter()
-                    .all(|record| record.state == WorkObligationState::Open)
-            );
+            assert!(obligations.iter().all(|record| record.state
+                == if unadmitted {
+                    WorkObligationState::Satisfied
+                } else {
+                    WorkObligationState::Open
+                }));
+            if unadmitted {
+                finish(&mut f, &receipt.verifications[0].record_id).unwrap();
+            }
             assert!(f.store.verify_all().unwrap().is_healthy());
         }
     }

@@ -8,7 +8,6 @@ import { createServer } from "node:http";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import test, { after, describe } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import { powerShellEnvironment, requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration } from "./test-run-registration.mjs";
 import {

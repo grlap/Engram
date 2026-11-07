@@ -683,10 +683,8 @@ that store or serve as a rollback binary.
 members are omitted when missing, never null; `finished_at` follows that rule in
 both alternatives. Missing facts stay missing and are never guessed. A
 malformed value or an unknown member answers `invalid_request` and records
-nothing. A well-formed finish time ahead of this host's clock is not malformed:
-it stays provisional, visible and uncredited, with a null origin. If the earlier
-qualification reasons below do not apply, it receives `result_not_pass` and the
-time in `detail`. A later delivery can settle it under a new key.
+nothing. A well-formed finish time ahead of this host's clock does not withhold
+credit. Remote and receiving-host timestamps remain separate recorded facts.
 
 **Send the complete retained facts the first time.** The first authoritative facts
 are the run's terminal, so a later delivery of the same run with more facts, such
@@ -707,8 +705,7 @@ there.
 A `remote_terminal_origin` holds one run's terminal facts, once per project,
 host and run. Its uniqueness is a `remote_verification_origin` row in
 `work_operation_results`, keyed by project, host and run. Only `terminal` true
-with verdict PASS, FAIL or INTERRUPTED, and no finish time ahead of this host's
-clock, settles it. A missing finish time does not prevent settlement, but it
+with verdict PASS, FAIL or INTERRUPTED settles it. A missing finish time does not prevent settlement, but it
 prevents credit. A running, unknown or inferred snapshot never fixes the terminal,
 and a later real terminal of the same run settles without conflict. The launcher
 really emits UNKNOWN with `terminal` true (`input-unverified`) and INTERRUPTED
@@ -728,38 +725,42 @@ deliveries.
 
 ### What earns credit
 
-One decision serves every use. Reasons apply in this order:
+The legacy native completion contract uses the following reasons, in order.
+Its debris and fingerprint rules describe historical and old-launcher evidence;
+the current launcher records complete `source_id` values instead.
 
 1. `producer_unsupported`: this build does not read the completion's
    `schema_version`.
 2. `association_stale`: the destination's item, revision, claim, fence, run or
    named root has moved.
 3. `result_conflict`: the run already has different terminal facts.
-4. `not_full_mode`: a focused pass stays visible author evidence only.
-5. `result_not_pass`: a finish time ahead of this host's clock.
-6. `untracked_debris_pending_disposition`: an authoritative terminal native FAIL
+4. `untracked_debris_pending_disposition`: an authoritative terminal native FAIL
    whose reason is `new-untracked-only`.
-7. `result_not_pass`: anything else but a terminal PASS with exit 0 and a finish
+5. `result_not_pass`: anything else but a terminal PASS with a finish
    time. The debris case above is the exception checked before these ordinary
    result predicates.
-8. `source_id_missing_or_changed`: shared input has an unavailable endpoint or
+6. `source_id_missing_or_changed`: shared input has an unavailable endpoint or
    its complete before and after objects differ. Two nulls never qualify. This
    applies to both `verification` and `landing_gate`, with local changes allowed.
-9. `commit_mismatch`: for `committed_input`, the tested commit is missing or
+7. `commit_mismatch`: for `committed_input`, the tested commit is missing or
    another commit, even with the same tree.
-10. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
+8. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
    another tree.
-11. `fingerprint_missing_or_changed`: for legacy `landing_gate` only, the before
+9. `fingerprint_missing_or_changed`: for legacy `landing_gate` only, the before
     and after fingerprints are not both present and equal.
 
 `detail` names missing data; there are no further reasons. An ordinary
+focused pass qualifies on the same basis as a full pass; an absent or nonzero
+exit value does not override the recorded PASS outcome. Historical refusals and
+provisional records remain readable as recorded, without gaining new credit.
+An ordinary
 `verification` has no legacy fingerprint rule, not even for differing optional
 fingerprints. For shared input, commit and tree association use the actual before
 object's fields; no digest, cleanliness bit or watcher condition is substituted
-for complete object equality. The launcher's native reason is kept unchanged. A debris result
-counts toward landing only through the integration owner's existing disposition
-note and run-referenced gate record; neither that gate nor a mailbox message makes
-it verification.
+for complete object equality. Historical native reasons remain as stored. Debris
+records remain readable, but the current launcher has no debris disposition lane:
+adding a non-ignored untracked file changes `source_id` and fails its input check.
+A gate or mailbox message does not turn historical evidence into new verification.
 
 Only a qualifying delivery mints verification: one `test` record, written by the
 same writer as any other, whose producer is the delivery. Shared input stores the
@@ -776,12 +777,9 @@ sighting or `execution_observe`. Purpose and ref tags grant no authority, and
 credit is not landing authority. Platform coverage stays the integration owner's
 judgment.
 
-**Cross-host time ordering assumes comparable clocks.** The time guards compare the
-remote finish time with local times, and nothing attests that time. A remote clock
-running behind can withhold credit. A remote clock running ahead can make an old
-run appear to follow a later local change: a run that ended at T, a local change at
-T+30 and a delivery at T+60 pass every guard if the origin's clock is 45 seconds
-ahead. Shared credit names the whole source state the run tested; its live
+**Shared currency compares source state.** A remote finish ahead of the receiving
+host's clock does not withhold credit, and an unadmitted-change ordering barrier
+does not gate a check with equal shared endpoints. Shared credit names the whole source state the run tested; its live
 currency reads the shared owner outside the database transaction and compares
 that object again, allowing an equal dirty state and refusing a different one.
 String-based evaluation declarations remain unsupported for shared input.

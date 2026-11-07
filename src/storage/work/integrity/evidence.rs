@@ -130,7 +130,7 @@ pub(in crate::storage::work) fn expected_verification_projection(
         && producer.observed_at == Some(evidence.completed_at)
         && producer.action_fingerprint == evidence.check_fingerprint
         && result_matches
-        && evidence.completed_at <= evidence.recorded_at
+        && (producer.run_outcome.is_some() || evidence.completed_at <= evidence.recorded_at)
         && producer.recorded_at <= evidence.recorded_at
         && evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
         && evidence.actor.run_id.as_deref() == Some(run_id.as_str())

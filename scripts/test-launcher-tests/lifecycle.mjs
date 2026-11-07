@@ -37,9 +37,8 @@ test("detached parent emits exact recovery receipt and child completes once", as
     // The liveness hint quotes the run directory, so a path with spaces
     // stays one argument when the command is copied.
     assert.ok(receipt.includes(`node scripts/test-launcher.mjs summary "${runDir}"`), receipt);
-    const printed = /^expectedFingerprint=(.+)$/mu.exec(receipt)?.[1];
-    assert.equal(printed, json(join(runDir, "input.json")).fingerprint);
-    assert.equal(printed, json(join(runDir, "results.json")).before);
+    assert.match(receipt, /^basis=source_id$/mu);
+    assert.deepEqual(json(join(runDir, "input.json")).sourceId, json(join(runDir, "results.json")).sourceIdBefore);
     assert.equal(json(join(runDir, "results.json")).state, "passed");
     assert.equal(json(join(runDir, "request.json")).detached, true, "the worker preserves the parent's mode");
     assert.equal(json(join(runDir, "results.json")).stages[0].cwd, root);
@@ -89,7 +88,7 @@ function waitForStageReady(child, broker, signal) {
 for (const earlyExit of [false, true]) test(earlyExit
   ? "foreground readiness rejects a worker exiting after receipt but before ready"
   : "foreground CLI exposes its input without taking ownership of caller IPC", async (t) => {
-  await repository(async (root) => {
+  await repository(async (root, observe) => {
     mkdirSync(join(root, "scripts"));
     for (const name of launcherFixtureFiles) {
       copyFileSync(fileURLToPath(new URL(name, entryUrl)), join(root, "scripts", name));
@@ -133,7 +132,8 @@ for (const earlyExit of [false, true]) test(earlyExit
       const ipcMessages = [];
       child.on("message", (message) => ipcMessages.push(message));
       completion = once(child, "close");
-      child.stderr.resume();
+      let stderr = "";
+      child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4096); });
       const ready = waitForStageReady(child, broker, t.signal);
       let output = "";
       const receipt = new Promise((done, reject) => {
@@ -142,23 +142,27 @@ for (const earlyExit of [false, true]) test(earlyExit
         child.once("close", () => reject(new Error("launcher ended before its startup receipt")));
         child.stdout.on("data", (chunk) => {
           output += chunk;
-          if (/^expectedFingerprint=.+\n/mu.test(output)) done(output);
+          if (/^basis=source_id\n/mu.test(output)) done(output);
         });
       });
       // Observe both promises immediately: exit/error/abort cannot strand a
       // readiness wait after the receipt has already resolved.
-      const admitted = Promise.all([receipt, ready]);
+      const admitted = Promise.all([receipt, ready]).catch((error) => {
+        const runDir = /^STARTED ([^\r\n]+)$/mu.exec(output)?.[1]
+          ?? /^results: ([^\r\n]+)$/mu.exec(stderr)?.[1];
+        if (runDir) observe(runDir, env.ENGRAM_SOURCE_BINARY);
+        throw new Error(`${error.message}\nlauncher stdout: ${output.slice(-4096)}\nlauncher stderr: ${stderr}`, { cause: error });
+      });
       if (earlyExit) {
         await assert.rejects(admitted, /launcher ended before stage readiness \(27\)/u);
-        assert.match(output, /^expectedFingerprint=.+$/mu);
+        assert.match(output, /^basis=source_id$/mu);
         assert.equal((await completion)[0], 27);
         return;
       }
       const [early] = await admitted;
       const runDir = /^STARTED (.+)$/mu.exec(early)?.[1];
       assert.ok(runDir);
-      const printed = /^expectedFingerprint=(.+)$/mu.exec(early)?.[1];
-      assert.equal(printed, json(join(runDir, "input.json")).fingerprint);
+      assert.deepEqual(json(join(runDir, "input.json")).sourceId, json(join(runDir, "request.json")).sourceId);
       assert.ok(early.includes(`manifest=${join(runDir, "input.json")}\n`));
       assert.equal(json(join(runDir, "results.json")).state, "running");
       assert.equal(child.exitCode, null);
@@ -347,8 +351,8 @@ if (![IO.Path]::IsPathRooted($cache)) { throw 'cache is not pinned' }
         const result = await module.executeRun(runDir, inherited);
         assert.equal(result.state, "passed", result.error);
         assert.equal(result.stages[0].code, 0);
-        assert.equal(result.before, json(join(runDir, "request.json")).expectedFingerprint);
-        assert.equal(result.after, result.before);
+        assert.deepEqual(result.sourceIdBefore, json(join(runDir, "request.json")).sourceId);
+        assert.deepEqual(result.sourceIdAfter, result.sourceIdBefore);
         const log = readFileSync(logPath(runDir, result.stages[0]), "utf8");
         const line = log.split(/\r?\n/u).find((value) => value.startsWith("fixture-stage-cache:"));
         assert.ok(line, "a real PowerShell workload executed");

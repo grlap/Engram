@@ -164,7 +164,7 @@ test("admitted display metadata survives rewritten requests and an unpublished n
           const file = path.join(runs, name, 'request.json');
           const request = JSON.parse(fs.readFileSync(file, 'utf8'));
           Object.assign(request, { item: 'rewritten item', nextTransition: { owner: 'wrong-owner', action: 'Wrong action.' },
-            expectedFingerprint: 'changed', started: 'invalid' });
+            sourceId: null, started: 'invalid' });
           fs.writeFileSync(file, JSON.stringify(request));
         }
         fs.appendFileSync(${JSON.stringify(counter)}, 'ran');`)] }, env);

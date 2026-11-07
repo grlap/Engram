@@ -7,6 +7,14 @@ cross-platform coverage.
 
 - New behavior has a test that fails without it; assertions verify exact state
   or output rather than merely “does not throw.”
+- Report as Medium, for deletion, any test that reads a Markdown file and
+  asserts that it contains given phrases, table rows or markers, and any test
+  that only pins text or mirrors the implementation without verifying
+  observable behavior, so that every change must be edited twice. Never ask
+  for such a test. General-purpose checks that process Markdown uniformly,
+  such as link validation or review input fingerprinting, are not such tests
+  (Greg, 2026-11-07, relayed by Engram::Asistant in mailbox 43498a6e #490,
+  #495 and #498: 'Poprawic reviewers aby nigdy to nie wróciło.').
 - Canonical JSON tests cover key ordering and malformed input; identity tests
   preserve minted ids independently of bytes, and fingerprint tests compare
   content without treating a fingerprint as a record id or corruption check.

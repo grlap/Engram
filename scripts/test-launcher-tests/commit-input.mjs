@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { captureCommitInputStatus, classifySourceIdChange, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "../review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "../review-freeze-fingerprint.mjs";
 import { createSourceFixture, sourceCases } from "../source-input-fixtures.mjs";
 import { fixtureHome } from "../test-temp.mjs";
-import { commitInputEligible, createRun, executeRun, machineRecord, selectDefaultInput, startDetached, summarize } from "../test-launcher.mjs";
+import { commitInputEligible, createRun, encodeRunRecord, executeRun, machineRecord, selectDefaultInput, startDetached, summarize } from "../test-launcher.mjs";
 import { registerTestRun } from "../test-run-registration.mjs";
 
 export function registerCommitInputTests(support) {
@@ -72,7 +73,7 @@ export function registerCommitInputTests(support) {
       const capture = (result) => captureCommitInputStatus(root, env, { run: (binary, args, options) => {
         assert.equal(binary, env.ENGRAM_SOURCE_BINARY);
         assert.deepEqual(args, ["source", "--root", resolve(root), "--json"]);
-        assert.equal(options.timeout, 10_000);
+        assert.ok(Number.isSafeInteger(options.timeout) && options.timeout > 0, "owner process remains bounded");
         assert.equal(options.maxBuffer, 1024 * 1024 + 1);
         assert.equal(options.windowsHide, true);
         assert.deepEqual(options.stdio, ["ignore", "pipe", "pipe"]);
@@ -107,28 +108,27 @@ export function registerCommitInputTests(support) {
         status: change.status, path: change.path }], submodules: [], tree: identified.tree, commit: identified.commit }));
       assert.equal(sourceIdsEqual(identified, measured.sourceId), false);
       const added = { ...change, path: "new.txt", status: "??" };
-      assert.deepEqual(classifySourceIdChange(identified, { ...identified, changes: [change, added] }),
-        { outcome: "new-untracked-only", newPaths: ["new.txt"] });
+      assert.equal(sourceIdsEqual(identified, { ...identified, changes: [change, added] }), false);
       const child = { path: "child", commit: measured.commit, changes: [change] };
       const withChild = { ...identified, submodules: [child] };
-      assert.deepEqual(classifySourceIdChange(withChild, { ...withChild,
-        submodules: [{ ...child, changes: [change, added] }] }),
-      { outcome: "new-untracked-only", newPaths: ["child/new.txt"] });
+      assert.equal(sourceIdsEqual(withChild, { ...withChild,
+        submodules: [{ ...child, changes: [change, added] }] }), false);
       for (const changed of [
         { ...identified, commit: measured.tree },
         { ...identified, changes: [added] },
         { ...identified, changes: [{ ...change, blob: measured.tree }, added] },
         { ...identified, changes: [change, { ...added, status: " A" }] },
         { ...identified, changes: [{ ...added, path: change.path }, change] },
-      ]) assert.equal(classifySourceIdChange(identified, changed).outcome, "input-changed");
-      assert.equal(classifySourceIdChange(withChild, { ...withChild,
-        submodules: [{ ...child, commit: measured.tree }] }).outcome, "input-changed");
+      ]) assert.equal(sourceIdsEqual(identified, changed), false);
+      assert.equal(sourceIdsEqual(withChild, { ...withChild,
+        submodules: [{ ...child, commit: measured.tree }] }), false);
       const detail = sourceIdDifference(identified, { ...identified, changes: [{ ...change, blob: measured.tree }] });
       assert.match(detail, /file.*\[ M\]/u);
       assert.ok(detail.includes(change.blob) && detail.includes(measured.tree));
       assert.ok(Buffer.byteLength(sourceIdDifference(measured.sourceId, { ...measured.sourceId,
         changes: [{ ...added, path: "long".repeat(2000) }] })) < 4300);
       for (const source_id of [null, { ...measured.sourceId, extra: true },
+        { ...measured.sourceId, changes: [{ ...change, status: "! " }] },
         { ...measured.sourceId, tree: "invalid" }, { ...measured.sourceId, changes: [{ ...change, origin: undefined }] },
         { ...measured.sourceId, changes: [{ ...change, blob: null }] },
         { ...measured.sourceId, changes: [{ ...change, path: "../outside" }] },
@@ -138,6 +138,239 @@ export function registerCommitInputTests(support) {
         { ...measured.sourceId, submodules: [{ path: "child", commit: measured.commit, changes: [], extra: true }] },
       ]) assert.throws(() => capture(response({ ...observation, source_id })), /source_id/u);
       assert.throws(() => capture(response({ ...refused, source_id: measured.sourceId }, 1)), /unavailable envelope/u);
+    });
+  });
+
+  test("run JSON artifacts enforce the exact UTF-8 byte boundary including newline", () => {
+    const limit = 1024 * 1024;
+    const value = { text: "界".repeat(1000), padding: "" };
+    const remaining = limit - Buffer.byteLength(encodeRunRecord(value));
+    value.padding = "x".repeat(remaining);
+    const text = encodeRunRecord(value, "request.json");
+    assert.equal(Buffer.byteLength(text), limit);
+    assert.deepEqual(JSON.parse(text), value);
+    assert.equal(text.at(-1), "\n");
+    value.padding += "x";
+    assert.throws(() => encodeRunRecord(value, "request.json"), (error) =>
+      error.artifactLimit && error.refusal.code === "output_limit");
+  });
+
+  test("source copies that cannot fit the result artifact refuse before any stage", async () => {
+    await fixture(async ({ root, marker, marking }) => {
+      const measured = captureCommitInputStatus(root, env);
+      const sourceId = { ...measured.sourceId, changes: [{ path: `p${"界".repeat(200_000)}`,
+        status: "??", origin: null, blob: measured.commit, mode: "100644" }] };
+      assert.equal(sourceIdsEqual(sourceId, sourceId), true);
+      assert.ok(Buffer.byteLength(JSON.stringify(sourceId)) < 1024 * 1024);
+      let runDir;
+      await assert.rejects(createRun({ root, stages: [marking()],
+        commitInputStatus: () => ({ ...measured, sourceId }) }, env), (error) => {
+        runDir = error.runDir;
+        return error.reason === "input-capture-failed" && error.cause?.refusal?.code === "output_limit";
+      });
+      for (const name of ["request.json", "completion.request.json", "input.json", "results.json"]) {
+        assert.ok(readFileSync(join(runDir, name)).length <= 1024 * 1024, name);
+      }
+      assert.equal(json(join(runDir, "request.json")).sourceId, null);
+      const result = json(join(runDir, "results.json"));
+      assert.equal(result.state, "failed");
+      assert.equal(result.stages[0].state, "unrun");
+      assert.match(result.error, /results.json.*output_limit/u);
+      assert.equal(existsSync(marker), false);
+    });
+  });
+
+  test("a source-bound request that exceeds the artifact cap leaves a bounded terminal refusal", async () => {
+    await fixture(async ({ root, marker }) => {
+      const measured = captureCommitInputStatus(root, env);
+      const sourceId = { ...measured.sourceId, changes: [{ path: `p${"界".repeat(340_000)}`,
+        status: "??", origin: null, blob: measured.commit, mode: "100644" }] };
+      const command = stage("fixture", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');`);
+      command.args.push("x".repeat(40_000));
+      let runDir;
+      await assert.rejects(createRun({ root, stages: [command],
+        commitInputStatus: () => ({ ...measured, sourceId }) }, env), (error) => {
+        runDir = error.runDir;
+        return error.reason === "input-capture-failed" && error.cause?.refusal?.code === "output_limit";
+      });
+      for (const name of ["request.json", "completion.request.json", "results.json"]) {
+        assert.ok(readFileSync(join(runDir, name)).length <= 1024 * 1024, name);
+      }
+      assert.equal(json(join(runDir, "request.json")).sourceId, null);
+      assert.equal(existsSync(join(runDir, "input.json")), false);
+      const result = json(join(runDir, "results.json"));
+      assert.equal(result.state, "failed");
+      assert.equal(result.stages[0].state, "unrun");
+      assert.match(result.error, /request.json.*output_limit/u);
+      assert.equal(existsSync(marker), false);
+    });
+  });
+
+  test("an oversized after record retains stage facts and marks the complete observation unavailable", async () => {
+    await fixture(async ({ root, admin, marker }) => {
+      // Control the observation boundary without thousands of filesystem
+      // writes or a fake source digest. Both complete values validate.
+      const local = copyLauncher(root, (source) => source.replaceAll(
+        "captureCommitInputStatus(request.root, childEnv)",
+        "JSON.parse(readFileSync(join(request.root, '.git', 'fixture-source.json'), 'utf8'))"));
+      const worker = await import(pathToFileURL(local).href);
+      const measured = captureCommitInputStatus(root, env);
+      const identity = (size) => ({ ...measured.sourceId, changes: [{ path: `p${"界".repeat(size)}`,
+        status: "??", origin: null, blob: measured.commit, mode: "100644" }] });
+      const before = identity(130_000), after = identity(230_000);
+      assert.equal(sourceIdsEqual(before, before), true);
+      assert.equal(sourceIdsEqual(after, after), true);
+      const captured = { ...measured, sourceId: before };
+      writeFileSync(join(admin, "fixture-source.json"), JSON.stringify(captured));
+      writeFileSync(join(admin, "fixture-next.json"), JSON.stringify({ ...measured, sourceId: after }));
+      const runDir = await worker.createRun({ root, commitInputStatus: () => captured,
+        stages: [stage("fixture", `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(marker)}, 'ran');`
+          + `fs.copyFileSync(${JSON.stringify(join(admin, "fixture-next.json"))}, ${JSON.stringify(join(admin, "fixture-source.json"))});`)] }, env);
+      const result = await worker.executeRun(runDir, env);
+      assert.equal(result.state, "failed");
+      assert.equal(result.reason, "input-unverified");
+      assert.equal(result.stages[0].state, "passed");
+      assert.equal(result.stages[0].code, 0);
+      assert.equal(readFileSync(marker, "utf8"), "ran");
+      assert.deepEqual(result.sourceIdBefore, before);
+      assert.equal(result.sourceIdAfter, null);
+      assert.match(result.error, /results.json.*output_limit/u);
+      assert.ok(readFileSync(join(runDir, "results.json")).length <= 1024 * 1024);
+      assert.equal(json(join(runDir, "results.json")).stages[0].state, "passed");
+      assert.doesNotMatch(await worker.summarize(runDir), /^PASS /u);
+    });
+  });
+
+  test("command duplication that cannot fit refuses before spawn and keeps prior stage facts", async () => {
+    await fixture(async ({ root, admin, marker, marking }) => {
+      const blocked = join(admin, "blocked-stage-ran");
+      const oversized = stage("oversized", `require('node:fs').writeFileSync(${JSON.stringify(blocked)}, 'ran');`);
+      oversized.args.push("x".repeat(600_000));
+      const runDir = await createRun({ root, stages: [marking(), oversized] }, env);
+      const result = await executeRun(runDir, env);
+      assert.equal(result.state, "failed");
+      assert.equal(result.reason, "input-unverified");
+      assert.match(result.error, /results.json.*output_limit/u);
+      assert.equal(result.stages[0].state, "passed");
+      assert.equal(result.stages[0].code, 0);
+      assert.equal(readFileSync(marker, "utf8"), "x");
+      assert.equal(result.stages[1].state, "unrun");
+      assert.equal(existsSync(blocked), false);
+      assert.ok(readFileSync(join(runDir, "results.json")).length <= 1024 * 1024);
+      assert.deepEqual(json(join(runDir, "results.json")).stages, result.stages);
+      assert.doesNotMatch(await summarize(runDir), /^PASS /u);
+    });
+  });
+
+  test("accumulated stage diagnostics refuse the next command without losing completed facts", async () => {
+    await fixture(async ({ root, marker }) => {
+      const stages = Array.from({ length: 100 }, (_, index) => stage(`warning-${index}`,
+        `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'x');`
+        + "console.log('warning: ' + String.fromCharCode(1).repeat(2400));"));
+      const runDir = await createRun({ root, stages }, env);
+      const result = await executeRun(runDir, env);
+      assert.equal(result.state, "failed");
+      assert.equal(result.reason, "input-unverified");
+      assert.match(result.error, /results.json.*output_limit/u);
+      const ran = readFileSync(marker, "utf8").length;
+      assert.ok(ran > 1 && ran < stages.length, `completed ${ran} stages`);
+      for (const entry of result.stages.slice(0, ran)) {
+        assert.equal(entry.state, "passed");
+        assert.equal(entry.code, 0);
+        assert.match(entry.diagnostics.text, /^warning: /u);
+      }
+      assert.ok(result.stages.slice(ran).every((entry) => entry.state === "unrun"));
+      assert.ok(readFileSync(join(runDir, "results.json")).length <= 1024 * 1024);
+      assert.deepEqual(json(join(runDir, "results.json")).stages, result.stages);
+      assert.doesNotMatch(await summarize(runDir), /^PASS /u);
+    });
+  });
+
+  test("committed after overflow keeps real stages and the canonical unavailable input shape", async () => {
+    await fixture(async ({ root, admin, marker }) => {
+      const local = copyLauncher(root, (source) => source.replaceAll(
+        "captureCommitInputStatus(request.root, childEnv)",
+        "JSON.parse(readFileSync(join(request.root, '.git', 'fixture-source.json'), 'utf8'))"));
+      const worker = await import(pathToFileURL(local).href);
+      git(["add", "--", "scripts"], root);
+      commit(root);
+      const measured = captureCommitInputStatus(root, env);
+      assert.equal(measured.status, "clean");
+      const before = { ...measured.sourceId, submodules: [{ path: `p${"界".repeat(130_000)}`,
+        commit: measured.commit, changes: [] }] };
+      const after = { ...before, changes: [{ path: `p${"界".repeat(180_000)}`, status: "??",
+        origin: null, blob: measured.commit, mode: "100644" }] };
+      assert.equal(sourceIdsEqual(before, before), true);
+      assert.equal(sourceIdsEqual(after, after), true);
+      assert.ok(Buffer.byteLength(JSON.stringify(after)) < 1024 * 1024);
+      const captured = { ...measured, sourceId: before };
+      writeFileSync(join(admin, "fixture-source.json"), JSON.stringify(captured));
+      writeFileSync(join(admin, "fixture-next.json"), JSON.stringify({ ...measured,
+        status: "not_clean", sourceId: after, entries: [{ status: "??", path: "new.txt" }] }));
+      const runDir = await worker.createRun({ root, input: "commit", commitInputStatus: () => captured,
+        stages: [stage("fixture", `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(marker)}, 'ran');`
+          + `fs.copyFileSync(${JSON.stringify(join(admin, "fixture-next.json"))}, ${JSON.stringify(join(admin, "fixture-source.json"))});`)] }, env);
+      const result = await worker.executeRun(runDir, env);
+      assert.equal(result.state, "failed");
+      assert.equal(result.reason, "input-unverified");
+      assert.equal(result.stages[0].state, "passed");
+      assert.equal(result.stages[0].code, 0);
+      assert.equal(readFileSync(marker, "utf8"), "ran");
+      assert.deepEqual(result.sourceIdBefore, before);
+      assert.equal(result.sourceIdAfter, null);
+      assert.deepEqual(result.input, { kind: "commit", commit: measured.commit, tree: measured.tree,
+        cleanBefore: true, eligible: false, unavailableReason: result.error });
+      assert.match(result.error, /results.json.*output_limit/u);
+      assert.ok(readFileSync(join(runDir, "results.json")).length <= 1024 * 1024);
+      assert.deepEqual(json(join(runDir, "results.json")).stages, result.stages);
+      assert.doesNotMatch(await worker.summarize(runDir), /^PASS /u);
+    });
+  });
+
+  for (const denied of [false, true]) test(`long diagnostic ${denied ? "write refusal preserves terminal facts" : "retention is private and separate from stage output"}`, async () => {
+    await fixture(async ({ root, admin, marker }) => {
+      const local = copyLauncher(root, (source) => {
+        source = source.replaceAll("captureCommitInputStatus(request.root, childEnv)",
+          "JSON.parse(readFileSync(join(request.root, '.git', 'fixture-source.json'), 'utf8'))");
+        return denied ? source.replace('writeFileSync(diagnosticPath, message, { flag: "wx", mode: 0o600 });',
+          'throw Object.assign(new Error("fixture diagnostic denied"), { code: "EACCES" });') : source;
+      });
+      const worker = await import(pathToFileURL(local).href);
+      const measured = captureCommitInputStatus(root, env);
+      const after = { ...measured.sourceId, changes: [...measured.sourceId.changes,
+        ...Array.from({ length: 12 }, (_, i) => ({
+          path: `zz-long-${String(i).padStart(2, "0")}-${"x".repeat(160)}`, status: "??",
+          origin: null, blob: measured.commit, mode: "100644" }))]
+        .sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0) };
+      assert.equal(sourceIdsEqual(after, after), true);
+      assert.ok(sourceIdDifference(measured.sourceId, after).length > 2400);
+      writeFileSync(join(admin, "fixture-source.json"), JSON.stringify(measured));
+      writeFileSync(join(admin, "fixture-next.json"), JSON.stringify({ ...measured, sourceId: after }));
+      const runDir = await worker.createRun({ root, commitInputStatus: () => measured,
+        stages: [{ ...stage("worker", `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(marker)}, 'ran');`
+          + `fs.copyFileSync(${JSON.stringify(join(admin, "fixture-next.json"))}, ${JSON.stringify(join(admin, "fixture-source.json"))});`
+          + "console.log('actual stage output'); process.exitCode=7;"), kind: "other" }] }, env);
+      const result = await worker.executeRun(runDir, env);
+      assert.equal(result.state, "failed");
+      assert.equal(result.reason, "input-changed");
+      assert.ok(result.ended);
+      assert.equal(result.stages[0].state, "failed");
+      assert.equal(result.stages[0].code, 7);
+      assert.equal(readFileSync(marker, "utf8"), "ran");
+      assert.equal(readFileSync(join(runDir, "worker.log"), "utf8"), "actual stage output\n");
+      assert.ok(result.error.length <= 2400);
+      assert.deepEqual(json(join(runDir, "results.json")), JSON.parse(JSON.stringify(result)));
+      const logs = readdirSync(runDir).filter((name) => /^worker-error-.*\.log$/u.test(name));
+      if (denied) {
+        assert.equal(logs.length, 0);
+        assert.match(result.error, /full diagnostic unavailable: log write failed/u);
+      } else {
+        assert.equal(logs.length, 1);
+        assert.ok(result.error.includes(logs[0]));
+        assert.ok(readFileSync(join(runDir, logs[0]), "utf8").length > 2400);
+        if (process.platform !== "win32") assert.equal(statSync(join(runDir, logs[0])).mode & 0o777, 0o600);
+      }
+      assert.doesNotMatch(await worker.summarize(runDir), /^PASS /u);
     });
   });
 
@@ -269,7 +502,6 @@ export function registerCommitInputTests(support) {
       result = await executeRun(runDir, env);
       assert.equal(result.state, "passed", result.error);
       assert.equal(result.input, undefined);
-      assert.equal(result.before, result.after);
       assert.deepEqual(result.sourceIdBefore, result.sourceIdAfter);
     });
   });
@@ -280,7 +512,6 @@ export function registerCommitInputTests(support) {
     const runDir = await createRun({ root: fixture.root, stages: [command] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.stages[0].state, "passed", result.error);
-    assert.equal(result.before, result.after, "legacy dirty-submodule marker cannot identify child bytes");
     assert.equal(result.sourceIdBefore.commit, result.sourceIdAfter.commit);
     assert.notDeepEqual(result.sourceIdBefore, result.sourceIdAfter);
     assert.equal(result.state, "failed");
@@ -288,38 +519,46 @@ export function registerCommitInputTests(support) {
     assert.equal(result.exitCode, 1);
   });
 
-  test("committed-input eligibility requires its after fingerprint even when status is clean", () => {
+  test("committed-input eligibility requires complete source identity equality and passing stages", () => {
     const expected = createHash("sha256").update("admitted fixture input").digest("hex");
     const changed = createHash("sha256").update("changed fixture input").digest("hex");
     const sourceId = { commit: expected.slice(0, 40), tree: changed.slice(0, 40), submodules: [], changes: [] };
-    const result = { state: "passed", input: { outcome: "clean" }, expectedFingerprint: expected, after: expected,
+    const result = { state: "passed", input: { outcome: "clean" },
       sourceIdBefore: sourceId, sourceIdAfter: sourceId };
     assert.equal(commitInputEligible(result), true);
-    assert.equal(commitInputEligible({ ...result, after: changed }), false);
-    assert.equal(commitInputEligible({ ...result, after: undefined }), false);
+    assert.equal(commitInputEligible({ ...result, sourceIdAfter: undefined }), false);
     assert.equal(commitInputEligible({ ...result, state: "failed" }), false);
     assert.equal(commitInputEligible({ ...result, sourceIdAfter: { ...sourceId, commit: changed.slice(0, 40) } }), false);
   });
 
-  test("historical committed-input debris summary survives a damaged snapshot and malformed path metadata", async () => {
+  test("historical fingerprint-only records cannot supply new source identity proof", async () => {
     await fixture(async ({ root, marking }) => {
-      const runDir = await createRun({ root, input: "commit", stages: [marking("require('node:fs').writeFileSync('new.txt', 'debris');")] }, env);
+      const runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
       const result = await executeRun(runDir, env);
-      // Retained results from the previous launcher remain readable as stored.
-      Object.assign(result, { state: "passed", reason: "new-untracked-only" });
       delete result.sourceIdBefore;
       delete result.sourceIdAfter;
+      const legacy = createHash("sha256").update("historical matching input").digest("hex");
+      Object.assign(result, { expectedFingerprint: legacy, before: legacy, after: legacy });
       writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
-      assert.equal(result.input.outcome, "debris_pending_disposition");
-      writeFileSync(join(runDir, "completion.request.json"), "{damaged");
-      assert.match(await summarize(runDir), /FAIL .*exit=1/u);
-      assert.match(await summarize(runDir), /input-change: new-untracked-only;.*total=1;.*input.after.paths/u);
-      for (const after of [undefined, { paths: [] }, { paths: [{ status: " M", path: "tracked.txt" }] }]) {
-        writeFileSync(join(runDir, "results.json"), JSON.stringify({ ...result, input: { ...result.input, after } }));
-        const summary = await summarize(runDir);
-        assert.match(summary, /FAIL .*exit=1/u);
-        assert.match(summary, /input-change: details unavailable/u);
-      }
+      const original = readFileSync(join(runDir, "results.json"));
+      assert.match(await summarize(runDir), /^UNKNOWN .*exit=0/mu);
+      assert.match(await summarize(runDir), /^reason: input-unverified$/mu);
+      assert.deepEqual(readFileSync(join(runDir, "results.json")), original);
+    });
+  });
+
+  test("an unsupported worker input refuses all stages with an input-changed diagnostic", async () => {
+    await fixture(async ({ root, marker, marking }) => {
+      const runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
+      const request = json(join(runDir, "request.json"));
+      writeFileSync(join(runDir, "request.json"), JSON.stringify({ ...request, input: "unsupported" }));
+      const result = await executeRun(runDir, env);
+      assert.equal(result.state, "failed");
+      assert.equal(result.reason, "input-changed");
+      assert.equal(result.error, "unsupported worker input; no stages run");
+      assert.equal(result.exitCode, 1);
+      assert.deepEqual(result.stages.map(({ state }) => state), ["unrun"]);
+      assert.equal(existsSync(marker), false);
     });
   });
 
@@ -337,6 +576,14 @@ export function registerCommitInputTests(support) {
       assert.deepEqual(result.input, { kind: "commit", commit: status.commit, tree: status.tree, cleanBefore: true,
         after: { commit: status.commit, tree: status.tree, clean: true, paths: [] }, outcome: "clean", eligible: true });
       const snapshot = json(join(runDir, "completion.request.json"));
+      assert.deepEqual(json(join(runDir, "input.json")), { root: status.root, sourceId: status.sourceId });
+      assert.deepEqual(request.sourceId, status.sourceId);
+      assert.deepEqual(snapshot.sourceId, status.sourceId);
+      for (const record of [request, snapshot, result]) {
+        assert.equal(Object.hasOwn(record, "expectedFingerprint"), false);
+        assert.equal(Object.hasOwn(record, "before"), false);
+        assert.equal(Object.hasOwn(record, "after"), false);
+      }
       assert.equal(snapshot.commit, status.commit);
       assert.equal(snapshot.tree, status.tree);
       assert.equal(snapshot.input, "commit");
@@ -380,7 +627,7 @@ export function registerCommitInputTests(support) {
 
   for (const [name, code, outcome] of [
     ["tracked drift", "require('node:fs').writeFileSync('tracked.txt', 'changed');", "input_changed"],
-    ["new debris", "require('node:fs').writeFileSync('new.txt', 'new');", "debris_pending_disposition"],
+    ["new debris", "require('node:fs').writeFileSync('new.txt', 'new');", "input_changed"],
   ]) test(`committed-input preserves passing stages while recording ${name}`, async () => {
     await fixture(async ({ root, marking }) => {
       const runDir = await createRun({ root, input: "commit", stages: [marking(code)] }, env);
@@ -392,13 +639,13 @@ export function registerCommitInputTests(support) {
       assert.equal(result.input.eligible, false);
       assert.equal(result.input.after.clean, false);
       assert.equal(result.exitCode, 1);
-      const reason = name === "new debris" ? "new-untracked-only" : "input-changed";
+      const reason = "input-changed";
       assert.equal(result.reason, reason);
       assert.match(machineRecord(json(join(runDir, "request.json")), result), new RegExp(`overall=failed .*reason=${reason}`, "u"));
       assert.match(await summarize(runDir), /FAIL .*exit=1/u);
       assert.match(await summarize(runDir), new RegExp(`reason: ${reason}`, "u"));
       if (name === "new debris") {
-        assert.match(await summarize(runDir), /input-change: new-untracked-only;.*total=1;.*input\.after\.paths/u);
+        assert.doesNotMatch(await summarize(runDir), /input-change:|debris/u);
         assert.deepEqual(result.input.after.paths, [{ status: "??", path: "new.txt" }]);
       }
       assert.notDeepEqual(result.sourceIdBefore, result.sourceIdAfter);
@@ -424,29 +671,33 @@ export function registerCommitInputTests(support) {
         if (++calls === 1) commit(root);
         return status;
       };
-      await assert.rejects(createRun({ root, input: "commit", stages: [marking()], commitInputStatus }, env), /input capture failed/u);
-      assert.equal(existsSync(marker), false);
-      const runDir = await createRun({ root, input: "commit", stages: [marking()] }, env);
-      commit(root);
+      const runDir = await createRun({ root, input: "commit", stages: [marking()], commitInputStatus }, env);
       const result = await executeRun(runDir, env);
-      assert.equal(result.state, "failed");
-      assert.match(result.error, /source_id changed before execution/u);
+      assert.equal(result.reason, "input-changed");
+      assert.equal(result.stages[0].state, "unrun");
+      assert.equal(existsSync(marker), false);
+      const laterRun = await createRun({ root, input: "commit", stages: [marking()] }, env);
+      commit(root);
+      const laterResult = await executeRun(laterRun, env);
+      assert.equal(laterResult.state, "failed");
+      assert.match(laterResult.error, /source_id changed before execution/u);
       assert.equal(existsSync(marker), false);
     });
   });
 
-  test("committed-input detects dirt during capture even if it is reverted before admission", async () => {
+  test("committed-input refuses an edit after the admitted observation before worker execution", async () => {
     await fixture(async ({ root, marker, marking }) => {
-      const original = readFileSync(join(root, "tracked.txt"));
-      let calls = 0;
       const commitInputStatus = () => {
         const status = captureCommitInputStatus(root, env);
-        writeFileSync(join(root, "tracked.txt"), ++calls === 1 ? "changed" : original);
+        writeFileSync(join(root, "tracked.txt"), "changed");
         return status;
       };
-      await assert.rejects(createRun({ root, input: "commit", stages: [marking()], commitInputStatus }, env), /input capture failed/u);
+      const runDir = await createRun({ root, input: "commit", stages: [marking()], commitInputStatus }, env);
+      const result = await executeRun(runDir, env);
+      assert.equal(result.reason, "input-changed");
+      assert.equal(result.stages[0].state, "unrun");
       assert.equal(existsSync(marker), false);
-      assert.equal(captureCommitInputStatus(root, env).entries.length, 0);
+      assert.equal(captureCommitInputStatus(root, env).entries.length, 1);
     });
   });
 
@@ -607,7 +858,7 @@ export function registerCommitInputTests(support) {
 
   for (const [name, code, reason] of [
     ["tracked drift", "require('node:fs').writeFileSync('tracked.txt', 'changed');", "input-changed"],
-    ["new debris", "require('node:fs').writeFileSync('new.txt', 'new');", "new-untracked-only"],
+    ["new debris", "require('node:fs').writeFileSync('new.txt', 'new');", "input-changed"],
     ["moved commit", `require('node:child_process').execFileSync('git', ${JSON.stringify(["-c", "user.name=Engram Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "--no-gpg-sign", "-m", "stage commit"])});`, "input-changed"],
   ]) test(`committed-input CLI fails the process and machine record for ${name}`, async () => {
     await fixture(async ({ root }) => {
@@ -628,9 +879,9 @@ export function registerCommitInputTests(support) {
       assert.equal(result.stages[0].code, 0);
       assert.equal(result.input.eligible, false);
       if (name === "new debris") {
-        assert.equal(result.input.outcome, "debris_pending_disposition");
+        assert.equal(result.input.outcome, "input_changed");
         assert.deepEqual(result.input.after.paths, [{ status: "??", path: "new.txt" }]);
-        assert.match(launched.stdout, /input-change: new-untracked-only;.*total=1;.*input\.after\.paths/u);
+        assert.doesNotMatch(launched.stdout, /input-change:|debris/u);
         assert.notDeepEqual(result.sourceIdBefore, result.sourceIdAfter);
       }
     });
@@ -645,7 +896,7 @@ export function registerCommitInputTests(support) {
       const filter = `"${process.execPath}" "${filterScript}"`;
       const args = kind === "filter" ? ["config", "filter.fixture.clean", filter]
         : ["update-index", "--add", "--cacheinfo", `160000,${head},child`];
-      // A real filter attribute makes an unsafe post-run fingerprint execute
+      // A real filter attribute makes an unsafe post-run Git capture execute
       // the configured command; the safe branch must leave this marker absent.
       writeFileSync(join(root, ".gitattributes"), "tracked.txt filter=fixture\n");
       git(["add", "--", ".gitattributes"], root);
@@ -657,7 +908,7 @@ export function registerCommitInputTests(support) {
       assert.equal(result.stages[0].state, "passed");
       assert.equal(result.input.outcome, "input_changed");
       assert.equal(result.input.eligible, false);
-      assert.equal(result.after, undefined);
+      assert.equal(result.sourceIdAfter, null);
       assert.equal(result.exitCode, 1);
       assert.equal(result.reason, "input-unverified");
       assert.equal(result.input.after.refusal.code, "input_unavailable");

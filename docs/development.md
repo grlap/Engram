@@ -112,8 +112,8 @@ explicitly agreed additive rule. Consumers fail closed on unknown codes.
 
 Clean and not-clean measurements exit 0; unavailable exits 1; invalid invocation
 exits 2. Consumers validate version, status and canonical root identity: exit 0
-alone is never credit. The reader retains its eight-second budget and one-MiB
-Git output bound; `--timeout-ms 1..8000` can shorten the budget. JSON expansion
+alone is never credit. The reader has a thirty-second budget and one-MiB
+Git output bound; `--timeout-ms 1..30000` can shorten the budget. JSON expansion
 beyond one MiB refuses rather than truncating usable entries; the bound excludes
 the final newline. The same absolute deadline is checked after Git queries,
 final parsing and JSON serialization: an overdue result is unavailable, never
@@ -138,7 +138,7 @@ Git-ignored output and changes hidden by index flags can be missed; captures
 can miss transient change-and-restore. Existing execution, authority and
 before/after rules remain the consumer's responsibility. Launcher committed-input
 admission calls this command through the bounded adapter described below;
-the separate schema-1 run fingerprint and its file hashing are unchanged.
+the automatic run-input check uses only that complete shared value.
 
 The shared real-Git constructor and expected table are
 `scripts/source-input-fixtures.mjs`; `scripts/source-input.test.mjs` exercises
@@ -390,7 +390,7 @@ filter configuration is checked before the single root dirt check. The predicate
 reads no complete file or index list. Edits hidden by assume-unchanged or
 skip-worktree flags can be missed by Git status. Repository ignores and local
 excludes apply; global ignore and attribute files and inherited Git redirection
-do not. The separate schema-1 run fingerprint and its file hashing are unchanged.
+do not. The automatic run-input check uses only the complete shared `source_id`.
 Every run also records the complete owner value in `request.sourceId` and the
 frozen completion request, with `results.sourceIdBefore` and `sourceIdAfter`.
 The adapter validates the closed additive v1 shape and compares the entire
@@ -437,8 +437,7 @@ Engram home refuses as `input_unavailable` when a fallback is needed; configure
 temp outside those locations for the production reader. Unix directories use
 0700 permissions; on Windows they inherit the temp folder's ACL, so that folder
 must be private to the user. Configuration discovery and every Git query share the existing
-eight-second deadline, output bound and empty-stderr requirement. The JSON v1
-shape and refusal codes are unchanged. Shared real-Git fixtures exercise actual
+thirty-second deadline, output bound and empty-stderr requirement. The EOL policy adds no JSON field or refusal code. Shared real-Git fixtures exercise actual
 CRLF checkouts with forced stat rechecks, local overrides, system/global/XDG
 precedence and changed-content controls; adapters consume the owner's verdict.
 Unit-test readers inject isolated null machine scopes and scratch under `target/`;
@@ -447,22 +446,18 @@ configuration and temp there. They
 exercise production discovery without consulting or writing the developer's
 machine configuration or system temp folder.
 
-After execution, `results.input` keeps the actual stage outcome separate from
-input eligibility: `clean`, `debris_pending_disposition`, or `input_changed`.
-Only clean input, an unchanged full source identity, a matching after fingerprint and passing stages set
-`eligible: true`; missing post-run input never does. An ineligible run exits
-nonzero and its machine record says `overall=failed`, even when every stage
-passed. Its reason names `input-changed`, or `input-unverified` when capture was
-unsafe. The existing landing exception remains `new-untracked-only`: root
-commit/tree, child commits and every earlier source record are unchanged, and
-the only new records are `??` paths. The separate fingerprint classifier must
-also confirm those same new paths, unchanged tracked/index input and unchanged
-pre-existing untracked and ignore/attribute inputs. Every stage must pass.
-Such a run remains failed and ineligible pending the integration owner's recorded
-disposition that these paths are non-input debris; it grants no EO equality
-credit. Other source differences never enter this lane. Before/after identities
-remain complete in `results.json`, with a bounded changed-path/child summary in
-the mismatch diagnostic.
+After execution, the commit lane's `results.input` keeps stage outcome separate
+from input eligibility: `clean` or `input_changed`. Only complete source identity
+equality and passing stages set `eligible: true`; unavailable post-run input
+never does. An ineligible run exits nonzero and its machine record says
+`overall=failed`, even when every stage passed. The reason is `input-changed`,
+or `input-unverified` when capture was unavailable. A newly created non-ignored
+untracked file is an ordinary source identity mismatch. The automatic check has
+no separate debris disposition and reads no `.git/info` rule images, staged or
+unstaged diff fingerprint, ignored-path inventory or complete file/index list.
+Before/after identities remain complete in `results.json`, with a bounded
+changed-path/child summary in the mismatch diagnostic.
+
 Eligibility is not host verification or landing approval.
 The host reads the shared committed-input shape; the additional tree field
 is launcher provenance, not an independent host tree validation. Detached
@@ -549,14 +544,15 @@ before `--`; the variable must contain an absolute executable path that passes
 
 Each invocation creates a unique directory below Git's `review-runs` metadata
 directory (also works with linked worktrees). `request.json` identifies commands,
-owner, absolute root, the `full` and `detached` flags, and expected source
-fingerprint. `detached` defaults to `false`; `--detach` records `true`, while
+owner, absolute root, the `full` and `detached` flags, and the admitted complete
+`sourceId`. `detached` defaults to `false`; `--detach` records `true`, while
 `--notify` alone leaves it `false`. The module's `startDetached` requires a request
 created with `detached: true` and refuses a foreground request before starting a
-worker or changing its files. `input.json` uses the existing review freeze format.
-Before yielding, retain the exact expected fingerprint in the
-parent's work status, independently of these run files. Use that parent-held
-literal when checking recovered results. Source and index must stay unchanged.
+worker or changing its files. `input.json` contains `{root, sourceId}`.
+The existing `completion.request.json` retains the same admitted value. The worker
+compares it with its actual before/after observations; it does not make a second
+content fingerprint. Retain the launch receipt and manifest locator before
+yielding. Source and index must stay unchanged.
 `results.json` records stage exits, timestamps, full log paths and bounded
 diagnostics. Every stage records `cwd`, the absolute request root, from its initial
 `unrun` state through running and completed states; stages left unrun retain it.
@@ -617,13 +613,17 @@ reported as `UNKNOWN` with reason `no-terminal-result`. `summary` shows a
 another process holds the file open; that retry is file I/O and never reruns a
 test.
 The snapshot checks are boundary checks, not proof against transient edits.
-Normalization limits are emitted in freeze CLI stderr and every run's
-results/summary; fingerprint stdout remains unchanged.
-Tracked content is compared through Git's normalized diff, not raw filesystem
-bytes: line-ending-only changes (or changes erased by clean filters) can be
-invisible on any platform. Known intervening edits still invalidate a run.
-The Windows executable-mode/symlink limitation is separate. Artifacts use
+The explicit review-freeze CLI retains its separate schema-1 algorithm and
+coverage warnings. Automatic runs report the source owner's ordinary Git
+normalization and ignored-path limits. Line-ending-only changes erased by Git
+normalization can be invisible; configured filters are refused. Known intervening
+edits still invalidate a run. Neither comparison proves raw filesystem bytes. Artifacts use
 owner-only POSIX modes (0700 run directory, 0600 files); Windows uses its ACLs.
+Long launcher errors keep a bounded excerpt in the result and attempt to retain
+the full diagnostic in an exclusively created `worker-error-<uuid>.log` file.
+The excerpt names that file, or explicitly reports that its write failed.
+Diagnostic retention never prevents saving terminal stage facts and never
+appends to a stage's output log.
 
 A run whose launcher ended without saving a result can be recovered, which
 saves for it the terminal result of an interrupted run:
@@ -691,12 +691,13 @@ JSON. `summary` and explicit inspection report the same condition as
 `FAIL launcher: results-unreadable`, with the results locator.
 
 Foreground and detached launch receipts both print the run directory, manifest
-path and expected fingerprint before waiting for completion. Foreground mode
+path and `basis=source_id` before waiting for completion, without dumping the
+complete identity into context. Foreground mode
 prints this after execution admission and before running stages, so the parent
 can retain recovery details while using its host's process-completion wait.
 
 Under TermAl, both full and focused runs register through the host's existing
-test-run endpoint before capturing the input fingerprint. The initiating session
+test-run endpoint before capturing the input `source_id`. The initiating session
 owns the registration; a different `--notify` recipient does not change its
 project. Registration and a detached worker's confirmation share an eight-second
 budget. For foreground and different-session notification runs, outside TermAl
@@ -847,7 +848,7 @@ silently discard completion or notification. It never deletes that lock on a
 guess about its owner. This fallback does not certify an intent that another
 caller has not yet published.
 A dead worker is not killed or declared stopped from stale disk PIDs; use the
-existing recovery procedure. Synchronous fingerprint or identity reads may
+existing recovery procedure. Synchronous source identity reads may
 delay stop consumption, so there is no immediate-stop latency promise.
 
 Recover an existing run at completion, without rerunning its tests:
@@ -885,50 +886,35 @@ accepts lowercase letters and hyphens in stage names and `passed` or `failed`
 states; digit-containing names remain valid launcher metadata but do not
 promise host recognition. Text alone never establishes test credit.
 Separate lines give numeric stage
-and recorded-preflight counts, the expected input fingerprint and its
+and recorded-preflight counts, the `source_id` basis and its
 `matched`, `mismatch` or `unknown` boundary comparison, a fixed reason code,
 and launch-to-terminal wall-clock elapsed time when its timestamps are valid.
 Missing, invalid or reversed timestamps give unknown elapsed time; a recovered
 interruption gives unknown elapsed time with a recovery-end basis. Stage counts
 are not test counts. Test-count evidence remains in `results.json` and the
-executor's machine record. A known fingerprint mismatch or contradictory
+executor's machine record. A known source identity mismatch or contradictory
 saved success never renders PASS. These boundary comparisons cannot detect
 transient edits or establish host test credit.
 
-One mismatch has its own reason. When every stage passed and the input
-captured after the run differs from the one the launcher admitted just before
-the stages ran only by new untracked, non-ignored paths, with HEAD, the staged
-and unstaged tracked content and every path untracked before unchanged, the
-run still fails, with reason `new-untracked-only` instead of `input-changed`.
-Its summary adds an `input-change:` line saying that every stage passed and
-only new untracked paths appeared, with their count. `results.json` lists them
-under `inputCheck` (at most 200, with the total and the number left out), and
-`admitted-input.json` and `after-input.json` beside it keep the complete
-captures from before and after the stages. Whether those paths are non-input
-debris is the integration owner's recorded call under the standing approval's
-gate clause; the launcher grants nothing for them. The comparison is against
-the input the launcher captured and checked just before the stages ran, held
-in memory, never against `input.json`, which a stage could rewrite. Any other
-difference, a difference after a failed stage, and a capture that lacks the
-per-part data stay `input-changed`.
+Every source identity difference, including a newly untracked path, is
+`input-changed`. The complete admitted `request.sourceId`, actual
+`results.sourceIdBefore` and actual `results.sourceIdAfter` must all validate
+and be structurally equal for a matched comparison. Missing, malformed or
+unavailable values cannot produce PASS. Stage results remain the observed
+results even when the source check fails. The comparison uses the admitted
+value held in memory during execution, never a stage-rewritten `input.json`.
+Ignored files are excluded by the shared owner. Changes to ignored files or
+Git administrative rules that leave the complete `source_id` unchanged are
+outside this equality check. A rule change that exposes a non-ignored delta
+changes the value and fails the check.
 
-A new path must not have been there before: one that was ignored at the
-admitted capture, or lies inside a directory that was, keeps the run
-`input-changed`, whatever made it visible (an ignore rule, `core.ignoreCase`,
-`core.precomposeUnicode` or anything else). Paths are compared without case
-and after Unicode composition, so a spelling difference never makes an old
-path look new. A new untracked path inside a directory whose contents were
-all ignored is therefore an input change too. A change during the run to
-these ignore and attribute sources is an input change as well:
-`.git/info/exclude` and `.git/info/attributes`, the global files
-(`core.excludesFile` and `core.attributesFile`, including setting one empty,
-or Git's default when unset), and any `.gitignore` or `.gitattributes` that is
-not tracked, whether visible or itself ignored, including a new one. Tracked
-rule files are covered by the tracked content. Tracked content is compared as
-the fingerprint sees it, after Git normalization; other settings that change
-that normalization, such as the system-wide attributes file or
-`core.autocrlf`, fall under the fingerprint's normalization limitation, as
-they do for a run whose input is unchanged.
+Activate this launcher only after TermAl's sourceId-aware readers are running
+following its restart; hold landing until then. Registration retains its existing
+request shape. Source IDs are complete objects, not digest substitutes. Existing
+host record and response bounds still apply: an owner observation fitting its
+1 MiB envelope does not promise that duplicated before/after identities and stage
+metadata fit a host's total record limit. Oversized evidence stays unavailable
+or ineligible; no identity is truncated to manufacture equality.
 
 Supply optional `--item TEXT` and paired `--next-owner SESSION --next-action
 TEXT` before the command separator. The item is an opaque display string;
@@ -965,7 +951,7 @@ with reason `input-unverified`. Its blocker uses `no-terminal-result` with
 even though a result file exists. It does not report a runner failure.
 An inconsistent saved success stays `FAIL`. A stage with definite failure
 evidence selects a `stage-failed` blocker. Otherwise its `runner-failed`
-blocker carries `basis: "input-changed"` for conflicting fingerprints or
+blocker carries `basis: "input-changed"` for conflicting source identities or
 `basis: "contradictory-result"` for a contradictory result, even with exit zero.
 
 When `--notify` is supplied, the launcher sends the same frozen body to its target and also to
@@ -1201,14 +1187,12 @@ tests.
   stage list records those selections whether or not the stages ran; a
   runner's reported filtered-out count also makes `filtered=yes`. `scope=full` says the
   prescribed stage list ran, not that no runner filtered.
-- `overall` covers validation only: the stages and the input fingerprint check.
+- `overall` covers validation only: the stages and the complete source identity check.
   A failed completion notification changes the process's exit status, not the
   record. `reason` is given when the run did not pass: `stage-failed`,
   `stage-interrupted`, `preflight-failed`, `spawn-failed`, `input-not-clean`
   (the commit lane refused before execution), `input-unverified` (no safe
   after-run capture), `input-changed`,
-  `new-untracked-only` (every stage passed and the input changed only by new
-  untracked paths, as above), `fingerprint-check-failed`, or
   `request-selection-unconfirmed` (a selected request lacks the exact host
   confirmation), `request-selection-changed` (the admitted selection changed),
   or `launcher-error` when no more specific refusal was recorded. A
@@ -1218,8 +1202,9 @@ tests.
   command that was found and that the system refused to start; its stage is
   `failed`.
 
-The record carries no source revision; the launcher's input fingerprint is its
-own drift check and is not a host's source revision. A killed launcher prints
+The machine record carries no source identity value; the launcher's complete
+`source_id` observations remain in its JSON records. Its boundary check alone
+does not grant host execution credit. A killed launcher prints
 no record. Neither does a run whose id or whose stage name is not a token of
 the grammar; the command line cannot produce one, only a caller of the
 module. Each stage's kind and selection, the scope, and whether to notify

@@ -98,8 +98,8 @@ enum Command {
         root: PathBuf,
         #[arg(long, required = true)]
         json: bool,
-        /// Shorten the eight-second reader budget; never raises it.
-        #[arg(long, default_value_t = 8000, value_parser = clap::value_parser!(u64).range(1..=8000))]
+        /// Shorten the source reader's maximum budget; never raises it.
+        #[arg(long, default_value_t = engram::source::MAX_BUDGET_MS, value_parser = clap::value_parser!(u64).range(1..=engram::source::MAX_BUDGET_MS))]
         timeout_ms: u64,
     },
     /// Move a whole store between formats as plain JSON: export, then import.

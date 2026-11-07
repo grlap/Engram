@@ -234,7 +234,7 @@ export function registerOwnRunWaitTests({ env, repository, stage, json, copyLaun
   });
 
   test("own-run CLI detachment reports a named wait refusal without STARTED or stage execution", async () => {
-    await repository(async (root) => {
+    await repository(async (root, observe) => {
       const launcher = copyLauncher(root);
       let request, directory, waits = 0;
       const server = createServer(async (incoming, outgoing) => {
@@ -248,6 +248,7 @@ export function registerOwnRunWaitTests({ env, repository, stage, json, copyLaun
         } else {
           directory = body.runDirectory;
           request = json(join(directory, "request.json"));
+          observe(directory, env.ENGRAM_SOURCE_BINARY);
           outgoing.end(JSON.stringify({ contract: "termal-durable-test-run-registration", version: 1,
             runId: request.runId, registered: true }));
         }
@@ -264,8 +265,8 @@ export function registerOwnRunWaitTests({ env, repository, stage, json, copyLaun
         let stdout = "", stderr = "";
         child.stdout.on("data", (chunk) => { stdout += chunk; });
         child.stderr.on("data", (chunk) => { stderr += chunk; });
-        assert.equal((await once(child, "close"))[0], 1);
-        assert.equal(waits, 1);
+        assert.equal((await once(child, "close"))[0], 1, (stdout + stderr).slice(-4096));
+        assert.equal(waits, 1, (stdout + stderr).slice(-4096));
         assert.match(stderr, /FAIL launcher: test-run-wait-refused/u);
         assert.match(stdout, /POST HTTP 409; host message="only a root session can wait"/u);
         assert.doesNotMatch(stdout + stderr, /STARTED|End your turn|not retained/u);

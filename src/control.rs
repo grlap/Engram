@@ -34,33 +34,19 @@ pub fn check_verification_applicability(
 /// either purpose. Historical input retains its landing-only fingerprint rule.
 /// Only the launcher's own
 /// verdict counts here, whatever its reason says, and `detail` names what is
-/// missing rather than adding reasons. `now` is the local delivery time: a
-/// finish time ahead of it is not yet a settled result.
+/// missing rather than adding reasons.
 #[must_use]
 pub fn remote_result_disqualification(
     completion: &crate::domain::RemoteRunCompletion,
     intended_use: &crate::domain::RemoteVerificationUse,
-    now: chrono::DateTime<chrono::Utc>,
+    _now: chrono::DateTime<chrono::Utc>,
 ) -> Option<(crate::domain::RemoteVerificationReason, Option<String>)> {
     use crate::domain::{
-        NEW_UNTRACKED_ONLY_REASON, RemoteRunInput, RemoteRunMode, RemoteRunVerdict,
+        NEW_UNTRACKED_ONLY_REASON, RemoteRunInput, RemoteRunVerdict,
         RemoteVerificationPurpose as Purpose, RemoteVerificationReason as Reason,
         RemoteVerificationUse as Use,
     };
     let result = &completion.result;
-    if completion.mode != RemoteRunMode::Full {
-        return Some((Reason::NotFullMode, None));
-    }
-    if let Some(finished_at) = completion.finished_at.filter(|at| *at > now) {
-        return Some((
-            Reason::ResultNotPass,
-            Some(format!(
-                "the finish time {} is ahead of this host's clock {}",
-                finished_at.to_rfc3339(),
-                now.to_rfc3339()
-            )),
-        ));
-    }
     if completion.is_authoritative_terminal()
         && result.verdict == RemoteRunVerdict::Fail
         && result.reason == NEW_UNTRACKED_ONLY_REASON
@@ -69,15 +55,6 @@ pub fn remote_result_disqualification(
     }
     if !completion.is_authoritative_terminal() || result.verdict != RemoteRunVerdict::Pass {
         return Some((Reason::ResultNotPass, None));
-    }
-    if result.exit != Some(0) {
-        return Some((
-            Reason::ResultNotPass,
-            Some(result.exit.map_or_else(
-                || "the passed run states no exit code".to_owned(),
-                |exit| format!("the passed run states exit {exit}"),
-            )),
-        ));
     }
     if completion.finished_at.is_none() {
         return Some((
@@ -158,6 +135,29 @@ pub fn remote_result_disqualification(
         }
     }
     None
+}
+
+/// Reconstruct refusals already recorded under the earlier admission rules.
+/// New deliveries use `remote_result_disqualification` exclusively.
+pub(crate) fn historical_remote_result_disqualification(
+    completion: &crate::domain::RemoteRunCompletion,
+    intended_use: &crate::domain::RemoteVerificationUse,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<crate::domain::RemoteVerificationReason> {
+    use crate::domain::{RemoteRunMode, RemoteRunVerdict, RemoteVerificationReason as Reason};
+    if completion.mode != RemoteRunMode::Full {
+        return Some(Reason::NotFullMode);
+    }
+    if completion.finished_at.is_some_and(|at| at > now) {
+        return Some(Reason::ResultNotPass);
+    }
+    if completion.is_authoritative_terminal()
+        && completion.result.verdict == RemoteRunVerdict::Pass
+        && completion.result.exit != Some(0)
+    {
+        return Some(Reason::ResultNotPass);
+    }
+    remote_result_disqualification(completion, intended_use, now).map(|(reason, _)| reason)
 }
 
 /// Immutable inputs for matching typed verification evidence at one exact
@@ -265,6 +265,7 @@ pub fn explain_verification_evidence(
     }
     let mutation = input
         .latest_mutation
+        .filter(|(change, _)| !shared || change.admitted)
         .map(|(latest_mutation, position)| {
             let basis = latest_mutation
                 .source_basis
@@ -428,9 +429,10 @@ pub fn explain_verification_evidence(
     let times_are_monotone = mutation.is_none_or(|(latest_mutation, _, _, latest_observed_at)| {
         run_time >= latest_observed_at
             && (latest_mutation.admitted || evidence.completed_at >= latest_mutation.recorded_at)
-    }) && evidence.completed_at <= evidence.recorded_at
+    }) && (producer.run_outcome.is_some()
+        || evidence.completed_at <= evidence.recorded_at)
         && producer.observed_at == Some(evidence.completed_at)
-        && producer.recorded_at >= evidence.completed_at;
+        && (producer.run_outcome.is_some() || producer.recorded_at >= evidence.completed_at);
     if !actor_matches || !times_are_monotone {
         return Err(plain(VerificationEvidenceMismatch::InvalidTime));
     }
@@ -626,6 +628,7 @@ pub fn explain_obligation_satisfaction(
     obligation: &WorkObligation,
 ) -> (ObligationAssessment, Option<StaleSourceDecider>) {
     let facts = input.producer.verification_facts();
+    let shared = facts.registered_source_id_basis(input.evidence).is_some();
     let registered_git = facts.registered_git_basis(input.evidence).is_some()
         || facts.registered_source_id_basis(input.evidence).is_some();
     let git_source_rule = registered_git
@@ -654,6 +657,7 @@ pub fn explain_obligation_satisfaction(
         // Under a named root a check accounts only for a source change it ran
         // after, wherever that change was recorded.
         || (input.named_root.is_some()
+            && (!shared || input.trigger.is_none_or(|trigger| trigger.admitted))
             && acceptance_binding_criterion(&obligation.rule).is_none()
             && producer_position
                 .is_some_and(|producer| producer <= obligation.trigger_position.position))
@@ -694,7 +698,7 @@ pub fn explain_obligation_satisfaction(
     {
         return (ObligationAssessment::Mismatch(mismatch), decider);
     }
-    if let Some(trigger) = input.trigger.filter(|trigger| !trigger.admitted) {
+    if let Some(trigger) = input.trigger.filter(|trigger| !shared && !trigger.admitted) {
         if producer_position.is_none_or(|producer| producer <= obligation.trigger_position.position)
         {
             return (

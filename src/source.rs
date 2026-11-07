@@ -10,7 +10,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const MAX_BUDGET: Duration = Duration::from_secs(8);
+pub const MAX_BUDGET_MS: u64 = 30_000;
+pub const MAX_BUDGET: Duration = Duration::from_millis(MAX_BUDGET_MS);
 pub const MAX_JSON_BYTES: usize = 1024 * 1024;
 
 type BoundedJson = Result<String, (RefusalCode, &'static str)>;

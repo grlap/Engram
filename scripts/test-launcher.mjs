@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { captureCommitInputStatus, captureFingerprint, classifyInputChange, classifySourceIdChange, fingerprintLimitations, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual } from "./review-freeze-fingerprint.mjs";
+import { captureCommitInputStatus, isolatedGitEnvironment, sourceBinaryPath, sourceIdDifference, sourceIdsEqual, sourceIdLimitations } from "./review-freeze-fingerprint.mjs";
 import { posixStopProtocol, powerShellEnvironment, requestStop, runJobCommand, runPosixCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 import { registerTestRun, confirmDetachedRegistration, registerOwnRunWait, ownRunWaitLine, registrationConfirmed, registrationLine,
   validateRequestMessageSelection } from "./test-run-registration.mjs";
@@ -43,9 +43,9 @@ function validateLaunchMetadata({ item, nextTransition }) {
 // Saved once before admission, for every completion projection. The execution
 // request remains separate; stages may rewrite it without changing this intent.
 function publishCompletionRequest(runDir, request) {
-  const { runId, root, owner, started, expectedFingerprint, sourceId, item, nextTransition, notifyTo, registration, detached } = request;
+  const { runId, root, owner, started, sourceId, item, nextTransition, notifyTo, registration, detached } = request;
   save(join(runDir, "completion.request.json"), {
-    runId, root, owner, started, expectedFingerprint, sourceId, item, nextTransition, notifyTo, registration, detached,
+    runId, root, owner, started, sourceId, item, nextTransition, notifyTo, registration, detached,
     ...(request.sourceBinary ? { sourceBinary: request.sourceBinary } : {}),
     ...(request.input !== undefined ? { input: request.input, commit: request.commit, tree: request.tree } : {}),
     ...(request.requestMessageId !== undefined ? { requestMessageId: request.requestMessageId, full: request.full } : {}),
@@ -129,12 +129,95 @@ export function renameWithRetry(from, to, { rename = renameSync, attempts = 20, 
     }
   }
 }
+// The host reads each run artifact through the same one-MiB file bound.
+// This is a transport bound, independent of the owner's observation bound.
+const runJsonBytes = 1024 * 1024;
+export function encodeRunRecord(value, name = "run JSON") {
+  const text = `${JSON.stringify(value)}\n`;
+  if (Buffer.byteLength(text, "utf8") > runJsonBytes) {
+    const message = `${name} exceeds the one-MiB run artifact bound (output_limit)`;
+    throw Object.assign(new Error(message), { reason: "input-unverified",
+      refusal: { code: "output_limit", message }, artifactLimit: true });
+  }
+  return text;
+}
 function save(path, value) {
+  const name = basename(path);
+  const text = encodeRunRecord(value, name);
+  // Before every stage, leave room for a complete matching S1 and the
+  // terminal refusal metadata. Later stage facts are checked again as saved.
+  if (name === "results.json" && value.state === "running" && value.sourceIdBefore
+      && !Object.hasOwn(value, "sourceIdAfter")) {
+    encodeRunRecord({ ...value, sourceIdAfter: value.sourceIdBefore,
+      ended: new Date().toISOString(), state: "failed", exitCode: 1,
+      reason: "input-unverified", error: "results.json exceeds the one-MiB run artifact bound (output_limit)" }, name);
+  }
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    writeFileSync(temporary, text, { flag: "wx", mode: 0o600 });
     renameWithRetry(temporary, path);
   } finally { rmSync(temporary, { force: true }); }
+}
+
+function unavailableResultInput(result, error) {
+  Object.assign(result, { state: "failed", exitCode: 1, reason: "input-unverified",
+    error: error.message, sourceIdAfter: null });
+  if (result.input?.kind === "commit") {
+    Object.assign(result.input, { eligible: false, unavailableReason: error.message });
+    delete result.input.after;
+    delete result.input.outcome;
+  }
+  // Keep S0 when it fits. Otherwise the complete observation is unavailable
+  // in this record; never keep only some paths or silently drop stage facts.
+  try { encodeRunRecord(result, "results.json"); }
+  catch (failure) {
+    if (!failure.artifactLimit) throw failure;
+    result.sourceIdBefore = null;
+  }
+}
+
+function boundedRunError(message, runDir) {
+  if (message.length <= diagnosticLimit) return message;
+  const name = `worker-error-${randomUUID()}.log`;
+  const diagnosticPath = join(runDir, name);
+  let suffix;
+  try {
+    writeFileSync(diagnosticPath, message, { flag: "wx", mode: 0o600 });
+    suffix = ` [full diagnostic in ${name}]`;
+  } catch {
+    // Raw diagnostic retention must never prevent core terminal publication.
+    suffix = " [full diagnostic unavailable: log write failed]";
+  }
+  return message.slice(0, diagnosticLimit - suffix.length) + suffix;
+}
+
+function reserveCommandResult(result, entry, field, index, runDir) {
+  // These are the existing producers' bounds, encoded as their largest
+  // representation: control characters require six JSON bytes each.
+  const diagnostic = "\0".repeat(diagnosticLimit);
+  // Unknown summaries can retain an unsafe accumulated count. The longest
+  // finite JSON number also covers that existing representation.
+  const integer = -Number.MAX_VALUE;
+  const cleanup = { method: posixStopProtocol, scope: "process-group", confirmed: true,
+    activeProcesses: integer, receipt: join(runDir, `group-${randomUUID()}.json`) };
+  const completed = { ...entry, state: "failed", ended: new Date().toISOString(), code: integer,
+    signal: "SIGRTMAX+2147483647", stopped: true, cleanup, error: diagnostic,
+    diagnostics: { text: diagnostic, truncated: true, fallback: "no recognized diagnostic; bounded failure tail" },
+    tests: { executed: integer, passed: integer, failed: integer, ignored: integer,
+      runners: integer, filteredOut: integer, failures: integer, why: "inconsistent-summary", runner: "cargo-frames" },
+    reported: `the runners' summaries count ${integer} failed tests and the command exited 0` };
+  const entries = [...result[field]];
+  entries[index] = completed;
+  const terminal = { ...result, [field]: entries,
+    processCleanup: [...(result.processCleanup ?? []), cleanup],
+    sourceIdAfter: result.sourceIdBefore, ended: new Date().toISOString(), state: "failed", exitCode: 1,
+    reason: "input-unverified", error: diagnostic, interrupted: true,
+    stop: { protocol: posixStopProtocol, runId: result.runId, id: randomUUID(),
+      actor: "\\".repeat(256), reason: "\\".repeat(2000), requestedAt: new Date().toISOString() } };
+  if (terminal.input?.kind === "commit") {
+    terminal.input = { ...terminal.input, eligible: false, unavailableReason: diagnostic };
+  }
+  encodeRunRecord(terminal, "results.json");
 }
 
 // Why a run did not pass, as the record's reason token.
@@ -716,7 +799,7 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   // A worker that never starts leaves this first heartbeat to go stale.
   const initial = { runId, state: "running", started: request.started,
     ...(requestMessageId !== undefined ? { requestMessageId } : {}),
-    heartbeat: { at: request.started, everyMs }, limitations: fingerprintLimitations(),
+    heartbeat: { at: request.started, everyMs }, limitations: sourceIdLimitations(),
     stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root })) };
   save(join(runDir, "results.json"), initial);
   // The host stamps registration before this launcher reads its input. Its
@@ -752,31 +835,24 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
         return runDir;
       }
     }
-    const input = captureFingerprint(root, committed ? isolatedGitEnvironment(env) : process.env);
-    const again = await commitInputStatus(root, sourceEnv);
-    if (!sourceIdsEqual(sourceBefore.sourceId, again.sourceId)) {
-      throw new Error("source_id changed while input was captured; no stage ran");
-    }
     request.sourceId = sourceBefore.sourceId;
     if (committed) {
-      if (input.head !== committed.commit || again.commit !== committed.commit || again.tree !== committed.tree) {
-        throw new Error("committed-input run refused: HEAD moved while input was captured; no stage ran");
-      }
-      if (!commitInputStatusClean(again)) throw new Error("committed-input run refused: checkout changed during input capture; no stage ran");
       Object.assign(request, { commit: committed.commit, tree: committed.tree });
       const result = readJson(join(runDir, "results.json"));
       result.input = { kind: "commit", commit: committed.commit, tree: committed.tree, cleanBefore: true };
       save(join(runDir, "results.json"), result);
     }
-    save(join(runDir, "input.json"), input);
-    request.expectedFingerprint = input.fingerprint;
+    encodeRunRecord(request, "request.json");
+    save(join(runDir, "input.json"), { root: sourceBefore.root, sourceId: sourceBefore.sourceId });
     // The capture blocks the event loop; beat once it returns.
     const created = readJson(join(runDir, "results.json"));
     created.sourceIdBefore = sourceBefore.sourceId;
     created.heartbeat.at = new Date().toISOString();
     save(join(runDir, "results.json"), created);
   } catch (error) {
+    if (error.artifactLimit) request.sourceId = null;
     const result = readJson(join(runDir, "results.json"));
+    if (error.artifactLimit) unavailableResultInput(result, error);
     Object.assign(result, { state: "failed", exitCode: 1, reason: "input-capture-failed",
       ended: new Date().toISOString(), error: error.message });
     save(join(runDir, "results.json"), result);
@@ -874,22 +950,6 @@ async function readDiagnostics(log, failed) {
     ...(fallback ? { fallback: "no recognized diagnostic; bounded failure tail" } : {}) };
 }
 
-function inputDrift(message, root, env = process.env) {
-  const status = spawnSync("git", ["status", "--short"],
-    { cwd: root, env, encoding: "utf8", windowsHide: true });
-  const detail = status.error || status.status !== 0
-    ? `status unavailable: ${status.error?.message ?? status.stderr}`
-    : status.stdout || "(clean; inspect HEAD/index and the saved input)";
-  return because("input-changed", new Error(`${message}\nCurrent Git status (investigation context, not a since-capture diff):\n`
-    + detail.slice(0, diagnosticLimit).trimEnd()
-    + (detail.length > diagnosticLimit ? "\n[status truncated]" : "")));
-}
-
-function currentCapture(root, env = process.env) {
-  try { return captureFingerprint(root, env); }
-  catch (error) { throw because("fingerprint-check-failed", error); }
-}
-
 export function commitInputStatusClean(status) {
   return status.status === "clean";
 }
@@ -898,43 +958,9 @@ function commitInputNotCleanReason(status) {
   return status.status === "not_clean" ? "dirty paths" : "owner did not report clean input";
 }
 
-export function commitInputOutcome(commit, after) {
-  if (after.commit !== commit || after.entries.some((entry) => entry.status !== "??")) return "input_changed";
-  return after.entries.length ? "debris_pending_disposition" : "clean";
-}
-
 export function commitInputEligible(result) {
   return result.input?.outcome === "clean" && result.state === "passed"
-    && sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter)
-    && typeof result.expectedFingerprint === "string" && result.expectedFingerprint.length > 0
-    && result.after === result.expectedFingerprint;
-}
-
-// The most new paths results.json lists; the admitted and after-run captures
-// are saved beside it in full.
-const NEW_PATHS_LISTED = 200;
-
-// After every stage passed, an after-run input that differs only by new
-// untracked, non-ignored paths is reported as that, not as an input change.
-// The run still fails: the paths are listed for the integration owner, who
-// decides whether they are non-input debris. Any other difference, and any
-// difference after a failed stage, stays an input change. The baseline is the
-// capture this process took and checked against the expected fingerprint just
-// before the stages ran, never a file a stage could rewrite.
-function afterRunDrift(runDir, result, before, after, root) {
-  const passed = result.stages.length > 0 && result.stages.every((stage) => stageState(stage) === "passed");
-  const admitted = before?.fingerprint === result.expectedFingerprint;
-  const change = passed && admitted ? classifyInputChange(before, after) : { outcome: "input-changed" };
-  if (change.outcome !== "new-untracked-only") {
-    return inputDrift("input drift: results do not validate the current source", root);
-  }
-  save(join(runDir, "admitted-input.json"), before);
-  save(join(runDir, "after-input.json"), after);
-  const listed = change.newPaths.slice(0, NEW_PATHS_LISTED);
-  result.inputCheck = { outcome: "new-untracked-only", newPaths: listed,
-    totalNewPaths: change.newPaths.length, omittedPaths: change.newPaths.length - listed.length,
-    admittedInput: join(runDir, "admitted-input.json"), afterInput: join(runDir, "after-input.json") };
-  return because("new-untracked-only", new Error(`every stage passed; the input changed only by ${change.newPaths.length} new untracked path(s), listed in results.json inputCheck; whether they are non-input debris is the integration owner's call`));
+    && sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter);
 }
 
 function validateNotification(request, env) {
@@ -954,7 +980,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     throw because(error.code === "EEXIST" ? "execution-lock-held" : "execution-admission-failed", error);
   }
   let request, heartbeat, control;
-  let result = { runId: basename(runDir), started: null, stages: [], limitations: fingerprintLimitations() };
+  let result = { runId: basename(runDir), started: null, stages: [], limitations: sourceIdLimitations() };
   const resultPath = join(runDir, "results.json");
   let cleanupUnconfirmed = false;
   const commandRun = async (binary, args, log) => {
@@ -975,6 +1001,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       throw error;
     }
     if (outcome.cleanup) (result.processCleanup ??= []).push(outcome.cleanup);
+    if (outcome.error) outcome.error = boundedRunError(outcome.error, runDir);
     // runJobCommand returns only after the job has no remaining members.
     control?.check();
     return outcome;
@@ -988,6 +1015,8 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   }
   const probe = async (name, command, args) => {
     const log = join(runDir, `preflight-${name}.log`);
+    reserveCommandResult(result, { name, log, started: new Date().toISOString(), command: [command, ...args] },
+      "preflight", result.preflight.length, runDir);
     let outcome;
     try { outcome = await commandRun(command, args, log); }
     catch (error) { if (["stopped", "helper-start-failed"].includes(error.reason)) throw error; throw because("preflight-failed", error); }
@@ -999,7 +1028,6 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   try {
     request = readJson(join(runDir, "request.json"));
     if (request.sourceBinary) childEnv.ENGRAM_SOURCE_BINARY = request.sourceBinary;
-    if (request.input !== undefined && request.input !== "commit") throw inputDrift("unsupported worker input", request.root);
     // What the record says of each stage is what was read here, before any
     // stage ran: a stage can write to the run directory.
     const plan = { full: request.full === true, ...(request.input !== undefined ? { input: request.input } : {}),
@@ -1010,7 +1038,15 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     const saved = readJson(resultPath);
     if (!saved || !Array.isArray(saved.stages)) throw new Error("invalid initial results: stages missing");
     result = saved;
+    // A readable request can still expand beyond the result bound when its
+    // plan joins the stage records. Refuse before adopting that expansion,
+    // leaving the original unrun stages available for the terminal record.
+    encodeRunRecord({ ...result, plan, ended: new Date().toISOString(), state: "failed", exitCode: 1,
+      reason: "input-unverified", error: "\0".repeat(diagnosticLimit) }, "results.json");
     result.plan = plan;
+    if (request.input !== undefined && request.input !== "commit") {
+      throw because("input-changed", new Error("unsupported worker input; no stages run"));
+    }
     if (result.state === "failed") { control?.close(); return result; }
     if ([stopProtocol, posixStopProtocol].includes(request.stopProtocol)) control = stopController(runDir, request);
     try { childEnv = powerShellEnvironment(request.root, basename(runDir), childEnv); }
@@ -1106,11 +1142,11 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     let sourceBefore;
     try { sourceBefore = captureCommitInputStatus(request.root, childEnv); }
     catch (error) { throw because("input-capture-failed", error); }
-    if (!sourceIdsEqual(request.sourceId, sourceBefore.sourceId)) {
+    result.sourceIdBefore = sourceBefore.sourceId;
+    if (!sourceIdsEqual(request.sourceId, result.sourceIdBefore)) {
       throw because("input-changed", new Error("source_id changed before execution; no stages run\n"
         + sourceIdDifference(request.sourceId, sourceBefore.sourceId)));
     }
-    result.sourceIdBefore = sourceBefore.sourceId;
     if (request.input === "commit") {
       if (!commitInputStatusClean(sourceBefore) || sourceBefore.commit !== request.commit || sourceBefore.tree !== request.tree
           || result.input?.kind !== "commit" || result.input.cleanBefore !== true
@@ -1118,20 +1154,21 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
         throw because("input-changed", new Error("committed-input worker has no matching clean commit; no stages run"));
       }
     }
-    const admittedInput = currentCapture(request.root, request.input === "commit" ? isolatedGitEnvironment(childEnv) : process.env);
-    const before = admittedInput.fingerprint;
-    if (before !== request.expectedFingerprint) throw inputDrift("input drift before execution; no stages run", request.root,
-      request.input === "commit" ? isolatedGitEnvironment(childEnv) : process.env);
-    result.expectedFingerprint = request.expectedFingerprint;
-    result.before = before;
     // The capture blocked the timer; beat with this save.
     result.heartbeat.at = new Date().toISOString();
     save(resultPath, result);
     for (let index = 0; index < request.stages.length; index += 1) {
       const stage = request.stages[index];
       const entry = result.stages[index];
-      Object.assign(entry, { state: "running", cwd: request.root, started: new Date().toISOString(), command: [stage.command, ...stage.args], log: join(runDir, `${stage.name}.log`) });
-      save(resultPath, result);
+      const running = { ...entry, state: "running", cwd: request.root, started: new Date().toISOString(),
+        command: [stage.command, ...stage.args], log: join(runDir, `${stage.name}.log`) };
+      reserveCommandResult(result, running, "stages", index, runDir);
+      // Publish the proposed state before changing the in-memory stage. A
+      // refused pre-spawn save leaves this stage factually unrun.
+      const pending = [...result.stages];
+      pending[index] = running;
+      save(resultPath, { ...result, stages: pending });
+      Object.assign(entry, running);
       const outcome = await commandRun(stage.command, stage.args, entry.log);
       Object.assign(entry, outcome, { ended: new Date().toISOString(), state: outcome.code === 0 && !outcome.error ? "passed" : "failed" });
       if (stage.kind === "test") {
@@ -1160,41 +1197,16 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       sourceRefusal = error.refusal ?? { code: "input_unavailable", message: error.message.slice(0, 4096) };
     }
     result.sourceIdAfter = sourceRefusal ? null : status.sourceId;
-    // An unavailable owner observation cannot authorize a fingerprint that
-    // might execute newly configured filters. Keep actual stage results.
-    const after = sourceRefusal ? null
-      : currentCapture(request.root, request.input === "commit" ? isolatedGitEnvironment(childEnv) : process.env);
-    if (after) result.after = after.fingerprint;
     if (request.input === "commit") {
       result.input.after = sourceRefusal ? { clean: false, refusal: sourceRefusal }
         : { commit: status.commit, tree: status.tree, clean: commitInputStatusClean(status), paths: status.entries };
-      result.input.outcome = sourceRefusal ? "input_changed" : commitInputOutcome(result.input.commit, status);
-      if (result.input.outcome === "debris_pending_disposition") result.input.disposition = null;
+      result.input.outcome = sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter) ? "clean" : "input_changed";
     }
-    const sourceChange = classifySourceIdChange(result.sourceIdBefore, result.sourceIdAfter);
-    const fingerprintChange = after ? classifyInputChange(admittedInput, after) : null;
-    const addedSourcePaths = new Set(sourceChange.newPaths);
-    const onlyNewUntracked = result.stages.every((stage) => stage.state === "passed")
-      && admittedInput.fingerprint === result.expectedFingerprint
-      && sourceChange.outcome === "new-untracked-only" && fingerprintChange?.outcome === "new-untracked-only"
-      && sourceChange.newPaths.length === fingerprintChange.newPaths.length
-      && fingerprintChange.newPaths.every((path) => addedSourcePaths.has(path));
-    // Keep the governed landing-debris lane, independently of EO's full-value
-    // equality rule. Both captures must agree that only new untracked paths
-    // appeared. A pre-existing change, rule edit or failed stage cannot qualify.
-    if (request.input === "commit" && !sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter)) {
-      result.input.outcome = onlyNewUntracked ? "debris_pending_disposition" : "input_changed";
-      if (onlyNewUntracked) result.input.disposition = null;
-      else delete result.input.disposition;
-    }
-    if (!sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter) && !onlyNewUntracked) {
+    if (!sourceIdsEqual(result.sourceIdBefore, result.sourceIdAfter)) {
       throw because(sourceRefusal ? "input-unverified" : "input-changed",
         new Error(sourceRefusal ? `source_id unavailable after execution: ${sourceRefusal.message}`
           : "source_id changed during execution; stage results do not validate the current source\n"
             + sourceIdDifference(result.sourceIdBefore, result.sourceIdAfter)));
-    }
-    if (request.input !== "commit" && result.after !== result.expectedFingerprint) {
-      throw afterRunDrift(runDir, result, admittedInput, after, request.root);
     }
     result.state = result.stages.every((stage) => stage.state === "passed") ? "passed" : "failed";
     result.exitCode = result.stages.find((stage) => stage.state === "failed")?.code || (result.state === "passed" ? 0 : 1);
@@ -1203,16 +1215,16 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       if (!result.input.eligible && result.state === "passed") {
         result.state = "failed";
         result.exitCode = 1;
-        result.reason = result.input.outcome === "debris_pending_disposition" ? "new-untracked-only"
-          : result.after ? "input-changed" : "input-unverified";
+        result.reason = result.sourceIdAfter ? "input-changed" : "input-unverified";
       }
     }
   } catch (error) {
-    result.state = "failed"; result.exitCode = 1; result.error = error.message;
+    result.state = "failed"; result.exitCode = 1; result.error = boundedRunError(error.message, runDir);
     result.reason = error.reason ?? "launcher-error";
+    if (error.artifactLimit) unavailableResultInput(result, error);
     if (result.input?.kind === "commit") result.input.eligible = false;
     if (error.reason === "stopped") Object.assign(result, { interrupted: true, stop: error.stop });
-    for (const stage of result.stages) if (stage.state === "running") { stage.state = "failed"; stage.error = error.message; }
+    for (const stage of result.stages) if (stage.state === "running") { stage.state = "failed"; stage.error = result.error; }
   }
   clearInterval(heartbeat);
   // The same lock orders stop acceptance against this final terminal save.
@@ -1221,7 +1233,8 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     if (control && !cleanupUnconfirmed) {
       try { await control.settle(); }
       catch (error) {
-        Object.assign(result, { state: "failed", exitCode: 1, reason: error.reason ?? "launcher-error", error: error.message });
+        Object.assign(result, { state: "failed", exitCode: 1, reason: error.reason ?? "launcher-error",
+          error: boundedRunError(error.message, runDir) });
         if (error.reason === "stopped") Object.assign(result, { interrupted: true, stop: error.stop });
       }
     }
@@ -1232,6 +1245,11 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     }
     result.ended = new Date().toISOString();
     if (result.input?.kind === "commit" && (result.state !== "passed" || result.input.outcome !== "clean")) result.input.eligible = false;
+    try { encodeRunRecord(result, "results.json"); }
+    catch (error) {
+      if (!error.artifactLimit) throw error;
+      unavailableResultInput(result, error);
+    }
     save(resultPath, result);
   };
   try {
@@ -1270,7 +1288,7 @@ export function runLiveness(result, now = Date.now()) {
   return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
 }
 
-const completionReasons = new Set(["own-run-registration-unconfirmed", "test-run-wait-refused", "test-run-wait-unconfirmed", "request-selection-unconfirmed", "request-selection-changed", "input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "new-untracked-only", "fingerprint-check-failed", "preflight-failed",
+const completionReasons = new Set(["own-run-registration-unconfirmed", "test-run-wait-refused", "test-run-wait-unconfirmed", "request-selection-unconfirmed", "request-selection-changed", "input-not-clean", "input-unverified", "input-capture-failed", "request-publication-failed", "input-changed", "preflight-failed",
   "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed",
   "stop-request-invalid", "stop-request-unreadable"]);
 const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
@@ -1290,32 +1308,12 @@ function stateCounts(entries, state) {
   for (const entry of entries) counts[state(entry)] += 1;
   return counts;
 }
-// A failed run whose stages all passed and whose input changed only by new
-// untracked paths, as the run itself recorded it.
-function newUntrackedOnly(result) {
-  if (result.input?.kind === "commit") {
-    const paths = result.input.after?.paths;
-    return result.reason === "new-untracked-only" && result.input.outcome === "debris_pending_disposition"
-      && Array.isArray(paths) && paths.length > 0
-      && paths.every((entry) => entry?.status === "??" && typeof entry.path === "string" && entry.path.length > 0)
-      && Array.isArray(result.stages) && result.stages.length > 0
-      && result.stages.every((entry) => entry !== null && typeof entry === "object" && stageState(entry) === "passed");
-  }
-  const check = result.inputCheck;
-  return result.reason === "new-untracked-only" && check?.outcome === "new-untracked-only"
-    && Number.isSafeInteger(check.totalNewPaths) && check.totalNewPaths > 0
-    && Number.isSafeInteger(check.omittedPaths) && check.omittedPaths >= 0
-    && Array.isArray(check.newPaths) && check.newPaths.length + check.omittedPaths === check.totalNewPaths
-    && Array.isArray(result.stages) && result.stages.length > 0
-    && result.stages.every((entry) => entry !== null && typeof entry === "object" && stageState(entry) === "passed");
-}
-
 function completionInput(request, result) {
-  const values = [request.expectedFingerprint, result.expectedFingerprint, result.before, result.after];
-  const known = values.filter((value) => typeof value === "string" && value.length > 0);
-  const comparison = result.reason === "input-changed" || new Set(known).size > 1 ? "mismatch"
-    : known.length === 4 && known.every((value) => /^[a-f0-9]{64}$/u.test(value)) ? "matched" : "unknown";
-  return { expected: /^[a-f0-9]{64}$/u.test(request.expectedFingerprint ?? "") ? request.expectedFingerprint : "unknown", comparison };
+  const values = [request.sourceId, result.sourceIdBefore, result.sourceIdAfter];
+  const comparison = result.reason === "input-changed" ? "mismatch"
+    : !values.every((value) => sourceIdsEqual(value, value)) ? "unknown"
+      : values.every((value) => sourceIdsEqual(request.sourceId, value)) ? "matched" : "mismatch";
+  return { comparison };
 }
 
 // Read metadata only. Logs and saved diagnostic/error prose never enter this
@@ -1350,7 +1348,7 @@ export function completionMetadata(request, result, now = Date.now()) {
       ? interruptedStage.name : stage;
   const exit = Number.isInteger(result.exitCode) ? result.exitCode : null;
   const inputUnverified = verdict === "UNKNOWN" && terminal && liveness === "passed" && input.comparison === "unknown";
-  const reason = input.comparison === "mismatch" ? newUntrackedOnly(result) ? "new-untracked-only" : "input-changed"
+  const reason = input.comparison === "mismatch" ? "input-changed"
     : inputUnverified ? "input-unverified"
       : result.reason === "stopped" ? "stopped" : inferredInterruption ? "heartbeat-stale" : interrupted ? "interrupted" : completionReasons.has(result.reason) ? result.reason
       : verdict === "PASS" ? "completed" : !terminal ? "no-terminal-result" : failed ? "stage-failed" : "launcher-error";
@@ -1383,7 +1381,7 @@ function renderCompletion(runDir, request, result, now) {
     `reason: ${metadata.reason}`,
     ...["stages", "preflight"].map((kind) => `${kind}: ${Object.entries(metadata[kind]).map(([name, count]) => `${name}=${count}`).join(" ")}`),
     `elapsed: ms=${metadata.elapsed.ms} basis=${metadata.elapsed.basis}`,
-    `input: ${metadata.input.comparison}; expectedFingerprint=${metadata.input.expected}; boundary comparison only, not host check credit`];
+    `input: ${metadata.input.comparison}; source_id; boundary comparison only, not host check credit`];
   const registration = registrationLine(result.registration ?? request.registration, result.hostWait);
   if (registration) lines.push(registration);
   const hostWait = ownRunWaitLine(result.hostWait);
@@ -1391,20 +1389,9 @@ function renderCompletion(runDir, request, result, now) {
   if (request.input === "commit") {
     const input = result.input;
     const objectId = (value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value) ? value : "unknown";
-    const outcome = ["clean", "debris_pending_disposition", "input_changed"].includes(input?.outcome) ? input.outcome
+    const outcome = ["clean", "input_changed"].includes(input?.outcome) ? input.outcome
       : input?.cleanBefore === false ? "refused-not-clean" : "unknown";
     lines.push(`committed-input: commit=${quote(objectId(input?.commit))} tree=${quote(objectId(input?.tree))} outcome=${quote(outcome)} eligible=${input?.eligible === true}`);
-  }
-  if (metadata.reason === "new-untracked-only" || result.reason === "new-untracked-only") {
-    if (!newUntrackedOnly(result)) {
-      lines.push("input-change: details unavailable; saved debris metadata is incomplete");
-    } else if (result.input?.kind === "commit") {
-      const paths = result.input.after.paths;
-      lines.push(`input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=${paths.length}; the paths are in results.json input.after.paths; the integration owner records what they are before a full gate counts`);
-    } else {
-      const check = result.inputCheck;
-      lines.push(`input-change: new-untracked-only; every stage passed and only new untracked paths appeared; total=${check.totalNewPaths} listed=${check.newPaths.length} omitted=${check.omittedPaths}; the paths are in results.json inputCheck; the integration owner records what they are before a full gate counts`);
-    }
   }
   if (["stage", "startup", "between-stages", "finishing"].includes(result.recovered?.phase)) {
     const stage = typeof result.recovered.stage === "string" && recordToken.test(result.recovered.stage)
@@ -1421,7 +1408,7 @@ function renderCompletion(runDir, request, result, now) {
     if (metadata.verdict !== "PASS") lines.push(`BLOCKER ${quote(metadata.blocker)}`);
   }
   // Fixed coverage metadata, never arbitrary text copied from results.json.
-  lines.push(...fingerprintLimitations());
+  lines.push(...sourceIdLimitations());
   return `${lines.join("\n")}\n`;
 }
 
@@ -1615,7 +1602,7 @@ function startupReceipt(runDir, pid, completion) {
   const result = readJson(join(runDir, "results.json"));
   const registration = registrationLine(result.registration ?? request.registration, result.hostWait);
   const hostWait = ownRunWaitLine(result.hostWait);
-  return `STARTED ${runDir}\npid=${pid} completion=${completion}\nmanifest=${join(runDir, "input.json")}\nexpectedFingerprint=${request.expectedFingerprint}\n`
+  return `STARTED ${runDir}\npid=${pid} completion=${completion}\nmanifest=${join(runDir, "input.json")}\nbasis=source_id\n`
     + (registration ? `${registration}\n` : "") + (hostWait ? `${hostWait}\n` : "");
 }
 

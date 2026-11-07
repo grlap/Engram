@@ -53,11 +53,11 @@ fn remote_verification_wire_carries_the_frozen_shape() {
     assert_eq!(request["completion"]["result"]["verdict"], "PASS");
     assert_eq!(request["completion"]["mode"], "full");
 
-    let mut uncredited = request.clone();
-    uncredited["operation_key"] = serde_json::json!("remote:uncredited");
-    uncredited["completion"]["run_id"] = serde_json::json!("test-uncredited");
-    uncredited["completion"]["mode"] = serde_json::json!("focused");
-    let replies = serve(f, &[request.clone(), request, uncredited]);
+    let mut focused = request.clone();
+    focused["operation_key"] = serde_json::json!("remote:focused");
+    focused["completion"]["run_id"] = serde_json::json!("test-focused");
+    focused["completion"]["mode"] = serde_json::json!("focused");
+    let replies = serve(f, &[request.clone(), request, focused]);
     for reply in &replies {
         crate::host::id_contract::assert_host_ids(reply);
     }
@@ -69,11 +69,12 @@ fn remote_verification_wire_carries_the_frozen_shape() {
     );
     assert_eq!(result["verifications"][0]["stage"], "full");
     assert_eq!(replies[1], replies[0], "an exact retry repeats the receipt");
-    let uncredited = &replies[2]["result"];
-    assert_eq!(uncredited["verifications"], serde_json::json!([]));
+    let focused = &replies[2]["result"];
+    assert_eq!(focused["verifications"].as_array().unwrap().len(), 1);
+    assert_eq!(focused["verifications"][0]["stage"], "focused");
     assert_eq!(
-        uncredited["qualification"],
-        serde_json::json!({"credited": false, "reason": "not_full_mode"})
+        focused["qualification"],
+        serde_json::json!({"credited": true})
     );
 }
 

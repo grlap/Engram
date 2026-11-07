@@ -6,7 +6,7 @@ import { once } from "node:events";
 import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
 import test, { after, describe } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { fingerprintLimitations, NORMALIZATION_LIMITATION } from "../review-freeze-fingerprint.mjs";
+import { sourceIdLimitations } from "../review-freeze-fingerprint.mjs";
 import { completionMetadata, createRun, diagnostics, executable, executeRun, fileProbes, inspectFailure, machineRecord, notifyRun, requiredStages, summarize } from "../test-launcher.mjs";
 import { fixtureHome, fixtureRoot, removeFixturePath, assertTempClean } from "../test-temp.mjs";
 
@@ -225,11 +225,11 @@ test("clean pass retains logs and summarizes without passing-test lists", async 
     assert.equal(result.state, "passed");
     assert.equal(result.exitCode, 0);
     assert.equal(result.stages[0].state, "passed");
-    assert.deepEqual(result.limitations, fingerprintLimitations());
+    assert.deepEqual(result.limitations, sourceIdLimitations());
     assert.match(readFileSync(logPath(runDir, result.stages[0]), "utf8"), /passing-marker/u);
     const summary = await summarize(runDir);
     assert.match(summary, /PASS/iu);
-    assert.ok(summary.includes(NORMALIZATION_LIMITATION));
+    assert.ok(summary.includes(sourceIdLimitations()[0]));
     assert.doesNotMatch(summary, /passing-marker/u);
     assert.ok(Buffer.byteLength(summary) < 12_288);
   });
@@ -436,7 +436,7 @@ test("input capture failure reports once before detached admission or notificati
     for (const name of launcherFixtureFiles) {
       copyFileSync(fileURLToPath(new URL(name, entryUrl)), join(root, "scripts", name));
     }
-    // A real failing Git clean filter makes captureFingerprint refuse.
+    // The shared owner refuses configured clean filters before they can run.
     writeFileSync(join(root, ".gitattributes"), "tracked.txt filter=refuse\n");
     writeFileSync(join(root, "tracked.txt"), "modified\n");
     git(["config", "filter.refuse.clean", `"${process.execPath.replaceAll("\\", "/")}" -e "process.exit(7)"`], root);
@@ -604,13 +604,17 @@ test("large diagnostic output is bounded in results while the complete log survi
 });
 
 test("source drift before execution refuses to run the captured input", async () => {
-  await repository(async (root) => {
+  await repository(async (root, observe) => {
     const runDir = await createRun({ root, stages: [stage("unused")] }, env);
+    observe(runDir, env.ENGRAM_SOURCE_BINARY);
+    const admitted = JSON.parse(readFileSync(join(runDir, "request.json"), "utf8")).sourceId;
     writeFileSync(join(root, "tracked.txt"), "changed after capture\n");
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "failed");
     assert.equal(result.stages[0].state, "unrun");
     assert.equal(result.reason, "input-changed");
+    assert.notDeepEqual(result.sourceIdBefore, admitted);
+    assert.ok(result.sourceIdBefore.changes.some(({ path, status }) => path === "tracked.txt" && status === " M"));
     assert.match(result.error, /^source_id changed before execution; no stages run\n/u);
     assert.match(result.error, /tracked\.txt.*\[ M\]/u);
   });
@@ -640,36 +644,36 @@ describe("an input that changed only by new untracked paths after every stage pa
     return { runDir, result: await executeRun(runDir, env) };
   };
 
-  test("an unchanged input passes with its fingerprint matched", async () => {
+  test("an unchanged input passes with its full source identity matched", async () => {
     await repository(async (root) => {
       const { runDir, result } = await run(root, "");
       assert.equal(result.state, "passed");
-      assert.equal(result.after, result.before);
+      assert.deepEqual(result.sourceIdAfter, result.sourceIdBefore);
       assert.equal(result.inputCheck, undefined);
       assert.match(await summarize(runDir), /^input: matched;/mu);
     });
   });
 
-  test("new untracked paths retain the landing debris lane and preserve passing stages", async () => {
+  test("new untracked paths fail the source check and preserve passing stages", async () => {
     await repository(async (root) => {
       const { runDir, result } = await run(root, writes(["debris-a.log", "a\n"], ["debris-b.log", "b\n"]));
       assert.equal(result.state, "failed");
       assert.equal(result.exitCode, 1);
-      assert.equal(result.reason, "new-untracked-only");
-      assert.notEqual(result.after, result.before);
+      assert.equal(result.reason, "input-changed");
+      assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
       assert.deepEqual(result.stages.map(({ state, code }) => [state, code]), [["passed", 0]]);
-      assert.deepEqual(result.inputCheck.newPaths, ["debris-a.log", "debris-b.log"]);
+      assert.equal(result.inputCheck, undefined);
       assert.deepEqual(result.sourceIdBefore.changes, []);
       assert.deepEqual(result.sourceIdAfter.changes.map(({ path }) => path), ["debris-a.log", "debris-b.log"]);
       const summary = await summarize(runDir);
       assert.match(summary, /^FAIL .* exit=1$/mu);
-      assert.match(summary, /^reason: new-untracked-only$/mu);
+      assert.match(summary, /^reason: input-changed$/mu);
       assert.match(summary, /^input: mismatch;/mu);
       const request = json(join(runDir, "request.json"));
       assert.deepEqual(completionMetadata(request, result).blocker, { reason: "runner-failed", exit: 1 });
       // A result that claims a pass names the same classification as its reason.
-      assert.equal(completionMetadata(request, { ...result, state: "passed" }).blocker.basis, "new-untracked-only");
-      assert.match(machineRecord(json(join(runDir, "request.json")), result), / overall=failed scope=focused stages=1 reason=new-untracked-only$/mu);
+      assert.equal(completionMetadata(request, { ...result, state: "passed" }).blocker.basis, "input-changed");
+      assert.match(machineRecord(json(join(runDir, "request.json")), result), / overall=failed scope=focused stages=1 reason=input-changed$/mu);
     });
   });
 
@@ -677,14 +681,13 @@ describe("an input that changed only by new untracked paths after every stage pa
     await repository(async (root) => {
       const source = "for (let i = 0; i < 201; i += 1) require('node:fs').writeFileSync('debris-' + String(i).padStart(3, '0') + '.log', 'x');";
       const { runDir, result } = await run(root, source);
-      assert.equal(result.reason, "new-untracked-only");
-      assert.equal(result.inputCheck.newPaths.length, 200);
-      assert.equal(result.inputCheck.omittedPaths, 1);
-      assert.equal(result.sourceIdAfter.changes.length, 201);
-      assert.equal(result.sourceIdAfter.changes[0].path, "debris-000.log");
-      assert.equal(result.sourceIdAfter.changes.at(-1).path, "debris-200.log");
+      assert.equal(result.reason, "input-changed");
+      assert.equal(result.inputCheck, undefined);
+      assert.deepEqual(result.sourceIdAfter.changes.length, 201);
+      assert.deepEqual(result.sourceIdAfter.changes[0].path, "debris-000.log");
+      assert.deepEqual(result.sourceIdAfter.changes.at(-1).path, "debris-200.log");
       assert.notDeepEqual(result.sourceIdAfter, result.sourceIdBefore);
-      assert.match(await summarize(runDir), /^reason: new-untracked-only$/mu);
+      assert.match(await summarize(runDir), /^reason: input-changed$/mu);
     });
   });
 
@@ -707,7 +710,7 @@ describe("an input that changed only by new untracked paths after every stage pa
         const { runDir, result } = await run(root, source, setup);
         assert.equal(result.reason, "input-changed");
         assert.equal(result.inputCheck, undefined);
-        assert.match(result.error, /source_id changed during execution|input drift: results do not validate the current source/u);
+        assert.match(result.error, /source_id changed during execution/u);
         const request = json(join(runDir, "request.json"));
         assert.deepEqual(completionMetadata(request, result).blocker, { reason: "runner-failed", exit: 1 });
         assert.equal(completionMetadata(request, { ...result, state: "passed" }).blocker.basis, "input-changed");
@@ -722,7 +725,7 @@ describe("an input that changed only by new untracked paths after every stage pa
         git(["add", ".gitignore"], fixture);
       });
       assert.equal(result.state, "passed");
-      assert.equal(result.after, result.before);
+      assert.deepEqual(result.sourceIdAfter, result.sourceIdBefore);
     });
   });
 
@@ -745,11 +748,11 @@ describe("an input that changed only by new untracked paths after every stage pa
       + " const runs = require('node:child_process').execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'review-runs'], { encoding: 'utf8' }).trim();"
       + " const run = path.join(runs, fs.readdirSync(runs).find((name) => name.startsWith('test-')));"
       + ` fs.writeFileSync('tracked.txt', 'changed\\n'); import(${JSON.stringify(fingerprintModule)}).then((m) => {`
-      + " fs.writeFileSync(path.join(run, 'input.json'), JSON.stringify(m.captureFingerprint('.')));"
+      + " const current = m.captureCommitInputStatus('.'); fs.writeFileSync(path.join(run, 'input.json'), JSON.stringify({root:current.root, sourceId:current.sourceId}));"
       + " fs.writeFileSync('debris.log', 'x\\n'); });";
     await repository(async (root) => {
       const { runDir, result } = await run(root, source);
-      assert.equal(json(join(runDir, "input.json")).untracked.length, 0, "the stage replaced the saved capture");
+      assert.equal(json(join(runDir, "input.json")).sourceId.changes.length, 1, "the stage replaced the saved capture");
       assert.equal(result.reason, "input-changed");
       assert.equal(result.inputCheck, undefined);
     });

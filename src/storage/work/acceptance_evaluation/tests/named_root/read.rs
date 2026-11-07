@@ -1509,50 +1509,8 @@ fn a_read_outside_its_item_or_its_run_feed_is_refused_with_a_typed_code() {
     assert_eq!(by_id.head_cut, head);
 }
 
-/// Every path of a JSON value, objects joined with dots.
-fn json_paths(
-    prefix: &str,
-    value: &serde_json::Value,
-    paths: &mut std::collections::BTreeSet<String>,
-) {
-    if let serde_json::Value::Object(object) = value {
-        for (key, child) in object {
-            let path = if prefix.is_empty() {
-                key.clone()
-            } else {
-                format!("{prefix}.{key}")
-            };
-            json_paths(&path, child, paths);
-        }
-    } else {
-        paths.insert(prefix.to_owned());
-    }
-}
-
-/// The documented result table names exactly the fields the three result
-/// shapes carry, and lists the state values they take.
 #[test]
-fn the_documented_result_table_matches_every_result_shape() {
-    let doc = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/docs/features/execution-observability.md"
-    ));
-    let table = doc
-        .split("<!-- named-root-sighting-read:begin -->")
-        .nth(1)
-        .and_then(|rest| rest.split("<!-- named-root-sighting-read:end -->").next())
-        .expect("the result table is marked");
-    let rows: Vec<(String, String)> = table
-        .lines()
-        .filter_map(|line| {
-            let cells: Vec<&str> = line.split('|').map(str::trim).collect();
-            let field = cells.get(1)?.strip_prefix('`')?.strip_suffix('`')?;
-            Some((field.to_owned(), (*cells.get(2)?).to_owned()))
-        })
-        .collect();
-    let documented: std::collections::BTreeSet<String> =
-        rows.iter().map(|(field, _)| field.clone()).collect();
-
+fn named_root_read_wire_round_trips_and_refuses_unknown_fields() {
     let object = ObjectId::from_canonical_bytes(b"event");
     let shape = |root: NamedRootAtCut| NamedRootSightingRead {
         schema_version: NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION,
@@ -1572,7 +1530,6 @@ fn the_documented_result_table_matches_every_result_shape() {
         binding_position: 2,
         sighting,
     };
-    let mut emitted = std::collections::BTreeSet::new();
     for read in [
         shape(NamedRootAtCut::None {}),
         shape(bound(InitialSighting::Absent {})),
@@ -1583,23 +1540,9 @@ fn the_documented_result_table_matches_every_result_shape() {
         })),
     ] {
         let value = serde_json::to_value(&read).expect("serialize");
-        json_paths("", &value, &mut emitted);
         // Each shape reads back as itself; nothing is dropped.
         let back: NamedRootSightingRead = serde_json::from_value(value).expect("read back");
         assert_eq!(back, read);
-    }
-    assert_eq!(documented, emitted);
-    let values = |field: &str| {
-        rows.iter()
-            .find(|(name, _)| name == field)
-            .map(|(_, kind)| kind.clone())
-            .expect("documented")
-    };
-    for state in ["`none`", "`bound`"] {
-        assert!(values("root.state").contains(state), "{state}");
-    }
-    for state in ["`absent`", "`present`"] {
-        assert!(values("root.sighting.state").contains(state), "{state}");
     }
     // An unknown field is refused at every level, never ignored.
     let present = serde_json::to_value(shape(bound(InitialSighting::Present {

@@ -268,7 +268,7 @@ gates. Full logs stay on disk; see
 For your own run in a TermAl root session, use launcher `full --detach` or
 `focused --detach -- COMMAND ARGS...` without `--notify`. The admitted worker
 registers one host test-run wait and saves its acknowledgement before printing
-`completion=host-test-run-wait`. Retain the receipt and expected fingerprint,
+`completion=host-test-run-wait`. Retain the receipt and admitted `source_id` manifest,
 then end the turn: the host resumes you with the result. Do not register a
 second manual wait, mail yourself, relay through a peer, or poll. A named
 registration/wait failure retains the original run for diagnosis; an uncertain

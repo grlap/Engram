@@ -8,11 +8,11 @@ use crate::CanonicalObject;
 use crate::domain::{
     ExecutionOutcome, ExecutionSourceBasis, NamedRootBindingKind, REMOTE_COMPLETION_SCHEMA_VERSION,
     REMOTE_TERMINAL_ORIGIN_KIND, REMOTE_VERIFICATION_ASSOCIATION_KIND,
-    RegisteredVerificationRecord, RemoteRunCompletion, RemoteRunInput, RemoteTerminalOrigin,
-    RemoteVerificationAssociationRecord, RemoteVerificationQualification, RemoteVerificationReason,
-    RemoteVerificationReceipt, RemoteVerificationRequest, SCHEMA_VERSION, SourceRootState,
-    VerificationEvidence, VerificationKind, VerificationProducerFacts, VerificationResult,
-    VerificationSourceBasis, VerificationSourceIdentity,
+    RegisteredVerificationRecord, RemoteRunCompletion, RemoteRunInput, RemoteRunMode,
+    RemoteTerminalOrigin, RemoteVerificationAssociationRecord, RemoteVerificationQualification,
+    RemoteVerificationReason, RemoteVerificationReceipt, RemoteVerificationRequest, SCHEMA_VERSION,
+    SourceRootState, VerificationEvidence, VerificationKind, VerificationProducerFacts,
+    VerificationResult, VerificationSourceBasis, VerificationSourceIdentity,
 };
 use crate::storage::{SqliteStore, StoreError};
 use crate::{ActorContext, ObjectId, ProjectId, SessionId};
@@ -25,8 +25,12 @@ mod tests;
 /// The row that keeps one project's run to one terminal: its key names the
 /// project, host and run, and its fingerprint the terminal facts.
 pub(in crate::storage::work) const ORIGIN_OPERATION: &str = "remote_verification_origin";
-/// The one stage a remote run reports: the launcher's whole full plan.
-const REMOTE_STAGE: &str = "full";
+fn remote_stage(mode: RemoteRunMode) -> &'static str {
+    match mode {
+        RemoteRunMode::Full => "full",
+        RemoteRunMode::Focused => "focused",
+    }
+}
 
 fn invalid(field: &str, reason: &str) -> StoreError {
     StoreError::RemoteVerificationInvalid {
@@ -74,7 +78,7 @@ pub(in crate::storage) fn record_remote_verification_on(
             completion.schema_version
         ))
     };
-    let settled = if supported && completion.settles_terminal_at(now) {
+    let settled = if supported && completion.is_authoritative_terminal() {
         Some(settle_origin(tx, project, session, actor, completion, now)?)
     } else {
         None
@@ -176,10 +180,7 @@ pub(in crate::storage) fn record_remote_verification_on(
                 check_fingerprint: check_fingerprint(completion)?,
                 result: VerificationResult::Passed,
                 completed_at,
-                summary: format!(
-                    "remote full run {} on {}",
-                    completion.run_id, completion.origin.host_id
-                ),
+                summary: completion.headline(),
                 refs: Vec::new(),
                 actor,
                 recorded_at: now,
@@ -187,7 +188,7 @@ pub(in crate::storage) fn record_remote_verification_on(
             },
         )?;
         verifications.push(RegisteredVerificationRecord {
-            stage: REMOTE_STAGE.into(),
+            stage: remote_stage(completion.mode).into(),
             record_id,
         });
     }
@@ -353,7 +354,7 @@ fn repeated_delivery(
             .map(|record_id| {
                 ObjectId::from_stored(record_id?)
                     .map(|record_id| RegisteredVerificationRecord {
-                        stage: REMOTE_STAGE.into(),
+                        stage: remote_stage(record.request.completion.mode).into(),
                         record_id,
                     })
                     .ok_or_else(|| {
@@ -414,10 +415,6 @@ pub(super) fn origin_is_consistent_on(
         || !origin.completion.is_authoritative_terminal()
         || origin.actor.session_id.as_ref() != Some(&origin.session_id)
         || origin.completion.validate().is_err()
-        || origin
-            .completion
-            .finished_at
-            .is_some_and(|at| at > origin.recorded_at)
     {
         return Ok(false);
     }
@@ -485,10 +482,11 @@ pub(super) fn association_problem_on(
     {
         return Ok(Some("decision_differs"));
     }
-    // Only a supported terminal settled by its delivery time has an origin.
-    if record.origin.is_some()
-        != (supported && completion.settles_terminal_at(record.associated_at))
-    {
+    // Earlier deliveries left a remote finish ahead of the local clock
+    // provisional. Retain that stored interpretation without gating new credit.
+    let current_origin = supported && completion.is_authoritative_terminal();
+    let historical_origin = supported && completion.settles_terminal_at(record.associated_at);
+    if record.origin.is_some() != current_origin && record.origin.is_some() != historical_origin {
         return Ok(Some("origin_differs"));
     }
     let conflicting = match &record.origin {
@@ -521,6 +519,11 @@ pub(super) fn association_problem_on(
         &request.association.intended_use,
         record.associated_at,
     );
+    let historical = crate::control::historical_remote_result_disqualification(
+        completion,
+        &request.association.intended_use,
+        record.associated_at,
+    );
     let problem = match reason {
         // These came first, so the delivery may hold any native facts.
         Some(
@@ -530,8 +533,10 @@ pub(super) fn association_problem_on(
         Some(RemoteVerificationReason::ResultConflict) => {
             (!conflicting).then_some("conflict_without_difference")
         }
-        Some(reason) => (conflicting || decided.is_none_or(|(decided, _)| decided != reason))
-            .then_some("decision_differs"),
+        Some(reason) => (conflicting
+            || (decided.is_none_or(|(decided, _)| decided != reason)
+                && historical != Some(reason)))
+        .then_some("decision_differs"),
         None => (conflicting || decided.is_some()).then_some("decision_differs"),
     };
     if problem.is_some() {

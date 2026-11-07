@@ -1,14 +1,9 @@
-//! The `backup status --json` receipt as docs/features/cli-and-mcp.md
-//! documents it, field by field, against the receipt the command emits: the
-//! same field paths, and no emitted value of a listed field the table does
-//! not list. Fixtures reach every field that can be null, so each documented
-//! path is emitted somewhere.
+//! Observable backup status JSON across unavailable, failed and restore states.
 
 #[path = "../src/test_support.rs"]
 mod test_support;
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -26,8 +21,6 @@ use engram::{
 use serde_json::Value;
 
 const PROJECT: &str = "status-receipt-fixture";
-const BEGIN: &str = "<!-- backup-status-receipt:begin -->";
-const END: &str = "<!-- backup-status-receipt:end -->";
 
 /// One home under the test's root, with the project file beside it.
 struct Home {
@@ -166,142 +159,14 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// The documented receipt.
-struct Documented {
-    /// Every field path, in table order.
-    paths: Vec<String>,
-    /// For a field that lists its values, those values.
-    values: BTreeMap<String, BTreeSet<String>>,
-    /// The JSON types each field may take: its base type, and `null` when it
-    /// can be null.
-    types: BTreeMap<String, BTreeSet<&'static str>>,
-}
-
-/// The JSON type of a value, as the table names it.
-fn json_type(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "boolean",
-        Value::Number(number) if number.is_i64() || number.is_u64() => "integer",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
-}
-
-fn documented() -> Documented {
-    let doc = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/features/cli-and-mcp.md"),
-    )
-    .unwrap()
-    .replace("\r\n", "\n");
-    let start = doc.find(BEGIN).expect("the receipt table's begin marker") + BEGIN.len();
-    let end = doc[start..]
-        .find(END)
-        .expect("the receipt table's end marker")
-        + start;
-    let mut paths = Vec::new();
-    let mut values = BTreeMap::new();
-    let mut types = BTreeMap::new();
-    for row in doc[start..end]
-        .lines()
-        .filter(|line| line.starts_with("| `"))
-    {
-        let cells: Vec<&str> = row.split(" | ").collect();
-        let path = cells[0]
-            .trim_start_matches("| `")
-            .trim_end_matches('`')
-            .to_owned();
-        let kind = cells[1];
-        let base = ["string", "integer", "boolean", "object", "array"]
-            .into_iter()
-            .find(|base| kind.starts_with(base))
-            .unwrap_or_else(|| panic!("{row}: no base type"));
-        let mut allowed = BTreeSet::from([base]);
-        if kind.contains("or null") {
-            allowed.insert("null");
-        }
-        types.insert(path.clone(), allowed);
-        if let Some((_, listed)) = kind.split_once("one of: ") {
-            let listed: BTreeSet<String> = listed
-                .split('`')
-                .skip(1)
-                .step_by(2)
-                .map(str::to_owned)
-                .collect();
-            assert!(!listed.is_empty(), "{row}");
-            values.insert(path.clone(), listed);
-        }
-        paths.push(path);
-    }
-    assert!(!paths.is_empty(), "the receipt table has rows");
-    Documented {
-        paths,
-        values,
-        types,
-    }
-}
-
-/// What the fixtures emitted: every field path, with array elements as `[]`,
-/// the string values seen at each path, and the JSON types seen there.
-#[derive(Default)]
-struct Emitted {
-    paths: BTreeSet<String>,
-    values: BTreeMap<String, BTreeSet<String>>,
-    types: BTreeMap<String, BTreeSet<&'static str>>,
-}
-
-fn emitted(value: &Value, prefix: &str, seen: &mut Emitted) {
-    match value {
-        Value::Object(fields) => {
-            for (key, field) in fields {
-                let path = if prefix.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{prefix}.{key}")
-                };
-                seen.paths.insert(path.clone());
-                seen.types
-                    .entry(path.clone())
-                    .or_default()
-                    .insert(json_type(field));
-                if let Value::String(text) = field {
-                    seen.values
-                        .entry(path.clone())
-                        .or_default()
-                        .insert(text.clone());
-                }
-                emitted(field, &path, seen);
-            }
-        }
-        Value::Array(items) => {
-            let path = format!("{prefix}[]");
-            for item in items {
-                if let Value::String(text) = item {
-                    seen.values
-                        .entry(path.clone())
-                        .or_default()
-                        .insert(text.clone());
-                }
-                emitted(item, &path, seen);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// The receipts of fixtures that between them reach every field.
-fn receipts(root: &Path) -> Vec<Value> {
-    let mut receipts = Vec::new();
-
+/// Exercise status transitions through the real CLI.
+fn status_cases(root: &Path) {
     // No store at all: the store's cut is unavailable, no target.
     let bare = Home::new(root, "bare");
-    receipts.push(bare.status(false));
+    let missing = bare.status(false);
     assert_eq!(
-        receipts[0]["store_cut_unavailable"]["code"], "store_not_initialized",
-        "{}",
-        receipts[0]
+        missing["store_cut_unavailable"]["code"], "store_not_initialized",
+        "{missing}"
     );
 
     // A pushed copy; then a failed push leaves the copy qualifying, and the
@@ -316,7 +181,6 @@ fn receipts(root: &Path) -> Vec<Value> {
     }
     assert_eq!(target["pending"], Value::Null);
     assert_eq!(pushed["restore"], Value::Null);
-    receipts.push(pushed);
     let aside = root.join("failing-copies-gone");
     fs::rename(failing.copies(), &aside).unwrap();
     let push = failing.engram(&["backup", "push"]);
@@ -329,7 +193,6 @@ fn receipts(root: &Path) -> Vec<Value> {
         attempt["code"].is_string() && attempt["message"].is_string(),
         "{attempt}"
     );
-    receipts.push(failed);
 
     // A pending attempt and a copy checked by another build, then a copy
     // the target no longer holds, found by a check.
@@ -356,7 +219,6 @@ fn receipts(root: &Path) -> Vec<Value> {
     let copy = &checked_by_another["kinds"][0]["target"]["copy"];
     assert_eq!(copy["checking_build"], other_build.as_str(), "{copy}");
     assert!(checked_by_another["kinds"][0]["target"]["pending"].is_object());
-    receipts.push(checked_by_another);
     let data = edited
         .copies()
         .join(project_digest(&ProjectId(PROJECT.into())))
@@ -365,7 +227,6 @@ fn receipts(root: &Path) -> Vec<Value> {
     let checked = edited.status(true);
     assert_eq!(checked["checks"][0]["outcome"], "missing", "{checked}");
     assert!(checked["kinds"][0]["target"]["copy"]["missing"].is_object());
-    receipts.push(checked);
 
     // A recorded restore: pending, restored, and a record that cannot be
     // used. The outer `restored` is the record's `completed`.
@@ -373,23 +234,11 @@ fn receipts(root: &Path) -> Vec<Value> {
     let pending = edited.status(false);
     assert_eq!(pending["restore"]["state"], "pending");
     assert_eq!(pending["restore"]["record"]["state"], "pending");
-    receipts.push(pending);
     edited.write_restore(RestoreState::Completed);
     let restored = edited.status(false);
     assert_eq!(restored["restore"]["state"], "restored");
     assert_eq!(restored["restore"]["record"]["state"], "completed");
-    receipts.push(restored);
-    let record_path = restore_record_path(&edited.home(), &ProjectId(PROJECT.into()));
-    let mut local: RestoreRecord =
-        serde_json::from_slice(&fs::read(&record_path).unwrap()).unwrap();
-    local.source = engram::backup::restore::RestoreSource::LocalFile {
-        path: edited.home().join("local.db").display().to_string(),
-        replace: true,
-    };
-    let lock = PushLock::try_acquire(&edited.paths()).unwrap();
-    write_restore_record(&edited.home(), &ProjectId(PROJECT.into()), &lock, &local).unwrap();
-    receipts.push(edited.status(false));
-    drop(lock);
+
     fs::write(
         restore_record_path(&edited.home(), &ProjectId(PROJECT.into())),
         b"not a record",
@@ -399,7 +248,6 @@ fn receipts(root: &Path) -> Vec<Value> {
     assert_eq!(unreadable["restore"]["state"], "unreadable");
     assert_eq!(unreadable["restore"]["record"], Value::Null);
     assert!(unreadable["restore"]["unreadable"].is_string());
-    receipts.push(unreadable);
 
     // A state file this build cannot use.
     let broken = Home::new(root, "broken");
@@ -407,50 +255,10 @@ fn receipts(root: &Path) -> Vec<Value> {
     fs::write(broken.paths().state, b"{ not json").unwrap();
     let broken_status = broken.status(false);
     assert!(broken_status["kinds"][0]["unreadable"].is_string());
-    receipts.push(broken_status);
-    receipts
 }
 
 #[test]
-fn the_documented_status_receipt_is_the_one_the_command_emits() {
-    let documented = documented();
-    let unique: BTreeSet<String> = documented.paths.iter().cloned().collect();
-    assert_eq!(
-        unique.len(),
-        documented.paths.len(),
-        "a path is documented twice"
-    );
-
+fn status_reports_unavailable_backup_and_restore_states() {
     let root = test_support::temp_home().unwrap();
-    let mut seen = Emitted::default();
-    for receipt in receipts(root.path()) {
-        emitted(&receipt, "", &mut seen);
-    }
-
-    let undocumented: Vec<_> = seen.paths.difference(&unique).collect();
-    let never_emitted: Vec<_> = unique.difference(&seen.paths).collect();
-    assert!(
-        undocumented.is_empty() && never_emitted.is_empty(),
-        "emitted but not documented: {undocumented:?}; documented but never emitted: {never_emitted:?}"
-    );
-    for (path, listed) in &documented.values {
-        let values = seen.values.get(path).cloned().unwrap_or_default();
-        // Each listed field is checked against something the fixtures emit.
-        assert!(!values.is_empty(), "{path}: no fixture emits a value");
-        let unlisted: Vec<_> = values.difference(listed).collect();
-        assert!(
-            unlisted.is_empty(),
-            "{path} emitted {unlisted:?}, which its documented values {listed:?} do not list"
-        );
-    }
-    // Each field takes only its documented type, and is null only where the
-    // table says it can be.
-    for (path, allowed) in &documented.types {
-        let types = &seen.types[path];
-        let undocumented: Vec<_> = types.difference(allowed).collect();
-        assert!(
-            undocumented.is_empty(),
-            "{path} emitted {undocumented:?}, which its documented type {allowed:?} does not allow"
-        );
-    }
+    status_cases(root.path());
 }

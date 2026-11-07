@@ -7,6 +7,44 @@ mod downstream;
 mod host_wire;
 mod shared_input;
 
+#[test]
+fn remote_verification_historical_provisional_refusals_remain_readable() {
+    for (mode, reason) in [
+        (
+            RemoteRunMode::Focused,
+            RemoteVerificationReason::NotFullMode,
+        ),
+        (RemoteRunMode::Full, RemoteVerificationReason::ResultNotPass),
+    ] {
+        let mut f = fixture();
+        f.request.completion.mode = mode;
+        f.request.completion.result.exit = None;
+        f.request.completion.finished_at = Some(at(11));
+        let mut attributed = actor("runner");
+        attributed.run_id = Some(f.request.association.binding.run_id.0.to_string());
+        let record = RemoteVerificationAssociationRecord {
+            schema_version: SCHEMA_VERSION,
+            project_id: f.project.clone(),
+            session_id: f.session.clone(),
+            request: f.request.clone(),
+            origin: None,
+            qualification: RemoteVerificationQualification::refused(reason, None),
+            actor: attributed,
+            associated_at: at(10),
+        };
+        let object = CanonicalObject::mint(&record).unwrap();
+        let bytes = serde_json::to_vec(&record).unwrap();
+        assert_eq!(
+            association_problem_on(&f.store.connection, object.key(), &record).unwrap(),
+            None
+        );
+        assert_eq!(serde_json::to_vec(&record).unwrap(), bytes);
+        // The same facts qualify on a new delivery without upgrading the old one.
+        assert!(f.record().unwrap().qualification.credited);
+        f.assert_healthy();
+    }
+}
+
 fn legacy_input(input: &mut RemoteRunInput) -> &mut LegacyRemoteRunInput {
     let RemoteRunInput::Legacy(input) = input else {
         panic!("legacy fixture")
@@ -383,13 +421,9 @@ fn remote_verification_ordinary_pass_needs_no_fingerprint_but_a_landing_gate_doe
 }
 
 #[test]
-fn remote_verification_focused_failed_interrupted_and_debris_stay_visible_and_uncredited() {
+fn remote_verification_failed_interrupted_and_debris_stay_visible_and_uncredited() {
     type Change = fn(&mut RemoteRunCompletion);
-    let cases: [(Change, RemoteVerificationReason); 6] = [
-        (
-            |completion| completion.mode = RemoteRunMode::Focused,
-            RemoteVerificationReason::NotFullMode,
-        ),
+    let cases: [(Change, RemoteVerificationReason); 5] = [
         (
             |completion| {
                 completion.result.verdict = RemoteRunVerdict::Fail;
@@ -422,7 +456,7 @@ fn remote_verification_focused_failed_interrupted_and_debris_stay_visible_and_un
             },
             RemoteVerificationReason::UntrackedDebrisPendingDisposition,
         ),
-        // Debris on a focused run is still only a focused run.
+        // The same failure remains uncredited in focused mode.
         (
             |completion| {
                 completion.mode = RemoteRunMode::Focused;
@@ -430,7 +464,7 @@ fn remote_verification_focused_failed_interrupted_and_debris_stay_visible_and_un
                 completion.result.exit = Some(1);
                 completion.result.reason = NEW_UNTRACKED_ONLY_REASON.into();
             },
-            RemoteVerificationReason::NotFullMode,
+            RemoteVerificationReason::UntrackedDebrisPendingDisposition,
         ),
     ];
     for (change, reason) in cases {
@@ -545,13 +579,14 @@ fn remote_verification_names_each_input_mismatch() {
             .contains("no tested tree")
     );
 
-    // A pass that cannot state its exit or finish time is not a settled pass.
-    let mut f = fixture();
-    f.request.completion.result.exit = Some(1);
-    f.assert_uncredited(RemoteVerificationReason::ResultNotPass);
-    let mut f = fixture();
-    f.request.completion.result.exit = None;
-    f.assert_uncredited(RemoteVerificationReason::ResultNotPass);
+    // A passed verdict is authoritative regardless of its optional exit code.
+    for exit in [None, Some(1)] {
+        let mut f = fixture();
+        f.request.completion.result.exit = exit;
+        assert!(f.record().unwrap().qualification.credited);
+        f.assert_healthy();
+    }
+    // A finish time is still part of a completed result's shape.
     let mut f = fixture();
     f.request.completion.finished_at = None;
     let receipt = f.assert_uncredited(RemoteVerificationReason::ResultNotPass);
@@ -633,7 +668,7 @@ fn remote_verification_reasons_follow_the_agreed_precedence() {
     legacy_input(&mut f.request.completion.input).commit = None;
     f.assert_uncredited(RemoteVerificationReason::AssociationStale);
 
-    // A conflict comes before not_full_mode and the input.
+    // A conflict comes before the input, even for a focused run.
     let mut f = fixture();
     f.record().unwrap();
     f.request.operation_key = "remote:test-remote:two".into();
@@ -641,12 +676,12 @@ fn remote_verification_reasons_follow_the_agreed_precedence() {
     legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
     f.assert_uncredited(RemoteVerificationReason::ResultConflict);
 
-    // not_full_mode comes before result_not_pass.
+    // A focused failure still fails.
     let mut f = fixture();
     f.request.completion.mode = RemoteRunMode::Focused;
     f.request.completion.result.verdict = RemoteRunVerdict::Fail;
     f.request.completion.result.exit = Some(1);
-    f.assert_uncredited(RemoteVerificationReason::NotFullMode);
+    f.assert_uncredited(RemoteVerificationReason::ResultNotPass);
 
     // Native facts come before the input, and the input before fingerprints.
     let mut f = fixture();
@@ -913,42 +948,30 @@ fn remote_verification_malformed_values_are_refused_without_effects() {
 }
 
 #[test]
-fn remote_verification_finish_time_ahead_of_this_clock_stays_provisional() {
-    let mut f = fixture();
-    let provisional = f.record_at(8).unwrap();
-    assert!(!provisional.qualification.credited);
-    assert_eq!(
-        provisional.qualification.reason,
-        Some(RemoteVerificationReason::ResultNotPass)
-    );
-    assert_eq!(provisional.origin, None, "it reserves no terminal");
-    assert_eq!(provisional.verifications.len(), 0);
-    let detail = provisional.qualification.detail.clone().unwrap();
-    assert!(detail.contains(&at(9).to_rfc3339()), "{detail}");
-    assert!(detail.contains(&at(8).to_rfc3339()), "{detail}");
-    assert_eq!(f.count(REMOTE_TERMINAL_ORIGIN_KIND), 0);
-    f.assert_healthy();
-    // It stays visible on the item, and its exact retry stays its own receipt.
-    let run = f.run_head();
-    assert_eq!(f.record_at(12).unwrap(), provisional);
-    assert_eq!(f.run_head(), run);
-    // A later delivery settles under a new key, with no conflict.
-    f.request.operation_key = "remote:test-remote:settled".into();
-    let settled = f.record_at(12).unwrap();
-    assert!(settled.qualification.credited, "{settled:?}");
-    assert!(settled.origin.is_some());
-    f.assert_healthy();
-
-    // A focused run ahead of the clock is still only a focused run.
-    let mut f = fixture();
-    f.request.completion.mode = RemoteRunMode::Focused;
-    let focused = f.record_at(8).unwrap();
-    assert_eq!(
-        focused.qualification.reason,
-        Some(RemoteVerificationReason::NotFullMode)
-    );
-    assert_eq!(focused.origin, None);
-    f.assert_healthy();
+fn remote_verification_finish_time_ahead_of_this_clock_is_credited_once() {
+    for mode in [RemoteRunMode::Full, RemoteRunMode::Focused] {
+        let mut f = fixture();
+        f.request.completion.mode = mode;
+        let credited = f.record_at(8).unwrap();
+        assert!(credited.qualification.credited, "{credited:?}");
+        assert!(credited.origin.is_some());
+        assert_eq!(credited.verifications.len(), 1);
+        assert_eq!(f.count(REMOTE_TERMINAL_ORIGIN_KIND), 1);
+        f.assert_healthy();
+        let run = f.run_head();
+        assert_eq!(f.record_at(12).unwrap(), credited);
+        assert_eq!(
+            f.run_head(),
+            run,
+            "the later retry does not mint more evidence"
+        );
+        f.request.operation_key = "remote:test-remote:settled".into();
+        let repeated = f.record_at(12).unwrap();
+        assert!(repeated.qualification.credited);
+        assert_eq!(repeated.origin, credited.origin);
+        assert_eq!(f.count(REMOTE_TERMINAL_ORIGIN_KIND), 1);
+        f.assert_healthy();
+    }
 }
 
 #[test]
@@ -1032,9 +1055,9 @@ fn assert_doctor_names(f: &Fixture, problem: &str) {
 
 #[test]
 fn remote_verification_doctor_names_a_forged_decision() {
-    // Credit claimed over a focused completion.
+    // Credit claimed over a failed completion.
     let mut f = fixture();
-    f.request.completion.mode = RemoteRunMode::Focused;
+    f.request.completion.result.verdict = RemoteRunVerdict::Fail;
     let receipt = f.record().unwrap();
     tamper(
         &f,
@@ -1059,7 +1082,7 @@ fn remote_verification_doctor_names_a_forged_decision() {
 
     // A conflict with nothing different from the settled terminal.
     let mut f = fixture();
-    f.request.completion.mode = RemoteRunMode::Focused;
+    legacy_input(&mut f.request.completion.input).commit = None;
     let receipt = f.record().unwrap();
     tamper(
         &f,
@@ -1073,7 +1096,7 @@ fn remote_verification_doctor_names_a_forged_decision() {
 
     // A delivery called stale that stands on its item's feeds.
     let mut f = fixture();
-    f.request.completion.mode = RemoteRunMode::Focused;
+    legacy_input(&mut f.request.completion.input).commit = None;
     let receipt = f.record().unwrap();
     tamper(
         &f,

@@ -59,8 +59,8 @@ fn changes(values: &[Change]) -> Result<()> {
                 && value
                     .status
                     .bytes()
-                    .all(|byte| b" MADRCUT?!".contains(&byte))
-                && !matches!(value.status.as_str(), "  " | "!!"),
+                    .all(|byte| b" MADRCUT?".contains(&byte))
+                && value.status != "  ",
             "invalid source change path or status"
         );
         let renamed = value.status.contains(['R', 'C']);
@@ -117,6 +117,11 @@ mod tests {
             changes: vec![change.clone()],
         };
         assert!(value.validate().is_ok());
+        for status in ["! ", " !", "!!"] {
+            value.changes[0].status = status.to_owned();
+            assert!(value.validate().is_err());
+        }
+        value.changes[0].status = "??".to_owned();
         value.changes.push(Change {
             status: "D ".to_owned(),
             ..change

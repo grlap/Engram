@@ -121,8 +121,8 @@ test("registration distinguishes real case-sensitive roots and run directories",
   });
 });
 
-test("registration covers all launch modes before fingerprint capture through the supported HTTP contract", async () => {
-  await repository(async (root) => {
+test("registration covers all launch modes before source identity capture through the supported HTTP contract", async () => {
+  await repository(async (root, observe) => {
     const requests = new Map(), calls = [], errors = [];
     const server = createServer(async (incoming, outgoing) => {
       try {
@@ -138,7 +138,7 @@ test("registration covers all launch modes before fingerprint capture through th
           assert.equal(request.creatorPid, process.pid);
           assert.equal(request.owner, env.TERMAL_SESSION_ID);
           assert.equal(existsSync(join(body.runDirectory, "input.json")), false);
-          assert.equal(request.expectedFingerprint, undefined);
+          assert.deepEqual(request.sourceId, undefined);
           // The capture must include a source change made during registration.
           writeFileSync(join(root, "tracked.txt"), `${request.runId}\n`);
           requests.set(request.runId, { request, directory: body.runDirectory });
@@ -161,15 +161,16 @@ test("registration covers all launch modes before fingerprint capture through th
         assert.equal(request.registration.state, "registered");
         assert.equal(request.registration.nativeWaitReady, true);
         assert.equal(json(join(runDir, "results.json")).registration.state, "registered");
-        assert.equal(json(join(runDir, "input.json")).fingerprint, request.expectedFingerprint);
+        assert.deepEqual(json(join(runDir, "input.json")).sourceId, request.sourceId);
         assert.equal(calls.at(-2)[1], `/api/sessions/${env.TERMAL_SESSION_ID}/test-runs`);
         assert.equal(calls.at(-1)[1], `/api/test-runs/${request.runId}`);
         if (!full) {
           const before = calls.length;
+          observe(runDir, env.ENGRAM_SOURCE_BINARY);
           const result = await executeRun(runDir, hostEnv);
           assert.equal(result.state, "passed");
-          assert.equal(result.before, request.expectedFingerprint);
-          assert.equal(result.after, result.before);
+          assert.deepEqual(result.sourceIdBefore, request.sourceId);
+          assert.deepEqual(result.sourceIdAfter, result.sourceIdBefore);
           assert.equal(calls.length, before + (detached ? 1 : 0));
           assert.match(await summarize(runDir), /registration: registered; native-wait=ready; registration succeeded; host check credit decided at delivery/u);
         }

@@ -4,11 +4,12 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { randomUUID } from "node:crypto";
 import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import test, { after } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { captureCommitInputStatus } from "../review-freeze-fingerprint.mjs";
 import { commandKind, completionMetadata, countTests, createRun, diagnostics, executable, executeRun, inspectFailure, machineRecord, requiredStages, selectsTests, startDetached, summarize } from "../test-launcher.mjs";
 
 export function registerCountTests(support) {
-  const { env, entryUrl, launcher, launcherFixtureFiles, stage, json, git, repository, rustWrapperFixture, nodeFixtureExecutable, parseRecord, directoryBytes } = support;
+  const { env, entryUrl, launcher, launcherFixtureFiles, stage, json, git, repository, rustWrapperFixture, nodeFixtureExecutable, parseRecord, directoryBytes, copyLauncher } = support;
 // The rule the host applies to a record, as agreed with it.
 const countsAsPassedTests = ({ state, stages }) => state === "passed"
   && stages.every((stage) => stage.state !== "failed" && stage.state !== "interrupted")
@@ -260,8 +261,23 @@ test("Cargo frames refuse incomplete or ambiguous ownership and retain readable 
 });
 
 test("Cargo phase execution preserves native exits, failure masking and count records", { timeout: 120_000 }, async () => {
-  await repository(async (root) => {
+  await repository(async (root, observe) => {
     const fixture = rustWrapperFixture(root, process.platform === "win32" ? "win32" : "linux");
+    // These transcripts exercise native execution and count parsing, not Git.
+    // Keep one measured source value at that boundary instead of repeating
+    // three full observations for every transcript inside the same timeout.
+    const local = copyLauncher(root, (source) => source.replaceAll(
+      "captureCommitInputStatus(request.root, childEnv)",
+      "JSON.parse(readFileSync(join(request.root, '.git', 'count-source.json'), 'utf8'))"));
+    const worker = await import(pathToFileURL(local).href);
+    const measured = captureCommitInputStatus(root, env);
+    writeFileSync(join(root, ".git", "count-source.json"), JSON.stringify(measured));
+    const recordPhase = async (stages, options = {}) => {
+      const runDir = await worker.createRun({ root, stages, ...options, commitInputStatus: () => measured }, env);
+      observe(runDir, env.ENGRAM_SOURCE_BINARY);
+      const result = await worker.executeRun(runDir, env);
+      return { result, record: parseRecord(machineRecord(result.plan, result)) };
+    };
     const ordinary = requiredStages()[3];
     const outer = libtest(3, 0, 1, 0);
     const nested = cargoFrame(outer.replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n"));
@@ -280,7 +296,7 @@ test("Cargo phase execution preserves native exits, failure masking and count re
       [doctestOverlap, 0, "failed", "ambiguous-summary"],
       [doctestOverlap, 101, "failed", "ambiguous-summary"]]) {
       writeFileSync(join(root, "scripts", "test-temp.mjs"), `process.stdout.write(${JSON.stringify(text)}); process.exitCode = ${code};`);
-      const { result, record } = await recordOf(root, [{ ...ordinary, name: "owner-from-command" },
+      const { result, record } = await recordPhase([{ ...ordinary, name: "owner-from-command" },
         printing("later", "test", libtest(1, 0, 0, 0))]);
       assert.deepEqual([result.stages[0].state, result.stages[0].code, result.stages[0].signal], [state, code, null]);
       assert.deepEqual([record.stages[0].state, record.stages[0].exit, record.stages[0].why], [state, String(code), why]);
@@ -294,7 +310,7 @@ test("Cargo phase execution preserves native exits, failure masking and count re
         : text === doctests || text === doctestFailure ? "2" : "1");
     }
     // The same full-stage name and framed text through another command stay generic.
-    const generic = await recordOf(root, [printing("rust", "test", nested)], { full: true });
+    const generic = await recordPhase([printing("rust", "test", nested)], { full: true });
     assert.equal(generic.record.stages[0].executed, "unknown");
     assert.equal(generic.record.stages[0].why, "incomplete-summary");
   });
