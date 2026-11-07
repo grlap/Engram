@@ -1046,7 +1046,9 @@ pub struct DisplacedSourceChange {
     pub observation_id: String,
     /// The workspace the host recorded for the change, not the named root's.
     pub workspace_id: String,
-    pub source_revision: String,
+    pub source_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id_summary: Option<crate::source::SourceIdSummary>,
 }
 
 /// A source change that no matching passing test followed, disclosed on the
@@ -1057,6 +1059,8 @@ pub struct UntestedSourceChange {
     pub observation_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id_summary: Option<crate::source::SourceIdSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_at: Option<DateTime<Utc>>,
     /// How the host says it established the change: a host source

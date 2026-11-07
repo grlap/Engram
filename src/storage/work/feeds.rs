@@ -891,7 +891,7 @@ pub(super) fn newest_measured_sighting_on(
     run_id: WorkRunId,
     workspace: &str,
     through: i64,
-) -> Result<Option<(i64, crate::domain::ExecutionSourceBasis)>, StoreError> {
+) -> Result<Option<(i64, crate::domain::VerificationSourceBasis)>, StoreError> {
     newest_measured_source_basis_on(connection, run_id, Some(workspace), through)
 }
 
@@ -900,10 +900,11 @@ pub(super) fn newest_measured_source_basis_on(
     run_id: WorkRunId,
     workspace: Option<&str>,
     through: i64,
-) -> Result<Option<(i64, crate::domain::ExecutionSourceBasis)>, StoreError> {
-    let (workspace_sql, revision_sql) = (
+) -> Result<Option<(i64, crate::domain::VerificationSourceBasis)>, StoreError> {
+    let (workspace_sql, revision_sql, source_id_sql) = (
         source_basis_sql("workspace_id"),
         source_basis_sql("source_revision"),
+        source_basis_sql("source_id"),
     );
     let row = connection
         .query_row(
@@ -914,7 +915,8 @@ pub(super) fn newest_measured_source_basis_on(
                  WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
                    AND entry.position <= ?2
                    AND (entry.object_kind = 'environment_evidence' OR {SOURCE_RECORD_SQL})
-                   AND (?3 IS NULL OR {workspace_sql} = ?3) AND {revision_sql} IS NOT NULL
+                   AND (?3 IS NULL OR {workspace_sql} = ?3)
+                   AND ({revision_sql} IS NOT NULL OR {source_id_sql} IS NOT NULL)
                  ORDER BY entry.position DESC LIMIT 1"
             ),
             params![run_id.0.to_string(), through, workspace],
@@ -939,7 +941,8 @@ pub(super) fn newest_measured_source_basis_on(
                 &record,
                 "environment_evidence",
             )?
-            .source_basis,
+            .source_basis
+            .into(),
         )
     } else {
         load_source_observation_on(connection, &record)?.source_basis

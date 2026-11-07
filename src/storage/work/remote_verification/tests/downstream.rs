@@ -292,11 +292,14 @@ fn live_change(f: &mut Fixture, kind: LiveChange, key: &str, second: i64) {
             workspace_id: workspace.clone(),
             baseline: MeasuredBaseline {
                 workspace_id: workspace.clone(),
-                source_revision: "content-before".into(),
+                identity: crate::domain::VerificationSourceIdentity::Legacy {
+                    source_revision: "content-before".into(),
+                    git_tree: None,
+                },
                 observed_at: at(second - 2),
             },
             sighting: MeasuredSighting {
-                source_basis: ExecutionSourceBasis {
+                source_basis: (ExecutionSourceBasis {
                     git_tree: None,
                     workspace_id: workspace.clone(),
                     source_revision: format!(
@@ -305,7 +308,8 @@ fn live_change(f: &mut Fixture, kind: LiveChange, key: &str, second: i64) {
                     ),
                     source_root_generation: Some(f.request.association.root.generation),
                     source_root_state: Some(SourceRootState::Named),
-                },
+                })
+                .into(),
                 observed_at: at(second - 1),
             },
         },

@@ -63,6 +63,8 @@ pub(crate) struct WorkObservationRow {
     pub source_changed: Option<bool>,
     pub workspace: Option<String>,
     pub revision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id_summary: Option<crate::source::SourceIdSummary>,
     pub root_generation: Option<i64>,
     /// The reporting session as the display label `show` uses for sessions.
     pub reporting_session: String,
@@ -94,6 +96,12 @@ pub(crate) struct ObservedCheckRow {
     pub finished_at: Option<DateTime<Utc>>,
     /// The revision the host says it ran on; `None` when unknown.
     pub source_revision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_root_generation: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_root_state: Option<crate::domain::SourceRootState>,
     /// The host's opaque reference, shortened for display only.
     pub evidence_ref: Option<String>,
 }
@@ -121,6 +129,7 @@ pub(super) fn observation_row(
                 source_changed: Some(observation.source_changed),
                 workspace: basis.map(|basis| basis.workspace_id.clone()),
                 revision: basis.map(|basis| basis.source_revision.clone()),
+                source_id_summary: None,
                 root_generation: basis.and_then(|basis| basis.source_root_generation),
                 reporting_session: identity.session(&observation.session_id),
                 observed_at: observation.observed_at,
@@ -146,7 +155,26 @@ pub(super) fn observation_row(
                         .check
                         .source_basis
                         .as_ref()
-                        .map(|basis| displayed(&basis.source_revision)),
+                        .and_then(|basis| basis.source_revision.as_deref())
+                        .map(displayed),
+                    source_workspace: recorded
+                        .check
+                        .source_basis
+                        .as_ref()
+                        .filter(|basis| basis.source_revision.is_none())
+                        .map(|basis| displayed(&basis.workspace_id)),
+                    source_root_generation: recorded
+                        .check
+                        .source_basis
+                        .as_ref()
+                        .filter(|basis| basis.source_revision.is_none())
+                        .and_then(|basis| basis.source_root_generation),
+                    source_root_state: recorded
+                        .check
+                        .source_basis
+                        .as_ref()
+                        .filter(|basis| basis.source_revision.is_none())
+                        .and_then(|basis| basis.source_root_state),
                     evidence_ref: recorded.check.host_evidence_ref.as_deref().map(displayed),
                 })
                 .collect();
@@ -169,7 +197,11 @@ pub(super) fn observation_row(
                     .map(|sighting| displayed(&sighting.source_basis.workspace_id))
                     .or_else(|| change.map(|change| displayed(change.workspace_id()))),
                 revision: sighting
-                    .map(|sighting| displayed(&sighting.source_basis.source_revision)),
+                    .and_then(|sighting| sighting.source_basis.legacy_revision())
+                    .map(displayed),
+                source_id_summary: sighting
+                    .and_then(|sighting| sighting.source_basis.source_id())
+                    .map(crate::source::SourceId::summary),
                 root_generation: sighting
                     .and_then(|sighting| sighting.source_basis.source_root_generation),
                 reporting_session: identity.session(&observation.observing_session),

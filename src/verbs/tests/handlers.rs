@@ -898,7 +898,8 @@ fn displaced_changes_are_named_and_the_rest_counted() {
     displaced.items[0].displaced_change = Some(crate::DisplacedSourceChange {
         observation_id: "write-main".into(),
         workspace_id: "workspace-A".into(),
-        source_revision: "revision-3".into(),
+        source_revision: Some("revision-3".into()),
+        source_id_summary: None,
     });
     displaced.omitted_count = 1;
     displaced.displaced_total = 2;
@@ -947,6 +948,7 @@ fn untested_changes_are_named_and_the_rest_counted() {
     untested.items[0].untested_change = Some(crate::UntestedSourceChange {
         observation_id: "write-lib".into(),
         source_revision: Some("revision-7".into()),
+        source_id_summary: None,
         observed_at: None,
         reported_source_change: None,
     });

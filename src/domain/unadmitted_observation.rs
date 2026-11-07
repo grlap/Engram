@@ -10,8 +10,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ActorContext, ControlWorkBinding, ExecutionSourceBasis, FeedPosition, NamedRootState,
-    ProjectId, ProjectPolicyEpoch, SessionId, VerificationKind, VerificationResult,
+    ActorContext, ControlWorkBinding, ExecutionSourceBasis, FeedPosition, GitTreeId,
+    NamedRootState, ProjectId, ProjectPolicyEpoch, SessionId, SourceRootState, VerificationKind,
+    VerificationResult, VerificationSourceBasis, VerificationSourceIdentity,
     validate_session_id_length,
 };
 use crate::ObjectId;
@@ -31,7 +32,8 @@ pub const MAX_OBSERVATION_CAUSAL_BASIS_BYTES: usize = 4_096;
 /// Bytes of a workspace id or source revision.
 pub const MAX_OBSERVED_SOURCE_BYTES: usize = 512;
 /// Bytes of a whole `execution_observe` request frame, checked before decoding.
-pub const MAX_EXECUTION_OBSERVE_REQUEST_BYTES: usize = 64 * 1_024;
+pub const MAX_EXECUTION_OBSERVE_REQUEST_BYTES: usize =
+    2 * crate::source::MAX_JSON_BYTES + 64 * 1_024;
 /// Bytes of the complete receipt, checked before the record commits.
 pub const MAX_EXECUTION_OBSERVE_RESULT_BYTES: usize = 16 * 1_024;
 
@@ -59,18 +61,56 @@ pub struct ObservedInterval {
 
 /// An earlier measured revision of the workspace.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "BaselineWire")]
 pub struct MeasuredBaseline {
     pub workspace_id: String,
-    pub source_revision: String,
+    #[serde(flatten)]
+    pub identity: VerificationSourceIdentity,
     pub observed_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BaselineWire {
+    workspace_id: String,
+    #[serde(
+        default,
+        deserialize_with = "super::verification_source::present_revision"
+    )]
+    source_revision: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "super::verification_source::present_source_id"
+    )]
+    source_id: Option<crate::source::SourceId>,
+    observed_at: DateTime<Utc>,
+}
+
+impl TryFrom<BaselineWire> for MeasuredBaseline {
+    type Error = &'static str;
+
+    fn try_from(wire: BaselineWire) -> Result<Self, Self::Error> {
+        let identity = match (wire.source_revision, wire.source_id) {
+            (Some(source_revision), None) => VerificationSourceIdentity::Legacy {
+                source_revision,
+                git_tree: None,
+            },
+            (None, Some(source_id)) => VerificationSourceIdentity::SourceId { source_id },
+            _ => return Err("baseline requires exactly one revision or complete source_id"),
+        };
+        Ok(Self {
+            workspace_id: wire.workspace_id,
+            identity,
+            observed_at: wire.observed_at,
+        })
+    }
 }
 
 /// The measured revision the host saw at the end of the change.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredSighting {
-    pub source_basis: ExecutionSourceBasis,
+    pub source_basis: VerificationSourceBasis,
     pub observed_at: DateTime<Utc>,
 }
 
@@ -131,6 +171,43 @@ impl ObservedSourceChange {
     }
 }
 
+/// Workspace/root context of an observed check, never its verification input.
+/// Historical revision fields retain their old bytes during producer transition.
+/// New producers send only workspace and optional root generation/state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservedCheckSourceBasis {
+    pub workspace_id: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::verification_source::present_revision"
+    )]
+    pub source_revision: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::verification_applicability::present_git_tree"
+    )]
+    pub git_tree: Option<GitTreeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root_generation: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root_state: Option<SourceRootState>,
+}
+
+impl From<ExecutionSourceBasis> for ObservedCheckSourceBasis {
+    fn from(basis: ExecutionSourceBasis) -> Self {
+        Self {
+            workspace_id: basis.workspace_id,
+            source_revision: Some(basis.source_revision),
+            git_tree: basis.git_tree,
+            source_root_generation: basis.source_root_generation,
+            source_root_state: basis.source_root_state,
+        }
+    }
+}
+
 /// One check the host saw run inside an unadmitted turn: a bounded fact,
 /// never verification evidence and never a command log.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -145,10 +222,10 @@ pub struct ObservedCheck {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<DateTime<Utc>>,
     pub observed_at: DateTime<Utc>,
-    /// The source the check ran on, as the host asserts it; absent when
-    /// unknown.
+    /// Workspace/root context as the host asserts it; absent when unknown.
+    /// It carries no complete source object and creates no check credit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_basis: Option<ExecutionSourceBasis>,
+    pub source_basis: Option<ObservedCheckSourceBasis>,
     /// An opaque host artifact or log reference, never fetched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_evidence_ref: Option<String>,
@@ -188,7 +265,7 @@ fn reported_outcome<'de, D: serde::Deserializer<'de>>(
 pub enum ObservedOccurrence {
     /// A measured source revision, with no source mutation or check reported.
     SourceSighting {
-        source_basis: ExecutionSourceBasis,
+        source_basis: VerificationSourceBasis,
         observed_at: DateTime<Utc>,
     },
     /// Execution seen without an admitted begin; not a begun or checkpointed
@@ -235,7 +312,7 @@ pub struct RecordedObservedCheck {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RecordedOccurrence {
     SourceSighting {
-        source_basis: ExecutionSourceBasis,
+        source_basis: VerificationSourceBasis,
         observed_at: DateTime<Utc>,
     },
     UnadmittedTurn {
@@ -674,14 +751,12 @@ impl ExecutionObserveInput {
     /// host's own ids are host text too, so none is used as a label.
     #[must_use]
     pub fn source_texts(&self) -> Vec<(String, &str)> {
-        fn basis<'a>(label: &str, basis: &'a ExecutionSourceBasis) -> [(String, &'a str); 2] {
-            [
-                (format!("{label}.workspace_id"), basis.workspace_id.as_str()),
-                (
-                    format!("{label}.source_revision"),
-                    basis.source_revision.as_str(),
-                ),
-            ]
+        fn basis<'a>(label: &str, basis: &'a VerificationSourceBasis) -> Vec<(String, &'a str)> {
+            let mut texts = vec![(format!("{label}.workspace_id"), basis.workspace_id.as_str())];
+            if let Some(revision) = basis.legacy_revision() {
+                texts.push((format!("{label}.source_revision"), revision));
+            }
+            texts
         }
         let mut texts = Vec::new();
         // Each check is labelled by the path the request itself carries: an
@@ -723,10 +798,12 @@ impl ExecutionObserveInput {
                     "source_change.baseline.workspace_id".to_owned(),
                     baseline.workspace_id.as_str(),
                 ));
-                texts.push((
-                    "source_change.baseline.source_revision".to_owned(),
-                    baseline.source_revision.as_str(),
-                ));
+                if let Some(revision) = baseline.identity.legacy_revision() {
+                    texts.push((
+                        "source_change.baseline.source_revision".to_owned(),
+                        revision,
+                    ));
+                }
             }
             if let Some(sighting) = change.sighting() {
                 texts.extend(basis(
@@ -737,7 +814,13 @@ impl ExecutionObserveInput {
         }
         for (label, check) in checks {
             if let Some(source_basis) = &check.source_basis {
-                texts.extend(basis(&format!("{label}.source_basis"), source_basis));
+                texts.push((
+                    format!("{label}.source_basis.workspace_id"),
+                    source_basis.workspace_id.as_str(),
+                ));
+                if let Some(revision) = source_basis.source_revision.as_deref() {
+                    texts.push((format!("{label}.source_basis.source_revision"), revision));
+                }
             }
         }
         texts
@@ -874,21 +957,28 @@ fn within(at: DateTime<Utc>, interval: ObservedInterval, label: &str) -> Result<
     Ok(())
 }
 
-fn validate_source_basis(basis: &ExecutionSourceBasis, label: &str) -> Result<(), String> {
-    bounded_text(
+fn validate_source_basis(basis: &VerificationSourceBasis, label: &str) -> Result<(), String> {
+    validate_source_scope(
         &basis.workspace_id,
+        basis.source_root_generation,
+        basis.source_root_state,
+        label,
+    )?;
+    validate_source_identity(&basis.identity, label)
+}
+
+fn validate_source_scope(
+    workspace_id: &str,
+    generation: Option<i64>,
+    state: Option<SourceRootState>,
+    label: &str,
+) -> Result<(), String> {
+    bounded_text(
+        workspace_id,
         MAX_OBSERVED_SOURCE_BYTES,
         &format!("{label}.workspace_id"),
     )?;
-    bounded_text(
-        &basis.source_revision,
-        MAX_OBSERVED_SOURCE_BYTES,
-        &format!("{label}.source_revision"),
-    )?;
-    if !matches!(
-        (basis.source_root_generation, basis.source_root_state),
-        (None, None) | (Some(1..), Some(_))
-    ) {
+    if !matches!((generation, state), (None, None) | (Some(1..), Some(_))) {
         return Err(format!(
             "{label} named-root generation and state must occur together, with a positive generation"
         ));
@@ -915,21 +1005,27 @@ fn validate_source_change(
                 MAX_OBSERVED_SOURCE_BYTES,
                 "source_change.baseline.workspace_id",
             )?;
-            bounded_text(
-                &baseline.source_revision,
-                MAX_OBSERVED_SOURCE_BYTES,
-                "source_change.baseline.source_revision",
-            )?;
+            validate_source_identity(&baseline.identity, "source_change.baseline")?;
             validate_source_basis(
                 &sighting.source_basis,
                 "source_change.sighting.source_basis",
             )?;
+            if std::mem::discriminant(&baseline.identity)
+                != std::mem::discriminant(&sighting.source_basis.identity)
+            {
+                return Err(
+                    "content_comparison cannot compare a legacy revision with a source_id".into(),
+                );
+            }
             if baseline.workspace_id != workspace_id
                 || sighting.source_basis.workspace_id != workspace_id
             {
                 return Err("a measured source change names one workspace throughout".into());
             }
-            if baseline.source_revision == sighting.source_basis.source_revision {
+            if baseline
+                .identity
+                .same_source(&sighting.source_basis.identity)
+            {
                 return Err(
                     "content_comparison needs two different revisions; an equal pair is no change"
                         .into(),
@@ -956,6 +1052,34 @@ fn validate_source_change(
         }
     }
     Ok(())
+}
+
+fn validate_source_identity(
+    identity: &VerificationSourceIdentity,
+    label: &str,
+) -> Result<(), String> {
+    match identity {
+        VerificationSourceIdentity::Legacy {
+            source_revision, ..
+        } => bounded_text(
+            source_revision,
+            MAX_OBSERVED_SOURCE_BYTES,
+            &format!("{label}.source_revision"),
+        ),
+        VerificationSourceIdentity::SourceId { source_id } => {
+            source_id
+                .validate()
+                .map_err(|error| format!("{label}.source_id: {error}"))?;
+            let bytes = serde_json::to_vec(source_id).map_err(|error| error.to_string())?;
+            if bytes.len() > crate::source::MAX_JSON_BYTES {
+                return Err(format!(
+                    "{label}.source_id exceeds {} bytes",
+                    crate::source::MAX_JSON_BYTES
+                ));
+            }
+            Ok(())
+        }
+    }
 }
 
 fn validate_checks(checks: &[ObservedCheck], interval: ObservedInterval) -> Result<(), String> {
@@ -998,7 +1122,24 @@ fn validate_checks(checks: &[ObservedCheck], interval: ObservedInterval) -> Resu
             ));
         }
         if let Some(basis) = &check.source_basis {
-            validate_source_basis(basis, &format!("{label} source_basis"))?;
+            let label = format!("{label} source_basis");
+            validate_source_scope(
+                &basis.workspace_id,
+                basis.source_root_generation,
+                basis.source_root_state,
+                &label,
+            )?;
+            if let Some(revision) = basis.source_revision.as_deref() {
+                bounded_text(
+                    revision,
+                    MAX_OBSERVED_SOURCE_BYTES,
+                    &format!("{label}.source_revision"),
+                )?;
+            } else if basis.git_tree.is_some() {
+                return Err(format!(
+                    "{label}.git_tree requires a historical source_revision"
+                ));
+            }
         }
         if let Some(reference) = &check.host_evidence_ref {
             bounded_text(

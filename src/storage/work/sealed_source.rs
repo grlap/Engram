@@ -146,7 +146,7 @@ impl SqliteStore {
                             super::SourceObservationRecord::Unadmitted(observation) => observation
                                 .occurrence
                                 .measured_sighting()
-                                .map(|sighting| sighting.source_basis),
+                                .and_then(|sighting| sighting.source_basis.legacy_basis()),
                         });
             }
             let rows = query.select(&store.connection, before, None, true, limit.min(32))?;

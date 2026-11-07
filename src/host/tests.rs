@@ -347,8 +347,7 @@ fn removed_host_obligation_waiver_is_refused() {
     });
     let error = parse_host_control_request(&serde_json::to_vec(&clean).expect("encode frame"))
         .expect_err("removed operation must fail closed");
-    assert!(error.contains("obligation_waive"));
-    assert!(error.contains("unknown variant"));
+    assert!(error.contains("Data"));
 }
 
 #[test]
@@ -495,7 +494,7 @@ fn execution_observe_frame_parses_strictly() {
             .insert(field.into(), value);
         let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
             .expect_err("an unknown field is refused");
-        assert!(error.contains(field), "{error}");
+        assert!(error.contains("Data"), "{error}");
     }
     let mut verified = frame;
     verified["causality"] = serde_json::json!({"kind": "verified"});
@@ -520,7 +519,7 @@ fn execution_observe_refuses_unknown_nested_fields() {
             .insert(field.into(), serde_json::json!("x"));
         let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
             .expect_err("an unknown nested field is refused");
-        assert!(error.contains(field), "{error}");
+        assert!(error.contains("Data"), "{error}");
     }
     let mut linked = frame;
     linked["causality"]["claimed_actor"]["provenance_chain"] = serde_json::json!([
@@ -528,7 +527,7 @@ fn execution_observe_refuses_unknown_nested_fields() {
     ]);
     let error = parse_host_control_request(&serde_json::to_vec(&linked).expect("frame"))
         .expect_err("an unknown provenance field is refused");
-    assert!(error.contains("weight"), "{error}");
+    assert!(error.contains("Data"), "{error}");
 }
 
 // A duplicate key anywhere in the request is refused, as it is for typed
@@ -558,7 +557,7 @@ fn execution_observe_refuses_duplicate_nested_keys() {
         let altered = text.replacen(needle, doubled, 1);
         let error =
             parse_host_control_request(altered.as_bytes()).expect_err("a duplicate key is refused");
-        assert!(error.contains("duplicate"), "{needle}: {error}");
+        assert!(error.contains("Data"), "{needle}: {error}");
     }
 }
 
@@ -591,7 +590,7 @@ fn execution_observe_refuses_fields_beside_a_bare_tag() {
             .insert(extra.0.into(), extra.1);
         let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
             .expect_err("a field beside a bare tag is refused");
-        assert!(error.contains(extra.0), "{error}");
+        assert!(error.contains("Data"), "{error}");
     }
     assert_eq!(
         serde_json::to_value(crate::domain::ObservationCausality::Unknown {}).expect("json"),
@@ -621,7 +620,6 @@ fn an_oversized_execution_observe_frame_is_refused_before_decoding() {
     frame["occurrence"]["host_turn_ref"] =
         Value::String("x".repeat(crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES));
     let bytes = serde_json::to_vec(&frame).expect("frame");
-    assert!(bytes.len() < MAX_HOST_CONTROL_FRAME_BYTES);
     let refused = parse_frame(Ok(bytes)).expect_err("refused");
     let HostControlResponse::Error { error } = refused else {
         panic!("an error response");
@@ -632,7 +630,100 @@ fn an_oversized_execution_observe_frame_is_refused_before_decoding() {
         "{}",
         error.message
     );
-    assert!(error.message.contains("65536"), "{}", error.message);
+    assert!(
+        error
+            .message
+            .contains(&crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES.to_string()),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn observation_frame_holds_all_complete_sources_without_raising_other_operation_limits() {
+    let mut source = crate::source::SourceId {
+        commit: "a".repeat(40),
+        tree: "b".repeat(40),
+        submodules: vec![],
+        changes: vec![crate::source::Change {
+            path: "p".into(),
+            status: " M".into(),
+            origin: None,
+            blob: Some("c".repeat(40)),
+            mode: Some(crate::source::Mode::Regular),
+        }],
+    };
+    let initial = serde_json::to_vec(&source).unwrap().len();
+    source.changes[0].path = "p".repeat(crate::source::MAX_JSON_BYTES - initial + 1);
+    assert_eq!(
+        serde_json::to_vec(&source).unwrap().len(),
+        crate::source::MAX_JSON_BYTES
+    );
+    source.validate().unwrap();
+    let before = serde_json::to_value(&source).unwrap();
+    source.changes[0].blob = Some("d".repeat(40));
+    let after = serde_json::to_value(&source).unwrap();
+    let mut frame = execution_observe_frame();
+    let baseline = &mut frame["occurrence"]["source_change"]["baseline"];
+    baseline.as_object_mut().unwrap().remove("source_revision");
+    baseline["source_id"] = before.clone();
+    frame["occurrence"]["source_change"]["sighting"]["source_basis"] =
+        serde_json::json!({"workspace_id":"workspace-A", "source_id":after});
+    let mut check = frame["occurrence"]["observed_checks"][0].clone();
+    check["source_basis"] = serde_json::json!({"workspace_id":"workspace-A"});
+    frame["occurrence"]["observed_checks"] = Value::Array(
+        (0..crate::domain::MAX_OBSERVED_CHECKS)
+            .map(|i| {
+                let mut check = check.clone();
+                check["host_check_id"] = format!("check-{i}").into();
+                check
+            })
+            .collect(),
+    );
+    let mut bytes = serde_json::to_vec(&frame).unwrap();
+    assert!(bytes.len() > MAX_HOST_CONTROL_FRAME_BYTES);
+    assert!(bytes.len() <= crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES);
+    bytes.push(b'\n');
+    let mut input = std::io::Cursor::new(bytes);
+    let parsed = parse_frame(read_control_frame(&mut input).unwrap().unwrap()).unwrap();
+    let HostControlRequest::ExecutionObserve { occurrence, .. } = parsed else {
+        panic!("observation");
+    };
+    let crate::domain::ObservedOccurrence::UnadmittedTurn {
+        observed_checks,
+        source_change,
+        ..
+    } = *occurrence
+    else {
+        panic!("turn");
+    };
+    assert_eq!(observed_checks.len(), crate::domain::MAX_OBSERVED_CHECKS);
+    assert_eq!(
+        observed_checks[0]
+            .source_basis
+            .as_ref()
+            .unwrap()
+            .workspace_id,
+        "workspace-A"
+    );
+    let Some(crate::domain::ObservedSourceChange::ContentComparison { sighting, .. }) =
+        source_change
+    else {
+        panic!("source change");
+    };
+    assert_eq!(sighting.source_basis.source_id(), Some(&source));
+    let ordinary = serde_json::to_vec(&serde_json::json!({"operation":"named_root_read", "padding":"x".repeat(MAX_HOST_CONTROL_FRAME_BYTES)})).unwrap();
+    assert!(parse_frame(Ok(ordinary)).is_err());
+    // Rejected caller text must not turn the refusal itself into a large response.
+    let oversized_operation = serde_json::to_vec(
+        &serde_json::json!({"operation":"x".repeat(MAX_HOST_CONTROL_FRAME_BYTES)}),
+    )
+    .unwrap();
+    let refusal = parse_frame(Ok(oversized_operation)).unwrap_err();
+    let HostControlResponse::Error { error } = refusal else {
+        panic!("refusal");
+    };
+    assert!(error.message.len() <= MAX_HOST_CONTROL_ERROR_DETAIL_BYTES);
 }
 
 #[test]
@@ -679,7 +770,7 @@ fn named_root_binding_frame_carries_claim_and_workspace_identity() {
     altered["source_path"] = serde_json::json!("C:\\source-root");
     let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
         .expect_err("a path alias cannot stand in for the host workspace identity");
-    assert!(error.contains("source_path"));
+    assert!(error.contains("Data"));
 }
 
 #[test]
@@ -713,7 +804,7 @@ fn acceptance_binding_read_frame_takes_no_caller_cut() {
     cut["run_cut"] = serde_json::json!(12);
     let error = parse_host_control_request(&serde_json::to_vec(&cut).expect("frame"))
         .expect_err("the first page captures the cut; a caller cannot name one");
-    assert!(error.contains("run_cut"), "{error}");
+    assert!(error.contains("Data"), "{error}");
 }
 
 #[test]
@@ -745,7 +836,7 @@ fn named_root_sighting_read_frame_needs_no_routing_token() {
     token["routing_token"] = serde_json::json!("routing-token");
     let error = parse_host_control_request(&serde_json::to_vec(&token).expect("frame"))
         .expect_err("an unknown field is refused");
-    assert!(error.contains("routing_token"), "{error}");
+    assert!(error.contains("Data"), "{error}");
 }
 
 #[test]
@@ -842,13 +933,13 @@ fn acceptance_verification_read_frame_names_its_cut_and_criterion_strictly() {
     negative["criterion"] = serde_json::json!(-1);
     let error = parse_host_control_request(&serde_json::to_vec(&negative).expect("frame"))
         .expect_err("a negative criterion");
-    assert!(error.contains("expected usize"), "{error}");
+    assert!(error.contains("Data"), "{error}");
     for field in ["check_kind", "project_id"] {
         let mut altered = frame.clone();
         altered[field] = serde_json::json!("caller-chosen");
         let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
             .expect_err("an unknown field");
-        assert!(error.contains(field), "{field}: {error}");
+        assert!(error.contains("Data"), "{field}: {error}");
     }
     for missing in ["run_cut", "criterion"] {
         let mut altered = frame.clone();
@@ -858,7 +949,7 @@ fn acceptance_verification_read_frame_names_its_cut_and_criterion_strictly() {
             .remove(missing);
         let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
             .expect_err("a frame without its cut or criterion");
-        assert!(error.contains(missing), "{missing}: {error}");
+        assert!(error.contains("Data"), "{missing}: {error}");
     }
 }
 
@@ -900,7 +991,7 @@ fn host_control_frames_reject_duplicate_fields_without_unbounded_diagnostics() {
     }"#;
     let error = parse_host_control_request(duplicate_top_level)
         .expect_err("duplicate top-level field must fail closed");
-    assert!(error.contains("duplicate field"));
+    assert!(error.contains("Data"));
     let mut frame = serde_json::to_string(&execution_observe_frame()).unwrap();
     frame = frame.replace(
         "\"capture_run_cut\":12",
@@ -908,16 +999,16 @@ fn host_control_frames_reject_duplicate_fields_without_unbounded_diagnostics() {
     );
     let error = parse_host_control_request(frame.as_bytes())
         .expect_err("duplicate nested field must fail closed");
-    assert!(error.contains("duplicate field"));
+    assert!(error.contains("Data"));
 
     let oversized_operation = serde_json::json!({
-        "operation": "x".repeat(MAX_HOST_CONTROL_OPERATION_BYTES + 1),
+        "operation": "x".repeat(MAX_HOST_CONTROL_ERROR_DETAIL_BYTES + 1),
     });
     let error = parse_host_control_request(
         &serde_json::to_vec(&oversized_operation).expect("encode oversized operation"),
     )
     .expect_err("unknown oversized operation must fail closed");
-    assert!(error.contains("<invalid>"));
+    assert!(error.contains("Data"));
     assert!(error.len() < 512);
 }
 
@@ -1012,5 +1103,77 @@ fn ordinary_source_sighting_uses_the_observation_protocol_without_admission() {
     assert_eq!(decoded.operation(), "execution_observe");
     frame["routing_token"] = "removed-token".into();
     let error = parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).unwrap_err();
-    assert!(error.contains("routing_token"), "{error}");
+    assert!(error.contains("Data"), "{error}");
+}
+
+#[test]
+fn invalid_host_requests_do_not_echo_source_objects_or_caller_values() {
+    let source = serde_json::json!({
+        "commit":"a".repeat(40), "tree":"b".repeat(40), "changes":[], "submodules":[]
+    });
+    let encoded = serde_json::to_string(&source).unwrap();
+    let mut valid = execution_observe_frame();
+    valid["occurrence"] = serde_json::json!({
+        "kind":"source_sighting", "source_basis":{"workspace_id":"workspace-A", "source_id":source},
+        "observed_at":"2026-10-02T03:04:00Z"
+    });
+    assert!(parse_frame(Ok(serde_json::to_vec(&valid).unwrap())).is_ok());
+    for pointer in [
+        "/occurrence/source_basis/source_id",
+        "/occurrence/kind",
+        "/operation",
+    ] {
+        let mut invalid = valid.clone();
+        *invalid.pointer_mut(pointer).unwrap() = encoded.clone().into();
+        let HostControlResponse::Error { error } =
+            parse_frame(Ok(serde_json::to_vec(&invalid).unwrap())).unwrap_err()
+        else {
+            panic!("invalid request must return an error");
+        };
+        assert_eq!(error.code, "invalid_request");
+        assert!(error.message.contains("Data"));
+        assert!(error.message.contains("line"));
+        assert!(!error.message.contains(&encoded));
+        assert!(!error.message.contains(&"a".repeat(40)));
+        assert!(error.message.len() <= MAX_HOST_CONTROL_ERROR_DETAIL_BYTES);
+    }
+}
+
+#[test]
+fn invalid_host_requests_keep_only_bounded_field_identifiers() {
+    let valid = serde_json::json!({"operation":"work_session_read"});
+    for field in ["run_cut", "x"] {
+        let mut frame = valid.clone();
+        frame[field] = serde_json::json!("private-value");
+        let error = parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).unwrap_err();
+        assert!(
+            error.contains(&format!("unknown field `{field}`")),
+            "{error}"
+        );
+        assert!(!error.contains("private-value"));
+    }
+    for field in [
+        "x".repeat(65),
+        "unsafe\nfield".into(),
+        "{\"source_id\":{}}".into(),
+    ] {
+        let mut frame = valid.clone();
+        frame[field.as_str()] = serde_json::json!("private-value");
+        let error = parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).unwrap_err();
+        assert!(error.contains("Data"), "{error}");
+        assert!(!error.contains(&field));
+        assert!(!error.contains("private-value"));
+        assert!(!error.contains("unknown field"));
+    }
+    let missing =
+        parse_host_control_request(br#"{"operation":"acceptance_binding_read"}"#).unwrap_err();
+    assert!(missing.contains("missing field `work_id`"), "{missing}");
+    let duplicate = parse_host_control_request(
+        br#"{"operation":"acceptance_binding_read","work_id":"00000000-0000-0000-0000-000000000001","work_id":"00000000-0000-0000-0000-000000000001"}"#,
+    )
+    .unwrap_err();
+    assert!(
+        duplicate.contains("duplicate field `work_id`"),
+        "{duplicate}"
+    );
 }

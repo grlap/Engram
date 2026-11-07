@@ -164,13 +164,16 @@ fn the_largest_accepted_record_fits_the_observation_window() {
                 "{index:02}{}",
                 "c".repeat(MAX_OBSERVATION_LABEL_BYTES - 2)
             ));
-            check.source_basis = Some(ExecutionSourceBasis {
-                git_tree: None,
-                workspace_id: workspace.clone(),
-                source_revision: "r".repeat(MAX_OBSERVED_SOURCE_BYTES),
-                source_root_generation: None,
-                source_root_state: None,
-            });
+            check.source_basis = Some(
+                ExecutionSourceBasis {
+                    git_tree: None,
+                    workspace_id: workspace.clone(),
+                    source_revision: "r".repeat(MAX_OBSERVED_SOURCE_BYTES),
+                    source_root_generation: None,
+                    source_root_state: None,
+                }
+                .into(),
+            );
             check.host_evidence_ref = Some("e".repeat(MAX_OBSERVED_EVIDENCE_REF_BYTES));
             check
         })
@@ -182,13 +185,14 @@ fn the_largest_accepted_record_fits_the_observation_window() {
         source_change: Some(ObservedSourceChange::AssumedMissingBaseline {
             workspace_id: workspace.clone(),
             sighting: MeasuredSighting {
-                source_basis: ExecutionSourceBasis {
+                source_basis: (ExecutionSourceBasis {
                     git_tree: None,
                     workspace_id: workspace,
                     source_revision: "s".repeat(MAX_OBSERVED_SOURCE_BYTES),
                     source_root_generation: None,
                     source_root_state: None,
-                },
+                })
+                .into(),
                 observed_at: at(5),
             },
         }),
@@ -247,13 +251,16 @@ fn escape_heavy_records_fit_the_observation_window() {
                     "{index:02}{}",
                     "\u{1}".repeat(MAX_OBSERVATION_LABEL_BYTES - 2)
                 ));
-                check.source_basis = Some(ExecutionSourceBasis {
-                    git_tree: None,
-                    workspace_id: workspace.clone(),
-                    source_revision: "\"".repeat(MAX_OBSERVED_SOURCE_BYTES),
-                    source_root_generation: None,
-                    source_root_state: None,
-                });
+                check.source_basis = Some(
+                    ExecutionSourceBasis {
+                        git_tree: None,
+                        workspace_id: workspace.clone(),
+                        source_revision: "\"".repeat(MAX_OBSERVED_SOURCE_BYTES),
+                        source_root_generation: None,
+                        source_root_state: None,
+                    }
+                    .into(),
+                );
                 check.host_evidence_ref = Some(format!(
                     "r{}",
                     "\u{1}".repeat(MAX_OBSERVED_EVIDENCE_REF_BYTES - 1)
@@ -273,7 +280,7 @@ fn escape_heavy_records_fit_the_observation_window() {
             source_change: Some(ObservedSourceChange::AssumedMissingBaseline {
                 workspace_id: workspace.clone(),
                 sighting: MeasuredSighting {
-                    source_basis: ExecutionSourceBasis {
+                    source_basis: (ExecutionSourceBasis {
                         git_tree: None,
                         workspace_id: workspace.clone(),
                         // Host source text refuses control characters, so
@@ -281,7 +288,8 @@ fn escape_heavy_records_fit_the_observation_window() {
                         source_revision: "\"".repeat(MAX_OBSERVED_SOURCE_BYTES),
                         source_root_generation: None,
                         source_root_state: None,
-                    },
+                    })
+                    .into(),
                     observed_at: at(5),
                 },
             }),

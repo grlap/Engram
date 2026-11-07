@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub(crate) const MAX_HOST_CONTROL_FRAME_BYTES: usize = 256 * 1_024;
-const MAX_HOST_CONTROL_OPERATION_BYTES: usize = 64;
+#[cfg(test)]
 const MAX_HOST_CONTROL_ERROR_DETAIL_BYTES: usize = 384;
 
 /// One host-private control operation. The runtime session and asserted actor
@@ -973,18 +973,24 @@ fn parse_frame(frame: Result<Vec<u8>, ()>) -> Result<HostControlRequest, HostCon
         },
     };
     match frame {
-        Err(()) => Err(refuse(format!(
-            "host control frame exceeds {MAX_HOST_CONTROL_FRAME_BYTES} bytes"
-        ))),
+        Err(()) => Err(refuse(
+            "host control frame exceeds the maximum control frame size".into(),
+        )),
         Ok(frame) => {
-            // An observation request has its own, smaller bound, checked
-            // before the request is decoded into its typed shape.
-            if frame.len() > crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES
-                && frame_operation(&frame).as_deref() == Some("execution_observe")
-            {
+            let operation = frame_operation(&frame);
+            let max_bytes = if operation.as_deref() == Some("execution_observe") {
+                crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES
+            } else {
+                MAX_HOST_CONTROL_FRAME_BYTES
+            };
+            if frame.len() > max_bytes {
+                let label = if operation.as_deref() == Some("execution_observe") {
+                    "execution_observe"
+                } else {
+                    "ordinary operation"
+                };
                 return Err(refuse(format!(
-                    "host control request \"execution_observe\" exceeds {} bytes",
-                    crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES
+                    "host control request {label} exceeds {max_bytes} bytes"
                 )));
             }
             parse_host_control_request(&frame).map_err(refuse)
@@ -1040,6 +1046,10 @@ fn read_control_frame_with_policy(
     reader: &mut impl BufRead,
     policy: OversizedFramePolicy,
 ) -> std::io::Result<Option<Result<Vec<u8>, ()>>> {
+    let max_bytes = match policy {
+        OversizedFramePolicy::Drain => crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES,
+        OversizedFramePolicy::Stop => MAX_HOST_CONTROL_FRAME_BYTES,
+    };
     let mut frame = Vec::new();
     loop {
         let available = reader.fill_buf()?;
@@ -1055,14 +1065,12 @@ fn read_control_frame_with_policy(
         let available = match policy {
             OversizedFramePolicy::Drain => available,
             OversizedFramePolicy::Stop => {
-                &available[..available
-                    .len()
-                    .min(MAX_HOST_CONTROL_FRAME_BYTES + 1 - frame.len())]
+                &available[..available.len().min(max_bytes + 1 - frame.len())]
             }
         };
         let newline = available.iter().position(|byte| *byte == b'\n');
         let consumed = newline.map_or(available.len(), |position| position + 1);
-        let oversized = frame.len().saturating_add(consumed) > MAX_HOST_CONTROL_FRAME_BYTES;
+        let oversized = frame.len().saturating_add(consumed) > max_bytes;
         if !oversized {
             frame.extend_from_slice(&available[..consumed]);
         }
@@ -1081,39 +1089,41 @@ fn read_control_frame_with_policy(
 
 fn parse_host_control_request(frame: &[u8]) -> Result<HostControlRequest, String> {
     serde_json::from_slice(frame).map_err(|error| {
-        let operation = host_control_operation_hint(frame);
-        let detail = bounded_host_control_error_detail(&error.to_string());
-        format!("host control request {operation:?} is invalid: {detail}")
+        // Serde's Display can include caller values. Keep structural details
+        // and bounded field identifiers, never the rest of that message.
+        let mut diagnostic = format!(
+            "host control request is invalid: {:?} at line {} column {}",
+            error.classify(),
+            error.line(),
+            error.column()
+        );
+        if let Some(field) = host_control_error_field(&error.to_string()) {
+            diagnostic.push_str("; ");
+            diagnostic.push_str(&field);
+        }
+        diagnostic
     })
 }
 
-fn host_control_operation_hint(frame: &[u8]) -> String {
-    let Ok(value) = serde_json::from_slice::<Value>(frame) else {
-        return "<invalid-json>".into();
-    };
-    let Some(operation) = value.get("operation").and_then(Value::as_str) else {
-        return "<missing>".into();
-    };
-    if operation.is_empty()
-        || operation.len() > MAX_HOST_CONTROL_OPERATION_BYTES
-        || !operation
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-    {
-        return "<invalid>".into();
+fn host_control_error_field(detail: &str) -> Option<String> {
+    for kind in ["unknown", "missing", "duplicate"] {
+        let prefix = format!("{kind} field `");
+        let Some(rest) = detail.strip_prefix(&prefix) else {
+            continue;
+        };
+        let (field, _) = rest.split_once('`')?;
+        if field.is_empty()
+            || field.len() > 64
+            || !field.starts_with(|ch: char| ch.is_ascii_alphabetic() || ch == '_')
+            || !field
+                .bytes()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == b'_')
+        {
+            return None;
+        }
+        return Some(format!("{kind} field `{field}`"));
     }
-    operation.to_owned()
-}
-
-fn bounded_host_control_error_detail(detail: &str) -> String {
-    if detail.len() <= MAX_HOST_CONTROL_ERROR_DETAIL_BYTES {
-        return detail.to_owned();
-    }
-    let mut end = MAX_HOST_CONTROL_ERROR_DETAIL_BYTES.saturating_sub('…'.len_utf8());
-    while !detail.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}…", &detail[..end])
+    None
 }
 
 fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {

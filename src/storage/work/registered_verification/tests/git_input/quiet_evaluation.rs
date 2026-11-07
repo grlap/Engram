@@ -71,13 +71,14 @@ fn source_sighting_delivered(
                     through: at(second),
                 },
                 occurrence: ObservedOccurrence::SourceSighting {
-                    source_basis: ExecutionSourceBasis {
+                    source_basis: (ExecutionSourceBasis {
                         workspace_id: f.request.registration.root.workspace_id.clone(),
                         source_revision: revision.into(),
                         source_root_generation: Some(f.request.registration.root.generation),
                         source_root_state: Some(SourceRootState::Named),
                         git_tree: None,
-                    },
+                    })
+                    .into(),
                     observed_at: at(second),
                 },
                 causality: ObservationCausality::Unknown {},

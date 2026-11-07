@@ -174,7 +174,7 @@ fn new_evidence_between(
         let revision = observation
             .source_basis
             .as_ref()
-            .map(|basis| basis.source_revision.clone());
+            .and_then(|basis| basis.legacy_revision().map(str::to_owned));
         if observation.source_changed
             && (!observation.admitted || revision.is_none() || revision != last)
         {

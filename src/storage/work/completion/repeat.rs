@@ -7,7 +7,9 @@ use super::super::feeds::{
     latest_source_mutation_in_on, latest_source_mutation_on, latest_unlocated_source_change_on,
 };
 use super::named_root::named_root_context_on;
-use crate::domain::{ExecutionSourceBasis, WorkClaimId, WorkRunId};
+#[cfg(test)]
+use crate::domain::ExecutionSourceBasis;
+use crate::domain::{VerificationSourceBasis, WorkClaimId, WorkRunId};
 use crate::storage::StoreError;
 
 /// Whether a reported source change leaves the source where the run already
@@ -43,7 +45,15 @@ pub(in crate::storage) fn source_revision_repeats_on(
     let Some(basis) = basis else {
         return Ok(false);
     };
-    Ok(newest_change_repeated_on(connection, run_id, claim_id, basis, i64::MAX, false)?.is_some())
+    Ok(newest_change_repeated_on(
+        connection,
+        run_id,
+        claim_id,
+        &basis.clone().into(),
+        i64::MAX,
+        false,
+    )?
+    .is_some())
 }
 
 /// The newest recorded source change that a report of `basis` would repeat
@@ -58,7 +68,7 @@ pub(in crate::storage) fn newest_change_repeated_on(
     connection: &Connection,
     run_id: WorkRunId,
     claim_id: WorkClaimId,
-    basis: &ExecutionSourceBasis,
+    basis: &VerificationSourceBasis,
     through: i64,
     workspace_scoped: bool,
 ) -> Result<Option<(i64, crate::domain::SourceObservation)>, StoreError> {
@@ -87,7 +97,7 @@ pub(in crate::storage) fn newest_change_repeated_on(
     if newest_change
         .source_basis
         .as_ref()
-        .is_none_or(|recorded| recorded.source_revision != basis.source_revision)
+        .is_none_or(|recorded| !recorded.identity.same_source(&basis.identity))
     {
         return Ok(None);
     }
@@ -103,10 +113,20 @@ pub(in crate::storage) fn newest_change_repeated_on(
     }
     // Every host record that carries a revision counts: admitted and
     // accounted unadmitted source records and environment evidence alike.
-    let (revision_sql, workspace_sql) = (
+    let (revision_sql, workspace_sql, source_id_sql) = (
         super::super::feeds::source_basis_sql("source_revision"),
         super::super::feeds::source_basis_sql("workspace_id"),
+        super::super::feeds::source_basis_sql("source_id"),
     );
+    let source_json = basis
+        .source_id()
+        .map(crate::canonical::canonical_bytes)
+        .transpose()?;
+    let source_json = source_json
+        .as_ref()
+        .map(|bytes| std::str::from_utf8(bytes))
+        .transpose()
+        .map_err(|error| StoreError::InvalidWorkProjection(error.to_string()))?;
     let moved_since: bool = connection.query_row(
         &format!(
             "SELECT EXISTS (
@@ -116,8 +136,8 @@ pub(in crate::storage) fn newest_change_repeated_on(
                    AND entry.position > ?2 AND entry.position <= ?5
                    AND (entry.object_kind = 'environment_evidence'
                         OR {})
-                   AND {revision_sql} IS NOT NULL
-                   AND {revision_sql} != ?3
+                   AND ({revision_sql} IS NOT NULL OR {source_id_sql} IS NOT NULL)
+                   AND ({revision_sql} IS NOT ?3 OR {source_id_sql} IS NOT ?6)
                    AND (?4 IS NULL OR {workspace_sql} = ?4)
              )",
             super::super::feeds::SOURCE_RECORD_SQL
@@ -125,9 +145,10 @@ pub(in crate::storage) fn newest_change_repeated_on(
         params![
             run_id.0.to_string(),
             change_position,
-            basis.source_revision,
+            basis.legacy_revision(),
             (root.is_some() || workspace_scoped).then_some(basis.workspace_id.as_str()),
-            through
+            through,
+            source_json
         ],
         |row| row.get(0),
     )?;

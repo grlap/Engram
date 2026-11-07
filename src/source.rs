@@ -44,6 +44,37 @@ pub struct SourceId {
     pub changes: Vec<Change>,
 }
 
+/// Bounded presentation of a source object. Equality always uses `SourceId`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SourceIdSummary {
+    pub commit: String,
+    pub tree: String,
+    pub changes: usize,
+    pub submodules: usize,
+}
+
+impl SourceIdSummary {
+    #[must_use]
+    pub fn description(&self) -> String {
+        format!(
+            "source_id commit {}; tree {}; {} changes; {} submodules",
+            self.commit, self.tree, self.changes, self.submodules
+        )
+    }
+}
+
+impl SourceId {
+    #[must_use]
+    pub fn summary(&self) -> SourceIdSummary {
+        SourceIdSummary {
+            commit: self.commit.clone(),
+            tree: self.tree.clone(),
+            changes: self.changes.len(),
+            submodules: self.submodules.len(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Submodule {

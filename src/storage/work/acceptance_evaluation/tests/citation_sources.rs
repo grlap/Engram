@@ -1659,17 +1659,21 @@ pub(super) fn unadmitted_change(
                 workspace_id: workspace.clone(),
                 baseline: MeasuredBaseline {
                     workspace_id: workspace.clone(),
-                    source_revision: "revision-before".into(),
+                    identity: crate::domain::VerificationSourceIdentity::Legacy {
+                        source_revision: "revision-before".into(),
+                        git_tree: None,
+                    },
                     observed_at: at(second - 2),
                 },
                 sighting: MeasuredSighting {
-                    source_basis: ExecutionSourceBasis {
+                    source_basis: (ExecutionSourceBasis {
                         git_tree: None,
                         workspace_id: workspace,
                         source_revision: revision.into(),
                         source_root_generation: None,
                         source_root_state: None,
-                    },
+                    })
+                    .into(),
                     observed_at: at(second - 1),
                 },
             },

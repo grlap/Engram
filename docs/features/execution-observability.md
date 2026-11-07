@@ -399,8 +399,8 @@ no verification credit.
 
 A `source_change` is tagged by `detection`, and every kind names its
 `workspace_id`: `content_comparison` adds a `baseline` (`workspace_id`,
-`source_revision`, `observed_at`) and a `sighting` (`source_basis`,
-`observed_at`) of that one workspace at two different revisions;
+`source_id`, `observed_at`) and a `sighting` (`source_basis`,
+`observed_at`) of that one workspace at two different complete identities;
 `assumed_missing_baseline` adds a `sighting` only; and `watcher_only` adds
 `observed_at` and no revision.
 `source_change: null` means only that no change is reported, never that the
@@ -413,11 +413,37 @@ failed result needs `finished_at`; an unfinished check is `indeterminate`.
 Every time lies inside the observed window, and the window ends no later than
 the record time.
 
-A `source_basis` is `{ workspace_id, source_revision,
-source_root_generation?, source_root_state? }`. `source_revision` is a
-host-computed fingerprint of the complete relevant content state, including
-committed and dirty content. `workspace_id` is the host-recorded workspace
-identity, compared byte for byte; Engram never derives it from path text.
+A shared `source_basis` is `{ workspace_id, source_id,
+source_root_generation?, source_root_state? }`, using the same complete
+`source_id` that the source owner and registered verification use. The
+baseline carries that object too. Comparison uses the whole object, including
+dirty changes and submodules; it has no extra cleanliness predicate. A
+baseline and sighting cannot mix shared and legacy representations.
+`workspace_id` is the host-recorded workspace identity, compared byte for
+byte; Engram never derives it from path text.
+
+An observed check's optional `source_basis` carries only
+`{ workspace_id, source_root_generation?, source_root_state? }`. It carries
+no `source_id`: accounting reads the source change's baseline and sighting,
+and an observed check creates no verification credit. Historical per-check
+revision/tree fields remain readable and replayable during the transition.
+
+During the producer transition, the consumer also accepts the historical
+`source_revision` basis and baseline, and `watcher_only`. Their stored bytes,
+accounting and exact-retry receipts remain unchanged. Consumer support lands
+first; producers then switch and restart on every observation-writing host;
+only after that recorded writer census does a separate change refuse new
+legacy submissions unconditionally. Historical records keep being read as
+stored after the cutoff. Acceptance, naming and sealing string protocols
+have separate transitions.
+
+A genuinely unavailable capture keeps the existing omitted optional check
+basis or null `source_change`; it never supplies a fabricated identity or
+equality. A source-only occurrence needs a measured object. Observed checks
+remain uncredited, and observation availability does not change the separate
+native verification source-equality condition. Agent observation windows
+show a bounded `source_id_summary` (commit, tree and change/submodule counts);
+the canonical record retains the complete object.
 
 #### Source text
 
@@ -441,8 +467,14 @@ closing sighting that states a root generation must agree with the root
 basis: `named` at generation g needs the claim bound at g at the cut, and
 `ended` at g needs no root there with g's end as the claim's newest root
 event; a check may name any generation the claim had recorded by the cut.
-The request is bounded to 64 KiB before it is decoded and its receipt to
-16 KiB before it commits. Nothing is truncated. A frame over 64 KiB,
+Each shared source object can occupy the source owner's existing 1 MiB
+serialized ceiling. This operation's request bound is
+`2 * 1 MiB + 64 KiB`: a baseline and sighting, with the existing allowance
+for the envelope and up to sixteen checks' metadata. A quiet sighting carries
+one source object. Other host
+operations keep their 256 KiB frame limit, and the receipt remains bounded to
+16 KiB before commit. The 512-byte text limit applies to workspace and legacy
+revision text, not to a source object. Nothing is truncated. An oversized frame,
 malformed JSON, an unknown field at any depth (including inside
 `root_basis.state` and `claimed_actor`) or an unknown variant is refused as
 `invalid_request`. A decoded request that breaks a rule above, an asserted

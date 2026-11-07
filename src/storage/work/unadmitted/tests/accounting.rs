@@ -205,17 +205,21 @@ fn a_change_outside_the_named_root_is_classified_against_the_root() {
         workspace_id: "workspace-B".into(),
         baseline: MeasuredBaseline {
             workspace_id: "workspace-B".into(),
-            source_revision: "rev-a".into(),
+            identity: crate::domain::VerificationSourceIdentity::Legacy {
+                source_revision: "rev-a".into(),
+                git_tree: None,
+            },
             observed_at: at(4),
         },
         sighting: MeasuredSighting {
-            source_basis: ExecutionSourceBasis {
+            source_basis: (ExecutionSourceBasis {
                 git_tree: None,
                 workspace_id: "workspace-B".into(),
                 source_revision: "rev-b".into(),
                 source_root_generation: None,
                 source_root_state: None,
-            },
+            })
+            .into(),
             observed_at: at(5),
         },
     };
@@ -512,7 +516,7 @@ fn no_reported_change_accounts_nothing_and_nested_checks_are_no_sightings() {
     };
     let mut turn = accounted(&fixture, "quiet-turn", "rev-a", "rev-b");
     let mut check = passed_check("cargo-test");
-    check.source_basis = Some(nested.clone());
+    check.source_basis = Some(nested.clone().into());
     turn.occurrence = ObservedOccurrence::UnadmittedTurn {
         outcome: None,
         host_turn_ref: "turn-1".into(),

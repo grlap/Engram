@@ -1738,11 +1738,14 @@ fn unadmitted_change_through_host(
                 workspace_id: ROOT.into(),
                 baseline: MeasuredBaseline {
                     workspace_id: ROOT.into(),
-                    source_revision: from.into(),
+                    identity: crate::domain::VerificationSourceIdentity::Legacy {
+                        source_revision: from.into(),
+                        git_tree: None,
+                    },
                     observed_at: at(second - 2),
                 },
                 sighting: MeasuredSighting {
-                    source_basis: basis(to, held.generation),
+                    source_basis: (basis(to, held.generation)).into(),
                     observed_at: at(second - 1),
                 },
             },

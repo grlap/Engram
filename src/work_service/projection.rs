@@ -1231,7 +1231,8 @@ pub(super) fn disclosed_work_obligation_page(
             item.displaced_change = Some(super::DisplacedSourceChange {
                 observation_id: compact_text(&change.label),
                 workspace_id: compact_text(&basis.workspace_id),
-                source_revision: compact_text(&basis.source_revision),
+                source_revision: basis.legacy_revision().map(compact_text),
+                source_id_summary: basis.source_id().map(crate::source::SourceId::summary),
             });
             continue;
         }
@@ -1240,9 +1241,14 @@ pub(super) fn disclosed_work_obligation_page(
         }
         item.untested_change = Some(super::UntestedSourceChange {
             observation_id: compact_text(&change.label),
+            source_id_summary: change
+                .source_basis
+                .as_ref()
+                .and_then(|basis| basis.source_id())
+                .map(crate::source::SourceId::summary),
             source_revision: change
                 .source_basis
-                .map(|basis| compact_text(&basis.source_revision)),
+                .and_then(|basis| basis.legacy_revision().map(compact_text)),
             observed_at: change.observed_at,
             reported_source_change: change.reported_source_change,
         });

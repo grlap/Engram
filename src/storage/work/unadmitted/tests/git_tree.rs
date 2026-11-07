@@ -17,7 +17,12 @@ fn git_tree_execution_observe_preserves_the_actual_sighting_without_minting_cred
             else {
                 panic!("content comparison fixture");
             };
-            sighting.source_basis.git_tree = Some(tree.clone());
+            let crate::domain::VerificationSourceIdentity::Legacy { git_tree, .. } =
+                &mut sighting.source_basis.identity
+            else {
+                panic!("legacy fixture");
+            };
+            *git_tree = Some(tree.clone());
             let first = observe(&mut fixture, input.clone(), 7).unwrap();
             assert_eq!(
                 stored(&fixture.store, &first.observation)
@@ -34,7 +39,10 @@ fn git_tree_execution_observe_preserves_the_actual_sighting_without_minting_cred
             )
             .unwrap();
             if eligible {
-                assert_eq!(sighting.unwrap().1.git_tree, Some(tree));
+                assert_eq!(
+                    sighting.unwrap().1.legacy_basis().unwrap().git_tree,
+                    Some(tree)
+                );
             } else {
                 assert!(
                     sighting.is_none(),

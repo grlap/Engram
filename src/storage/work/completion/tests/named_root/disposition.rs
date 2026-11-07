@@ -59,7 +59,8 @@ fn the_obligation_page_names_a_displaced_change() {
         vec![crate::DisplacedSourceChange {
             observation_id: "write-foreign-before-name".into(),
             workspace_id: "workspace-A".into(),
-            source_revision: "A3".into(),
+            source_revision: Some("A3".into()),
+            source_id_summary: None,
         }]
     );
     assert_eq!(page.untested_total, 0, "a displaced change is not untested");

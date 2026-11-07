@@ -1666,7 +1666,7 @@ fn basis_moved_after_live(
         revision: observation
             .source_basis
             .as_ref()
-            .map(|basis| basis.source_revision.clone()),
+            .and_then(|basis| basis.legacy_revision().map(str::to_owned)),
         root_generation: observation
             .source_basis
             .as_ref()
@@ -1746,8 +1746,8 @@ fn basis_moved_after_live(
                     if let (Some(judged_at), Some(sighting)) =
                         (judged.as_deref(), observation.source_basis.as_ref())
                     {
-                        quiet_move =
-                            (sighting.source_revision != judged_at).then(|| name(at, &observation));
+                        quiet_move = (sighting.legacy_revision() != Some(judged_at))
+                            .then(|| name(at, &observation));
                     }
                     continue;
                 }

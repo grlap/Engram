@@ -7,9 +7,9 @@
 use chrono::{DateTime, Utc};
 
 use super::{
-    ControlWorkBinding, ExecutionObservation, ExecutionSourceBasis, ObservationAccounting,
-    ObservationPolicyBasis, ObservedSourceChange, ProjectId, SessionId, SourceChangeDetection,
-    UnadmittedExecutionObservation,
+    ControlWorkBinding, ExecutionObservation, ObservationAccounting, ObservationPolicyBasis,
+    ObservedSourceChange, ProjectId, SessionId, SourceChangeDetection,
+    UnadmittedExecutionObservation, VerificationSourceBasis,
 };
 use crate::ObjectId;
 
@@ -32,7 +32,7 @@ pub struct SourceObservation {
     pub source_changed: bool,
     pub reported_source_change: Option<SourceChangeDetection>,
     /// The measured source; `None` when no closing revision was taken.
-    pub source_basis: Option<ExecutionSourceBasis>,
+    pub source_basis: Option<VerificationSourceBasis>,
     pub observed_at: Option<DateTime<Utc>>,
     pub recorded_at: DateTime<Utc>,
     /// The rule set it opened obligations under.
@@ -52,7 +52,7 @@ impl SourceObservation {
             label: observation.observation_id.clone(),
             source_changed: observation.source_changed,
             reported_source_change: observation.reported_source_change,
-            source_basis: observation.source_basis.clone(),
+            source_basis: observation.source_basis.clone().map(Into::into),
             observed_at: observation.observed_at,
             recorded_at: observation.recorded_at,
             obligation_rule_set: observation.obligation_rule_set.clone(),

@@ -48,13 +48,14 @@ fn fixture() -> Fixture {
             through: at(5),
         },
         occurrence: ObservedOccurrence::SourceSighting {
-            source_basis: ExecutionSourceBasis {
+            source_basis: (ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "revision-a".into(),
                 source_root_generation: None,
                 source_root_state: None,
                 git_tree: None,
-            },
+            })
+            .into(),
             observed_at: at(5),
         },
         causality: ObservationCausality::Unknown {},
@@ -105,7 +106,10 @@ fn measured_quiet_source_is_freshness_evidence_without_mutation_or_check_credit(
     let sighting = view(&f, &receipt.observation).unwrap();
     assert!(!sighting.source_changed);
     assert_eq!(sighting.reported_source_change, None);
-    assert_eq!(sighting.source_basis.unwrap().source_revision, "revision-a");
+    assert_eq!(
+        sighting.source_basis.unwrap().legacy_revision(),
+        Some("revision-a")
+    );
     let newest = super::super::feeds::newest_measured_sighting_on(
         &f.store.connection,
         f.input.binding.run_id,
@@ -113,7 +117,7 @@ fn measured_quiet_source_is_freshness_evidence_without_mutation_or_check_credit(
         i64::MAX,
     )
     .unwrap();
-    assert_eq!(newest.unwrap().1.source_revision, "revision-a");
+    assert_eq!(newest.unwrap().1.legacy_revision(), Some("revision-a"));
     assert!(
         super::super::feeds::latest_source_mutation_on(
             &f.store.connection,

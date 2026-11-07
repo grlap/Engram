@@ -1221,11 +1221,14 @@ fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
                 workspace_id: "workspace-B".into(),
                 baseline: MeasuredBaseline {
                     workspace_id: "workspace-B".into(),
-                    source_revision: "revision-before".into(),
+                    identity: crate::domain::VerificationSourceIdentity::Legacy {
+                        source_revision: "revision-before".into(),
+                        git_tree: None,
+                    },
                     observed_at: at(38),
                 },
                 sighting: MeasuredSighting {
-                    source_basis: workspace("workspace-B", "R3", Some(9)),
+                    source_basis: (workspace("workspace-B", "R3", Some(9))).into(),
                     observed_at: at(39),
                 },
             },

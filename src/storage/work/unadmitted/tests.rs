@@ -23,6 +23,7 @@ mod matching;
 mod readers;
 mod refusals;
 mod request_budget;
+mod shared_source;
 mod work_session;
 
 #[test]
@@ -176,17 +177,21 @@ pub(super) fn content_change(from: &str, to: &str) -> ObservedSourceChange {
         workspace_id: "workspace-A".into(),
         baseline: MeasuredBaseline {
             workspace_id: "workspace-A".into(),
-            source_revision: from.into(),
+            identity: crate::domain::VerificationSourceIdentity::Legacy {
+                source_revision: from.into(),
+                git_tree: None,
+            },
             observed_at: at(4),
         },
         sighting: MeasuredSighting {
-            source_basis: ExecutionSourceBasis {
+            source_basis: (ExecutionSourceBasis {
                 git_tree: None,
                 workspace_id: "workspace-A".into(),
                 source_revision: to.into(),
                 source_root_generation: None,
                 source_root_state: None,
-            },
+            })
+            .into(),
             observed_at: at(5),
         },
     }
@@ -514,13 +519,16 @@ fn an_observation_is_never_citable_evidence() {
     let mut fixture = fixture();
     let mut input = inter_turn_change(&fixture, "uncitable");
     let mut check = passed_check("cargo-test");
-    check.source_basis = Some(ExecutionSourceBasis {
-        git_tree: None,
-        workspace_id: "workspace-A".into(),
-        source_revision: "rev-b".into(),
-        source_root_generation: None,
-        source_root_state: None,
-    });
+    check.source_basis = Some(
+        ExecutionSourceBasis {
+            git_tree: None,
+            workspace_id: "workspace-A".into(),
+            source_revision: "rev-b".into(),
+            source_root_generation: None,
+            source_root_state: None,
+        }
+        .into(),
+    );
     input.occurrence = ObservedOccurrence::UnadmittedTurn {
         outcome: None,
         host_turn_ref: "turn-3".into(),

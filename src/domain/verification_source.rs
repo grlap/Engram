@@ -18,6 +18,51 @@ pub enum VerificationSourceIdentity {
     },
 }
 
+impl VerificationSourceIdentity {
+    /// Bounded display text, never a substitute for the retained identity.
+    #[must_use]
+    pub fn description(&self) -> String {
+        match self {
+            Self::Legacy {
+                source_revision, ..
+            } => format!("source revision {source_revision}"),
+            Self::SourceId { source_id } => source_id.summary().description(),
+        }
+    }
+
+    /// Historical observations compared revision strings; shared observations
+    /// compare the complete source object, without a tree or cleanliness proxy.
+    #[must_use]
+    pub fn same_source(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Legacy {
+                    source_revision: left,
+                    ..
+                },
+                Self::Legacy {
+                    source_revision: right,
+                    ..
+                },
+            ) => left == right,
+            (Self::SourceId { source_id: left }, Self::SourceId { source_id: right }) => {
+                left == right
+            }
+            _ => false,
+        }
+    }
+
+    #[must_use]
+    pub fn legacy_revision(&self) -> Option<&str> {
+        match self {
+            Self::Legacy {
+                source_revision, ..
+            } => Some(source_revision),
+            Self::SourceId { .. } => None,
+        }
+    }
+}
+
 /// The legacy alternative serializes exactly as it did before shared identities.
 /// A shared identity has no revision string, tree surrogate or cleanliness bit.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -51,11 +96,15 @@ struct Wire {
     source_root_state: Option<SourceRootState>,
 }
 
-fn present_revision<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+pub(super) fn present_revision<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<String>, D::Error> {
     String::deserialize(d).map(Some)
 }
 
-fn present_source_id<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<SourceId>, D::Error> {
+pub(super) fn present_source_id<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<SourceId>, D::Error> {
     SourceId::deserialize(d).map(Some)
 }
 

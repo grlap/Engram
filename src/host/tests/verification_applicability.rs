@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn git_tree_observation_ingestion_refuse_malformed_values_by_name() {
+fn git_tree_observation_ingestion_refuses_malformed_values_without_echoing_them() {
     let observe = execution_observe_frame();
     for (frame, pointer) in [(observe, "/occurrence/source_change/sighting/source_basis")] {
         assert!(parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).is_ok());
@@ -22,7 +22,7 @@ fn git_tree_observation_ingestion_refuse_malformed_values_by_name() {
                 panic!("invalid tree admitted");
             };
             assert_eq!(error.code, "invalid_request");
-            assert!(error.message.contains("git_tree"), "{}", error.message);
+            assert!(error.message.contains("Data"), "{}", error.message);
             assert!(!error.message.contains("private-invalid-tree"));
         }
     }

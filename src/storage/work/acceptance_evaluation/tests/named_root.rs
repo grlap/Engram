@@ -349,7 +349,7 @@ fn observe_basis(
     )?;
     let policy = SqliteStore::load_active_control_policy(&store.connection)?;
     let sighting = MeasuredSighting {
-        source_basis: basis,
+        source_basis: (basis).into(),
         observed_at: at(second + 1),
     };
     let occurrence = if source_changed {

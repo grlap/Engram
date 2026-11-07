@@ -15,8 +15,9 @@ use super::{
 use crate::ObjectId;
 use crate::canonical::CanonicalObject;
 use crate::domain::{
-    ControlWorkBinding, ExecutionSourceBasis, FeedId, FeedPosition, ProjectId, SourceRootState,
-    UnadmittedExecutionObservation, WorkClaimState, WorkEvent, WorkLifecycle, WorkRunState,
+    ControlWorkBinding, FeedId, FeedPosition, ProjectId, SourceRootState,
+    UnadmittedExecutionObservation, VerificationSourceBasis, WorkClaimState, WorkEvent,
+    WorkLifecycle, WorkRunState,
 };
 use crate::storage::{SqliteStore, StoreError};
 
@@ -190,7 +191,7 @@ pub(in crate::storage) fn check_sighting_matches_root_basis_on(
     connection: &Connection,
     binding: &ControlWorkBinding,
     root_basis: &crate::domain::ObservationRootBasis,
-    basis: &ExecutionSourceBasis,
+    basis: &VerificationSourceBasis,
 ) -> Result<(), StoreError> {
     use crate::domain::{NamedRootBindingKind, NamedRootState};
     let (Some(generation), Some(state)) = (basis.source_root_generation, basis.source_root_state)
@@ -238,7 +239,7 @@ pub(in crate::storage) fn check_sighting_matches_root_basis_on(
 pub(in crate::storage) fn check_source_root_at_cut_on(
     connection: &Connection,
     binding: &ControlWorkBinding,
-    basis: &ExecutionSourceBasis,
+    basis: &crate::domain::ObservedCheckSourceBasis,
     capture_run_cut: i64,
     label: &str,
 ) -> Result<(), StoreError> {

@@ -23,8 +23,9 @@ use crate::control::{
 };
 use crate::domain::{
     BuiltinObligationRuleRef, ExecutionSourceBasis, FeedPosition, SourceObservation,
-    StaleSourceDecider, StaleVerificationSource, VerificationEvidence, VerificationKind, WorkId,
-    WorkObligation, WorkObligationId, WorkObligationResolution, WorkRunId,
+    StaleSourceDecider, StaleVerificationSource, VerificationEvidence, VerificationKind,
+    VerificationSourceBasis, WorkId, WorkObligation, WorkObligationId, WorkObligationResolution,
+    WorkRunId,
 };
 
 impl SqliteStore {
@@ -77,11 +78,12 @@ pub(super) fn judged_basis_on(
         return Ok(root
             .latest_sighting
             .as_ref()
-            .and_then(|(_, sighting)| sighting.source_basis.clone()));
+            .and_then(|(_, sighting)| sighting.source_basis.as_ref())
+            .and_then(crate::domain::VerificationSourceBasis::legacy_basis));
     }
     Ok(
         super::super::feeds::newest_measured_source_basis_on(connection, run_id, None, cut)?
-            .map(|(_, basis)| basis),
+            .and_then(|(_, basis)| basis.legacy_basis()),
     )
 }
 
@@ -95,7 +97,7 @@ pub(super) fn measured_sighting_on(
     latest_mutation: Option<&(i64, SourceObservation)>,
     root: Option<&NamedRootContext>,
     cut: i64,
-) -> Result<Option<(i64, ExecutionSourceBasis)>, StoreError> {
+) -> Result<Option<(i64, VerificationSourceBasis)>, StoreError> {
     let Some(basis) = latest_mutation
         .filter(|(_, change)| root.is_none() && !change.admitted)
         .and_then(|(_, change)| change.source_basis.as_ref())
@@ -115,7 +117,7 @@ pub(super) fn stale_verification_source(
     evidence: &VerificationEvidence,
     latest_mutation: Option<(i64, &SourceObservation)>,
     root: Option<&NamedRootContext>,
-    measured: Option<(i64, &ExecutionSourceBasis)>,
+    measured: Option<(i64, &VerificationSourceBasis)>,
 ) -> Option<StaleVerificationSource> {
     let observed = |position: i64, observation: &SourceObservation| {
         let basis = observation.source_basis.as_ref();
@@ -123,7 +125,7 @@ pub(super) fn stale_verification_source(
             position,
             Some(observation.source_changed),
             basis.map(|basis| basis.workspace_id.clone()),
-            basis.map(|basis| basis.source_revision.clone()),
+            basis.and_then(|basis| basis.legacy_revision().map(str::to_owned)),
             basis.and_then(|basis| basis.source_root_generation),
         )
     };
@@ -148,7 +150,7 @@ pub(super) fn stale_verification_source(
                 position,
                 None,
                 Some(basis.workspace_id.clone()),
-                Some(basis.source_revision.clone()),
+                basis.legacy_revision().map(str::to_owned),
                 basis.source_root_generation,
             )
         }),
@@ -176,7 +178,7 @@ pub(super) struct VerificationAtCut {
     cut: FeedPosition,
     root: Option<NamedRootContext>,
     latest_mutation: Option<(i64, SourceObservation)>,
-    measured: Option<(i64, ExecutionSourceBasis)>,
+    measured: Option<(i64, VerificationSourceBasis)>,
 }
 
 impl VerificationAtCut {

@@ -51,7 +51,7 @@ impl SealedSourceTransportFixture {
                 source_change: ObservedSourceChange::AssumedMissingBaseline {
                     workspace_id: "workspace-B".into(),
                     sighting: MeasuredSighting {
-                        source_basis: workspace("workspace-B", "C", Some(9)),
+                        source_basis: (workspace("workspace-B", "C", Some(9))).into(),
                         observed_at: at(49),
                     },
                 },
@@ -593,11 +593,14 @@ fn sealed_source_unadmitted_finished_run_and_watcher_reports_keep_their_original
                 workspace_id: "workspace-B".into(),
                 baseline: MeasuredBaseline {
                     workspace_id: "workspace-B".into(),
-                    source_revision: "A".into(),
+                    identity: crate::domain::VerificationSourceIdentity::Legacy {
+                        source_revision: "A".into(),
+                        git_tree: None,
+                    },
                     observed_at: at(47),
                 },
                 sighting: MeasuredSighting {
-                    source_basis: workspace("workspace-B", "B", Some(9)),
+                    source_basis: (workspace("workspace-B", "B", Some(9))).into(),
                     observed_at: at(49),
                 },
             },

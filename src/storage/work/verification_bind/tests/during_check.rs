@@ -108,7 +108,7 @@ impl Fixture {
             .unwrap()
             .sighting()
             .unwrap();
-        assert_eq!(closing.source_basis, basis("R1", self.b.generation));
+        assert_eq!(closing.source_basis, basis("R1", self.b.generation).into());
         assert_eq!(closing.observed_at, at(second - 1));
         receipt
     }

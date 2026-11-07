@@ -367,7 +367,7 @@ pub(super) fn binding_freshness_mismatch(
     producer: (&dyn crate::domain::VerificationProducer, i64),
     requirement: &crate::domain::VerificationRequirement,
     root: Option<&NamedRootContext>,
-    measured_sighting: Option<(&crate::domain::ExecutionSourceBasis, i64)>,
+    measured_sighting: Option<(&crate::domain::VerificationSourceBasis, i64)>,
     judged_basis: Option<&crate::domain::ExecutionSourceBasis>,
 ) -> Option<(
     crate::domain::VerificationEvidenceMismatch,
@@ -395,7 +395,7 @@ fn binding_freshness_mismatch_live(
     (producer, producer_position): (&dyn crate::domain::VerificationProducer, i64),
     requirement: &crate::domain::VerificationRequirement,
     root: Option<&NamedRootContext>,
-    measured_sighting: Option<(&crate::domain::ExecutionSourceBasis, i64)>,
+    measured_sighting: Option<(&crate::domain::VerificationSourceBasis, i64)>,
     judged_basis: Option<&crate::domain::ExecutionSourceBasis>,
     live_commit: bool,
 ) -> Option<(

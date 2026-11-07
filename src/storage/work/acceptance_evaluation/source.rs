@@ -107,7 +107,11 @@ pub(super) fn revision_seen_through(
     if let Some(root) = root {
         return Ok(
             named_root_sighting_on(connection, run_id, root, through)?.and_then(
-                |(_, observation)| observation.source_basis.map(|basis| basis.source_revision),
+                |(_, observation)| {
+                    observation
+                        .source_basis
+                        .and_then(|basis| basis.legacy_revision().map(str::to_owned))
+                },
             ),
         );
     }
@@ -115,6 +119,7 @@ pub(super) fn revision_seen_through(
         return Ok(Some(measured));
     }
     let revision = source_basis_sql("source_revision");
+    let source_id = source_basis_sql("source_id");
     Ok(connection
         .query_row(
             &format!(
@@ -124,13 +129,14 @@ pub(super) fn revision_seen_through(
                  WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
                    AND entry.position <= ?2
                    AND {SOURCE_RECORD_SQL}
-                   AND {revision} IS NOT NULL
+                   AND ({revision} IS NOT NULL OR {source_id} IS NOT NULL)
                  ORDER BY entry.position DESC LIMIT 1"
             ),
             params![run_id.0.to_string(), through],
-            |row| row.get::<_, String>(0),
+            |row| row.get::<_, Option<String>>(0),
         )
-        .optional()?)
+        .optional()?
+        .flatten())
 }
 
 /// The source an evaluation judged: the revision it declared, in the
@@ -231,11 +237,12 @@ pub(super) fn measured_source_at_on(
 ) -> Result<Option<ExecutionSourceBasis>, StoreError> {
     if let Some(root) = root {
         return Ok(named_root_sighting_on(connection, run_id, root, through)?
-            .and_then(|(_, observation)| observation.source_basis));
+            .and_then(|(_, observation)| observation.source_basis)
+            .and_then(|basis| basis.legacy_basis()));
     }
     Ok(
         super::super::feeds::newest_measured_source_basis_on(connection, run_id, None, through)?
-            .map(|(_, basis)| basis),
+            .and_then(|(_, basis)| basis.legacy_basis()),
     )
 }
 
@@ -478,7 +485,7 @@ pub(super) fn declared_not_contradicted(
             Some((position, _)) if position <= through => true,
             Some((_, sighting)) => sighting
                 .source_basis
-                .is_some_and(|basis| basis.source_revision == declared),
+                .is_some_and(|basis| basis.legacy_revision() == Some(declared)),
         },
     )
 }
@@ -1259,8 +1266,10 @@ pub(super) fn quiet_git_input_conflicts(
     !observation.source_changed
         && observation.observed_at.unwrap_or(observation.recorded_at) >= checked_at
         && observation.source_basis.as_ref().is_some_and(|basis| {
-            crate::domain::is_git_input_revision(&basis.source_revision)
-                && witnessed_input.is_some_and(|input| basis.source_revision != input)
+            basis.legacy_revision().is_some_and(|revision| {
+                crate::domain::is_git_input_revision(revision)
+                    && witnessed_input.is_some_and(|input| revision != input)
+            })
         })
 }
 
@@ -1284,7 +1293,7 @@ fn measured_after_unadmitted(
     };
     Ok(
         newest_measured_sighting_on(connection, run_id, &basis.workspace_id, through)?
-            .map(|(_, sighting)| sighting.source_revision),
+            .and_then(|(_, sighting)| sighting.legacy_revision().map(str::to_owned)),
     )
 }
 
@@ -1297,7 +1306,7 @@ pub(super) fn judged_revision(
     let (Some(declared), Some(basis)) = (declared, observation.source_basis.as_ref()) else {
         return false;
     };
-    declared.fingerprint == basis.source_revision
+    Some(declared.fingerprint.as_str()) == basis.legacy_revision()
         && declared
             .workspace_id
             .as_ref()
@@ -1363,7 +1372,10 @@ pub(in crate::storage) fn read_named_root_sighting_on(
         None => NamedRootAtCut::None {},
         Some(root) => {
             let sighting = match named_root_sighting_on(connection, run_id, &root, cut)? {
-                Some((position, observation)) => match observation.source_basis {
+                Some((position, observation)) => match observation
+                    .source_basis
+                    .and_then(|basis| basis.legacy_basis())
+                {
                     Some(basis) => InitialSighting::Present {
                         record: observation.record,
                         position,

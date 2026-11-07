@@ -1011,7 +1011,9 @@ pub(super) fn untested_change_lines(page: &crate::WorkObligationPage) -> Vec<Str
         .iter()
         .map(|change| {
             let revision = change.source_revision.as_deref().map_or_else(
-                || "no recorded source revision".to_owned(),
+                || change.source_id_summary.as_ref().map_or_else(
+                    || "no recorded source revision".to_owned(),
+                    crate::source::SourceIdSummary::description),
                 |revision| format!("source revision {}", super::terminal_safe_line(revision)),
             );
             let detection = source_change_detection_label(change.reported_source_change);
@@ -1066,10 +1068,13 @@ pub(super) fn displaced_change_lines(page: &crate::WorkObligationPage) -> Vec<St
         .iter()
         .map(|change| {
             format!(
-                "foreign workspace change: {} (workspace {}; source revision {}); captured before the named root, displaced and not verified",
+                "foreign workspace change: {} (workspace {}; {}); captured before the named root, displaced and not verified",
                 super::terminal_safe_line(&change.observation_id),
                 super::terminal_safe_line(&change.workspace_id),
-                super::terminal_safe_line(&change.source_revision)
+                change.source_revision.as_deref().map_or_else(
+                    || change.source_id_summary.as_ref().map_or_else(
+                        || "no recorded source".to_owned(), crate::source::SourceIdSummary::description),
+                    |revision| format!("source revision {}", super::terminal_safe_line(revision)))
             )
         })
         .collect::<Vec<_>>();

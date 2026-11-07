@@ -1328,7 +1328,7 @@ fn untested_change_summary(
     let change = store.source_observation(&obligation.triggering_observation)?;
     let revision = change.source_basis.map_or_else(
         || "no recorded source revision".to_owned(),
-        |basis| format!("source revision {}", basis.source_revision),
+        |basis| basis.identity.description(),
     );
     let said = change
         .reported_source_change

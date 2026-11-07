@@ -389,7 +389,7 @@ pub(super) fn resolve_source_change_obligations_on(
         }
         let revision = change.source_basis.as_ref().map_or_else(
             || "no recorded source revision".to_owned(),
-            |basis| format!("source revision {}", basis.source_revision),
+            |basis| basis.identity.description(),
         );
         let event = WorkObligationResolutionEvent {
             registered_input_decision: None,

@@ -361,7 +361,9 @@ fn validate_original(
         evidence.applicability.as_ref(),
         root.as_ref()
             .and_then(|root| root.latest_sighting.as_ref())
-            .and_then(|(_, sighting)| sighting.source_basis.as_ref()),
+            .and_then(|(_, sighting)| sighting.source_basis.as_ref())
+            .and_then(crate::domain::VerificationSourceBasis::legacy_basis)
+            .as_ref(),
     )
     .is_ok();
     let live_commit = match currency.check_on(transaction, &input.original) {
@@ -534,17 +536,22 @@ fn validate_target<'a>(
             Some(target.sighting.observation.to_string()),
         );
     }
-    let Some(sighting_basis) = sighting.source_basis.as_ref().filter(|basis| {
-        basis.workspace_id == root.workspace_id
-            && basis.source_root_generation == Some(root.generation)
-            && basis.source_root_state == Some(SourceRootState::Named)
-    }) else {
+    let Some(sighting_basis) = sighting
+        .source_basis
+        .as_ref()
+        .and_then(crate::domain::VerificationSourceBasis::legacy_basis)
+        .filter(|basis| {
+            basis.workspace_id == root.workspace_id
+                && basis.source_root_generation == Some(root.generation)
+                && basis.source_root_state == Some(SourceRootState::Named)
+        })
+    else {
         return refuse(Reason::SightingScopeDiffers, None, None);
     };
     if let Some(original) = original
         && let Err(mismatch) = crate::control::check_verification_applicability(
             original.evidence.applicability.as_ref(),
-            Some(sighting_basis),
+            Some(&sighting_basis),
         )
     {
         let reason = match mismatch {

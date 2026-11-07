@@ -623,11 +623,14 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
                         workspace_id: f.request.registration.root.workspace_id.clone(),
                         baseline: MeasuredBaseline {
                             workspace_id: f.request.registration.root.workspace_id.clone(),
-                            source_revision: "content-before".into(),
+                            identity: crate::domain::VerificationSourceIdentity::Legacy {
+                                source_revision: "content-before".into(),
+                                git_tree: None,
+                            },
                             observed_at: at(second - 2),
                         },
                         sighting: MeasuredSighting {
-                            source_basis: basis,
+                            source_basis: (basis).into(),
                             observed_at: at(second - 1),
                         },
                     },

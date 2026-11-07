@@ -191,18 +191,22 @@ fn bound_sighting_matches(
     Ok(root.workspace_id == basis.workspace_id
         && Some(root.generation) == basis.source_root_generation
         && sighting.record == source.sighting
-        && sighting.source_basis.as_ref().is_some_and(|sighted| {
-            sighted.workspace_id == basis.workspace_id
-                && sighted.source_root_generation == basis.source_root_generation
-                && sighted.source_root_state == Some(crate::domain::SourceRootState::Named)
-                && sighted.source_revision == basis.source_revision
-                && sighted.git_tree == basis.git_tree
-                && crate::control::check_verification_applicability(
-                    evidence.applicability.as_ref(),
-                    Some(sighted),
-                )
-                .is_ok()
-        })
+        && sighting
+            .source_basis
+            .as_ref()
+            .and_then(crate::domain::VerificationSourceBasis::legacy_basis)
+            .is_some_and(|sighted| {
+                sighted.workspace_id == basis.workspace_id
+                    && sighted.source_root_generation == basis.source_root_generation
+                    && sighted.source_root_state == Some(crate::domain::SourceRootState::Named)
+                    && sighted.source_revision == basis.source_revision
+                    && sighted.git_tree == basis.git_tree
+                    && crate::control::check_verification_applicability(
+                        evidence.applicability.as_ref(),
+                        Some(&sighted),
+                    )
+                    .is_ok()
+            })
         && root
             .unknown_change_position
             .is_none_or(|unknown| unknown <= *sighting_position))

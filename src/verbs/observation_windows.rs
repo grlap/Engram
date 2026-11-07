@@ -201,13 +201,17 @@ fn unadmitted_row_line(
 ) -> String {
     let safe = super::terminal_safe_line;
     let mut line = format!(
-        "  run position {}: {} unadmitted observation: {}; revision {}{}; {}; {}; reported by {}; observed {} to {}; recorded {}",
+        "  run position {}: {} unadmitted observation: {}; {}{}; {}; {}; reported by {}; observed {} to {}; recorded {}",
         row.position,
         row.observation,
         safe(&detail.occurrence),
-        row.revision
-            .as_deref()
-            .map_or_else(|| "not recorded".to_owned(), safe),
+        row.revision.as_deref().map_or_else(
+            || row.source_id_summary.as_ref().map_or_else(
+                || "revision not recorded".to_owned(),
+                crate::source::SourceIdSummary::description
+            ),
+            |revision| format!("revision {}", safe(revision))
+        ),
         row.root_generation
             .map_or_else(String::new, |generation| format!(
                 "; root generation {generation}"
@@ -231,7 +235,18 @@ fn unadmitted_row_line(
                 |at| format!("finished {}", at.to_rfc3339())
             ),
             check.source_revision.as_deref().map_or_else(
-                || "unknown".to_owned(),
+                || check.source_workspace.as_deref().map_or_else(
+                    || "unknown".to_owned(),
+                    |workspace| format!(
+                        "workspace {}{}",
+                        safe(workspace),
+                        check
+                            .source_root_generation
+                            .map_or_else(String::new, |generation| format!(
+                                "; root generation {generation}"
+                            ))
+                    )
+                ),
                 |revision| format!("revision {}", safe(revision))
             ),
             check
@@ -247,7 +262,7 @@ fn unadmitted_row_line(
 }
 
 fn row_value(row: &WorkObservationRow) -> Value {
-    json!({
+    let mut value = json!({
         "observation": row.observation,
         "run_position": row.position,
         "sealed_comparison": row.sealed_comparison,
@@ -262,7 +277,11 @@ fn row_value(row: &WorkObservationRow) -> Value {
         "observed_at": row.observed_at,
         "recorded_at": row.recorded_at,
         "unadmitted": row.unadmitted,
-    })
+    });
+    if let Some(summary) = &row.source_id_summary {
+        value["source_id_summary"] = json!(summary);
+    }
+    value
 }
 
 #[cfg(test)]
@@ -317,6 +336,9 @@ mod tests {
                         credit: "uncredited",
                         finished_at: Some(row.recorded_at),
                         source_revision: row.revision.clone(),
+                        source_workspace: None,
+                        source_root_generation: None,
+                        source_root_state: None,
                         evidence_ref: Some(displayed(&format!(
                             "r{}",
                             "\u{1}".repeat(crate::domain::MAX_OBSERVED_EVIDENCE_REF_BYTES - 1)

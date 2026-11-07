@@ -185,10 +185,10 @@ pub struct VerificationEvidenceMatchInput<'a> {
     pub producer_position: Option<i64>,
     /// When the latest change is an unadmitted record and no named root
     /// holds: the newest measured sighting at the cut in that change's
-    /// workspace, with its run-feed position. Its revision, not the
-    /// unadmitted record's, is the one a check must carry. `None` keeps the
-    /// change's own revision.
-    pub measured_sighting: Option<(&'a crate::domain::ExecutionSourceBasis, i64)>,
+    /// workspace, with its run-feed position. A legacy check must carry its
+    /// revision; a shared identity cannot be established by a legacy string.
+    /// `None` keeps the change's own revision.
+    pub measured_sighting: Option<(&'a crate::domain::VerificationSourceBasis, i64)>,
     pub requirement: &'a VerificationRequirement,
 }
 
@@ -352,7 +352,8 @@ pub fn explain_verification_evidence(
                 &basis.workspace_id,
                 basis.source_root_generation,
                 basis.source_root_state,
-            ) || revision != Some(basis.source_revision.as_str())
+            ) || revision.is_none()
+                || revision != basis.legacy_revision()
             {
                 return Err(stale(StaleSourceDecider::RootSighting));
             }
@@ -380,10 +381,10 @@ pub fn explain_verification_evidence(
         }
         if !shared && !registered_git && !revision_from_root {
             match measured {
-                Some((sighting, _)) if revision != Some(sighting.source_revision.as_str()) => {
+                Some((sighting, _)) if revision != sighting.legacy_revision() => {
                     return Err(stale(StaleSourceDecider::MeasuredSighting));
                 }
-                None if revision != Some(latest_basis.source_revision.as_str()) => {
+                None if revision.is_none() || revision != latest_basis.legacy_revision() => {
                     return Err(stale(StaleSourceDecider::LatestChange));
                 }
                 _ => {}
@@ -569,7 +570,7 @@ pub struct ObligationSatisfactionInput<'a> {
     /// [`VerificationEvidenceMatchInput::producer_position`].
     pub producer_position: Option<i64>,
     /// See [`VerificationEvidenceMatchInput::measured_sighting`].
-    pub measured_sighting: Option<(&'a crate::domain::ExecutionSourceBasis, i64)>,
+    pub measured_sighting: Option<(&'a crate::domain::VerificationSourceBasis, i64)>,
     /// The source record that triggered the obligation, when a source change
     /// did. A check accounts for an unadmitted trigger only when its producer
     /// and its record follow the trigger and it completed no earlier than
@@ -895,11 +896,11 @@ mod tests {
         );
 
         let mut later_mutation = latest_mutation.clone();
-        later_mutation
-            .source_basis
-            .as_mut()
-            .unwrap()
-            .source_revision = "content-revision-2".into();
+        later_mutation.source_basis.as_mut().unwrap().identity =
+            crate::domain::VerificationSourceIdentity::Legacy {
+                source_revision: "content-revision-2".into(),
+                git_tree: None,
+            };
         let stale = VerificationEvidenceMatchInput {
             judged_basis: None,
             candidate_kind: WorkEvidenceKind::Verification,
