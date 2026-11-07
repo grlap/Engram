@@ -46,6 +46,13 @@ named reason for every result it does not credit. It adds no durable schema, and
 the first delivery requires every consumer of the store on the new build. See
 [remote verification](features/execution-observability.md#remote-verification).
 
+Remote completion also accepts the closed `source_id` alternative with two
+required, nullable endpoint objects. Credit for either verification or a landing
+gate requires both complete objects to be available and equal; equal local
+changes qualify. Association uses the before object's commit or tree, and live
+currency compares the whole identity. Historical remote records keep their
+original wire, qualification and canonical bytes.
+
 Evaluation and test-bound completion read the named Git root and require it clean
 at exactly the registered check's commit. Accounted reports remain history;
 reverted edits can pass, while dirty, missing and different-commit roots refuse.

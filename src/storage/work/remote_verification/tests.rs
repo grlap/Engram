@@ -5,6 +5,14 @@ use crate::domain::*;
 
 mod downstream;
 mod host_wire;
+mod shared_input;
+
+fn legacy_input(input: &mut RemoteRunInput) -> &mut LegacyRemoteRunInput {
+    let RemoteRunInput::Legacy(input) = input else {
+        panic!("legacy fixture")
+    };
+    input
+}
 
 pub(super) struct Fixture {
     pub(super) store: SqliteStore,
@@ -102,12 +110,13 @@ pub(super) fn fixture_in(
                 exit: Some(0),
                 reason: "completed".into(),
             },
-            input: RemoteRunInput {
+            input: LegacyRemoteRunInput {
                 commit: Some(tested_commit()),
                 tree: Some(tested_tree()),
                 before_fingerprint: Some("f".repeat(64)),
                 after_fingerprint: Some("f".repeat(64)),
-            },
+            }
+            .into(),
             finished_at: Some(at(9)),
         },
         association: RemoteVerificationAssociation {
@@ -325,24 +334,24 @@ fn remote_verification_credits_a_full_pass_in_each_use() {
 
 #[test]
 fn remote_verification_ordinary_pass_needs_no_fingerprint_but_a_landing_gate_does() {
-    let without = |input: &mut RemoteRunInput| {
+    let without = |input: &mut LegacyRemoteRunInput| {
         input.before_fingerprint = None;
         input.after_fingerprint = None;
     };
     let mut f = fixture();
-    without(&mut f.request.completion.input);
+    without(legacy_input(&mut f.request.completion.input));
     assert!(f.record().unwrap().qualification.credited);
 
     // Differing optional fingerprints invent no ordinary-verification rule.
     let mut f = fixture();
-    f.request.completion.input.after_fingerprint = Some("e".repeat(64));
+    legacy_input(&mut f.request.completion.input).after_fingerprint = Some("e".repeat(64));
     assert!(f.record().unwrap().qualification.credited);
 
     for landing in [
         committed(RemoteVerificationPurpose::LandingGate),
         test_ref(),
     ] {
-        type Change = fn(&mut RemoteRunInput);
+        type Change = fn(&mut LegacyRemoteRunInput);
         let cases: [(Change, &str); 3] = [
             (without, "before and after fingerprints"),
             (
@@ -357,7 +366,7 @@ fn remote_verification_ordinary_pass_needs_no_fingerprint_but_a_landing_gate_doe
         for (change, detail) in cases {
             let mut f = fixture();
             f.request.association.intended_use = landing.clone();
-            change(&mut f.request.completion.input);
+            change(legacy_input(&mut f.request.completion.input));
             let receipt =
                 f.assert_uncredited(RemoteVerificationReason::FingerprintMissingOrChanged);
             assert!(
@@ -497,12 +506,12 @@ fn remote_verification_snapshots_never_fix_a_terminal_and_the_real_one_settles()
 fn remote_verification_names_each_input_mismatch() {
     // The same tree from another commit is still another commit.
     let mut f = fixture();
-    f.request.completion.input.commit = Some(object_name("other commit"));
+    legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
     let receipt = f.assert_uncredited(RemoteVerificationReason::CommitMismatch);
     assert_eq!(receipt.qualification.detail, None);
 
     let mut f = fixture();
-    f.request.completion.input.commit = None;
+    legacy_input(&mut f.request.completion.input).commit = None;
     let receipt = f.assert_uncredited(RemoteVerificationReason::CommitMismatch);
     assert!(
         receipt
@@ -515,17 +524,18 @@ fn remote_verification_names_each_input_mismatch() {
     // A test ref judges the exact tree, whatever commit carried it.
     let mut f = fixture();
     f.request.association.intended_use = test_ref();
-    f.request.completion.input.commit = Some(object_name("other commit"));
+    legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
     assert!(f.record().unwrap().qualification.credited);
 
     let mut f = fixture();
     f.request.association.intended_use = test_ref();
-    f.request.completion.input.tree = Some(GitTreeId::parse(object_name("other tree")).unwrap());
+    legacy_input(&mut f.request.completion.input).tree =
+        Some(GitTreeId::parse(object_name("other tree")).unwrap());
     f.assert_uncredited(RemoteVerificationReason::TreeMismatch);
 
     let mut f = fixture();
     f.request.association.intended_use = test_ref();
-    f.request.completion.input.tree = None;
+    legacy_input(&mut f.request.completion.input).tree = None;
     let receipt = f.assert_uncredited(RemoteVerificationReason::TreeMismatch);
     assert!(
         receipt
@@ -620,7 +630,7 @@ fn remote_verification_reasons_follow_the_agreed_precedence() {
     let mut f = fixture();
     f.request.association.root.generation = 2;
     f.request.completion.mode = RemoteRunMode::Focused;
-    f.request.completion.input.commit = None;
+    legacy_input(&mut f.request.completion.input).commit = None;
     f.assert_uncredited(RemoteVerificationReason::AssociationStale);
 
     // A conflict comes before not_full_mode and the input.
@@ -628,7 +638,7 @@ fn remote_verification_reasons_follow_the_agreed_precedence() {
     f.record().unwrap();
     f.request.operation_key = "remote:test-remote:two".into();
     f.request.completion.mode = RemoteRunMode::Focused;
-    f.request.completion.input.commit = Some(object_name("other commit"));
+    legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
     f.assert_uncredited(RemoteVerificationReason::ResultConflict);
 
     // not_full_mode comes before result_not_pass.
@@ -642,12 +652,12 @@ fn remote_verification_reasons_follow_the_agreed_precedence() {
     let mut f = fixture();
     f.request.completion.result.verdict = RemoteRunVerdict::Fail;
     f.request.completion.result.exit = Some(1);
-    f.request.completion.input.commit = Some(object_name("other commit"));
+    legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
     f.assert_uncredited(RemoteVerificationReason::ResultNotPass);
     let mut f = fixture();
     f.request.association.intended_use = committed(RemoteVerificationPurpose::LandingGate);
-    f.request.completion.input.commit = Some(object_name("other commit"));
-    f.request.completion.input.after_fingerprint = None;
+    legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
+    legacy_input(&mut f.request.completion.input).after_fingerprint = None;
     f.assert_uncredited(RemoteVerificationReason::CommitMismatch);
 }
 
@@ -860,11 +870,11 @@ fn remote_verification_malformed_values_are_refused_without_effects() {
         ),
         (|r| r.completion.result.exit = Some(i64::MAX), "result.exit"),
         (
-            |r| r.completion.input.commit = Some("A".repeat(40)),
+            |r| legacy_input(&mut r.completion.input).commit = Some("A".repeat(40)),
             "input.commit",
         ),
         (
-            |r| r.completion.input.before_fingerprint = Some(" ".into()),
+            |r| legacy_input(&mut r.completion.input).before_fingerprint = Some(" ".into()),
             "input.fingerprint",
         ),
         (|r| r.association.root.generation = 0, "association.root"),
@@ -1038,7 +1048,7 @@ fn remote_verification_doctor_names_a_forged_decision() {
 
     // A stored reason the facts do not give.
     let mut f = fixture();
-    f.request.completion.input.commit = Some(object_name("other commit"));
+    legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
     let receipt = f.record().unwrap();
     tamper(
         &f,

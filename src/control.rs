@@ -30,8 +30,9 @@ pub fn check_verification_applicability(
 
 /// Why a remote completion does not qualify for its stated use, by the native
 /// facts first and the input second; `None` when it qualifies. One decision
-/// serves every use: a landing gate only adds the fingerprint predicate, and a
-/// fingerprint never decides an ordinary verification. Only the launcher's own
+/// serves every use. Shared input requires two available equal source ids for
+/// either purpose. Historical input retains its landing-only fingerprint rule.
+/// Only the launcher's own
 /// verdict counts here, whatever its reason says, and `detail` names what is
 /// missing rather than adding reasons. `now` is the local delivery time: a
 /// finish time ahead of it is not yet a settled result.
@@ -42,7 +43,7 @@ pub fn remote_result_disqualification(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Option<(crate::domain::RemoteVerificationReason, Option<String>)> {
     use crate::domain::{
-        NEW_UNTRACKED_ONLY_REASON, RemoteRunMode, RemoteRunVerdict,
+        NEW_UNTRACKED_ONLY_REASON, RemoteRunInput, RemoteRunMode, RemoteRunVerdict,
         RemoteVerificationPurpose as Purpose, RemoteVerificationReason as Reason,
         RemoteVerificationUse as Use,
     };
@@ -84,7 +85,28 @@ pub fn remote_result_disqualification(
             Some("the passed run states no finish time".to_owned()),
         ));
     }
-    let input = &completion.input;
+    let input = match &completion.input {
+        RemoteRunInput::SourceId(input) => {
+            let Some(source) = input.matching_source_id() else {
+                return Some((
+                    Reason::SourceIdMissingOrChanged,
+                    Some("the before and after source_id must both be available and equal".into()),
+                ));
+            };
+            return match intended_use {
+                Use::CommittedInput {
+                    expected_commit, ..
+                } if source.commit != *expected_commit => Some((Reason::CommitMismatch, None)),
+                Use::AuthorizedTestRef { expected_tree, .. }
+                    if source.tree != expected_tree.as_str() =>
+                {
+                    Some((Reason::TreeMismatch, None))
+                }
+                _ => None,
+            };
+        }
+        RemoteRunInput::Legacy(input) => input,
+    };
     match intended_use {
         Use::CommittedInput {
             expected_commit, ..

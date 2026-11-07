@@ -78,11 +78,65 @@ pub struct RemoteRunResult {
     pub reason: String,
 }
 
-/// What the run tested, as far as the launcher knows it. Missing facts stay
-/// missing and are never derived.
+/// A complete shared endpoint pair or the unchanged historical launcher facts.
+/// The alternatives are closed: shared input never falls back to a legacy hint.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum RemoteRunInput {
+    SourceId(Box<RemoteSourceIdInput>),
+    Legacy(LegacyRemoteRunInput),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RemoteSourceIdKind {
+    SourceId,
+}
+
+/// Both keys are required. A null endpoint reports an unavailable measurement;
+/// even two null endpoints supply no source identity and cannot earn credit.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteSourceIdInput {
+    kind: RemoteSourceIdKind,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub source_id_before: Option<crate::source::SourceId>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub source_id_after: Option<crate::source::SourceId>,
+}
+
+impl RemoteSourceIdInput {
+    #[must_use]
+    pub fn new(
+        source_id_before: Option<crate::source::SourceId>,
+        source_id_after: Option<crate::source::SourceId>,
+    ) -> Self {
+        Self {
+            kind: RemoteSourceIdKind::SourceId,
+            source_id_before,
+            source_id_after,
+        }
+    }
+
+    #[must_use]
+    pub fn matching_source_id(&self) -> Option<&crate::source::SourceId> {
+        self.source_id_before
+            .as_ref()
+            .filter(|before| Some(*before) == self.source_id_after.as_ref())
+    }
+}
+
+impl From<LegacyRemoteRunInput> for RemoteRunInput {
+    fn from(input: LegacyRemoteRunInput) -> Self {
+        Self::Legacy(input)
+    }
+}
+
+/// What historical launchers stated. Missing facts stay missing; these fields
+/// keep their original wire, stored bytes and qualification semantics.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RemoteRunInput {
+pub struct LegacyRemoteRunInput {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -167,8 +221,38 @@ impl RemoteRunCompletion {
     #[must_use]
     pub fn describe(&self) -> String {
         let fact = |value: Option<&str>| value.unwrap_or("missing").to_owned();
+        let input = match &self.input {
+            RemoteRunInput::Legacy(input) => format!(
+                "commit={} tree={} before={} after={}",
+                fact(input.commit.as_deref()),
+                fact(input.tree.as_ref().map(GitTreeId::as_str)),
+                fact(input.before_fingerprint.as_deref()),
+                fact(input.after_fingerprint.as_deref()),
+            ),
+            RemoteRunInput::SourceId(input) => {
+                let endpoint = |source: Option<&crate::source::SourceId>| {
+                    source.map_or_else(
+                        || "unavailable".to_owned(),
+                        |source| {
+                            format!(
+                                "commit {} tree {} ({} changes, {} submodules)",
+                                source.commit,
+                                source.tree,
+                                source.changes.len(),
+                                source.submodules.len()
+                            )
+                        },
+                    )
+                };
+                format!(
+                    "source_id_before={} source_id_after={}",
+                    endpoint(input.source_id_before.as_ref()),
+                    endpoint(input.source_id_after.as_ref())
+                )
+            }
+        };
         format!(
-            "remote {} run {} on {} runner {}: {} terminal={} exit={} reason={}; commit={} tree={} before={} after={}; finished_at={}",
+            "remote {} run {} on {} runner {}: {} terminal={} exit={} reason={}; {}; finished_at={}",
             match self.mode {
                 RemoteRunMode::Full => "full",
                 RemoteRunMode::Focused => "focused",
@@ -182,10 +266,7 @@ impl RemoteRunCompletion {
                 .exit
                 .map_or_else(|| "null".to_owned(), |exit| exit.to_string()),
             self.result.reason,
-            fact(self.input.commit.as_deref()),
-            fact(self.input.tree.as_ref().map(GitTreeId::as_str)),
-            fact(self.input.before_fingerprint.as_deref()),
-            fact(self.input.after_fingerprint.as_deref()),
+            input,
             self.finished_at
                 .map_or_else(|| "missing".to_owned(), |at| at.to_rfc3339()),
         )
@@ -302,6 +383,7 @@ pub enum RemoteVerificationReason {
     CommitMismatch,
     TreeMismatch,
     FingerprintMissingOrChanged,
+    SourceIdMissingOrChanged,
 }
 
 impl RemoteVerificationReason {
@@ -317,6 +399,7 @@ impl RemoteVerificationReason {
             Self::CommitMismatch => "commit_mismatch",
             Self::TreeMismatch => "tree_mismatch",
             Self::FingerprintMissingOrChanged => "fingerprint_missing_or_changed",
+            Self::SourceIdMissingOrChanged => "source_id_missing_or_changed",
         }
     }
 }
@@ -489,32 +572,52 @@ impl RemoteRunCompletion {
         {
             return Err(("result.exit", "the exit code is out of range"));
         }
-        if self
-            .input
-            .commit
-            .as_deref()
-            .is_some_and(|commit| !full_commit(commit))
-        {
-            return Err(("input.commit", "a full lowercase commit id is required"));
-        }
-        if [
-            &self.input.before_fingerprint,
-            &self.input.after_fingerprint,
-        ]
-        .into_iter()
-        .flatten()
-        .any(|fingerprint| !bounded_label(fingerprint, 128))
-        {
-            return Err((
-                "input.fingerprint",
-                "a supplied fingerprint must be bounded safe text",
-            ));
+        if let RemoteRunInput::Legacy(input) = &self.input {
+            if input
+                .commit
+                .as_deref()
+                .is_some_and(|commit| !full_commit(commit))
+            {
+                return Err(("input.commit", "a full lowercase commit id is required"));
+            }
+            if [&input.before_fingerprint, &input.after_fingerprint]
+                .into_iter()
+                .flatten()
+                .any(|fingerprint| !bounded_label(fingerprint, 128))
+            {
+                return Err((
+                    "input.fingerprint",
+                    "a supplied fingerprint must be bounded safe text",
+                ));
+            }
         }
         Ok(())
     }
 }
 
 impl RemoteVerificationRequest {
+    /// Validate new shared endpoints without changing what stored legacy facts
+    /// or decisions mean. Null endpoints remain valid, non-qualifying reports.
+    ///
+    /// # Errors
+    /// Names a malformed new endpoint or a malformed common request field.
+    pub fn validate_new(&self) -> Result<(), (&'static str, &'static str)> {
+        self.validate()?;
+        if let RemoteRunInput::SourceId(input) = &self.completion.input {
+            for (field, source) in [
+                ("input.source_id_before", &input.source_id_before),
+                ("input.source_id_after", &input.source_id_after),
+            ] {
+                if let Some(source) = source {
+                    source
+                        .validate()
+                        .map_err(|_| (field, "a valid complete source_id is required"))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The shape every stored or delivered request must have, independent of
     /// any clock or store.
     ///

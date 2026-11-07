@@ -511,8 +511,8 @@ fn a_check_binds_to_two_items_on_one_root_with_distinct_generations() {
 #[test]
 fn a_credited_remote_check_binds_through_the_ordinary_branch() {
     use crate::domain::{
-        REMOTE_COMPLETION_SCHEMA_VERSION, RegisteredVerificationRoot, RemoteRunCompletion,
-        RemoteRunInput, RemoteRunMode, RemoteRunOrigin, RemoteRunResult, RemoteRunVerdict,
+        LegacyRemoteRunInput, REMOTE_COMPLETION_SCHEMA_VERSION, RegisteredVerificationRoot,
+        RemoteRunCompletion, RemoteRunMode, RemoteRunOrigin, RemoteRunResult, RemoteRunVerdict,
         RemoteVerificationAssociation, RemoteVerificationPurpose, RemoteVerificationRequest,
         RemoteVerificationUse,
     };
@@ -537,10 +537,11 @@ fn a_credited_remote_check_binds_through_the_ordinary_branch() {
                 exit: Some(0),
                 reason: "completed".into(),
             },
-            input: RemoteRunInput {
+            input: LegacyRemoteRunInput {
                 commit: Some(commit.clone()),
-                ..RemoteRunInput::default()
-            },
+                ..LegacyRemoteRunInput::default()
+            }
+            .into(),
             finished_at: Some(at(20)),
         },
         association: RemoteVerificationAssociation {

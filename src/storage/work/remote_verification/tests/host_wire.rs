@@ -99,6 +99,50 @@ fn remote_verification_snapshot_receipt_has_a_null_origin() {
 }
 
 #[test]
+fn remote_verification_wire_accepts_two_shared_endpoints_and_refuses_partial_input() {
+    let f = current();
+    let mut request = frame(&f);
+    let source = shared_input_source();
+    request["completion"]["input"] =
+        serde_json::json!({"kind":"source_id","source_id_before":source,"source_id_after":source});
+    let parsed: crate::host::HostControlRequest = serde_json::from_value(request.clone()).unwrap();
+    assert_eq!(parsed.operation(), "remote_verification_record");
+    let mut unavailable = request.clone();
+    unavailable["operation_key"] = serde_json::json!("remote:null-source");
+    unavailable["completion"]["run_id"] = serde_json::json!("test-null-source");
+    unavailable["completion"]["input"]["source_id_before"] = serde_json::Value::Null;
+    unavailable["completion"]["input"]["source_id_after"] = serde_json::Value::Null;
+    let mut partial = request.clone();
+    partial["completion"]["input"]
+        .as_object_mut()
+        .unwrap()
+        .remove("source_id_after");
+    let mut mixed = request.clone();
+    mixed["completion"]["input"]["commit"] = serde_json::json!(tested_commit());
+    let replies = serve(f, &[request, unavailable, partial, mixed]);
+    assert_eq!(
+        replies[0]["result"]["qualification"],
+        serde_json::json!({"credited":true})
+    );
+    assert_eq!(
+        replies[1]["result"]["qualification"]["reason"],
+        "source_id_missing_or_changed"
+    );
+    for reply in &replies[2..] {
+        assert_eq!(reply["error"]["code"], "invalid_request", "{reply}");
+    }
+}
+
+fn shared_input_source() -> crate::source::SourceId {
+    crate::source::SourceId {
+        commit: tested_commit(),
+        tree: tested_tree().as_str().into(),
+        submodules: vec![],
+        changes: vec![],
+    }
+}
+
+#[test]
 fn remote_verification_malformed_frames_answer_invalid_request() {
     let f = current();
     let request = frame(&f);

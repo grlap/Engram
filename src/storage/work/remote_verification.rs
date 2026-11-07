@@ -8,10 +8,11 @@ use crate::CanonicalObject;
 use crate::domain::{
     ExecutionOutcome, ExecutionSourceBasis, NamedRootBindingKind, REMOTE_COMPLETION_SCHEMA_VERSION,
     REMOTE_TERMINAL_ORIGIN_KIND, REMOTE_VERIFICATION_ASSOCIATION_KIND,
-    RegisteredVerificationRecord, RemoteRunCompletion, RemoteTerminalOrigin,
+    RegisteredVerificationRecord, RemoteRunCompletion, RemoteRunInput, RemoteTerminalOrigin,
     RemoteVerificationAssociationRecord, RemoteVerificationQualification, RemoteVerificationReason,
     RemoteVerificationReceipt, RemoteVerificationRequest, SCHEMA_VERSION, SourceRootState,
     VerificationEvidence, VerificationKind, VerificationProducerFacts, VerificationResult,
+    VerificationSourceBasis, VerificationSourceIdentity,
 };
 use crate::storage::{SqliteStore, StoreError};
 use crate::{ActorContext, ObjectId, ProjectId, SessionId};
@@ -61,7 +62,7 @@ pub(in crate::storage) fn record_remote_verification_on(
     now: DateTime<Utc>,
 ) -> Result<RemoteVerificationReceipt, StoreError> {
     request
-        .validate()
+        .validate_new()
         .map_err(|(field, reason)| invalid(field, reason))?;
     let completion = &request.completion;
     let supported = completion.schema_version == REMOTE_COMPLETION_SCHEMA_VERSION;
@@ -169,7 +170,7 @@ pub(in crate::storage) fn record_remote_verification_on(
                 binding: binding.clone(),
                 session_id: session.clone(),
                 producer_observation: object.key().clone(),
-                source_basis: (source_basis(request)).into(),
+                source_basis: source_basis(request)?,
                 environment: None,
                 check_kind: VerificationKind::Test,
                 check_fingerprint: check_fingerprint(completion)?,
@@ -198,15 +199,33 @@ pub(in crate::storage) fn record_remote_verification_on(
     })
 }
 
-fn source_basis(request: &RemoteVerificationRequest) -> ExecutionSourceBasis {
+fn source_basis(
+    request: &RemoteVerificationRequest,
+) -> Result<VerificationSourceBasis, StoreError> {
     let association = &request.association;
-    ExecutionSourceBasis {
+    if let RemoteRunInput::SourceId(input) = &request.completion.input {
+        let source_id = input.matching_source_id().ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "a credited remote shared run has no matching source_id endpoints".into(),
+            )
+        })?;
+        return Ok(VerificationSourceBasis {
+            workspace_id: association.root.workspace_id.clone(),
+            identity: VerificationSourceIdentity::SourceId {
+                source_id: source_id.clone(),
+            },
+            source_root_generation: Some(association.root.generation),
+            source_root_state: Some(SourceRootState::Named),
+        });
+    }
+    Ok(ExecutionSourceBasis {
         workspace_id: association.root.workspace_id.clone(),
         source_revision: association.intended_use.revision(),
         git_tree: association.intended_use.git_tree(),
         source_root_generation: Some(association.root.generation),
         source_root_state: Some(SourceRootState::Named),
     }
+    .into())
 }
 
 /// The destination's item, or why it is stale. A database failure stays an
@@ -376,7 +395,7 @@ pub(super) fn producer_facts_on(
         action_fingerprint: check_fingerprint(completion)?,
         outcome: ExecutionOutcome::Succeeded,
         run_outcome: Some(ExecutionOutcome::Succeeded),
-        source_basis: Some(source_basis(&record.request).into()),
+        source_basis: Some(source_basis(&record.request)?),
         observed_at: completion.finished_at,
         actor: record.actor,
         recorded_at: record.associated_at,

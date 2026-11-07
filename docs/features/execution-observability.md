@@ -653,15 +653,35 @@ operation_key
 completion: {schema_version: 1, origin: {host_id, runner_session_id}, run_id,
   mode: full|focused,
   result: {verdict: PASS|FAIL|INTERRUPTED|RUNNING|UNKNOWN, terminal, exit, reason},
-  input: {commit?, tree?, before_fingerprint?, after_fingerprint?},
+  input: {kind: source_id, source_id_before: SourceId|null,
+          source_id_after: SourceId|null}
+       | {commit?, tree?, before_fingerprint?, after_fingerprint?},
   finished_at?}
 association: {binding, root, use}
 use: {kind: committed_input, expected_commit, purpose: verification|landing_gate}
    | {kind: authorized_test_ref, ref_name, expected_tree, purpose: landing_gate}
 ```
 
-`exit` must be stated and may be null; other optional members are omitted when
-missing, never null. Missing facts stay missing and are never guessed. A
+The shared alternative has exactly those three members. Both endpoint keys are
+required; each carries the complete shared source object or an explicit null
+when unavailable. A missing key, malformed object, unknown kind, or mixture with
+legacy commit, tree or fingerprint fields refuses the request. There is no third
+admitted-source copy: the launcher checks its own frozen admitted snapshot
+against its actual before-run measurement before running stages. The remote
+consumer judges the two retained endpoints and the authoritative result.
+
+The legacy alternative retains its historical wire and qualification semantics
+during the additive producer rollout. Existing terminal, association,
+verification and decision records are read as stored, with no conversion. New
+shared submissions validate through the source owner's representation validator,
+separately from stored-record validation. Every store consumer must understand
+shared input before its first delivery; the capability name and schema version
+do not change. Once shared records exist, an older consumer cannot safely read
+that store or serve as a rollback binary.
+
+`exit` must be stated and may be null. In the legacy alternative, optional input
+members are omitted when missing, never null; `finished_at` follows that rule in
+both alternatives. Missing facts stay missing and are never guessed. A
 malformed value or an unknown member answers `invalid_request` and records
 nothing. A well-formed finish time ahead of this host's clock is not malformed:
 it stays provisional, visible and uncredited, with a null origin. If the earlier
@@ -722,23 +742,30 @@ One decision serves every use. Reasons apply in this order:
 7. `result_not_pass`: anything else but a terminal PASS with exit 0 and a finish
    time. The debris case above is the exception checked before these ordinary
    result predicates.
-8. `commit_mismatch`: for `committed_input`, the tested commit is missing or
+8. `source_id_missing_or_changed`: shared input has an unavailable endpoint or
+   its complete before and after objects differ. Two nulls never qualify. This
+   applies to both `verification` and `landing_gate`, with local changes allowed.
+9. `commit_mismatch`: for `committed_input`, the tested commit is missing or
    another commit, even with the same tree.
-9. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
+10. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
    another tree.
-10. `fingerprint_missing_or_changed`: for `landing_gate` only, the before and after
-    fingerprints are not both present and equal.
+11. `fingerprint_missing_or_changed`: for legacy `landing_gate` only, the before
+    and after fingerprints are not both present and equal.
 
 `detail` names missing data; there are no further reasons. An ordinary
-`verification` has no fingerprint rule at all, not even for differing optional
-fingerprints. The launcher's native reason is kept unchanged. A debris result
+`verification` has no legacy fingerprint rule, not even for differing optional
+fingerprints. For shared input, commit and tree association use the actual before
+object's fields; no digest, cleanliness bit or watcher condition is substituted
+for complete object equality. The launcher's native reason is kept unchanged. A debris result
 counts toward landing only through the integration owner's existing disposition
 note and run-referenced gate record; neither that gate nor a mailbox message makes
 it verification.
 
 Only a qualifying delivery mints verification: one `test` record, written by the
-same writer as any other, whose producer is the delivery. `committed_input` is the
-input `git-commit:<expected_commit>` and `authorized_test_ref` is
+same writer as any other, whose producer is the delivery. Shared input stores the
+whole equal source object as its verification basis, with no `source_revision`
+surrogate. Legacy `committed_input` is the input
+`git-commit:<expected_commit>` and legacy `authorized_test_ref` is
 `git-tree:<expected_tree>`, so it enters the same
 [registered Git input](acceptance-evaluation.md#registered-git-input-evidence)
 decision, and the same root, run, cut, time and mutation guards. The wire names no
@@ -754,8 +781,12 @@ remote finish time with local times, and nothing attests that time. A remote clo
 running behind can withhold credit. A remote clock running ahead can make an old
 run appear to follow a later local change: a run that ended at T, a local change at
 T+30 and a delivery at T+60 pass every guard if the origin's clock is 45 seconds
-ahead. Credit names the exact commit or tree the run tested. Evaluation compares
-that input exactly. Native committed-input decisions also read the named Git root
+ahead. Shared credit names the whole source state the run tested; its live
+currency reads the shared owner outside the database transaction and compares
+that object again, allowing an equal dirty state and refusing a different one.
+String-based evaluation declarations remain unsupported for shared input.
+Legacy credit names the exact commit or tree the run tested. Evaluation compares
+that input exactly. Legacy committed-input decisions also read the named Git root
 at evaluation and completion, requiring it clean at that exact commit. Accounted
 reports stay history; reverted edits can pass, while dirty, missing and
 different-commit roots refuse even with a cached completion fingerprint.
@@ -771,9 +802,10 @@ interpretation. Existing witnesses and staged-tree inputs keep their historical
 report-based rules. Non-registered verification, including bound copies, keeps
 its revision matching against the applicable observations.
 
-`verification_bind` can copy a credited remote check through its ordinary bound
-branch, under its usual measurement rules. Crediting another item with the result
-itself is a new delivery of the same origin.
+`verification_bind` can copy a credited legacy remote check through its ordinary
+bound branch, under its usual measurement rules. It explicitly refuses shared
+source input. Crediting another item with the result itself is a new delivery of
+the same origin.
 
 ## Obligations from source changes
 

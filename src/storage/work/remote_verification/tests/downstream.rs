@@ -22,7 +22,7 @@ fn prepared(bound: bool, fresh: bool) -> Fixture {
     f
 }
 
-fn unevaluated(bound: bool) -> Fixture {
+pub(super) fn unevaluated(bound: bool) -> Fixture {
     let mut create = root_request("project-a", "remote-input-work", 1);
     if bound {
         create.acceptance_bindings = vec![AcceptanceBinding {
@@ -72,7 +72,7 @@ fn commit(root: &std::path::Path) -> String {
     git(root, &["rev-parse", "HEAD"])
 }
 
-fn real_git_root(
+pub(super) fn real_git_root(
     f: &mut Fixture,
     intended: RemoteVerificationUse,
 ) -> crate::test_support::TempHome {
@@ -106,8 +106,8 @@ fn real_git_root(
         .unwrap();
     f.request.association.root.workspace_id = workspace;
     f.request.association.root.generation = 2;
-    f.request.completion.input.commit = Some(checked.clone());
-    f.request.completion.input.tree = Some(tree.clone());
+    legacy_input(&mut f.request.completion.input).commit = Some(checked.clone());
+    legacy_input(&mut f.request.completion.input).tree = Some(tree.clone());
     f.request.association.intended_use = match intended {
         RemoteVerificationUse::CommittedInput { purpose, .. } => {
             RemoteVerificationUse::CommittedInput {
