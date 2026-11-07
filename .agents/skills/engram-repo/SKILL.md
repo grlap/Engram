@@ -258,8 +258,8 @@ A check that must earn host credit runs from the item's own detached
 worktree, as "Repository work constraints" above describes.
 Use `node scripts/test-launcher.mjs focused -- COMMAND ARGS...` for the
 smallest focused test while iterating. For landing, a changeset touching only
-`.md` files runs the link and identity checks with the exact focused-launcher
-commands in
+`.md` files runs the link check with the exact focused-launcher
+command in
 [review-changes](../../../.claude/commands/review-changes.md#documentation-only-changesets).
 Any other path requires `node scripts/test-launcher.mjs full` for the following
 gates. Full logs stay on disk; see
@@ -294,9 +294,9 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
 
 Use `/review-changes`, which runs the gates and the two-agent read-only review
 in parallel on one frozen input; a changeset touching only `.md` files runs
-the link and identity checks instead of the gates.
+the link check instead of the gates.
 Choose by file type: `.md` prose, agent instructions, skills and review
-commands use those two checks; executable tooling or examples, test-only
+commands use that check; executable tooling or examples, test-only
 changes, runtime code, CLI implementation and schemas use the full gate.
 A Markdown code block or quoted command is prose and does not trigger the
 full gate by itself. Even a comment-only change in a `.rs` test uses the full

@@ -112,22 +112,21 @@ phases without the Unix-only file-descriptor-limit adjustment.
 ### Documentation-only changesets
 
 A changeset whose every changed path is a `.md` file (docs, AGENTS.md,
-CLAUDE.md, skills, commands) runs the link check and a byte comparison of
-AGENTS.md and CLAUDE.md instead of the full batch (Greg, 2026-09-26): no
-build step or test reads Markdown except the link checker. Run each through
+CLAUDE.md, skills, commands) runs the link check instead of the full batch
+(Greg, 2026-09-26): no build step or test reads Markdown except the link
+checker. Run it through
 the launcher, so that its automatic input fingerprint is checked at completion
 as for the full gate. Review identity uses the separate Git tree id in section 3:
 
 ```bash
 node scripts/test-launcher.mjs focused -- node scripts/check-doc-links.mjs
-node scripts/test-launcher.mjs focused -- git diff --no-index --exit-code AGENTS.md CLAUDE.md
 ```
 
 Both reviewers still review it. A changeset with any other path runs the
 full gate.
 
 Choose by file type: `.md` prose, agent instructions, skills and review
-commands use these two checks; executable tooling or examples, test-only
+commands use the link check; executable tooling or examples, test-only
 changes, runtime code, CLI implementation and schemas use the full gate.
 A Markdown code block or quoted command is prose and does not trigger the
 full gate by itself. Even a comment-only change in a `.rs` test uses the full
@@ -402,8 +401,8 @@ Accept reviewer output only once the gate has finished and passed on the same
 unchanged input tree, with its automatic before/after fingerprints matching
 the parent-held launcher value, or with the `new-untracked-only` exception of
 section 2.
-For a changeset touching only `.md` files, that means once the link and
-identity checks passed on that tree. When the reviews arrive first, verify
+For a changeset touching only `.md` files, that means once the link check
+passed on that tree. When the reviews arrive first, verify
 the freeze as below. They may be read, and a justified finding may start the
 next round at once, but a clean review counts only once the gate has passed
 on that same input.

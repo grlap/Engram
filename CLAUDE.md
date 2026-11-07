@@ -91,9 +91,8 @@ their presence in a file alone does not prove delivery.
     input. In the latter case the integration owner records on the item
     what those paths contain and why they are non-input debris; the
     committed tree excludes them. No input has changed since the run; a
-    changeset touching only `.md` files instead passes the link check and
-    the AGENTS/CLAUDE identity check on that tree, each with its input
-    fingerprint checked at completion;
+    changeset touching only `.md` files instead passes the link check on
+    that tree, with its input fingerprint checked at completion;
   - the latest review round from two independent read-only reviewers of
     different vendors, Codex and Claude, on a verified freeze of that same
     tree, has no outstanding in-scope finding of Medium or higher, and every
@@ -505,18 +504,27 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 phases without the Unix-only file-descriptor-limit adjustment.
 
 A changeset touching only `.md` files (docs, AGENTS.md, CLAUDE.md, skills,
-commands) runs the link check and a byte comparison of AGENTS.md and
-CLAUDE.md instead of this sequence: no build step or test
-reads Markdown except the link checker. Run each through
+commands) runs the link check instead of this sequence: no build step or
+test reads Markdown except the link checker. Run it through
 `node scripts/test-launcher.mjs focused -- …`, so that its input fingerprint
-is checked at completion; `/review-changes` gives the commands. Both
+is checked at completion; `/review-changes` gives the command. Both
 reviewers still review it.
+
+Never add an automated test or check that reads, pins or compares the
+content of AGENTS.md, CLAUDE.md or another agent instruction file. Never add
+a test that only pins text or mirrors the implementation, so that every
+change must be edited twice; where a test is needed, it verifies observable
+behavior (Greg, 2026-11-07, relayed by Engram::Asistant in mailbox 43498a6e
+#487: 'USUNAC TESTY sprawdzajace claud.md czy agents.md Natychmiast!! Nigdy
+ich niedodawac', and #490: 'Zero tautologi. Tak marnujemy cykle. Te testy
+nic nie wnosza. Teraz kazda zmiana wymusza zmiane testow. Czyli edycja 2
+razy. O ile zlapiemy to odrazu. Absurd! Nigdy wiecej.').
 
 Choose landing validation by changed file type:
 
 | Changed surface | Required landing validation |
 | --- | --- |
-| Only `.md` prose, agent instructions, skills or review commands | Link and AGENTS/CLAUDE identity checks through the focused launcher |
+| Only `.md` prose, agent instructions, skills or review commands | Link check through the focused launcher |
 | Executable tooling or examples, such as `.mjs`, `.ps1` or `.sh` | Full gate |
 | Tests only, including a comment in a `.rs` test | Full gate |
 | Runtime code, CLI implementation or schema | Full gate |

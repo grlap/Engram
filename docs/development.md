@@ -510,8 +510,8 @@ Full mode is the landing validation of a frozen changeset with any non-`.md`
 path, including configuration, lockfiles and fixtures. Focused mode is the
 fast correction check between fixes: it runs the tests that cover a fix before
 the next freeze, and never replaces full mode for such a changeset. A
-changeset touching only `.md` files lands on two focused runs instead, the
-link check and the AGENTS/CLAUDE byte comparison (see
+changeset touching only `.md` files lands on one focused run instead, the
+link check (see
 [Required Quality Gates](../AGENTS.md#required-quality-gates)).
 
 Commands are argument arrays, not shell strings. Name `pwsh -NoProfile -File`
