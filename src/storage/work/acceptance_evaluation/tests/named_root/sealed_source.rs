@@ -61,7 +61,7 @@ impl SealedSourceTransportFixture {
         };
         fixture
             .store
-            .record_unadmitted_execution_observation(
+            .seed_historical_execution_observation(
                 &fixture.work.project_id,
                 &observer.session_id,
                 &observer.connection_token,
@@ -615,7 +615,7 @@ fn sealed_source_unadmitted_finished_run_and_watcher_reports_keep_their_original
     let mut submit = |input: ExecutionObserveInput| {
         fixture
             .store
-            .record_unadmitted_execution_observation(
+            .seed_historical_execution_observation(
                 &fixture.work.project_id,
                 &observer.session_id,
                 &observer.connection_token,

@@ -103,7 +103,10 @@ fn ordinary_host_late_commit_with_lost_response_is_settled_by_exact_replay() {
         "root_basis": {"capture_run_cut": cut, "latest_event": null, "state": {"state": "none"}},
         "observed_interval": {"from": wall, "through": wall},
         "occurrence": {"kind": "source_sighting", "source_basis": {
-            "workspace_id": "measured-workspace", "source_revision": "measured-revision"}, "observed_at": wall},
+            "workspace_id": "measured-workspace", "source_id": {
+                "commit": "a".repeat(40), "tree": "b".repeat(40),
+                "submodules": [], "changes": []
+            }}, "observed_at": wall},
         "causality": {"kind": "unknown"}, "policy_basis": {"mode": "audit_only"}
     });
     let mut input = serde_json::to_vec(&request).unwrap();

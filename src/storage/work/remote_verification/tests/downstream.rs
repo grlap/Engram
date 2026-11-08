@@ -243,7 +243,7 @@ pub(super) fn observe(
     let mut observer = actor("runner");
     observer.run_id = Some(binding.run_id.0.to_string());
     f.store
-        .record_unadmitted_execution_observation(
+        .seed_historical_execution_observation(
             &f.project,
             &f.session,
             &f.connection,

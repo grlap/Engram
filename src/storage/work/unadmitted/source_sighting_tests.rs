@@ -77,7 +77,7 @@ fn fixture() -> Fixture {
 fn record(f: &mut Fixture) -> Result<ExecutionObservationReceipt, crate::StoreError> {
     let mut observer = actor(&f.session.0);
     observer.run_id = Some(f.input.binding.run_id.0.to_string());
-    f.store.record_unadmitted_execution_observation(
+    f.store.seed_historical_execution_observation(
         &f.project,
         &f.session,
         &f.connection,

@@ -2,7 +2,16 @@ use super::*;
 use crate::domain::{VerificationSourceBasis, VerificationSourceIdentity};
 use crate::source::{Change, Mode, SourceId};
 
-fn source(blob: char) -> SourceId {
+// Shared-input behavior exercises current ingress, not the historical seeder.
+fn observe(
+    f: &mut Fixture,
+    input: ExecutionObserveInput,
+    second: i64,
+) -> Result<ExecutionObservationReceipt, StoreError> {
+    observe_current(f, input, second)
+}
+
+pub(super) fn source(blob: char) -> SourceId {
     SourceId {
         commit: "a".repeat(40),
         tree: "b".repeat(40),
@@ -36,7 +45,12 @@ fn check_scope() -> crate::domain::ObservedCheckSourceBasis {
     }
 }
 
-fn change(f: &Fixture, key: &str, before: SourceId, after: SourceId) -> ExecutionObserveInput {
+pub(super) fn change(
+    f: &Fixture,
+    key: &str,
+    before: SourceId,
+    after: SourceId,
+) -> ExecutionObserveInput {
     let mut input = accounting::accounted(f, key, "unused-before", "unused-after");
     input.occurrence = ObservedOccurrence::InterTurnChange {
         source_change: ObservedSourceChange::ContentComparison {
@@ -56,10 +70,160 @@ fn change(f: &Fixture, key: &str, before: SourceId, after: SourceId) -> Executio
 }
 
 #[test]
+fn new_legacy_sources_are_refused_but_retained_records_replay_and_import_unchanged() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("source.db");
+    let exported = directory.path().join("export.json");
+    let imported = directory.path().join("imported.db");
+    let mut f = fixture_on(SqliteStore::open(&database).unwrap());
+    let legacy_basis = VerificationSourceBasis::from(ExecutionSourceBasis {
+        workspace_id: "workspace-A".into(),
+        source_revision: "content-v1:retained".into(),
+        git_tree: None,
+        source_root_generation: None,
+        source_root_state: None,
+    });
+    let mut cases = Vec::new();
+    for turn in [false, true] {
+        for (label, source_change) in [
+            (
+                "comparison",
+                content_change("content-v1:before", "content-v1:after"),
+            ),
+            (
+                "assumed",
+                ObservedSourceChange::AssumedMissingBaseline {
+                    workspace_id: "workspace-A".into(),
+                    sighting: MeasuredSighting {
+                        source_basis: legacy_basis.clone(),
+                        observed_at: at(5),
+                    },
+                },
+            ),
+            (
+                "watcher",
+                ObservedSourceChange::WatcherOnly {
+                    workspace_id: "workspace-A".into(),
+                    observed_at: at(5),
+                },
+            ),
+        ] {
+            let mut input = inter_turn_change(&f, &format!("{label}-{turn}"));
+            input.occurrence = if turn {
+                ObservedOccurrence::UnadmittedTurn {
+                    host_turn_ref: "turn".into(),
+                    outcome: None,
+                    source_change: Some(source_change),
+                    observed_checks: vec![],
+                }
+            } else {
+                ObservedOccurrence::InterTurnChange { source_change }
+            };
+            cases.push((
+                input,
+                if label == "watcher" {
+                    "source_change.detection"
+                } else if label == "comparison" {
+                    "source_change.baseline.source_revision"
+                } else {
+                    "source_change.sighting.source_basis.source_revision"
+                },
+            ));
+        }
+    }
+    let mut quiet = inter_turn_change(&f, "legacy-quiet");
+    quiet.occurrence = ObservedOccurrence::SourceSighting {
+        source_basis: legacy_basis,
+        observed_at: at(5),
+    };
+    cases.push((quiet, "source_sighting.source_basis.source_revision"));
+    for turn in [false, true] {
+        let mut check = passed_check("private-caller-id");
+        check.source_basis = Some(
+            ExecutionSourceBasis {
+                workspace_id: "workspace-A".into(),
+                source_revision: "content-v1:retained".into(),
+                git_tree: None,
+                source_root_generation: None,
+                source_root_state: None,
+            }
+            .into(),
+        );
+        let mut input = inter_turn_change(&f, &format!("legacy-check-{turn}"));
+        input.occurrence = if turn {
+            ObservedOccurrence::UnadmittedTurn {
+                host_turn_ref: "turn".into(),
+                outcome: None,
+                source_change: None,
+                observed_checks: vec![check],
+            }
+        } else {
+            ObservedOccurrence::ObservedCheck {
+                host_turn_ref: "turn".into(),
+                check,
+            }
+        };
+        cases.push((input, "observed_checks[0].source_basis"));
+    }
+    let mut retained = Vec::new();
+    for (input, field) in cases {
+        let before = footprint(&f.store);
+        let error = observe(&mut f, input.clone(), 7).unwrap_err();
+        assert!(
+            matches!(error, StoreError::ExecutionObservationInvalid(ref reason)
+            if reason.contains(field) && reason.contains("retired")
+                && !reason.contains("private-caller-id") && !reason.contains("content-v1:retained")),
+            "{error:?}"
+        );
+        assert_eq!(footprint(&f.store), before);
+        // Seed the exact old record using its historical validator, never current ingress.
+        let receipt = super::observe(&mut f, input.clone(), 7).unwrap();
+        let record = stored(&f.store, &receipt.observation);
+        record.validate_recorded_shape().unwrap();
+        let bytes = crate::canonical::canonical_bytes(&record).unwrap();
+        let before = footprint(&f.store);
+        assert_eq!(observe(&mut f, input.clone(), 8).unwrap(), receipt);
+        assert_eq!(footprint(&f.store), before);
+        retained.push((input, receipt, bytes));
+    }
+    let report = f.store.verify_all().unwrap();
+    assert!(report.is_healthy(), "{report:?}");
+    // Shared measurements, scope-only checks and genuine absence still enter normally.
+    let input = change(&f, "shared-after-cutoff", source('c'), source('d'));
+    observe(&mut f, input, 8).unwrap();
+    drop(f.store);
+    crate::storage::migration::export_json(&database, &exported).unwrap();
+    crate::storage::migration::import_json(&exported, &imported).unwrap();
+    f.store = SqliteStore::open(&imported).unwrap();
+    f.host.connection_token = f
+        .store
+        .resume_work_connection(&f.host.session_id, at(9))
+        .unwrap();
+    for (input, receipt, bytes) in retained {
+        assert_eq!(
+            crate::canonical::canonical_bytes(&stored(&f.store, &receipt.observation)).unwrap(),
+            bytes
+        );
+        let before = footprint(&f.store);
+        assert_eq!(observe(&mut f, input.clone(), 10).unwrap(), receipt);
+        assert_eq!(footprint(&f.store), before);
+        let mut fresh = input;
+        fresh.idempotency_key.push_str("-new");
+        assert!(matches!(
+            observe(&mut f, fresh, 10),
+            Err(StoreError::ExecutionObservationInvalid(_))
+        ));
+        assert_eq!(footprint(&f.store), before);
+    }
+    let report = f.store.verify_all().unwrap();
+    assert!(report.is_healthy(), "{report:?}");
+}
+
+#[test]
 fn shared_observations_compare_the_complete_dirty_source_and_keep_history() {
     let mut f = fixture();
     let legacy = accounting::accounted(&f, "legacy", "rev-a", "rev-b");
-    let old = observe(&mut f, legacy.clone(), 7).unwrap();
+    let old = super::observe(&mut f, legacy.clone(), 7).unwrap();
     let old_bytes: Vec<u8> = f
         .store
         .connection
@@ -203,7 +367,7 @@ fn a_shared_quiet_sighting_does_not_let_legacy_verification_complete_the_work() 
     }];
     let mut f = fixture_of(SqliteStore::open_in_memory().unwrap(), &request);
     let legacy = accounting::accounted(&f, "legacy-change", "rev-before", "rev-checked");
-    observe(&mut f, legacy, 7).unwrap();
+    super::observe(&mut f, legacy, 7).unwrap();
     host_verification_from_basis(
         &mut f.store,
         &f.work,

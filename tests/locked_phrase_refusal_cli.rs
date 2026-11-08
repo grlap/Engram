@@ -121,8 +121,16 @@ impl Control {
         response["result"].clone()
     }
 
-    /// Record the source the ordinary host actually measured, without admission.
-    fn observe(&mut self, binding: &Value, name: &str, observations: &[Value]) {
+    /// Seed retained legacy sightings for testing rendered historical text.
+    /// Current ingress receives a complete shared object; the fixture then
+    /// replaces only its canonical basis and matching receipt intent.
+    fn seed_historical_sightings(
+        &mut self,
+        project: &str,
+        binding: &Value,
+        name: &str,
+        observations: &[Value],
+    ) {
         for (index, observation) in observations.iter().enumerate() {
             let root = self.ok(&json!({
                 "operation": "named_root_read",
@@ -135,7 +143,15 @@ impl Control {
                     .unwrap(),
             );
             let time = observation["observed_at"].clone();
-            self.ok(&json!({
+            let mut source_basis = observation["source_basis"].clone();
+            let fields = source_basis.as_object_mut().unwrap();
+            fields.remove("source_revision");
+            fields.remove("git_tree");
+            source_basis["source_id"] = json!({
+                "commit": fingerprint(name)[..40], "tree": fingerprint("fixture-tree")[..40],
+                "submodules": [], "changes": []
+            });
+            let receipt = self.ok(&json!({
                 "operation": "execution_observe",
                 "idempotency_key": format!("{name}-{index}"),
                 "binding": binding,
@@ -147,7 +163,7 @@ impl Control {
                 "observed_interval": {"from": time, "through": time},
                 "occurrence": {
                     "kind": "source_sighting",
-                    "source_basis": observation["source_basis"], "observed_at": time,
+                    "source_basis": source_basis, "observed_at": time,
                 },
                 "causality": {"kind":"unknown"},
                 "policy_basis": {
@@ -155,7 +171,46 @@ impl Control {
                     "policy":policy["policy"], "obligation_rule_set":policy["obligation_rules"],
                 },
             }));
+            self.seed_historical_basis(project, &receipt, &observation["source_basis"]);
         }
+    }
+
+    fn seed_historical_basis(&self, project: &str, receipt: &Value, basis: &Value) {
+        let database = self
+            .home
+            .join("projects")
+            .join(fingerprint(project))
+            .join("engram.db");
+        let mut connection = rusqlite::Connection::open(database).unwrap();
+        connection
+            .busy_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let transaction = connection.transaction().unwrap();
+        let id = receipt["observation"].as_str().unwrap();
+        let bytes: Vec<u8> = transaction.query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1 AND object_kind = 'unadmitted_execution_observation'",
+            [id], |row| row.get(0),
+        ).unwrap();
+        let mut record: Value = serde_json::from_slice(&bytes).unwrap();
+        record["occurrence"]["source_basis"] = basis.clone();
+        transaction
+            .execute(
+                "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                rusqlite::params![serde_json_canonicalizer::to_vec(&record).unwrap(), id],
+            )
+            .unwrap();
+        let (key, bytes): (String, Vec<u8>) = transaction.query_row(
+            "SELECT idempotency_key, result_json FROM work_operation_results WHERE operation = 'host_execution_observe' AND json_extract(result_json, '$.result.observation') = ?1",
+            [id], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        let mut envelope: Value = serde_json::from_slice(&bytes).unwrap();
+        envelope["intent"]["occurrence"]["source_basis"] = basis.clone();
+        let intent = serde_json_canonicalizer::to_vec(&envelope["intent"]).unwrap();
+        transaction.execute(
+            "UPDATE work_operation_results SET request_hash = ?1, result_json = ?2 WHERE operation = 'host_execution_observe' AND idempotency_key = ?3",
+            rusqlite::params![format!("{:x}", Sha256::digest(intent)), serde_json_canonicalizer::to_vec(&envelope).unwrap(), key],
+        ).unwrap();
+        transaction.commit().unwrap();
     }
 }
 
@@ -269,9 +324,10 @@ fn refusals_carrying_host_recorded_text_never_spell_the_locked_store_phrase() {
     );
     succeeded(&evaluate(home, &work_ref, bases, &note, "locked-first"));
 
-    // The host then sees the source at a revision and in a workspace whose
-    // recorded text spells the phrase.
-    control.observe(
+    // Retained pre-cutoff source text can spell the phrase. Keep this fixture
+    // historical rather than submitting a retired shape to current ingress.
+    control.seed_historical_sightings(
+        project.as_str().unwrap(),
         &binding,
         "locked-sighting",
         &[json!({
@@ -285,6 +341,12 @@ fn refusals_carrying_host_recorded_text_never_spell_the_locked_store_phrase() {
         })],
     );
     drop(control);
+    let historical = engram(home).arg("doctor").output().unwrap();
+    assert!(
+        historical.status.success(),
+        "{}",
+        String::from_utf8_lossy(&historical.stderr)
+    );
 
     // Evaluating again at the old cut is refused because the basis moved;
     // the JSON refusal on stderr names that sighting.

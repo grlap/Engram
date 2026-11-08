@@ -1241,7 +1241,7 @@ fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
         },
     };
     store
-        .record_unadmitted_execution_observation(
+        .seed_historical_execution_observation(
             &host.project_id,
             &host.session_id,
             &host.connection_token,

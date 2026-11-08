@@ -25,6 +25,88 @@ fn mismatch(error: &StoreError) -> bool {
 }
 
 #[test]
+fn observed_check_refusals_name_indexed_fields_without_echoing_host_ids() {
+    let mut fixture = fixture();
+    let caller_id = format!("caller-check-{}", uuid::Uuid::new_v4());
+    let good = passed_check(&caller_id);
+    let checks = |check| vec![passed_check("first-valid-check"), check];
+    let mut cases = vec![(
+        "duplicate",
+        "host_check_id",
+        vec![good.clone(), good.clone()],
+    )];
+    let mut misordered = good.clone();
+    misordered.started_at = Some(at(6));
+    cases.push(("misordered", "started_at", checks(misordered)));
+    let mut before_interval = good.clone();
+    before_interval.started_at = Some(at(3));
+    cases.push(("early start", "started_at", checks(before_interval)));
+    let mut after_interval = good.clone();
+    after_interval.finished_at = Some(at(7));
+    cases.push(("late finish", "finished_at", checks(after_interval)));
+    let mut late_observation = good.clone();
+    late_observation.observed_at = at(7);
+    cases.push(("late observation", "observed_at", checks(late_observation)));
+    let mut unfinished = good.clone();
+    unfinished.finished_at = None;
+    cases.push(("unfinished", "finished_at", checks(unfinished)));
+    let mut bad_basis = good.clone();
+    bad_basis.source_basis = Some(crate::domain::ObservedCheckSourceBasis {
+        workspace_id: String::new(),
+        source_revision: None,
+        git_tree: None,
+        source_root_generation: None,
+        source_root_state: None,
+    });
+    cases.push(("source basis", "source_basis", checks(bad_basis)));
+    let mut bad_reference = good.clone();
+    bad_reference.host_evidence_ref = Some("r".repeat(2_049));
+    cases.push((
+        "evidence reference",
+        "host_evidence_ref",
+        checks(bad_reference),
+    ));
+    for (case, field, observed_checks) in cases {
+        let mut input = inter_turn_change(&fixture, case);
+        input.occurrence = ObservedOccurrence::UnadmittedTurn {
+            outcome: None,
+            host_turn_ref: "turn".into(),
+            source_change: None,
+            observed_checks,
+        };
+        let before = footprint(&fixture.store);
+        let error = observe_current(&mut fixture, input, 7).expect_err(case);
+        let StoreError::ExecutionObservationInvalid(reason) = &error else {
+            panic!("{case}: {error}");
+        };
+        assert!(
+            reason.contains(&format!("observed_checks[1].{field}")),
+            "{case}: {reason}"
+        );
+        assert!(
+            !reason.contains(&caller_id),
+            "{case}: caller check id was echoed"
+        );
+        assert_eq!(footprint(&fixture.store), before, "{case} left effects");
+    }
+    let mut valid = inter_turn_change(&fixture, "valid-checks");
+    valid.occurrence = ObservedOccurrence::UnadmittedTurn {
+        outcome: None,
+        host_turn_ref: "turn".into(),
+        source_change: None,
+        observed_checks: checks(good),
+    };
+    let receipt = observe_current(&mut fixture, valid, 7).unwrap();
+    assert_eq!(receipt.observed_checks.len(), 2);
+    assert!(
+        receipt
+            .observed_checks
+            .iter()
+            .all(|check| check.credit == ObservedCheckCredit::Uncredited)
+    );
+}
+
+#[test]
 fn a_malformed_or_oversized_request_is_refused_whole() {
     let mut fixture = fixture();
     let base = inter_turn_change(&fixture, "malformed");

@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { fixtureHome, removeFixtureHomes, registerFixtureChild, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { FixtureChild, finishFixture } from "./fixture-child.mjs";
-import { observeSource, recordCheck, ensureRoot, gitRevision } from "./work-session-fixture.mjs";
+import { observeHistoricalSource, recordCheck, ensureRoot, gitRevision } from "./work-session-fixture.mjs";
 import { join, resolve } from "node:path";
 import test, { after } from "node:test";
 
@@ -725,7 +725,7 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
   }
 });
 
-test("ordinary observations owe checks and registered evidence satisfies them", async (t) => {
+test("retained ordinary observations owe checks and registered evidence satisfies them", async (t) => {
   const home = fixtureHome("engram-observation-work-", t);
   const actor = "ordinary-runner";
   let client;
@@ -747,7 +747,7 @@ test("ordinary observations owe checks and registered evidence satisfies them", 
     const source = { workspace_id: "ordinary-workspace", source_revision: gitRevision("ordinary-R1"),
       source_root_generation: 1, source_root_state: "named" };
     await ensureRoot({ request, binding, key: "ordinary", source });
-    await observeSource({ request, policy, binding, key: "ordinary-mutation", source, changed: true });
+    await observeHistoricalSource({ home, request, policy, binding, key: "ordinary-mutation", source, changed: true });
     let focus = cliWorkFocus(home, actor, item.work.short_ref);
     assert.equal(focus.obligation_page.items.filter((row) => row.state === "open").length, 1);
     const recorded = await recordCheck({ request, binding, session: actor, key: "ordinary-check", source });
@@ -824,7 +824,7 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
           if (check) return recordCheck({ request, binding, session, key, source,
             input: { kind: "staged_tree", tree: source.source_revision.slice("git-tree:".length),
               base_commit: gitRevision("admission-base").slice("git-commit:".length) } });
-          return observeSource({ request, policy, binding, key, source, changed: true });
+          return observeHistoricalSource({ home: engramHome, request, policy, binding, key, source, changed: true });
         };
         return { client, binding, report };
       };
@@ -1135,7 +1135,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
       claim_id: binding.claim_id, claim_fence: binding.claim_fence, workspace_id: workspace,
       generation: 1, named_at: new Date().toISOString(), kind: "bound", idempotency_key: "source-root" }));
     let sightingCounter = 0;
-    const sight = async (revision) => observeSource({ request: async (frame) => ok(await client.request(frame)),
+    const sight = async (revision) => observeHistoricalSource({ home: engramHome, request: async (frame) => ok(await client.request(frame)),
       policy: () => readPolicy(engramHome), binding, key: `source-sighting-${++sightingCounter}`,
       source: { workspace_id: workspace, source_revision: revision,
         source_root_generation: 1, source_root_state: "named" } });

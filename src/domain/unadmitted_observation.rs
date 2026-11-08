@@ -172,7 +172,7 @@ impl ObservedSourceChange {
 }
 
 /// Workspace/root context of an observed check, never its verification input.
-/// Historical revision fields retain their old bytes during producer transition.
+/// Historical revision fields retain their stored bytes and are refused on new writes.
 /// New producers send only workspace and optional root generation/state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -721,6 +721,63 @@ pub struct ExecutionObservationReceipt {
 }
 
 impl ExecutionObserveInput {
+    /// Checks a new observation without applying the cutoff to stored history.
+    ///
+    /// # Errors
+    ///
+    /// Returns a field label when a retired source representation is supplied.
+    pub fn validate_new(&self, recorded_at: DateTime<Utc>) -> Result<(), String> {
+        self.validate_shape(recorded_at)?;
+        let change = match &self.occurrence {
+            ObservedOccurrence::SourceSighting { source_basis, .. } => {
+                require_shared_source(&source_basis.identity, "source_sighting.source_basis")?;
+                None
+            }
+            ObservedOccurrence::UnadmittedTurn { source_change, .. } => source_change.as_ref(),
+            ObservedOccurrence::InterTurnChange { source_change } => Some(source_change),
+            ObservedOccurrence::ObservedCheck { .. } => None,
+        };
+        if let Some(change) = change {
+            match change {
+                ObservedSourceChange::ContentComparison {
+                    baseline, sighting, ..
+                } => {
+                    require_shared_source(&baseline.identity, "source_change.baseline")?;
+                    require_shared_source(
+                        &sighting.source_basis.identity,
+                        "source_change.sighting.source_basis",
+                    )?;
+                }
+                ObservedSourceChange::AssumedMissingBaseline { sighting, .. } => {
+                    require_shared_source(
+                        &sighting.source_basis.identity,
+                        "source_change.sighting.source_basis",
+                    )?;
+                }
+                ObservedSourceChange::WatcherOnly { .. } => {
+                    return Err("source_change.detection watcher_only is retired; a measured source_id is required".into());
+                }
+            }
+        }
+        let checks = match &self.occurrence {
+            ObservedOccurrence::UnadmittedTurn {
+                observed_checks, ..
+            } => observed_checks.as_slice(),
+            ObservedOccurrence::ObservedCheck { check, .. } => std::slice::from_ref(check),
+            _ => &[],
+        };
+        for (index, check) in checks.iter().enumerate() {
+            if let Some(basis) = &check.source_basis
+                && (basis.source_revision.is_some() || basis.git_tree.is_some())
+            {
+                return Err(format!(
+                    "observed_checks[{index}].source_basis historical revision fields are retired; only workspace/root metadata is accepted"
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Checks the request's own shape against `recorded_at`, before any store
     /// read: bounds, required relations between its facts, and times that
     /// lie inside the observed window and not after recording. Nothing is
@@ -743,6 +800,15 @@ impl ExecutionObserveInput {
             recorded_at,
         )
     }
+}
+
+fn require_shared_source(identity: &VerificationSourceIdentity, label: &str) -> Result<(), String> {
+    if matches!(identity, VerificationSourceIdentity::Legacy { .. }) {
+        return Err(format!(
+            "{label}.source_revision is retired; source_id is required"
+        ));
+    }
+    Ok(())
 }
 
 impl ExecutionObserveInput {
@@ -1089,19 +1155,18 @@ fn validate_checks(checks: &[ObservedCheck], interval: ObservedInterval) -> Resu
         ));
     }
     let mut ids = HashSet::new();
-    for check in checks {
-        bounded_label(&check.host_check_id, "observed check host_check_id")?;
+    for (index, check) in checks.iter().enumerate() {
+        let label = format!("observed_checks[{index}]");
+        bounded_label(&check.host_check_id, &format!("{label}.host_check_id"))?;
         if !ids.insert(check.host_check_id.as_str()) {
             return Err(format!(
-                "observed check id {:?} appears twice in one request",
-                check.host_check_id
+                "{label}.host_check_id appears twice in one request"
             ));
         }
-        let label = format!("observed check {:?}", check.host_check_id);
         if let (Some(started), Some(finished)) = (check.started_at, check.finished_at)
             && started > finished
         {
-            return Err(format!("{label} started after it finished"));
+            return Err(format!("{label}.started_at is after {label}.finished_at"));
         }
         for (at, part) in [
             (check.started_at, "started_at"),
@@ -1109,7 +1174,7 @@ fn validate_checks(checks: &[ObservedCheck], interval: ObservedInterval) -> Resu
             (Some(check.observed_at), "observed_at"),
         ] {
             if let Some(at) = at {
-                within(at, interval, &format!("{label} {part}"))?;
+                within(at, interval, &format!("{label}.{part}"))?;
             }
         }
         if matches!(
@@ -1118,11 +1183,11 @@ fn validate_checks(checks: &[ObservedCheck], interval: ObservedInterval) -> Resu
         ) && check.finished_at.is_none()
         {
             return Err(format!(
-                "{label} reports a finished result without finished_at; an unfinished check is indeterminate"
+                "{label}.finished_at is required for a finished result; an unfinished check is indeterminate"
             ));
         }
         if let Some(basis) = &check.source_basis {
-            let label = format!("{label} source_basis");
+            let label = format!("{label}.source_basis");
             validate_source_scope(
                 &basis.workspace_id,
                 basis.source_root_generation,
@@ -1145,7 +1210,7 @@ fn validate_checks(checks: &[ObservedCheck], interval: ObservedInterval) -> Resu
             bounded_text(
                 reference,
                 MAX_OBSERVED_EVIDENCE_REF_BYTES,
-                &format!("{label} host_evidence_ref"),
+                &format!("{label}.host_evidence_ref"),
             )?;
         }
     }

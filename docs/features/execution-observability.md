@@ -426,16 +426,19 @@ An observed check's optional `source_basis` carries only
 `{ workspace_id, source_root_generation?, source_root_state? }`. It carries
 no `source_id`: accounting reads the source change's baseline and sighting,
 and an observed check creates no verification credit. Historical per-check
-revision/tree fields remain readable and replayable during the transition.
+revision/tree fields remain readable and replayable as historical records.
 
-During the producer transition, the consumer also accepts the historical
-`source_revision` basis and baseline, and `watcher_only`. Their stored bytes,
-accounting and exact-retry receipts remain unchanged. Consumer support lands
-first; producers then switch and restart on every observation-writing host;
-only after that recorded writer census does a separate change refuse new
-legacy submissions unconditionally. Historical records keep being read as
-stored after the cutoff. Acceptance, naming and sealing string protocols
-have separate transitions.
+New observations require the complete shared `source_id` for measured bases
+and baselines. A legacy `source_revision`, `watcher_only` change or observed
+check carrying revision/tree fields is refused unconditionally, with an indexed
+field label and no caller value. Scope-only check metadata and genuinely
+unavailable optional measurements remain valid. This cutoff follows consumer
+support, the producer switch and supported restart on every observation-writing
+host, and the recorded writer census. Historical records keep their stored
+bytes, accounting, ids and links. An exact committed retry returns its original
+receipt before the new-write rule; it creates no new legacy record. Doctor and
+migration import keep validating historical shapes. Acceptance, naming and
+sealing string protocols have separate transitions.
 
 A genuinely unavailable capture keeps the existing omitted optional check
 basis or null `source_change`; it never supplies a fabricated identity or

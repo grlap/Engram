@@ -600,7 +600,7 @@ fn actual_change(f: &mut Fixture, unadmitted: bool, second: i64) {
     let policy = SqliteStore::load_active_control_policy(&f.store.connection).unwrap();
     let receipt = f
         .store
-        .record_unadmitted_execution_observation(
+        .seed_historical_execution_observation(
             &f.project,
             &f.session,
             &f.connection,

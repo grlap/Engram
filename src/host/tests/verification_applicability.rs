@@ -1,8 +1,13 @@
 use super::*;
 
 #[test]
-fn git_tree_observation_ingestion_refuses_malformed_values_without_echoing_them() {
-    let observe = execution_observe_frame();
+fn historical_git_tree_observation_decoding_refuses_malformed_values_without_echoing_them() {
+    // Historical typed decoding remains supported; this does not admit a new
+    // observation through the store's current new-write validator.
+    let mut observe = execution_observe_frame();
+    let basis = &mut observe["occurrence"]["source_change"]["sighting"]["source_basis"];
+    basis.as_object_mut().unwrap().remove("source_id");
+    basis["source_revision"] = "historical-revision".into();
     for (frame, pointer) in [(observe, "/occurrence/source_change/sighting/source_basis")] {
         assert!(parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).is_ok());
         for length in [40, 64] {

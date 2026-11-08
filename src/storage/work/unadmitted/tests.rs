@@ -34,11 +34,19 @@ fn work_session_turn_wire_is_provider_neutral_and_keeps_observed_checks_uncredit
         let mut f = fixture();
         let session = SessionId(format!("ordinary-{provider}"));
         let token = f.store.resume_work_connection(&session, at(3)).unwrap();
-        let mut input = inter_turn_change(&f, "ordinary-turn");
+        let mut input = shared_source::change(
+            &f,
+            "ordinary-turn",
+            shared_source::source('c'),
+            shared_source::source('d'),
+        );
+        let ObservedOccurrence::InterTurnChange { source_change } = input.occurrence else {
+            unreachable!()
+        };
         input.occurrence = ObservedOccurrence::UnadmittedTurn {
             outcome: None,
             host_turn_ref: format!("runtime-turn-{}", uuid::Uuid::new_v4()),
-            source_change: Some(content_change("rev-a", "rev-b")),
+            source_change: Some(source_change),
             observed_checks: vec![passed_check("native-check")],
         };
         let mut wire = serde_json::to_value(input).unwrap();
@@ -76,7 +84,12 @@ fn work_session_records_observations_without_a_control_binding_or_turn() {
     let mut f = fixture();
     let session = SessionId("ordinary-observer".into());
     let token = f.store.resume_work_connection(&session, at(3)).unwrap();
-    let input = inter_turn_change(&f, "ordinary-change");
+    let input = shared_source::change(
+        &f,
+        "ordinary-change",
+        shared_source::source('c'),
+        shared_source::source('d'),
+    );
     let mut observer = actor(&session.0);
     observer.run_id = Some(f.binding.run_id.0.to_string());
     let before = footprint(&f.store);
@@ -233,10 +246,30 @@ pub(super) fn inter_turn_change(fixture: &Fixture, key: &str) -> ExecutionObserv
     }
 }
 
+/// Seeds pre-cutoff observations for tests of retained legacy accounting,
+/// readers and completion. Current ingress is tested with `observe_current`.
 pub(super) fn observe(
     fixture: &mut Fixture,
     input: ExecutionObserveInput,
     second: i64,
+) -> Result<ExecutionObservationReceipt, StoreError> {
+    observe_with(fixture, input, second, true)
+}
+
+/// Current ingress, distinct from the pre-cutoff history used by older tests.
+pub(super) fn observe_current(
+    fixture: &mut Fixture,
+    input: ExecutionObserveInput,
+    second: i64,
+) -> Result<ExecutionObservationReceipt, StoreError> {
+    observe_with(fixture, input, second, false)
+}
+
+fn observe_with(
+    fixture: &mut Fixture,
+    input: ExecutionObserveInput,
+    second: i64,
+    historical: bool,
 ) -> Result<ExecutionObservationReceipt, StoreError> {
     let mut observer = actor("observer");
     // The host-control channel records an observation as the kind the agent
@@ -244,7 +277,13 @@ pub(super) fn observe(
     observer.actor_kind = crate::work_service::WORD_ACTOR_KIND.into();
     observer.run_id = Some(fixture.binding.run_id.0.to_string());
     let host = &fixture.host;
-    let recorded = fixture.store.record_unadmitted_execution_observation(
+    let record = if historical {
+        SqliteStore::seed_historical_execution_observation
+    } else {
+        SqliteStore::record_unadmitted_execution_observation
+    };
+    let recorded = record(
+        &mut fixture.store,
         &fixture.work.project_id,
         &host.session_id,
         &host.connection_token,

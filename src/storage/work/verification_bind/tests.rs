@@ -1761,7 +1761,7 @@ fn unadmitted_change_through_host(
     observer.actor_kind = crate::work_service::WORD_ACTOR_KIND.into();
     observer.run_id = Some(held.claim.run_id.0.to_string());
     store
-        .record_unadmitted_execution_observation(
+        .seed_historical_execution_observation(
             &held.work.project_id,
             &host.session_id,
             &host.connection_token,

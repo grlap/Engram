@@ -367,7 +367,7 @@ fn observe_basis(
     };
     let mut observer = actor(&host.session_id.0);
     observer.run_id = Some(host.binding.run_id.0.to_string());
-    store.record_unadmitted_execution_observation(
+    store.seed_historical_execution_observation(
         &host.project_id,
         &host.session_id,
         &host.connection_token,

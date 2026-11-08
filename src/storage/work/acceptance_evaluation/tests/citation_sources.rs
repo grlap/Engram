@@ -1686,7 +1686,7 @@ pub(super) fn unadmitted_change(
         },
     };
     store
-        .record_unadmitted_execution_observation(
+        .seed_historical_execution_observation(
             &host.project_id,
             &host.session_id,
             &host.connection_token,

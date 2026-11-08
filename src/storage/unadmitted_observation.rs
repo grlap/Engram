@@ -197,6 +197,60 @@ impl SqliteStore {
         input: ExecutionObserveInput,
         now: DateTime<Utc>,
     ) -> Result<ExecutionObservationReceipt, StoreError> {
+        self.record_execution_observation_validated(
+            project_id,
+            session_id,
+            connection_token,
+            authority,
+            observer,
+            input,
+            now,
+            ExecutionObserveInput::validate_new,
+        )
+    }
+
+    /// Seeds retained pre-cutoff history for tests of its unchanged semantics.
+    /// Production ingress always uses `validate_new` above.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same shape, custody and storage errors as historical ingress.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn seed_historical_execution_observation(
+        &mut self,
+        project_id: &ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        authority: super::HostSessionAuthority,
+        observer: &ActorContext,
+        input: ExecutionObserveInput,
+        now: DateTime<Utc>,
+    ) -> Result<ExecutionObservationReceipt, StoreError> {
+        self.record_execution_observation_validated(
+            project_id,
+            session_id,
+            connection_token,
+            authority,
+            observer,
+            input,
+            now,
+            ExecutionObserveInput::validate_shape,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_execution_observation_validated(
+        &mut self,
+        project_id: &ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        authority: super::HostSessionAuthority,
+        observer: &ActorContext,
+        input: ExecutionObserveInput,
+        now: DateTime<Utc>,
+        validate: fn(&ExecutionObserveInput, DateTime<Utc>) -> Result<(), String>,
+    ) -> Result<ExecutionObservationReceipt, StoreError> {
         let intent = CanonicalObject::freeze(&ExecutionObserveIntent::of(session_id, &input))?;
         control_lifecycle_transaction(&mut self.connection, |transaction| {
             authority.verify_on(transaction, project_id, session_id, connection_token)?;
@@ -221,9 +275,7 @@ impl SqliteStore {
                 }
                 return Ok(replay);
             }
-            input
-                .validate_shape(now)
-                .map_err(StoreError::ExecutionObservationInvalid)?;
+            validate(&input, now).map_err(StoreError::ExecutionObservationInvalid)?;
             // New host source text only: a stored record re-validates its shape
             // without this rule and keeps reading as stored. The endpoint's own
             // invalid-request code is kept, which the host already handles.
@@ -267,14 +319,14 @@ impl SqliteStore {
                     &sighting.source_basis,
                 )?;
             }
-            for check in occurrence.checks() {
+            for (index, check) in occurrence.checks().iter().enumerate() {
                 if let Some(basis) = &check.check.source_basis {
                     work::check_source_root_at_cut_on(
                         transaction,
                         &input.binding,
                         basis,
                         cut,
-                        &format!("observed check {:?}", check.check.host_check_id),
+                        &format!("observed_checks[{index}].source_basis"),
                     )?;
                 }
             }

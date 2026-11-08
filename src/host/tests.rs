@@ -420,13 +420,13 @@ fn execution_observe_frame() -> Value {
                 "workspace_id": "workspace-A",
                 "baseline": {
                     "workspace_id": "workspace-A",
-                    "source_revision": "rev-a",
+                    "source_id": {"commit":"a".repeat(40), "tree":"b".repeat(40), "submodules":[], "changes":[]},
                     "observed_at": "2026-10-02T03:00:00Z"
                 },
                 "sighting": {
                     "source_basis": {
                         "workspace_id": "workspace-A",
-                        "source_revision": "rev-b"
+                        "source_id": {"commit":"c".repeat(40), "tree":"d".repeat(40), "submodules":[], "changes":[]}
                     },
                     "observed_at": "2026-10-02T03:04:00Z"
                 }
@@ -665,7 +665,6 @@ fn observation_frame_holds_all_complete_sources_without_raising_other_operation_
     let after = serde_json::to_value(&source).unwrap();
     let mut frame = execution_observe_frame();
     let baseline = &mut frame["occurrence"]["source_change"]["baseline"];
-    baseline.as_object_mut().unwrap().remove("source_revision");
     baseline["source_id"] = before.clone();
     frame["occurrence"]["source_change"]["sighting"]["source_basis"] =
         serde_json::json!({"workspace_id":"workspace-A", "source_id":after});
@@ -1097,7 +1096,8 @@ fn host_control_attributes_its_records_to_the_supplied_actor_context() {
 fn ordinary_source_sighting_uses_the_observation_protocol_without_admission() {
     let mut frame = execution_observe_frame();
     frame["occurrence"] = serde_json::json!({"kind":"source_sighting", "source_basis":{
-        "workspace_id":"workspace-A", "source_revision":"quiet-revision"},
+        "workspace_id":"workspace-A", "source_id":{
+            "commit":"a".repeat(40), "tree":"b".repeat(40), "submodules":[], "changes":[]}},
         "observed_at":"2026-10-02T03:04:00Z"});
     let decoded = parse_host_control_request(&serde_json::to_vec(&frame).unwrap()).unwrap();
     assert_eq!(decoded.operation(), "execution_observe");
