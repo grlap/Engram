@@ -91,7 +91,7 @@ pub(crate) use work::{
     FOCUS_CHANGE_RESERVE, FocusChange, FocusJournal, MAX_DISCLOSED_WORKSPACE_JSON_BYTES,
     owned_control_work_binding,
 };
-pub(crate) use work::{SealedSourceDiagnostic, SealedSourceFact};
+pub(crate) use work::{SealedSourceBasis, SealedSourceDiagnostic, SealedSourceFact};
 pub(crate) use work::{criteria_without_evidence_link, unlinked_criteria_owe_bound_check};
 
 pub(crate) use project_memory::ProjectMemoryAdmission;

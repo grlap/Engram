@@ -35,6 +35,24 @@ fn source_sighting_delivered(
     delivered: i64,
     revision: &str,
 ) -> ObjectId {
+    let basis = ExecutionSourceBasis {
+        workspace_id: f.request.registration.root.workspace_id.clone(),
+        source_revision: revision.into(),
+        source_root_generation: Some(f.request.registration.root.generation),
+        source_root_state: Some(SourceRootState::Named),
+        git_tree: None,
+    }
+    .into();
+    basis_sighting_delivered(f, key, second, delivered, basis)
+}
+
+fn basis_sighting_delivered(
+    f: &mut Fixture,
+    key: &str,
+    second: i64,
+    delivered: i64,
+    source_basis: crate::domain::VerificationSourceBasis,
+) -> ObjectId {
     let binding = f.request.registration.binding.clone();
     let mut observer = actor("runner");
     observer.run_id = Some(binding.run_id.0.to_string());
@@ -71,14 +89,7 @@ fn source_sighting_delivered(
                     through: at(second),
                 },
                 occurrence: ObservedOccurrence::SourceSighting {
-                    source_basis: (ExecutionSourceBasis {
-                        workspace_id: f.request.registration.root.workspace_id.clone(),
-                        source_revision: revision.into(),
-                        source_root_generation: Some(f.request.registration.root.generation),
-                        source_root_state: Some(SourceRootState::Named),
-                        git_tree: None,
-                    })
-                    .into(),
+                    source_basis,
                     observed_at: at(second),
                 },
                 causality: ObservationCausality::Unknown {},
@@ -415,7 +426,13 @@ fn registered_staged_input_quiet_evaluation_rejects_a_different_or_late_input() 
         let mut f = prepared(false, true);
         let note = note(&mut f);
         let mut input = judgment(&f, &note);
-        let declared = input.source_basis.as_ref().unwrap().fingerprint.clone();
+        let declared = input
+            .source_basis
+            .as_ref()
+            .unwrap()
+            .legacy_fingerprint()
+            .unwrap()
+            .to_owned();
         if !late {
             f.request.input = RegisteredVerificationInput::StagedTree {
                 tree: GitTreeId::parse(object_name("another checked tree")).unwrap(),
@@ -429,7 +446,15 @@ fn registered_staged_input_quiet_evaluation_rejects_a_different_or_late_input() 
                 .work_feed_head(&FeedId::RunExecution(f.request.registration.binding.run_id))
                 .unwrap();
         }
-        assert_eq!(input.source_basis.as_ref().unwrap().fingerprint, declared);
+        assert_eq!(
+            input
+                .source_basis
+                .as_ref()
+                .unwrap()
+                .legacy_fingerprint()
+                .unwrap(),
+            declared
+        );
         // The late case isolates the evidence-cut guard; a later content
         // sighting would instead decide SourceChanged and mask that guard.
         let sighting = (!late).then(|| quiet_sighting(&mut f, "nonmatching-registered-input", 11));
@@ -828,8 +853,14 @@ fn registered_staged_input_uncited_witness_validates_the_exact_saved_proof() {
             "wrong-kind" => bad.registered_input_witness = Some(note.clone()),
             "not-in-basis" => bad.evidence_basis.retain(|id| id != check),
             "wrong-input" => {
-                bad.source_basis.as_mut().unwrap().fingerprint =
-                    format!("git-commit:{}", object_name("not-the-checked-input"));
+                bad.source_basis.as_mut().unwrap().identity =
+                    crate::domain::VerificationSourceIdentity::Legacy {
+                        source_revision: format!(
+                            "git-commit:{}",
+                            object_name("not-the-checked-input")
+                        ),
+                        git_tree: None,
+                    };
             }
             "missing-root" => bad.named_root_binding = None,
             _ => unreachable!(),
@@ -929,7 +960,7 @@ fn registered_staged_input_uncited_witness_requires_completion_input_with_freshn
     );
     let crate::storage::AcceptanceEvaluationReadiness::Blocked(_, context) = f
         .store
-        .acceptance_evaluation_readiness(work.work_id, held.run_id, None)
+        .acceptance_evaluation_readiness(work.work_id, held.run_id, None, None)
         .unwrap()
     else {
         panic!("a witness still requires the completion's exact input");
@@ -1224,4 +1255,49 @@ fn registered_staged_input_old_and_witness_records_round_trip_without_rewriting(
             schema
         );
     }
+}
+
+#[test]
+fn a_shared_quiet_sighting_preserves_the_historical_staged_tree_witness() {
+    let mut f = prepared(false, true);
+    let check = f.record().unwrap().verifications[0].record_id.clone();
+    let note = note(&mut f);
+    let shared = |f: &Fixture| crate::domain::VerificationSourceBasis {
+        workspace_id: f.request.registration.root.workspace_id.clone(),
+        identity: crate::domain::VerificationSourceIdentity::SourceId {
+            source_id: crate::source::SourceId {
+                commit: "a".repeat(40),
+                tree: "b".repeat(40),
+                changes: vec![],
+                submodules: vec![],
+            },
+        },
+        source_root_generation: Some(f.request.registration.root.generation),
+        source_root_state: Some(SourceRootState::Named),
+    };
+    let basis = shared(&f);
+    basis_sighting_delivered(&mut f, "shared-before-cut", 11, 11, basis);
+    let input = judgment(&f, &note);
+    let recorded = record_evaluation(&mut f, &input).unwrap();
+    assert_eq!(
+        recorded.record.registered_input_witness.as_ref(),
+        Some(&check)
+    );
+    assert!(f.store.verify_all().unwrap().is_healthy());
+    let basis = shared(&f);
+    basis_sighting_delivered(&mut f, "shared-after-recording", 14, 14, basis);
+    let revision = f.request.input.revision();
+    let status = f
+        .store
+        .acceptance_evaluation_status(f.request.registration.binding.work_id, Some(&revision))
+        .unwrap()
+        .unwrap();
+    assert_eq!(status.stale, None);
+    let sealed =
+        complete_with_evidence(&mut f, &[check, note], &revision, "shared-quiet-complete").unwrap();
+    assert_eq!(
+        f.store.completion_seal_evaluation(&sealed).unwrap(),
+        Some(recorded.record)
+    );
+    assert!(f.store.verify_all().unwrap().is_healthy());
 }

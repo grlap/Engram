@@ -32,6 +32,8 @@ fn stored_results() -> (serde_json::Value, serde_json::Value) {
     let complete = |acceptance: Option<Vec<WorkAcceptanceInput>>, note: Option<&str>, key: &str| {
         WorkCompleteInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,

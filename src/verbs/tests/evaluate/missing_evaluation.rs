@@ -47,6 +47,8 @@ fn refused_done(name: &str, modes: &[AcceptanceEvaluationMode], mark: Option<&st
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -205,6 +207,8 @@ fn a_title_placeholder_criterion_is_named_on_show_claim_and_done() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -329,6 +333,8 @@ fn a_title_placeholder_criterion_is_named_on_show_claim_and_done() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -395,6 +401,8 @@ fn a_child_done_receipt_names_the_parent_placeholder_as_the_parents() {
             .done(
                 DoneInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,

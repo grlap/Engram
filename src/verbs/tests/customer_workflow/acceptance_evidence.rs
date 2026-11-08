@@ -71,6 +71,8 @@ fn assert_service_citation_refusal(malformed: bool) {
             Some(&reference),
             WorkCompleteInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -247,6 +249,8 @@ fn criterion_disclosure_words_keep_work_evidence_separate_and_frozen() {
         .unwrap();
     let input = DoneInput {
         source_fingerprint: None,
+
+        source_id: None,
         landing: None,
         links: Vec::new(),
         link_basis: None,
@@ -331,6 +335,8 @@ fn criterion_disclosure_explicit_and_mixed_core_inputs_use_seal_positions() {
             .unwrap();
         let input = WorkCompleteInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,
@@ -684,6 +690,8 @@ fn criterion_disclosure_absent_transient_facts_still_render_optional_children() 
             Some(&reference),
             WorkCompleteInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -920,6 +928,8 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
         let reference = claimed(&verbs, vec!["delivered".into()]);
         let core_input = WorkCompleteInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,
@@ -1120,6 +1130,8 @@ fn a_completed_items_misbound_seal_is_unavailable_with_its_class() {
                 Some(reference),
                 WorkCompleteInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,

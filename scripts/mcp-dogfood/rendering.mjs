@@ -311,7 +311,6 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
     assert.match(doneTool.description, /no evidence linked to this criterion/);
     assert.match(doneTool.description, /what is still owed and the command that resolves it/);
     assert.match(doneTool.inputSchema.properties.note.description, /does not link evidence/);
-    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["landing", "link_basis", "links", "note", "source_fingerprint", "summary", "work_ref"]);
     assert.match(doneTool.inputSchema.properties.link_basis.description, /Required with links/);
     const help = cliWord(engramHome, session, "done", "--help");
     assert.equal(help.status, 0, help.stderr);

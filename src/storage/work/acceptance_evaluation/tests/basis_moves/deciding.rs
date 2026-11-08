@@ -1056,7 +1056,7 @@ fn completion_carries_the_deciding_observation_beside_the_unchanged_cause() {
         });
 
         let crate::storage::AcceptanceEvaluationReadiness::Blocked(cause, context) = store
-            .acceptance_evaluation_readiness(work.work_id, claim.run_id, None)
+            .acceptance_evaluation_readiness(work.work_id, claim.run_id, None, None)
             .expect("readiness")
         else {
             panic!("a stale evaluation blocks completion");

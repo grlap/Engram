@@ -19,7 +19,11 @@ pub(in crate::storage::work::acceptance_evaluation) fn select_registered_input_w
     let (Some(declared), Some(root)) = (declared, root) else {
         return Ok(None);
     };
-    if !crate::domain::is_git_input_revision(&declared.fingerprint) {
+    if !(declared.source_id().is_some()
+        || declared
+            .legacy_fingerprint()
+            .is_some_and(crate::domain::is_git_input_revision))
+    {
         return Ok(None);
     }
     // Prefer the newest qualifying check, rather than letting old failed or
@@ -43,7 +47,10 @@ fn qualifies_on(
     root: &NamedEvaluationRoot,
     witness: &ObjectId,
 ) -> Result<bool, StoreError> {
-    if !crate::domain::is_git_input_revision(&declared.fingerprint)
+    if !(declared.source_id().is_some()
+        || declared
+            .legacy_fingerprint()
+            .is_some_and(crate::domain::is_git_input_revision))
         || declared
             .workspace_id
             .as_ref()
@@ -59,9 +66,7 @@ fn qualifies_on(
     let evidence: VerificationEvidence =
         load_typed_work_object(connection, witness, "verification_evidence")?;
     let producer = crate::storage::work::load_verification_producer_on(connection, &evidence)?;
-    let Some(basis) = evidence.source_basis.legacy_basis() else {
-        return Ok(false);
-    };
+    let basis = &evidence.source_basis;
     let binding = &evidence.binding;
     if evidence.project_id != root.event.project_id
         || binding.run_id != run_id
@@ -69,13 +74,13 @@ fn qualifies_on(
         || binding.root_execution_id != root.event.root_execution_id
         || binding.claim_id != root.event.claim_id
         || binding.claim_fence != root.event.claim_fence
-        || producer.matches_registered_git_input(&evidence, &declared.fingerprint) != Some(true)
+        || producer.matches_registered_source(&evidence, &declared.identity) != Some(true)
         || naming_mismatch(
             connection,
             run_id,
             witness,
             &evidence.producer_observation,
-            &basis,
+            basis,
             root,
         )?
         .is_some()
@@ -87,7 +92,7 @@ fn qualifies_on(
         run_id,
         witness,
         &evidence.producer_observation,
-        CitationSource::WitnessGit(&declared.fingerprint),
+        CitationSource::WitnessGit(&declared.identity),
         cut,
         Some(root),
     )?

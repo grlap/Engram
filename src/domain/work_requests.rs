@@ -451,6 +451,13 @@ pub struct CompleteWorkRequest {
     /// project policy requires source freshness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::source::present_source_id"
+    )]
+    pub source_id: Option<crate::source::SourceId>,
     /// Where the work landed, recorded in the seal as asserted provenance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub landing: Option<super::CompletionLanding>,

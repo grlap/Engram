@@ -271,6 +271,7 @@ fn a_holder_evaluation_of_another_held_item_discloses_the_move() {
                 }],
                 attempt: Some("focus-change-evaluation".into()),
                 source_fingerprint: None,
+                source_id: None,
                 model: None,
                 execution_identity: None,
                 parent_session: None,

@@ -21,6 +21,8 @@ impl AgentVerbs {
     fn done_word(&self, input: DoneInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let completion = WorkCompleteInput {
             source_fingerprint: nonempty(input.source_fingerprint),
+
+            source_id: input.source_id,
             landing: input.landing,
             links: input.links,
             link_basis: input.link_basis,

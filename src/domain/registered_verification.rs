@@ -9,6 +9,11 @@ use super::{
 use crate::ActorContext;
 use crate::ObjectId;
 
+/// Complete native registration frame, including its line terminator. The
+/// input and post-run measurement each retain one complete source identity.
+pub const MAX_VERIFICATION_RECORD_FRAME_BYTES: usize =
+    2 * crate::source::MAX_JSON_BYTES + 64 * 1_024;
+
 /// The input actually selected before execution. A staged tree's base is
 /// provenance, whereas an ordinary commit is the input's identity.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -175,6 +180,22 @@ pub enum RegisteredDecisionSource {
     },
 }
 
+impl From<&RegisteredDecisionSource> for super::VerificationSourceIdentity {
+    fn from(source: &RegisteredDecisionSource) -> Self {
+        match source {
+            RegisteredDecisionSource::Legacy {
+                source_revision, ..
+            } => Self::Legacy {
+                source_revision: source_revision.clone(),
+                git_tree: None,
+            },
+            RegisteredDecisionSource::SourceId { source_id } => Self::SourceId {
+                source_id: source_id.clone(),
+            },
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum DecisionWire {
@@ -318,6 +339,24 @@ pub fn is_git_input_revision(revision: &str) -> bool {
 }
 
 impl VerificationProducerFacts {
+    /// Compare an existing registered producer with the complete declared
+    /// identity. Historical Git inputs retain their original matcher.
+    #[must_use]
+    pub fn matches_registered_source(
+        &self,
+        evidence: &super::VerificationEvidence,
+        judged: &super::VerificationSourceIdentity,
+    ) -> Option<bool> {
+        match judged {
+            super::VerificationSourceIdentity::Legacy {
+                source_revision, ..
+            } => self.matches_registered_git_input(evidence, source_revision),
+            super::VerificationSourceIdentity::SourceId { .. } => self
+                .registered_source_id_basis(evidence)
+                .map(|basis| basis == &evidence.source_basis && basis.identity.same_source(judged)),
+        }
+    }
+
     /// Only the registered-run reader supplies an aggregate outcome. Legacy
     /// observations and cross-item bindings retain their original contract.
     #[must_use]

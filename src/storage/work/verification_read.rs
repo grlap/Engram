@@ -729,7 +729,8 @@ mod tests {
             (8, 0, None)
         );
 
-        let page = fit_page(&basis, 1, &requirement, 12, 2, rows(4_000)).expect("large rows");
+        let width = ACCEPTANCE_VERIFICATION_READ_PAGE_BYTES / 4;
+        let page = fit_page(&basis, 1, &requirement, 12, 2, rows(width)).expect("large rows");
         assert!(page.shown >= 1 && page.shown < 8, "{}", page.shown);
         assert_eq!(page.earlier, 2);
         assert_eq!(page.omitted, 12 - 2 - page.shown);
@@ -745,15 +746,68 @@ mod tests {
             (resumed.last_position, &resumed.last_record),
             (last.position, &last.record)
         );
-        assert_eq!(page.rows, rows(4_000)[..page.shown]);
+        assert_eq!(page.rows, rows(width)[..page.shown]);
 
         assert!(matches!(
-            fit_page(&basis, 1, &requirement, 3, 0, vec![row(10, 17_000)]),
+            fit_page(
+                &basis,
+                1,
+                &requirement,
+                3,
+                0,
+                vec![row(10, ACCEPTANCE_VERIFICATION_READ_PAGE_BYTES + 1)]
+            ),
             Err(StoreError::AcceptanceVerificationReadRefused {
                 refusal: Refusal::PageTooLarge,
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn shared_candidates_keep_complete_owner_sized_identities_across_pages() {
+        let mut source = crate::source::SourceId {
+            commit: "a".repeat(40),
+            tree: "b".repeat(40),
+            submodules: vec![],
+            changes: vec![crate::source::Change {
+                path: "p".into(),
+                status: " M".into(),
+                origin: None,
+                blob: Some("c".repeat(40)),
+                mode: Some(crate::source::Mode::Regular),
+            }],
+        };
+        let initial = serde_json::to_vec(&source).unwrap().len();
+        source.changes[0].path = "p".repeat(crate::source::MAX_JSON_BYTES - initial + 1);
+        source.validate().unwrap();
+        let rows = (1..=3)
+            .map(|position| {
+                let mut value = row(position * 10, 8);
+                value.source_basis.identity = crate::domain::VerificationSourceIdentity::SourceId {
+                    source_id: source.clone(),
+                };
+                value
+            })
+            .collect::<Vec<_>>();
+        let basis = basis();
+        let requirement = cursor().requirement;
+        let first = fit_page(&basis, 1, &requirement, 3, 0, rows.clone()).unwrap();
+        assert_eq!((first.shown, first.omitted), (2, 1));
+        assert_eq!(first.rows, rows[..2]);
+        let resumed = decode_cursor(first.continuation.as_deref().unwrap()).unwrap();
+        let last = fit_page(
+            &basis,
+            1,
+            &requirement,
+            3,
+            resumed.through,
+            rows[2..].to_vec(),
+        )
+        .unwrap();
+        assert_eq!((last.earlier, last.shown, last.omitted), (2, 1, 0));
+        assert_eq!(last.rows[0].source_basis.source_id(), Some(&source));
+        assert!(last.continuation.is_none());
     }
 
     fn invalid(token: &str) -> bool {

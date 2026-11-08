@@ -11,9 +11,14 @@ pub(super) struct SourceQuery {
 }
 
 impl SourceQuery {
-    pub(super) fn new(seal: &CompletionSeal, diagnostic: &SealedSourceDiagnostic) -> Self {
+    pub(super) fn new(
+        seal: &CompletionSeal,
+        diagnostic: &SealedSourceDiagnostic,
+        judged: Option<&crate::domain::VerificationSourceBasis>,
+    ) -> Result<Self, StoreError> {
         let binding = |field| format!("json_extract(object.canonical_json, '$.binding.{field}')");
         let revision = source_basis_sql("source_revision");
+        let source_id = source_basis_sql("source_id");
         let workspace = source_basis_sql("workspace_id");
         let generation = source_basis_sql("source_root_generation");
         let state = source_basis_sql("source_root_state");
@@ -30,10 +35,11 @@ impl SourceQuery {
         let cte = format!(
             "WITH facts AS (
                 SELECT entry.position, entry.object_id,
-                  CASE WHEN ?11 IS NULL THEN 'judged_basis_unavailable'
+                  CASE WHEN ?11 IS NULL AND ?12 IS NULL THEN 'judged_basis_unavailable'
                        WHEN NOT COALESCE(({scope}), 0) THEN 'unrelated_or_missing_basis'
-                       WHEN {revision} IS NULL THEN 'closing_sighting_unavailable'
-                       WHEN {revision} = ?11 THEN 'agreement'
+                       WHEN {revision} IS NULL AND {source_id} IS NULL THEN 'closing_sighting_unavailable'
+                       WHEN (?11 IS NOT NULL AND {revision} = ?11 AND {source_id} IS NULL)
+                         OR (?12 IS NOT NULL AND {source_id} = ?12 AND {revision} IS NULL) THEN 'agreement'
                        ELSE 'differs' END AS comparison
                 FROM work_feed_entries entry
                 JOIN objects object ON object.object_id = entry.object_id
@@ -43,7 +49,6 @@ impl SourceQuery {
                     ('execution_observation', 'unadmitted_execution_observation')
              )"
         );
-        let judged = diagnostic.judged.as_ref();
         let values = vec![
             Value::Text(seal.run_id.0.to_string()),
             Value::Integer(diagnostic.completion_cut),
@@ -57,9 +62,18 @@ impl SourceQuery {
             judged
                 .and_then(|b| b.source_root_generation)
                 .map_or(Value::Null, Value::Integer),
-            judged.map_or(Value::Null, |b| Value::Text(b.source_revision.clone())),
+            judged
+                .and_then(|b| b.legacy_revision())
+                .map_or(Value::Null, |v| Value::Text(v.to_owned())),
+            judged
+                .and_then(|b| b.source_id())
+                .map(crate::canonical::canonical_bytes)
+                .transpose()?
+                .map_or(Value::Null, |bytes| {
+                    Value::Text(String::from_utf8_lossy(&bytes).into_owned())
+                }),
         ];
-        Self { cte, values }
+        Ok(Self { cte, values })
     }
 
     pub(super) fn count(
@@ -109,7 +123,7 @@ impl SourceQuery {
         })?));
         let mut statement = connection.prepare(&format!(
             "{} SELECT position, object_id, comparison FROM facts
-             WHERE position < ?12 AND {filter} ORDER BY position {order} LIMIT ?13",
+             WHERE position < ?13 AND {filter} ORDER BY position {order} LIMIT ?14",
             self.cte,
         ))?;
         let rows = statement.query_map(params_from_iter(&values), |row| {
@@ -141,7 +155,7 @@ impl SourceQuery {
         values.push(Value::Integer(boundary));
         let count: i64 = connection.query_row(
             &format!(
-                "{} SELECT COUNT(*) FROM facts WHERE position >= ?12",
+                "{} SELECT COUNT(*) FROM facts WHERE position >= ?13",
                 self.cte,
             ),
             params_from_iter(&values),
@@ -155,6 +169,60 @@ impl SourceQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_sealed_source_counts_compare_the_complete_canonical_identity() {
+        let mut fixture = crate::storage::sealed_source_transport_fixture("missing");
+        let source = crate::source::SourceId {
+            commit: "a".repeat(40),
+            tree: "b".repeat(40),
+            submodules: vec![],
+            changes: vec![crate::source::Change {
+                path: "source-\"quoted\".rs".into(),
+                status: " M".into(),
+                origin: None,
+                blob: Some("c".repeat(40)),
+                mode: Some(crate::source::Mode::Regular),
+            }],
+        };
+        fixture.append_shared_sighting(source.clone(), "shared-equal");
+        let mut different = source.clone();
+        different.changes[0].blob = Some("d".repeat(40));
+        fixture.append_shared_sighting(different, "shared-different");
+        let store = crate::SqliteStore::open(&fixture.database).unwrap();
+        let seal = store.completion_seal_at(&fixture.seal).unwrap();
+        let mut diagnostic = store
+            .sealed_source_page(&fixture.seal, None, None, 0)
+            .unwrap()
+            .diagnostic;
+        let judged = crate::domain::VerificationSourceBasis {
+            workspace_id: "workspace-B".into(),
+            identity: crate::domain::VerificationSourceIdentity::SourceId { source_id: source },
+            source_root_generation: Some(9),
+            source_root_state: Some(crate::domain::SourceRootState::Named),
+        };
+        diagnostic.judged = Some(super::super::SealedSourceBasis::from(&judged));
+        diagnostic.total = 0;
+        diagnostic.differences = 0;
+        diagnostic.agreements = 0;
+        diagnostic.incomparable = 0;
+        let query = SourceQuery::new(&seal, &diagnostic, Some(&judged)).unwrap();
+        query.count(&store.connection, &mut diagnostic).unwrap();
+        assert_eq!(diagnostic.total, 2);
+        assert_eq!(diagnostic.agreements, 1);
+        assert_eq!(diagnostic.differences, 1);
+        assert_eq!(diagnostic.incomparable, 0);
+        assert_eq!(
+            query
+                .select(&store.connection, None, Some("differs"), false, 1)
+                .unwrap()
+                .len(),
+            1
+        );
+        let projected = serde_json::to_string(&diagnostic).unwrap();
+        assert!(!projected.contains("quoted"));
+        assert!(projected.contains("source_id_summary"));
+    }
 
     #[test]
     fn sealed_source_scope_checks_each_original_binding_component() {
@@ -197,7 +265,20 @@ mod tests {
                 "judged" => diagnostic.judged = None,
                 _ => unreachable!(),
             }
-            let query = SourceQuery::new(&seal, &diagnostic);
+            let judged =
+                diagnostic
+                    .judged
+                    .as_ref()
+                    .map(|basis| crate::domain::VerificationSourceBasis {
+                        workspace_id: basis.workspace_id.clone(),
+                        identity: crate::domain::VerificationSourceIdentity::Legacy {
+                            source_revision: basis.source_revision.clone().unwrap(),
+                            git_tree: None,
+                        },
+                        source_root_generation: basis.source_root_generation,
+                        source_root_state: basis.source_root_state,
+                    });
+            let query = SourceQuery::new(&seal, &diagnostic, judged.as_ref()).unwrap();
             query.count(&store.connection, &mut diagnostic).unwrap();
             assert_eq!(diagnostic.total, 40, "{component}");
             assert_eq!(diagnostic.agreements, 0, "{component}");

@@ -177,6 +177,8 @@ fn a_held_self_asserted_item_names_its_unlinked_criteria_before_the_seal() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 work_ref: Some(reference.clone()),
                 summary: Some("Delivered".into()),
                 links: vec![WorkCriterionLinkInput {

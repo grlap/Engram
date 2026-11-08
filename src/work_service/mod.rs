@@ -109,7 +109,7 @@ pub(crate) use criterion_links::{WorkCriterionLinkRow, WorkCriterionLinksWindow}
 mod deciding;
 mod source_recovery;
 pub(crate) use source_recovery::{
-    MEASURE_SOURCE_REMEDY, shown_source_recovery, source_recovery_remedy,
+    MEASURE_SOURCE_ID_REMEDY, MEASURE_SOURCE_REMEDY, shown_source_recovery, source_recovery_remedy,
 };
 mod evaluate;
 pub(crate) use evaluate::validate_evaluation_words;

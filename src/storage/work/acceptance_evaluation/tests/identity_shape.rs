@@ -762,3 +762,376 @@ fn a_malformed_record_reads_after_earlier_reasons_and_identity() {
         Some(AcceptanceStaleReason::Identity)
     );
 }
+
+mod shared_source {
+    //! Shared identity follows the same source-selection and evidence rules.
+
+    use super::*;
+    use crate::domain::{VerificationSourceBasis, VerificationSourceIdentity};
+    use crate::source::{Change, Mode as FileMode, SourceId};
+
+    fn source(blob: char) -> SourceId {
+        SourceId {
+            commit: "a".repeat(40),
+            tree: "b".repeat(40),
+            submodules: vec![],
+            changes: vec![Change {
+                path: "src/lib.rs".into(),
+                status: " M".into(),
+                origin: None,
+                blob: Some(blob.to_string().repeat(40)),
+                mode: Some(FileMode::Regular),
+            }],
+        }
+    }
+
+    fn declared(source_id: SourceId) -> AcceptanceSourceBasis {
+        AcceptanceSourceBasis {
+            workspace_id: None,
+            identity: VerificationSourceIdentity::SourceId { source_id },
+        }
+    }
+
+    fn sighting(
+        store: &mut SqliteStore,
+        host: &HostSession,
+        key: &str,
+        workspace: &str,
+        source_id: SourceId,
+        second: i64,
+    ) -> ObjectId {
+        observe(store, host, key, workspace, source_id, second, false)
+    }
+
+    fn observe(
+        store: &mut SqliteStore,
+        host: &HostSession,
+        key: &str,
+        workspace: &str,
+        source_id: SourceId,
+        second: i64,
+        changed: bool,
+    ) -> ObjectId {
+        let root = store
+            .read_named_root(
+                &host.project_id,
+                &host.session_id,
+                &host.connection_token,
+                crate::storage::HostSessionAuthority::Work,
+                host.binding.run_id,
+                host.binding.claim_id,
+            )
+            .unwrap();
+        let policy = SqliteStore::load_active_control_policy(&store.connection).unwrap();
+        let basis = VerificationSourceBasis {
+            workspace_id: workspace.into(),
+            identity: VerificationSourceIdentity::SourceId { source_id },
+            source_root_generation: None,
+            source_root_state: None,
+        };
+        let occurrence = if changed {
+            crate::domain::ObservedOccurrence::InterTurnChange {
+                source_change: crate::domain::ObservedSourceChange::AssumedMissingBaseline {
+                    workspace_id: workspace.into(),
+                    sighting: crate::domain::MeasuredSighting {
+                        source_basis: basis,
+                        observed_at: at(second),
+                    },
+                },
+            }
+        } else {
+            crate::domain::ObservedOccurrence::SourceSighting {
+                source_basis: basis,
+                observed_at: at(second),
+            }
+        };
+        let mut observer = actor("runner");
+        observer.run_id = Some(host.binding.run_id.0.to_string());
+        let receipt = store
+            .record_unadmitted_execution_observation(
+                &host.project_id,
+                &host.session_id,
+                &host.connection_token,
+                crate::storage::HostSessionAuthority::Work,
+                &observer,
+                crate::domain::ExecutionObserveInput {
+                    idempotency_key: key.into(),
+                    binding: host.binding.clone(),
+                    root_basis: crate::domain::ObservationRootBasis {
+                        capture_run_cut: root.read_cut.position,
+                        latest_event: root.latest_event.as_ref().map(|event| event.event.clone()),
+                        state: root.named_root,
+                    },
+                    observed_interval: crate::domain::ObservedInterval {
+                        from: at(second),
+                        through: at(second),
+                    },
+                    occurrence,
+                    causality: crate::domain::ObservationCausality::Unknown {},
+                    policy_basis: crate::domain::ObservationPolicyBasis::AccountIfEligible {
+                        project_policy_epoch: policy.epoch,
+                        policy: policy.policy_id,
+                        obligation_rule_set: policy.obligation_rule_set,
+                    },
+                },
+                at(second),
+            )
+            .unwrap();
+        receipt.observation
+    }
+
+    #[test]
+    fn shared_sightings_keep_complete_identity_and_do_not_fall_back_to_other_workspaces() {
+        let mut f = fixture("shared-measurement");
+        disable_obligation_rules(&mut f.store, 6);
+        let mut host = HostSession::bind(&mut f.store, &f.work, &f.claim, 10);
+        host.install_source_records(&mut f.store, &[(true, Some("legacy-A"))], 11);
+        let identity = source('c');
+        observe(
+            &mut f.store,
+            &host,
+            "shared-A",
+            &host.basis.workspace_id,
+            identity.clone(),
+            20,
+            true,
+        );
+        // A different workspace's later historical observation cannot become A's source.
+        host.basis.workspace_id = "other-workspace".into();
+        host.install_source_records(&mut f.store, &[(false, Some("legacy-B"))], 21);
+        let selected = source::revision_seen_through(
+            &f.store.connection,
+            f.claim.run_id,
+            cut(&f.store, &f.work),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            selected,
+            VerificationSourceIdentity::SourceId {
+                source_id: identity.clone()
+            }
+        );
+        let declaration = declared(identity.clone());
+        let judged = source::judged_source(
+            &f.store.connection,
+            f.claim.run_id,
+            cut(&f.store, &f.work),
+            Some(&declaration),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            judged
+                .identity
+                .same_source(&VerificationSourceIdentity::SourceId {
+                    source_id: identity.clone()
+                })
+        );
+        let mut changed = identity;
+        changed.changes[0].blob = Some("d".repeat(40));
+        assert!(
+            !judged
+                .identity
+                .same_source(&VerificationSourceIdentity::SourceId { source_id: changed })
+        );
+    }
+
+    #[test]
+    fn shared_quiet_reports_do_not_create_reroll_evidence() {
+        let mut f = fixture("shared-reroll");
+        enable(
+            &mut f.store,
+            &[Mode::SameSession],
+            MechanicalBasis::Asserted,
+            false,
+            "enable",
+            5,
+        );
+        disable_obligation_rules(&mut f.store, 6);
+        let host = HostSession::bind(&mut f.store, &f.work, &f.claim, 10);
+        let identity = source('c');
+        sighting(
+            &mut f.store,
+            &host,
+            "initial",
+            &host.basis.workspace_id,
+            identity.clone(),
+            11,
+        );
+        let mut failed = request(
+            &f.work,
+            cut(&f.store, &f.work),
+            "runner",
+            Mode::SameSession,
+            vec![verdict(
+                1,
+                AcceptanceVerdict::Fail,
+                AcceptanceBasis::Judgment,
+                &[],
+            )],
+            12,
+        );
+        failed.source_basis = Some(declared(identity.clone()));
+        record(&mut f.store, &failed).unwrap();
+        for (index, identity) in [identity, source('d')].into_iter().enumerate() {
+            let id = sighting(
+                &mut f.store,
+                &host,
+                &format!("quiet-{index}"),
+                &host.basis.workspace_id,
+                identity.clone(),
+                20 + i64::try_from(index).expect("two fixture sightings"),
+            );
+            let observation = source_observation_if_accounted_on(&f.store.connection, &id)
+                .unwrap()
+                .unwrap();
+            let witnessed = VerificationSourceIdentity::SourceId {
+                source_id: identity,
+            };
+            assert!(!source::quiet_git_input_conflicts(
+                Some(&witnessed),
+                at(10),
+                &observation
+            ));
+            let different = VerificationSourceIdentity::SourceId {
+                source_id: source('e'),
+            };
+            assert!(source::quiet_git_input_conflicts(
+                Some(&different),
+                at(10),
+                &observation
+            ));
+            assert!(!source::quiet_git_input_conflicts(
+                Some(&different),
+                at(30),
+                &observation
+            ));
+            let status = f
+                .store
+                .acceptance_evaluation_status(f.work.work_id, None)
+                .unwrap()
+                .unwrap();
+            assert!(
+                status.reroll.is_some(),
+                "a quiet source sighting is not new qualifying evidence"
+            );
+        }
+    }
+
+    #[test]
+    fn shared_capacity_counts_exact_source_values_and_preserves_the_content_allowance() {
+        let mut f = fixture("shared-capacity");
+        enable(
+            &mut f.store,
+            &[Mode::SameSession],
+            MechanicalBasis::Asserted,
+            false,
+            "enable",
+            5,
+        );
+        let input = request(
+            &f.work,
+            cut(&f.store, &f.work),
+            "runner",
+            Mode::SameSession,
+            vec![verdict(
+                1,
+                AcceptanceVerdict::Pass,
+                AcceptanceBasis::Judgment,
+                std::slice::from_ref(&f.evidence),
+            )],
+            10,
+        );
+        let mut record = record(&mut f.store, &input).unwrap().record;
+        let change = source('c').changes.remove(0);
+        let mut identity = source('c');
+        identity.changes = (0..4500)
+            .map(|index| Change {
+                path: format!("private-path-{index:05}-{}", "p".repeat(80)),
+                ..change.clone()
+            })
+            .collect();
+        identity.validate().unwrap();
+        let source_bytes = crate::canonical::canonical_bytes(&identity).unwrap().len();
+        assert!(source_bytes > crate::source::MAX_JSON_BYTES / 2);
+        assert!(source_bytes < crate::source::MAX_JSON_BYTES);
+        record.source_basis = Some(declared(identity.clone()));
+        record.registered_input_decision = Some(crate::domain::RegisteredInputDecision {
+            verification: f.evidence.clone(),
+            named_root_binding: f.evidence.clone(),
+            source: crate::domain::RegisteredDecisionSource::SourceId {
+                source_id: identity,
+            },
+            measured_at: at(10),
+        });
+        let bytes = crate::canonical::canonical_bytes(&record).unwrap().len();
+        assert!(bytes > crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES);
+        validate_evaluation_capacity(&record, bytes).unwrap();
+        // Count keys and metadata, not an estimate of the record or of path strings.
+        let content = bytes - 2 * source_bytes;
+        record.verdicts[0].rationale.push_str(
+            &"r".repeat(crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES - content),
+        );
+        let bytes = crate::canonical::canonical_bytes(&record).unwrap().len();
+        validate_evaluation_capacity(&record, bytes).unwrap();
+        record.verdicts[0].rationale.push('r');
+        let error = validate_evaluation_capacity(
+            &record,
+            crate::canonical::canonical_bytes(&record).unwrap().len(),
+        )
+        .unwrap_err();
+        assert!(!error.to_string().contains("private-path"));
+        assert!(error.to_string().contains("non-source"));
+    }
+
+    #[test]
+    fn an_enclosing_request_distinguishes_omission_from_a_null_source_basis() {
+        let f = fixture("source-basis-null");
+        let input = request(
+            &f.work,
+            cut(&f.store, &f.work),
+            "runner",
+            Mode::SameSession,
+            vec![verdict(
+                1,
+                AcceptanceVerdict::Pass,
+                AcceptanceBasis::Judgment,
+                &[],
+            )],
+            12,
+        );
+        let mut wire = serde_json::to_value(&input).unwrap();
+        assert!(wire.get("source_basis").is_none());
+        assert!(
+            serde_json::from_value::<RecordAcceptanceEvaluationRequest>(wire.clone())
+                .unwrap()
+                .source_basis
+                .is_none()
+        );
+        for malformed in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({"source_id": source('c'), "fingerprint":"legacy"}),
+        ] {
+            wire["source_basis"] = malformed;
+            assert!(
+                serde_json::from_value::<RecordAcceptanceEvaluationRequest>(wire.clone()).is_err()
+            );
+        }
+        for basis in [
+            declared(source('c')),
+            AcceptanceSourceBasis::legacy(None, "old".into()),
+        ] {
+            wire["source_basis"] = serde_json::to_value(&basis).unwrap();
+            assert_eq!(
+                serde_json::from_value::<RecordAcceptanceEvaluationRequest>(wire.clone())
+                    .unwrap()
+                    .source_basis,
+                Some(basis)
+            );
+        }
+    }
+}

@@ -106,6 +106,7 @@ pub(crate) struct WorkEvaluationDetail {
     pub parent_session: Option<String>,
     /// The judged source fingerprint the record declares.
     pub source_fingerprint: Option<String>,
+    pub source_id_summary: Option<crate::source::SourceIdSummary>,
 }
 
 impl WorkEvaluationWindow {
@@ -315,7 +316,11 @@ impl LocalWorkService {
                 source_fingerprint: record
                     .source_basis
                     .as_ref()
-                    .map(|basis| basis.fingerprint.clone()),
+                    .and_then(|basis| basis.legacy_fingerprint().map(str::to_owned)),
+                source_id_summary: record
+                    .source_basis
+                    .as_ref()
+                    .and_then(|basis| basis.source_id().map(crate::source::SourceId::summary)),
                 row: window_row(&assessed, &identity),
                 verdicts,
             })

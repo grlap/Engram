@@ -1595,9 +1595,9 @@ Rules that matter:
   complete newest evaluation with every rationale and citation. It is
   refused until an operator enables the
   [acceptance evaluation](acceptance-evaluation.md) policy, and under that
-  policy `done [--source-fingerprint F]` consumes the newest fresh, all-pass
+  policy `done [--source-fingerprint F | --source-id-file PATH]` consumes the newest fresh, all-pass
   evaluation instead of the author's self-assertion, presenting the
-  host-measured fingerprint when the policy requires source freshness. An
+  host-measured identity when the policy requires source freshness. An
   independent evaluator that later takes the run cannot consume its own
   pass. Under that policy `done` on an item with no acceptance criteria
   answers the error code `acceptance_criteria_required`: add a criterion

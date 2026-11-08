@@ -182,7 +182,8 @@ pub(super) fn root_refusal(
             workspace_id: root.event.workspace_id.clone(),
             evaluated_cut: cut,
             declared_workspace_id: declaration.and_then(|basis| basis.workspace_id.clone()),
-            declared_revision: declaration.map(|basis| basis.fingerprint.clone()),
+            declared_revision: declaration
+                .and_then(|basis| basis.legacy_fingerprint().map(str::to_owned)),
             reported_revision: reported,
             remedy: if mismatch == EvaluationRootMismatch::NoInitialSighting {
                 EvaluationAdmissionRemedy::CaptureRootAndEvaluate

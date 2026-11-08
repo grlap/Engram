@@ -41,6 +41,8 @@ fn done(
     verbs.done(
         DoneInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing,
             links: Vec::new(),
             link_basis: None,
@@ -165,6 +167,8 @@ fn an_unreadable_seal_leaves_its_landing_unavailable() {
     let named = landing("0123456789abcdef0123456789abcdef01234567");
     let core_input = WorkCompleteInput {
         source_fingerprint: None,
+
+        source_id: None,
         landing: Some(named.clone()),
         links: Vec::new(),
         link_basis: None,

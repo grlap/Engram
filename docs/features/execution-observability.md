@@ -291,6 +291,7 @@ shapes:
 | `root.sighting.record` | string | The sighting record's id; `present` only. |
 | `root.sighting.position` | integer | Its run-feed position; `present` only. |
 | `root.sighting.revision` | string | The source revision it sighted; `present` only. |
+| `root.sighting.source_id_summary` | object | Shared `present` alternative: commit, tree, change and submodule counts; exclusive with `revision`, never a full identity. |
 <!-- named-root-sighting-read:end -->
 
 A host acts on it this way:
@@ -1190,3 +1191,12 @@ versions written before the removal stay readable as stored; a new policy
 version omits their assurance, effect
 and grant-lifetime fields. Reading any of these never restores the
 operations that wrote them.
+
+### Native verification source capacity
+
+`verification_record` alone admits a complete frame of at most 2,162,688 bytes,
+including its LF or CRLF terminator, for its before/after SourceIds. Other
+ordinary operations and `remote_verification_record` retain 256 KiB. Private
+acceptance binding and verification pages hold at most 2,113,536 bytes and eight
+whole rows with continuation; the compact outer response with LF is bounded at
+2,113,562 bytes. This private transport does not enlarge public agent output.

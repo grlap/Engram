@@ -255,6 +255,8 @@ fn required_successor_resolution_keeps_nonqualifying_immediate_successors_owed()
             .done(
                 DoneInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,
@@ -349,6 +351,8 @@ fn required_successor_resolution_never_transfers_across_root_generations() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -433,6 +437,8 @@ fn required_successor_resolution_does_not_adopt_restored_only_completion() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,

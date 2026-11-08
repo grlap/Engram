@@ -34,10 +34,10 @@ fn declared_pass(
         )],
         second,
     );
-    request.source_basis = Some(AcceptanceSourceBasis {
-        workspace_id: workspace.map(Into::into),
-        fingerprint: revision.into(),
-    });
+    request.source_basis = Some(AcceptanceSourceBasis::legacy(
+        workspace.map(Into::into),
+        revision.into(),
+    ));
     request.attempt_key = Some(key.into());
     request
 }

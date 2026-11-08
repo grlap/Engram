@@ -978,17 +978,18 @@ fn parse_frame(frame: Result<Vec<u8>, ()>) -> Result<HostControlRequest, HostCon
         )),
         Ok(frame) => {
             let operation = frame_operation(&frame);
-            let max_bytes = if operation.as_deref() == Some("execution_observe") {
-                crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES
-            } else {
-                MAX_HOST_CONTROL_FRAME_BYTES
+            let (max_bytes, label) = match operation.as_deref() {
+                Some("execution_observe") => (
+                    crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES,
+                    "execution_observe",
+                ),
+                Some("verification_record") => (
+                    crate::domain::MAX_VERIFICATION_RECORD_FRAME_BYTES,
+                    "verification_record",
+                ),
+                _ => (MAX_HOST_CONTROL_FRAME_BYTES, "ordinary operation"),
             };
             if frame.len() > max_bytes {
-                let label = if operation.as_deref() == Some("execution_observe") {
-                    "execution_observe"
-                } else {
-                    "ordinary operation"
-                };
                 return Err(refuse(format!(
                     "host control request {label} exceeds {max_bytes} bytes"
                 )));
@@ -1047,7 +1048,8 @@ fn read_control_frame_with_policy(
     policy: OversizedFramePolicy,
 ) -> std::io::Result<Option<Result<Vec<u8>, ()>>> {
     let max_bytes = match policy {
-        OversizedFramePolicy::Drain => crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES,
+        OversizedFramePolicy::Drain => crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES
+            .max(crate::domain::MAX_VERIFICATION_RECORD_FRAME_BYTES),
         OversizedFramePolicy::Stop => MAX_HOST_CONTROL_FRAME_BYTES,
     };
     let mut frame = Vec::new();

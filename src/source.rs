@@ -35,7 +35,7 @@ pub struct Entry {
 
 /// The complete measured source state. Paths are relative to their repository;
 /// absolute host paths and observation metadata are not comparison inputs.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceId {
     pub commit: String,
@@ -44,8 +44,22 @@ pub struct SourceId {
     pub changes: Vec<Change>,
 }
 
+/// Decode a present identity without reflecting malformed caller values in a
+/// front-door diagnostic. Absence is handled by the containing field's default.
+///
+/// # Errors
+/// Refuses a malformed or null present object without reflecting its values.
+pub fn present_source_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SourceId>, D::Error> {
+    SourceId::deserialize(deserializer)
+        .map(Some)
+        .map_err(|_| serde::de::Error::custom("invalid source_id object"))
+}
+
 /// Bounded presentation of a source object. Equality always uses `SourceId`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SourceIdSummary {
     pub commit: String,
     pub tree: String,
@@ -75,7 +89,7 @@ impl SourceId {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Submodule {
     pub path: String,
@@ -83,7 +97,7 @@ pub struct Submodule {
     pub changes: Vec<Change>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Change {
     pub path: String,
@@ -96,7 +110,7 @@ pub struct Change {
     pub mode: Option<Mode>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub enum Mode {
     #[serde(rename = "100644")]
     Regular,

@@ -276,9 +276,8 @@ fn evaluation(
         key,
         second,
     );
-    input.source_basis = declared.revision.map(|revision| AcceptanceSourceBasis {
-        workspace_id: declared.workspace.map(Into::into),
-        fingerprint: revision.into(),
+    input.source_basis = declared.revision.map(|revision| {
+        AcceptanceSourceBasis::legacy(declared.workspace.map(Into::into), revision.into())
     });
     input
 }
@@ -464,13 +463,19 @@ fn observe(name: &str, begin: Start, declared: Declared, input: Input<'_>) -> Ou
     let root = named_root_at_on(connection, claim.run_id, started_at).expect("root read");
     let probe = match (declared.revision, &delivered.refused, root, begin) {
         (Some(revision), None, Some(root), Start::Sighted) => {
-            let open =
-                declared_not_contradicted(connection, claim.run_id, started_at, &root, revision)
-                    .expect("declaration read");
-            let basis = AcceptanceSourceBasis {
-                workspace_id: declared.workspace.map(Into::into),
-                fingerprint: revision.into(),
-            };
+            let open = declared_not_contradicted(
+                connection,
+                claim.run_id,
+                started_at,
+                &root,
+                &crate::domain::VerificationSourceIdentity::Legacy {
+                    source_revision: revision.into(),
+                    git_tree: None,
+                },
+            )
+            .expect("declaration read");
+            let basis =
+                AcceptanceSourceBasis::legacy(declared.workspace.map(Into::into), revision.into());
             let moved = basis_moved_after(
                 connection,
                 claim.run_id,

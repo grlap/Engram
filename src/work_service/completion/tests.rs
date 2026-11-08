@@ -136,6 +136,8 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
         .work_complete(
             WorkCompleteInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -203,6 +205,8 @@ fn explicit_empty_acceptance_still_fails_and_note_needs_omitted_acceptance() {
     let complete = |acceptance: Option<Vec<WorkAcceptanceInput>>, note: Option<&str>, key: &str| {
         WorkCompleteInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,
@@ -290,6 +294,8 @@ fn completion_on_a_lapsed_claim_refuses_without_retaking() {
 
     let input = WorkCompleteInput {
         source_fingerprint: None,
+
+        source_id: None,
         landing: None,
         links: Vec::new(),
         link_basis: None,
@@ -375,6 +381,8 @@ fn lapsed_completion_refuses_before_capture_for_explicit_and_derived_keys() {
             .expect("claim");
         let input = WorkCompleteInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,
@@ -460,6 +468,8 @@ fn missing_contribution_recovery_names_the_participant_and_root() {
         .work_complete(
             WorkCompleteInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -651,6 +661,8 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -1148,6 +1160,8 @@ fn capture_completion_rejects_bad_acceptance_without_substeps() {
 
         let input = WorkCompleteInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,
@@ -1257,6 +1271,8 @@ fn capture_completion_replays_after_evidence_or_checkpoint_commit() {
             .expect("claim focused work");
         let input = WorkCompleteInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,
@@ -1579,6 +1595,8 @@ fn pending_completion_resumes_after_holder_evidence_and_seals_the_current_set() 
         .expect("claim focused work");
     let input = WorkCompleteInput {
         source_fingerprint: None,
+
+        source_id: None,
         landing: None,
         links: Vec::new(),
         link_basis: None,
@@ -1682,6 +1700,8 @@ fn stored_completion_refusal_is_a_corrupt_projection() {
         .expect("claim focused work");
     let input = WorkCompleteInput {
         source_fingerprint: None,
+
+        source_id: None,
         landing: None,
         links: Vec::new(),
         link_basis: None,
@@ -1749,6 +1769,8 @@ fn pending_completion_conflicts_after_foreign_claim_fence_change() {
         .expect("short original claim");
     let input = WorkCompleteInput {
         source_fingerprint: None,
+
+        source_id: None,
         landing: None,
         links: Vec::new(),
         link_basis: None,

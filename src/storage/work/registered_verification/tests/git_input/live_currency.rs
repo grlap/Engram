@@ -1273,6 +1273,8 @@ fn live_git_currency_service_prose_completion_does_not_read_git() {
             Some(&work.short_ref),
             WorkCompleteInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -1523,9 +1525,11 @@ fn live_git_currency_requires_a_commit_declaration_for_a_prose_evaluation() {
         f.record().unwrap();
         let note = quiet_evaluation::note(&mut f);
         let mut input = quiet_evaluation::judgment(&f, &note);
-        input.source_basis = declared.map(|fingerprint| AcceptanceSourceBasis {
-            workspace_id: Some(f.request.registration.root.workspace_id.clone()),
-            fingerprint: fingerprint.into(),
+        input.source_basis = declared.map(|fingerprint| {
+            AcceptanceSourceBasis::legacy(
+                Some(f.request.registration.root.workspace_id.clone()),
+                fingerprint.into(),
+            )
         });
         let before = f.snapshot();
         let error = record_evaluation(&mut f, &input).unwrap_err();

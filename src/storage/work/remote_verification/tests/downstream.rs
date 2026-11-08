@@ -146,10 +146,10 @@ fn evaluation(
         execution_identity: None,
         parent_session: None,
         evaluator_model: None,
-        source_basis: Some(AcceptanceSourceBasis {
-            workspace_id: Some(f.request.association.root.workspace_id.clone()),
-            fingerprint: revision.into(),
-        }),
+        source_basis: Some(AcceptanceSourceBasis::legacy(
+            Some(f.request.association.root.workspace_id.clone()),
+            revision.into(),
+        )),
         verdicts: vec![CriterionVerdictInput {
             criterion: 1,
             verdict: AcceptanceVerdict::Pass,

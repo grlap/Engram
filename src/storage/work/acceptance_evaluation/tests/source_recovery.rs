@@ -92,12 +92,25 @@ pub(crate) fn source_recovery_transport_fixture(
         second + 20,
     );
     if case != "no_basis" {
-        input.source_basis = Some(AcceptanceSourceBasis {
-            workspace_id: None,
-            fingerprint: match case {
+        input.source_basis = Some(AcceptanceSourceBasis::legacy(
+            None,
+            match case {
                 "unconfirmed" => "R2".into(),
                 "long_unconfirmed" | "long_mismatch" => long_declared_source(),
                 _ => "measured-A".into(),
+            },
+        ));
+    }
+    if case == "shared_missing" {
+        input.source_basis = Some(AcceptanceSourceBasis {
+            workspace_id: None,
+            identity: crate::domain::VerificationSourceIdentity::SourceId {
+                source_id: crate::source::SourceId {
+                    commit: "a".repeat(40),
+                    tree: "b".repeat(40),
+                    changes: vec![],
+                    submodules: vec![],
+                },
             },
         });
     }
@@ -108,7 +121,7 @@ pub(crate) fn source_recovery_transport_fixture(
             Some(long_presented_source()),
             Mismatch::CompletionFingerprintMismatch,
         ),
-        "missing" => (None, Mismatch::CompletionMeasurementMissing),
+        "missing" | "shared_missing" => (None, Mismatch::CompletionMeasurementMissing),
         "mismatch" => (
             Some("measured-B".into()),
             Mismatch::CompletionFingerprintMismatch,
@@ -134,6 +147,7 @@ pub(crate) fn source_recovery_transport_fixture(
 fn source_recovery_fingerprint_causes_are_distinct_and_reads_stay_unmeasured() {
     for (case, remedy) in [
         ("missing", Remedy::MeasureSourceAndRetry),
+        ("shared_missing", Remedy::MeasureSourceIdAndRetry),
         ("mismatch", Remedy::EvaluateCurrentSource),
         ("no_basis", Remedy::EvaluateCurrentSource),
     ] {
@@ -145,6 +159,7 @@ fn source_recovery_fingerprint_causes_are_distinct_and_reads_stay_unmeasured() {
                 fixture.work.work_id,
                 fixture.work.active_run_id.unwrap(),
                 fixture.presented.as_deref(),
+                None,
             )
             .unwrap();
         let AcceptanceEvaluationReadiness::Blocked(cause, context) = readiness else {
@@ -163,7 +178,7 @@ fn source_recovery_fingerprint_causes_are_distinct_and_reads_stay_unmeasured() {
         assert_eq!(source.presented_fingerprint, fixture.presented);
         assert_eq!(
             source.expected_fingerprint.as_deref(),
-            (case != "no_basis").then_some("measured-A")
+            (!matches!(case, "no_basis" | "shared_missing")).then_some("measured-A")
         );
         assert!(context.deciding_observation.is_none());
         let shown = store

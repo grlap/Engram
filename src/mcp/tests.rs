@@ -168,6 +168,7 @@ fn done_names_the_deciding_observation_beside_the_unchanged_stale_cause() {
             links: None,
             link_basis: None,
             source_fingerprint: None,
+            source_id: None,
             landing: None,
         }));
         assert_ne!(
@@ -225,6 +226,7 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
     for case in [
         "unconfirmed",
         "missing",
+        "shared_missing",
         "mismatch",
         "no_basis",
         "long_unconfirmed",
@@ -250,6 +252,7 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
                     acceptance: None,
                     note: None,
                     source_fingerprint: fixture.presented.clone(),
+                    source_id: None,
                     landing: None,
                     idempotency_key: String::new(),
                 },
@@ -289,6 +292,7 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
             links: None,
             link_basis: None,
             source_fingerprint: fixture.presented.clone(),
+            source_id: None,
             landing: None,
         }));
         assert_ne!(response.is_error, Some(true), "{case}: an owed receipt");
@@ -371,6 +375,13 @@ fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
             matches!(case, "unconfirmed" | "no_basis" | "long_unconfirmed"),
             "{case}"
         );
+        if case == "shared_missing" {
+            assert!(refusal.remedy.contains("--source-id-file PATH"));
+            assert!(!refusal.remedy.contains("source-fingerprint"));
+            let spelled = mcp_spelled(&refusal.remedy);
+            assert!(spelled.contains("with source_id;"), "{spelled}");
+            assert!(!spelled.contains("--source-id-file"));
+        }
         // Over MCP the remedy names the field the caller passes.
         let spelled = mcp_spelled(&refusal.remedy);
         assert!(
@@ -496,6 +507,7 @@ fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_an
             verdicts: input.verdicts.clone(),
             attempt: input.attempt.clone(),
             source_fingerprint: input.source_fingerprint.clone(),
+            source_id: None,
             model: input.model.clone(),
             execution_identity: input.execution_identity.clone(),
             parent_session: input.parent_session.clone(),
@@ -607,6 +619,7 @@ fn done_preserves_bound_check_error_status_and_exposes_typed_guidance() {
             links: None,
             link_basis: None,
             source_fingerprint: None,
+            source_id: None,
             landing: None,
         }));
         assert_eq!(response.is_error, Some(true));
@@ -1191,6 +1204,7 @@ fn done_args(work_ref: Option<&str>) -> DoneArgs {
         links: None,
         link_basis: None,
         source_fingerprint: None,
+        source_id: None,
         landing: None,
     }
 }
@@ -1251,6 +1265,7 @@ fn bare_done_and_evaluate_refuse_over_mcp_while_several_claims_are_live() {
             verdicts: Vec::new(),
             attempt: None,
             source_fingerprint: None,
+            source_id: None,
             model: None,
             execution_identity: None,
             parent_session: None,

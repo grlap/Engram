@@ -194,6 +194,7 @@ static REGISTERED: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
         crate::work_service::UNKNOWN_EVALUATION_REFUSAL,
         crate::work_service::READ_RUN_EVIDENCE_REMEDY,
         crate::work_service::MEASURE_SOURCE_REMEDY,
+        crate::work_service::MEASURE_SOURCE_ID_REMEDY,
         crate::verbs::error_rendering::remedies::CATALOG_CURSOR_REMEDY,
         crate::verbs::error_rendering::remedies::SHOW_CURSOR_REMEDY,
         crate::verbs::error_rendering::remedies::CRITERION_LINK_REMEDY,
@@ -218,10 +219,11 @@ pub(super) fn registered() -> &'static [(String, String)] {
 /// listing hint or a completion refusal's remedy. A receipt is fitted to its
 /// byte budget before it is respelled, so none of these may grow when
 /// respelled; every other registered sentence ends refusals only.
-pub(super) const RECEIPT_SENTENCES: [Twin; 3] = [
+pub(super) const RECEIPT_SENTENCES: [Twin; 4] = [
     CLIPPED_STATUS,
     PAGE_LIMIT_HINT,
     crate::work_service::MEASURE_SOURCE_REMEDY,
+    crate::work_service::MEASURE_SOURCE_ID_REMEDY,
 ];
 
 /// The text as the caller reads it: unchanged for the CLI; for MCP, a

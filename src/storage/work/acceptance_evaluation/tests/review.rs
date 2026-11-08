@@ -969,6 +969,7 @@ fn the_word_accepts_full_record_ids_of_host_minted_verification_evidence() {
                 }],
                 attempt: None,
                 source_fingerprint: None,
+                source_id: None,
                 model: None,
                 execution_identity: None,
                 parent_session: None,
@@ -1521,6 +1522,8 @@ fn evaluated_completion_unions_verdict_citations_into_the_seal_evidence_and_chec
             Some(&work.work_id.0.to_string()),
             crate::work_service::WorkCompleteInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,

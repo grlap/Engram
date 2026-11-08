@@ -452,6 +452,7 @@ fn an_evaluation_refused_after_input_checks_preserves_navigation() {
                 }],
                 attempt: Some("refused-evaluation".into()),
                 source_fingerprint: None,
+                source_id: None,
                 model: None,
                 execution_identity: None,
                 parent_session: None,

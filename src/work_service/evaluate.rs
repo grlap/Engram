@@ -100,12 +100,14 @@ impl LocalWorkService {
             execution_identity: input.execution_identity.clone(),
             parent_session: input.parent_session.clone().map(SessionId),
             evaluator_model,
-            source_basis: input.source_fingerprint.clone().map(|fingerprint| {
-                AcceptanceSourceBasis {
-                    workspace_id: None,
-                    fingerprint,
-                }
-            }),
+            source_basis: AcceptanceSourceBasis::from_declaration(
+                input.source_fingerprint.clone(),
+                input.source_id.clone(),
+            )
+            .map_err(|reason| StoreError::AcceptanceEvaluationRefused {
+                work: work.work_id,
+                reason: reason.into(),
+            })?,
             verdicts,
             evaluator: self.actor("work_evaluate", "record an acceptance evaluation"),
             attempt_key: input.attempt.clone(),
@@ -147,12 +149,12 @@ impl LocalWorkService {
         // Storage checks the record's exact bytes. The bases name a revision
         // (from 1) and a feed position (from 0). Each is refused before a
         // holder's focus moves, with the refusal the record would get.
-        if verdict_bytes >= crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES {
+        if verdict_bytes >= crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES {
             return Err(StoreError::AcceptanceEvaluationRefused {
                 work: work.work_id,
                 reason: format!(
                     "the evaluation's verdicts alone take {verdict_bytes} canonical bytes, so the record would pass the {} byte cap; shorten the rationales",
-                    crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES
+                    crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES
                 ),
             });
         }
@@ -450,10 +452,7 @@ pub(super) fn preview_projection(
         run_id,
         request.evaluated_through,
         &rows,
-        request
-            .source_basis
-            .as_ref()
-            .map(|basis| basis.fingerprint.clone()),
+        request.source_basis.as_ref(),
         attempt_key,
         request.supersedes.clone(),
         full_detail,
@@ -482,10 +481,7 @@ fn project_record(record: &AcceptanceEvaluation, full_detail: String) -> WorkEva
         record.run_id,
         record.evaluated_cut.position,
         &rows,
-        record
-            .source_basis
-            .as_ref()
-            .map(|basis| basis.fingerprint.clone()),
+        record.source_basis.as_ref(),
         record.attempt_key.clone(),
         record.supersedes.clone(),
         full_detail,
@@ -502,7 +498,7 @@ fn projection_from_rows(
     run_id: WorkRunId,
     evaluated_cut: i64,
     rows: &[(usize, AcceptanceVerdict, AcceptanceBasis, usize, &str)],
-    source_fingerprint: Option<String>,
+    source_basis: Option<&crate::domain::AcceptanceSourceBasis>,
     attempt_key: String,
     supersedes: Option<ObjectId>,
     full_detail: String,
@@ -547,7 +543,10 @@ fn projection_from_rows(
             .filter(|(_, verdict, _, _, _)| *verdict == AcceptanceVerdict::Pass)
             .count(),
         blocking,
-        source_fingerprint,
+        source_fingerprint: source_basis
+            .and_then(|basis| basis.legacy_fingerprint().map(str::to_owned)),
+        source_id_summary: source_basis
+            .and_then(|basis| basis.source_id().map(crate::source::SourceId::summary)),
         attempt_key,
         supersedes,
         full_detail,
@@ -580,6 +579,10 @@ pub(crate) fn validate_evaluation_words(input: &WorkEvaluateInput) -> Result<(),
 }
 
 fn parse_evaluation_words(input: &WorkEvaluateInput) -> Result<ParsedEvaluation, StoreError> {
+    crate::domain::AcceptanceSourceBasis::validate_declaration(
+        input.source_fingerprint.as_deref(),
+        input.source_id.as_ref(),
+    )?;
     let mode = AcceptanceEvaluationMode::parse(&input.mode).ok_or_else(|| {
         StoreError::InvalidWork(format!(
             "unknown evaluation mode {:?}; use same_session, sub_agent, or independent_session",

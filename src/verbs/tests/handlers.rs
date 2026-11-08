@@ -132,6 +132,8 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,

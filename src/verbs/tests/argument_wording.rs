@@ -203,6 +203,7 @@ fn word_refusals_name_flags_on_the_cli_and_fields_over_mcp() {
                         verdicts: Vec::new(),
                         attempt: None,
                         source_fingerprint: None,
+                        source_id: None,
                         model: None,
                         execution_identity: None,
                         parent_session: None,
@@ -795,39 +796,44 @@ fn project_memory_refusals_name_their_arguments_for_the_caller() {
 #[test]
 fn receipts_name_fields_over_mcp_and_keep_runnable_commands() {
     let surfaces = surfaces();
-    let source = crate::work_service::MEASURE_SOURCE_REMEDY;
-    let stale =
-        |remedy: &str| format!("w-000000000001 acceptance evaluation is stale (source): {remedy}");
-    let receipt = Receipt::assemble(
-        vec![format!("text line: {}", wording::PAGE_LIMIT_HINT.cli)],
-        Guidance {
-            reminders: vec![
-                wording::CLIPPED_STATUS.cli.into(),
-                stale(source.cli),
-                "a reminder that names no argument".into(),
-            ],
-            next: vec!["engram work memories kept --full".into()],
-        },
-        json!({"hint": wording::PAGE_LIMIT_HINT.cli, "remedy": source.cli}),
-        true,
-    );
-    assert_eq!(
-        surfaces.cli.spell_receipt(receipt.clone()).value,
-        receipt.value
-    );
-    let spelled = surfaces.mcp.spell_receipt(receipt.clone());
-    assert_eq!(spelled.value["hint"], json!(wording::PAGE_LIMIT_HINT.mcp));
-    assert_eq!(spelled.value["remedy"], json!(source.mcp));
-    let reminders = vec![
-        wording::CLIPPED_STATUS.mcp.to_owned(),
-        stale(source.mcp),
-        "a reminder that names no argument".to_owned(),
-    ];
-    assert_eq!(spelled.value["reminders"], json!(reminders));
-    assert_eq!(spelled.reminders, reminders);
-    assert_eq!(spelled.value["next"], receipt.value["next"]);
-    // Lines only the CLI prints keep the flag.
-    assert_eq!(spelled.lines, receipt.lines);
+    for source in [
+        crate::work_service::MEASURE_SOURCE_REMEDY,
+        crate::work_service::MEASURE_SOURCE_ID_REMEDY,
+    ] {
+        let stale = |remedy: &str| {
+            format!("w-000000000001 acceptance evaluation is stale (source): {remedy}")
+        };
+        let receipt = Receipt::assemble(
+            vec![format!("text line: {}", wording::PAGE_LIMIT_HINT.cli)],
+            Guidance {
+                reminders: vec![
+                    wording::CLIPPED_STATUS.cli.into(),
+                    stale(source.cli),
+                    "a reminder that names no argument".into(),
+                ],
+                next: vec!["engram work memories kept --full".into()],
+            },
+            json!({"hint": wording::PAGE_LIMIT_HINT.cli, "remedy": source.cli}),
+            true,
+        );
+        assert_eq!(
+            surfaces.cli.spell_receipt(receipt.clone()).value,
+            receipt.value
+        );
+        let spelled = surfaces.mcp.spell_receipt(receipt.clone());
+        assert_eq!(spelled.value["hint"], json!(wording::PAGE_LIMIT_HINT.mcp));
+        assert_eq!(spelled.value["remedy"], json!(source.mcp));
+        let reminders = vec![
+            wording::CLIPPED_STATUS.mcp.to_owned(),
+            stale(source.mcp),
+            "a reminder that names no argument".to_owned(),
+        ];
+        assert_eq!(spelled.value["reminders"], json!(reminders));
+        assert_eq!(spelled.reminders, reminders);
+        assert_eq!(spelled.value["next"], receipt.value["next"]);
+        // Lines only the CLI prints keep the flag.
+        assert_eq!(spelled.lines, receipt.lines);
+    }
 }
 
 /// A real listing page that stops at its limit gives the hint with the limit

@@ -1100,14 +1100,15 @@ test("source recovery keeps a judgment through host confirmation and separates f
     jsonWord("gate", "source-evidence", "--work-ref", ref);
     return ref;
   };
-  const evaluate = (ref, revision) => {
+  const evaluate = (ref, revision, sourceFile) => {
     const shown = jsonWord("show", ref);
     const citation = jsonWord("show", ref, "--notes", "--gates").notes
       .find((row) => String(row.family).toLowerCase() === "gates").locator;
     return jsonWord("evaluate", ref, "--mode", "same-session",
       "--acceptance-basis", String(shown.acceptance_basis), "--evidence-basis", String(shown.evidence_basis),
       "--verdict", "1=pass:judgment", "--rationale", "1=judge the recorded outcome", "--evidence", `1=${citation}`,
-      ...(revision ? ["--source-fingerprint", revision] : []));
+      ...(revision ? ["--source-fingerprint", revision] : []),
+      ...(sourceFile ? ["--source-id-file", sourceFile] : []));
   };
   const refused = (ref, mismatch, action, presented) => {
     const result = word("done", ref, "Delivered", ...(presented ? ["--source-fingerprint", presented] : []), "--json");
@@ -1223,6 +1224,27 @@ test("source recovery keeps a judgment through host confirmation and separates f
     assert.match(mismatch.value.remedy, /copying.*insufficient/u);
     assert.equal(jsonWord("show", measuredRef).acceptance_evaluation.source_recovery, undefined);
     assert.equal(jsonWord("done", measuredRef, "Delivered", "--source-fingerprint", "measured-A").work.lifecycle, "completed");
+    const sharedRef = create("Complete shared measurement required");
+    const sourceFile = join(engramHome, "saved-source.json");
+    const changedFile = join(engramHome, "different-source.json");
+    const sharedSource = { commit: "a".repeat(40), tree: "b".repeat(40), submodules: [],
+      changes: [{ path: "private-source-file.rs", status: " M", origin: null, blob: "c".repeat(40), mode: "100644" }] };
+    writeFileSync(sourceFile, JSON.stringify(sharedSource));
+    writeFileSync(changedFile, JSON.stringify({ ...sharedSource, tree: "d".repeat(40) }));
+    const sharedEvaluation = evaluate(sharedRef, undefined, sourceFile);
+    assert.doesNotMatch(JSON.stringify(sharedEvaluation), /private-source-file/u);
+    const sharedMissing = refused(sharedRef, "completion_measurement_missing", "measure_source_id_and_retry");
+    assert.match(sharedMissing.value.remedy, /--source-id-file PATH/u);
+    assert.doesNotMatch(sharedMissing.value.remedy, /source-fingerprint/u);
+    const conflict = word("done", sharedRef, "Delivered", "--source-id-file", sourceFile,
+      "--source-fingerprint", "legacy", "--json");
+    assert.notEqual(conflict.status, 0);
+    const wrong = word("done", sharedRef, "Delivered", "--source-id-file", changedFile, "--json");
+    assert.equal(wrong.status, 2, wrong.stderr);
+    assert.equal(JSON.parse(wrong.stdout).recovery.source.mismatch, "completion_fingerprint_mismatch");
+    const sharedDone = jsonWord("done", sharedRef, "Delivered", "--source-id-file", sourceFile);
+    assert.equal(sharedDone.work.lifecycle, "completed");
+    assert.equal(sharedDone.acceptance.evaluation, sharedEvaluation.evaluation.evaluation);
     const absentRef = create("No evaluated source basis");
     evaluate(absentRef);
     const absent = refused(absentRef, "evaluation_source_basis_missing", "evaluate_current_source", "measured-A");

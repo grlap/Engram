@@ -9,6 +9,8 @@ fn done(verbs: &AgentVerbs, work_ref: &str, second: i64) -> Result<Receipt, Verb
     verbs.done(
         DoneInput {
             source_fingerprint: None,
+
+            source_id: None,
             landing: None,
             links: Vec::new(),
             link_basis: None,

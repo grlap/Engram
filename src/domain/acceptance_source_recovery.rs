@@ -20,6 +20,7 @@ pub enum AcceptanceSourceRemedy {
     EndTurnReadAndRetry,
     ReadSourceAndEvaluate,
     MeasureSourceAndRetry,
+    MeasureSourceIdAndRetry,
     EvaluateCurrentSource,
 }
 

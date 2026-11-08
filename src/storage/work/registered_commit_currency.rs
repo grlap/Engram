@@ -11,7 +11,10 @@ use super::{
 use crate::storage::{SqliteStore, StoreError};
 use crate::{
     ObjectId,
-    domain::{ExecutionOutcome, NamedRootBindingKind, VerificationEvidence, WorkId, WorkRunId},
+    domain::{
+        ExecutionOutcome, NamedRootBindingKind, VerificationEvidence, VerificationSourceIdentity,
+        WorkId, WorkRunId,
+    },
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::BTreeMap;
@@ -304,10 +307,10 @@ impl LiveCurrency {
     pub(super) fn require_declared_on(
         &self,
         connection: &Connection,
-        revision: Option<&str>,
+        identity: Option<&VerificationSourceIdentity>,
         cut: i64,
     ) -> Result<bool, StoreError> {
-        if !self.candidates.iter().any(Candidate::is_commit) {
+        if !self.candidates.iter().any(Candidate::is_live) {
             if let Some((work, run, _)) = self.work {
                 let entered = has_committed_run_on(connection, run, cut)?;
                 if entered {
@@ -320,13 +323,26 @@ impl LiveCurrency {
             return Ok(false);
         }
         let work = self.work.expect("measured candidate scope").0;
-        let Some(revision) = revision.filter(|revision| revision.starts_with("git-commit:")) else {
+        let Some(identity) = identity.filter(|identity| {
+            matches!(identity, VerificationSourceIdentity::SourceId { .. })
+                || identity
+                    .legacy_revision()
+                    .is_some_and(|revision| revision.starts_with("git-commit:"))
+        }) else {
             return Err(StoreError::WorkCompletionRefused {
                 work,
-                reason: "this run has registered committed-input evidence; declare the intended git-commit input with --source-fingerprint before evaluating".into(),
+                reason: if self
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.evidence.source_basis.source_id().is_some())
+                {
+                    "this run has registered source_id evidence; declare the intended complete source with --source-id-file before evaluating".into()
+                } else {
+                    "this run has registered committed-input evidence; declare the intended git-commit input with --source-fingerprint before evaluating".into()
+                },
             });
         };
-        if !self.matching_on(connection, revision, cut)? {
+        if !self.matching_on(connection, identity, cut)? {
             return Err(StoreError::WorkCompletionRefused {
                 work,
                 reason: "no registered check at the evaluated cut tested the declared commit; run a passing check on the intended current commit".into(),
@@ -488,14 +504,16 @@ impl LiveCurrency {
     pub(super) fn matching_decision_on(
         &self,
         connection: &Connection,
-        revision: &str,
+        identity: &VerificationSourceIdentity,
         through: i64,
     ) -> Result<Option<crate::domain::RegisteredInputDecision>, StoreError> {
-        for candidate in
-            self.candidates.iter().rev().filter(|candidate| {
-                candidate.evidence.source_basis.legacy_revision() == Some(revision)
-            })
-        {
+        for candidate in self.candidates.iter().rev().filter(|candidate| {
+            candidate
+                .evidence
+                .source_basis
+                .identity
+                .same_source(identity)
+        }) {
             let position = super::feeds::run_feed_position_for_object_on(
                 connection,
                 candidate.evidence.binding.run_id,
@@ -514,11 +532,11 @@ impl LiveCurrency {
     pub(super) fn matching_on(
         &self,
         connection: &Connection,
-        revision: &str,
+        identity: &VerificationSourceIdentity,
         through: i64,
     ) -> Result<bool, StoreError> {
         Ok(self
-            .matching_decision_on(connection, revision, through)?
+            .matching_decision_on(connection, identity, through)?
             .is_some())
     }
 }
@@ -529,7 +547,7 @@ pub(super) fn has_committed_run_on(
     cut: i64,
 ) -> Result<bool, StoreError> {
     Ok(connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM work_feed_entries entry JOIN objects object ON object.object_id=entry.object_id WHERE entry.feed_kind='run_execution' AND entry.feed_id=?1 AND entry.position<=?2 AND object.object_kind='registered_host_run' AND json_extract(object.canonical_json, '$.request.input.kind')='commit')",
+        "SELECT EXISTS(SELECT 1 FROM work_feed_entries entry JOIN objects object ON object.object_id=entry.object_id WHERE entry.feed_kind='run_execution' AND entry.feed_id=?1 AND entry.position<=?2 AND object.object_kind='registered_host_run' AND json_extract(object.canonical_json, '$.request.input.kind') IN ('commit','source_id'))",
         params![run.0.to_string(), cut], |row| row.get(0))?)
 }
 

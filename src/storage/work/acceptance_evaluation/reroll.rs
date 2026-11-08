@@ -144,7 +144,7 @@ fn new_evidence_between(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     // The revision last seen, read once the first observation needs it.
-    let mut seen: Option<Option<String>> = None;
+    let mut seen: Option<Option<crate::domain::VerificationSourceIdentity>> = None;
     for (kind, stored) in rows {
         if kind != "execution_observation" && kind != UNADMITTED_OBSERVATION_KIND {
             return Ok(true);
@@ -169,14 +169,17 @@ fn new_evidence_between(
                 blocking.source_basis.as_ref(),
                 judged_root.as_ref(),
             )?
-            .map(|judged| judged.revision)
+            .map(|judged| judged.identity)
         };
         let revision = observation
             .source_basis
             .as_ref()
-            .and_then(|basis| basis.legacy_revision().map(str::to_owned));
+            .map(|basis| basis.identity.clone());
         if observation.source_changed
-            && (!observation.admitted || revision.is_none() || revision != last)
+            && (!observation.admitted
+                || revision.as_ref().is_none_or(|identity| {
+                    last.as_ref().is_none_or(|last| !identity.same_source(last))
+                }))
         {
             return Ok(true);
         }

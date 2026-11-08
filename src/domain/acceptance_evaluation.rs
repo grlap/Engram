@@ -13,6 +13,9 @@ use crate::ObjectId;
 
 use super::{ActorContext, FeedPosition, ProjectId, SessionId, WorkId, WorkRunId};
 
+mod source_basis;
+pub use source_basis::AcceptanceSourceBasis;
+
 /// Who evaluates, relative to the completing session. These are alternatives
 /// selected by policy compatibility, not an ordinal security ladder.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
@@ -277,17 +280,6 @@ impl EvaluatorModel {
     }
 }
 
-/// Host-measured source identity at evaluation time. Asserted context unless
-/// a host channel mediates it; equality with a later measurement is asserted
-/// freshness, not independent verification.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AcceptanceSourceBasis {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-    pub fingerprint: String,
-}
-
 /// One criterion's recorded result.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CriterionVerdict {
@@ -541,7 +533,11 @@ pub struct RecordAcceptanceEvaluationRequest {
     pub parent_session: Option<SessionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluator_model: Option<EvaluatorModel>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "source_basis::present"
+    )]
     pub source_basis: Option<AcceptanceSourceBasis>,
     pub verdicts: Vec<CriterionVerdictInput>,
     pub evaluator: ActorContext,
@@ -559,11 +555,13 @@ pub struct RecordAcceptanceEvaluationRequest {
 /// Maximum citations admitted per verdict.
 pub const MAX_ACCEPTANCE_VERDICT_CITATIONS: usize = 64;
 
-/// Maximum canonical bytes of one evaluation object (1 MiB). Rationales share
-/// the note-text bound individually and the criteria count is not capped, so
-/// this bounds the whole record without making a large item unevaluable: an
-/// admitted evaluation is always finite to project and to read back in full.
-pub const MAX_ACCEPTANCE_EVALUATION_BYTES: usize = 1024 * 1024;
+/// Maximum non-source canonical bytes of one evaluation (1 MiB). Rationales
+/// share the note-text bound individually; complete source values have their
+/// own owner limit beside this existing allowance.
+pub const MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES: usize = 1024 * 1024;
+/// Two complete identities plus the unchanged non-source record allowance.
+pub const MAX_ACCEPTANCE_EVALUATION_BYTES: usize =
+    MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES + 2 * crate::source::MAX_JSON_BYTES;
 
 /// Maximum bytes of a source fingerprint or workspace id carried by an
 /// evaluation; these are identifiers, never prose.

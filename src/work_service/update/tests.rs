@@ -1573,6 +1573,8 @@ fn gate_heavy_evidence_membership_has_constant_decode_cost() {
                 Some(&work.short_ref),
                 WorkCompleteInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,
@@ -1992,6 +1994,8 @@ fn measure_claim_validated_mutations_at_project_scale(
                 Some(&work.short_ref),
                 WorkCompleteInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,

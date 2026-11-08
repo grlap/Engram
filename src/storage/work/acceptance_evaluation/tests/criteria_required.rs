@@ -69,7 +69,7 @@ fn an_item_without_criteria_is_refused_by_name_under_an_evaluated_policy() {
     let readiness =
         fixture
             .store
-            .acceptance_evaluation_readiness(work_id, fixture.claim.run_id, None);
+            .acceptance_evaluation_readiness(work_id, fixture.claim.run_id, None, None);
     assert!(
         matches!(&readiness, Err(StoreError::AcceptanceCriteriaRequired { work }) if *work == work_id),
         "{readiness:?}"

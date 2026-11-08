@@ -113,26 +113,31 @@ impl SourceDiagnostic {
                 super::record_windows::safe_reference_argument(work_ref)
             )
         });
-        let basis = diagnostic.judged.as_ref().map(|basis| json!({
-            "workspace": bounded(&basis.workspace_id), "revision": bounded(&basis.source_revision),
-            "root_generation": basis.source_root_generation, "root_state": basis.source_root_state,
-            "workspace_bytes": basis.workspace_id.len(), "revision_bytes": basis.source_revision.len(),
-            "truncated": basis.workspace_id.len() > 256 || basis.source_revision.len() > 256,
-        }));
+        let basis = diagnostic.judged.as_ref().map(basis_value);
         if let Some(basis) = &diagnostic.judged {
+            let description = basis.source_id_summary.as_ref().map_or_else(
+                || {
+                    format!(
+                        "revision {}",
+                        bounded(basis.source_revision.as_deref().unwrap_or_default())
+                    )
+                },
+                crate::source::SourceIdSummary::description,
+            );
+            let revision = basis.source_revision.as_deref().unwrap_or_default();
             lines.push(format!(
-                "  judged source: workspace {}; generation {}; revision {}{}",
+                "  judged source: workspace {}; generation {}; {}{}",
                 super::terminal_safe_line(&bounded(&basis.workspace_id)),
                 basis.source_root_generation.map_or_else(
                     || "not recorded".into(),
-                    |generation| generation.to_string(),
+                    |generation| generation.to_string()
                 ),
-                super::terminal_safe_line(&bounded(&basis.source_revision)),
-                if basis.workspace_id.len() > 256 || basis.source_revision.len() > 256 {
+                super::terminal_safe_line(&description),
+                if basis.workspace_id.len() > 256 || revision.len() > 256 {
                     format!(
                         " (previews truncated; workspace {} bytes, revision {} bytes)",
                         basis.workspace_id.len(),
-                        basis.source_revision.len(),
+                        revision.len()
                     )
                 } else {
                     String::new()
@@ -156,8 +161,15 @@ impl SourceDiagnostic {
             if let Some(basis) = &fact.source_basis {
                 lines.push(format!(
                     "  reported closing revision {}{}",
-                    super::terminal_safe_line(&bounded(&basis.source_revision)),
-                    if basis.source_revision.len() > 256 {
+                    super::terminal_safe_line(&basis.source_id_summary.as_ref().map_or_else(
+                        || bounded(basis.source_revision.as_deref().unwrap_or_default()),
+                        crate::source::SourceIdSummary::description
+                    )),
+                    if basis
+                        .source_revision
+                        .as_ref()
+                        .is_some_and(|revision| revision.len() > 256)
+                    {
                         " (truncated; see that observation's row)"
                     } else {
                         ""
@@ -229,12 +241,26 @@ impl SourceDiagnostic {
 fn fact_value(fact: &crate::storage::SealedSourceFact) -> Value {
     json!({ "observation": fact.observation, "run_position": fact.position,
         "comparison": fact.comparison,
-        "source_basis": fact.source_basis.as_ref().map(|basis| json!({
-            "workspace": bounded(&basis.workspace_id), "revision": bounded(&basis.source_revision),
-            "root_generation": basis.source_root_generation, "root_state": basis.source_root_state,
-            "truncated": basis.workspace_id.len() > 256 || basis.source_revision.len() > 256,
-        })),
+        "source_basis": fact.source_basis.as_ref().map(basis_value),
     })
+}
+
+fn basis_value(basis: &crate::storage::SealedSourceBasis) -> Value {
+    let revision = basis.source_revision.as_deref().unwrap_or_default();
+    let mut value = json!({
+        "workspace": bounded(&basis.workspace_id),
+        "root_generation": basis.source_root_generation, "root_state": basis.source_root_state,
+        "workspace_bytes": basis.workspace_id.len(),
+        "truncated": basis.workspace_id.len() > 256 || revision.len() > 256,
+    });
+    if let Some(revision) = &basis.source_revision {
+        value["revision"] = json!(bounded(revision));
+        value["revision_bytes"] = json!(revision.len());
+    }
+    if let Some(summary) = &basis.source_id_summary {
+        value["source_id_summary"] = json!(summary);
+    }
+    value
 }
 
 fn bounded(text: &str) -> String {

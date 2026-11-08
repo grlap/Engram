@@ -1097,10 +1097,8 @@ fn evaluation(
         execution_identity: None,
         parent_session: None,
         evaluator_model: None,
-        source_basis: declared.map(|revision| crate::domain::AcceptanceSourceBasis {
-            workspace_id: None,
-            fingerprint: revision.into(),
-        }),
+        source_basis: declared
+            .map(|revision| crate::domain::AcceptanceSourceBasis::legacy(None, revision.into())),
         verdicts,
         evaluator: actor(HOLDER),
         attempt_key: Some(key.into()),

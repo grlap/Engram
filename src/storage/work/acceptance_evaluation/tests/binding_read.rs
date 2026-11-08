@@ -595,7 +595,10 @@ fn every_criterion_reads_once_across_pages() {
         assert_eq!(read.shown, read.rows.len());
         assert_eq!(read.omitted, 19 - read.earlier - read.shown);
         assert!(read.shown > 0 && read.shown <= 8);
-        assert!(serde_json::to_vec(&read).expect("page bytes").len() <= 16 * 1_024);
+        assert!(
+            serde_json::to_vec(&read).expect("page bytes").len()
+                <= crate::domain::ACCEPTANCE_BINDING_READ_PAGE_BYTES
+        );
         seen.extend(read.rows.iter().map(|row| row.criterion));
         pages.push(read.shown);
         assert_eq!(read.continuation.is_some(), read.omitted > 0);
@@ -638,12 +641,18 @@ fn a_page_fits_whole_rows_or_refuses() {
         );
         (fixture, host, work)
     };
-    let (fixture, host, work) = large(4_000, "project-binding-read-large");
+    let (fixture, host, work) = large(
+        crate::domain::ACCEPTANCE_BINDING_READ_PAGE_BYTES / 4,
+        "project-binding-read-large",
+    );
     let mut after: Option<String> = None;
     let mut seen = Vec::new();
     loop {
         let read = read(&fixture.store, &host, &work, after.as_deref()).expect("page");
-        assert!(serde_json::to_vec(&read).expect("page bytes").len() <= 16 * 1_024);
+        assert!(
+            serde_json::to_vec(&read).expect("page bytes").len()
+                <= crate::domain::ACCEPTANCE_BINDING_READ_PAGE_BYTES
+        );
         assert!(read.shown >= 1 && read.shown < 6, "{}", read.shown);
         seen.extend(read.rows.iter().map(|row| row.criterion));
         let Some(next) = read.continuation else {
@@ -653,7 +662,10 @@ fn a_page_fits_whole_rows_or_refuses() {
     }
     assert_eq!(seen, (1..=6).collect::<Vec<_>>());
 
-    let (fixture, host, work) = large(17_000, "project-binding-read-oversized");
+    let (fixture, host, work) = large(
+        crate::domain::ACCEPTANCE_BINDING_READ_PAGE_BYTES + 1,
+        "project-binding-read-oversized",
+    );
     assert_eq!(
         refused(read(&fixture.store, &host, &work, None)),
         Refusal::PageTooLarge
@@ -1428,7 +1440,10 @@ mod candidates {
             assert_eq!(page.shown, page.rows.len());
             assert_eq!(page.omitted, 19 - page.earlier - page.shown);
             assert_eq!(page.continuation.is_some(), page.omitted > 0);
-            assert!(serde_json::to_vec(page).expect("page bytes").len() <= 16 * 1_024);
+            assert!(
+                serde_json::to_vec(page).expect("page bytes").len()
+                    <= crate::domain::ACCEPTANCE_VERIFICATION_READ_PAGE_BYTES
+            );
             assert_eq!(page.basis, pages[0].basis);
             seen.extend(page.rows.iter().map(|row| row.record.clone()));
         }

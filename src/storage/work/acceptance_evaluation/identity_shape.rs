@@ -14,10 +14,10 @@
 
 use super::{
     AcceptanceBasis, AcceptanceEvaluation, AcceptanceEvaluationMode, AcceptanceVerdict,
-    MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES,
-    RecordAcceptanceEvaluationRequest,
+    MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_ATTEMPT_KEY_BYTES, MAX_EXECUTION_IDENTITY_BYTES,
+    RecordAcceptanceEvaluationRequest, StoreError, refused,
 };
-use crate::domain::SessionId;
+use crate::domain::{MAX_ACCEPTANCE_EVALUATION_BYTES, SessionId};
 
 /// Why a `sub_agent` evaluation's execution identity is refused.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -166,6 +166,65 @@ impl<'a> IdentityShape<'a> {
         !matches!(self.mode, AcceptanceEvaluationMode::SubAgent)
             && (self.execution.is_some() || self.parent.is_some())
     }
+}
+
+/// An explicit attempt key, after trimming, holds from 1 through
+/// `MAX_ATTEMPT_KEY_BYTES` bytes; it needs no run to check.
+pub(super) fn validate_attempt_key(
+    request: &RecordAcceptanceEvaluationRequest,
+) -> Result<(), StoreError> {
+    match request.attempt_key.as_deref().map(str::trim) {
+        Some(key) if key.is_empty() || key.len() > MAX_ATTEMPT_KEY_BYTES => Err(refused(
+            request.work_id,
+            format!(
+                "an explicit attempt key must contain from 1 through {MAX_ATTEMPT_KEY_BYTES} bytes"
+            ),
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Identity values have their existing owner budget; all remaining canonical
+/// keys, metadata and verdict bytes keep the original one MiB allowance.
+pub(super) fn validate_evaluation_capacity(
+    record: &AcceptanceEvaluation,
+    bytes: usize,
+) -> Result<(), StoreError> {
+    let identity_bytes = record
+        .source_basis
+        .as_ref()
+        .and_then(|basis| basis.source_id())
+        .map(crate::canonical::canonical_bytes)
+        .transpose()?
+        .map_or(0, |bytes| bytes.len())
+        + match record
+            .registered_input_decision
+            .as_ref()
+            .map(|decision| &decision.source)
+        {
+            Some(crate::domain::RegisteredDecisionSource::SourceId { source_id }) => {
+                crate::canonical::canonical_bytes(source_id)?.len()
+            }
+            _ => 0,
+        };
+    let content_bytes = bytes.checked_sub(identity_bytes).ok_or_else(|| {
+        StoreError::InvalidWorkProjection("evaluation source byte accounting exceeds record".into())
+    })?;
+    if bytes > MAX_ACCEPTANCE_EVALUATION_BYTES
+        || content_bytes > crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES
+    {
+        return Err(refused(
+            record.work_id,
+            format!(
+                "the evaluation would be {} canonical bytes ({} non-source bytes), over its {} total / {} non-source byte cap; shorten the rationales or redundant citations, never omit a source identity",
+                bytes,
+                content_bytes,
+                MAX_ACCEPTANCE_EVALUATION_BYTES,
+                crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES
+            ),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

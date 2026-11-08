@@ -238,6 +238,14 @@ pub(super) struct EvaluateArgs {
     pub(super) attempt: Option<String>,
     /// Host-measured source fingerprint at evaluation time.
     pub(super) source_fingerprint: Option<String>,
+    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::source::present_source_id"
+    )]
+    #[schemars(with = "Option<crate::source::SourceId>")]
+    pub(super) source_id: Option<crate::source::SourceId>,
     /// PROVIDER/MODEL or PROVIDER/MODEL@VERSION, recorded as asserted metadata.
     pub(super) model: Option<String>,
     /// Sub-agent mode only: the evaluator's distinct execution identity.
@@ -333,6 +341,14 @@ pub(super) struct DoneArgs {
     pub(super) note: Option<String>,
     /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
     pub(super) source_fingerprint: Option<String>,
+    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::source::present_source_id"
+    )]
+    #[schemars(with = "Option<crate::source::SourceId>")]
+    pub(super) source_id: Option<crate::source::SourceId>,
     /// Where the work landed, recorded in the seal as asserted provenance: `commit`, `remote`, `branch`, `pushed_at`, and `installed_build` when a binary was installed.
     pub(super) landing: Option<crate::domain::CompletionLanding>,
 }

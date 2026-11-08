@@ -222,10 +222,7 @@ fn oversized_evaluations_are_refused_with_nothing_appended() {
     let long_fingerprint = refusal(record(
         store,
         &RecordAcceptanceEvaluationRequest {
-            source_basis: Some(AcceptanceSourceBasis {
-                workspace_id: None,
-                fingerprint: "f".repeat(257),
-            }),
+            source_basis: Some(AcceptanceSourceBasis::legacy(None, "f".repeat(257))),
             ..request(
                 &work,
                 head_before,
@@ -249,10 +246,10 @@ fn oversized_evaluations_are_refused_with_nothing_appended() {
     let admitted = record(
         store,
         &RecordAcceptanceEvaluationRequest {
-            source_basis: Some(AcceptanceSourceBasis {
-                workspace_id: Some("w".repeat(256)),
-                fingerprint: "f".repeat(256),
-            }),
+            source_basis: Some(AcceptanceSourceBasis::legacy(
+                Some("w".repeat(256)),
+                "f".repeat(256),
+            )),
             evaluator_model: Some(EvaluatorModel {
                 provider: "p".repeat(128),
                 model: "m".repeat(128),

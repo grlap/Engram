@@ -74,6 +74,7 @@ fn evaluate_input(
         verdicts,
         attempt: None,
         source_fingerprint: None,
+        source_id: None,
         model: None,
         execution_identity: None,
         parent_session: None,
@@ -536,5 +537,89 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
             "acceptance evaluated (same_session): all 1 criteria pass",
         ],
         "delivered changes: {described:#?}"
+    );
+}
+
+#[test]
+fn shared_evaluation_keeps_the_complete_record_and_only_projects_an_owner_summary() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("shared-evaluation.sqlite3");
+    let service = LocalWorkService::new(
+        database.clone(),
+        ProjectId("shared-evaluation-output".into()),
+        "agent".into(),
+        SessionId("holder".into()),
+        Some("protocol-test".into()),
+    );
+    let root = proposed_root(
+        service
+            .work_propose(root_input("Shared evaluation", "shared-root"), at(0))
+            .unwrap(),
+    );
+    service
+        .work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: Some(3600),
+                recovery_reason: None,
+                idempotency_key: "shared-claim".into(),
+            },
+            at(1),
+        )
+        .unwrap();
+    enable(&database, &[AcceptanceEvaluationMode::SameSession], 2);
+    let mut input = evaluate_input(
+        &root.short_ref,
+        root.revision,
+        completion_run_feed_head(&service, root.work_id),
+        vec![verdict(1, "fail", "judgment", &[])],
+    );
+    let identity = crate::source::SourceId {
+        commit: "a".repeat(40),
+        tree: "b".repeat(40),
+        submodules: vec![],
+        changes: (0..1000)
+            .map(|index| crate::source::Change {
+                path: format!("private-source-file-{index:05}-{}", "p".repeat(80)),
+                status: " M".into(),
+                origin: None,
+                blob: Some("c".repeat(40)),
+                mode: Some(crate::source::Mode::Regular),
+            })
+            .collect(),
+    };
+    assert!(serde_json::to_vec(&identity).unwrap().len() > MAX_AGENT_WORK_RESPONSE_BYTES);
+    input.source_id = Some(identity.clone());
+    let result = service.work_evaluate_on(&input, at(10)).unwrap();
+    assert_eq!(
+        result.projection.source_id_summary,
+        Some(identity.summary())
+    );
+    let output = serde_json::to_string(&result).unwrap();
+    assert!(!output.contains("private-source-file"));
+    assert!(output.len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
+    let store = SqliteStore::open(&database).unwrap();
+    let record: crate::domain::AcceptanceEvaluation =
+        store.get(&result.evaluation).unwrap().unwrap();
+    assert_eq!(
+        record.source_basis.as_ref().unwrap().source_id(),
+        Some(&identity)
+    );
+    assert_eq!(
+        service.work_evaluate_on(&input, at(11)).unwrap().evaluation,
+        result.evaluation
+    );
+    let mut invalid = input;
+    invalid.source_fingerprint = Some("legacy".into());
+    let before = crate::storage::test_database_shape_snapshot(
+        &rusqlite::Connection::open(&database).unwrap(),
+    )
+    .unwrap();
+    assert!(service.work_evaluate_on(&invalid, at(12)).is_err());
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(
+            &rusqlite::Connection::open(&database).unwrap()
+        )
+        .unwrap(),
+        before
     );
 }

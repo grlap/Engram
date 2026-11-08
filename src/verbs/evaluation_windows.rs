@@ -283,6 +283,12 @@ fn detail_receipt(detail: &WorkEvaluationDetail) -> Receipt {
             lines.push(format!("  {label}: {}", super::terminal_safe_line(value)));
         }
     }
+    if let Some(summary) = &detail.source_id_summary {
+        lines.push(format!(
+            "  {}",
+            super::terminal_safe_line(&summary.description())
+        ));
+    }
     if let Some(supersedes) = &row.supersedes {
         lines.push(format!("  supersedes {supersedes}"));
     }
@@ -322,6 +328,9 @@ fn detail_receipt(detail: &WorkEvaluationDetail) -> Receipt {
         if let Some(field) = field {
             value[key] = json!(field);
         }
+    }
+    if let Some(summary) = &detail.source_id_summary {
+        value["source_id_summary"] = json!(summary);
     }
     value["verdicts"] = json!(
         detail

@@ -317,6 +317,8 @@ fn terminalize(verbs: &AgentVerbs, parent: &str, lifecycle: WorkLifecycle) {
             .done(
                 DoneInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,
@@ -481,6 +483,8 @@ fn phoenix_full_notes_include_inherited_late_restored_and_reopened_native_genera
             .done(
                 DoneInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,

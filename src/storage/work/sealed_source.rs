@@ -3,19 +3,43 @@
 
 use super::current_run_feed_cut_on;
 use crate::ObjectId;
-use crate::domain::{CompletionSeal, ExecutionSourceBasis, WorkId, WorkRunId};
+use crate::domain::{CompletionSeal, VerificationSourceBasis, WorkId, WorkRunId};
 use crate::storage::{SqliteStore, StoreError};
 use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 
 mod query;
 
+/// Agent-facing projection only. Comparison retains the complete basis separately.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct SealedSourceBasis {
+    pub workspace_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_revision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id_summary: Option<crate::source::SourceIdSummary>,
+    pub source_root_generation: Option<i64>,
+    pub source_root_state: Option<crate::domain::SourceRootState>,
+}
+
+impl From<&VerificationSourceBasis> for SealedSourceBasis {
+    fn from(basis: &VerificationSourceBasis) -> Self {
+        Self {
+            workspace_id: basis.workspace_id.clone(),
+            source_revision: basis.legacy_revision().map(str::to_owned),
+            source_id_summary: basis.source_id().map(crate::source::SourceId::summary),
+            source_root_generation: basis.source_root_generation,
+            source_root_state: basis.source_root_state,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct SealedSourceFact {
     pub position: i64,
     pub observation: ObjectId,
     pub comparison: String,
-    pub source_basis: Option<ExecutionSourceBasis>,
+    pub source_basis: Option<SealedSourceBasis>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -32,7 +56,7 @@ pub(crate) struct SealedSourceDiagnostic {
     pub named_root_binding: Option<ObjectId>,
     pub completion_cut: i64,
     pub horizon: i64,
-    pub judged: Option<ExecutionSourceBasis>,
+    pub judged: Option<SealedSourceBasis>,
     pub unavailable: Option<String>,
     pub total: usize,
     pub differences: usize,
@@ -109,7 +133,7 @@ impl SqliteStore {
                     .and_then(|e| e.named_root_binding.clone()),
                 completion_cut: seal.completion_cut.position,
                 horizon,
-                judged,
+                judged: judged.as_ref().map(SealedSourceBasis::from),
                 unavailable,
                 total: 0,
                 differences: 0,
@@ -118,7 +142,7 @@ impl SqliteStore {
                 first_difference: None,
                 latest_endpoint: None,
             };
-            let query = query::SourceQuery::new(&seal, &diagnostic);
+            let query = query::SourceQuery::new(&seal, &diagnostic, judged.as_ref())?;
             query.count(&store.connection, &mut diagnostic)?;
             diagnostic.first_difference = query
                 .select(&store.connection, None, Some("differs"), false, 1)?
@@ -135,19 +159,20 @@ impl SqliteStore {
             {
                 let records =
                     store.source_observations(&[(fact.position, fact.observation.clone())])?;
-                fact.source_basis =
-                    records
-                        .into_iter()
-                        .next()
-                        .and_then(|(_, _, record)| match record {
-                            super::SourceObservationRecord::Admitted(observation) => {
-                                observation.source_basis
-                            }
-                            super::SourceObservationRecord::Unadmitted(observation) => observation
-                                .occurrence
-                                .measured_sighting()
-                                .and_then(|sighting| sighting.source_basis.legacy_basis()),
-                        });
+                fact.source_basis = records
+                    .into_iter()
+                    .next()
+                    .and_then(|(_, _, record)| match record {
+                        super::SourceObservationRecord::Admitted(observation) => {
+                            observation.source_basis.map(VerificationSourceBasis::from)
+                        }
+                        super::SourceObservationRecord::Unadmitted(observation) => observation
+                            .occurrence
+                            .measured_sighting()
+                            .map(|sighting| sighting.source_basis.clone()),
+                    })
+                    .as_ref()
+                    .map(SealedSourceBasis::from);
             }
             let rows = query.select(&store.connection, before, None, true, limit.min(32))?;
             let newer = before

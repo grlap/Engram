@@ -195,6 +195,7 @@ pub(crate) fn admission_transport_fixture(
             evidence: vec![citation.as_str().into()],
         }],
         source_fingerprint: declared,
+        source_id: None,
         attempt: None,
         model: None,
         execution_identity: None,

@@ -65,7 +65,7 @@ pub(crate) use query::{
 mod receipts;
 mod record_windows;
 mod sealed_source;
-pub(crate) use sealed_source::{SealedSourceDiagnostic, SealedSourceFact};
+pub(crate) use sealed_source::{SealedSourceBasis, SealedSourceDiagnostic, SealedSourceFact};
 pub(crate) mod refusal_labels;
 mod verification_read;
 pub(crate) use verification_read::VerificationReadRequest;

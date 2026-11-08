@@ -840,7 +840,7 @@ fn sealed_source_text_basis_preview_bounds_utf8_and_escapes_controls() {
     let revision = format!("\"\\\u{1}\n{}é-tail", "r".repeat(250));
     let judged = facts.judged.as_mut().unwrap();
     judged.workspace_id.clone_from(&workspace);
-    judged.source_revision.clone_from(&revision);
+    judged.source_revision = Some(revision.clone());
     facts.first_difference.as_mut().unwrap().source_basis = Some(judged.clone());
     let rendered =
         crate::verbs::sealed_source::SourceDiagnostic::new(source, &fixture.work.short_ref);

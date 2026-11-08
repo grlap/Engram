@@ -18,6 +18,8 @@ fn finish(verbs: &AgentVerbs, work_ref: &str, now: i64) -> Receipt {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,

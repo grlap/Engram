@@ -13,7 +13,8 @@ use super::{AcceptanceBindingReadBasis, AcceptanceBindingVerification, Verificat
 pub const ACCEPTANCE_VERIFICATION_READ_PAGE_ROWS: usize = 8;
 
 /// The most bytes one page's serialized result holds.
-pub const ACCEPTANCE_VERIFICATION_READ_PAGE_BYTES: usize = 16 * 1_024;
+pub const ACCEPTANCE_VERIFICATION_READ_PAGE_BYTES: usize =
+    super::ACCEPTANCE_BINDING_READ_PAGE_BYTES;
 
 /// One page of the read. Rows are complete and in ascending run-feed
 /// position; `continuation` is `None` exactly when no row remains.

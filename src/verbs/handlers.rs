@@ -300,6 +300,13 @@ pub struct EvaluateInput {
     pub attempt: Option<String>,
     #[serde(default)]
     pub source_fingerprint: Option<String>,
+    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::source::present_source_id"
+    )]
+    pub source_id: Option<crate::source::SourceId>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -421,6 +428,13 @@ pub struct DoneInput {
     /// the evaluated one when the policy requires source freshness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::source::present_source_id"
+    )]
+    pub source_id: Option<crate::source::SourceId>,
     /// Where the work landed, recorded in the seal as asserted provenance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub landing: Option<crate::domain::CompletionLanding>,

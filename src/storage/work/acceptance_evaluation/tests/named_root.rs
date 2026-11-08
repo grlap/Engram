@@ -81,10 +81,10 @@ fn evaluate_check(
         )],
         second,
     );
-    input.source_basis = Some(AcceptanceSourceBasis {
-        workspace_id: Some("workspace-B".into()),
-        fingerprint: "revision-B".into(),
-    });
+    input.source_basis = Some(AcceptanceSourceBasis::legacy(
+        Some("workspace-B".into()),
+        "revision-B".into(),
+    ));
     input.attempt_key = Some(key.into());
     record(store, &input)
 }
@@ -856,10 +856,10 @@ fn evaluate_declared(
         )],
         second,
     );
-    input.source_basis = Some(AcceptanceSourceBasis {
-        workspace_id: Some(workspace.into()),
-        fingerprint: revision.into(),
-    });
+    input.source_basis = Some(AcceptanceSourceBasis::legacy(
+        Some(workspace.into()),
+        revision.into(),
+    ));
     input.attempt_key = Some(key.into());
     record(&mut named.fixture.store, &input)
 }
@@ -1230,10 +1230,10 @@ fn an_evaluation_waits_for_the_named_root_first_sighting() {
     // B71: a declaration does not supply the initial host sighting.
     for declaration in [
         None,
-        Some(AcceptanceSourceBasis {
-            workspace_id: Some("workspace-B".into()),
-            fingerprint: "revision-B".into(),
-        }),
+        Some(AcceptanceSourceBasis::legacy(
+            Some("workspace-B".into()),
+            "revision-B".into(),
+        )),
     ] {
         let mut before = judge(&fixture.store, "before-sighting", 10);
         before.source_basis = declaration.clone();
@@ -1251,7 +1251,7 @@ fn an_evaluation_waits_for_the_named_root_first_sighting() {
         assert_eq!(cause.evaluated_cut, before.evaluated_through);
         assert_eq!(
             cause.declared_revision,
-            declaration.map(|basis| basis.fingerprint)
+            declaration.and_then(|basis| basis.legacy_fingerprint().map(str::to_owned))
         );
         assert!(cause.reported_revision.is_none());
         assert_eq!(
@@ -1669,10 +1669,7 @@ fn declared_pass(
         )],
         second,
     );
-    input.source_basis = Some(AcceptanceSourceBasis {
-        workspace_id: None,
-        fingerprint: revision.into(),
-    });
+    input.source_basis = Some(AcceptanceSourceBasis::legacy(None, revision.into()));
     input.attempt_key = Some(key.into());
     input
 }
@@ -1943,10 +1940,7 @@ fn a_check_outside_the_root_s_workspace_names_both_workspaces() {
         )],
         11,
     );
-    input.source_basis = Some(AcceptanceSourceBasis {
-        workspace_id: None,
-        fingerprint: "revision-B".into(),
-    });
+    input.source_basis = Some(AcceptanceSourceBasis::legacy(None, "revision-B".into()));
     input.attempt_key = Some("revision-only".into());
     let refused = refusal(record(&mut named.fixture.store, &input));
     assert!(

@@ -817,10 +817,7 @@ fn evaluation(
 }
 
 fn declared(fingerprint: &str, workspace: Option<&str>) -> AcceptanceSourceBasis {
-    AcceptanceSourceBasis {
-        workspace_id: workspace.map(Into::into),
-        fingerprint: fingerprint.into(),
-    }
+    AcceptanceSourceBasis::legacy(workspace.map(Into::into), fingerprint.into())
 }
 
 /// The one check a host turn recorded.

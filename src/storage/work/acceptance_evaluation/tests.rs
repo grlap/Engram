@@ -1815,17 +1815,14 @@ fn source_freshness_binds_the_host_fingerprint() {
             reason: AcceptanceStaleReason::Source
         }
     ));
-    pass.source_basis = Some(AcceptanceSourceBasis {
-        workspace_id: Some("workspace-source".into()),
-        fingerprint: "fingerprint-1".into(),
-    });
+    pass.source_basis = Some(AcceptanceSourceBasis::legacy(
+        Some("workspace-source".into()),
+        "fingerprint-1".into(),
+    ));
     let blank = refusal(record(
         store,
         &RecordAcceptanceEvaluationRequest {
-            source_basis: Some(AcceptanceSourceBasis {
-                workspace_id: None,
-                fingerprint: " ".into(),
-            }),
+            source_basis: Some(AcceptanceSourceBasis::legacy(None, " ".into())),
             ..pass.clone()
         },
     ));

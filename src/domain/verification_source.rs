@@ -63,6 +63,15 @@ impl VerificationSourceIdentity {
     }
 }
 
+impl std::fmt::Display for VerificationSourceIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.legacy_revision() {
+            Some(revision) => f.write_str(revision),
+            None => f.write_str(&self.description()),
+        }
+    }
+}
+
 /// The legacy alternative serializes exactly as it did before shared identities.
 /// A shared identity has no revision string, tree surrogate or cleanliness bit.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

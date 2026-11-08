@@ -113,6 +113,8 @@ fn restored_parent_without_a_run_agrees_with_successor_completion() {
             .done(
                 DoneInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,
@@ -145,6 +147,8 @@ fn restored_parent_without_a_run_agrees_with_successor_completion() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -279,6 +283,8 @@ fn done_refusal_keeps_the_show_successor_reason_and_core_shape() {
             .done(
                 DoneInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,
@@ -323,6 +329,8 @@ fn done_refusal_keeps_the_show_successor_reason_and_core_shape() {
                 Some(&parent),
                 crate::work_service::WorkCompleteInput {
                     source_fingerprint: None,
+
+                    source_id: None,
                     landing: None,
                     links: Vec::new(),
                     link_basis: None,

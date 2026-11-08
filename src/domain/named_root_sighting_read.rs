@@ -60,7 +60,7 @@ pub enum NamedRootAtCut {
 /// The root's newest qualifying source record at or before the cut, as
 /// recording looks for it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(from = "InitialSightingWire", into = "InitialSightingWire")]
 pub enum InitialSighting {
     /// No qualifying record sights the root at or before the cut: recording
     /// an evaluation there would be refused for want of one.
@@ -73,6 +73,91 @@ pub enum InitialSighting {
         /// The source revision it sighted.
         revision: String,
     },
+    SharedPresent {
+        record: ObjectId,
+        position: i64,
+        source_id_summary: crate::source::SourceIdSummary,
+    },
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+enum InitialSightingWire {
+    Legacy(LegacySighting),
+    Shared(SharedSighting),
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+enum LegacySighting {
+    Absent {},
+    Present {
+        record: ObjectId,
+        position: i64,
+        revision: String,
+    },
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+enum SharedSighting {
+    Present {
+        record: ObjectId,
+        position: i64,
+        source_id_summary: crate::source::SourceIdSummary,
+    },
+}
+
+impl From<InitialSightingWire> for InitialSighting {
+    fn from(value: InitialSightingWire) -> Self {
+        match value {
+            InitialSightingWire::Legacy(LegacySighting::Absent {}) => Self::Absent {},
+            InitialSightingWire::Legacy(LegacySighting::Present {
+                record,
+                position,
+                revision,
+            }) => Self::Present {
+                record,
+                position,
+                revision,
+            },
+            InitialSightingWire::Shared(SharedSighting::Present {
+                record,
+                position,
+                source_id_summary,
+            }) => Self::SharedPresent {
+                record,
+                position,
+                source_id_summary,
+            },
+        }
+    }
+}
+
+impl From<InitialSighting> for InitialSightingWire {
+    fn from(value: InitialSighting) -> Self {
+        match value {
+            InitialSighting::Absent {} => Self::Legacy(LegacySighting::Absent {}),
+            InitialSighting::Present {
+                record,
+                position,
+                revision,
+            } => Self::Legacy(LegacySighting::Present {
+                record,
+                position,
+                revision,
+            }),
+            InitialSighting::SharedPresent {
+                record,
+                position,
+                source_id_summary,
+            } => Self::Shared(SharedSighting::Present {
+                record,
+                position,
+                source_id_summary,
+            }),
+        }
+    }
 }
 
 /// Why a read was refused. A refusal is never a finding about the root.

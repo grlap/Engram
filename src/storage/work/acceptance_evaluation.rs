@@ -5,6 +5,8 @@
 //! run, evaluated cut, and run evidence, and completion later consults the
 //! newest record. No projection table exists: the run feed is the index.
 
+#[cfg(test)]
+use crate::domain::ExecutionSourceBasis;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 
@@ -28,13 +30,12 @@ use crate::domain::{
     AcceptanceBasis, AcceptanceBinding, AcceptanceEvaluation, AcceptanceEvaluationMode,
     AcceptanceEvaluationPolicy, AcceptanceResult, AcceptanceStaleReason, AcceptanceVerdict,
     ActorContext, AssuranceLevel, CarriedFailure, CarriedFailureReviser, CarriedFailureVerdict,
-    CompletionSeal, CriterionVerdict, CriterionVerdictInput, ExecutionSourceBasis, FeedId,
-    MAX_ACCEPTANCE_EVALUATION_BYTES, MAX_ACCEPTANCE_SOURCE_BASIS_BYTES,
-    MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis,
-    NamedRootBindingEvent, NamedRootBindingKind, ProjectId, ProvenanceRelation,
-    RecordAcceptanceEvaluationRequest, SourceObservation, SourceRootState, VerificationEvidence,
-    VerificationResult, WorkEvent, WorkEvidence, WorkLifecycle, WorkObligation,
-    WorkPlanningAuthority, WorkTransition,
+    CompletionSeal, CriterionVerdict, CriterionVerdictInput, FeedId,
+    MAX_ACCEPTANCE_SOURCE_BASIS_BYTES, MAX_ACCEPTANCE_VERDICT_CITATIONS,
+    MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis, NamedRootBindingEvent, NamedRootBindingKind,
+    ProjectId, ProvenanceRelation, RecordAcceptanceEvaluationRequest, SourceObservation,
+    SourceRootState, VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence,
+    WorkLifecycle, WorkObligation, WorkPlanningAuthority, WorkTransition,
 };
 use crate::memory::Redactor;
 use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};
@@ -116,6 +117,26 @@ pub(super) enum SourceCheck<'a> {
     Unmeasured,
     /// A completion attempt presenting this fingerprint, if any.
     AtCompletion(Option<&'a str>),
+    AtSharedCompletion(&'a crate::source::SourceId),
+}
+
+impl SourceCheck<'_> {
+    fn identity(self) -> Option<crate::domain::VerificationSourceIdentity> {
+        match self {
+            Self::Unmeasured | Self::AtCompletion(None) => None,
+            Self::AtCompletion(Some(source_revision)) => {
+                Some(crate::domain::VerificationSourceIdentity::Legacy {
+                    source_revision: source_revision.to_owned(),
+                    git_tree: None,
+                })
+            }
+            Self::AtSharedCompletion(source_id) => {
+                Some(crate::domain::VerificationSourceIdentity::SourceId {
+                    source_id: source_id.clone(),
+                })
+            }
+        }
+    }
 }
 
 /// The attempt key one request resolves to on a run, and the content
@@ -394,17 +415,16 @@ impl SqliteStore {
             )?
         };
         let registered_staged = request.source_basis.as_ref().is_some_and(|basis| {
-            basis.fingerprint.starts_with("git-tree:")
+            basis
+                .legacy_fingerprint()
+                .is_some_and(|value| value.starts_with("git-tree:"))
                 && (cited_git_input || registered_input_witness.is_some())
         });
         let live_commit = has_pass
             && !registered_staged
             && currency.require_declared_on(
                 &transaction,
-                request
-                    .source_basis
-                    .as_ref()
-                    .map(|basis| basis.fingerprint.as_str()),
+                request.source_basis.as_ref().map(|basis| &basis.identity),
                 cut,
             )?;
         let registered_input_witness = if live_commit {
@@ -509,12 +529,16 @@ impl SqliteStore {
                 StaleCause::RegisteredGit { checked: basis, .. }
                 | StaleCause::OtherSource(basis)
                 | StaleCause::OtherNaming { checked: basis, .. } => {
-                    Some(basis.source_revision.clone())
+                    basis.legacy_revision().map(str::to_owned)
                 }
-                StaleCause::MovedAfter { checked, .. } => Some(checked.clone()),
+                StaleCause::MovedAfter { checked, .. } => {
+                    checked.legacy_revision().map(str::to_owned)
+                }
                 StaleCause::Unverifiable | StaleCause::Applicability(_) => None,
             };
-            cause.judged_revision = judged.as_ref().map(|source| source.revision.clone());
+            cause.judged_revision = judged
+                .as_ref()
+                .and_then(|source| source.identity.legacy_revision().map(str::to_owned));
             cause.producer_observation.clone_from(&stale.producer);
             let original_reason = stale.refusal(&item, judged.as_ref(), cut)?;
             let reason = if cause.mismatch == EvaluationCitationMismatch::WrongSource {
@@ -586,9 +610,7 @@ impl SqliteStore {
                 request
                     .source_basis
                     .as_ref()
-                    .map(|basis| {
-                        currency.matching_decision_on(&transaction, &basis.fingerprint, cut)
-                    })
+                    .map(|basis| currency.matching_decision_on(&transaction, &basis.identity, cut))
                     .transpose()?
                     .flatten()
             } else {
@@ -677,6 +699,7 @@ impl SqliteStore {
         work_id: WorkId,
         run_id: WorkRunId,
         source_fingerprint: Option<&str>,
+        source_id: Option<&crate::source::SourceId>,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
         let policy_before = SqliteStore::load_acceptance_evaluation_policy_on(&self.connection)?;
         let currency = if policy_before.is_self_asserted() {
@@ -703,6 +726,7 @@ impl SqliteStore {
                 work_id,
                 run_id,
                 source_fingerprint,
+                source_id,
                 &currency,
             )
         })
@@ -713,6 +737,7 @@ impl SqliteStore {
         work_id: WorkId,
         run_id: WorkRunId,
         source_fingerprint: Option<&str>,
+        source_id: Option<&crate::source::SourceId>,
         currency: &LiveCurrency,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
         let policy = SqliteStore::load_acceptance_evaluation_policy_on(connection)?;
@@ -727,6 +752,7 @@ impl SqliteStore {
                 run_id,
                 &policy,
                 source_fingerprint,
+                source_id,
                 currency,
             )? {
                 AcceptanceEvaluationAssessment::Absent => AcceptanceEvaluationReadiness::Blocked(
@@ -908,15 +934,7 @@ fn append_evaluation(
         supersedes: request.supersedes.clone(),
     };
     let object = CanonicalObject::mint(&record)?;
-    if object.bytes().len() > MAX_ACCEPTANCE_EVALUATION_BYTES {
-        return Err(refused(
-            item.work_id,
-            format!(
-                "the evaluation would be {} canonical bytes, over the {MAX_ACCEPTANCE_EVALUATION_BYTES} byte cap; shorten the rationales",
-                object.bytes().len()
-            ),
-        ));
-    }
+    validate_evaluation_capacity(&record, object.bytes().len())?;
     SqliteStore::insert_object(transaction, KIND, &object)?;
     append_to_work_feeds(
         transaction,
@@ -1037,10 +1055,13 @@ pub(in crate::storage::work) fn validate_evaluation_input_witness_on(
         )?;
         if evaluation.registered_input_witness.is_some()
             || !evaluation.evidence_basis.contains(&decision.verification)
-            || evaluation
-                .source_basis
-                .as_ref()
-                .is_none_or(|basis| !matches!(&decision.source, crate::domain::RegisteredDecisionSource::Legacy {source_revision, ..} if &basis.fingerprint == source_revision))
+            || evaluation.source_basis.as_ref().is_none_or(|basis| {
+                !basis
+                    .identity
+                    .same_source(&crate::domain::VerificationSourceIdentity::from(
+                        &decision.source,
+                    ))
+            })
             || evaluation.named_root_binding.as_ref() != Some(&decision.named_root_binding)
         {
             return Err(StoreError::InvalidWorkProjection("evaluation registered input decision does not match its declared input and evidence basis".into()));
@@ -1110,20 +1131,6 @@ pub(crate) fn validate_evaluation_verdicts<'a>(
     Ok(())
 }
 
-/// An explicit attempt key, after trimming, holds from 1 through
-/// `MAX_ATTEMPT_KEY_BYTES` bytes; it needs no run to check.
-fn validate_attempt_key(request: &RecordAcceptanceEvaluationRequest) -> Result<(), StoreError> {
-    match request.attempt_key.as_deref().map(str::trim) {
-        Some(key) if key.is_empty() || key.len() > MAX_ATTEMPT_KEY_BYTES => Err(refused(
-            request.work_id,
-            format!(
-                "an explicit attempt key must contain from 1 through {MAX_ATTEMPT_KEY_BYTES} bytes"
-            ),
-        )),
-        _ => Ok(()),
-    }
-}
-
 pub(crate) fn validate_evaluation_metadata(
     request: &RecordAcceptanceEvaluationRequest,
 ) -> Result<(), StoreError> {
@@ -1170,10 +1177,15 @@ pub(crate) fn validate_evaluation_metadata(
         }
     }
     if let Some(basis) = &request.source_basis {
-        if basis.fingerprint.trim().is_empty() {
+        if basis
+            .legacy_fingerprint()
+            .is_some_and(|value| value.trim().is_empty())
+        {
             return Err(refused(work, "a source fingerprint must not be blank"));
         }
-        if basis.fingerprint.len() > MAX_ACCEPTANCE_SOURCE_BASIS_BYTES
+        if basis
+            .legacy_fingerprint()
+            .is_some_and(|value| value.len() > MAX_ACCEPTANCE_SOURCE_BASIS_BYTES)
             || basis
                 .workspace_id
                 .as_ref()
@@ -1185,6 +1197,17 @@ pub(crate) fn validate_evaluation_metadata(
                     "a source fingerprint or workspace id must not exceed {MAX_ACCEPTANCE_SOURCE_BASIS_BYTES} bytes"
                 ),
             ));
+        }
+        if let Some(source_id) = basis.source_id() {
+            source_id
+                .validate()
+                .map_err(|_| refused(work, "source_id has invalid values or ordering"))?;
+            if crate::canonical::canonical_bytes(source_id)?.len() > crate::source::MAX_JSON_BYTES {
+                return Err(refused(
+                    work,
+                    "source_id exceeds its 1 MiB owner limit; recapture an available bounded identity; do not truncate it",
+                ));
+            }
         }
     }
     Ok(())
@@ -1653,7 +1676,7 @@ fn basis_moved_after_live(
         })
         .transpose()?;
     let judged_source = judged_source(connection, run_id, position, declared, root)?;
-    let judged = judged_source.as_ref().map(|judged| judged.revision.clone());
+    let judged = judged_source.as_ref().map(|judged| &judged.identity);
     let name = |at: i64, observation: &SourceObservation| DecidingObservation {
         observation: observation.record.clone(),
         position: at,
@@ -1674,7 +1697,9 @@ fn basis_moved_after_live(
         reporting_session: observation.reporting_session.clone(),
         observed_at: observation.observed_at,
         recorded_at: observation.recorded_at,
-        evaluated_revision: judged_source.as_ref().map(|judged| judged.revision.clone()),
+        evaluated_revision: judged_source
+            .as_ref()
+            .and_then(|judged| judged.identity.legacy_revision().map(str::to_owned)),
         evaluated_revision_declared: judged_source.as_ref().is_some_and(|judged| judged.declared),
     };
     let mut statement = connection.prepare(
@@ -1727,7 +1752,7 @@ fn basis_moved_after_live(
                 if !observation.source_changed {
                     if witnessed_after.is_some_and(|checked_at| {
                         source::quiet_git_input_conflicts(
-                            declared.map(|basis| basis.fingerprint.as_str()),
+                            declared.map(|basis| &basis.identity),
                             checked_at,
                             &observation,
                         )
@@ -1744,9 +1769,9 @@ fn basis_moved_after_live(
                     }
                     // The newest sighting decides where the source is.
                     if let (Some(judged_at), Some(sighting)) =
-                        (judged.as_deref(), observation.source_basis.as_ref())
+                        (judged, observation.source_basis.as_ref())
                     {
-                        quiet_move = (sighting.legacy_revision() != Some(judged_at))
+                        quiet_move = (!sighting.identity.same_source(judged_at))
                             .then(|| name(at, &observation));
                     }
                     continue;
@@ -1872,11 +1897,7 @@ fn staleness_named_live(
             .source_basis
             .as_ref()
             .map(|basis| {
-                currency.matching_on(
-                    connection,
-                    &basis.fingerprint,
-                    record.evaluated_cut.position,
-                )
+                currency.matching_on(connection, &basis.identity, record.evaluated_cut.position)
             })
             .transpose()?
             .unwrap_or(false);
@@ -2043,11 +2064,7 @@ fn staleness_after_move(
             .source_basis
             .as_ref()
             .map(|basis| {
-                currency.matching_on(
-                    connection,
-                    &basis.fingerprint,
-                    record.evaluated_cut.position,
-                )
+                currency.matching_on(connection, &basis.identity, record.evaluated_cut.position)
             })
             .transpose()?
             .unwrap_or(false);
@@ -2063,14 +2080,14 @@ fn staleness_after_move(
         declared_revision: record
             .source_basis
             .as_ref()
-            .map(|basis| basis.fingerprint.clone()),
+            .and_then(|basis| basis.legacy_fingerprint().map(str::to_owned)),
         reported_revision: None,
         expected_fingerprint: record
             .source_basis
             .as_ref()
-            .map(|basis| basis.fingerprint.clone()),
+            .and_then(|basis| basis.legacy_fingerprint().map(str::to_owned)),
         presented_fingerprint: match source {
-            SourceCheck::Unmeasured => None,
+            SourceCheck::Unmeasured | SourceCheck::AtSharedCompletion(_) => None,
             SourceCheck::AtCompletion(value) => value.map(str::to_owned),
         },
     };
@@ -2147,44 +2164,44 @@ fn staleness_after_move(
             StaleRecoveryContext::default(),
         ));
     }
+    let presented = source.identity();
     if live_commit
-        && let SourceCheck::AtCompletion(Some(presented)) = source
+        && let Some(presented) = presented.as_ref()
         && record
             .source_basis
             .as_ref()
-            .map(|basis| basis.fingerprint.as_str())
-            != Some(presented)
+            .is_none_or(|basis| !basis.identity.same_source(presented))
     {
         source_context.mismatch =
             crate::domain::AcceptanceSourceMismatch::CompletionFingerprintMismatch;
         return Ok(refused_source(source_context));
     }
     if !live_commit && (policy.require_source_freshness || git_input) {
-        let evaluated = record
-            .source_basis
-            .as_ref()
-            .map(|basis| basis.fingerprint.as_str());
-        match (evaluated, source) {
-            // A record without a basis can never match a measurement.
-            (None, _) => return Ok(refused_source(source_context)),
-            // A read measured nothing: the check is pending, not failed.
-            (Some(_), SourceCheck::Unmeasured) => {}
-            (Some(evaluated), SourceCheck::AtCompletion(presented))
-                if presented == Some(evaluated) => {}
-            (Some(_), SourceCheck::AtCompletion(None)) => {
-                source_context.mismatch =
-                    crate::domain::AcceptanceSourceMismatch::CompletionMeasurementMissing;
-                source_context.remedy =
-                    crate::domain::AcceptanceSourceRemedy::MeasureSourceAndRetry;
-                return Ok(refused_source(source_context));
-            }
-            (Some(_), SourceCheck::AtCompletion(Some(_))) => {
-                source_context.mismatch =
-                    crate::domain::AcceptanceSourceMismatch::CompletionFingerprintMismatch;
-                return Ok(refused_source(source_context));
+        let Some(evaluated) = record.source_basis.as_ref() else {
+            return Ok(refused_source(source_context));
+        };
+        if !matches!(source, SourceCheck::Unmeasured) {
+            match presented.as_ref() {
+                Some(presented) if evaluated.identity.same_source(presented) => {}
+                None => {
+                    source_context.mismatch =
+                        crate::domain::AcceptanceSourceMismatch::CompletionMeasurementMissing;
+                    source_context.remedy = if evaluated.source_id().is_some() {
+                        crate::domain::AcceptanceSourceRemedy::MeasureSourceIdAndRetry
+                    } else {
+                        crate::domain::AcceptanceSourceRemedy::MeasureSourceAndRetry
+                    };
+                    return Ok(refused_source(source_context));
+                }
+                Some(_) => {
+                    source_context.mismatch =
+                        crate::domain::AcceptanceSourceMismatch::CompletionFingerprintMismatch;
+                    return Ok(refused_source(source_context));
+                }
             }
         }
     }
+
     Ok((None, StaleRecoveryContext::default()))
 }
 
@@ -2197,6 +2214,7 @@ pub(super) fn assess_live_on(
     run_id: WorkRunId,
     policy: &AcceptanceEvaluationPolicy,
     source_fingerprint: Option<&str>,
+    source_id: Option<&crate::source::SourceId>,
     currency: &LiveCurrency,
 ) -> Result<AcceptanceEvaluationAssessment, StoreError> {
     if item.acceptance.is_empty() {
@@ -2213,7 +2231,10 @@ pub(super) fn assess_live_on(
             policy,
             &hash,
             &record,
-            SourceCheck::AtCompletion(source_fingerprint),
+            source_id.map_or(
+                SourceCheck::AtCompletion(source_fingerprint),
+                SourceCheck::AtSharedCompletion,
+            ),
             currency,
         )? {
             (Some(reason), context) => AcceptanceEvaluationAssessment::Stale(reason, context),
@@ -2448,7 +2469,7 @@ pub(crate) use history::{AssessedAcceptanceEvaluation, SourceObservationRecord};
 mod identity_shape;
 use identity_shape::{
     ExecutionIdentityFault, IdentityShape, VerdictFault, execution_identity_fault,
-    record_verdicts_malformed, verdict_fault,
+    record_verdicts_malformed, validate_attempt_key, validate_evaluation_capacity, verdict_fault,
 };
 mod reroll;
 mod same_turn;

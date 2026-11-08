@@ -328,6 +328,14 @@ pub struct WorkCompleteInput {
     /// project policy requires acceptance-evaluation source freshness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::source::present_source_id"
+    )]
+    #[schemars(with = "Option<crate::source::SourceId>")]
+    pub source_id: Option<crate::source::SourceId>,
     /// Where the work landed, recorded in the seal as asserted provenance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub landing: Option<crate::domain::CompletionLanding>,
@@ -380,6 +388,14 @@ pub struct WorkEvaluateInput {
     /// Host-measured source fingerprint at evaluation time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    /// Complete host-measured source identity, exclusive with `source_fingerprint`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::source::present_source_id"
+    )]
+    #[schemars(with = "Option<crate::source::SourceId>")]
+    pub source_id: Option<crate::source::SourceId>,
     /// `PROVIDER/MODEL[@VERSION]`, recorded as structured metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -435,6 +451,8 @@ pub struct WorkEvaluationProjection {
     pub blocking: Option<WorkEvaluationBlocking>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id_summary: Option<crate::source::SourceIdSummary>,
     pub attempt_key: String,
     /// Record id of the carried failing evaluation this one acknowledges.
     #[serde(default, skip_serializing_if = "Option::is_none")]

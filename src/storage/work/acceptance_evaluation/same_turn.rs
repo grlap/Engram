@@ -49,8 +49,9 @@ impl ExemptChecks {
             return Ok(exempt);
         };
         if !live_commit
-            && revision_seen_through(connection, run_id, i64::MAX, root)?.as_deref()
-                != Some(declared.fingerprint.as_str())
+            && revision_seen_through(connection, run_id, i64::MAX, root)?
+                .as_ref()
+                .is_none_or(|identity| !identity.same_source(&declared.identity))
         {
             return Ok(exempt);
         }
@@ -76,9 +77,9 @@ impl ExemptChecks {
             if live_commit {
                 let producer =
                     crate::storage::work::load_verification_producer_on(connection, &check)?;
-                if producer.registered_git_basis(&check).is_none()
-                    || producer.matches_registered_git_input(&check, &declared.fingerprint)
-                        != Some(true)
+                if (producer.registered_git_basis(&check).is_none()
+                    && producer.registered_source_id_basis(&check).is_none())
+                    || producer.matches_registered_source(&check, &declared.identity) != Some(true)
                     || producer.outcome != crate::domain::ExecutionOutcome::Succeeded
                     || producer.run_outcome != Some(crate::domain::ExecutionOutcome::Succeeded)
                 {
@@ -89,7 +90,10 @@ impl ExemptChecks {
                     super::source::measured_source_at_on(connection, run_id, i64::MAX, root)?;
                 if crate::control::check_verification_applicability(
                     check.applicability.as_ref(),
-                    judged.as_ref(),
+                    judged
+                        .as_ref()
+                        .and_then(crate::domain::VerificationSourceBasis::legacy_basis)
+                        .as_ref(),
                 )
                 .is_err()
                 {
@@ -137,7 +141,7 @@ fn on_declared(
     root: Option<&NamedEvaluationRoot>,
 ) -> bool {
     let basis = &check.source_basis;
-    basis.legacy_revision() == Some(declared.fingerprint.as_str())
+    basis.identity.same_source(&declared.identity)
         && declared
             .workspace_id
             .as_ref()

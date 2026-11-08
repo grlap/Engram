@@ -153,6 +153,7 @@ fn malformed_evaluate_mode_leaves_focus_and_delivery_unchanged() {
                     verdicts: Vec::new(),
                     attempt: None,
                     source_fingerprint: None,
+                    source_id: None,
                     model: None,
                     execution_identity: None,
                     parent_session: None,
@@ -183,6 +184,7 @@ fn malformed_evaluate_verdict_leaves_focus_and_delivery_unchanged() {
                     }],
                     attempt: None,
                     source_fingerprint: None,
+                    source_id: None,
                     model: None,
                     execution_identity: None,
                     parent_session: None,
@@ -407,6 +409,7 @@ fn keyed_evaluation(first: &str, attempt: String) -> EvaluateInput {
         }],
         attempt: Some(attempt),
         source_fingerprint: None,
+        source_id: None,
         model: None,
         execution_identity: None,
         parent_session: None,
@@ -826,6 +829,7 @@ fn bounded_evaluation(
         }],
         attempt: None,
         source_fingerprint: None,
+        source_id: None,
         model: None,
         execution_identity: None,
         parent_session: None,
@@ -857,7 +861,7 @@ fn refuses_rationales_over_the_record_cap(count: usize, rationale: &str) {
         let error = verbs.evaluate(input, at(6)).expect_err("over the cap");
         let cap = format!(
             "would pass the {} byte cap",
-            crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES
+            crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES
         );
         assert!(error.to_string().contains(&cap), "{error}");
         Err(error)
@@ -869,7 +873,7 @@ fn refuses_rationales_over_the_record_cap(count: usize, rationale: &str) {
 #[test]
 fn evaluation_rationales_summing_to_the_record_cap_leave_focus_and_delivery_unchanged() {
     let rationale = "x".repeat(65_536);
-    let count = crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES / rationale.len();
+    let count = crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES / rationale.len();
     refuses_rationales_over_the_record_cap(count, &rationale);
 }
 
@@ -878,8 +882,8 @@ fn evaluation_rationales_summing_to_the_record_cap_leave_focus_and_delivery_unch
 #[test]
 fn escaped_evaluation_rationales_over_the_record_cap_leave_focus_and_delivery_unchanged() {
     let rationale = "\"".repeat(65_536);
-    let count = crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES / (2 * rationale.len()) + 1;
-    assert!(count * rationale.len() < crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES);
+    let count = crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES / (2 * rationale.len()) + 1;
+    assert!(count * rationale.len() < crate::domain::MAX_ACCEPTANCE_EVALUATION_CONTENT_BYTES);
     refuses_rationales_over_the_record_cap(count, &rationale);
 }
 
@@ -915,6 +919,7 @@ fn malformed_core_evaluation_refuses_before_its_target_is_resolved() {
                     verdicts: input.verdicts,
                     attempt: None,
                     source_fingerprint: None,
+                    source_id: None,
                     model: None,
                     execution_identity: None,
                     parent_session: None,
@@ -1218,6 +1223,7 @@ fn cited_evaluation(first: &str, citation: String) -> EvaluateInput {
         }],
         attempt: None,
         source_fingerprint: None,
+        source_id: None,
         model: None,
         execution_identity: None,
         parent_session: None,

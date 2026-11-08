@@ -669,8 +669,11 @@ enum WorkCommand {
         #[arg(long, value_name = "KEY")]
         attempt: Option<String>,
         /// Host-measured source fingerprint at evaluation time.
-        #[arg(long, value_name = "FINGERPRINT")]
+        #[arg(long, value_name = "FINGERPRINT", conflicts_with = "source_id_file")]
         source_fingerprint: Option<String>,
+        /// Read one complete host-captured `SourceId` from an immutable attempt file.
+        #[arg(long, value_name = "PATH", conflicts_with = "source_fingerprint")]
+        source_id_file: Option<std::path::PathBuf>,
         /// PROVIDER/MODEL or PROVIDER/MODEL@VERSION, recorded as asserted metadata.
         #[arg(long, value_name = "PROVIDER/MODEL")]
         model: Option<String>,
@@ -773,8 +776,11 @@ enum WorkCommand {
         #[arg(long)]
         note: Option<String>,
         /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
-        #[arg(long, value_name = "FINGERPRINT")]
+        #[arg(long, value_name = "FINGERPRINT", conflicts_with = "source_id_file")]
         source_fingerprint: Option<String>,
+        /// Read one complete host-captured `SourceId` from an immutable attempt file.
+        #[arg(long, value_name = "PATH", conflicts_with = "source_fingerprint")]
+        source_id_file: Option<std::path::PathBuf>,
         /// Record where the work landed: the pushed commit (with --remote, --branch and --pushed-at).
         #[arg(long, value_name = "COMMIT", requires_all = ["remote", "branch", "pushed_at"])]
         landed: Option<String>,
@@ -1849,28 +1855,33 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             evidence,
             attempt,
             source_fingerprint,
+            source_id_file,
             model,
             execution_identity,
             parent_session,
             supersedes,
-        } => evaluate_verdicts(&verdicts, &rationales, &evidence).and_then(|verdicts| {
-            verbs.evaluate(
-                engram::EvaluateInput {
-                    work_ref,
-                    mode,
-                    acceptance_basis,
-                    evidence_basis,
-                    verdicts,
-                    attempt,
-                    source_fingerprint,
-                    model,
-                    execution_identity,
-                    parent_session,
-                    supersedes,
-                },
-                now,
-            )
-        }),
+        } => {
+            let source_id = bin_support::source_identity::read_optional(source_id_file.as_deref())?;
+            evaluate_verdicts(&verdicts, &rationales, &evidence).and_then(|verdicts| {
+                verbs.evaluate(
+                    engram::EvaluateInput {
+                        work_ref,
+                        mode,
+                        acceptance_basis,
+                        evidence_basis,
+                        verdicts,
+                        attempt,
+                        source_fingerprint,
+                        source_id,
+                        model,
+                        execution_identity,
+                        parent_session,
+                        supersedes,
+                    },
+                    now,
+                )
+            })
+        }
         WorkCommand::Remember {
             text,
             text_flag,
@@ -1944,12 +1955,14 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             links,
             link_basis,
             source_fingerprint,
+            source_id_file,
             landed,
             remote,
             branch,
             pushed_at,
             installed_build,
         } => {
+            let source_id = bin_support::source_identity::read_optional(source_id_file.as_deref())?;
             // Clap requires the whole landing together, so it is one record.
             let landing = match (landed, remote, branch, pushed_at) {
                 (Some(commit), Some(remote), Some(branch), Some(pushed_at)) => {
@@ -1996,6 +2009,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                         summary,
                         note,
                         source_fingerprint,
+                        source_id,
                         landing,
                     },
                     now,

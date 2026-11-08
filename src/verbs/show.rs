@@ -408,6 +408,8 @@ pub(super) struct ShowEvaluation {
     /// The evaluated source fingerprint, when the record carries one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) source_fingerprint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id_summary: Option<crate::source::SourceIdSummary>,
     /// True when the policy requires source freshness and this read could
     /// not measure a fingerprint: `done --source-fingerprint` checks it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -698,7 +700,11 @@ pub(super) fn show_evaluation(
         source_fingerprint: record
             .source_basis
             .as_ref()
-            .map(|basis| basis.fingerprint.clone()),
+            .and_then(|basis| basis.legacy_fingerprint().map(str::to_owned)),
+        source_id_summary: record
+            .source_basis
+            .as_ref()
+            .and_then(|basis| basis.source_id().map(crate::source::SourceId::summary)),
         source_checked_at_done: status.source_checked_at_done,
         source_recovery: status
             .source_recovery
@@ -746,6 +752,21 @@ fn evaluation_lines(
         projected.criteria,
         projected.work_revision
     )];
+    if let Some(summary) = &projected.source_id_summary {
+        lines.push(format!(
+            "  {}{}",
+            super::terminal_safe_line(&summary.description()),
+            if projected.source_checked_at_done {
+                if status.record.registered_input_decision.is_some() {
+                    "; source currency checked at done"
+                } else {
+                    "; present --source-id-file at done"
+                }
+            } else {
+                ""
+            }
+        ));
+    }
     if let Some(fingerprint) = &projected.source_fingerprint {
         lines.push(format!(
             "  source fingerprint: {}{}",

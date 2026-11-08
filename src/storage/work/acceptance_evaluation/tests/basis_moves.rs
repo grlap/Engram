@@ -85,10 +85,7 @@ pub(super) fn entries_after(
 }
 
 fn revision(fingerprint: &str, workspace: Option<&str>) -> AcceptanceSourceBasis {
-    AcceptanceSourceBasis {
-        workspace_id: workspace.map(Into::into),
-        fingerprint: fingerprint.into(),
-    }
+    AcceptanceSourceBasis::legacy(workspace.map(Into::into), fingerprint.into())
 }
 
 #[test]

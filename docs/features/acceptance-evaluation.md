@@ -28,6 +28,48 @@ change here adds a recorded, attributed, per-criterion evaluation that Engram
 enforces at completion under a per-project policy, without Engram ever calling a
 model itself.
 
+## Complete shared source identities
+
+New host evaluation and completion declarations can carry the existing complete
+`source_id`. CLI `evaluate` and `done` read it with `--source-id-file PATH`,
+exclusive with `--source-fingerprint`; MCP and service inputs use `source_id`.
+The file contains one UTF-8 JSON SourceId, at most 1 MiB, read once from a bounded
+open handle. The host publishes a unique immutable file for its saved attempt,
+keeps it through uncertain submission and concurrent retries, and removes it only
+after terminal disposition and the last consumer releases it. Paths are transport
+locators and do not enter evaluation intent or canonical records. Invalid-file
+errors contain structural categories and positions, never source values.
+
+`source_basis` has exactly one of `fingerprint` (historical) or `source_id`, plus
+an optional `workspace_id`. Missing the whole basis still means undeclared;
+null, both alternatives, unknown fields and malformed identities refuse. Shared
+comparisons use complete SourceId equality, including dirty changes and
+submodules. Mixed legacy/shared representations are unequal. Root/workspace
+scope, feed cuts, evidence applicability and terminal result rules remain
+separate. Source selection, same-turn checks, citations, quiet witnesses, reroll
+and sealed-source diagnostics retain the typed identity through comparison.
+Historical fingerprints and their stored bytes retain their existing semantics;
+revision-specific rules and examples below describe that historical alternative.
+
+Completion presents the same complete identity via `--source-id-file` when
+freshness requires it. Native registered checks use the existing current-input
+decision with the complete object, including dirty input. Agent responses,
+receipts, history windows and sealed diagnostics carry only SourceIdSummary
+(commit, tree and change/submodule counts). They never emit the full declaration
+or native decision object. A root's shared sighting is `present` with
+`source_id_summary`, not an absent sighting.
+
+The canonical record permits two owner-sized SourceIds, one declaration and one
+native decision: 3 MiB total, with the original 1 MiB allowance for all other
+canonical bytes. Subtract only the exact canonical SourceId value bytes; keys,
+metadata, criteria and verdicts still consume the original allowance. Every
+identity retains its 1 MiB owner limit, and the early verdict-only check remains
+1 MiB. Shorten rationales or redundant citations on a content refusal; never
+truncate or omit an identity. Legacy records retain the original 1 MiB cap.
+This implementation does not enable evaluation policy. TermAl's shared
+`same_session` preparation remains unsupported until it persists an attempt and
+its immutable file; this imposes no new core mode restriction.
+
 ## Boundary
 
 - **The host evaluates; the core enforces.** Engram never runs a model, a
@@ -520,7 +562,8 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   parser); a sub-agent `execution_identity` is at most 256 bytes with no
   control characters and `parent_session` follows the live session-id bound
   (64 bytes), both asserted identifiers rather than proof of independent
-  execution; and the whole frozen object is at most 1 MiB of canonical bytes.
+  execution. Non-source canonical data is at most 1 MiB; with two complete
+  owner-sized SourceIds the whole record is at most 3 MiB, as described above.
   Every bound is checked before the write, so a refused record leaves the run
   feed and the newest record untouched. The criteria count is not capped:
   receipts carry a bounded prefix of verdict rows with an exact omitted count
@@ -679,7 +722,9 @@ stale reason named.
   is at that revision (R3b). Registered checks instead follow
   [Registered Git-input evidence](#registered-git-input-evidence), where the
   exact `git-commit:` or `git-tree:` declaration replaces this sighting rule.
-- **F4 source fingerprint.** When policy `require_source_freshness` is on, the
+- **F4 source declaration.** Shared declarations compare the completion
+  `source_id` with the complete evaluated identity; a legacy declaration compares
+  the legacy fingerprint. When policy `require_source_freshness` is on, the
   completion attempt presents a `source_fingerprint` measured by the host at
   completion time (`done --source-fingerprint F`) that equals
   `source_basis.fingerprint`; a missing or different fingerprint refuses with
@@ -1210,8 +1255,8 @@ none.
 The newest whole record still decides completion. `show` and `show --full`
 keep their newest-only reads.
 
-`done [--source-fingerprint F]` presents the
-host-measured fingerprint (F4); its refusals carry the causes above, and its
+`done [--source-fingerprint F | --source-id-file PATH]` presents the
+host-measured source identity (F4), using a complete saved `source_id` file for a shared declaration; its refusals carry the causes above, and its
 success line and the completed item's `show` carry the provenance (completion
 enforcement, step 5). `add --evaluation-mode MODE` pins the mode from creation
 (roots and `--under` children alike), and `update` accepts `--evaluation-mode
@@ -1342,7 +1387,7 @@ is still the run's head. A page answers with:
 - `total`, the item's authored criteria; `earlier`, the rows on earlier
   pages; `shown`, the rows on this page; and `omitted`, the rows after it;
 - `rows`: complete rows in ascending one-based criterion order, at most
-  eight to a page and at most 16 KiB of result;
+  eight to a page and at most 2,113,536 bytes of private result (public agent response limits are unchanged);
 - `continuation`: `null` when no row remains, otherwise an opaque token for
   the next page.
 
@@ -1444,7 +1489,7 @@ candidate at its rank in this snapshot. A page answers with:
 - `total`, every candidate at the cut; `earlier`, `shown` and `omitted`, the
   candidates on earlier pages, on this page and after it;
 - `rows`: complete candidates in ascending run-feed position, at most eight
-  to a page and at most 16 KiB of result;
+  to a page and at most 2,113,536 bytes of private result (public agent response limits are unchanged);
 - `continuation`: `null` when no candidate remains, otherwise a token for
   the next page.
 

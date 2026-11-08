@@ -361,10 +361,10 @@ fn a_reported_change_to_the_judged_revision_is_no_new_evidence() {
         "fail",
         30,
     );
-    failing.source_basis = Some(AcceptanceSourceBasis {
-        workspace_id: None,
-        fingerprint: "content-revision-2".into(),
-    });
+    failing.source_basis = Some(AcceptanceSourceBasis::legacy(
+        None,
+        "content-revision-2".into(),
+    ));
     record(store, &failing).expect("the failing evaluation");
     // The host reports that change at the end of the turn.
     host.basis.source_revision = "content-revision-2".into();

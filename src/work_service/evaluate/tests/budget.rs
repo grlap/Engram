@@ -187,6 +187,8 @@ fn a_large_blocking_criterion_and_a_large_rationale_still_fit() {
         .work_evaluate_on(
             &WorkEvaluateInput {
                 source_fingerprint: Some("f".repeat(256)),
+
+                source_id: None,
                 model: Some(format!(
                     "{}/{}@{}",
                     "p".repeat(128),

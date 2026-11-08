@@ -31,10 +31,14 @@ fn registered_git_input_does_not_relabel_legacy_content_evidence() {
         30,
     );
     let mut wrong = valid.clone();
-    wrong.source_basis.as_mut().unwrap().fingerprint = format!(
-        "git-commit:{}",
-        &ObjectId::from_canonical_bytes(b"commit").as_str()[..40]
-    );
+    wrong.source_basis.as_mut().unwrap().identity =
+        crate::domain::VerificationSourceIdentity::Legacy {
+            source_revision: format!(
+                "git-commit:{}",
+                &ObjectId::from_canonical_bytes(b"commit").as_str()[..40]
+            ),
+            git_tree: None,
+        };
     let before = test_database_shape_snapshot(&fixture.store.connection).unwrap();
     assert!(record(&mut fixture.store, &wrong).is_err());
     assert_eq!(

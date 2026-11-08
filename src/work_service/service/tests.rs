@@ -713,6 +713,8 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .work_complete(
             WorkCompleteInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,

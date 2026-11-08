@@ -190,6 +190,10 @@ impl SqliteStore {
             Self::journal_claim_ended(request);
             return Ok(CompleteWorkStorageResult::Completed(Box::new(seal)));
         }
+        crate::domain::AcceptanceSourceBasis::validate_declaration(
+            request.source_fingerprint.as_deref(),
+            request.source_id.as_ref(),
+        )?;
         expire_handoff_offers(
             &transaction,
             request.run_id,
@@ -283,6 +287,7 @@ impl SqliteStore {
                 run.run_id,
                 &acceptance_policy,
                 request.source_fingerprint.as_deref(),
+                request.source_id.as_ref(),
                 &currency,
             )?;
             // A fresh, all-pass evaluation is the only path to a sealed vector;
@@ -411,20 +416,27 @@ impl SqliteStore {
                 {
                     return Err(StoreError::WorkCompletionRefused {
                         work: item.work_id,
-                        reason: "source_fingerprint cannot declare a source_id input; omit the declaration for unevaluated completion".into(),
+                        reason: "source_fingerprint cannot declare a source_id input; use --source-id-file or omit the declaration for unevaluated completion".into(),
                     });
                 }
-                if request.source_fingerprint.as_ref().is_some_and(|declared| {
-                    checked
-                        .source_basis
-                        .legacy_revision()
-                        .is_some_and(|revision| declared != revision)
+                let declared = crate::domain::AcceptanceSourceBasis::from_declaration(
+                    request.source_fingerprint.clone(),
+                    request.source_id.clone(),
+                )
+                .map_err(|reason| StoreError::InvalidWork(reason.into()))?;
+                if declared.as_ref().is_some_and(|declared| {
+                    !declared
+                        .identity
+                        .same_source(&checked.source_basis.identity)
                 }) {
+                    let remedy = checked.source_basis.legacy_revision().map_or_else(
+                        || "use --source-id-file with the current complete identity or omit the declaration for unevaluated completion".to_owned(),
+                        |revision| format!("use --source-fingerprint {revision} or omit the declaration for unevaluated completion"),
+                    );
                     return Err(StoreError::WorkCompletionRefused {
                         work: item.work_id,
                         reason: format!(
-                            "completion declares an input other than its current registered check; use --source-fingerprint {} or omit the declaration for unevaluated completion; otherwise run a check on the intended commit",
-                            checked.source_basis.legacy_revision().unwrap_or_default()
+                            "completion declares an input other than its current registered check; {remedy}; otherwise run a check on the intended source"
                         ),
                     });
                 }
@@ -642,6 +654,7 @@ impl SqliteStore {
             &evidence,
             acceptance_evaluation.is_some(),
             request.source_fingerprint.as_deref(),
+            request.source_id.as_ref(),
             acceptance,
             &currency,
         )?;

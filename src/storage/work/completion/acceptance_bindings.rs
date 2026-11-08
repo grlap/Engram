@@ -30,6 +30,7 @@ pub(super) fn bind_acceptance_to_obligations_on(
     completion_evidence: &[ObjectId],
     evaluated: bool,
     source_fingerprint: Option<&str>,
+    source_id: Option<&crate::source::SourceId>,
     mut acceptance: Vec<AcceptanceResult>,
     currency: &super::super::registered_commit_currency::LiveCurrency,
 ) -> Result<Vec<AcceptanceResult>, StoreError> {
@@ -125,6 +126,23 @@ pub(super) fn bind_acceptance_to_obligations_on(
                 return Err(StoreError::WorkCompletionRefused {
                     work: item.work_id,
                     reason: "source_fingerprint cannot declare a source_id input; omit the declaration for unevaluated completion".into(),
+                });
+            }
+            if let Some(source_id) = source_id
+                && (registered_git || registered_shared)
+                && producer.matches_registered_source(
+                    &evidence,
+                    &crate::domain::VerificationSourceIdentity::SourceId {
+                        source_id: source_id.clone(),
+                    },
+                ) != Some(true)
+            {
+                return Err(StoreError::WorkCompletionRefused {
+                    work: item.work_id,
+                    reason: format!(
+                        "criterion {} selected registered verification {newest} does not match the complete source_id declared at completion; use --source-id-file for the current checked input, or run a fresh passing check on the intended source",
+                        binding.criterion
+                    ),
                 });
             }
             if registered_git

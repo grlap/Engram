@@ -79,6 +79,103 @@ fn shared_input_equal_clean_and_dirty_complete_without_observations() {
 }
 
 #[test]
+fn shared_evaluation_cites_dirty_checks_and_completion_compares_the_complete_object() {
+    for bound in [false, true] {
+        let (root, mut f, identity) = shared_fixture(bound, true);
+        f.store
+            .set_acceptance_evaluation_policy(
+                &AcceptanceEvaluationPolicy {
+                    allowed_modes: vec![AcceptanceEvaluationMode::IndependentSession],
+                    mechanical_basis: MechanicalBasis::Observed,
+                    require_source_freshness: true,
+                },
+                &actor("policy-admin"),
+                "shared-evaluation-policy",
+                None,
+                at(5),
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap();
+        let check = f.record().unwrap().verifications[0].record_id.clone();
+        let mut input = evaluation(&f, &check, "unused");
+        input.source_basis = Some(AcceptanceSourceBasis {
+            workspace_id: Some(f.request.registration.root.workspace_id.clone()),
+            identity: crate::domain::VerificationSourceIdentity::SourceId {
+                source_id: identity.clone(),
+            },
+        });
+        let mut missing = input.clone();
+        missing.source_basis = None;
+        let before = f.snapshot();
+        let error = record_evaluation(&mut f, &missing).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("declare the intended complete source with --source-id-file"),
+            "{error}"
+        );
+        assert_eq!(f.snapshot(), before);
+        let mut wrong = input.clone();
+        let mut other = identity.clone();
+        other.changes[0].blob = Some("f".repeat(40));
+        wrong.source_basis.as_mut().unwrap().identity =
+            crate::domain::VerificationSourceIdentity::SourceId {
+                source_id: other.clone(),
+            };
+        let before = f.snapshot();
+        assert!(record_evaluation(&mut f, &wrong).is_err());
+        assert_eq!(f.snapshot(), before);
+        let receipt = record_evaluation(&mut f, &input).unwrap();
+        assert_eq!(
+            receipt.record.source_basis.as_ref().unwrap().source_id(),
+            Some(&identity)
+        );
+        assert!(
+            matches!(receipt.record.registered_input_decision.as_ref().map(|decision| &decision.source),
+            Some(crate::domain::RegisteredDecisionSource::SourceId { source_id }) if source_id == &identity)
+        );
+        assert_eq!(
+            record_evaluation(&mut f, &input).unwrap().evaluation,
+            receipt.evaluation
+        );
+        let work = f
+            .store
+            .get_work_item(f.request.registration.binding.work_id)
+            .unwrap();
+        let held = f.store.claim_fixture(work.work_id);
+        checkpoint(
+            &mut f.store,
+            &work,
+            &held,
+            "runner",
+            "evaluated-shared-checkpoint",
+            13,
+            std::slice::from_ref(&check),
+        );
+        let mut request =
+            completion_request(&work, &held, "runner", &check, "evaluated-shared-done", 14);
+        request.acceptance.clear();
+        request.source_fingerprint = None;
+        request.source_id = Some(other);
+        let before = f.snapshot();
+        assert!(
+            f.store
+                .complete_work(&request, &DevelopmentNoopRedactor)
+                .is_err()
+        );
+        assert_eq!(f.snapshot(), before);
+        request.source_id = Some(identity);
+        let seal = f
+            .store
+            .complete_work(&request, &DevelopmentNoopRedactor)
+            .unwrap();
+        assert_eq!(seal.acceptance_evaluation, Some(receipt.evaluation));
+        std::fs::write(root.join("tracked"), "changed after completion\n").unwrap();
+        assert!(f.store.verify_all().unwrap().is_healthy());
+    }
+}
+
+#[test]
 fn shared_input_live_change_refuses_even_when_commit_is_unchanged() {
     for dirty in [false, true] {
         let (root, mut f, source_id) = shared_fixture(true, dirty);
@@ -234,7 +331,7 @@ fn shared_input_import_preserves_canonical_record_bytes_and_links() {
 }
 
 #[test]
-fn shared_input_completion_refuses_string_declarations_for_cited_and_selected_checks() {
+fn shared_input_completion_checks_both_declarations_for_cited_and_selected_checks() {
     for implicit in [false, true] {
         let (_, mut f, source_id) = shared_fixture(implicit, true);
         let check = f.record().unwrap().verifications[0].record_id.clone();
@@ -283,6 +380,17 @@ fn shared_input_completion_refuses_string_declarations_for_cited_and_selected_ch
             assert_eq!(f.snapshot(), before);
         }
         request.source_fingerprint = None;
+        let mut other = source_id.clone();
+        other.changes[0].blob = Some("f".repeat(40));
+        request.source_id = Some(other);
+        let before = f.snapshot();
+        let mismatch = f
+            .store
+            .complete_work(&request, &DevelopmentNoopRedactor)
+            .unwrap_err();
+        assert_eq!(f.snapshot(), before);
+        assert!(!mismatch.to_string().contains("tracked"));
+        request.source_id = Some(source_id);
         assert!(
             f.store
                 .complete_work(&request, &DevelopmentNoopRedactor)
@@ -497,4 +605,92 @@ fn shared_and_legacy_bases_roundtrip_without_surrogates_or_rewrites() {
         original.bytes()
     );
     assert!(f.store.verify_all().unwrap().is_healthy());
+}
+
+fn shared_sighting(f: &mut Fixture, source_id: SourceId, key: &str, second: i64) -> ObjectId {
+    let binding = f.request.registration.binding.clone();
+    let root = f
+        .store
+        .read_named_root(
+            &f.project,
+            &f.session,
+            &f.connection,
+            crate::storage::HostSessionAuthority::Work,
+            binding.run_id,
+            binding.claim_id,
+        )
+        .unwrap();
+    let policy = SqliteStore::load_active_control_policy(&f.store.connection).unwrap();
+    let mut observer = actor("runner");
+    observer.run_id = Some(binding.run_id.0.to_string());
+    f.store
+        .record_unadmitted_execution_observation(
+            &f.project,
+            &f.session,
+            &f.connection,
+            crate::storage::HostSessionAuthority::Work,
+            &observer,
+            ExecutionObserveInput {
+                idempotency_key: key.into(),
+                binding,
+                root_basis: ObservationRootBasis {
+                    capture_run_cut: root.read_cut.position,
+                    latest_event: root.latest_event.as_ref().map(|event| event.event.clone()),
+                    state: root.named_root,
+                },
+                observed_interval: ObservedInterval {
+                    from: at(second),
+                    through: at(second),
+                },
+                occurrence: ObservedOccurrence::SourceSighting {
+                    source_basis: crate::domain::VerificationSourceBasis {
+                        workspace_id: f.request.registration.root.workspace_id.clone(),
+                        identity: crate::domain::VerificationSourceIdentity::SourceId { source_id },
+                        source_root_generation: Some(f.request.registration.root.generation),
+                        source_root_state: Some(SourceRootState::Named),
+                    },
+                    observed_at: at(second),
+                },
+                causality: ObservationCausality::Unknown {},
+                policy_basis: ObservationPolicyBasis::AccountIfEligible {
+                    project_policy_epoch: policy.epoch,
+                    policy: policy.policy_id,
+                    obligation_rule_set: policy.obligation_rule_set,
+                },
+            },
+            at(second),
+        )
+        .unwrap()
+        .observation
+}
+
+#[test]
+fn shared_named_root_sighting_is_present_with_a_summary() {
+    let (_, mut f, identity) = shared_fixture(false, true);
+    f.record().unwrap();
+    let id = shared_sighting(&mut f, identity.clone(), "shared-quiet", 10);
+    let work = f
+        .store
+        .get_work_item(f.request.registration.binding.work_id)
+        .unwrap();
+    let before = f.snapshot();
+    let read = f
+        .store
+        .read_named_root_sighting(
+            &f.project,
+            &work.short_ref,
+            f.request.registration.binding.run_id,
+            None,
+        )
+        .unwrap();
+    assert_eq!(f.snapshot(), before);
+    assert!(matches!(&read.root, crate::domain::NamedRootAtCut::Bound {
+        sighting: crate::domain::InitialSighting::SharedPresent { record, source_id_summary, .. }, ..
+    } if record == &id && source_id_summary == &identity.summary()));
+    let value = serde_json::to_value(&read).unwrap();
+    let encoded = serde_json::to_string(&value).unwrap();
+    assert!(!encoded.contains("\"changes\":["));
+    assert!(!encoded.contains("\"source_id\":"));
+    let decoded: crate::domain::NamedRootSightingRead = serde_json::from_value(value).unwrap();
+    assert_eq!(decoded, read);
 }

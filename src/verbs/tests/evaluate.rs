@@ -85,6 +85,7 @@ fn evaluate_input(
         verdicts,
         attempt: None,
         source_fingerprint: None,
+        source_id: None,
         model: None,
         execution_identity: None,
         parent_session: None,
@@ -418,6 +419,8 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,
@@ -505,6 +508,8 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+
+                source_id: None,
                 landing: None,
                 links: Vec::new(),
                 link_basis: None,

@@ -71,10 +71,10 @@ fn evaluation(
         execution_identity: None,
         parent_session: None,
         evaluator_model: None,
-        source_basis: Some(AcceptanceSourceBasis {
-            workspace_id: Some(f.request.registration.root.workspace_id.clone()),
-            fingerprint: revision.into(),
-        }),
+        source_basis: Some(AcceptanceSourceBasis::legacy(
+            Some(f.request.registration.root.workspace_id.clone()),
+            revision.into(),
+        )),
         verdicts: vec![CriterionVerdictInput {
             criterion: 1,
             verdict: AcceptanceVerdict::Pass,
@@ -206,6 +206,7 @@ fn registered_git_input_mismatch_refuses_bound_and_unbound_citations_without_eff
                             f.request.registration.binding.work_id,
                             f.request.registration.binding.run_id,
                             presented,
+                            None,
                         )
                         .unwrap();
                     if !staged && presented.is_none() {

@@ -20,7 +20,8 @@ use super::{
 pub const ACCEPTANCE_BINDING_READ_PAGE_ROWS: usize = 8;
 
 /// The most bytes one page's serialized result holds.
-pub const ACCEPTANCE_BINDING_READ_PAGE_BYTES: usize = 16 * 1_024;
+pub const ACCEPTANCE_BINDING_READ_PAGE_BYTES: usize =
+    2 * crate::source::MAX_JSON_BYTES + 16 * 1_024;
 
 /// One page of the read. Rows are complete and in ascending criterion
 /// order; `continuation` is `None` exactly when no row remains.

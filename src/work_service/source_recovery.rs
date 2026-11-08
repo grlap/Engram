@@ -8,6 +8,12 @@ pub(crate) const MEASURE_SOURCE_REMEDY: crate::argument_names::Twin = crate::arg
     mcp: "obtain a fresh source measurement from the host and retry done with it (source_fingerprint); copying the evaluated fingerprint is not a measurement",
 };
 
+pub(crate) const MEASURE_SOURCE_ID_REMEDY: crate::argument_names::Twin =
+    crate::argument_names::Twin {
+        cli: "obtain a fresh complete source_id measurement from the host and retry done with --source-id-file PATH; copying the evaluated identity is not a measurement",
+        mcp: "obtain a fresh complete source_id measurement from the host and retry done with source_id; copying the evaluated identity is not a measurement",
+    };
+
 pub(crate) fn source_recovery_remedy(cause: &AcceptanceSourceRecoveryCause) -> String {
     let remedy = match cause.remedy {
         AcceptanceSourceRemedy::EndTurnReadAndRetry => {
@@ -17,6 +23,7 @@ pub(crate) fn source_recovery_remedy(cause: &AcceptanceSourceRecoveryCause) -> S
             "read the named root's current source and request a new acceptance evaluation of it, then retry done"
         }
         AcceptanceSourceRemedy::MeasureSourceAndRetry => MEASURE_SOURCE_REMEDY.cli,
+        AcceptanceSourceRemedy::MeasureSourceIdAndRetry => MEASURE_SOURCE_ID_REMEDY.cli,
         AcceptanceSourceRemedy::EvaluateCurrentSource => {
             "request a new acceptance evaluation of the current source with its host-measured source basis, then retry done; copying an earlier fingerprint is insufficient"
         }

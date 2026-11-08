@@ -17,6 +17,23 @@ pub(crate) struct SealedSourceTransportFixture {
 
 impl SealedSourceTransportFixture {
     pub(crate) fn append_later_sighting(&mut self) {
+        self.append_source(
+            crate::domain::VerificationSourceIdentity::Legacy {
+                source_revision: "C".into(),
+                git_tree: None,
+            },
+            "appended-after-window",
+        );
+    }
+
+    pub(crate) fn append_shared_sighting(&mut self, source_id: crate::source::SourceId, key: &str) {
+        self.append_source(
+            crate::domain::VerificationSourceIdentity::SourceId { source_id },
+            key,
+        );
+    }
+
+    fn append_source(&mut self, identity: crate::domain::VerificationSourceIdentity, key: &str) {
         let fixture = &mut self.owner;
         let diagnostic = fixture
             .store
@@ -25,7 +42,7 @@ impl SealedSourceTransportFixture {
             .diagnostic;
         let observer = bind_observer(fixture, "appending-observer", 80);
         let input = ExecutionObserveInput {
-            idempotency_key: "appended-after-window".into(),
+            idempotency_key: key.into(),
             binding: ControlWorkBinding {
                 root_execution_id: diagnostic.root_execution,
                 work_id: fixture.work.work_id,
@@ -51,7 +68,12 @@ impl SealedSourceTransportFixture {
                 source_change: ObservedSourceChange::AssumedMissingBaseline {
                     workspace_id: "workspace-B".into(),
                     sighting: MeasuredSighting {
-                        source_basis: (workspace("workspace-B", "C", Some(9))).into(),
+                        source_basis: crate::domain::VerificationSourceBasis {
+                            workspace_id: "workspace-B".into(),
+                            identity,
+                            source_root_generation: Some(9),
+                            source_root_state: Some(SourceRootState::Named),
+                        },
                         observed_at: at(49),
                     },
                 },

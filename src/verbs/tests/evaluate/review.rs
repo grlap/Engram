@@ -727,6 +727,7 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
                 verdicts: explicit.verdicts.clone(),
                 attempt: explicit.attempt.clone(),
                 source_fingerprint: None,
+                source_id: None,
                 model: None,
                 execution_identity: None,
                 parent_session: None,
@@ -1177,6 +1178,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
         passed: usize::MAX,
         blocking: None,
         source_fingerprint: None,
+        source_id_summary: None,
         attempt_key: String::new(),
         full_detail: String::new(),
     };
@@ -1479,6 +1481,7 @@ fn the_word_envelope_stays_within_its_reserve() {
                 verdicts: input.verdicts.clone(),
                 attempt: None,
                 source_fingerprint: None,
+                source_id: None,
                 model: None,
                 execution_identity: None,
                 parent_session: None,
@@ -1550,6 +1553,8 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
         .evaluate(
             EvaluateInput {
                 source_fingerprint: Some("sha256:worktree-a".into()),
+
+                source_id: None,
                 ..evaluate_input(
                     &item.work_ref,
                     basis(&database, &item),
@@ -1604,6 +1609,8 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
         .done(
             DoneInput {
                 source_fingerprint: Some("sha256:worktree-b".into()),
+
+                source_id: None,
                 ..done_input(&item.work_ref)
             },
             at(7),
@@ -1633,6 +1640,8 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
         .done(
             DoneInput {
                 source_fingerprint: Some("sha256:worktree-a".into()),
+
+                source_id: None,
                 ..done_input(&item.work_ref)
             },
             at(9),
@@ -1655,6 +1664,8 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
         .evaluate(
             EvaluateInput {
                 source_fingerprint: Some("sha256:worktree-a".into()),
+
+                source_id: None,
                 ..evaluate_input(
                     &second.work_ref,
                     basis(&database, &second),

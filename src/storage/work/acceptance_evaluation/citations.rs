@@ -5,8 +5,8 @@
 use super::{
     AcceptanceBasis, AcceptanceEvaluation, AcceptanceEvaluationPolicy, AcceptanceVerdict,
     CitationContext, Connection, CriterionVerdict, CriterionVerdictInput,
-    EvaluationCitationMismatch, ExecutionSourceBasis, MechanicalBasis, ObjectId, OptionalExtension,
-    StoreError, VerificationEvidence, VerificationResult, WorkEvidence, WorkItem, WorkRunId,
+    EvaluationCitationMismatch, MechanicalBasis, ObjectId, OptionalExtension, StoreError,
+    VerificationEvidence, VerificationResult, WorkEvidence, WorkItem, WorkRunId,
     load_typed_work_object, normalize_note_text, params, refused,
 };
 
@@ -16,7 +16,7 @@ pub(super) enum Citation {
         kind: crate::domain::VerificationKind,
         check_fingerprint: ObjectId,
         /// The source the check ran on.
-        source_basis: ExecutionSourceBasis,
+        source_basis: crate::domain::VerificationSourceBasis,
         /// The execution observation that ran the check.
         producer: ObjectId,
     },
@@ -236,10 +236,7 @@ pub(super) fn classify_citation(
                     applicability: evidence.applicability,
                     kind: evidence.check_kind,
                     check_fingerprint: evidence.check_fingerprint,
-                    source_basis: evidence.source_basis.legacy_basis().ok_or_else(|| StoreError::WorkCompletionRefused {
-                        work: evidence.binding.work_id,
-                        reason: "source_id verification requires the shared-object evaluation protocol; a source-fingerprint string cannot declare that input".into(),
-                    })?,
+                    source_basis: evidence.source_basis,
                     producer: evidence.producer_observation,
                 }
             } else {

@@ -6,14 +6,15 @@
 
 use super::{
     AcceptanceVerdict, Citation, Connection, CriterionVerdict, EvaluationRootMismatch,
-    ExecutionSourceBasis, NamedRootBindingEvent, NamedRootBindingKind, ObjectId, OptionalExtension,
-    SourceObservation, SourceRootState, StoreError, WorkId, WorkItem, WorkRunId, admission,
-    citation_position, classify_citation, latest_named_root_binding_on,
-    latest_named_root_sighting_on, load_typed_work_object, load_work_claim_optional, params,
+    NamedRootBindingEvent, NamedRootBindingKind, ObjectId, OptionalExtension, SourceObservation,
+    SourceRootState, StoreError, WorkId, WorkItem, WorkRunId, admission, citation_position,
+    classify_citation, latest_named_root_binding_on, latest_named_root_sighting_on,
+    load_typed_work_object, load_work_claim_optional, params,
 };
 use crate::domain::{
     InitialSighting, NAMED_ROOT_SIGHTING_READ_BYTES, NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION,
     NamedRootAtCut, NamedRootSightingRead, NamedRootSightingReadRefusal as Refusal, ProjectId,
+    VerificationSourceBasis, VerificationSourceIdentity,
 };
 use crate::storage::work::feeds::{
     SOURCE_CHANGED_SQL, SOURCE_RECORD_SQL, latest_source_mutation_on, newest_measured_sighting_on,
@@ -103,48 +104,47 @@ pub(super) fn revision_seen_through(
     run_id: WorkRunId,
     through: i64,
     root: Option<&NamedEvaluationRoot>,
-) -> Result<Option<String>, StoreError> {
+) -> Result<Option<VerificationSourceIdentity>, StoreError> {
     if let Some(root) = root {
-        return Ok(
-            named_root_sighting_on(connection, run_id, root, through)?.and_then(
-                |(_, observation)| {
-                    observation
-                        .source_basis
-                        .and_then(|basis| basis.legacy_revision().map(str::to_owned))
-                },
-            ),
-        );
+        return Ok(named_root_sighting_on(connection, run_id, root, through)?
+            .and_then(|(_, observation)| observation.source_basis.map(|basis| basis.identity)));
     }
     if let Some(measured) = measured_after_unadmitted(connection, run_id, through)? {
-        return Ok(Some(measured));
+        return Ok(Some(measured.identity));
     }
     let revision = source_basis_sql("source_revision");
     let source_id = source_basis_sql("source_id");
-    Ok(connection
+    let stored: Option<String> = connection
         .query_row(
             &format!(
-                "SELECT {revision}
-                 FROM work_feed_entries entry
-                 JOIN objects object ON object.object_id = entry.object_id
-                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-                   AND entry.position <= ?2
-                   AND {SOURCE_RECORD_SQL}
-                   AND ({revision} IS NOT NULL OR {source_id} IS NOT NULL)
-                 ORDER BY entry.position DESC LIMIT 1"
+                "SELECT entry.object_id FROM work_feed_entries entry
+         JOIN objects object ON object.object_id = entry.object_id
+         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+           AND entry.position <= ?2 AND {SOURCE_RECORD_SQL}
+           AND ({revision} IS NOT NULL OR {source_id} IS NOT NULL)
+         ORDER BY entry.position DESC LIMIT 1"
             ),
             params![run_id.0.to_string(), through],
-            |row| row.get::<_, Option<String>>(0),
+            |row| row.get(0),
         )
-        .optional()?
-        .flatten())
+        .optional()?;
+    stored
+        .map(|stored| {
+            let id = ObjectId::from_stored(stored.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored))?;
+            Ok(super::source_observation_if_accounted_on(connection, &id)?
+                .and_then(|observation| observation.source_basis.map(|basis| basis.identity)))
+        })
+        .transpose()
+        .map(Option::flatten)
 }
 
 /// The source an evaluation judged: the revision it declared, in the
 /// workspace it declared when it named one, or else the revision the run was
 /// last seen at through its cut.
 pub(super) struct JudgedSource {
-    pub(super) host_basis: Option<ExecutionSourceBasis>,
-    pub(super) revision: String,
+    pub(super) host_basis: Option<VerificationSourceBasis>,
+    pub(super) identity: VerificationSourceIdentity,
     pub(super) workspace: Option<String>,
     /// Whether the evaluation declared this source rather than taking the
     /// run's newest sighting.
@@ -153,8 +153,8 @@ pub(super) struct JudgedSource {
 
 impl JudgedSource {
     /// Whether a check that ran on `basis` checked this source.
-    fn checked_by(&self, basis: &ExecutionSourceBasis) -> bool {
-        basis.source_revision == self.revision
+    fn checked_by(&self, basis: &VerificationSourceBasis) -> bool {
+        basis.identity.same_source(&self.identity)
             && self
                 .workspace
                 .as_ref()
@@ -171,7 +171,12 @@ pub(super) fn registered_git_evaluation_on<'a>(
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
     citations: impl IntoIterator<Item = &'a ObjectId>,
 ) -> Result<bool, StoreError> {
-    if !declared.is_some_and(|basis| crate::domain::is_git_input_revision(&basis.fingerprint)) {
+    if !declared.is_some_and(|basis| {
+        basis.source_id().is_some()
+            || basis
+                .legacy_fingerprint()
+                .is_some_and(crate::domain::is_git_input_revision)
+    }) {
         return Ok(false);
     }
     for citation in citations {
@@ -186,7 +191,9 @@ pub(super) fn registered_git_evaluation_on<'a>(
         let evidence: crate::domain::VerificationEvidence =
             load_typed_work_object(connection, citation, "verification_evidence")?;
         let producer = super::super::load_verification_producer_on(connection, &evidence)?;
-        if producer.registered_git_basis(&evidence).is_some() {
+        if producer.registered_git_basis(&evidence).is_some()
+            || producer.registered_source_id_basis(&evidence).is_some()
+        {
             return Ok(true);
         }
     }
@@ -208,16 +215,16 @@ pub(super) fn judged_source(
     let mut judged = match declared {
         Some(declared) => Some(JudgedSource {
             host_basis: None,
-            revision: declared.fingerprint.clone(),
+            identity: declared.identity.clone(),
             workspace: root
                 .map(|root| root.event.workspace_id.clone())
                 .or_else(|| declared.workspace_id.clone()),
             declared: true,
         }),
         None => {
-            revision_seen_through(connection, run_id, through, root)?.map(|revision| JudgedSource {
+            revision_seen_through(connection, run_id, through, root)?.map(|identity| JudgedSource {
                 host_basis: None,
-                revision,
+                identity,
                 workspace: root.map(|root| root.event.workspace_id.clone()),
                 declared: false,
             })
@@ -234,15 +241,14 @@ pub(super) fn measured_source_at_on(
     run_id: WorkRunId,
     through: i64,
     root: Option<&NamedEvaluationRoot>,
-) -> Result<Option<ExecutionSourceBasis>, StoreError> {
+) -> Result<Option<VerificationSourceBasis>, StoreError> {
     if let Some(root) = root {
         return Ok(named_root_sighting_on(connection, run_id, root, through)?
-            .and_then(|(_, observation)| observation.source_basis)
-            .and_then(|basis| basis.legacy_basis()));
+            .and_then(|(_, observation)| observation.source_basis));
     }
     Ok(
         super::super::feeds::newest_measured_source_basis_on(connection, run_id, None, through)?
-            .and_then(|(_, basis)| basis.legacy_basis()),
+            .map(|(_, basis)| basis),
     )
 }
 
@@ -252,7 +258,7 @@ pub(in crate::storage::work) fn sealed_source_basis_on(
     connection: &Connection,
     seal: &crate::domain::CompletionSeal,
     evaluation: &crate::domain::AcceptanceEvaluation,
-) -> Result<Option<ExecutionSourceBasis>, StoreError> {
+) -> Result<Option<VerificationSourceBasis>, StoreError> {
     let Some(expected) = evaluation.named_root_binding.as_ref() else {
         // Two absent generation values do not identify a measured root.
         return Ok(None);
@@ -289,10 +295,9 @@ pub(in crate::storage::work) fn sealed_source_basis_on(
         evaluation.source_basis.as_ref(),
         Some(&root),
     )?
-    .map(|judged| ExecutionSourceBasis {
-        git_tree: judged.host_basis.and_then(|basis| basis.git_tree),
+    .map(|judged| VerificationSourceBasis {
         workspace_id: root.event.workspace_id,
-        source_revision: judged.revision,
+        identity: judged.identity,
         source_root_generation: Some(root.event.generation),
         source_root_state: Some(SourceRootState::Named),
     }))
@@ -385,20 +390,20 @@ pub(super) fn assess_named_root_source(
             };
             match judged {
                 Some(judged)
-                    if judged.revision == latest
+                    if judged.identity.same_source(&latest)
                         || (judged.declared
                             && declared_not_contradicted(
                                 connection,
                                 run_id,
                                 cut,
                                 root,
-                                &judged.revision,
+                                &judged.identity,
                             )?) =>
                 {
                     RootSource::Confirmed
                 }
                 _ => RootSource::Unconfirmed {
-                    reported: Some(latest),
+                    reported: latest.legacy_revision().map(str::to_owned),
                 },
             }
         }
@@ -407,11 +412,17 @@ pub(super) fn assess_named_root_source(
             let horizon = if declared { i64::MAX } else { cut };
             let latest = revision_seen_through(connection, run_id, horizon, Some(root))?;
             if latest.is_some()
-                && latest.as_deref() == judged.map(|judged| judged.revision.as_str())
+                && latest
+                    .as_ref()
+                    .zip(judged)
+                    .is_some_and(|(latest, judged)| latest.same_source(&judged.identity))
             {
                 RootSource::Confirmed
             } else {
-                RootSource::Unconfirmed { reported: latest }
+                RootSource::Unconfirmed {
+                    reported: latest
+                        .and_then(|identity| identity.legacy_revision().map(str::to_owned)),
+                }
             }
         }
     })
@@ -470,7 +481,7 @@ pub(super) fn declared_not_contradicted(
     run_id: WorkRunId,
     through: i64,
     root: &NamedEvaluationRoot,
-    declared: &str,
+    declared: &VerificationSourceIdentity,
 ) -> Result<bool, StoreError> {
     Ok(
         match latest_named_root_sighting_on(
@@ -485,7 +496,7 @@ pub(super) fn declared_not_contradicted(
             Some((position, _)) if position <= through => true,
             Some((_, sighting)) => sighting
                 .source_basis
-                .is_some_and(|basis| basis.legacy_revision() == Some(declared)),
+                .is_some_and(|basis| basis.identity.same_source(declared)),
         },
     )
 }
@@ -520,21 +531,21 @@ pub(super) enum StaleCause {
     Applicability(crate::domain::VerificationEvidenceMismatch),
     /// A registered check needs its exact Git declaration and current root.
     RegisteredGit {
-        checked: ExecutionSourceBasis,
+        checked: VerificationSourceBasis,
         naming: Option<NamingMismatch>,
     },
     /// The check ran on another source than the judged one.
-    OtherSource(ExecutionSourceBasis),
+    OtherSource(VerificationSourceBasis),
     /// The check ran on the judged source, but not under the run's current
     /// root naming, for the reason given.
     OtherNaming {
-        checked: ExecutionSourceBasis,
+        checked: VerificationSourceBasis,
         mismatch: NamingMismatch,
     },
     /// The check ran on the judged revision, but by the cut the run had moved
     /// away from it.
     MovedAfter {
-        checked: String,
+        checked: VerificationSourceIdentity,
         moved: Moved,
     },
     /// The citation is not a passed check, or no judged source exists to
@@ -619,7 +630,7 @@ impl NamingMismatch {
 /// Whether `basis` is in `root`: its workspace, named state and generation,
 /// or the first of them it fails.
 fn basis_naming_mismatch(
-    basis: &ExecutionSourceBasis,
+    basis: &VerificationSourceBasis,
     root: &NamedEvaluationRoot,
 ) -> Option<NamingMismatch> {
     if basis.workspace_id != root.event.workspace_id {
@@ -651,7 +662,7 @@ fn naming_mismatch(
     run_id: WorkRunId,
     citation: &ObjectId,
     producer: &ObjectId,
-    basis: &ExecutionSourceBasis,
+    basis: &VerificationSourceBasis,
     root: &NamedEvaluationRoot,
 ) -> Result<Option<NamingMismatch>, StoreError> {
     if let Some(mismatch) = basis_naming_mismatch(basis, root) {
@@ -666,7 +677,7 @@ fn naming_mismatch(
             load_typed_work_object(connection, citation, "verification_evidence")?;
         let producer_basis =
             super::super::load_verification_producer_on(connection, &evidence)?.source_basis;
-        let Some(producer_basis) = producer_basis.and_then(|basis| basis.legacy_basis()) else {
+        let Some(producer_basis) = producer_basis else {
             return Ok(Some(NamingMismatch::ProducerUnsourced));
         };
         if let Some(mismatch) = basis_naming_mismatch(&producer_basis, root) {
@@ -701,7 +712,7 @@ pub(super) enum Moved {
     /// or observed time, even if the terminal result arrived afterwards.
     Mutation(String),
     /// Its newest sighting after the check is at this other revision.
-    To(String),
+    To(VerificationSourceIdentity),
     /// It reported a change that carries no revision, which may have moved
     /// the source anywhere.
     Unrevised,
@@ -727,21 +738,36 @@ impl StaleCitation {
             .transpose()?
             .unwrap_or_default();
         let (criterion, citation) = (self.criterion, &self.citation);
-        let declaration = if judged.is_some_and(|judged| judged.declared) {
+        let declaration = if judged.is_some_and(|judged| {
+            judged.declared
+                && matches!(judged.identity, VerificationSourceIdentity::SourceId { .. })
+        }) {
+            ", or declare the intended complete identity with --source-id-file"
+        } else if judged.is_some_and(|judged| judged.declared) {
             ", or, when the declared fingerprint is not the source revision the host reports, declare that revision"
         } else {
             ""
         };
         Ok(match (&self.cause, judged) {
+            (StaleCause::RegisteredGit { checked, naming }, _) if checked.source_id().is_some() => {
+                let scope = naming
+                    .as_ref()
+                    .map(|mismatch| format!(", but {}", mismatch.describe()))
+                    .unwrap_or_default();
+                format!(
+                    "criterion {criterion} selected registered verification {citation} ran on {} in workspace {}{scope}; run a check on the intended current source, then evaluate declaring its complete identity with --source-id-file",
+                    checked.identity, checked.workspace_id
+                )
+            }
             (StaleCause::RegisteredGit { checked, naming }, _) => match naming {
                 Some(mismatch) => format!(
                     "criterion {criterion} selected registered verification {citation} ran on {}, but {}; run a check under the current named root, then evaluate again declaring that check's exact git-commit:<full commit> or git-tree:<full tree> input with --source-fingerprint",
-                    checked.source_revision,
+                    checked.identity,
                     mismatch.describe(),
                 ),
                 None => format!(
                     "criterion {criterion} selected registered verification {citation} ran on {} in workspace {}; declare that exact Git input with --source-fingerprint {} if it is the input being judged, otherwise run a check on the intended input and cite it with its exact Git declaration",
-                    checked.source_revision, checked.workspace_id, checked.source_revision,
+                    checked.identity, checked.workspace_id, checked.identity,
                 ),
             },
             (StaleCause::Applicability(mismatch), _) => format!(
@@ -750,11 +776,11 @@ impl StaleCitation {
             ),
             (StaleCause::OtherNaming { checked, mismatch }, _) => format!(
                 "criterion {criterion} is bound to {kind} verification, and {citation} ran on the judged revision {}, but {}; run the check on the current source, then evaluate again citing it{declaration}",
-                checked.source_revision,
+                checked.identity,
                 mismatch.describe(),
             ),
             (StaleCause::OtherSource(checked), Some(judged)) => {
-                let (ran, evaluated) = if checked.source_revision == judged.revision {
+                let (ran, evaluated) = if checked.identity.same_source(&judged.identity) {
                     (
                         format!("in workspace {}", checked.workspace_id),
                         format!(
@@ -764,8 +790,8 @@ impl StaleCitation {
                     )
                 } else {
                     (
-                        format!("on source revision {}", checked.source_revision),
-                        format!("revision {}", judged.revision),
+                        format!("on source revision {}", checked.identity),
+                        format!("revision {}", judged.identity),
                     )
                 };
                 format!(
@@ -862,10 +888,9 @@ pub(super) fn stale_bound_citation_live<'a>(
                 let evidence: crate::domain::VerificationEvidence =
                     load_typed_work_object(connection, citation, "verification_evidence")?;
                 let producer = super::super::load_verification_producer_on(connection, &evidence)?;
-                producer
-                    .registered_git_basis(&evidence)
-                    .is_some()
-                    .then_some((evidence, producer))
+                (producer.registered_git_basis(&evidence).is_some()
+                    || producer.registered_source_id_basis(&evidence).is_some())
+                .then_some((evidence, producer))
             } else {
                 None
             };
@@ -883,11 +908,7 @@ pub(super) fn stale_bound_citation_live<'a>(
                 continue;
             }
             if let Some((evidence, producer)) = registered {
-                let basis = evidence.source_basis.legacy_basis().ok_or_else(|| {
-                    StoreError::InvalidWorkProjection(
-                        "legacy registered input has no revision".into(),
-                    )
-                })?;
+                let basis = evidence.source_basis.clone();
                 let naming = match root {
                     Some(root) => naming_mismatch(
                         connection,
@@ -906,7 +927,7 @@ pub(super) fn stale_bound_citation_live<'a>(
                     })
                 } else if judged.is_some_and(|judged| {
                     judged.declared
-                        && producer.matches_registered_git_input(&evidence, &judged.revision)
+                        && producer.matches_registered_source(&evidence, &judged.identity)
                             == Some(true)
                         && judged.workspace.as_ref().is_none_or(|workspace| {
                             workspace == &evidence.source_basis.workspace_id
@@ -936,7 +957,7 @@ pub(super) fn stale_bound_citation_live<'a>(
                         root,
                     )?
                     .map(|moved| StaleCause::MovedAfter {
-                        checked: basis.source_revision.clone(),
+                        checked: basis.identity.clone(),
                         moved,
                     }),
                 };
@@ -963,12 +984,18 @@ pub(super) fn stale_bound_citation_live<'a>(
                         let confirming = measured_source_at_on(connection, run_id, i64::MAX, root)?;
                         let assessment = crate::control::check_verification_applicability(
                             applicability.as_ref(),
-                            judged.and_then(|j| j.host_basis.as_ref()),
+                            judged
+                                .and_then(|j| j.host_basis.as_ref())
+                                .and_then(VerificationSourceBasis::legacy_basis)
+                                .as_ref(),
                         )
                         .and_then(|()| {
                             crate::control::check_verification_applicability(
                                 applicability.as_ref(),
-                                confirming.as_ref(),
+                                confirming
+                                    .as_ref()
+                                    .and_then(VerificationSourceBasis::legacy_basis)
+                                    .as_ref(),
                             )
                         });
                         if let Err(mismatch) = assessment {
@@ -1003,13 +1030,13 @@ pub(super) fn stale_bound_citation_live<'a>(
                                     run_id,
                                     citation,
                                     &producer,
-                                    CitationSource::Observed(&source_basis.source_revision),
+                                    CitationSource::Observed(&source_basis.identity),
                                     through,
                                     root,
                                 )? {
                                     None => continue,
                                     Some(moved) => StaleCause::MovedAfter {
-                                        checked: source_basis.source_revision,
+                                        checked: source_basis.identity,
                                         moved,
                                     },
                                 },
@@ -1052,7 +1079,10 @@ pub(in crate::storage::work) fn check_moved_on(
         run_id,
         citation,
         producer,
-        CitationSource::Observed(checked),
+        CitationSource::Observed(&VerificationSourceIdentity::Legacy {
+            source_revision: checked.to_owned(),
+            git_tree: None,
+        }),
         through,
         root.as_ref(),
     )?
@@ -1073,9 +1103,9 @@ fn is_bound(connection: &Connection, citation: &ObjectId) -> Result<bool, StoreE
 
 #[derive(Clone, Copy)]
 enum CitationSource<'a> {
-    Observed(&'a str),
+    Observed(&'a VerificationSourceIdentity),
     RegisteredGit,
-    WitnessGit(&'a str),
+    WitnessGit(&'a VerificationSourceIdentity),
 }
 
 /// Whether the run left the revision `producer` ran the check
@@ -1149,22 +1179,21 @@ fn moved_after_check(
         }
     };
     let run = run_id.0.to_string();
-    let (revision, workspace, generation, state) = (
+    let (revision, source_id, workspace, generation, state) = (
         source_basis_sql("source_revision"),
+        source_basis_sql("source_id"),
         source_basis_sql("workspace_id"),
         source_basis_sql("source_root_generation"),
         source_basis_sql("source_root_state"),
     );
     let unrevised: bool = connection.query_row(
         &format!(
-            "SELECT EXISTS(
-                 SELECT 1 FROM work_feed_entries entry
-                 JOIN objects object ON object.object_id = entry.object_id
-                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-                   AND entry.position > ?2 AND entry.position <= ?3
-                   AND {SOURCE_RECORD_SQL} AND {SOURCE_CHANGED_SQL}
-                   AND {revision} IS NULL
-             )"
+            "SELECT EXISTS(SELECT 1 FROM work_feed_entries entry
+          JOIN objects object ON object.object_id = entry.object_id
+          WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+            AND entry.position > ?2 AND entry.position <= ?3
+            AND {SOURCE_RECORD_SQL} AND {SOURCE_CHANGED_SQL}
+            AND {revision} IS NULL AND {source_id} IS NULL)"
         ),
         params![run, ran, through],
         |row| row.get(0),
@@ -1175,34 +1204,45 @@ fn moved_after_check(
     if root.is_none()
         && let Some(measured) = measured_after_unadmitted(connection, run_id, through)?
     {
-        return Ok((measured != checked).then_some(Moved::To(measured)));
+        return Ok(
+            (!measured.identity.same_source(checked)).then_some(Moved::To(measured.identity))
+        );
     }
     let newest: Option<String> = connection
         .query_row(
             &format!(
-                "SELECT {revision}
-                 FROM work_feed_entries entry
-                 JOIN objects object ON object.object_id = entry.object_id
-                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-                   AND entry.position > ?2 AND entry.position <= ?3
-                   AND {SOURCE_RECORD_SQL}
-                   AND {revision} IS NOT NULL
-                   AND (?4 IS NULL OR (
-                       {workspace} = ?4 AND {generation} = ?5 AND {state} = 'named'
-                   ))
-                 ORDER BY entry.position DESC LIMIT 1"
+                "SELECT entry.object_id FROM work_feed_entries entry
+          JOIN objects object ON object.object_id = entry.object_id
+          WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+            AND entry.position > ?2 AND entry.position <= ?3 AND {SOURCE_RECORD_SQL}
+            AND ({revision} IS NOT NULL OR {source_id} IS NOT NULL)
+            AND (?4 IS NULL OR ({workspace} = ?4 AND {generation} = ?5 AND {state} = 'named'))
+          ORDER BY entry.position DESC LIMIT 1"
             ),
             params![
                 run,
                 ran,
                 through,
                 root.map(|root| root.event.workspace_id.as_str()),
-                root.map(|root| root.event.generation),
+                root.map(|root| root.event.generation)
             ],
             |row| row.get(0),
         )
         .optional()?;
-    Ok(newest.filter(|revision| revision != checked).map(Moved::To))
+    let newest = newest
+        .map(|stored| {
+            let id = ObjectId::from_stored(stored.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored))?;
+            Ok::<_, StoreError>(
+                super::source_observation_if_accounted_on(connection, &id)?
+                    .and_then(|observation| observation.source_basis.map(|basis| basis.identity)),
+            )
+        })
+        .transpose()?
+        .flatten();
+    Ok(newest
+        .filter(|identity| !identity.same_source(checked))
+        .map(Moved::To))
 }
 
 /// Actual mutations under a registered check's root, including those whose
@@ -1215,7 +1255,7 @@ fn registered_mutation_after_check(
     (ran, recorded): (i64, i64),
     through: i64,
     root: Option<&NamedEvaluationRoot>,
-    witnessed_input: Option<&str>,
+    witnessed_input: Option<&VerificationSourceIdentity>,
 ) -> Result<Option<Moved>, StoreError> {
     let changes = connection
         .prepare(&format!(
@@ -1259,18 +1299,31 @@ fn registered_mutation_after_check(
 /// quiet sighting observed before the check cannot contradict that check.
 /// Without an observed time, recording time is the conservative horizon.
 pub(super) fn quiet_git_input_conflicts(
-    witnessed_input: Option<&str>,
+    witnessed_input: Option<&VerificationSourceIdentity>,
     checked_at: chrono::DateTime<chrono::Utc>,
     observation: &SourceObservation,
 ) -> bool {
     !observation.source_changed
         && observation.observed_at.unwrap_or(observation.recorded_at) >= checked_at
-        && observation.source_basis.as_ref().is_some_and(|basis| {
-            basis.legacy_revision().is_some_and(|revision| {
-                crate::domain::is_git_input_revision(revision)
-                    && witnessed_input.is_some_and(|input| revision != input)
+        && witnessed_input
+            .zip(observation.source_basis.as_ref())
+            .is_some_and(|(input, basis)| {
+                let comparable = match (input, &basis.identity) {
+                    (
+                        VerificationSourceIdentity::Legacy { .. },
+                        VerificationSourceIdentity::Legacy {
+                            source_revision, ..
+                        },
+                    ) => crate::domain::is_git_input_revision(source_revision),
+                    // Historical staged-tree witnesses never compared shared sightings.
+                    (
+                        VerificationSourceIdentity::Legacy { .. },
+                        VerificationSourceIdentity::SourceId { .. },
+                    ) => false,
+                    (VerificationSourceIdentity::SourceId { .. }, _) => true,
+                };
+                comparable && !input.same_source(&basis.identity)
             })
-        })
 }
 
 /// When the run's latest change at `through` is an unadmitted record with a
@@ -1284,17 +1337,20 @@ fn measured_after_unadmitted(
     connection: &Connection,
     run_id: WorkRunId,
     through: i64,
-) -> Result<Option<String>, StoreError> {
+) -> Result<Option<VerificationSourceBasis>, StoreError> {
     let Some((_, latest)) = latest_source_mutation_on(connection, run_id, through)? else {
         return Ok(None);
     };
     let Some(basis) = latest.source_basis.filter(|_| !latest.admitted) else {
         return Ok(None);
     };
-    Ok(
-        newest_measured_sighting_on(connection, run_id, &basis.workspace_id, through)?
-            .and_then(|(_, sighting)| sighting.legacy_revision().map(str::to_owned)),
-    )
+    newest_measured_sighting_on(connection, run_id, &basis.workspace_id, through)?
+        .map(|(_, sighting)| Some(sighting))
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "measured unadmitted change has no measured source in its workspace".into(),
+            )
+        })
 }
 
 /// Whether a source change left the source at the revision the evaluation
@@ -1306,7 +1362,7 @@ pub(super) fn judged_revision(
     let (Some(declared), Some(basis)) = (declared, observation.source_basis.as_ref()) else {
         return false;
     };
-    Some(declared.fingerprint.as_str()) == basis.legacy_revision()
+    declared.identity.same_source(&basis.identity)
         && declared
             .workspace_id
             .as_ref()
@@ -1372,14 +1428,25 @@ pub(in crate::storage) fn read_named_root_sighting_on(
         None => NamedRootAtCut::None {},
         Some(root) => {
             let sighting = match named_root_sighting_on(connection, run_id, &root, cut)? {
-                Some((position, observation)) => match observation
-                    .source_basis
-                    .and_then(|basis| basis.legacy_basis())
-                {
-                    Some(basis) => InitialSighting::Present {
+                Some((position, observation)) => match observation.source_basis {
+                    Some(VerificationSourceBasis {
+                        identity:
+                            VerificationSourceIdentity::Legacy {
+                                source_revision, ..
+                            },
+                        ..
+                    }) => InitialSighting::Present {
                         record: observation.record,
                         position,
-                        revision: basis.source_revision,
+                        revision: source_revision,
+                    },
+                    Some(VerificationSourceBasis {
+                        identity: VerificationSourceIdentity::SourceId { source_id },
+                        ..
+                    }) => InitialSighting::SharedPresent {
+                        record: observation.record,
+                        position,
+                        source_id_summary: source_id.summary(),
                     },
                     None => InitialSighting::Absent {},
                 },

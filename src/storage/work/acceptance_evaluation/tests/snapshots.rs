@@ -115,7 +115,7 @@ fn completion_readiness_reads_the_item_and_its_newest_evaluation_from_one_commit
     } = evaluated("project-readiness-snapshot");
     let read = read_across_a_concurrent_commit(
         &reader,
-        |reader| reader.acceptance_evaluation_readiness(work.work_id, claim.run_id, None),
+        |reader| reader.acceptance_evaluation_readiness(work.work_id, claim.run_id, None, None),
         NEWEST_EVALUATION,
         revise_and_re_evaluate(writer, work.clone(), claim.clone(), gate),
     );
@@ -126,7 +126,7 @@ fn completion_readiness_reads_the_item_and_its_newest_evaluation_from_one_commit
         other => panic!("the evaluation was fresh when the read began: {other:?}"),
     }
     match reader
-        .acceptance_evaluation_readiness(work.work_id, claim.run_id, None)
+        .acceptance_evaluation_readiness(work.work_id, claim.run_id, None, None)
         .expect("after")
     {
         AcceptanceEvaluationReadiness::Ready(evaluation) => {

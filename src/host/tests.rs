@@ -6,6 +6,7 @@ mod diagnostics;
 mod startup;
 mod store_busy;
 mod verification_applicability;
+mod verification_source_capacity;
 mod work_session;
 
 /// A real ordinary claim for transport tests that mutate host evidence.

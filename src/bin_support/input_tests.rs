@@ -161,3 +161,34 @@ fn bounded_read_refuses_before_consuming_more_than_cap_plus_one() {
         other => panic!("expected overflow, got {other:?}"),
     }
 }
+
+#[test]
+fn source_id_file_is_exclusive_with_the_legacy_declaration_on_both_words() {
+    for word in ["evaluate", "done"] {
+        let mut args = vec![
+            "engram",
+            "work",
+            word,
+            "--source-id-file",
+            "saved.json",
+            "--source-fingerprint",
+            "legacy",
+        ];
+        if word == "evaluate" {
+            args.extend([
+                "--mode",
+                "same-session",
+                "--acceptance-basis",
+                "1",
+                "--evidence-basis",
+                "1",
+                "--verdict",
+                "1=pass:judgment",
+            ]);
+        }
+        let error = Cli::try_parse_from(args).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        assert!(error.to_string().contains("--source-id-file"));
+        assert!(error.to_string().contains("--source-fingerprint"));
+    }
+}
