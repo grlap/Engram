@@ -69,7 +69,10 @@ use normalization::{
     validate_root_input,
 };
 pub(super) use normalization::{normalize_strings, refuse_record_id_pins_on};
-use persistence::initialize_new_work_catalog_projection;
+use persistence::{
+    blocker_json_search_can_read, initialize_new_work_catalog_projection,
+    refuse_longer_text_search_cannot_read,
+};
 pub(in crate::storage) use persistence::{
     encode_state, initialize_work_catalog_projection, persist_operation_result,
     refresh_work_catalog_projection,
@@ -593,6 +596,7 @@ impl SqliteStore {
         }
         item.revision += 1;
         item.updated_at = request.updated_at;
+        refuse_longer_text_search_cannot_read(&transaction, &item)?;
         persist_work_item(&transaction, &item)?;
         let (claim_snapshot, rebased_run) =
             rebase_planning_claim(&transaction, &item, &request.authority, request.updated_at)?;
@@ -796,7 +800,7 @@ impl SqliteStore {
             params![
                 blocker.blocker_id,
                 blocker.work_id.0.to_string(),
-                serde_json::to_vec(&blocker)?,
+                blocker_json_search_can_read(&item, &blocker)?,
                 event_id.as_str()
             ],
         )?;

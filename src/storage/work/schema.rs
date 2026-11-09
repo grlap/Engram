@@ -548,6 +548,9 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
     for (_, object) in REBUILDABLE_WORK_SCHEMA_OBJECTS {
         super::super::drop_schema_object(connection, object)?;
     }
+    // Catalog search reads work_id from this table's FTS5 content table, as
+    // its column c0, so keep work_id first and the default content mode here
+    // and in the schema creation above.
     connection.execute_batch(
         "CREATE VIRTUAL TABLE IF NOT EXISTS work_catalog_fts USING fts5(
              work_id UNINDEXED,

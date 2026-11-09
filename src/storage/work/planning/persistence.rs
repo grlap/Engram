@@ -8,6 +8,7 @@ use super::{
     Connection, ObjectId, RootExecution, StoreError, Transaction, WorkBlocker, WorkClaim, WorkItem,
     WorkRun, catalog_fts, params,
 };
+use crate::storage::work::search_budget;
 
 pub(in crate::storage) fn persist_operation_result<T: Serialize>(
     transaction: &Transaction<'_>,
@@ -80,6 +81,9 @@ pub(super) fn initialize_new_work_catalog_projection(
     item: &WorkItem,
 ) -> Result<(), StoreError> {
     // Creation has just minted this UUID and inserted its work item.
+    if !stored_form_fits_search(serde_json::to_vec(item)?.len()) {
+        return Err(text_search_cannot_read("this item"));
+    }
     write_work_catalog_projection(connection, item, CatalogProjectionMode::Create)
 }
 
@@ -88,6 +92,77 @@ enum CatalogProjectionMode {
     Create,
     Refresh,
     Restore,
+}
+
+/// A search returning an item reads its stored form and active blockers, and
+/// one over the search's unit limit fails that search. So text an agent writes
+/// that would put one over is refused. Stored forms keep this much room for what
+/// later writes add beside the text, such as a claim's run id. An item an earlier
+/// build stored over the limit keeps working, and a task arriving from another
+/// host is never refused: searches that wouldn't select such an item skip what
+/// they can't read.
+const STORED_FORM_HEADROOM: usize = 64 * 1024;
+
+fn stored_form_fits_search(bytes: usize) -> bool {
+    bytes.saturating_add(STORED_FORM_HEADROOM) <= search_budget::unit_bytes_limit()
+}
+
+/// `subject` names the item, or says "this item" when its ref was only minted
+/// by the write being refused.
+fn text_search_cannot_read(subject: &str) -> StoreError {
+    StoreError::InvalidWork(format!(
+        "this text would make {subject} too long for catalog search: keep an item's title, outcome, acceptance, labels, assignee, external reference and blocker details under about {} bytes",
+        search_budget::unit_bytes_limit().saturating_sub(STORED_FORM_HEADROOM)
+    ))
+}
+
+/// What an item's author decides of its stored form, measured as stored, so
+/// escaping and criterion bindings count.
+fn planning_form_bytes(item: &WorkItem) -> Result<usize, StoreError> {
+    Ok(serde_json::to_vec(&(
+        &item.title,
+        &item.outcome,
+        &item.acceptance,
+        &item.acceptance_bindings,
+        &item.labels,
+        &item.assigned_to,
+        &item.external_ref,
+    ))?
+    .len())
+}
+
+/// Runs before the item's row changes, so the row still holds the prior text.
+/// A write that doesn't lengthen the text goes through.
+pub(super) fn refuse_longer_text_search_cannot_read(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<(), StoreError> {
+    if stored_form_fits_search(serde_json::to_vec(item)?.len()) {
+        return Ok(());
+    }
+    let stored: Vec<u8> = connection.query_row(
+        "SELECT item_json FROM work_items WHERE work_id = ?1",
+        params![item.work_id.0.to_string()],
+        |row| row.get(0),
+    )?;
+    let stored: WorkItem = serde_json::from_slice(&stored)?;
+    if planning_form_bytes(item)? > planning_form_bytes(&stored)? {
+        return Err(text_search_cannot_read(&item.short_ref));
+    }
+    Ok(())
+}
+
+/// A new blocker's stored form, refused when a search returning its item
+/// couldn't read it. Escaping can make this longer than its detail.
+pub(super) fn blocker_json_search_can_read(
+    item: &WorkItem,
+    blocker: &WorkBlocker,
+) -> Result<Vec<u8>, StoreError> {
+    let bytes = serde_json::to_vec(blocker)?;
+    if !stored_form_fits_search(bytes.len()) {
+        return Err(text_search_cannot_read(&item.short_ref));
+    }
+    Ok(bytes)
 }
 
 fn write_work_catalog_projection(

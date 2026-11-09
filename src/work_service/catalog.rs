@@ -198,8 +198,7 @@ impl LocalWorkService {
             store.work_read_snapshot(|store| {
                 let mut query = query.clone();
                 if let Some(parent) = under {
-                    query.parent_id =
-                        Some(store.resolve_work_ref(&self.project_id, parent)?.work_id);
+                    query.parent_id = Some(store.resolve_work_id(&self.project_id, parent)?);
                 }
                 let mut filters = query.clone();
                 SqliteStore::normalize_catalog_filters(&mut filters);
@@ -227,7 +226,8 @@ impl LocalWorkService {
                         .items
                         .into_iter()
                         .map(|item| {
-                            let successor = store.required_child_successor(&item.work)?;
+                            let successor =
+                                store.required_child_successor_for_listing(&item.work)?;
                             let mut summary = ready_work_summary(item);
                             summary.work.required_child_successor = successor;
                             Ok(summary)

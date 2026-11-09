@@ -145,12 +145,23 @@ pub(crate) struct Request {
     pause: Option<Arc<TestPause>>,
 }
 
+fn current_limits() -> Limits {
+    #[cfg(not(test))]
+    let limits = Limits::default();
+    #[cfg(test)]
+    let limits = TEST_LIMITS.with(std::cell::Cell::get).unwrap_or_default();
+    limits
+}
+
+/// The longest single text a catalog search can read. SQL that scans items a
+/// search might not select compares against this and skips a longer value.
+pub(crate) fn unit_bytes_limit() -> usize {
+    usize::try_from(current_limits().unit_bytes).unwrap_or(0)
+}
+
 impl Request {
     pub(crate) fn new(cancel: CancellationToken) -> Self {
-        #[cfg(not(test))]
-        let limits = Limits::default();
-        #[cfg(test)]
-        let limits = TEST_LIMITS.with(std::cell::Cell::get).unwrap_or_default();
+        let limits = current_limits();
         let allowance = Allowance::new(limits.elapsed);
         // How fast the host runs never decides a test's search: elapsed time
         // stands still, so only the counted dimensions can refuse it. The

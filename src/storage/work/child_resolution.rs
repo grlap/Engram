@@ -36,6 +36,26 @@ impl SqliteStore {
         self.required_child_successor_in_scope(child, None)
     }
 
+    /// Successor details for a listing that returned `child`. Resolving them
+    /// reads records beyond the listed item: the successor, its seal, the
+    /// ancestors, the root's feed and the supersession event. Under a search,
+    /// SQLite refuses a record over the unit limit with TOOBIG before the
+    /// budget counts it, and that refusal stays with this read: the details
+    /// are left out rather than fail the listing.
+    pub(crate) fn required_child_successor_for_listing(
+        &self,
+        child: &WorkItem,
+    ) -> Result<Option<RequiredChildSuccessor>, StoreError> {
+        match self.required_child_successor(child) {
+            Err(StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, _)))
+                if code.code == rusqlite::ErrorCode::TooBig =>
+            {
+                Ok(None)
+            }
+            other => other,
+        }
+    }
+
     pub(crate) fn required_child_successor_in_scope(
         &self,
         child: &WorkItem,

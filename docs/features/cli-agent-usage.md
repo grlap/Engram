@@ -1154,7 +1154,15 @@ Rules that matter:
   Derived values and clones of already charged input are not separately
   counted allocations. This is work accounting, not peak heap usage.
   SQLite strings, blobs and rows are capped at 1 MiB inside the catalog scope;
-  this bounds SQLite input units, not every Rust allocation. Exhaustion returns `search_budget_exhausted` with
+  this bounds SQLite input units, not every Rust allocation. A search skips an
+  assignee or search text over that cap rather than reading it, so an item that
+  long is found only through full-text search and fails no search that wouldn't
+  return it. A search that does return an item reads its stored form and active
+  blockers, so `add`, `update` and blocking refuse text that would make those too
+  long, about 960 KiB, unless the write doesn't lengthen it; tasks arriving
+  through task sync are not refused. A listing leaves out a superseded child's
+  successor details when resolving them would read a record over that cap, and
+  `--under` names its parent without reading it. Exhaustion returns `search_budget_exhausted` with
   the dimension, limit and observed lower bound, without partial matches,
   counts or a continuation. Narrow the parent or other filters to reduce work,
   though the scan of the project's assigned items runs whatever they select.

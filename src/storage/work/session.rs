@@ -19,7 +19,7 @@ use super::query::{
     completion_recovery_snapshot_on, current_required_child_waivers, feed_parts,
     load_retained_root_execution, load_root_execution, load_work_claim_optional, load_work_item,
     load_work_items_query, load_work_run, on_one_snapshot, parse_work_id, parse_work_run_id,
-    resolve_work_ref_on,
+    resolve_work_id_on, resolve_work_ref_on,
 };
 use super::{
     CompletionRecoverySnapshot, StageWorkSessionDelivery, WorkPrerequisitePage, WorkProtocolAttempt,
@@ -512,6 +512,15 @@ impl SqliteStore {
         self.work_read_snapshot(|store| {
             resolve_work_ref_on(&store.connection, project_id, work_ref)
         })
+    }
+
+    /// The id a reference names, without loading the item.
+    pub(crate) fn resolve_work_id(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        work_ref: &str,
+    ) -> Result<WorkId, StoreError> {
+        self.work_read_snapshot(|store| resolve_work_id_on(&store.connection, project_id, work_ref))
     }
 
     /// Builds current completion-recovery guidance without persisting a

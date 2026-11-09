@@ -226,6 +226,83 @@ fn the_doctor_names_a_changed_task_row_the_feed_does_not_derive() {
 }
 
 #[test]
+fn tasks_over_the_search_limit_arrive_and_fail_no_search_that_would_not_select_them() {
+    let limit = crate::storage::work::search_budget::unit_bytes_limit();
+    let plain = document(0);
+    // U+0130 is two bytes and case-folds to three, so these fit a task file
+    // while their search keys are over the limit.
+    let mut titled = document(1);
+    titled.title = "\u{0130}".repeat(limit * 2 / 5);
+    let mut assigned = document(2);
+    assigned.assigned_to = Some("\u{0130}".repeat(limit * 2 / 5));
+    // This one's stored form is over it too.
+    let mut stored = document(3);
+    stored.outcome = "o".repeat(limit + 8);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let imported = store
+        .import_task_tree(
+            &project(),
+            &actor("plain-importer"),
+            &tree(vec![plain, titled, assigned, stored]),
+            false,
+            at(6),
+        )
+        .unwrap();
+    assert!(imported.changed);
+
+    let total =
+        |search: &str, availabilities: Vec<crate::WorkAvailability>, assignee: Option<&str>| {
+            store
+                .query_work_catalog_listing(
+                    &project(),
+                    at(7),
+                    &crate::WorkCatalogQuery {
+                        search: Some(search.into()),
+                        limit: 20,
+                        availabilities,
+                        assigned_to: assignee.map(Into::into),
+                        ..crate::WorkCatalogQuery::default()
+                    },
+                )
+                .unwrap()
+                .1
+        };
+    // A short needle scans every search key, a longer one every assignee, and
+    // the note phase's eligible set classifies every item.
+    assert_eq!(total("task 0", Vec::new(), None), 1);
+    assert_eq!(total("sk", Vec::new(), None), 2);
+    assert_eq!(total("zq", Vec::new(), None), 0);
+    assert_eq!(total("absent-needle", Vec::new(), None), 0);
+    assert_eq!(total("zq", vec![crate::WorkAvailability::Ready], None), 0);
+    assert_eq!(
+        total("task 0", vec![crate::WorkAvailability::Ready], None),
+        1
+    );
+    assert_eq!(total("zq", Vec::new(), Some("nobody")), 0);
+    // Full-text needles matching the over-limit rows, with a filter that
+    // selects none of them.
+    assert_eq!(total("ooo", Vec::new(), Some("nobody")), 0);
+    assert_eq!(total("task", Vec::new(), Some("nobody")), 0);
+    // `ls --mine` asks for an assignee or a holder, which checks every
+    // candidate's assignee rather than seeking it.
+    let mine = store
+        .query_work_catalog_listing(
+            &project(),
+            at(7),
+            &crate::WorkCatalogQuery {
+                search: Some("zq".into()),
+                limit: 20,
+                assigned_to: Some("nobody".into()),
+                held_by: Some(crate::SessionId("nobody".into())),
+                ..crate::WorkCatalogQuery::default()
+            },
+        )
+        .unwrap()
+        .1;
+    assert_eq!(mine, 0);
+}
+
+#[test]
 fn a_plain_import_refuses_once_the_feed_has_begun_so_no_capture_misses_it() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     // An empty enrolment starts the feed; a capture from zero takes its cut.

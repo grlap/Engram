@@ -48,7 +48,9 @@ const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
               AND execution.root_id = candidate.root_id
               AND execution.state = 'active'
         )) OR (candidate.active_run_id IS NULL
-               AND COALESCE(json_extract(candidate.item_json, '$.restored'), 0) != 1)
+               AND COALESCE(CASE WHEN octet_length(candidate.item_json) <= UNIT_BYTES
+                                 THEN json_extract(candidate.item_json, '$.restored')
+                                 ELSE 1 END, 0) != 1)
           OR EXISTS (
             WITH RECURSIVE ancestors(work_id, parent_id, lifecycle) AS (
                 SELECT parent.work_id, parent.parent_id, parent.lifecycle
@@ -201,10 +203,11 @@ pub(in crate::storage::work) fn open_children_by_ready_order_on(
     parent_id: WorkId,
     now: DateTime<Utc>,
 ) -> Result<Vec<(WorkId, String)>, StoreError> {
+    let availability = projected_work_availability_sql();
     let sql = format!(
         "WITH classified AS (
              SELECT candidate.work_id, candidate.priority,
-                    ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability
+                    ({availability}) AS availability
              FROM work_items candidate
              WHERE candidate.parent_id = ?1 AND candidate.lifecycle = 'open'
          )
@@ -236,11 +239,12 @@ impl SqliteStore {
         now: DateTime<Utc>,
         limit: u32,
     ) -> Result<Vec<ReadyWork>, StoreError> {
+        let availability = projected_work_availability_sql();
         let sql = format!(
             "WITH classified AS (
                  SELECT candidate.work_id, candidate.priority,
                         candidate.created_at_ms,
-                        ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability
+                        ({availability}) AS availability
                  FROM work_items candidate
                  WHERE candidate.project_id = ?1
                    AND candidate.lifecycle = 'open'
@@ -310,6 +314,14 @@ impl SqliteStore {
         self.query_work_catalog_continuation(project_id, now, query, None)
             .map(|(page, total, _, claims, _, _)| (page, total, claims))
     }
+}
+
+/// A run-free item whose stored form a search can't read counts as restored,
+/// as any run-free item in practice is, so a search that wouldn't select it
+/// doesn't read it.
+fn projected_work_availability_sql() -> String {
+    PROJECTED_WORK_AVAILABILITY_SQL
+        .replace("UNIT_BYTES", &search_budget::unit_bytes_limit().to_string())
 }
 
 fn push_catalog_parameter(parameters: &mut Vec<Value>, value: Value) -> String {
@@ -450,7 +462,22 @@ fn work_catalog_sql(
             &mut parameters,
             Value::Text(normalize_work_catalog_key(assigned_to)),
         );
-        ownership_filters.push(format!("candidate.assigned_to_key = {parameter}"));
+        // A key search can't read is skipped, not compared. Beside a holder
+        // test the equality is checked on every candidate; alone it is sought
+        // through the index, and the length test comes first should the
+        // planner scan instead.
+        let unit_bytes = search_budget::unit_bytes_limit();
+        ownership_filters.push(if query.held_by.is_some() {
+            format!(
+                "CASE WHEN octet_length(candidate.assigned_to_key) <= {unit_bytes}
+                      THEN candidate.assigned_to_key = {parameter} ELSE 0 END"
+            )
+        } else {
+            format!(
+                "(octet_length(candidate.assigned_to_key) <= {unit_bytes}
+                  AND candidate.assigned_to_key = {parameter})"
+            )
+        });
     }
     if let Some(session) = &query.held_by {
         let parameter = push_catalog_parameter(&mut parameters, Value::Text(session.0.clone()));
@@ -489,6 +516,9 @@ fn work_catalog_sql(
         .filter(|value| !value.is_empty())
     {
         let use_fts = catalog_uses_fts(&search);
+        // A key over the limit fails a search that reads it, whichever item it
+        // belongs to, so these scans skip it.
+        let unit_bytes = search_budget::unit_bytes_limit();
         let text = push_catalog_parameter(
             &mut parameters,
             Value::Text(if use_fts {
@@ -500,9 +530,14 @@ fn work_catalog_sql(
         // One IN over the union keeps an indexed search a seek; an OR beside
         // it would scan every candidate in the project.
         let mut listed = Vec::new();
+        // Reading any column of the FTS table loads its whole row, long text
+        // included, so the id is read from FTS5's content table by rowid.
         if use_fts {
             listed.push(format!(
-                "SELECT work_id FROM work_catalog_fts WHERE work_catalog_fts MATCH {text}"
+                "SELECT content.c0 FROM work_catalog_fts_content content
+                 WHERE content.id IN (
+                     SELECT rowid FROM work_catalog_fts WHERE work_catalog_fts MATCH {text}
+                 )"
             ));
         }
         // Stored ids are hyphenated, so a complete id in any accepted spelling
@@ -518,7 +553,8 @@ fn work_catalog_sql(
             "SELECT assignee.work_id FROM work_items assignee
              WHERE assignee.project_id = ?1
                AND assignee.assigned_to_key > ''
-               AND instr(assignee.assigned_to_key, {parameter}) > 0"
+               AND CASE WHEN octet_length(assignee.assigned_to_key) <= {unit_bytes}
+                        THEN instr(assignee.assigned_to_key, {parameter}) ELSE 0 END > 0"
         ));
         if let Some(ids) = note_matches {
             let parameter = push_catalog_parameter(&mut parameters, Value::Text(ids.into()));
@@ -528,7 +564,11 @@ fn work_catalog_sql(
         candidate_filters.push(if use_fts {
             listed
         } else {
-            format!("(instr(candidate.search_text_key, {text}) > 0 OR {listed})")
+            format!(
+                "(CASE WHEN octet_length(candidate.search_text_key) <= {unit_bytes}
+                       THEN instr(candidate.search_text_key, {text}) ELSE 0 END > 0
+                  OR {listed})"
+            )
         });
     }
 
@@ -580,11 +620,12 @@ fn work_catalog_sql(
     } else {
         format!("COUNT(*) FROM classified {classified_where}")
     };
+    let availability = projected_work_availability_sql();
     let sql = format!(
         "WITH classified AS (
              SELECT candidate.work_id,
                     candidate.priority,
-                    ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability,
+                    ({availability}) AS availability,
                     ({PROJECTED_WORK_HAS_BLOCKER_SQL}) AS has_blocker
              FROM work_items candidate
              WHERE {}

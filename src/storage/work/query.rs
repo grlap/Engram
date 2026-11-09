@@ -36,7 +36,7 @@ pub(super) use restored::{
 use restored::{restored_record_binds_work, restored_work_evidence_for_item};
 mod references;
 pub(in crate::storage) use activity::canonical_work_event_records_for_item;
-pub(in crate::storage) use references::resolve_work_ref_on;
+pub(in crate::storage) use references::{resolve_work_id_on, resolve_work_ref_on};
 /// Test builds observe the executed statement, rather than estimating SQL work.
 pub(super) fn query_row_with_cost<T, P, F>(
     connection: &rusqlite::Connection,

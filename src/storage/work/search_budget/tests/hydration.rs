@@ -230,6 +230,181 @@ fn service_search_keeps_one_budget_through_successor_root_materialization() {
 }
 
 #[test]
+fn a_successor_search_cannot_read_leaves_its_details_out_instead_of_failing() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("long-successor.db");
+    let (mut store, target, query) = successor_fixture(&database);
+    let successor = store.get_work_item(target.superseded_by.unwrap()).unwrap();
+    with_limits(
+        Limits {
+            unit_bytes: i32::MAX,
+            ..Limits::default()
+        },
+        || {
+            store
+                .revise_work(
+                    &crate::ReviseWorkRequest {
+                        work_id: successor.work_id,
+                        expected_revision: successor.revision,
+                        patch: crate::WorkRevisionPatch {
+                            title: Some("x".repeat(1024 * 1024 + 64)),
+                            ..crate::WorkRevisionPatch::default()
+                        },
+                        authority: WorkPlanningAuthority::Project,
+                        actor: actor("planner"),
+                        idempotency_key: "long-successor".into(),
+                        updated_at: at(3),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap()
+        },
+    );
+    let service = LocalWorkService::new(
+        database,
+        target.project_id.clone(),
+        "reader".into(),
+        crate::SessionId("search-reader".into()),
+        None,
+    );
+    let page = service
+        .work_catalog_page(&query, None, None, at(10))
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert!(page.items[0].work.required_child_successor.is_none());
+}
+
+#[test]
+fn a_long_event_of_a_sibling_in_the_root_feed_fails_no_successor_listing() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("long-sibling.db");
+    let (mut store, target, query) = successor_fixture(&database);
+    let sibling: String = store
+        .connection
+        .query_row(
+            "SELECT work_id FROM work_items WHERE parent_id = ?1 AND work_id NOT IN (?2, ?3)
+             ORDER BY work_id LIMIT 1",
+            [
+                target.parent_id.unwrap().0.to_string(),
+                target.work_id.0.to_string(),
+                target.superseded_by.unwrap().0.to_string(),
+            ],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let sibling = store
+        .get_work_item(crate::WorkId(sibling.parse().unwrap()))
+        .unwrap();
+    // Each write is accepted, and the event recording the blocker holds both,
+    // so the root's feed gets a record no search can read.
+    let renamed = store
+        .revise_work(
+            &crate::ReviseWorkRequest {
+                work_id: sibling.work_id,
+                expected_revision: sibling.revision,
+                patch: crate::WorkRevisionPatch {
+                    title: Some("t".repeat(900 * 1024)),
+                    ..crate::WorkRevisionPatch::default()
+                },
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "long-sibling".into(),
+                updated_at: at(3),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    store
+        .add_work_blocker(
+            &AddWorkBlockerRequest {
+                work_id: sibling.work_id,
+                expected_work_revision: renamed.revision,
+                kind: crate::WorkBlockerKind::Manual,
+                detail: "b".repeat(900 * 1024),
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "long-sibling-blocker".into(),
+                blocked_at: at(4),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let service = LocalWorkService::new(
+        database,
+        target.project_id.clone(),
+        "reader".into(),
+        crate::SessionId("search-reader".into()),
+        None,
+    );
+    let page = service
+        .work_catalog_page(&query, None, None, at(10))
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+}
+
+#[test]
+fn a_search_under_a_parent_it_cannot_read_still_lists_its_children() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("long-parent.db");
+    let mut store = SqliteStore::open(&database).unwrap();
+    let parent = with_limits(
+        Limits {
+            unit_bytes: i32::MAX,
+            ..Limits::default()
+        },
+        || {
+            let mut request = root_request("search-under", "parent", 0);
+            request.outcome = "o".repeat(1024 * 1024 + 64);
+            let parent = store
+                .create_work(&request, &DevelopmentNoopRedactor)
+                .unwrap();
+            store
+                .decompose_work(
+                    &DecomposeWorkRequest {
+                        parent_id: parent.work_id,
+                        expected_parent_revision: parent.revision,
+                        children: vec![child(
+                            "child",
+                            ChildRequirement::Required,
+                            "unique child needle",
+                        )],
+                        prerequisites: Vec::new(),
+                        authority: WorkPlanningAuthority::Project,
+                        actor: actor("planner"),
+                        idempotency_key: "plan".into(),
+                        created_at: at(1),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap();
+            parent
+        },
+    );
+    let service = LocalWorkService::new(
+        database,
+        parent.project_id.clone(),
+        "reader".into(),
+        crate::SessionId("search-reader".into()),
+        None,
+    );
+    for (needle, expected) in [("unique child needle", 1), ("absent needle", 0)] {
+        let page = service
+            .work_catalog_page(
+                &WorkCatalogQuery {
+                    search: Some(needle.into()),
+                    limit: 20,
+                    ..WorkCatalogQuery::default()
+                },
+                Some(&parent.short_ref),
+                None,
+                at(10),
+            )
+            .unwrap();
+        assert_eq!(page.items.len(), expected, "{needle}");
+    }
+}
+
+#[test]
 fn cancellation_between_catalog_and_successor_is_seen_inside_enrichment() {
     let directory = crate::test_support::temp_home().unwrap();
     let (store, target, query) = successor_fixture(&directory.path().join("cancel.db"));
