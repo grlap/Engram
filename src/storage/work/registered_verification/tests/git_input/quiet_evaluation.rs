@@ -4,6 +4,8 @@
 use super::*;
 use crate::storage::work::test_support::{evidence, host_verification_from_basis};
 
+mod kept_root;
+
 fn prepared(bound: bool, fresh: bool) -> Fixture {
     let mut fixture = super::prepared(bound, fresh);
     fixture.request.input = RegisteredVerificationInput::StagedTree {

@@ -4,6 +4,7 @@ use crate::DevelopmentNoopRedactor;
 use crate::domain::*;
 
 mod git_input;
+mod kept_root;
 mod work_session;
 
 struct Fixture {

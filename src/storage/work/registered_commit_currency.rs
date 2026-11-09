@@ -614,7 +614,6 @@ pub(super) fn validate_decision_on(
         || root.run_id != run
         || root.root_execution_id != evidence.binding.root_execution_id
         || root.claim_id != evidence.binding.claim_id
-        || root.claim_fence != evidence.binding.claim_fence
         || root.kind != NamedRootBindingKind::Bound
         || latest_named_root_binding_on(connection, run, root.claim_id, cut)?
             .as_ref()

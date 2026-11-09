@@ -73,7 +73,6 @@ fn qualifies_on(
         || binding.work_id != root.event.work_id
         || binding.root_execution_id != root.event.root_execution_id
         || binding.claim_id != root.event.claim_id
-        || binding.claim_fence != root.event.claim_fence
         || producer.matches_registered_source(&evidence, &declared.identity) != Some(true)
         || naming_mismatch(
             connection,

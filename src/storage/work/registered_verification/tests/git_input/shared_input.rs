@@ -4,6 +4,8 @@ use super::*;
 use crate::source::{SourceId, Submodule};
 use std::path::Path;
 
+mod kept_root;
+
 fn observed(root: &Path) -> SourceId {
     let observation = crate::source::inspect(root, crate::source::MAX_BUDGET);
     observation.source_id.expect("fixture source identity")

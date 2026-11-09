@@ -135,14 +135,15 @@ fn validate_association(
             other => other,
         },
     )?;
-    let root = super::latest_named_root_event_on(tx, binding.run_id, binding.claim_id, i64::MAX)?
-        .map(|(_, event)| event)
-        .ok_or_else(|| refused("root", "registration has no named root"))?;
+    // Naming retains its original holder and fence. Current claim authority
+    // was checked above; a release still ends the old binding.
+    let root =
+        super::feeds::latest_named_root_binding_on(tx, binding.run_id, binding.claim_id, i64::MAX)?
+            .map(|(_, _, event)| event)
+            .ok_or_else(|| refused("root", "registration has no named root"))?;
     if root.kind != NamedRootBindingKind::Bound
         || root.workspace_id != registration.root.workspace_id
         || root.generation != registration.root.generation
-        || root.claim_fence != binding.claim_fence
-        || root.session_id != *session
         || root.recorded_at > registration.registered_at
     {
         return Err(refused("root", "named root moved since registration"));
