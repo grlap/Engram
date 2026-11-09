@@ -38,10 +38,17 @@ processes, raw HTTP, or nested TermAl review sessions for those reviewers.
 
 Under the family split the standing approval allows, record the family map on
 the item before the round, then obtain one such pair for each family on the
-same freeze, and give each pair's brief its family's paths. What this command
-says about the pair or both reviewers applies to each family's pair, and the
-round counts only when every family's pair has delivered two reviews that
-count. A fix round re-runs every family's pair on the new freeze. An optional
+same freeze, and give each pair's brief its family's paths. The
+integration-seam family's brief names the cross-family interfaces it covers,
+and its pair may read any path to judge them. What this command says about the
+pair or both reviewers, about a round's reviews that count, and about its Kimi
+stand-in applies to each family's pair: each pair has at most two reviews that
+count and at most one Kimi stand-in, Kimi never stands in for both reviewers of
+one pair, and the round counts only when every family's pair has delivered two
+reviews that count. When the host's delegation cap keeps a family's pair from
+starting with the others, it starts as soon as a slot frees; that is still one
+round on the same verified freeze. A fix round re-runs every family's pair on
+the new freeze. An optional
 third review may cover one family or the whole input. A Coder round adopted
 under section 6a that used the split includes its recorded family map.
 
@@ -378,12 +385,14 @@ arguments slot, so everything after the command is dropped.
 
 Fix rounds keep both reviewers (Greg, 2026-09-26: a fix for a Low can turn
 into a High). The brief may point at the change since the previous freeze,
-but both reviewers review the whole input.
+but both reviewers review the whole input; under a family split, each family's
+pair reviews its whole family on the new freeze.
 
 If one spawn fails after the other succeeds, continue waiting for the created
 reviewer. When the failure is Codex's or Claude's unavailability (a usage limit
 or outage), record the refusal text on the item and, if no stand-in has been
-spawned this round, spawn Kimi in its place on the same freeze. For any other
+spawned this round (under a family split, for that family's pair), spawn Kimi
+in its place on the same freeze. For any other
 failure, or when the stand-in fails too or was already used for the other
 reviewer, report the missing reviewer as unavailable.
 
@@ -423,7 +432,8 @@ submissions are authoritative. If a submission is missing or failed, report
 that reviewer as unavailable; when the cause is Codex's or Claude's
 unavailability met in this round, record the refusal text on the item and,
 if no stand-in has been
-spawned this round, spawn Kimi in its place on the same freeze, as section 4
+spawned this round (under a family split, for that family's pair), spawn Kimi
+in its place on the same freeze, as section 4
 describes, then wait for it through section 5 and fetch its result before
 presenting; otherwise report the reviewer as unavailable. When the stand-in's
 own submission is missing or failed, report that reviewer as unavailable
