@@ -617,14 +617,14 @@ host verification or source-observation credit or rebind a named source root;
 an explicit local claim release still has its ordinary root-lifetime effect.
 
 Preserve existing validation identities. Materialized tracked task-file changes
-affect `content-v1`; a HEAD-only change need not affect that content identity,
-but the current review freeze also includes HEAD and therefore changes. There
+affect `source_id`, and so does a HEAD-only change, because `source_id` names the
+commit; the current review freeze also includes HEAD and therefore changes. There
 is no `.engram/` exclusion from source coverage, the watcher or whole-input
 review. Frozen detached source roots remain unchanged until explicit integration;
 do not claim evidence carries when their input changes. Imported planning and
 evaluation freshness is checked separately even if a detached source root is
 unchanged. A future non-source data profile needs a new versioned coverage
-contract and its own approval; it cannot redefine existing `content-v1`.
+contract and its own approval; it cannot redefine existing `source_id`.
 
 For TermAl, gated code roots stay in separate detached worktrees. Serialize
 main-checkout exchange with main-checkout Git operations and wait while an
