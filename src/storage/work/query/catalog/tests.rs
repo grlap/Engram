@@ -348,6 +348,160 @@ fn phoenix_catalog_count_uses_the_same_filters_and_deduplicated_mine_union() {
 }
 
 #[test]
+fn catalog_search_also_finds_a_complete_work_id_and_the_assignee() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("catalog-search-union".into());
+    let mut add = |key: &str, title: &str, assignee: Option<&str>, priority, label: &str| {
+        let mut request = root_request(&project.0, key, 0);
+        request.title = title.into();
+        request.outcome = "Unrelated outcome".into();
+        request.assigned_to = assignee.map(Into::into);
+        request.priority = priority;
+        request.labels = vec![label.into()];
+        store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect("item")
+            .work_id
+    };
+    let titled = add("titled", "Straße in the title", None, 3, "first");
+    let assigned = add("assigned", "Nothing", Some("Straße-Owner"), 1, "first");
+    let both = add("both", "Straße again", Some("Straße"), 2, "second");
+    let other = add("other", "Nothing", Some("Someone"), 2, "first");
+    let simple = other.0.simple().to_string();
+    let citing = add("citing", &format!("Cites {simple}"), None, 2, "first");
+    let elsewhere = store
+        .create_work(
+            &root_request("catalog-search-elsewhere", "elsewhere", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("item")
+        .work_id;
+
+    let walk = |query: WorkCatalogQuery| {
+        let mut query = WorkCatalogQuery { limit: 2, ..query };
+        let mut found = Vec::new();
+        loop {
+            let (page, total, _) = store
+                .query_work_catalog_listing(&project, at(1), &query)
+                .expect("page");
+            assert!(page.items.len() <= 2);
+            found.extend(page.items.iter().map(|row| row.work.work_id));
+            let Some(after) = page.next_after else {
+                assert_eq!(total, found.len(), "{:?}", query.search);
+                return found;
+            };
+            query.after = Some(after);
+            query.after_priority = page.items.last().map(|row| row.work.priority);
+        }
+    };
+    let search = |text: &str| WorkCatalogQuery {
+        search: Some(text.into()),
+        ..WorkCatalogQuery::default()
+    };
+    let sorted = |ids: &[WorkId]| {
+        let mut ids = ids.to_vec();
+        ids.sort_by_key(|id| id.0);
+        ids
+    };
+
+    // Title, assignee and both at once, each listed once, for a needle above
+    // and below the length the metadata index serves.
+    for text in ["STRASSE", "ß"] {
+        assert_eq!(
+            walk(search(text)),
+            sorted(&[titled, assigned, both]),
+            "{text}"
+        );
+    }
+    assert_eq!(walk(search("OWNE")), [assigned]);
+
+    // The union stays inside the other filters and every listing order.
+    assert_eq!(
+        walk(WorkCatalogQuery {
+            label: Some("first".into()),
+            ..search("strasse")
+        }),
+        sorted(&[titled, assigned])
+    );
+    assert!(
+        walk(WorkCatalogQuery {
+            assigned_to: Some("Someone".into()),
+            ..search("strasse")
+        })
+        .is_empty(),
+        "the assignee filter still narrows a search"
+    );
+    assert_eq!(
+        walk(WorkCatalogQuery {
+            lifecycles: vec![WorkLifecycle::Open],
+            availabilities: vec![WorkAvailability::Ready],
+            ready_priority_order: true,
+            ..search("strasse")
+        }),
+        [assigned, both, titled]
+    );
+
+    // A complete id in any spelling; its text still matches what cites it.
+    let id = assigned.0.to_string();
+    for text in [
+        id.clone(),
+        id.to_uppercase(),
+        assigned.0.simple().to_string(),
+        format!("{{{id}}}"),
+        format!("URN:UUID:{id}"),
+    ] {
+        assert_eq!(walk(search(&text)), [assigned], "{text}");
+    }
+    assert_eq!(walk(search(&simple)), sorted(&[other, citing]));
+    assert!(
+        walk(search(&elsewhere.0.to_string())).is_empty(),
+        "a complete id stays inside its project"
+    );
+    for partial in [&id[..35], &id[9..23]] {
+        assert!(walk(search(partial)).is_empty(), "{partial}");
+    }
+
+    // Neither alternative invents a note match.
+    let (_, _, _, _, _, matches) = store
+        .query_work_catalog_continuation(&project, at(1), &search("OWNE"), None)
+        .expect("continuation");
+    assert!(matches.is_empty());
+}
+
+#[test]
+fn catalog_search_served_by_the_index_seeks_candidates() {
+    let store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("catalog-search-plan".into());
+    let query = WorkCatalogQuery {
+        search: Some("long enough needle".into()),
+        limit: 2,
+        ..WorkCatalogQuery::default()
+    };
+    for note_matches in [None, Some("[]")] {
+        let (sql, parameters) =
+            work_catalog_sql(&project, at(0), &query, true, note_matches).expect("page SQL");
+        let mut statement = store
+            .connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .expect("plan");
+        let plan = statement
+            .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("explain")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("plan rows")
+            .join("\n");
+        assert!(
+            plan.contains(
+                "SEARCH candidate USING COVERING INDEX work_items_catalog_after (project_id=? AND work_id=?)"
+            ),
+            "{plan}"
+        );
+    }
+}
+
+#[test]
 fn phoenix_catalog_cursor_plan_seeks_without_sorting_with_availability_filters() {
     let store = SqliteStore::open_in_memory().expect("store");
     let query = WorkCatalogQuery {

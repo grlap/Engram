@@ -389,6 +389,55 @@ test("Phoenix update --accept replaces criteria and ls reports exact totals", (t
   }
 });
 
+test("ls --search finds a complete work id and the assignee beside metadata and notes", (t) => {
+  const engramHome = fixtureHome("engram-parity-search-union-", t);
+  try {
+    hostSetup(engramHome);
+    const context = ["--home", engramHome, "work", "--actor-id", "reader", "--session-id", "reader"];
+    const json = (...args) => {
+      const result = run([...context, ...args, "--json"]);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const titled = json("add", "Find-needle in the title").work.short_ref;
+    const assigned = json("add", "Unrelated", "--assignee", "Find-Needle-Owner").work.short_ref;
+    const noted = json("add", "Unrelated").work.short_ref;
+    json("claim", noted);
+    json("note", noted, "find-needle in a note");
+    const bystander = json("add", "Unrelated", "--assignee", "someone").work.short_ref;
+
+    let page = json("ls", "--search", "FIND-NEEDLE", "--limit", "2");
+    assert.equal(page.total, 3);
+    assert.equal(page.items.length, 2);
+    const found = page.items.map(({ ref }) => ref);
+    page = json("ls", "--search", "FIND-NEEDLE", "--limit", "2", "--after", page.after);
+    assert.equal(page.total, 3);
+    assert.equal(page.more, false);
+    found.push(...page.items.map(({ ref }) => ref));
+    assert.deepEqual(found.sort(), [titled, assigned, noted].sort());
+
+    const id = json("ls", "--search", bystander, "--verbose").items[0].work.work_id;
+    for (const spelling of [
+      id,
+      id.toUpperCase(),
+      id.replaceAll("-", ""),
+      `{${id}}`,
+      `urn:uuid:${id}`,
+    ]) {
+      const listed = json("ls", "--search", spelling);
+      assert.equal(listed.total, 1, spelling);
+      assert.deepEqual(listed.items.map(({ ref }) => ref), [bystander], spelling);
+    }
+    assert.equal(json("ls", "--search", id.slice(0, -1)).total, 0);
+    assert.deepEqual(
+      json("ls", "--search", bystander.slice(2, 10)).items.map(({ ref }) => ref),
+      [bystander],
+    );
+  } finally {
+    removeFixtureHomes(engramHome);
+  }
+});
+
 test("scoped listing continuation is bounded and stale cursors refuse through CLI", (t) => {
   const engramHome = fixtureHome("engram-parity-listing-", t);
   try {

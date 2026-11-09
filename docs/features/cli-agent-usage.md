@@ -1112,12 +1112,16 @@ Rules that matter:
   `under`. Both together are refused. Other filters and `--all` still apply.
   MCP `search { query: TEXT }` is shell `ls --search TEXT --all`; both search
   every lifecycle, while plain `ls --search TEXT` defaults to open work.
-  Search matches refs, titles, outcomes and labels, plus complete canonical
-  note summaries, note refs, and structured gate names and failures. This
-  includes peer observations, inherited notes and restored late evidence;
-  history-only events, private scratch, identities and raw environment payloads
-  are excluded. Matching uses NFC and full Unicode case folding with literal
-  substring semantics, including short queries, punctuation and paths.
+  Search matches refs, titles, outcomes, labels and assignees, plus complete
+  canonical note summaries, note refs, and structured gate names and failures.
+  This includes peer observations, inherited notes and restored late evidence;
+  history-only events, private scratch, other identities and raw environment
+  payloads are excluded. Matching uses NFC and full Unicode case folding with
+  literal substring semantics, including short queries, punctuation and paths.
+  A complete work UUID, plain, hyphenated, or hyphenated in braces or as a URN,
+  in any case, also finds its item; part of one matches only as literal text.
+  An assignee matches
+  by its stored value, not the peer label `show` may display for it.
   An item matching a note carries one deterministic `note_match` with its
   full `locator` and `family`; use `show REF --note LOCATOR` to read it.
   Counts, membership and pages share one snapshot and one transient note
@@ -1152,7 +1156,8 @@ Rules that matter:
   SQLite strings, blobs and rows are capped at 1 MiB inside the catalog scope;
   this bounds SQLite input units, not every Rust allocation. Exhaustion returns `search_budget_exhausted` with
   the dimension, limit and observed lower bound, without partial matches,
-  counts or a continuation. Narrow the parent or other filters to reduce work.
+  counts or a continuation. Narrow the parent or other filters to reduce work,
+  though the scan of the project's assigned items runs whatever they select.
   A direct storage query starts its allowance after connection admission.
   MCP `search` and search-bearing `ls` start it before blocking-worker
   submission and share it through read opening and the complete word.

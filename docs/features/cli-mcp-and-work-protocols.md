@@ -170,7 +170,9 @@ projections before their compact item rows are decoded. Assignment and label
 filters use NFC plus full Unicode case folding, and catalog text search uses a
 trigram index over the short reference, title, outcome, labels, and active
 blocker detail, combined with complete public note/gate text and refs from the
-transactionally maintained note index in the same read snapshot. Search trusts
+transactionally maintained note index in the same read snapshot, a substring
+scan of the project's stored assignees, and a lookup of a complete work UUID.
+Search trusts
 that projection; explicit detail reads and doctor retain canonical validation,
 as described in the [search contract](cli-agent-usage.md#using-engram-as-an-agent). These views remain advisory; lifecycle mutations revalidate
 their canonical work-event basis under the write lock.
@@ -178,6 +180,8 @@ Core `next --search` includes canonical note and gate matches, but its catalog
 rows omit the match details. To find why an item matched, run
 `engram work ls --all --search QUERY`, follow its continuations to the returned
 work ref, and read its `note_match` locator with `engram work show REF --note LOCATOR`.
+An item found only through its assignee or complete id has no locator; `ls
+--verbose --json` and MCP `verbose` show both values.
 This listing is a new read and may observe newer state. `--all` broadens lifecycle
 coverage; it does not recreate every core catalog filter.
 The `--blocked`/`blocked_only` filter is independent of derived availability:

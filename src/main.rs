@@ -461,7 +461,7 @@ enum WorkCommand {
     },
     /// List open work.
     Ls {
-        /// Case-insensitive literal text over refs, titles, outcomes, labels, and complete note/gate text and refs.
+        /// Case-insensitive literal text over refs, titles, outcomes, labels, assignees, and complete note/gate text and refs; a complete work UUID also finds that item.
         #[arg(long)]
         search: Option<String>,
         /// Only items with an active blocker or incomplete prerequisite.

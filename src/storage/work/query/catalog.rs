@@ -489,29 +489,46 @@ fn work_catalog_sql(
         .filter(|value| !value.is_empty())
     {
         let use_fts = catalog_uses_fts(&search);
-        let parameter = push_catalog_parameter(
+        let text = push_catalog_parameter(
             &mut parameters,
             Value::Text(if use_fts {
                 catalog_literal_fts_query(&search)
             } else {
-                search
+                search.clone()
             }),
         );
-        let metadata_match = if use_fts {
-            format!(
-                "candidate.work_id IN (
-                     SELECT work_id FROM work_catalog_fts
-                     WHERE work_catalog_fts MATCH {parameter}
-                 )"
-            )
-        } else {
-            format!("instr(candidate.search_text_key, {parameter}) > 0")
-        };
-        candidate_filters.push(if let Some(ids) = note_matches {
+        // One IN over the union keeps an indexed search a seek; an OR beside
+        // it would scan every candidate in the project.
+        let mut listed = Vec::new();
+        if use_fts {
+            listed.push(format!(
+                "SELECT work_id FROM work_catalog_fts WHERE work_catalog_fts MATCH {text}"
+            ));
+        }
+        // Stored ids are hyphenated, so a complete id in any accepted spelling
+        // is compared in that form, beside its literal text matches.
+        if let Ok(work_id) = uuid::Uuid::parse_str(&search) {
+            let parameter =
+                push_catalog_parameter(&mut parameters, Value::Text(work_id.to_string()));
+            listed.push(format!("SELECT {parameter}"));
+        }
+        // The range skips unassigned items, so this scan follows assignments.
+        let parameter = push_catalog_parameter(&mut parameters, Value::Text(search));
+        listed.push(format!(
+            "SELECT assignee.work_id FROM work_items assignee
+             WHERE assignee.project_id = ?1
+               AND assignee.assigned_to_key > ''
+               AND instr(assignee.assigned_to_key, {parameter}) > 0"
+        ));
+        if let Some(ids) = note_matches {
             let parameter = push_catalog_parameter(&mut parameters, Value::Text(ids.into()));
-            format!("({metadata_match} OR candidate.work_id IN (SELECT value FROM json_each({parameter})))")
+            listed.push(format!("SELECT value FROM json_each({parameter})"));
+        }
+        let listed = format!("candidate.work_id IN ({})", listed.join(" UNION ALL "));
+        candidate_filters.push(if use_fts {
+            listed
         } else {
-            metadata_match
+            format!("(instr(candidate.search_text_key, {text}) > 0 OR {listed})")
         });
     }
 
