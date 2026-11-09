@@ -301,7 +301,7 @@ supplied base even though the checkout is clean.
 A candidate commit, under the candidate-commits rule in the Authority and Git
 section of AGENTS.md and CLAUDE.md, is such a committed input. The parent
 commits its change on its own feature branch or detached worktree, never on
-master and pushed only as a test ref under the test-ref bullets in AGENTS.md
+master, and pushed only as a test ref under the test-ref bullets in AGENTS.md
 and CLAUDE.md, and follows the "Commit messages" section, because a
 fast-forward keeps that commit in master's history. Its freeze identity is the
 commit plus an empty `git status --porcelain --untracked-files=all`, which

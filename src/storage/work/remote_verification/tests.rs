@@ -891,7 +891,7 @@ fn remote_verification_a_later_holder_associates_the_existing_origin_under_its_o
 #[test]
 fn remote_verification_malformed_values_are_refused_without_effects() {
     type Change = fn(&mut RemoteVerificationRequest);
-    let cases: [(Change, &str); 11] = [
+    let cases: [(Change, &str); 12] = [
         (|r| r.operation_key = " padded".into(), "operation_key"),
         (|r| r.completion.origin.host_id = String::new(), "origin"),
         (
@@ -931,6 +931,16 @@ fn remote_verification_malformed_values_are_refused_without_effects() {
                 };
             },
             "association.use.purpose",
+        ),
+        (
+            |r| {
+                r.association.intended_use = RemoteVerificationUse::AuthorizedTestRef {
+                    ref_name: "refs/heads/author-test/remote-work-0a1b2c3d".into(),
+                    expected_tree: tested_tree(),
+                    purpose: RemoteVerificationPurpose::LandingGate,
+                };
+            },
+            "association.use.ref_name",
         ),
     ];
     for (change, expected) in cases {

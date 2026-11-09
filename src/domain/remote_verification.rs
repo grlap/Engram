@@ -23,6 +23,9 @@ pub const REMOTE_COMPLETION_SCHEMA_VERSION: u16 = 1;
 /// The native launcher's reason for a run whose only change is new untracked
 /// paths. It stays a failed run until the integration owner disposes of them.
 pub const NEW_UNTRACKED_ONLY_REASON: &str = "new-untracked-only";
+/// Where the Merger's test refs live: the only refs the landing-gate lane
+/// admits.
+pub const AUTHORIZED_TEST_REF_PREFIX: &str = "refs/heads/test/";
 
 /// A supplied optional member must have its type: `null` is not "absent".
 fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
@@ -603,6 +606,19 @@ impl RemoteVerificationRequest {
     /// Names a malformed new endpoint or a malformed common request field.
     pub fn validate_new(&self) -> Result<(), (&'static str, &'static str)> {
         self.validate()?;
+        // The landing-gate lane carries only the Merger's test refs. An
+        // author's own test ref is evidence like a bundle run and reaches
+        // Engram as a committed input. Stored requests keep being read as
+        // stored, so only a new request is held to this.
+        if let RemoteVerificationUse::AuthorizedTestRef { ref_name, .. } =
+            &self.association.intended_use
+            && !ref_name.starts_with(AUTHORIZED_TEST_REF_PREFIX)
+        {
+            return Err((
+                "association.use.ref_name",
+                "an authorized test ref is a refs/heads/test/ ref; report an author test ref as a committed input",
+            ));
+        }
         if let RemoteRunInput::SourceId(input) = &self.completion.input {
             for (field, source) in [
                 ("input.source_id_before", &input.source_id_before),

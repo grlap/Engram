@@ -708,7 +708,11 @@ The legacy alternative retains its historical wire and qualification semantics
 during the additive producer rollout. Existing terminal, association,
 verification and decision records are read as stored, with no conversion. New
 shared submissions validate through the source owner's representation validator,
-separately from stored-record validation. Every store consumer must understand
+separately from stored-record validation. A new `authorized_test_ref` names a
+`refs/heads/test/` ref, where the Merger's test refs live; any other ref name,
+such as an author's own `refs/heads/author-test/` ref, is refused, naming
+`association.use.ref_name`, because an author test ref is reported as a
+`committed_input`. Every store consumer must understand
 shared input before its first delivery; the capability name and schema version
 do not change. Once shared records exist, an older consumer cannot safely read
 that store or serve as a rollback binary.

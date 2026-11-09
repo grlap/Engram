@@ -348,9 +348,10 @@ and no size limit.
   exactly as the same run from a bundle of that commit would, and gains no
   landing weight that such a bundle run lacks; the landing rules are
   unchanged. The pusher deletes only that same ref, with an explicit refspec,
-  once the run's evidence is recorded, and at the latest when the item
-  closes, and records the push and the deletion (commit id, times) on the
-  item. This grants no other commit, push, install or restart.
+  once the evidence of every run requested on that ref is recorded, and at
+  the latest when the item closes, and records the push and the deletion
+  (commit id, times) on the item. This grants no other commit, push, install
+  or restart.
 - S3 pilot folder exchange (Greg, 2026-10-20: option (c), "the private
   bare repository under target/s3-pilot/folder.git over the existing
   Windows↔Mac SSH path, never origin"). As an exception to the bullets

@@ -1349,7 +1349,8 @@ briefs explain.
 Conservative by default: **no commits or pushes without explicit
 authorization**, which is Greg's word or, for commit, push and install, the
 standing approval in [AGENTS.md](../AGENTS.md#authority-and-git), or, for a
-candidate commit only, its candidate-commits bullet. Without any of these, at
+candidate commit only, its candidate-commits bullet, or, for a test ref only,
+its test-ref bullets. Without any of these, at
 handoff report changed files, validation performed, and proposed next
 commands, then wait.
 
