@@ -377,7 +377,35 @@ pub struct ProjectMemoryList {
     /// listings use `next_after` instead and leave this at zero.
     pub omitted_count: usize,
     pub exhausted: bool,
+    /// Keys changed since the session's recorded memory position, read by
+    /// the first page of a listing that carries a context generation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<ProjectMemoryKeyChanges>,
 }
+
+/// The keys whose memories changed since a session's recorded memory
+/// position: every distinct key counted, the newest few named.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryKeyChanges {
+    /// Distinct keys changed, forgotten ones included.
+    pub count: usize,
+    /// How many of the changed keys were forgotten.
+    pub forgotten: usize,
+    /// The most recently changed keys, newest first, at most
+    /// [`MAX_NAMED_PROJECT_MEMORY_CHANGES`].
+    pub keys: Vec<ProjectMemoryKeyChange>,
+}
+
+/// One changed key; `forgotten` when its newest change retired it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryKeyChange {
+    pub key: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub forgotten: bool,
+}
+
+/// How many changed keys a memories signal or listing names.
+pub const MAX_NAMED_PROJECT_MEMORY_CHANGES: usize = 8;
 
 /// Dedicated full-read envelope whose exact serialized size is checked before
 /// the corresponding memory is persisted.

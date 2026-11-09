@@ -345,10 +345,11 @@ pub struct MemoriesInput {
     #[serde(default)]
     pub full: bool,
     pub revision: Option<u64>,
-    /// The host's context generation, as a peek printed it. The first page of
-    /// an unfiltered listing records it with the listing; searches, full
-    /// reads and continuation pages accept it and record nothing. Without it
-    /// no form of `memories` records anything.
+    /// The host's context generation, as a peek printed it. Every page of an
+    /// unfiltered listing that carries it is the compact recovery listing, and
+    /// its first page records it with the listing; searches, full reads and
+    /// continuation pages accept it and record nothing. Without it no form of
+    /// `memories` records anything.
     pub context_generation: Option<String>,
 }
 

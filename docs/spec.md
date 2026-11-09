@@ -976,8 +976,9 @@ Agent-facing work has no grant token, validity window, revocation object, or
 routine remint requirement. Its lifecycle mutations are governed by project
 binding, current item state, fenced claims, and reason-attributed audit records.
 
-Project-memory advertisement in `next` is advisory and
-content-free: a count of retained project notes and a changed flag, with
+Project-memory advertisement in `next` is advisory and carries no memory
+text: a count of retained project notes, a changed flag and, while it is
+set, the keys changed since the session's recorded memory position, with
 no exactly-once guarantee. `memories` is the source of truth, and a
 host-passed `context_generation` asserts a fresh or compacted context and
 reannounces the count: until an unfiltered `memories` listing of the session

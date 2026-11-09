@@ -1,7 +1,7 @@
 //! Full and bounded listing reads over validated project-memory history.
 
 use super::retirement::retiring_state_on;
-use super::state::project_memory_state_on;
+use super::state::{project_memory_key_changes_on, project_memory_state_on};
 use super::{
     ActorContext, Authority, Connection, Delivery, FILTERED_SEARCH_AFTER_REFUSAL,
     MemoryAssertionEvent, MemoryHeadProjectionRow, MemoryKind, MemoryStatus, MemoryVersion,
@@ -81,8 +81,16 @@ impl SqliteStore {
         query: Option<&str>,
         after: Option<&str>,
     ) -> Result<ProjectMemoryList, StoreError> {
-        self.project_memories_at_cut(project_id, session_id, actor, query, after, false)
-            .map(|(list, _)| list)
+        self.project_memories_at_cut(
+            project_id,
+            session_id,
+            actor,
+            query,
+            after,
+            false,
+            PROJECT_MEMORY_LIST_LIMIT,
+        )
+        .map(|(list, _)| list)
     }
 
     /// The listing, and with `records` the memory position its own snapshot
@@ -92,6 +100,10 @@ impl SqliteStore {
     /// from the memory rows alone, as it always did, even while the position
     /// is missing. The record is advisory, so a position that cannot be read
     /// leaves the listing delivered and unrecorded.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one read carries the caller's identity, the query, the cursor, whether it records, and its page size"
+    )]
     pub(crate) fn project_memories_at_cut(
         &self,
         project_id: &crate::domain::ProjectId,
@@ -100,6 +112,7 @@ impl SqliteStore {
         query: Option<&str>,
         after: Option<&str>,
         records: bool,
+        limit: usize,
     ) -> Result<(ProjectMemoryList, Option<ProjectMemoryListingCut>), StoreError> {
         admit_live_project_memory_sessions(session_id, actor)?;
         validate_project_memory_authorization(session_id, actor)?;
@@ -117,14 +130,25 @@ impl SqliteStore {
                 project_id,
                 normalized_query,
                 normalized_after.as_deref(),
-                PROJECT_MEMORY_LIST_LIMIT + 1,
+                limit + 1,
             )?;
             let state = records
                 .then(|| project_memory_state_on(connection, project_id).ok())
                 .flatten();
-            Ok((rows, state))
+            // What changed since the session's recorded position, read in this
+            // snapshot before the listing records its own. Advisory: a read
+            // that fails leaves the changes unnamed.
+            let changes = state.and_then(|(_, current)| {
+                SqliteStore::recorded_project_memory_position_on(connection, project_id, session_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|since| {
+                        project_memory_key_changes_on(connection, project_id, since, current).ok()
+                    })
+            });
+            Ok((rows, state, changes))
         };
-        let ((rows, total_matches), state) = if self.connection.is_autocommit() {
+        let ((rows, total_matches), state, changes) = if self.connection.is_autocommit() {
             let transaction = self.connection.unchecked_transaction()?;
             let read = read(&transaction)?;
             transaction.commit()?;
@@ -132,11 +156,8 @@ impl SqliteStore {
         } else {
             read(&self.connection)?
         };
-        let has_more = rows.len() > PROJECT_MEMORY_LIST_LIMIT;
-        let memories = rows
-            .into_iter()
-            .take(PROJECT_MEMORY_LIST_LIMIT)
-            .collect::<Vec<_>>();
+        let has_more = rows.len() > limit;
+        let memories = rows.into_iter().take(limit).collect::<Vec<_>>();
         let omitted_count = total_matches
             .unwrap_or(memories.len())
             .saturating_sub(memories.len());
@@ -157,6 +178,7 @@ impl SqliteStore {
                 next_after,
                 omitted_count,
                 exhausted,
+                changes,
             },
             listing,
         ))

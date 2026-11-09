@@ -1741,6 +1741,9 @@ pub(crate) struct ProjectMemoryAdvertisement {
     /// The call supplied a context generation that no recorded memories
     /// listing of the session carries.
     pub generation_unlisted: bool,
+    /// While `changed`, the keys changed since the session's recorded
+    /// position; `None` when the session has no recorded position.
+    pub changes: Option<crate::domain::ProjectMemoryKeyChanges>,
     change_position: i64,
 }
 
@@ -1750,7 +1753,10 @@ pub(crate) struct ProjectMemoryListingCut {
     change_position: i64,
 }
 
-const PROJECT_MEMORY_LIST_LIMIT: usize = 20;
+pub(crate) const PROJECT_MEMORY_LIST_LIMIT: usize = 20;
+/// Rows a recovery listing reads per page before fitting its compact rows to
+/// the response budget: about as many as fit, so little read work is dropped.
+pub(crate) const PROJECT_MEMORY_RECOVERY_LIST_LIMIT: usize = 64;
 const MAX_PROJECT_MEMORY_ADVERTISEMENTS_PER_PROJECT: i64 = 1_024;
 const PROJECT_MEMORY_FIRST_LINE_BYTES: usize = 160;
 const MAX_CONTEXT_GENERATION_BYTES: usize = 256;

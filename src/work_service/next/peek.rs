@@ -79,6 +79,7 @@ impl LocalWorkService {
                 Some(ProjectMemorySignal {
                     count: advertisement.count,
                     changed: advertisement.changed,
+                    changes: advertisement.changes,
                 })
             } else {
                 None

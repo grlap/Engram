@@ -2,7 +2,7 @@
 
 use super::{
     Connection, MemoryAssertionEvent, ObjectId, OptionalExtension, SCHEMA_VERSION, SqliteStore,
-    StoreError,
+    StoreError, params,
 };
 
 pub(in crate::storage) fn project_memory_state_on(
@@ -43,6 +43,66 @@ pub(in crate::storage) fn project_memory_state_on(
         StoreError::InvalidMemoryProjection("project memory count is invalid".into())
     })?;
     Ok((count, state.1))
+}
+
+/// The keys behind the project's memory changes after position `since`, up
+/// to `current`. Each change stored one assertion and advanced the position
+/// by one in the same transaction, and writes are serialized, so the newest
+/// `current - since` assertions in insertion order are exactly those changes.
+/// Every path that inserts assertions otherwise (graph restore, replay,
+/// projection repair, migration import) starts the recorded positions over,
+/// so no recorded position spans one. A key counts once, with its newest
+/// change deciding whether it was forgotten.
+pub(super) fn project_memory_key_changes_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    since: i64,
+    current: i64,
+) -> Result<crate::domain::ProjectMemoryKeyChanges, StoreError> {
+    let newer = current.saturating_sub(since);
+    if newer <= 0 {
+        return Ok(crate::domain::ProjectMemoryKeyChanges::default());
+    }
+    let rows = connection
+        .prepare(
+            "WITH events AS (
+                 SELECT json_extract(version.canonical_json, '$.project_key') AS key,
+                        json_extract(assertion.canonical_json, '$.status') AS status,
+                        assertion.rowid AS sequence
+                 FROM objects AS version INDEXED BY objects_project_memory_key
+                 JOIN objects AS assertion INDEXED BY objects_memory_assertion_version
+                   ON assertion.object_kind = 'memory_assertion_event'
+                  AND json_extract(assertion.canonical_json, '$.version') = version.object_id
+                 WHERE version.object_kind = 'memory_version'
+                   AND json_extract(version.canonical_json, '$.scope.kind') = 'project'
+                   AND json_type(version.canonical_json, '$.project_key') = 'text'
+                   AND json_extract(version.canonical_json, '$.scope.project') = ?1
+                 ORDER BY assertion.rowid DESC
+                 LIMIT ?2
+             )
+             SELECT key, status, MAX(sequence) AS newest
+             FROM events
+             GROUP BY key
+             ORDER BY newest DESC",
+        )?
+        .query_map(params![project_id.0, newer], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut changes = crate::domain::ProjectMemoryKeyChanges {
+        count: rows.len(),
+        ..Default::default()
+    };
+    for (key, status) in rows {
+        let forgotten = status != "active";
+        changes.forgotten += usize::from(forgotten);
+        if changes.keys.len() < crate::domain::MAX_NAMED_PROJECT_MEMORY_CHANGES {
+            changes
+                .keys
+                .push(crate::domain::ProjectMemoryKeyChange { key, forgotten });
+        }
+    }
+    Ok(changes)
 }
 
 pub(super) fn advance_project_memory_state_on(

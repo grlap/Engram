@@ -277,6 +277,7 @@ fn peek_disclosures_survive_even_an_impossible_budget() {
     compact.memories = Some(ProjectMemorySignal {
         count: 17,
         changed: true,
+        changes: None,
     });
     compact.guidance.next = vec!["engram work memories".into(), "engram work next".into()];
     compact

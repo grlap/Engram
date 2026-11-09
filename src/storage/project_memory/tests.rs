@@ -144,7 +144,7 @@ fn assert_project_memory_advertisement_contract(
             .changed
     );
     let listing = store
-        .project_memories_at_cut(project, session, &actor(&session.0), None, None, true)
+        .project_memories_at_cut(project, session, &actor(&session.0), None, None, true, 20)
         .expect("list memories")
         .1
         .expect("the listing that records reads the position");
@@ -171,6 +171,7 @@ fn project_memory_advertisement_bookkeeping_is_bounded_per_project() {
         count: 0,
         changed: true,
         generation_unlisted: false,
+        changes: None,
         change_position: 0,
     };
     store
@@ -2036,6 +2037,7 @@ fn refuse_advertisement_ack_before_effects(live: &SessionId) {
                 count: 1,
                 changed: true,
                 generation_unlisted: false,
+                changes: None,
                 change_position: 1,
             },
         )
@@ -2119,6 +2121,7 @@ fn project_memory_advertisement_preserves_an_exact_64_byte_session() {
                 count: 1,
                 changed: true,
                 generation_unlisted: false,
+                changes: None,
                 change_position: 1,
             },
         )

@@ -117,14 +117,22 @@ impl AgentVerbs {
         // it has been rendered. Every other form stays a read that records
         // nothing and reads no recorded position.
         let records = input.context_generation.is_some() && !filtered && input.after.is_none();
+        // Every page of the unfiltered listing that carries a generation is
+        // the compact recovery listing, and its continuation keeps the
+        // generation; only its first page records.
+        let recovery = input.context_generation.as_deref().filter(|_| !filtered);
         let (mut result, listing) = self.service.project_memories_at_cut(
             input.query.as_deref(),
             input.after.as_deref(),
             records,
+            recovery.is_some(),
             now,
         )?;
         loop {
-            let receipt = project_memory_list_receipt(&result, filtered)?;
+            let receipt = match recovery {
+                Some(generation) => recovery_list_receipt(&result, generation)?,
+                None => project_memory_list_receipt(&result, filtered)?,
+            };
             if super::super::receipts::agent_receipt_fits(&receipt, budget)? {
                 if let (Some(generation), Some(listing)) = (&input.context_generation, listing) {
                     self.service
@@ -174,6 +182,133 @@ impl AgentVerbs {
             false,
         )))
     }
+}
+
+/// A recovery listing's compact row: what a session needs to decide which
+/// entries to read in full. Author and time stay with the full read.
+#[derive(serde::Serialize)]
+struct RecoveryRow<'a> {
+    key: &'a str,
+    revision: u64,
+    first_line: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retiring_target: Option<&'a crate::domain::ProjectMemoryRetiringTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retiring_state: Option<&'a crate::domain::ProjectMemoryRetiringState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retiring_target_dropped: Option<&'a crate::domain::ProjectMemoryRetiringTargetDropped>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workaround: Option<bool>,
+}
+
+#[derive(serde::Serialize)]
+struct RecoveryList<'a> {
+    memories: Vec<RecoveryRow<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<&'a str>,
+    exhausted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    changes: Option<&'a crate::domain::ProjectMemoryKeyChanges>,
+}
+
+/// The longest preview a recovery row gives of a memory's first line.
+const RECOVERY_FIRST_LINE_BYTES: usize = 120;
+
+/// A sentence end this close to the start is more likely a list number or an
+/// abbreviation ("1.", "e.g.") than the end of a useful preview.
+const RECOVERY_SENTENCE_MIN_BYTES: usize = 24;
+
+/// The first sentence of a memory's first line when it ends within the
+/// preview budget, otherwise the line cut at a character boundary. A '.',
+/// '?' or '!' ends a sentence only when whitespace or the line's end follows,
+/// it lies past the first few bytes, and a digit or another '.' does not
+/// precede it.
+fn recovery_first_line(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let sentence_end = line.char_indices().find_map(|(index, character)| {
+        let ends = matches!(character, '.' | '?' | '!')
+            && index + 1 >= RECOVERY_SENTENCE_MIN_BYTES
+            && !bytes[index - 1].is_ascii_digit()
+            && bytes[index - 1] != b'.'
+            && bytes.get(index + 1).is_none_or(u8::is_ascii_whitespace);
+        ends.then_some(index + 1)
+    });
+    match sentence_end {
+        Some(end) if end <= RECOVERY_FIRST_LINE_BYTES => line[..end].to_owned(),
+        _ if line.len() <= RECOVERY_FIRST_LINE_BYTES => line.to_owned(),
+        _ => {
+            let mut end = RECOVERY_FIRST_LINE_BYTES;
+            while !line.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}…", line[..end].trim_end())
+        }
+    }
+}
+
+/// One page of the compact recovery listing: on its first page, the keys
+/// changed since the session's recorded position, then key, revision and a
+/// first-line preview per memory, continued with the same generation.
+fn recovery_list_receipt(
+    result: &crate::domain::ProjectMemoryList,
+    context_generation: &str,
+) -> Result<Receipt, VerbError> {
+    let mut lines = Vec::new();
+    if let Some(changes) = result.changes.as_ref().filter(|changes| changes.count > 0) {
+        lines.push(format!(
+            "changed since this session last listed or was shown them: {}",
+            super::super::memory_recovery::changes_summary(changes)
+        ));
+    }
+    lines.push(format!("{} project memory item(s):", result.memories.len()));
+    let mut rows = Vec::with_capacity(result.memories.len());
+    for row in &result.memories {
+        let first_line = recovery_first_line(&row.first_line);
+        lines.push(format!(
+            "  {} (r{}) — {}",
+            row.key,
+            row.revision,
+            terminal_safe_multiline(&first_line)
+        ));
+        for line in crate::work_service::retiring_target_lines(
+            row.retiring_target.as_ref(),
+            row.retiring_state.as_ref(),
+            row.retiring_target_dropped.as_ref(),
+            true,
+        ) {
+            lines.push(format!("    {line}"));
+        }
+        rows.push(RecoveryRow {
+            key: &row.key,
+            revision: row.revision,
+            first_line,
+            retiring_target: row.retiring_target.as_ref(),
+            retiring_state: row.retiring_state.as_ref(),
+            retiring_target_dropped: row.retiring_target_dropped.as_ref(),
+            workaround: row.workaround,
+        });
+    }
+    if result.exhausted {
+        lines.push("  (end of project memories)".into());
+    }
+    let mut guidance = Guidance::default();
+    if let Some(after) = &result.next_after {
+        guidance.next.push(format!(
+            "engram work memories --context-generation {context_generation} --after {after}"
+        ));
+    }
+    let value = RecoveryList {
+        memories: rows,
+        next_after: result.next_after.as_deref(),
+        exhausted: result.exhausted,
+        changes: result.changes.as_ref(),
+    };
+    Ok(Receipt::assemble(
+        lines,
+        guidance,
+        serde_json::to_value(value)?,
+        false,
+    ))
 }
 
 fn project_memory_list_receipt(

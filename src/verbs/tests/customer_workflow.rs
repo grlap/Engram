@@ -20,6 +20,7 @@ mod focus_ownership;
 mod landing;
 mod listing;
 mod memory_recovery;
+mod memory_recovery_changes;
 mod memory_retirement;
 mod mutation_titles;
 mod note_search;

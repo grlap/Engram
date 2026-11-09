@@ -723,6 +723,22 @@ Rules that matter:
   direction precedes every other reminder. A peek with no context generation
   gives no direction. The direction reports the host's assertion and what is
   recorded, never that a compaction happened.
+  The memory signal names what changed: while `changed` holds for a session
+  with a recorded memory position, `memories.changes` counts the distinct
+  keys changed since that position and the forgotten ones among them, and
+  names the newest eight, forgotten ones marked; the `memories:` line shows
+  them and, when more changed, the listing command. A session with no
+  recorded position is told it has none. Changed keys say what to read in
+  full first; they never replace listing every key after a new context.
+  Every page of an unfiltered `memories` listing that carries
+  `--context-generation` is the compact recovery listing: each row gives the
+  key, revision, the first sentence of the memory's first line or its first
+  120 bytes, and any retirement line, without author or time, which the full
+  read keeps. Pages fill the response budget instead of holding twenty rows,
+  and each continuation keeps the generation. The first page opens with the
+  keys changed since the session's recorded position, read in its own
+  snapshot. Plain `memories`, searches and `--json` keep their rows and page
+  size.
   Only the first page of an unfiltered `memories` listing that carries
   `--context-generation` (MCP `context_generation`) records anything: once
   that page has been rendered, it records the generation and the memory

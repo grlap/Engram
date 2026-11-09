@@ -47,7 +47,15 @@ fn list(store: &mut SqliteStore, generation: &str) {
 
 fn listing_cut(store: &SqliteStore) -> ProjectMemoryListingCut {
     store
-        .project_memories_at_cut(&project(), &session(), &actor(SESSION), None, None, true)
+        .project_memories_at_cut(
+            &project(),
+            &session(),
+            &actor(SESSION),
+            None,
+            None,
+            true,
+            20,
+        )
         .expect("list memories")
         .1
         .expect("the listing that records reads the position")
@@ -309,7 +317,15 @@ fn every_listing_answers_while_the_memory_position_is_missing() {
     assert_eq!(listed(None), 1);
     assert_eq!(listed(Some("first")), 1);
     let (list, listing) = store
-        .project_memories_at_cut(&project(), &session(), &actor(SESSION), None, None, true)
+        .project_memories_at_cut(
+            &project(),
+            &session(),
+            &actor(SESSION),
+            None,
+            None,
+            true,
+            20,
+        )
         .expect("the recording form answers too");
     assert_eq!(list.memories.len(), 1);
     assert!(listing.is_none(), "no position to record");
@@ -366,4 +382,20 @@ fn the_memories_word_answers_while_the_memory_position_is_missing() {
         );
     }
     assert_eq!(stored_row(&store), None, "nothing is recorded");
+}
+
+#[test]
+fn a_memory_state_rebuild_forgets_every_recorded_position() {
+    let mut store = store_with_one_memory();
+    list(&mut store, "termal-1");
+    assert!(!candidate(&store, Some("termal-1")).changed);
+
+    store.rebuild_memory_index().expect("rebuild memory state");
+
+    // The session has no recorded position, so no changed keys are named
+    // from one that no longer describes the stored order.
+    assert!(stored_row(&store).is_none());
+    let after = candidate(&store, Some("termal-1"));
+    assert!(after.changed && after.generation_unlisted);
+    assert!(after.changes.is_none());
 }

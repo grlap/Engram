@@ -114,8 +114,8 @@ Optional report assembly remains deferred.
   evidence, and report views
 - Agent-surface Cuts A and B: gate results are auditable evidence,
   prerequisites and supersession are `update` flags, and attributed project
-  episodes ship through `remember` / `memories` / `forget` with a content-free
-  `next` signal —
+  episodes ship through `remember` / `memories` / `forget` with a `next`
+  signal that carries counts and changed keys, never memory text —
   [local work
   system](features/local-work-system.md#gates-prerequisites-supersession-and-project-memories)
 - The contention-robust scale gate asserts canonical, work-event, and item

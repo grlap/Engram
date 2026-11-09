@@ -266,10 +266,9 @@ impl AgentVerbs {
                     view.peek.as_ref(),
                 );
                 if let Some(memories) = &view.memories {
-                    lines.push(format!(
-                        "memories: {} retained{}",
-                        memories.count,
-                        if memories.changed { " (changed)" } else { "" }
+                    lines.push(super::super::memory_recovery::signal_line(
+                        memories,
+                        view.context_generation.as_deref(),
                     ));
                 }
                 if input.peek {

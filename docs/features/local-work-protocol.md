@@ -80,7 +80,7 @@ The hot agent protocol has six operations:
 
 | Operation | Purpose |
 | --- | --- |
-| `work_next` | Return selected compact focus, ready, catalog, assignment/participation discovery, change, and content-free project-memory advisory sections under a 12 KiB ceiling; each call returns the changes since the session's previous call |
+| `work_next` | Return selected compact focus, ready, catalog, assignment/participation discovery, change, and project-memory advisory sections (count, changed flag and changed keys, never memory text) under a 12 KiB ceiling; each call returns the changes since the session's previous call |
 | `work_focus` | Select/inspect one item as the ambient binding and return bounded acceptance, relations, memory index, history count/tail, and allowed-next state; never claim or release implicitly |
 | `work_propose` | Open a root or atomically create a bounded decomposition and prerequisites; each result is active, proposed, duplicate, or refused |
 | `work_update` | Apply a typed union such as claim/release, checkpoint, block/unblock, defer, revise, assign, or dependency change to ambient work |
@@ -1267,11 +1267,20 @@ a tombstoned key — and returns the full body as a dedicated response, at most
 the 12 KiB ceiling, never inlined into `next`; a read reminder such as a
 lapsed own claim fits within that ceiling, except for a version stored before
 its reserve, which may reach 12 KiB plus 160 bytes (see
-[work claims](local-work-model.md#work-claims)). The `next.memories` signal is
-content-free: a count of retained project notes and a changed-since-recorded-
-advertisement flag, read in
-O(1) from a rebuildable per-project count and change position — no
-keys, no first lines, no body-derived text. In ordinary advancing `next`, when
+[work claims](local-work-model.md#work-claims)). The `next.memories` signal
+carries no memory text: a count of retained project notes, a
+changed-since-recorded-advertisement flag read from a rebuildable
+per-project count and change position, and, while `changed` holds for a
+session with a recorded position, `changes`: how many distinct keys changed
+since that position, how many of them were forgotten, and the newest eight
+keys, forgotten ones marked. Its `memories:` line names them, with the
+listing command when more changed. A session with no recorded position gets
+no `changes`. The changed keys are those of the newest memory assertions,
+one per change, counted back from the current position, so their cost
+follows the project's memory history rather than staying constant; they are
+read only while something changed. A rebuild of the memory state (graph
+restore, replay or projection repair), like an import, clears the recorded
+positions. In ordinary advancing `next`, when
 even that does not fit, the signal is omitted without acknowledgement and
 reannounces later. Peek never sheds this signal or its memory navigation.
 `changed` is not evidence that notes are unread or unapplied. `memories`

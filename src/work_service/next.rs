@@ -309,6 +309,7 @@ impl LocalWorkService {
             .map(|advertisement| ProjectMemorySignal {
                 count: advertisement.count,
                 changed: advertisement.changed,
+                changes: advertisement.changes.clone(),
             });
         let mut response = WorkNextView {
             build_fingerprint: crate::build_identity::current().build_fingerprint.clone(),

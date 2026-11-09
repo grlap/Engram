@@ -364,17 +364,22 @@ pub struct WorkNextQuery {
     pub label: Option<String>,
     pub after: Option<String>,
     /// Asserted host/client context generation. A value that no recorded
-    /// memories listing of the session carries reannounces the content-free
-    /// project-memory signal, and makes a peek direct the session to list its
+    /// memories listing of the session carries reannounces the project-memory
+    /// signal, and makes a peek direct the session to list its
     /// memories; it creates no delivery cursor.
     pub context_generation: Option<String>,
 }
 
-/// Advisory, content-free project-memory advertisement carried by next.
+/// Advisory project-memory advertisement carried by next: the count, whether
+/// anything changed for this session, and, while changed, the keys changed
+/// since the session's recorded position. `changes` is absent when the
+/// session has no recorded position. It names keys, never memory text.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectMemorySignal {
     pub count: usize,
     pub changed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<crate::domain::ProjectMemoryKeyChanges>,
 }
 
 /// Selectable `work_next` response section.

@@ -153,6 +153,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
         memories: Some(ProjectMemorySignal {
             count: 1,
             changed: true,
+            changes: None,
         }),
         omissions: Vec::new(),
         guidance: Guidance {
@@ -252,6 +253,7 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
         memories: Some(ProjectMemorySignal {
             count: 1,
             changed: true,
+            changes: None,
         }),
         omissions: Vec::new(),
         guidance: Guidance::default(),
@@ -315,6 +317,7 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
         memories: Some(ProjectMemorySignal {
             count: 3,
             changed: true,
+            changes: None,
         }),
         omissions: Vec::new(),
         guidance: Guidance {

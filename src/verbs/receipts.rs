@@ -1534,10 +1534,9 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         ));
     }
     if let Some(memories) = &compact.memories {
-        lines.push(format!(
-            "memories: {} retained{}",
-            memories.count,
-            if memories.changed { " (changed)" } else { "" }
+        lines.push(super::memory_recovery::signal_line(
+            memories,
+            compact.context_generation.as_deref(),
         ));
     }
     if compact.peek.is_some() {

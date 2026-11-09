@@ -1,6 +1,6 @@
 //! Project-memory advertisements and listing acknowledgements.
 
-use super::state::project_memory_state_on;
+use super::state::{project_memory_key_changes_on, project_memory_state_on};
 use super::{
     MAX_PROJECT_MEMORY_ADVERTISEMENTS_PER_PROJECT, OptionalExtension, ProjectMemoryAdvertisement,
     ProjectMemoryListingCut, SessionId, SqliteStore, StoreError, TransactionBehavior, params,
@@ -8,7 +8,7 @@ use super::{
 };
 
 impl SqliteStore {
-    /// Returns the advisory content-free memory signal and acknowledges it as
+    /// Returns the advisory memory signal and acknowledges it as
     /// an advancing next does.
     ///
     /// # Errors
@@ -66,13 +66,39 @@ impl SqliteStore {
                 || prior
                     .as_ref()
                     .is_none_or(|(prior_position, _)| *prior_position != change_position);
+            let key_changes = match &prior {
+                Some((prior_position, _)) if changed => Some(project_memory_key_changes_on(
+                    connection,
+                    project_id,
+                    *prior_position,
+                    change_position,
+                )?),
+                _ => None,
+            };
             Ok(ProjectMemoryAdvertisement {
                 count,
                 changed,
                 generation_unlisted,
+                changes: key_changes,
                 change_position,
             })
         })
+    }
+
+    /// The memory position recorded for the session, if it has one.
+    pub(super) fn recorded_project_memory_position_on(
+        connection: &rusqlite::Connection,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+    ) -> Result<Option<i64>, StoreError> {
+        Ok(connection
+            .query_row(
+                "SELECT memory_position FROM project_memory_advertisements
+                 WHERE project_id = ?1 AND session_id = ?2",
+                params![project_id.0, session_id.0],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?)
     }
 
     /// Records that an advancing `next` delivered the memory signal: the

@@ -1840,6 +1840,11 @@ impl SqliteStore {
         connection: &Connection,
     ) -> Result<(), StoreError> {
         connection.execute("DELETE FROM project_memory_state", [])?;
+        // A rebuild follows assertions stored out of change order (a graph
+        // restore, a replay), so the sessions' recorded positions no longer
+        // name a point in that order: each session starts over, as after a
+        // projection repair or an import.
+        connection.execute("DELETE FROM project_memory_advertisements", [])?;
         for (project_id, active_count, change_position) in
             derived_project_memory_state_rows_on(connection)?
         {

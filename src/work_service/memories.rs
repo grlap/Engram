@@ -151,17 +151,20 @@ impl LocalWorkService {
         after: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryList, StoreError> {
-        self.project_memories_at_cut(query, after, false, now)
+        self.project_memories_at_cut(query, after, false, false, now)
             .map(|(list, _)| list)
     }
 
     /// The listing and, with `records`, the memory position its snapshot
-    /// read, for [`Self::acknowledge_project_memory_listing`].
+    /// read, for [`Self::acknowledge_project_memory_listing`], with the keys
+    /// changed since the session's recorded position. A `recovery` listing
+    /// reads larger pages, for compact rows.
     pub(crate) fn project_memories_at_cut(
         &self,
         query: Option<&str>,
         after: Option<&str>,
         records: bool,
+        recovery: bool,
         now: DateTime<Utc>,
     ) -> Result<(ProjectMemoryList, Option<ProjectMemoryListingCut>), StoreError> {
         self.read_store_at(now)?.project_memories_at_cut(
@@ -171,6 +174,11 @@ impl LocalWorkService {
             query,
             after,
             records,
+            if recovery {
+                crate::storage::PROJECT_MEMORY_RECOVERY_LIST_LIMIT
+            } else {
+                crate::storage::PROJECT_MEMORY_LIST_LIMIT
+            },
         )
     }
 

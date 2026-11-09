@@ -737,9 +737,10 @@ enum WorkCommand {
         /// Read one historical version; omitted to read the current version.
         #[arg(long, requires = "full")]
         revision: Option<u64>,
-        /// The host's context generation, as a peek printed it; the first page of an
-        /// unfiltered listing records it, which records a listing, not a reading.
-        /// Without it, memories records nothing.
+        /// The host's context generation, as a peek printed it; an unfiltered
+        /// listing that carries it is the compact recovery listing, and its first
+        /// page records it, which records a listing, not a reading. Without it,
+        /// memories records nothing.
         #[arg(long)]
         context_generation: Option<String>,
     },
