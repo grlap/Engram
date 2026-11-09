@@ -484,37 +484,14 @@ fn source_text_refused(error: &StoreError) -> bool {
 
 // New host source text holding a control or bidirectional formatting
 // character is refused whole, naming the field and recording nothing, in
-// every place the request carries a workspace or a revision; an observed
+// every place the request carries a workspace; an observed
 // check's source and a lone watcher change included. Other format
 // characters and Windows extended paths are kept.
 #[test]
 fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
     let mut fixture = fixture();
     let base = inter_turn_change(&fixture, "source-text");
-    let unsafe_text = "rev\u{202E}b";
     let mut cases: Vec<(&str, &str, ExecutionObserveInput)> = Vec::new();
-    {
-        let mut input = base.clone();
-        input.occurrence = ObservedOccurrence::InterTurnChange {
-            source_change: content_change("rev-a", unsafe_text),
-        };
-        cases.push((
-            "sighting revision",
-            "source_change.sighting.source_basis.source_revision",
-            input,
-        ));
-    }
-    {
-        let mut input = base.clone();
-        input.occurrence = ObservedOccurrence::InterTurnChange {
-            source_change: content_change("rev\u{1}a", "rev-b"),
-        };
-        cases.push((
-            "baseline revision",
-            "source_change.baseline.source_revision",
-            input,
-        ));
-    }
     {
         let mut input = base.clone();
         input.occurrence = ObservedOccurrence::InterTurnChange {
@@ -555,8 +532,8 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
         second.source_basis = Some(
             ExecutionSourceBasis {
                 git_tree: None,
-                workspace_id: "workspace-a".into(),
-                source_revision: "rev\u{200F}b".into(),
+                workspace_id: "workspace\u{200F}a".into(),
+                source_revision: "rev-b".into(),
                 source_root_generation: None,
                 source_root_state: None,
             }
@@ -569,8 +546,8 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
             observed_checks: vec![passed_check("first"), second],
         };
         cases.push((
-            "unadmitted turn check revision",
-            "observed_checks[1].source_basis.source_revision",
+            "unadmitted turn check workspace",
+            "observed_checks[1].source_basis.workspace_id",
             input,
         ));
     }
@@ -631,8 +608,20 @@ fn an_exact_retry_of_an_observation_admitted_before_the_text_rule_replays() {
     let first = inter_turn_change(&fixture, key);
     let admitted = observe(&mut fixture, first.clone(), 7).expect("recorded");
     let mut retry = first;
+    let unsafe_workspace = "workspace\u{202E}b";
+    let mut unsafe_change = content_change("rev-a", "rev-b");
+    if let ObservedSourceChange::ContentComparison {
+        workspace_id,
+        baseline,
+        sighting,
+    } = &mut unsafe_change
+    {
+        *workspace_id = unsafe_workspace.into();
+        baseline.workspace_id = unsafe_workspace.into();
+        sighting.source_basis.workspace_id = unsafe_workspace.into();
+    }
     retry.occurrence = ObservedOccurrence::InterTurnChange {
-        source_change: content_change("rev-a", "rev\u{202E}b"),
+        source_change: unsafe_change,
     };
     // A fresh request with this text is refused.
     let mut fresh = retry.clone();

@@ -61,7 +61,7 @@ fn native_registration_retains_two_owner_sized_objects() {
         }
     );
     assert_eq!(
-        post_run,
+        *post_run,
         crate::domain::RegisteredVerificationPostRun::SourceId { source_id: source }
     );
 }

@@ -14,19 +14,7 @@ fn kept_root_recovery_preserves_a_new_registered_input_witness() {
     f.request.run.finished_at = at(4005);
     f.request.checks[0].started_at = Some(at(4002));
     f.request.checks[0].completed_at = Some(at(4005));
-    let check = f
-        .store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(4006),
-        )
-        .unwrap()
-        .verifications[0]
+    let check = f.record_at(at(4006)).unwrap().verifications[0]
         .record_id
         .clone();
     let note = evidence(

@@ -616,18 +616,7 @@ fn registered_staged_input_note_only_change_needs_a_later_check() {
     f.request.run.finished_at = at(15);
     f.request.checks[0].started_at = Some(at(14));
     f.request.checks[0].completed_at = Some(at(15));
-    let current = f
-        .store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(16),
-        )
-        .unwrap();
+    let current = f.record_at(at(16)).unwrap();
     let mut input = judgment(&f, &note);
     input.recorded_at = at(17);
     let recorded = record_evaluation(&mut f, &input).unwrap();
@@ -687,18 +676,7 @@ fn registered_staged_input_later_check_recovers_from_a_quiet_git_conflict() {
     f.request.run.finished_at = at(15);
     f.request.checks[0].started_at = Some(at(14));
     f.request.checks[0].completed_at = Some(at(15));
-    let current = f
-        .store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(16),
-        )
-        .unwrap();
+    let current = f.record_at(at(16)).unwrap();
     let mut input = judgment(&f, &note);
     input.recorded_at = at(17);
     let recorded = record_evaluation(&mut f, &input).unwrap();
@@ -1104,18 +1082,7 @@ fn registered_staged_input_uncited_witness_is_source_identity_not_check_selectio
     f.request.run.outcome = RegisteredVerificationOutcome::Failed;
     f.request.checks[0].started_at = Some(at(14));
     f.request.checks[0].completed_at = Some(at(15));
-    let failed = f
-        .store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(16),
-        )
-        .unwrap();
+    let failed = f.record_at(at(16)).unwrap();
     assert_ne!(&failed.verifications[0].record_id, check);
     let mut input = judgment(&f, &note);
     input.recorded_at = at(17);

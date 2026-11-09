@@ -16,7 +16,7 @@ use crate::{
         WorkId, WorkRunId,
     },
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 use std::collections::BTreeMap;
 
 struct Candidate {
@@ -52,26 +52,6 @@ pub(in crate::storage) struct LiveCurrency {
 }
 
 impl LiveCurrency {
-    pub(in crate::storage) fn scope_on(
-        connection: &Connection,
-        id: &ObjectId,
-        project: &crate::ProjectId,
-    ) -> Result<Option<(WorkId, WorkRunId)>, StoreError> {
-        let kind: Option<String> = connection
-            .query_row(
-                "SELECT object_kind FROM objects WHERE object_id=?1",
-                [id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if kind.as_deref() != Some("verification_evidence") {
-            return Ok(None);
-        }
-        let evidence: VerificationEvidence =
-            load_typed_work_object(connection, id, "verification_evidence")?;
-        Ok((evidence.project_id == *project)
-            .then_some((evidence.binding.work_id, evidence.binding.run_id)))
-    }
     pub(in crate::storage) fn measure(
         store: &SqliteStore,
         work: WorkId,

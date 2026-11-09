@@ -93,8 +93,8 @@ for the completed conversion and current import refusals. `control_anchors`,
 `control_changes` and `control_operation_results` stay as passive history:
 receipts earlier builds stored there stay where they were and still replay
 for their exact key. New work-session receipts (`named_root_bind`, `execution_observe`,
-`verification_record`, `verification_bind` and `remote_verification_record`) are stored in
-`work_operation_results` as `host_<operation>` rows, each an envelope that
+`verification_record` and `remote_verification_record`) are stored in
+`work_operation_results`, beside the `verification_bind` rows an earlier build left, as `host_<operation>` rows, each an envelope that
 names its project, session, operation, idempotency key, intent and result. An
 exact retry reads a preserved historical receipt first, then the work receipt.
 Their intent and result payloads use canonical bytes. Intent fingerprints

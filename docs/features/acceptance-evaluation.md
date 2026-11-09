@@ -103,10 +103,11 @@ its immutable file; this imposes no new core mode restriction.
 
 A native, item-bound check from the
 [registered verification producer](execution-observability.md#registered-verification)
-names an exact `git-commit:<full commit>` or, for the staged lane,
-`git-tree:<full tree>`. Equal trees do not make different commits interchangeable.
-A staged input's base commit is provenance. A revision string alone supplies
-no registered provenance.
+names an exact `git-commit:<full commit>`. From this producer, a
+`git-tree:<full tree>` check exists only on a record an earlier build stored from
+a staged input, whose base commit is provenance; a legacy remote
+`authorized_test_ref` delivery still names a tree. Equal trees do not make different commits interchangeable.
+A revision string alone supplies no registered provenance.
 
 For a new passing evaluation on a run carrying registered committed-input evidence,
 Engram reads the named root itself, outside its SQLite write transaction.
@@ -1422,7 +1423,7 @@ and complete `source_basis`, and its `producer` observation's `record`,
 or before the cut, except on a record bound from another item's check: its
 `producer` is the original's, with its position on the original's run, and
 the record adds a `bound` branch, described under
-[Binding one check to several items](#binding-one-check-to-several-items).
+[Bound records from earlier builds](#bound-records-from-earlier-builds).
 A native record has no `bound` member at all.
 
 This is the record as stored, not an assessment. A satisfied obligation
@@ -1551,105 +1552,23 @@ Any append to the run moves its head, so a host paging a run that is still
 recording may be refused `stale_cut` again and again; an append to another
 item does not. A superseded connection keeps its code.
 
-### Binding one check to several items
+### Bound records from earlier builds
 
-One changeset often delivers several items, and one test run checks them
-all. A host credits that run to each of them, explicitly, with the
-host-private `verification_bind` operation. The check runs once, on one
-item's run; binding gives every other item a record of it on that item's own
-run, and each item is still evaluated on its own.
+An earlier build's host-private `verification_bind` operation credited one test
+run to several items of a changeset. That operation is gone: nothing writes a
+bound record now, and a frame naming it is refused as `invalid_request`. The
+bound records and stored receipts a live store holds are read as stored.
 
-The request carries an `idempotency_key` of 1 to 512 bytes
-without surrounding whitespace, the `original` verification's record id,
-the host's `measurement` of the shared root (`workspace_id`,
-`source_revision`, `measured_at`) and `targets`: for each, its claim
-`binding` as the host holds it (`root_execution_id`, `work_id`, `run_id`,
-`work_revision`, `claim_id`, `claim_fence`), its `sighting` (the target
-run's newest source `observation` and its `source_revision`) and the
-one-based `criteria` the binder intends the check for. Any other field is
-refused as `invalid_request`.
-
-The original must be a native verification, not itself bound, that passed,
-whose producer succeeded, on a named root, under a claim the session still
-holds, whose root is still current: the claim's root is the one the check
-ran under, no change of unknown place follows its producer, and the check
-still stands on its run exactly as an evaluation citing it would read it,
-through the run's head. So an accounted unadmitted change the check does not
-follow retires it, as does a change that carries no revision, or a newest
-source record under the root at another revision; a later record back at
-the check's revision leaves it standing, since the revision fingerprints
-the whole content. Binding never restores credit those rules retired; such
-an original is refused as `root_not_current`.
-The [live registered committed-input lane](#registered-git-input-evidence)
-uses Git for the original's currency instead of these report floors, including
-unlocated reports; it does not observe edits outside the named root. The
-remaining authority and target requirements still apply. The request names 1 to 16 targets,
-no more than the session's other live claims, and a measurement of the
-original's workspace and revision. Each target must be another open item
-the session holds, named once: every field of its binding equals its
-current claim, run and revision; its run is active; its claim's current
-named root has the original's workspace; its sighting is the run's newest
-under that root, at the original's and the measurement's revision, with no
-change of unknown location after it; no accounted unadmitted change on its
-run under that root was recorded after the check completed; its criteria
-are strictly increasing positions that exist at its revision;
-and it is not already bound from this original. A host that knows of a
-source change it has not reported reports it first: the bind never resolves
-one by asserting a measurement, and a missing or mismatched sighting is
-refused with a remedy to obtain genuine source accounting, never answered by
-a focus switch or a made-up turn.
-
-One transaction writes, per target, one verification record on the
-target's run: the original's producer, check kind, fingerprint, result,
-completion time and environment, unchanged; the original's workspace and
-revision under the target's own root generation; and a typed `bound_from`
-naming the original verification, its item, run and run-feed position, the
-target's sighting, the measurement and the intended criteria. The binder and
-the binding time are the record's own attribution. The environment link
-names the original's environment record, which stays on the original's run;
-the target's focus evidence lists the bound record without it. It creates no
-observation, turn or focus change, and credits nothing on its own: the
-record satisfies exactly the target obligations the ordinary matching rules
-let it satisfy, as any check recorded at that moment would. The receipt
-names, per target in request order, the item, run, record and its
-position, the rules of the obligations it satisfied, and each intended
-criterion's eligibility: whether the check suits that criterion's binding
-(its kind and any pinned fingerprint), with a reason when it does not. That
-is never a verdict; a criterion bound to another kind is reported
-ineligible, does not refuse the bind and stays unsatisfied. `eligible`
-means only that no binding mismatches: a criterion bound to no check is
-reported eligible with no `binding`, and no check can satisfy it.
-
-Any failure refuses the whole request with `verification_bind_refused`, and
-nothing is written for any target. The refusal's `details` names the
-original's reason (`not_found`, `not_verification`, `is_bound`,
-`not_passed`, `producer_not_succeeded`, `rootless`, `claim_not_held`,
-`root_not_current`), the request's (`no_targets`, `too_many_targets`,
-`more_targets_than_held_claims`, `invalid_idempotency_key`,
-`measurement_workspace_differs`, `measurement_revision_differs`) and each
-failing target's, by its `work_id` and `work_ref`, with what was expected
-and found and a remedy where one applies: `not_found`, `duplicate_target`,
-`is_original_item`, `claim_not_held`, `claim_fence_moved`,
-`work_revision_moved`, `root_execution_moved`, `work_not_open`,
-`run_not_active`, `no_named_root`, `workspace_differs`,
-`sighting_missing`, `sighting_not_newest`, `sighting_scope_differs`,
-`sighting_revision_differs`, `unresolved_source_after_sighting`,
-`check_predates_unadmitted_change`, `criteria_not_increasing`,
-`criterion_out_of_range` and `already_bound`.
-A target's `claim_not_held` refusal names its cause in `actual`: no claim,
-another claim, another holder, an inactive or expired claim, or the shared
-live-claim rule's reason.
-No other error carries `details`.
-
-A committed bind is kept as a control operation of the session. A retry
-with the same key and the same project, session and request, every
-original, target, sighting, measurement and criterion field included,
-returns the stored receipt marked `replayed`, before anything current is
-checked: it answers even after a claim it named ended, and over a new
-connection of the same session.
-The same key with another request is
-`control_operation_idempotency_conflict`. A new bind needs every claim live
-and held.
+A bound record stands on the target's run: the original's producer, check kind,
+fingerprint, result, completion time and environment, unchanged; the original's
+workspace and revision under the target's own root generation; and a typed
+`bound_from` naming the original verification, its item, run and run-feed
+position, the target's sighting, the measurement and the intended criteria. The
+binder and the binding time are the record's own attribution. The environment
+link names the original's environment record, which stays on the original's run;
+the target's focus evidence lists the bound record without it. It satisfied
+exactly the target obligations the ordinary matching rules let it satisfy, and
+each item is still evaluated on its own.
 
 `doctor` verifies both. A stored bind operation must be a bind of its
 session whose receipt names, per target in order, the record written for
@@ -1664,21 +1583,14 @@ a migration export and import carry both unchanged.
 Positions are compared on one run only. The original's producer and the
 original stand on the original's run, with the producer before it; on the
 target's run, a bound record stands where it is recorded, which is where its
-check counts for the target's obligations, freshness and evaluation
-citations, and the binding time stands for its time there against an
-admitted change, whose revision it was matched to. An accounted unadmitted
-change's time floor holds the check's own completion, as for any check: a
-check that completed before such a change on the target's run was recorded
-could satisfy nothing on that run, whatever the obligation, and would block
-every bound criterion as the run's newest check of its kind. So the bind
-refuses that target as `check_predates_unadmitted_change`, with a remedy to
-run the check on that item after the change. A later source
-change on the target stales it like any check, and the existing
-same-source exception applies unchanged: a bound passed check on the
-revision an evaluation declared asks for no resubmission, while after an
-evaluation that declared nothing it asks for one. A later evaluation whose
-basis includes the bound record may cite it for a criterion bound to its
-kind.
+check counts for the target's obligations, freshness and evaluation citations,
+and the binding time stands for its time there against an admitted change, whose
+revision it was matched to. A later source change on the target stales it like
+any check, and the existing same-source exception applies unchanged: a bound
+passed check on the revision an evaluation declared asks for no resubmission,
+while after an evaluation that declared nothing it asks for one. A later
+evaluation whose basis includes the bound record may cite it for a criterion
+bound to its kind.
 
 The binding read, the candidate read and `show --note` on the record show
 it with a `bound` branch: the original `verification`, its `work_ref`, its
@@ -1688,11 +1600,6 @@ it with a `bound` branch: the original `verification`, its `work_ref`, its
 the original's, with its position on the original's run. Native records
 keep their exact bytes and shapes, and none of these reads adds `bound` to
 one.
-
-Only `verification_bind` creates bound records, and a host sends it only
-once its own reader of these responses accepts the `bound` branch. So the
-order is self-enforcing: Engram may ship first, and until the host sends a
-bind no response changes.
 
 ### Evaluation unit and re-evaluation
 

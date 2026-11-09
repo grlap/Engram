@@ -1,27 +1,22 @@
-//! The host's request to bind one native passed check to several items the
-//! session holds. Routing, replay and the control-operation record live
-//! here; the validation and the writes live in the work store.
+//! The record an earlier build's `verification_bind` operation left: its
+//! stored intent and receipt, which doctor still checks. No request writes
+//! one now; the operation is gone and these rows are history.
 
-use super::control_runtime::control_lifecycle_transaction;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{SqliteStore, StoreError, work};
+use super::{StoreError, work};
 use crate::ObjectId;
-use crate::canonical::CanonicalObject;
 use crate::domain::{
-    ActorContext, BindMeasurement, CONTROL_SCHEMA_VERSION, ProjectId, SessionId,
-    VerificationBindInput, VerificationBindReceipt, VerificationBindTarget,
+    BindMeasurement, CONTROL_SCHEMA_VERSION, ProjectId, SessionId, VerificationBindReceipt,
+    VerificationBindTarget,
 };
 
-/// The control operation a bind is recorded and replayed under.
+/// The operation name a stored bind row carries.
 pub(crate) const VERIFICATION_BIND_OPERATION: &str = "verification_bind";
 
-/// What a retry must repeat exactly: the session and project it acts for and
-/// every semantic field of the request. The connection fence is not part of
-/// it, so a retry on a replacement connection still replays. The session and
-/// key sit at the top level, where doctor binds every host operation to
-/// its row.
+/// A stored bind's intent: the session and project it acted for and every
+/// semantic field of the request. The session and key sit at the top level,
+/// where doctor binds every host operation to its row.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct VerificationBindIntent {
@@ -35,17 +30,25 @@ pub(super) struct VerificationBindIntent {
     targets: Vec<VerificationBindTarget>,
 }
 
+#[cfg(test)]
 impl VerificationBindIntent {
-    fn new(project_id: &ProjectId, session_id: &SessionId, input: &VerificationBindInput) -> Self {
+    pub(super) fn historical(
+        project_id: &ProjectId,
+        session_id: &SessionId,
+        idempotency_key: &str,
+        original: &ObjectId,
+        measurement: &BindMeasurement,
+        targets: &[VerificationBindTarget],
+    ) -> Self {
         Self {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             operation: VERIFICATION_BIND_OPERATION.into(),
             project_id: project_id.clone(),
             session_id: session_id.clone(),
-            idempotency_key: input.idempotency_key.clone(),
-            original: input.original.clone(),
-            measurement: input.measurement.clone(),
-            targets: input.targets.clone(),
+            idempotency_key: idempotency_key.to_owned(),
+            original: original.clone(),
+            measurement: measurement.clone(),
+            targets: targets.to_vec(),
         }
     }
 }
@@ -82,110 +85,4 @@ pub(super) fn verification_bind_row_matches(
         &intent.targets,
         &receipt.bound,
     )
-}
-
-impl SqliteStore {
-    /// Binds `input.original` to every target for the host's work session.
-    ///
-    /// A request committed earlier with the same key and intent is replayed
-    /// before anything mutable is consulted, even when a claim it named has
-    /// since ended; its receipt says it was replayed.
-    ///
-    /// # Errors
-    ///
-    /// [`StoreError::ControlConnectionSuperseded`] when the work session's
-    /// connection fence is missing or no longer current;
-    /// [`StoreError::VerificationBindRefused`] naming every failing part
-    /// when the request does not hold, with nothing written;
-    /// [`StoreError::ControlOperationIdempotencyConflict`] when the key was
-    /// used for a different request.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the host record keeps routing, attribution, request and time explicit"
-    )]
-    pub(crate) fn bind_verification(
-        &mut self,
-        project_id: &ProjectId,
-        session_id: &SessionId,
-        connection_token: &str,
-        authority: super::HostSessionAuthority,
-        binder: &ActorContext,
-        input: &VerificationBindInput,
-        now: DateTime<Utc>,
-    ) -> Result<VerificationBindReceipt, StoreError> {
-        super::control_runtime::request_budget::check_current()?;
-        let intent =
-            CanonicalObject::freeze(&VerificationBindIntent::new(project_id, session_id, input))?;
-        let original_scope = {
-            let snapshot = self.connection.unchecked_transaction()?;
-            authority.verify_on(&snapshot, project_id, session_id, connection_token)?;
-            if let Some(mut replay) = Self::replay_host_operation::<VerificationBindReceipt>(
-                &snapshot,
-                project_id,
-                session_id,
-                VERIFICATION_BIND_OPERATION,
-                &input.idempotency_key,
-                intent.key(),
-            )? {
-                super::control_runtime::request_budget::check_current()?;
-                snapshot.commit()?;
-                replay.replayed = true;
-                return Ok(replay);
-            }
-            let scope = work::registered_commit_currency::LiveCurrency::scope_on(
-                &snapshot,
-                &input.original,
-                project_id,
-            )?;
-            snapshot.commit()?;
-            scope
-        };
-        let currency = match original_scope {
-            Some((work, run)) => {
-                work::registered_commit_currency::LiveCurrency::measure(self, work, run)?
-            }
-            None => work::registered_commit_currency::LiveCurrency::default(),
-        };
-        control_lifecycle_transaction(&mut self.connection, |transaction| {
-            authority.verify_on(transaction, project_id, session_id, connection_token)?;
-            if let Some(mut replay) = Self::replay_host_operation::<VerificationBindReceipt>(
-                transaction,
-                project_id,
-                session_id,
-                VERIFICATION_BIND_OPERATION,
-                &input.idempotency_key,
-                intent.key(),
-            )? {
-                replay.replayed = true;
-                return Ok(replay);
-            }
-            match work::bind_verification_live_on(
-                transaction,
-                project_id,
-                session_id,
-                binder,
-                input,
-                now,
-                &currency,
-            )? {
-                work::VerificationBindOutcome::Bound(receipt) => {
-                    authority.persist(
-                        transaction,
-                        project_id,
-                        session_id,
-                        VERIFICATION_BIND_OPERATION,
-                        &input.idempotency_key,
-                        &intent,
-                        &receipt,
-                        now,
-                    )?;
-                    Ok(receipt)
-                }
-                // The wrapper drops the transaction on refusal; nothing was written.
-                work::VerificationBindOutcome::Refused(refusal) => {
-                    Err(StoreError::VerificationBindRefused(Box::new(refusal)))
-                }
-            }
-        })
-    }
 }

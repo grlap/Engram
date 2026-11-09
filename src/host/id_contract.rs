@@ -181,18 +181,6 @@ pub(crate) fn class_of(field: &str) -> Option<IdClass> {
     })
 }
 
-/// The class of a refused target's `expected` and `actual` values, which
-/// depends on the refusal's `reason`; `None` when the reason names a counter,
-/// host text or a time instead.
-pub(crate) fn refusal_value_class(reason: &str) -> Option<IdClass> {
-    match reason {
-        "run_not_active" | "root_execution_moved" => Some(IdClass::Uuid),
-        "sighting_not_newest" => Some(IdClass::RecordId),
-        "workspace_differs" | "sighting_revision_differs" => Some(IdClass::HostText),
-        _ => None,
-    }
-}
-
 /// The class of a feed's `id`, which depends on the feed's `kind`: a root's
 /// or a run's feed is named by a typed identity, the project's feed by the
 /// project's asserted text.
@@ -208,31 +196,24 @@ pub(crate) fn feed_id_class(kind: &str) -> Option<IdClass> {
 /// depends on a sibling, the class that sibling names.
 fn member_class(key: &str, map: &serde_json::Map<String, Value>) -> Option<IdClass> {
     let sibling = |name: &str| map.get(name).and_then(Value::as_str);
-    match (key, sibling("reason"), sibling("kind")) {
-        ("expected" | "actual", Some(reason), _) => refusal_value_class(reason),
-        ("id", _, Some(kind)) => feed_id_class(kind),
+    match (key, sibling("kind")) {
+        ("id", Some(kind)) => feed_id_class(kind),
         // A registered verification receipt names its operation record by
         // id; elsewhere `operation` is a protocol label.
-        ("operation", _, _) if map.contains_key("verifications") => Some(IdClass::RecordId),
-        // A refused bind names why its original was refused, beside the
-        // refused `targets` and with no `measurement`, which only a bind's
-        // request carries; elsewhere `original` names the original record.
-        ("original", _, _) if map.contains_key("targets") && !map.contains_key("measurement") => {
-            None
-        }
+        ("operation", _) if map.contains_key("verifications") => Some(IdClass::RecordId),
         // An actor context's run id is asserted text; a provenance link's
         // source and reference are host text.
-        ("run_id", _, _) if map.contains_key("actor_kind") => Some(IdClass::HostText),
+        ("run_id", _) if map.contains_key("actor_kind") => Some(IdClass::HostText),
         // A remote completion names its launcher run, which is the host's own.
-        ("run_id", _, _) if map.contains_key("runner_session_id") || map.contains_key("origin") => {
+        ("run_id", _) if map.contains_key("runner_session_id") || map.contains_key("origin") => {
             Some(IdClass::HostId)
         }
-        ("source" | "reference", _, _) if map.contains_key("relation") => Some(IdClass::HostText),
+        ("source" | "reference", _) if map.contains_key("relation") => Some(IdClass::HostText),
         // A historical delivery packet's memory names its version by record
         // id and its authority by a label.
-        ("version", _, _) if map.contains_key("memory_id") => Some(IdClass::RecordId),
-        ("authority", _, _) if map.contains_key("memory_id") => None,
-        (key, _, _) => class_of(key),
+        ("version", _) if map.contains_key("memory_id") => Some(IdClass::RecordId),
+        ("authority", _) if map.contains_key("memory_id") => None,
+        (key, _) => class_of(key),
     }
 }
 
@@ -439,17 +420,8 @@ mod tests {
             "historical_observation": {"grant_id": "recorded-grant"},
             "accounting": {"kind": "repeat", "source_change": minted()},
             "occurrence": {"source_change": {"detection": "watcher_only"}},
-            // A refused target's values take the class its reason names.
-            "targets": [
-                {"reason": "sighting_not_newest", "expected": minted(), "actual": minted()},
-                {"reason": "root_execution_moved", "expected": crate::WorkId::new().0.to_string()},
-                {"reason": "claim_fence_moved", "expected": "3", "actual": "4"},
-            ],
-            // A refused bind's original is a reason; a bind's request and
-            // receipt name the original record.
-            "refusal": {"original": "claim_not_held", "request": "more_targets_than_held_claims", "targets": []},
+            // A stored bind's receipt names the original record.
             "bind": {"original": minted(), "replayed": false, "bound": []},
-            "bind_request": {"original": minted(), "measurement": {}, "targets": []},
             // A feed's id takes the class its kind names.
             "read_cut": {"feed": {"kind": "run_execution", "id": crate::WorkId::new().0.to_string()}, "position": 7},
             "project_cut": {"feed": {"kind": "project", "id": "project-a"}, "position": 3},
@@ -458,7 +430,9 @@ mod tests {
             "receipt": {"operation": minted(), "producer": minted(), "verifications": [{"stage": "full", "record_id": minted()}]},
             "request": {"operation": "verification_record", "operation_key": "termal-run:test-1",
                 "registration": {"host_run_id": "test-1", "request_identity": "request-a", "initiating_session_id": "session-1"},
-                "input": {"kind": "staged_tree", "tree": "d".repeat(40), "base_commit": "e".repeat(40)}},
+                "input": {"kind": "commit", "commit": "e".repeat(40)}},
+            // A stored request may name a staged tree and its base.
+            "stored_input": {"kind": "staged_tree", "tree": "d".repeat(40), "base_commit": "e".repeat(40)},
             // A remote result's receipt names its records; its completion names
             // the launcher's own run and host, and Git objects.
             "remote_receipt": {"operation": minted(), "origin": minted(),
@@ -476,9 +450,6 @@ mod tests {
             "observed_checks": [{"host_check_id": uuid.clone()}],
             "session_id": "runner one",
             "named_root": {"workspace_id": uuid.clone(), "source_revision": "f".repeat(40)},
-            "named_targets": [
-                {"reason": "workspace_differs", "expected": uuid.clone(), "actual": "f".repeat(64)},
-            ],
             "project_feed": {"feed": {"kind": "project", "id": uuid.clone()}, "position": 1},
             "checkpoint_reference": {"kind": "object_id", "object_id": minted()},
             // A work ref is the short ref, or the work id when no item has it.
@@ -498,14 +469,12 @@ mod tests {
             "work_id": minted(),
             "unlisted": minted(),
             "nested": [{"also_unlisted": crate::WorkId::new().0.to_string()}],
-            "targets": [{"reason": "root_execution_moved", "expected": minted()}],
             "read_cut": {"feed": {"kind": "root_work", "id": minted()}, "position": 7},
             // A receipt's operation is a record id; a commit is a Git object.
             "receipt": {"operation": "verification_record", "verifications": []},
             "input": {"commit": minted()},
-            // Outside a refused bind, `original` is a record id.
+            // `original` is a record id.
             "bind": {"original": "claim_not_held", "bound": []},
-            "bind_request": {"original": "claim_not_held", "measurement": {}, "targets": []},
             // A work ref has its form; a registered commit is 40 digits; a
             // host key is never empty.
             "work_ref": "not-a-ref",
@@ -522,12 +491,10 @@ mod tests {
             "/work_id:",
             "/unlisted:",
             "/nested/0/also_unlisted:",
-            "/targets/0/expected:",
             "/read_cut/feed/id:",
             "/receipt/operation:",
             "/input/commit:",
             "/bind/original:",
-            "/bind_request/original:",
             "/work_ref:",
             "/registered/base_commit:",
             "/idempotency_key:",
@@ -539,6 +506,6 @@ mod tests {
                 "{path} not reported in {breaks:?}"
             );
         }
-        assert_eq!(breaks.len(), 17, "{breaks:?}");
+        assert_eq!(breaks.len(), 15, "{breaks:?}");
     }
 }

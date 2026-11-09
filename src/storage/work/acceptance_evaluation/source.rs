@@ -1059,36 +1059,6 @@ pub(super) fn stale_bound_citation_live<'a>(
     Ok(None)
 }
 
-/// Whether the source a check of `run_id` ran on has since moved on that
-/// run, through `through`, read exactly as an evaluation's citation of the
-/// check is read: an accounted unadmitted change it does not follow, a
-/// change that carries no revision, or a newer source record (within the
-/// run's named root there) at another revision. `checked` is the revision
-/// the check ran on.
-pub(in crate::storage::work) fn check_moved_on(
-    connection: &Connection,
-    run_id: WorkRunId,
-    citation: &ObjectId,
-    producer: &ObjectId,
-    checked: &str,
-    through: i64,
-) -> Result<bool, StoreError> {
-    let root = named_root_at_on(connection, run_id, through)?;
-    Ok(moved_after_check(
-        connection,
-        run_id,
-        citation,
-        producer,
-        CitationSource::Observed(&VerificationSourceIdentity::Legacy {
-            source_revision: checked.to_owned(),
-            git_tree: None,
-        }),
-        through,
-        root.as_ref(),
-    )?
-    .is_some())
-}
-
 /// Whether `citation` is a verification record bound from another item's
 /// check.
 fn is_bound(connection: &Connection, citation: &ObjectId) -> Result<bool, StoreError> {

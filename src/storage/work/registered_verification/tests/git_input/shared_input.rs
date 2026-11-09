@@ -542,41 +542,6 @@ fn shared_input_large_identity_keeps_agent_note_windows_and_details_bounded() {
 }
 
 #[test]
-fn shared_input_binding_refusal_names_the_unsupported_representation() {
-    let (_, mut f, _) = shared_fixture(false, true);
-    let check = f.record().unwrap().verifications[0].record_id.clone();
-    let request = VerificationBindInput {
-        idempotency_key: "unsupported-shared-bind".into(),
-        original: check,
-        measurement: BindMeasurement {
-            workspace_id: f.request.registration.root.workspace_id.clone(),
-            source_revision: "content-v1:cannot-declare-shared".into(),
-            measured_at: at(11),
-        },
-        targets: vec![],
-    };
-    let before = f.snapshot();
-    let error = f
-        .store
-        .bind_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &request,
-            at(11),
-        )
-        .unwrap_err();
-    assert!(
-        matches!(error, StoreError::VerificationBindRefused(ref refused)
-        if refused.original == Some(VerificationBindOriginalRefusal::SourceIdUnsupported)),
-        "{error}"
-    );
-    assert_eq!(f.snapshot(), before);
-}
-
-#[test]
 fn shared_and_legacy_bases_roundtrip_without_surrogates_or_rewrites() {
     let (_, mut f, source_id) = shared_fixture(false, true);
     let receipt = f.record().unwrap();

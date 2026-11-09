@@ -140,14 +140,32 @@ fn fixture_with_create_and_root(
 
 impl Fixture {
     fn record(&mut self) -> Result<RegisteredVerificationReceipt, StoreError> {
-        self.store.record_registered_verification(
+        self.record_at(at(10))
+    }
+
+    /// A staged-tree input is history: only the seed writes one now, so its
+    /// readers stay covered without keeping the retired ingress.
+    fn record_at(
+        &mut self,
+        now: DateTime<Utc>,
+    ) -> Result<RegisteredVerificationReceipt, StoreError> {
+        let record = if matches!(
+            self.request.input,
+            RegisteredVerificationInput::StagedTree { .. }
+        ) {
+            SqliteStore::seed_historical_registered_verification
+        } else {
+            SqliteStore::record_registered_verification
+        };
+        record(
+            &mut self.store,
             &self.project,
             &self.session,
             &self.connection,
             crate::storage::HostSessionAuthority::Work,
             &actor("runner"),
             &self.request,
-            at(10),
+            now,
         )
     }
 

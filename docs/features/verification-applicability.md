@@ -6,22 +6,23 @@ Stored verification evidence may carry an optional restriction:
 {"applicability":{"kind":"git_tree","tree":"<full Git tree object name>"}}
 ```
 
-On `execution_observe` sightings and observed-check source bases,
-`source_basis.git_tree` is an optional host measurement. Both tree fields accept exactly
-40 or 64 lowercase ASCII hexadecimal characters. The host supplies it only
-when that same capture found `git status --porcelain=v1 --untracked-files=all`
-empty. A dirty capture omits it. Absence means no tree identity and is valid
-input. A commit id and a content-v1 fingerprint are not tree identity.
+`source_basis.git_tree` is a measurement on stored records: `execution_observe`
+now refuses one, along with a source revision, and takes a complete `source_id`.
+Both tree fields hold exactly 40 or 64 lowercase ASCII hexadecimal characters. A
+host supplied the measurement only when that same capture found
+`git status --porcelain=v1 --untracked-files=all` empty. Absence means no tree
+identity. A commit id is not tree identity.
 
 `execution_observe` records source sightings and observed checks; it does not
 mint native verification. `verification_record` creates native evidence from
 registered terminal checks. Its current request has no `applicability` member,
-and the evidence it creates has no applicability restriction. Engram sets
-`source_basis.git_tree` from the declared `tree` of a `staged_tree` input; a
-`commit` input has no tree field in its source basis, even for a clean checkout.
-Eligibility requires `post_run.clean_before` and `clean_after`, a clean input
-outcome and no dirty paths. These describe the registered input, including a
-staged tree; they do not require porcelain status to be empty.
+and the evidence it creates has no applicability restriction. A `commit` input
+has no tree field in its source basis, even for a clean checkout. A new
+`staged_tree` input is refused; on evidence an earlier build stored from one,
+`source_basis.git_tree` holds its declared `tree`. Eligibility requires
+`post_run.clean_before` and `clean_after`, a clean input outcome and no dirty
+paths. These describe the registered input; they do not require porcelain status
+to be empty.
 
 Historical restricted evidence retains its stored restriction and canonical
 bytes; see [records from earlier builds](execution-observability.md#records-from-earlier-builds).
@@ -30,10 +31,7 @@ restriction is refused without echoing values. Strict host request decoding
 returns `invalid_request` for unknown fields, including an applicability member
 on the current registered-verification request.
 
-`verification_bind` preserves an original restriction when binding evidence to
-another run. A missing or different target tree returns
-`verification_bind_refused` with the typed reason `git_tree_missing` or
-`git_tree_mismatch`. Core evidence ingestion also rejects a restricted record
+A stored bound record keeps its original's restriction. Core evidence ingestion also rejects a restricted record
 whose producer tree does not match its restriction; that invariant does not
 provide another host ingestion operation.
 
@@ -47,10 +45,10 @@ restricted candidate cannot be skipped to find a convenient older pass.
 Unused historical restrictions do not veto a sufficient newer local check.
 
 The rule applies to obligation satisfaction, completion's newest-check rule,
-evaluation admission and consumption, selected observed mechanical passes,
-and binding to another run. Bound copies preserve the original restriction
-and the target's measured tree. Quiet tree changes with equal content-v1 are
-still changes of applicability. Attachment remains attribution-only: its
+evaluation admission and consumption, and selected observed mechanical passes.
+Bound copies an earlier build stored preserve the original restriction and the
+target's measured tree. Quiet tree changes with equal content are still changes
+of applicability. Attachment remains attribution-only: its
 restriction assessment never confers qualification.
 
 ## Schema barrier and cutover

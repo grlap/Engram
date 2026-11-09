@@ -235,6 +235,50 @@ fn registered_git_input_mismatch_refuses_bound_and_unbound_citations_without_eff
 }
 
 #[test]
+fn a_new_staged_tree_input_is_refused_and_a_stored_one_still_replays() {
+    let staged = RegisteredVerificationInput::StagedTree {
+        tree: GitTreeId::parse(object_name("staged input")).unwrap(),
+        base_commit: object_name("base"),
+    };
+    let mut f = prepared(true, true);
+    f.request.input = staged.clone();
+    let before = f.snapshot();
+    let error = f
+        .store
+        .record_registered_verification(
+            &f.project,
+            &f.session,
+            &f.connection,
+            crate::storage::HostSessionAuthority::Work,
+            &actor("runner"),
+            &f.request,
+            at(10),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(&error, StoreError::RegisteredVerificationRefused { field, .. } if field == "input.kind"),
+        "{error}"
+    );
+    assert_eq!(f.snapshot(), before, "a refusal records nothing");
+
+    let stored = f.record().unwrap();
+    let replayed = f
+        .store
+        .record_registered_verification(
+            &f.project,
+            &f.session,
+            &f.connection,
+            crate::storage::HostSessionAuthority::Work,
+            &actor("runner"),
+            &f.request,
+            at(11),
+        )
+        .unwrap();
+    assert_eq!(replayed, stored, "an exact retry of a stored input replays");
+    assert!(f.store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
 fn registered_git_input_staged_identity_ignores_base_provenance() {
     let mut f = prepared(true, true);
     let tree = GitTreeId::parse(object_name("staged input")).unwrap();

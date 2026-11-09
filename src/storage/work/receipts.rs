@@ -57,6 +57,8 @@ const CORE_RECEIPTS: &[(&str, Receipt)] = &[
     ("host_named_root_bind", HOST),
     ("host_execution_observe", HOST),
     ("host_verification_record", HOST),
+    // No longer an operation: stored receipts stay here so doctor keeps
+    // checking them, which `Receipt::Retired` would not.
     ("host_verification_bind", HOST),
     ("host_remote_verification_record", HOST),
     (

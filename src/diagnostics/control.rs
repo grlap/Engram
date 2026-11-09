@@ -37,9 +37,6 @@ impl Frame {
             }
             | HostControlRequest::ExecutionObserve {
                 idempotency_key, ..
-            }
-            | HostControlRequest::VerificationBind {
-                idempotency_key, ..
             } => Some(idempotency_key),
             HostControlRequest::VerificationRecord { operation_key, .. }
             | HostControlRequest::RemoteVerificationRecord { operation_key, .. } => {

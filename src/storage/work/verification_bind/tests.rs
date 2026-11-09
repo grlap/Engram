@@ -1,36 +1,37 @@
-//! Binding one native passed check to several held items: the record each
-//! target gets, how it satisfies that target's obligations, and every
-//! refusal writing nothing.
+//! Reading the bound records an earlier build's `verification_bind` stored.
+//! The operation is gone. `store_bound` writes such a record and its receipt
+//! through the production append and receipt paths, so these tests hold the
+//! readers, the matcher and doctor to the rows the live stores keep.
 
 use rusqlite::TransactionBehavior;
 
 use super::super::completion::{
     append_control_execution_observation_on, append_control_verification_evidence_on,
+    named_root_at_cut_on,
 };
+use super::super::feeds::{current_run_feed_cut_on, run_feed_position_for_object_on};
 use super::super::query::load_work_run;
 use super::super::test_support::*;
-use super::{VerificationBindOutcome, bind_verification_on};
+use crate::canonical::CanonicalObject;
 use crate::domain::SCHEMA_VERSION;
 use crate::domain::{
-    AcceptanceBinding, BindMeasurement, ControlWorkBinding, EffectClass, ExecutionObservation,
+    AcceptanceBinding, BindMeasurement, BoundCriterionEligibility, BoundVerificationSource,
+    BoundVerificationTarget, ControlWorkBinding, EffectClass, ExecutionObservation,
     ExecutionOutcome, ExecutionSourceBasis, NamedRootBindingKind, SessionId, SourceRootState,
-    VerificationBindInput, VerificationBindOriginalRefusal, VerificationBindReceipt,
-    VerificationBindRefusal, VerificationBindRequestRefusal, VerificationBindSighting,
-    VerificationBindTarget, VerificationBindTargetReason as Reason, VerificationEvidence,
-    VerificationKind, VerificationRequirement, VerificationResult, WorkClaim, WorkItem,
-    WorkObligationState,
+    VerificationBindReceipt, VerificationBindSighting, VerificationBindTarget,
+    VerificationEvidence, VerificationKind, VerificationRequirement, VerificationResult, WorkClaim,
+    WorkItem, WorkObligationState,
 };
+use crate::storage::SqliteStore;
 use crate::storage::test_support::open_work_host;
-use crate::storage::{SqliteStore, StoreError};
+use crate::storage::verification_bind::{VERIFICATION_BIND_OPERATION, VerificationBindIntent};
 use crate::{DevelopmentNoopRedactor, ObjectId};
-
-mod request_budget;
 
 const ROOT: &str = "workspace-root";
 const HOLDER: &str = "runner";
 
 mod during_check;
-mod git_tree;
+mod stored_shapes;
 
 fn basis(revision: &str, generation: i64) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
@@ -206,24 +207,10 @@ fn native_check_in(
     second: i64,
     environment: bool,
 ) -> ObjectId {
-    check_with(store, held, revision, second, environment, false)
-}
-
-/// As [`native_check_in`]; with `unknown_change_between`, a change of
-/// unknown place is recorded on the run after the producer and before its
-/// verification, which a host may record later than its producer.
-fn check_with(
-    store: &mut SqliteStore,
-    held: &Held,
-    revision: &str,
-    second: i64,
-    environment: bool,
-    unknown_change_between: bool,
-) -> ObjectId {
     let binding = binding_of(store, held);
     let mut source_basis = basis(revision, held.generation);
     source_basis.git_tree.clone_from(&held.git_tree);
-    let mut transaction = store
+    let transaction = store
         .connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .expect("checkpoint");
@@ -271,23 +258,6 @@ fn check_with(
         },
     )
     .expect("producer");
-    if unknown_change_between {
-        transaction.commit().expect("commit producer");
-        source_mutation_from_basis(
-            store,
-            &held.work,
-            &held.claim,
-            HOLDER,
-            &format!("unlocated-{second}"),
-            second,
-            None,
-            None,
-        );
-        transaction = store
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .expect("verification");
-    }
     let verification = append_control_verification_evidence_on(
         &transaction,
         &VerificationEvidence {
@@ -334,12 +304,20 @@ fn target(
     }
 }
 
+/// What a stored bind's intent carried.
+struct StoredBind {
+    idempotency_key: String,
+    original: ObjectId,
+    measurement: BindMeasurement,
+    targets: Vec<VerificationBindTarget>,
+}
+
 fn request(
     original: &ObjectId,
     revision: &str,
     targets: Vec<VerificationBindTarget>,
-) -> VerificationBindInput {
-    VerificationBindInput {
+) -> StoredBind {
+    StoredBind {
         idempotency_key: "bind-1".into(),
         original: original.clone(),
         measurement: BindMeasurement {
@@ -351,55 +329,205 @@ fn request(
     }
 }
 
-/// Runs the bind in one transaction, committing it only when it bound.
-fn bind(
+/// Stores what an earlier build's bind left: one bound record per target on
+/// the target's own run, then its intent and receipt as an ordinary host
+/// operation, through the same append and receipt paths production uses.
+fn store_bound(
     store: &mut SqliteStore,
-    input: &VerificationBindInput,
+    input: &StoredBind,
     second: i64,
-) -> VerificationBindOutcome {
+) -> VerificationBindReceipt {
     let project = crate::domain::ProjectId("project-a".into());
+    let session = SessionId(HOLDER.into());
+    let source = stored(store, &input.original);
+    let original_position =
+        run_feed_position_for_object_on(&store.connection, source.binding.run_id, &input.original)
+            .expect("the original's position")
+            .position;
     let transaction = store
         .connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .expect("bind transaction");
-    let outcome = bind_verification_on(
-        &transaction,
+        .expect("transaction");
+    let mut bound = Vec::with_capacity(input.targets.len());
+    for target in &input.targets {
+        let binding = target.binding.clone();
+        let cut = current_run_feed_cut_on(&transaction, binding.run_id)
+            .expect("cut")
+            .position;
+        let root = named_root_at_cut_on(&transaction, binding.run_id, binding.claim_id, cut)
+            .expect("root")
+            .expect("the target's named root");
+        let mut binder = actor(HOLDER);
+        binder.session_id = Some(session.clone());
+        binder.run_id = Some(binding.run_id.0.to_string());
+        let evidence = VerificationEvidence {
+            applicability: source.applicability.clone(),
+            schema_version: SCHEMA_VERSION,
+            project_id: source.project_id.clone(),
+            binding: binding.clone(),
+            session_id: session.clone(),
+            producer_observation: source.producer_observation.clone(),
+            source_basis: ExecutionSourceBasis {
+                git_tree: root
+                    .latest_sighting
+                    .as_ref()
+                    .and_then(|(_, sighting)| sighting.source_basis.as_ref())
+                    .and_then(crate::domain::VerificationSourceBasis::legacy_basis)
+                    .and_then(|sighting| sighting.git_tree),
+                workspace_id: source.source_basis.workspace_id.clone(),
+                source_revision: source
+                    .source_basis
+                    .legacy_revision()
+                    .expect("a bound original holds a revision")
+                    .to_owned(),
+                source_root_generation: Some(root.generation),
+                source_root_state: Some(SourceRootState::Named),
+            }
+            .into(),
+            environment: source.environment.clone(),
+            check_kind: source.check_kind,
+            check_fingerprint: source.check_fingerprint.clone(),
+            result: source.result,
+            completed_at: source.completed_at,
+            summary: source.summary.clone(),
+            refs: source.refs.clone(),
+            actor: binder,
+            recorded_at: at(second),
+            bound_from: Some(BoundVerificationSource {
+                verification: input.original.clone(),
+                work_id: source.binding.work_id,
+                run_id: source.binding.run_id,
+                original_position,
+                sighting: target.sighting.observation.clone(),
+                measurement: input.measurement.clone(),
+                criteria: target.criteria.clone(),
+            }),
+        };
+        let verification =
+            append_control_verification_evidence_on(&transaction, &evidence).expect("bound record");
+        let run_position =
+            run_feed_position_for_object_on(&transaction, binding.run_id, &verification)
+                .expect("position")
+                .position;
+        let obligations_satisfied = transaction
+            .prepare(
+                "SELECT rule_id FROM work_run_obligations
+                 WHERE run_id = ?1 AND evidence_id = ?2
+                 ORDER BY trigger_position, obligation_id",
+            )
+            .expect("prepare")
+            .query_map(
+                rusqlite::params![binding.run_id.0.to_string(), verification.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("rules");
+        let item =
+            super::super::query::load_work_item(&transaction, binding.work_id).expect("item");
+        bound.push(BoundVerificationTarget {
+            work_id: binding.work_id,
+            work_ref: item.short_ref.clone(),
+            run_id: binding.run_id,
+            verification,
+            run_position,
+            obligations_satisfied,
+            criteria: target
+                .criteria
+                .iter()
+                .map(|position| stored_eligibility(&item, *position, &evidence))
+                .collect(),
+        });
+    }
+    let receipt = VerificationBindReceipt {
+        original: input.original.clone(),
+        replayed: false,
+        bound,
+    };
+    crate::host::id_contract::assert_host_ids(&receipt);
+    let intent = CanonicalObject::freeze(&VerificationBindIntent::historical(
         &project,
-        &SessionId(HOLDER.into()),
-        &actor(HOLDER),
-        input,
-        at(second),
-    )
-    .expect("bind");
-    // What the host reads: the receipt, or the refusal as the error's details.
-    match &outcome {
-        VerificationBindOutcome::Bound(receipt) => {
-            crate::host::id_contract::assert_host_ids(receipt);
-        }
-        VerificationBindOutcome::Refused(refusal) => {
-            crate::host::id_contract::assert_host_ids(refusal);
-        }
-    }
-    if matches!(outcome, VerificationBindOutcome::Bound(_)) {
-        transaction.commit().expect("commit bind");
-    }
-    outcome
+        &session,
+        &input.idempotency_key,
+        &input.original,
+        &input.measurement,
+        &input.targets,
+    ))
+    .expect("intent");
+    crate::storage::HostSessionAuthority::Work
+        .persist(
+            &transaction,
+            &project,
+            &session,
+            VERIFICATION_BIND_OPERATION,
+            &input.idempotency_key,
+            &intent,
+            &receipt,
+            at(second),
+        )
+        .expect("the stored receipt");
+    transaction.commit().expect("commit");
+    receipt
 }
 
-fn refused(outcome: VerificationBindOutcome) -> VerificationBindRefusal {
-    match outcome {
-        VerificationBindOutcome::Refused(refusal) => refusal,
-        VerificationBindOutcome::Bound(receipt) => panic!("bound unexpectedly: {receipt:?}"),
-    }
-}
-
-fn evidence_rows(store: &SqliteStore) -> i64 {
-    store
-        .connection
-        .query_row("SELECT COUNT(*) FROM work_run_evidence", [], |row| {
-            row.get(0)
+/// What a stored receipt says of one intended criterion: whether the check
+/// suited its binding, never a verdict.
+fn stored_eligibility(
+    item: &WorkItem,
+    position: u32,
+    evidence: &VerificationEvidence,
+) -> BoundCriterionEligibility {
+    let binding = item
+        .acceptance_bindings
+        .iter()
+        .find(|binding| {
+            usize::try_from(position).is_ok_and(|position| binding.criterion == position)
         })
-        .expect("count")
+        .map(|binding| binding.requirement.clone());
+    let reason = binding.as_ref().and_then(|requirement| {
+        if requirement.check_kind != evidence.check_kind {
+            Some(format!(
+                "the criterion binds {:?} checks; this check is {:?}",
+                requirement.check_kind, evidence.check_kind
+            ))
+        } else if requirement
+            .check_fingerprint
+            .as_ref()
+            .is_some_and(|pin| pin != &evidence.check_fingerprint)
+        {
+            Some("the criterion pins another check".to_owned())
+        } else {
+            None
+        }
+    });
+    BoundCriterionEligibility {
+        position,
+        binding,
+        eligible: reason.is_none(),
+        reason,
+    }
+}
+
+fn release(store: &mut SqliteStore, held: &Held, second: i64) {
+    let current = store.get_work_item(held.work.work_id).expect("item");
+    store
+        .release_work(
+            &crate::domain::ReleaseWorkRequest {
+                work_id: current.work_id,
+                run_id: held.claim.run_id,
+                expected_work_revision: current.revision,
+                holder: held.claim.holder.clone(),
+                claim_id: held.claim.claim_id,
+                claim_fence: held.claim.fence,
+                reason: "stepping away".into(),
+                waiver_reason: Some("the check is recorded".into()),
+                actor: actor(HOLDER),
+                idempotency_key: format!("release-{second}"),
+                released_at: at(second),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("release");
 }
 
 fn stored(store: &SqliteStore, id: &ObjectId) -> VerificationEvidence {
@@ -437,403 +565,10 @@ fn obligations(
         .collect()
 }
 
-/// A check run on item A, bound to items B and C on the same root under
-/// their own generations: each gets one record whose producer is A's
-/// execution, with the original's check facts and its own basis, satisfying
-/// its source change and its bound criterion; the store stays consistent.
+/// A bound record of another kind leaves a kind-bound criterion open and
+/// still satisfies the source change.
 #[test]
-fn a_check_binds_to_two_items_on_one_root_with_distinct_generations() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let c = held(&mut store, "item-c", HOLDER, 11, "R1", 6);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let original_record = stored(&store, &original);
-    let input = request(
-        &original,
-        "R1",
-        vec![
-            target(&store, &b, "R1", vec![1]),
-            target(&store, &c, "R1", vec![]),
-        ],
-    );
-    let VerificationBindOutcome::Bound(receipt) = bind(&mut store, &input, 30) else {
-        panic!("the bind is refused")
-    };
-    assert_eq!(receipt.original, original);
-    assert!(!receipt.replayed);
-    assert_eq!(receipt.bound.len(), 2);
-    for (held, bound) in [(&b, &receipt.bound[0]), (&c, &receipt.bound[1])] {
-        assert_eq!(bound.work_id, held.work.work_id);
-        let record = stored(&store, &bound.verification);
-        // The check's own facts are the original's, copied unchanged.
-        assert_eq!(record.check_kind, original_record.check_kind);
-        assert_eq!(record.check_fingerprint, original_record.check_fingerprint);
-        assert_eq!(record.result, original_record.result);
-        assert_eq!(record.completed_at, original_record.completed_at);
-        assert_eq!(
-            record.producer_observation,
-            original_record.producer_observation
-        );
-        assert_eq!(record.environment, original_record.environment);
-        // Its basis is the original's content under this item's own name.
-        assert_eq!(record.source_basis, basis("R1", held.generation).into());
-        assert_eq!(record.binding.run_id, held.claim.run_id);
-        assert_eq!(record.recorded_at, at(30));
-        let source = record.bound_from.expect("a bound record");
-        assert_eq!(source.verification, original);
-        assert_eq!(source.work_id, a.work.work_id);
-        assert_eq!(source.run_id, a.claim.run_id);
-        assert_eq!(source.sighting, held.change);
-        // It satisfies this item's source change and its bound criterion.
-        let states = obligations(&store, held);
-        assert!(
-            states.iter().all(
-                |(_, state, evidence)| *state == WorkObligationState::Satisfied
-                    && evidence.as_deref() == Some(bound.verification.as_str())
-            ),
-            "{states:?}"
-        );
-        assert_eq!(bound.obligations_satisfied.len(), states.len());
-    }
-    assert_eq!(receipt.bound[0].criteria.len(), 1);
-    assert!(receipt.bound[0].criteria[0].eligible);
-    // The original is untouched and the store verifies.
-    assert_eq!(stored(&store, &original), original_record);
-    let report = store.verify_all().expect("doctor");
-    assert!(report.is_healthy(), "{report:?}");
-}
-
-/// A remote check can be bound like any native one when the target's root
-/// measures the same input: the copy keeps the ordinary bound branch, and its
-/// producer stays the delivery on the original's run. Crediting another item
-/// directly is a new delivery of the same origin instead.
-#[test]
-fn a_credited_remote_check_binds_through_the_ordinary_branch() {
-    use crate::domain::{
-        LegacyRemoteRunInput, REMOTE_COMPLETION_SCHEMA_VERSION, RegisteredVerificationRoot,
-        RemoteRunCompletion, RemoteRunMode, RemoteRunOrigin, RemoteRunResult, RemoteRunVerdict,
-        RemoteVerificationAssociation, RemoteVerificationPurpose, RemoteVerificationRequest,
-        RemoteVerificationUse,
-    };
-    let commit = "c".repeat(40);
-    let revision = format!("git-commit:{commit}");
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, &revision, 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, &revision, 4);
-    let delivery = RemoteVerificationRequest {
-        operation_key: "remote:item-a".into(),
-        completion: RemoteRunCompletion {
-            schema_version: REMOTE_COMPLETION_SCHEMA_VERSION,
-            origin: RemoteRunOrigin {
-                host_id: "dl560".into(),
-                runner_session_id: "native-root".into(),
-            },
-            run_id: "test-remote".into(),
-            mode: RemoteRunMode::Full,
-            result: RemoteRunResult {
-                verdict: RemoteRunVerdict::Pass,
-                terminal: true,
-                exit: Some(0),
-                reason: "completed".into(),
-            },
-            input: LegacyRemoteRunInput {
-                commit: Some(commit.clone()),
-                ..LegacyRemoteRunInput::default()
-            }
-            .into(),
-            finished_at: Some(at(20)),
-        },
-        association: RemoteVerificationAssociation {
-            binding: binding_of(&store, &a),
-            root: RegisteredVerificationRoot {
-                workspace_id: ROOT.into(),
-                generation: 9,
-                state: SourceRootState::Named,
-            },
-            intended_use: RemoteVerificationUse::CommittedInput {
-                expected_commit: commit,
-                purpose: RemoteVerificationPurpose::Verification,
-            },
-        },
-    };
-    let transaction = store
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .expect("delivery transaction");
-    let receipt = super::super::remote_verification::record_remote_verification_on(
-        &transaction,
-        &crate::domain::ProjectId("project-a".into()),
-        &SessionId(HOLDER.into()),
-        &actor(HOLDER),
-        &delivery,
-        at(21),
-    )
-    .expect("delivery");
-    transaction.commit().expect("commit delivery");
-    assert!(receipt.qualification.credited, "{receipt:?}");
-    let original = receipt.verifications[0].record_id.clone();
-    let input = request(
-        &original,
-        &revision,
-        vec![target(&store, &b, &revision, vec![1])],
-    );
-    let VerificationBindOutcome::Bound(bound) = bind(&mut store, &input, 30) else {
-        panic!("the bind is refused")
-    };
-    let record = stored(&store, &bound.bound[0].verification);
-    assert_eq!(record.producer_observation, receipt.operation);
-    assert!(record.bound_from.is_some());
-    let report = store.verify_all().expect("doctor");
-    assert!(report.is_healthy(), "{report:?}");
-}
-
-/// An operator's obligation rule set names its own rules. A bind that
-/// satisfies such a rule returns the operator's rule id, and the receipt
-/// still holds to the host identifier contract (`bind` checks it).
-#[test]
-fn a_bind_returns_the_operator_rule_id_it_satisfies() {
-    const OPERATOR_RULE: &str = "operator requires a test";
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    store
-        .set_obligation_rule_set(
-            &crate::domain::ObligationRuleSet {
-                schema_version: crate::domain::OBLIGATION_RULE_SET_SCHEMA_VERSION,
-                rules: vec![crate::domain::ObligationRuleDefinition {
-                    rule: crate::domain::BuiltinObligationRuleRef {
-                        rule_id: OPERATOR_RULE.into(),
-                        rule_version: 1,
-                    },
-                    trigger: crate::domain::BuiltinObligationTrigger::SourceChanged,
-                    requirement: VerificationRequirement {
-                        check_kind: VerificationKind::Test,
-                        check_fingerprint: None,
-                    },
-                }],
-            },
-            &actor("obligation-rule-admin"),
-            "operator-rules",
-            None,
-            at(1),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("operator rule set");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    let VerificationBindOutcome::Bound(receipt) = bind(&mut store, &input, 30) else {
-        panic!("the bind is refused")
-    };
-    assert!(
-        receipt.bound[0]
-            .obligations_satisfied
-            .iter()
-            .any(|rule| rule == OPERATOR_RULE),
-        "{receipt:?}"
-    );
-}
-
-/// A batch with one valid and one invalid target is refused whole: the
-/// refusal names the invalid one and nothing is written for either.
-#[test]
-fn a_mixed_batch_writes_nothing_for_any_target() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let c = held(&mut store, "item-c", HOLDER, 11, "R2", 6);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let before = evidence_rows(&store);
-    let input = request(
-        &original,
-        "R1",
-        vec![
-            target(&store, &b, "R1", vec![]),
-            target(&store, &c, "R2", vec![]),
-        ],
-    );
-    let refusal = refused(bind(&mut store, &input, 30));
-    assert_eq!(refusal.original, None);
-    assert_eq!(refusal.request, None);
-    assert_eq!(refusal.targets.len(), 1);
-    assert_eq!(refusal.targets[0].work_id, c.work.work_id);
-    assert_eq!(refusal.targets[0].reason, Reason::SightingRevisionDiffers);
-    assert!(refusal.targets[0].remedy.is_some());
-    assert_eq!(evidence_rows(&store), before, "nothing was written");
-    assert!(
-        obligations(&store, &b)
-            .iter()
-            .all(|(_, state, _)| *state == WorkObligationState::Open)
-    );
-}
-
-/// Each typed refusal names its target and writes nothing.
-#[test]
-fn every_target_refusal_is_typed_and_writes_nothing() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let other = held(&mut store, "item-other", "someone-else", 12, "R1", 6);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let before = evidence_rows(&store);
-    let mut stale_sighting = target(&store, &b, "R1", vec![]);
-    let newest = change(&mut store, &b.work, &b.claim, "item-b-later", "R1", 10, 21);
-    stale_sighting.sighting.observation = b.change.clone();
-    let cases = [
-        (
-            "not held",
-            vec![target(&store, &other, "R1", vec![])],
-            Reason::ClaimNotHeld,
-        ),
-        (
-            "not newest",
-            vec![stale_sighting],
-            Reason::SightingNotNewest,
-        ),
-        (
-            "original item",
-            vec![target(&store, &a, "R1", vec![])],
-            Reason::IsOriginalItem,
-        ),
-        // No item has the work id, so the refusal names the work id itself
-        // as its work reference.
-        (
-            "not found",
-            vec![{
-                let mut unknown = target(&store, &b, "R1", vec![]);
-                unknown.binding.work_id = crate::domain::WorkId::new();
-                unknown
-            }],
-            Reason::NotFound,
-        ),
-        (
-            "criterion out of range",
-            vec![{
-                let mut t = target(&store, &b, "R1", vec![3]);
-                t.sighting.observation = newest.clone();
-                t
-            }],
-            Reason::CriterionOutOfRange,
-        ),
-    ];
-    for (case, targets, reason) in cases {
-        let refusal = {
-            let input = request(&original, "R1", targets);
-            refused(bind(&mut store, &input, 30))
-        };
-        assert_eq!(refusal.targets.len(), 1, "{case}: {refusal:?}");
-        assert_eq!(refusal.targets[0].reason, reason, "{case}");
-        assert_eq!(evidence_rows(&store), before, "{case}: nothing was written");
-    }
-    // A duplicate target is refused once, by name.
-    let mut fresh = target(&store, &b, "R1", vec![]);
-    fresh.sighting.observation = newest;
-    let input = request(&original, "R1", vec![fresh.clone(), fresh]);
-    let refusal = refused(bind(&mut store, &input, 30));
-    assert_eq!(
-        refusal
-            .targets
-            .iter()
-            .map(|target| target.reason)
-            .collect::<Vec<_>>(),
-        vec![Reason::DuplicateTarget]
-    );
-}
-
-/// A source change on the target after its sighting whose root is unknown
-/// blocks the bind: the measurement does not resolve it.
-#[test]
-fn an_unresolved_change_after_the_sighting_refuses() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    source_mutation_from_basis(
-        &mut store,
-        &b.work,
-        &b.claim,
-        HOLDER,
-        "unlocated",
-        21,
-        None,
-        None,
-    );
-    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    let refusal = refused(bind(&mut store, &input, 30));
-    assert_eq!(
-        refusal.targets[0].reason,
-        Reason::UnresolvedSourceAfterSighting
-    );
-}
-
-/// Request-wide refusals: the measurement differing from the original, too
-/// many targets, and more targets than the caller holds claims.
-#[test]
-fn request_refusals_cover_measurement_and_bounds() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let mut wrong_measure = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    wrong_measure.measurement.source_revision = "R2".into();
-    assert_eq!(
-        refused(bind(&mut store, &wrong_measure, 30)).request,
-        Some(VerificationBindRequestRefusal::MeasurementRevisionDiffers)
-    );
-    let too_many = request(
-        &original,
-        "R1",
-        (0..17).map(|_| target(&store, &b, "R1", vec![])).collect(),
-    );
-    assert_eq!(
-        refused(bind(&mut store, &too_many, 30)).request,
-        Some(VerificationBindRequestRefusal::TooManyTargets)
-    );
-    // The caller holds two claims, one of them the original's: one target.
-    let over_held = request(
-        &original,
-        "R1",
-        vec![
-            target(&store, &b, "R1", vec![]),
-            target(&store, &b, "R1", vec![]),
-        ],
-    );
-    assert_eq!(
-        refused(bind(&mut store, &over_held, 30)).request,
-        Some(VerificationBindRequestRefusal::MoreTargetsThanHeldClaims)
-    );
-}
-
-/// A bound record cannot itself be bound: chains stop at depth one.
-#[test]
-fn a_bound_record_is_refused_as_an_original() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let c = held(&mut store, "item-c", HOLDER, 11, "R1", 6);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let VerificationBindOutcome::Bound(receipt) = ({
-        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-        bind(&mut store, &input, 30)
-    }) else {
-        panic!("the first bind is refused")
-    };
-    let chained = request(
-        &receipt.bound[0].verification,
-        "R1",
-        vec![target(&store, &c, "R1", vec![])],
-    );
-    assert_eq!(
-        refused(bind(&mut store, &chained, 31)).original,
-        Some(VerificationBindOriginalRefusal::IsBound)
-    );
-}
-
-/// A criterion bound to another kind of check is reported ineligible with a
-/// reason; the bind is not refused and that criterion's obligation stays
-/// open, while the source change is still satisfied.
-#[test]
-fn a_kind_mismatch_is_ineligible_without_a_verdict() {
+fn a_kind_mismatch_leaves_the_criterion_open() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
     let b = held_with(
@@ -849,15 +584,8 @@ fn a_kind_mismatch_is_ineligible_without_a_verdict() {
         },
     );
     let original = native_check(&mut store, &a, "R1", 20);
-    let VerificationBindOutcome::Bound(receipt) = ({
-        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-        bind(&mut store, &input, 30)
-    }) else {
-        panic!("a kind mismatch refused the bind")
-    };
-    let eligibility = &receipt.bound[0].criteria[0];
-    assert!(!eligibility.eligible);
-    assert!(eligibility.reason.is_some());
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
+    store_bound(&mut store, &input, 30);
     let states = obligations(&store, &b);
     assert!(
         states
@@ -883,12 +611,8 @@ fn a_later_change_stales_a_bound_record() {
     let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
     let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
     let original = native_check(&mut store, &a, "R1", 20);
-    let VerificationBindOutcome::Bound(_) = ({
-        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-        bind(&mut store, &input, 30)
-    }) else {
-        panic!("the bind is refused")
-    };
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
+    store_bound(&mut store, &input, 30);
     let later = change(&mut store, &b.work, &b.claim, "item-b-after", "R2", 10, 40);
     let records = store
         .work_run_obligations(b.claim.run_id)
@@ -940,12 +664,8 @@ fn cross_run_positions_are_never_compared() {
         producer_position < change_position,
         "the fixture puts the producer earlier in number: {producer_position} vs {change_position}"
     );
-    let VerificationBindOutcome::Bound(receipt) = ({
-        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-        bind(&mut store, &input, 30)
-    }) else {
-        panic!("the bind is refused")
-    };
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
+    let receipt = store_bound(&mut store, &input, 30);
     let states = obligations(&store, &b);
     let latest = states.last().expect("the latest change's obligation");
     assert_eq!(latest.1, WorkObligationState::Satisfied, "{states:?}");
@@ -953,126 +673,6 @@ fn cross_run_positions_are_never_compared() {
         latest.2.as_deref(),
         Some(receipt.bound[0].verification.as_str())
     );
-}
-
-/// The host's entry: the bind through a bound control session's credentials.
-fn bind_through_host(
-    store: &mut SqliteStore,
-    host: &crate::storage::test_support::TestWorkHost,
-    input: &VerificationBindInput,
-    second: i64,
-) -> Result<VerificationBindReceipt, StoreError> {
-    let bound = store.bind_verification(
-        &crate::domain::ProjectId("project-a".into()),
-        &host.session_id,
-        &host.connection_token,
-        crate::storage::HostSessionAuthority::Work,
-        &actor(HOLDER),
-        input,
-        at(second),
-    );
-    match &bound {
-        Ok(receipt) => crate::host::id_contract::assert_host_ids(receipt),
-        Err(StoreError::VerificationBindRefused(refusal)) => {
-            crate::host::id_contract::assert_host_ids(refusal);
-        }
-        Err(_) => {}
-    }
-    bound
-}
-
-fn release(store: &mut SqliteStore, held: &Held, second: i64) {
-    let current = store.get_work_item(held.work.work_id).expect("item");
-    store
-        .release_work(
-            &crate::domain::ReleaseWorkRequest {
-                work_id: current.work_id,
-                run_id: held.claim.run_id,
-                expected_work_revision: current.revision,
-                holder: held.claim.holder.clone(),
-                claim_id: held.claim.claim_id,
-                claim_fence: held.claim.fence,
-                reason: "stepping away".into(),
-                waiver_reason: Some("the check is recorded".into()),
-                actor: actor(HOLDER),
-                idempotency_key: format!("release-{second}"),
-                released_at: at(second),
-            },
-            &DevelopmentNoopRedactor,
-        )
-        .expect("release");
-}
-
-/// A lost reply is recovered by repeating the request: after the store was
-/// closed and opened again, the original's claim ended and the host
-/// reconnected with new credentials, the same key and intent return the
-/// stored receipt, marked replayed, with the same record ids and nothing
-/// written again. The routing token is not part of the intent. The stored
-/// operation passes doctor.
-#[test]
-fn a_retry_replays_after_a_restart_and_an_ended_claim() {
-    let directory = crate::test_support::temp_home().expect("directory");
-    let database = directory.path().join("engram.sqlite3");
-    let mut store = SqliteStore::open(&database).expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let c = held(&mut store, "item-c", HOLDER, 11, "R1", 6);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let input = request(
-        &original,
-        "R1",
-        vec![
-            target(&store, &b, "R1", vec![1]),
-            target(&store, &c, "R1", vec![]),
-        ],
-    );
-    let first_host = open_work_host(&mut store, HOLDER, at(25));
-    let first = bind_through_host(&mut store, &first_host, &input, 30).expect("bound");
-    assert!(!first.replayed);
-    let rows = evidence_rows(&store);
-    let operations = control_operations(&store);
-    let report = store.verify_all().expect("doctor");
-    assert!(
-        report.is_healthy(),
-        "the stored bind passes doctor: {report:?}"
-    );
-
-    // The host process restarts: the store is closed and opened again.
-    drop(store);
-    let mut store = SqliteStore::open(&database).expect("reopened store");
-    release(&mut store, &a, 40);
-    let second_host = open_work_host(&mut store, HOLDER, at(50));
-    assert_ne!(second_host.connection_token, first_host.connection_token);
-    let replay = bind_through_host(&mut store, &second_host, &input, 60).expect("replayed");
-    assert!(replay.replayed);
-    assert_eq!(replay.original, first.original);
-    assert_eq!(replay.bound, first.bound, "the same records, ids unchanged");
-    assert_eq!(evidence_rows(&store), rows, "nothing written again");
-    assert_eq!(control_operations(&store), operations);
-
-    // The same key for another request is a conflict and writes nothing.
-    let mut changed = input.clone();
-    changed.targets[1].criteria = vec![1];
-    assert!(matches!(
-        bind_through_host(&mut store, &second_host, &changed, 61),
-        Err(StoreError::ControlOperationIdempotencyConflict { .. })
-    ));
-    // A new bind needs the original's claim live and held.
-    changed.idempotency_key = "bind-2".into();
-    match bind_through_host(&mut store, &second_host, &changed, 62) {
-        Err(StoreError::VerificationBindRefused(refusal)) => {
-            assert_eq!(
-                refusal.original,
-                Some(VerificationBindOriginalRefusal::ClaimNotHeld)
-            );
-        }
-        other => panic!("a new bind after the claim ended: {other:?}"),
-    }
-    assert_eq!(evidence_rows(&store), rows);
-    assert_eq!(control_operations(&store), operations);
-    // After the release, the restart and the replay, the store still verifies.
-    let report = store.verify_all().expect("doctor");
-    assert!(report.is_healthy(), "{report:?}");
 }
 
 /// An evaluation of `held` read through `through`, declaring `declared` as
@@ -1170,12 +770,8 @@ fn a_bound_check_keeps_the_same_source_exception_and_supports_a_cited_pass() {
         store
             .record_acceptance_evaluation(&before, &DevelopmentNoopRedactor)
             .expect("the evaluation records");
-        let VerificationBindOutcome::Bound(receipt) = ({
-            let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-            bind(&mut store, &input, 30)
-        }) else {
-            panic!("the bind is refused")
-        };
+        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
+        let receipt = store_bound(&mut store, &input, 30);
         let stale = store
             .acceptance_evaluation_status(b.work.work_id, None)
             .expect("status")
@@ -1211,6 +807,55 @@ fn a_bound_check_keeps_the_same_source_exception_and_supports_a_cited_pass() {
     }
 }
 
+fn binding_page(store: &SqliteStore, held: &Held) -> crate::domain::AcceptanceBindingPage {
+    let work = store.get_work_item(held.work.work_id).expect("item");
+    super::super::binding_read::read_acceptance_bindings_on(
+        &store.connection,
+        &crate::domain::ProjectId("project-a".into()),
+        &super::super::binding_read::BindingReadRequest {
+            work_id: work.work_id,
+            expected_work_revision: work.revision,
+            run_id: held.claim.run_id,
+            after: None,
+        },
+    )
+    .expect("binding read")
+}
+
+/// The verification that satisfied the page's first criterion.
+fn satisfying(
+    page: &crate::domain::AcceptanceBindingPage,
+) -> crate::domain::AcceptanceBindingVerification {
+    page.rows[0]
+        .binding
+        .as_ref()
+        .and_then(|binding| binding.obligation.as_ref())
+        .and_then(|obligation| obligation.resolution.as_ref())
+        .and_then(|resolution| resolution.satisfaction.as_ref())
+        .map(|satisfaction| satisfaction.verification.clone())
+        .expect("criterion 1 is satisfied")
+}
+
+fn verification_page(
+    store: &SqliteStore,
+    held: &Held,
+) -> crate::domain::AcceptanceVerificationPage {
+    let work = store.get_work_item(held.work.work_id).expect("item");
+    super::super::verification_read::read_acceptance_verifications_on(
+        &store.connection,
+        &crate::domain::ProjectId("project-a".into()),
+        &super::super::verification_read::VerificationReadRequest {
+            work_id: work.work_id,
+            expected_work_revision: work.revision,
+            run_id: held.claim.run_id,
+            run_cut: run_head(store, held),
+            criterion: 1,
+            after: None,
+        },
+    )
+    .expect("verification read")
+}
+
 /// The binding read and the verification read show a bound record with its
 /// typed bound branch, the producer's record and position on the original's
 /// run, and both times; a native record keeps its exact shape, with no
@@ -1221,12 +866,8 @@ fn readers_expose_the_bound_branch_only_on_bound_records() {
     let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
     let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
     let original = native_check(&mut store, &a, "R1", 20);
-    let VerificationBindOutcome::Bound(receipt) = ({
-        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-        bind(&mut store, &input, 30)
-    }) else {
-        panic!("the bind is refused")
-    };
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
+    let receipt = store_bound(&mut store, &input, 30);
     let bound_id = receipt.bound[0].verification.clone();
     let original_record = stored(&store, &original);
     let position_on = |held: &Held, id: &ObjectId| {
@@ -1240,33 +881,7 @@ fn readers_expose_the_bound_branch_only_on_bound_records() {
     };
     let producer_on_a = position_on(&a, &original_record.producer_observation);
     let original_on_a = position_on(&a, &original);
-    let project = crate::domain::ProjectId("project-a".into());
-    let binding_page = |held: &Held| {
-        let work = store.get_work_item(held.work.work_id).expect("item");
-        super::super::binding_read::read_acceptance_bindings_on(
-            &store.connection,
-            &project,
-            &super::super::binding_read::BindingReadRequest {
-                work_id: work.work_id,
-                expected_work_revision: work.revision,
-                run_id: held.claim.run_id,
-                after: None,
-            },
-        )
-        .expect("binding read")
-    };
-    let satisfying = |page: &crate::domain::AcceptanceBindingPage| {
-        page.rows[0]
-            .binding
-            .as_ref()
-            .and_then(|binding| binding.obligation.as_ref())
-            .and_then(|obligation| obligation.resolution.as_ref())
-            .and_then(|resolution| resolution.satisfaction.as_ref())
-            .map(|satisfaction| satisfaction.verification.clone())
-            .expect("criterion 1 is satisfied")
-    };
-
-    let read = satisfying(&binding_page(&b));
+    let read = satisfying(&binding_page(&store, &b));
     assert_eq!(read.record, bound_id);
     assert_eq!(read.producer.record, original_record.producer_observation);
     assert_eq!(
@@ -1289,35 +904,19 @@ fn readers_expose_the_bound_branch_only_on_bound_records() {
     assert_eq!(bound.measurement.source_revision, "R1");
     assert_eq!(bound.criteria, vec![1]);
 
-    let verification_page = |held: &Held| {
-        let work = store.get_work_item(held.work.work_id).expect("item");
-        super::super::verification_read::read_acceptance_verifications_on(
-            &store.connection,
-            &project,
-            &super::super::verification_read::VerificationReadRequest {
-                work_id: work.work_id,
-                expected_work_revision: work.revision,
-                run_id: held.claim.run_id,
-                run_cut: run_head(&store, held),
-                criterion: 1,
-                after: None,
-            },
-        )
-        .expect("verification read")
-    };
-    let rows = verification_page(&b).rows;
+    let rows = verification_page(&store, &b).rows;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].record, bound_id);
     assert_eq!(rows[0].producer.position, producer_on_a);
     assert!(rows[0].bound.is_some());
 
     // The native original keeps its exact shape.
-    let native = satisfying(&binding_page(&a));
+    let native = satisfying(&binding_page(&store, &a));
     assert_eq!(native.record, original);
     assert!(native.bound.is_none());
     let wire = serde_json::to_value(&native).expect("json");
     assert!(wire.get("bound").is_none(), "{wire}");
-    let native_rows = verification_page(&a).rows;
+    let native_rows = verification_page(&store, &a).rows;
     assert!(native_rows.iter().all(|row| row.bound.is_none()));
 
     // The record's assessment, which show --note renders, carries the branch.
@@ -1346,9 +945,7 @@ pub(crate) fn bound_assessment_fixture(database: &std::path::Path) -> (String, O
     let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
     let original = native_check(&mut store, &a, "R1", 20);
     let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-    let VerificationBindOutcome::Bound(receipt) = bind(&mut store, &input, 30) else {
-        panic!("the bind is refused")
-    };
+    let receipt = store_bound(&mut store, &input, 30);
     (
         b.work.short_ref,
         receipt.bound[0].verification.clone(),
@@ -1402,6 +999,51 @@ fn objects(connection: &rusqlite::Connection) -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
+/// The stored bind operations of a store, as a retry or doctor reads them.
+fn bind_operations(connection: &rusqlite::Connection) -> Vec<(String, String, Vec<u8>)> {
+    connection
+        .prepare(
+            "SELECT idempotency_key, request_hash, result_json FROM work_operation_results
+             WHERE operation = 'host_verification_bind' ORDER BY idempotency_key",
+        )
+        .expect("prepare")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .expect("query")
+        .map(|row| row.expect("operation"))
+        .collect()
+}
+
+/// Projection repair rebuilds every derived row of `database` exactly, and a
+/// migration export then import carries every record's canonical bytes and
+/// every stored bind operation unchanged into a clean store, which it returns.
+fn repair_and_migrate(directory: &std::path::Path, database: &std::path::Path) -> SqliteStore {
+    let before = all_rows(&rusqlite::Connection::open(database).expect("open"));
+    let report = SqliteStore::repair_rebuildable_projections(database).expect("repair");
+    assert!(report.is_healthy(), "{report:?}");
+    let after = all_rows(&rusqlite::Connection::open(database).expect("open"));
+    assert_eq!(after, before, "repair rebuilt every row exactly");
+
+    let file = directory.join("export.jsonl");
+    crate::storage::migration::export_json(database, &file).expect("export");
+    let imported = directory.join("imported.db");
+    crate::storage::migration::import_json(&file, &imported).expect("import");
+    let store = SqliteStore::open(&imported).expect("imported store");
+    let report = store.verify_all().expect("doctor");
+    assert!(report.is_healthy(), "{report:?}");
+    let source = rusqlite::Connection::open(database).expect("open");
+    assert_eq!(
+        objects(&store.connection),
+        objects(&source),
+        "every record's canonical bytes travel unchanged"
+    );
+    assert_eq!(
+        bind_operations(&store.connection),
+        bind_operations(&source),
+        "every stored bind operation travels unchanged"
+    );
+    store
+}
+
 /// No format change, on a store holding only existing records and on one
 /// holding bound records: projection repair rebuilds every derived row
 /// exactly and the doctor stays clean, and a migration export then import
@@ -1419,10 +1061,8 @@ fn repair_and_migration_round_trip_with_and_without_bound_records() {
             // The original links an environment record on its own run.
             let original = native_check_in(&mut store, &a, "R1", 20, true);
             if with_bound {
-                // Through the host entry, which also stores the operation.
                 let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-                let host = open_work_host(&mut store, HOLDER, at(25));
-                let receipt = bind_through_host(&mut store, &host, &input, 30).expect("bound");
+                let receipt = store_bound(&mut store, &input, 30);
                 let bound = receipt.bound[0].verification.clone();
                 assert!(stored(&store, &bound).environment.is_some());
                 // The target's focus evidence reads the bound record although
@@ -1439,27 +1079,8 @@ fn repair_and_migration_round_trip_with_and_without_bound_records() {
             let report = store.verify_all().expect("doctor");
             assert!(report.is_healthy(), "{with_bound}: {report:?}");
         }
-        let before = all_rows(&rusqlite::Connection::open(&database).expect("open"));
-        let report = SqliteStore::repair_rebuildable_projections(&database).expect("repair");
-        assert!(report.is_healthy(), "{with_bound}: {report:?}");
-        let after = all_rows(&rusqlite::Connection::open(&database).expect("open"));
-        assert_eq!(
-            after, before,
-            "{with_bound}: repair rebuilt every row exactly"
-        );
-
-        let file = directory.path().join("export.jsonl");
-        crate::storage::migration::export_json(&database, &file).expect("export");
-        let imported = directory.path().join("imported.db");
-        crate::storage::migration::import_json(&file, &imported).expect("import");
-        let store = SqliteStore::open(&imported).expect("imported store");
-        let report = store.verify_all().expect("doctor");
-        assert!(report.is_healthy(), "{with_bound}: {report:?}");
-        assert_eq!(
-            objects(&store.connection),
-            objects(&rusqlite::Connection::open(&database).expect("open")),
-            "{with_bound}: every record's canonical bytes travel unchanged"
-        );
+        let store = repair_and_migrate(directory.path(), &database);
+        assert_eq!(!bind_operations(&store.connection).is_empty(), with_bound);
         if let Some(bound_id) = bound_id {
             assert!(stored(&store, &bound_id).bound_from.is_some());
             // The doctor verifies a bound record's projection row: drift in
@@ -1478,11 +1099,10 @@ fn repair_and_migration_round_trip_with_and_without_bound_records() {
     }
 }
 
-/// A criterion pinned to another check is reported ineligible with a reason;
-/// the bind is not refused, the pinned criterion's obligation stays open,
-/// and the source change is still satisfied.
+/// A bound record of a criterion pinned to another check leaves that
+/// criterion's obligation open and still satisfies the source change.
 #[test]
-fn a_pin_mismatch_is_ineligible_and_leaves_the_criterion_open() {
+fn a_pin_mismatch_leaves_the_criterion_open() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
     let b = held_with(
@@ -1498,15 +1118,8 @@ fn a_pin_mismatch_is_ineligible_and_leaves_the_criterion_open() {
         },
     );
     let original = native_check(&mut store, &a, "R1", 20);
-    let VerificationBindOutcome::Bound(receipt) = ({
-        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-        bind(&mut store, &input, 30)
-    }) else {
-        panic!("a pin mismatch refused the bind")
-    };
-    let eligibility = &receipt.bound[0].criteria[0];
-    assert!(!eligibility.eligible);
-    assert!(eligibility.reason.is_some());
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
+    store_bound(&mut store, &input, 30);
     let states = obligations(&store, &b);
     assert!(
         states
@@ -1524,54 +1137,6 @@ fn a_pin_mismatch_is_ineligible_and_leaves_the_criterion_open() {
     );
 }
 
-/// A target whose root was named again since its sighting has no sighting
-/// under the new generation, and a sighting outside the root's named scope
-/// is not the root's: both are refused, writing nothing.
-#[test]
-fn a_stale_generation_or_an_unscoped_sighting_refuses() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let c = held(&mut store, "item-c", HOLDER, 11, "R1", 6);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let before = evidence_rows(&store);
-
-    // b's root is named again, at a new generation, after its sighting.
-    name_root(&mut store, &b.work, &b.claim, 12, 21);
-    let stale = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    let refusal = refused(bind(&mut store, &stale, 30));
-    assert_eq!(refusal.targets.len(), 1, "{refusal:?}");
-    assert_eq!(refusal.targets[0].reason, Reason::SightingMissing);
-
-    // c's newest record names the root's workspace without its generation.
-    let unscoped = source_mutation_from_basis(
-        &mut store,
-        &c.work,
-        &c.claim,
-        HOLDER,
-        "item-c-unscoped",
-        22,
-        Some(ExecutionSourceBasis {
-            git_tree: None,
-            workspace_id: ROOT.into(),
-            source_revision: "R1".into(),
-            source_root_generation: None,
-            source_root_state: None,
-        }),
-        None,
-    );
-    let mut scoped = target(&store, &c, "R1", vec![]);
-    scoped.sighting.observation = unscoped;
-    let refusal = refused(bind(
-        &mut store,
-        &request(&original, "R1", vec![scoped]),
-        31,
-    ));
-    assert_eq!(refusal.targets.len(), 1, "{refusal:?}");
-    assert_eq!(refusal.targets[0].reason, Reason::SightingNotNewest);
-    assert_eq!(evidence_rows(&store), before, "nothing was written");
-}
-
 /// Doctor holds a bound record's sighting to what the bind required: a
 /// record whose `bound_from.sighting` names another observation, here the
 /// original's producer on another run, is reported.
@@ -1581,12 +1146,8 @@ fn doctor_reports_a_bound_record_naming_another_sighting() {
     let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
     let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
     let original = native_check(&mut store, &a, "R1", 20);
-    let VerificationBindOutcome::Bound(receipt) = ({
-        let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-        bind(&mut store, &input, 30)
-    }) else {
-        panic!("the bind is refused")
-    };
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
+    let receipt = store_bound(&mut store, &input, 30);
     assert!(store.verify_all().expect("doctor").is_healthy());
     let producer = stored(&store, &original).producer_observation;
     store
@@ -1610,48 +1171,6 @@ fn doctor_reports_a_bound_record_naming_another_sighting() {
     assert!(!report.is_healthy(), "a forged sighting is reported");
 }
 
-/// A check is current at its producer's position, not its record's: a
-/// verification recorded after a change of unknown place, naming a producer
-/// from before that change, is refused as an original, writing nothing,
-/// because the native rules would not let that check stand either.
-#[test]
-fn an_original_whose_source_moved_after_its_producer_refuses() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = check_with(&mut store, &a, "R1", 20, false, true);
-    let before = evidence_rows(&store);
-    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    assert_eq!(
-        refused(bind(&mut store, &input, 30)).original,
-        Some(VerificationBindOriginalRefusal::RootNotCurrent)
-    );
-    assert_eq!(evidence_rows(&store), before, "nothing was written");
-}
-
-/// Intended criteria are strictly increasing positions: a repeat or an
-/// unordered list is refused by name, so a list never outgrows the item.
-#[test]
-fn repeated_or_unordered_criteria_refuse() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    for criteria in [vec![1, 1], vec![2, 1]] {
-        let input = request(
-            &original,
-            "R1",
-            vec![target(&store, &b, "R1", criteria.clone())],
-        );
-        let refusal = refused(bind(&mut store, &input, 30));
-        assert_eq!(
-            refusal.targets[0].reason,
-            Reason::CriteriaNotIncreasing,
-            "{criteria:?}"
-        );
-    }
-}
-
 /// Doctor's check of a stored bind holds the whole requested sighting to
 /// the written record: a stored request naming the right sighting at
 /// another revision does not match, nor does a different sighting.
@@ -1662,9 +1181,7 @@ fn a_stored_bind_must_name_the_written_sighting_and_revision() {
     let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
     let original = native_check(&mut store, &a, "R1", 20);
     let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-    let VerificationBindOutcome::Bound(receipt) = bind(&mut store, &input, 30) else {
-        panic!("the bind is refused")
-    };
+    let receipt = store_bound(&mut store, &input, 30);
     let matches = |targets: &[VerificationBindTarget]| {
         super::bound_receipt_matches_on(
             &store.connection,
@@ -1683,21 +1200,6 @@ fn a_stored_bind_must_name_the_written_sighting_and_revision() {
     let mut other_sighting = input.targets.clone();
     other_sighting[0].sighting.observation = a.change.clone();
     assert!(!matches(&other_sighting));
-}
-
-/// An accounted inter-turn change the host observed without admission on
-/// `held`'s run, inside its named root, from `from` to `to`, recorded at
-/// `second`.
-fn unadmitted_change(
-    store: &mut SqliteStore,
-    held: &Held,
-    from: &str,
-    to: &str,
-    second: i64,
-) -> (ObjectId, Vec<ObjectId>) {
-    let host = open_work_host(store, HOLDER, at(second - 3));
-    let receipt = unadmitted_change_through_host(store, held, &host, from, to, second);
-    (receipt.observation, receipt.opened_obligations)
 }
 
 /// Report another held item's source without rebinding an active host turn.
@@ -1771,153 +1273,6 @@ fn unadmitted_change_through_host(
         .expect("accounted unadmitted change")
 }
 
-/// The original must still stand on its own run as an evaluation citing it
-/// would read it. A later change on that run to another revision retires it,
-/// and so does an accounted unadmitted change the check does not follow,
-/// even when a later sighting puts the source back at the check's revision.
-/// A later change back at the same revision alone leaves it standing.
-#[test]
-fn an_original_the_native_rules_retired_refuses() {
-    // A later change at another revision.
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    change(&mut store, &a.work, &a.claim, "item-a-moved", "R2", 9, 22);
-    let before = evidence_rows(&store);
-    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    assert_eq!(
-        refused(bind(&mut store, &input, 30)).original,
-        Some(VerificationBindOriginalRefusal::RootNotCurrent)
-    );
-    assert_eq!(evidence_rows(&store), before, "nothing was written");
-
-    // An accounted unadmitted change, then a sighting back at R1.
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let _ = unadmitted_change(&mut store, &a, "R1", "R2", 25);
-    change(&mut store, &a.work, &a.claim, "item-a-back", "R1", 9, 27);
-    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    assert_eq!(
-        refused(bind(&mut store, &input, 30)).original,
-        Some(VerificationBindOriginalRefusal::RootNotCurrent)
-    );
-
-    // Only a later change back at the check's own revision: it still binds.
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    change(&mut store, &a.work, &a.claim, "item-a-same", "R1", 9, 22);
-    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![])]);
-    assert!(
-        matches!(
-            bind(&mut store, &input, 30),
-            VerificationBindOutcome::Bound(_)
-        ),
-        "a same-revision sighting leaves the check standing"
-    );
-}
-
-/// On the target's run, an accounted unadmitted change's time floor holds
-/// the check's own completion, as for a native check. A check that completed
-/// before such a change was recorded could satisfy nothing on that run, so
-/// the bind refuses that target by name and writes nothing. That holds
-/// whether a later sighting put the source back at the check's revision, or
-/// the change itself is the newest sighting. It holds also when the target
-/// already passed its own check after the change: that check stays the
-/// run's newest, so the target's completion is not refused by a dead
-/// record. Binding adds no exemption and no new staleness.
-#[test]
-fn a_check_older_than_a_target_unadmitted_change_refuses() {
-    for case in [
-        "back_by_sighting",
-        "change_is_newest",
-        "target_passed_after",
-    ] {
-        let mut store = SqliteStore::open_in_memory().expect("store");
-        let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-        // Unless the source comes back by a sighting, the target starts at
-        // R0, so the change to R1 is a real change.
-        let start = if case == "back_by_sighting" {
-            "R1"
-        } else {
-            "R0"
-        };
-        let b = held(&mut store, "item-b", HOLDER, 10, start, 4);
-        let original = native_check(&mut store, &a, "R1", 20);
-        let sighting = match case {
-            "back_by_sighting" => {
-                let _ = unadmitted_change(&mut store, &b, "R1", "R2", 25);
-                change(&mut store, &b.work, &b.claim, "item-b-back", "R1", 10, 27)
-            }
-            "change_is_newest" => unadmitted_change(&mut store, &b, "R0", "R1", 25).0,
-            _ => {
-                let _ = unadmitted_change(&mut store, &b, "R0", "R1", 25);
-                let own = native_check(&mut store, &b, "R1", 26);
-                stored(&store, &own).producer_observation
-            }
-        };
-        let before = evidence_rows(&store);
-        let obligations_before = obligations(&store, &b);
-        let mut bound_target = target(&store, &b, "R1", vec![1]);
-        bound_target.sighting.observation = sighting;
-        let input = request(&original, "R1", vec![bound_target]);
-        let refusal = refused(bind(&mut store, &input, 30));
-        assert_eq!(refusal.targets.len(), 1, "{case}: {refusal:?}");
-        assert_eq!(
-            refusal.targets[0].reason,
-            Reason::CheckPredatesUnadmittedChange,
-            "{case}"
-        );
-        assert!(refusal.targets[0].remedy.is_some(), "{case}");
-        assert_eq!(evidence_rows(&store), before, "{case}: nothing was written");
-        assert_eq!(obligations(&store, &b), obligations_before, "{case}");
-    }
-}
-
-/// A target's `claim_not_held` refusal says why the claim is not held.
-#[test]
-fn a_claim_not_held_refusal_names_its_cause() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
-    let other = held(&mut store, "item-other", "someone-else", 12, "R1", 6);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let input = request(
-        &original,
-        "R1",
-        vec![
-            target(&store, &b, "R1", vec![]),
-            target(&store, &other, "R1", vec![]),
-        ],
-    );
-    let refusal = refused(bind(&mut store, &input, 30));
-    let not_held = refusal
-        .targets
-        .iter()
-        .find(|target| target.work_id == other.work.work_id)
-        .expect("the other session's item");
-    assert_eq!(not_held.reason, Reason::ClaimNotHeld);
-    assert_eq!(
-        not_held.actual.as_deref(),
-        Some("another session holds the claim")
-    );
-}
-
-fn control_operations(store: &SqliteStore) -> i64 {
-    store
-        .connection
-        .query_row(
-            "SELECT COUNT(*) FROM control_operation_results",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count")
-}
-
 /// An existing native record's canonical bytes have no `bound_from` member,
 /// so its bytes and fingerprint are what they were before bound records
 /// existed.
@@ -1941,83 +1296,4 @@ fn a_native_record_keeps_its_canonical_bytes() {
         crate::canonical::canonical_bytes(&record).expect("canonical"),
         bytes
     );
-}
-
-#[test]
-fn work_session_binds_native_credit_without_control_routing_or_admission() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let exported = directory.path().join("export.json");
-    let destination = directory.path().join("imported.db");
-    let mut store = SqliteStore::open(&source).unwrap();
-    let a = held(&mut store, "ordinary-a", HOLDER, 9, "R1", 2);
-    let b = held(&mut store, "ordinary-b", HOLDER, 10, "R1", 4);
-    let original = native_check(&mut store, &a, "R1", 20);
-    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
-    let session = SessionId(HOLDER.into());
-    let token = store.resume_work_connection(&session, at(25)).unwrap();
-    let before_grants: i64 = store
-        .connection
-        .query_row("SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('control_sessions','control_turn_results','control_turn_grants','control_turn_grant_supersessions')", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    let first = store
-        .bind_verification(
-            &a.work.project_id,
-            &session,
-            &token,
-            crate::storage::HostSessionAuthority::Work,
-            &actor(HOLDER),
-            &input,
-            at(30),
-        )
-        .unwrap();
-    assert_eq!(first.bound.len(), 1);
-    let rows = evidence_rows(&store);
-    let replay = store
-        .bind_verification(
-            &a.work.project_id,
-            &session,
-            &token,
-            crate::storage::HostSessionAuthority::Work,
-            &actor(HOLDER),
-            &input,
-            at(31),
-        )
-        .unwrap();
-    assert!(replay.replayed);
-    assert_eq!(replay.bound, first.bound);
-    assert_eq!(evidence_rows(&store), rows);
-    let after_grants: i64 = store
-        .connection
-        .query_row("SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('control_sessions','control_turn_results','control_turn_grants','control_turn_grant_supersessions')", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(before_grants, 0);
-    assert_eq!(after_grants, 0);
-    let report = store.verify_all().unwrap();
-    assert!(report.is_healthy(), "{report:?}");
-    drop(store);
-    crate::storage::migration::export_json(&source, &exported).unwrap();
-    crate::storage::migration::import_json(&exported, &destination).unwrap();
-    let mut store = SqliteStore::open(&destination).unwrap();
-    let token = store.resume_work_connection(&session, at(32)).unwrap();
-    let replay = store
-        .bind_verification(
-            &a.work.project_id,
-            &session,
-            &token,
-            crate::storage::HostSessionAuthority::Work,
-            &actor(HOLDER),
-            &input,
-            at(33),
-        )
-        .unwrap();
-    assert!(replay.replayed);
-    assert_eq!(replay.bound, first.bound);
-    assert_eq!(evidence_rows(&store), rows);
-    let report = store.verify_all().unwrap();
-    assert!(report.is_healthy(), "{report:?}");
 }

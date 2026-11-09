@@ -33,6 +33,32 @@ pub(in crate::storage) fn record_registered_verification_on(
     now: DateTime<Utc>,
 ) -> Result<RegisteredVerificationReceipt, StoreError> {
     validate_request(request, now)?;
+    write_registered_verification_on(tx, project, session, actor, request, now)
+}
+
+/// Seeds a stored producer for tests of how history keeps being read. Production
+/// ingress always goes through [`record_registered_verification_on`].
+#[cfg(test)]
+pub(in crate::storage) fn seed_historical_registered_verification_on(
+    tx: &Transaction<'_>,
+    project: &ProjectId,
+    session: &SessionId,
+    actor: &ActorContext,
+    request: &RegisteredVerificationRequest,
+    now: DateTime<Utc>,
+) -> Result<RegisteredVerificationReceipt, StoreError> {
+    validate_stored_request(request, now)?;
+    write_registered_verification_on(tx, project, session, actor, request, now)
+}
+
+fn write_registered_verification_on(
+    tx: &Transaction<'_>,
+    project: &ProjectId,
+    session: &SessionId,
+    actor: &ActorContext,
+    request: &RegisteredVerificationRequest,
+    now: DateTime<Utc>,
+) -> Result<RegisteredVerificationReceipt, StoreError> {
     let item = validate_association(tx, project, session, request, now)?;
     let registration = &request.registration;
     let binding = &registration.binding;
@@ -156,12 +182,15 @@ pub(super) fn validate_request(
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
     validate_stored_request(request, now)?;
-    if let RegisteredVerificationInput::SourceId { source_id } = &request.input {
-        source_id
+    match &request.input {
+        RegisteredVerificationInput::SourceId { source_id } => source_id
             .validate()
-            .map_err(|_| refused("input.source_id", "invalid shared source identity"))?;
+            .map_err(|_| refused("input.source_id", "invalid shared source identity")),
+        RegisteredVerificationInput::StagedTree { .. } => {
+            Err(refused("input.kind", "the staged_tree input is retired"))
+        }
+        RegisteredVerificationInput::Commit { .. } => Ok(()),
     }
-    Ok(())
 }
 
 /// Stored producer facts retain their original admission rules. In particular,

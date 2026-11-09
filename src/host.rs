@@ -100,22 +100,13 @@ pub enum HostControlRequest {
         causality: crate::domain::ObservationCausality,
         policy_basis: Box<crate::domain::ObservationPolicyBasis>,
     },
-    /// Binds one native passed check to other items this session holds whose
-    /// named roots hold the same content: one record per target, all or
-    /// nothing. It creates no observation, turn or focus change.
-    VerificationBind {
-        idempotency_key: String,
-        original: crate::ObjectId,
-        measurement: crate::domain::BindMeasurement,
-        targets: Vec<crate::domain::VerificationBindTarget>,
-    },
     VerificationRecord {
         operation_key: String,
         registration: Box<crate::domain::RegisteredVerificationAssociation>,
         input: crate::domain::RegisteredVerificationInput,
         run: crate::domain::RegisteredVerificationRun,
         checks: Vec<crate::domain::RegisteredVerificationCheck>,
-        post_run: crate::domain::RegisteredVerificationPostRun,
+        post_run: Box<crate::domain::RegisteredVerificationPostRun>,
     },
     /// Records one delivery of a test result from another host: its immutable
     /// terminal facts, and the destination and use the host states. Only a
@@ -140,7 +131,6 @@ impl HostControlRequest {
             Self::AcceptanceBindingRead { .. } => "acceptance_binding_read",
             Self::AcceptanceVerificationRead { .. } => "acceptance_verification_read",
             Self::ExecutionObserve { .. } => "execution_observe",
-            Self::VerificationBind { .. } => "verification_bind",
             Self::VerificationRecord { .. } => "verification_record",
             Self::RemoteVerificationRecord { .. } => "remote_verification_record",
         }
@@ -181,7 +171,6 @@ fn store_error_details(error: &StoreError) -> Option<Value> {
         | StoreError::RemoteVerificationInvalid { field, reason } => {
             Some(serde_json::json!({"field": field, "reason": reason}))
         }
-        StoreError::VerificationBindRefused(refusal) => serde_json::to_value(refusal).ok(),
         _ => None,
     }
 }
@@ -465,7 +454,7 @@ impl HostControlServer {
                         input,
                         run,
                         checks,
-                        post_run,
+                        post_run: *post_run,
                     },
                     now,
                 )?)
@@ -612,32 +601,6 @@ impl HostControlServer {
                         occurrence: *occurrence,
                         causality,
                         policy_basis: *policy_basis,
-                    },
-                    now,
-                )?)
-                .map_err(StoreError::Json)
-            }
-            HostControlRequest::VerificationBind {
-                idempotency_key,
-                original,
-                measurement,
-                targets,
-            } => {
-                let binder = self.actor(
-                    "verification_bind",
-                    "bind one passed check to other held items of the same content",
-                );
-                serde_json::to_value(self.store.bind_verification(
-                    &self.project_id,
-                    &self.session_id,
-                    &self.connection_token,
-                    crate::storage::HostSessionAuthority::Work,
-                    &binder,
-                    &crate::domain::VerificationBindInput {
-                        idempotency_key,
-                        original,
-                        measurement,
-                        targets,
                     },
                     now,
                 )?)
@@ -1158,7 +1121,6 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::SourceBasisTextRefused { .. } => "source_basis_text_refused",
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
         StoreError::ExecutionObservationInvalid(_) => "execution_observation_invalid",
-        StoreError::VerificationBindRefused(_) => "verification_bind_refused",
         StoreError::ExecutionObservationBasisMismatch(_) => "execution_observation_basis_mismatch",
         StoreError::ExecutionObservationPolicyBasisMismatch(_) => {
             "execution_observation_policy_basis_mismatch"

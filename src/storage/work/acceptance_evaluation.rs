@@ -2453,7 +2453,6 @@ use crate::domain::{
     EvaluationRootMismatch,
 };
 use admission::{CitationContext, EligibilityContext, SameSessionRefusal};
-pub(in crate::storage::work) use source::check_moved_on;
 #[cfg(test)]
 use source::declared_not_contradicted;
 pub(in crate::storage) use source::read_named_root_sighting_on;

@@ -111,18 +111,7 @@ fn another_check(
     f.request.checks[0].check_kind = kind;
     f.request.checks[0].check_fingerprint =
         ObjectId::from_canonical_bytes(format!("{kind:?} fixture check").as_bytes());
-    f.store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(13),
-        )
-        .unwrap()
-        .verifications[0]
+    f.record_at(at(13)).unwrap().verifications[0]
         .record_id
         .clone()
 }
@@ -149,76 +138,8 @@ fn unlocated_change_at(f: &mut Fixture, second: i64) -> ObjectId {
     )
 }
 
-fn target_at_input(f: &mut Fixture) -> VerificationBindTarget {
-    let target = f
-        .store
-        .create_work(
-            &root_request("project-a", "bind-target", 5),
-            &DevelopmentNoopRedactor,
-        )
-        .unwrap();
-    let held = claim(
-        &mut f.store,
-        &target,
-        "runner",
-        "bind-target-claim",
-        6,
-        3600,
-    );
-    f.store
-        .bind_named_root(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            held.claim_id,
-            held.fence,
-            &f.request.registration.root.workspace_id,
-            1,
-            at(7),
-            NamedRootBindingKind::Bound,
-            None,
-            &mut actor("runner"),
-            "bind-target-root",
-            at(7),
-        )
-        .unwrap();
-    let sighting = crate::storage::work::test_support::source_mutation_from_basis(
-        &mut f.store,
-        &target,
-        &held,
-        "runner",
-        "bind-target-sighting",
-        8,
-        Some(ExecutionSourceBasis {
-            workspace_id: f.request.registration.root.workspace_id.clone(),
-            source_revision: f.request.input.revision(),
-            source_root_generation: Some(1),
-            source_root_state: Some(SourceRootState::Named),
-            git_tree: None,
-        }),
-        None,
-    );
-    let run = f.store.get_work_run(held.run_id).unwrap();
-    VerificationBindTarget {
-        binding: ControlWorkBinding {
-            root_execution_id: run.root_execution_id,
-            work_id: target.work_id,
-            run_id: held.run_id,
-            work_revision: held.accepted_work_revision,
-            claim_id: held.claim_id,
-            claim_fence: held.fence,
-        },
-        sighting: VerificationBindSighting {
-            observation: sighting,
-            source_revision: f.request.input.revision(),
-        },
-        criteria: vec![1],
-    }
-}
-
 #[test]
-fn live_git_currency_unlocated_report_uses_git_at_evaluate_bind_and_done() {
+fn live_git_currency_unlocated_report_uses_git_at_evaluate_and_done() {
     for dirty in [false, true] {
         for before_cut in [false, true] {
             let (root, mut f) = live_fixture(true, true);
@@ -240,33 +161,7 @@ fn live_git_currency_unlocated_report_uses_git_at_evaluate_bind_and_done() {
                 input.attempt_key = Some("dirty-unlocated-evaluation".into());
                 std::fs::write(root.join("tracked"), "edited\n").unwrap();
             }
-            let target = target_at_input(&mut f);
-            let binding = VerificationBindInput {
-                idempotency_key: "unlocated-bind".into(),
-                original: check.clone(),
-                measurement: BindMeasurement {
-                    workspace_id: f.request.registration.root.workspace_id.clone(),
-                    source_revision: revision.clone(),
-                    measured_at: at(12),
-                },
-                targets: vec![target],
-            };
-            let bind = f.store.bind_verification(
-                &f.project,
-                &f.session,
-                &f.connection,
-                crate::storage::HostSessionAuthority::Work,
-                &actor("runner"),
-                &binding,
-                at(12),
-            );
             if dirty {
-                let error = bind.unwrap_err();
-                assert!(
-                    matches!(error, StoreError::VerificationBindRefused(ref refused)
-                    if refused.original == Some(VerificationBindOriginalRefusal::RootNotCurrent)),
-                    "{error}"
-                );
                 let error = record_evaluation(&mut f, &input).unwrap_err();
                 assert!(
                     matches!(error, StoreError::WorkCompletionRefused { .. }),
@@ -282,7 +177,6 @@ fn live_git_currency_unlocated_report_uses_git_at_evaluate_bind_and_done() {
                 assert!(error.to_string().contains("dirty"), "{error}");
                 continue;
             }
-            assert_eq!(bind.unwrap().bound.len(), 1);
             let recorded = record_evaluation(&mut f, &input).unwrap();
             let seal = complete(&mut f, &check, &revision, "unlocated-done").unwrap();
             assert_eq!(
@@ -1187,61 +1081,6 @@ fn live_git_currency_refuses_direct_unbound_citations_with_evaluations_off() {
 }
 
 #[test]
-fn live_git_currency_bind_faults_keep_the_typed_host_refusal_and_write_nothing() {
-    for change in ["dirty", "new-commit", "missing"] {
-        let (root, mut f) = live_fixture(false, false);
-        let original = f.record().unwrap().verifications[0].record_id.clone();
-        let input = VerificationBindInput {
-            idempotency_key: "live-bind-fault".into(),
-            original,
-            measurement: BindMeasurement {
-                workspace_id: f.request.registration.root.workspace_id.clone(),
-                source_revision: f.request.input.revision(),
-                measured_at: at(11),
-            },
-            targets: Vec::new(),
-        };
-        match change {
-            "dirty" => std::fs::write(root.join("tracked"), "edited\n").unwrap(),
-            "new-commit" => {
-                commit(&root);
-            }
-            "missing" => std::fs::rename(&root, root.with_file_name("unavailable-source")).unwrap(),
-            _ => unreachable!(),
-        }
-        let before = f.snapshot();
-        let error = f
-            .store
-            .bind_verification(
-                &f.project,
-                &f.session,
-                &f.connection,
-                crate::storage::HostSessionAuthority::Work,
-                &actor("runner"),
-                &input,
-                at(12),
-            )
-            .unwrap_err();
-        let StoreError::VerificationBindRefused(ref refusal) = error else {
-            panic!("{error}");
-        };
-        assert_eq!(
-            refusal.original,
-            Some(VerificationBindOriginalRefusal::RootNotCurrent)
-        );
-        assert!(
-            refusal.request.is_some(),
-            "other request faults remain collected"
-        );
-        assert_eq!(
-            crate::host::store_error_code(&error),
-            "verification_bind_refused"
-        );
-        assert_eq!(f.snapshot(), before);
-    }
-}
-
-#[test]
 fn live_git_currency_service_prose_completion_does_not_read_git() {
     use crate::work_service::{
         LocalWorkService, WorkCompleteInput, WorkCompleteResult, WorkCompletionCaptureInput,
@@ -1663,18 +1502,7 @@ fn live_git_currency_new_generation_requires_a_new_registered_check() {
     f.request.run.finished_at = at(13);
     f.request.checks[0].started_at = Some(at(12));
     f.request.checks[0].completed_at = Some(at(13));
-    let receipt = f
-        .store
-        .record_registered_verification(
-            &f.project,
-            &f.session,
-            &f.connection,
-            crate::storage::HostSessionAuthority::Work,
-            &actor("runner"),
-            &f.request,
-            at(14),
-        )
-        .unwrap();
+    let receipt = f.record_at(at(14)).unwrap();
     let check = receipt.verifications[0].record_id.clone();
     let mut input = evaluation(&f, &check, &f.request.input.revision());
     input.recorded_at = at(15);

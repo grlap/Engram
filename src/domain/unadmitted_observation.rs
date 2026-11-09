@@ -812,18 +812,12 @@ fn require_shared_source(identity: &VerificationSourceIdentity, label: &str) -> 
 }
 
 impl ExecutionObserveInput {
-    /// Every host-supplied workspace id and source revision the request
-    /// carries, each with the field that holds it, named by position: the
-    /// host's own ids are host text too, so none is used as a label.
+    /// Every host-supplied workspace id the request carries, each with the
+    /// field that holds it, named by position: the host's own ids are host
+    /// text too, so none is used as a label. A new request holds no source
+    /// revision: `validate_new` has already refused one.
     #[must_use]
     pub fn source_texts(&self) -> Vec<(String, &str)> {
-        fn basis<'a>(label: &str, basis: &'a VerificationSourceBasis) -> Vec<(String, &'a str)> {
-            let mut texts = vec![(format!("{label}.workspace_id"), basis.workspace_id.as_str())];
-            if let Some(revision) = basis.legacy_revision() {
-                texts.push((format!("{label}.source_revision"), revision));
-            }
-            texts
-        }
         let mut texts = Vec::new();
         // Each check is labelled by the path the request itself carries: an
         // unadmitted turn lists its checks, a single observed check names one.
@@ -832,7 +826,10 @@ impl ExecutionObserveInput {
             Vec<(String, &ObservedCheck)>,
         ) = match &self.occurrence {
             ObservedOccurrence::SourceSighting { source_basis, .. } => {
-                texts.extend(basis("source_sighting.source_basis", source_basis));
+                texts.push((
+                    "source_sighting.source_basis.workspace_id".to_owned(),
+                    source_basis.workspace_id.as_str(),
+                ));
                 (None, Vec::new())
             }
             ObservedOccurrence::UnadmittedTurn {
@@ -864,17 +861,11 @@ impl ExecutionObserveInput {
                     "source_change.baseline.workspace_id".to_owned(),
                     baseline.workspace_id.as_str(),
                 ));
-                if let Some(revision) = baseline.identity.legacy_revision() {
-                    texts.push((
-                        "source_change.baseline.source_revision".to_owned(),
-                        revision,
-                    ));
-                }
             }
             if let Some(sighting) = change.sighting() {
-                texts.extend(basis(
-                    "source_change.sighting.source_basis",
-                    &sighting.source_basis,
+                texts.push((
+                    "source_change.sighting.source_basis.workspace_id".to_owned(),
+                    sighting.source_basis.workspace_id.as_str(),
                 ));
             }
         }
@@ -884,9 +875,6 @@ impl ExecutionObserveInput {
                     format!("{label}.source_basis.workspace_id"),
                     source_basis.workspace_id.as_str(),
                 ));
-                if let Some(revision) = source_basis.source_revision.as_deref() {
-                    texts.push((format!("{label}.source_basis.source_revision"), revision));
-                }
             }
         }
         texts

@@ -226,76 +226,6 @@ fn moved_evaluation_basis_preserves_both_host_wire_codes() {
     }
 }
 
-/// The bind request parses with every field named and refuses an unknown
-/// one; its refusal carries the typed parts as `details`, which every
-/// other error leaves out.
-#[test]
-fn verification_bind_request_and_refusal_wire_shape() {
-    let id = crate::ObjectId::from_canonical_bytes(b"a record");
-    let binding = crate::domain::ControlWorkBinding {
-        root_execution_id: crate::domain::RootExecutionId::new(),
-        work_id: crate::WorkId::new(),
-        run_id: crate::domain::WorkRunId::new(),
-        work_revision: 3,
-        claim_id: crate::domain::WorkClaimId::new(),
-        claim_fence: 1,
-    };
-    let mut request = serde_json::json!({
-        "operation": "verification_bind",
-        "idempotency_key": "bind-1",
-        "original": id,
-        "measurement": {
-            "workspace_id": "root",
-            "source_revision": "R1",
-            "measured_at": "2026-10-05T07:00:00Z",
-        },
-        "targets": [{
-            "binding": binding,
-            "sighting": {"observation": id, "source_revision": "R1"},
-            "criteria": [1],
-        }],
-    });
-    let parsed: HostControlRequest =
-        serde_json::from_value(request.clone()).expect("the request parses");
-    assert_eq!(parsed.operation(), "verification_bind");
-    request["unexpected"] = serde_json::json!(true);
-    assert!(serde_json::from_value::<HostControlRequest>(request).is_err());
-
-    let refusal = crate::domain::VerificationBindRefusal {
-        original: None,
-        request: None,
-        targets: vec![crate::domain::VerificationBindTargetRefusal {
-            work_id: binding.work_id,
-            work_ref: "w-target".into(),
-            reason: crate::domain::VerificationBindTargetReason::SightingNotNewest,
-            expected: None,
-            actual: None,
-            remedy: Some("obtain genuine source accounting".into()),
-        }],
-    };
-    let error = StoreError::VerificationBindRefused(Box::new(refusal));
-    let wire = |error: &StoreError| {
-        serde_json::to_value(HostControlResponse::Error {
-            error: HostControlErrorBody {
-                code: store_error_code(error),
-                message: error.to_string(),
-                reason: store_error_reason(error),
-                details: store_error_details(error),
-            },
-        })
-        .expect("host response")
-    };
-    let refused = wire(&error);
-    assert_eq!(refused["error"]["code"], "verification_bind_refused");
-    assert_eq!(
-        refused["error"]["details"]["targets"][0]["reason"],
-        "sighting_not_newest"
-    );
-    let other = wire(&StoreError::DifferentBuildSchema);
-    assert!(other["error"].get("details").is_none(), "{other}");
-    assert!(other["error"].get("reason").is_none(), "{other}");
-}
-
 #[test]
 fn oversized_control_frame_is_rejected_and_drained() {
     let mut input = vec![b'x'; MAX_HOST_CONTROL_FRAME_BYTES + 1];
@@ -347,6 +277,36 @@ fn removed_host_obligation_waiver_is_refused() {
         "idempotency_key": "waive-once"
     });
     let error = parse_host_control_request(&serde_json::to_vec(&clean).expect("encode frame"))
+        .expect_err("removed operation must fail closed");
+    assert!(error.contains("Data"));
+}
+
+#[test]
+fn removed_host_verification_bind_is_refused() {
+    let id = crate::ObjectId::from_canonical_bytes(b"a record");
+    let frame = serde_json::json!({
+        "operation": "verification_bind",
+        "idempotency_key": "bind-1",
+        "original": id,
+        "measurement": {
+            "workspace_id": "root",
+            "source_revision": "R1",
+            "measured_at": "2026-10-05T07:00:00Z",
+        },
+        "targets": [{
+            "binding": {
+                "root_execution_id": crate::domain::RootExecutionId::new(),
+                "work_id": crate::WorkId::new(),
+                "run_id": crate::domain::WorkRunId::new(),
+                "work_revision": 3,
+                "claim_id": crate::domain::WorkClaimId::new(),
+                "claim_fence": 1,
+            },
+            "sighting": {"observation": id, "source_revision": "R1"},
+            "criteria": [1],
+        }],
+    });
+    let error = parse_host_control_request(&serde_json::to_vec(&frame).expect("encode frame"))
         .expect_err("removed operation must fail closed");
     assert!(error.contains("Data"));
 }

@@ -26,8 +26,7 @@ The terms used throughout:
 - **host observations**: the execution, source and test facts the host
   records, through `execution_observe`.
 - **registered verification**: a host-run check, registered before it ran
-  and bound to an item, recorded through `verification_record` and credited
-  to further items through `verification_bind`.
+  and bound to an item, recorded through `verification_record`.
 - **remote verification**: a test run on another host, delivered as its
   launcher's completion facts and a stated destination, through
   `remote_verification_record`.
@@ -71,8 +70,8 @@ credit.
 
 The channel accepts `control_connection_read`, `named_root_bind`,
 `named_root_read`, `named_root_sighting_read`, `acceptance_binding_read`,
-`acceptance_verification_read`, `execution_observe`, `verification_record`,
-`verification_bind` and `remote_verification_record`. Connection fencing,
+`acceptance_verification_read`, `execution_observe`, `verification_record`
+and `remote_verification_record`. Connection fencing,
 project/work/run/claim association, source validation, exact operation
 retries and evidence eligibility apply to every request. Naming a fresh root
 requires the live claim holder and fence; ending a root and recording an
@@ -588,8 +587,7 @@ operation_key: termal-run:<host_run_id>
 registration: {host_run_id, request_identity, registered_at,
   initiating_session_id, owning_session_id?, binding, root}
 root: {workspace_id, generation, state: named}
-input: {kind: commit, commit} | {kind: staged_tree, tree, base_commit}
-  | {kind: source_id, source_id}
+input: {kind: commit, commit} | {kind: source_id, source_id}
 run: {mode, command, started_at, finished_at, outcome}
 checks: [{stage, check_kind, command, check_fingerprint, started_at?,
   completed_at?, outcome, summary?, refs?, counts?}]
@@ -597,9 +595,10 @@ post_run: {outcome, clean_before, clean_after, dirty_paths?, disposition?}
   | {source_id}
 ```
 
-Commit input names its full commit; staged input names its exact tree,
-with base commit as provenance. These two historical representations retain
-their clean-before/after rule. The `source_id` input instead carries the
+Commit input names its full commit and retains its historical
+clean-before/after rule. A new `staged_tree` input is refused; one an earlier
+build stored, naming its exact tree with base commit as provenance, keeps being
+read and an exact retry of it replays. The `source_id` input instead carries the
 complete object returned by the shared source reader, and requires exactly
 the matching `{source_id}` post-run shape. Both objects must validate and be
 equal in full. Equal local changes and off-pin initialized submodules qualify;
@@ -648,10 +647,9 @@ moved association returns `verification_record_refused` with
 `details.field` and `details.reason`, recording nothing; the host retains it
 as not credited, without changing the key or substituting a later claim.
 
-For legacy input, `verification_bind` credits one registered check to several items: the check
-runs once, on one item's run, and binding gives every other item a record of
-it on its own run; see
-[binding one check to several items](acceptance-evaluation.md#binding-one-check-to-several-items).
+Records an earlier build bound from one registered check to several items stay
+readable; see
+[bound records from earlier builds](acceptance-evaluation.md#bound-records-from-earlier-builds).
 
 Only a typed, passed verification for the required check, exact run, and
 latest source revision may satisfy a verification obligation. The built-in
@@ -836,10 +834,8 @@ interpretation. Existing witnesses and staged-tree inputs keep their historical
 report-based rules. Non-registered verification, including bound copies, keeps
 its revision matching against the applicable observations.
 
-`verification_bind` can copy a credited legacy remote check through its ordinary
-bound branch, under its usual measurement rules. It explicitly refuses shared
-source input. Crediting another item with the result itself is a new delivery of
-the same origin.
+Crediting another item with the result itself is a new delivery of the same
+origin.
 
 ## Obligations from source changes
 

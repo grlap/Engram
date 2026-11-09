@@ -775,13 +775,22 @@ test("retained ordinary observations owe checks and registered evidence satisfie
 test("evaluation admission causes survive the native CLI and host-recorded evidence", async (t) => {
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr);
-  // These transport cases retain the historical source/cut admission rules.
-  // Committed input's live Git decision is exercised separately below.
+  // Bound cases cite registered checks of a real repository, since a live input
+  // is measured at evaluation. Its currency rules are exercised separately below.
   const revisionFor = (label) => gitRevision(label).replace("git-commit:", "git-tree:");
   for (const caseName of ["eligibility", "source_root", "wrong_run", "beyond_cut", "wrong_source"]) {
     const engramHome = fixtureHome(`engram-admission-${caseName.replaceAll("_", "-")}-`, t);
     const clients = [];
     let failure;
+    let sourceRoot;
+    const git = (...args) => {
+      const result = spawnSync("git", args, { cwd: sourceRoot, env: nativeEnvironment(), encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    const commit = () => git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+      "commit", "--no-gpg-sign", "--allow-empty", "-qm", "fixture");
+    const head = () => `git-commit:${git("rev-parse", "HEAD")}`;
     const actor = `admission-${caseName}`;
     const word = (session, ...args) => spawnNative(["--home", engramHome, "work", "--actor-id", session, "--session-id", session, ...args],
       { cwd: root, encoding: "utf8" });
@@ -799,6 +808,13 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
       { cwd: root, encoding: "utf8" });
       assert.equal(policy.status, 0, policy.stderr);
       const bound = ["wrong_run", "beyond_cut", "wrong_source"].includes(caseName);
+      if (bound) {
+        sourceRoot = fixtureHome("engram-admission-source-", t);
+        git("init", "-q");
+        writeFileSync(join(sourceRoot, "tracked"), "checked\n");
+        git("add", "tracked");
+        commit();
+      }
       const create = (session, title) => {
         const added = jsonWord(session, "add", title, "--accept", "the check supports the outcome",
           ...(bound ? ["--bind", "1=test"] : []));
@@ -812,21 +828,12 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         clients.push(client);
         assert.equal(ok(await client.request({ operation: "work_session_read" })).work_session, true);
         const request = async (frame) => ok(await client.request(frame));
-        const policy = () => readPolicy(engramHome);
-        if (bound) await ensureRoot({ request, binding, key: "admission",
-          source: { workspace_id: "admission-workspace" } });
+        const workspace = sourceRoot && realpathSync.native(sourceRoot);
+        if (bound) await ensureRoot({ request, binding, key: "admission", source: { workspace_id: workspace } });
         let sequence = 0;
-        const report = async (revision, check) => {
-          const key = `admission-report-${++sequence}`;
-          if (!revision) return;
-          const source = { workspace_id: "admission-workspace", source_revision: revisionFor(revision),
-            source_root_generation: 1, source_root_state: "named" };
-          if (check) return recordCheck({ request, binding, session, key, source,
-            input: { kind: "staged_tree", tree: source.source_revision.slice("git-tree:".length),
-              base_commit: gitRevision("admission-base").slice("git-commit:".length) } });
-          return observeHistoricalSource({ home: engramHome, request, policy, binding, key, source, changed: true });
-        };
-        return { client, binding, report };
+        const check = () => recordCheck({ request, binding, session, key: `admission-report-${++sequence}`,
+          source: { workspace_id: workspace, source_revision: head(), source_root_generation: 1, source_root_state: "named" } });
+        return { client, binding, check };
       };
       let citation;
       let beforeCheck;
@@ -844,36 +851,34 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         const other = "foreign-admission-runner";
         const otherRef = create(other, "Evidence belongs to another run");
         const host = await attachHost(other, otherRef);
-        citation = (await host.report("admission-R", true)).verifications[0].record_id;
+        citation = (await host.check()).verifications[0].record_id;
       }
       if (caseName === "beyond_cut" || caseName === "wrong_source") {
         const host = await attachHost(actor, ref);
+        // A live input needs a check of the judged source at the cut before
+        // citation admission runs, so each case supplies one.
+        if (caseName === "beyond_cut") await host.check();
         beforeCheck = jsonWord(actor, "show", ref).evidence_basis;
-        citation = (await host.report("admission-R", true)).verifications[0].record_id;
-        if (caseName === "wrong_source") await host.report("admission-S", false);
+        citation = (await host.check()).verifications[0].record_id;
+        if (caseName === "wrong_source") {
+          commit();
+          await host.check();
+        }
       }
       const shown = jsonWord(actor, "show", ref);
       const cut = caseName === "beyond_cut" ? beforeCheck : shown.evidence_basis;
-      const revision = revisionFor(caseName === "wrong_source" ? "admission-S" : "admission-R");
+      const revision = sourceRoot ? head() : revisionFor("admission-R");
       const result = word(actor, "evaluate", ref, "--mode", "same-session", "--acceptance-basis", String(shown.acceptance_basis),
         "--evidence-basis", String(cut), "--verdict", `1=pass:${bound ? "observed" : "judgment"}`,
         "--rationale", "1=judge the supplied evidence", "--evidence", `1=${citation}`,
         ...(caseName === "eligibility" || caseName === "wrong_run" ? [] : ["--source-fingerprint", revision]), "--json");
       assert.equal(result.status, 1, `${caseName}: ${result.stderr}`);
       const error = JSON.parse(result.stderr).error;
-      if (caseName === "beyond_cut") {
-        assert.equal(error.code, "acceptance_evaluation_resubmit", result.stderr);
-        assert.ok(error.details.reason.includes(`a host check was recorded after evidence basis ${cut}`), result.stderr);
-        assert.match(error.details.remedy, /re-read show/u);
-        assert.equal(jsonWord(actor, "show", ref).evidence_basis, shown.evidence_basis);
-        assert.deepEqual(jsonWord(actor, "show", ref, "--evaluations").evaluations, []);
-        continue;
-      }
       assert.equal(error.code, "acceptance_evaluation_refused", `${caseName}: ${result.stderr}`);
       const cause = error.details.cause;
       assert.equal(cause.kind, bound ? "citation" : caseName);
       assert.equal(cause.mismatch, ({ eligibility: "same_session_unmarked", source_root: "no_initial_sighting",
-        wrong_run: "not_on_run", wrong_source: "wrong_source" })[caseName]);
+        wrong_run: "not_on_run", beyond_cut: "beyond_cut", wrong_source: "wrong_source" })[caseName]);
       assert.equal(typeof error.details.remedy, "string");
       assert.ok(error.reminders.includes(error.details.remedy));
       assert.ok(error.next.some((command) => command.includes(ref)));
@@ -887,10 +892,23 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         assert.equal(cause.evaluated_cut, cut);
         assert.equal(cause.requirement.check_kind, "test");
       }
+      if (caseName === "beyond_cut") {
+        // A verdict with no pass has no live source decision, so the later
+        // check moves its basis and asks for a fresh reading.
+        const moved = word(actor, "evaluate", ref, "--mode", "same-session", "--acceptance-basis", String(shown.acceptance_basis),
+          "--evidence-basis", String(cut), "--verdict", "1=fail:judgment", "--rationale", "1=judge the supplied evidence", "--json");
+        assert.equal(moved.status, 1, moved.stderr);
+        const movedError = JSON.parse(moved.stderr).error;
+        assert.equal(movedError.code, "acceptance_evaluation_resubmit", moved.stderr);
+        assert.ok(movedError.details.reason.includes(`a host check was recorded after evidence basis ${cut}`), moved.stderr);
+        assert.match(movedError.details.remedy, /re-read show/u);
+        assert.equal(jsonWord(actor, "show", ref).evidence_basis, shown.evidence_basis);
+        assert.deepEqual(jsonWord(actor, "show", ref, "--evaluations").evaluations, []);
+      }
     } catch (error) {
       failure = error;
     } finally {
-      await finishFixture(failure, clients, () => removeFixtureHomes(engramHome));
+      await finishFixture(failure, clients, () => removeFixtureHomes(engramHome, ...(sourceRoot ? [sourceRoot] : [])));
     }
   }
 });
