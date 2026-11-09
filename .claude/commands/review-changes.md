@@ -292,7 +292,8 @@ supplied base even though the checkout is clean.
 A candidate commit, under the candidate-commits rule in the Authority and Git
 section of AGENTS.md and CLAUDE.md, is such a committed input. The parent
 commits its change on its own feature branch or detached worktree, never on
-master and never pushed, and follows the "Commit messages" section, because a
+master and pushed only as a test ref under the test-ref bullets in AGENTS.md
+and CLAUDE.md, and follows the "Commit messages" section, because a
 fast-forward keeps that commit in master's history. Its freeze identity is the
 commit plus an empty `git status --porcelain --untracked-files=all`, which
 respects `.gitignore`. Record the base commit, the candidate commit and its
@@ -300,10 +301,11 @@ tree id on the item and in the brief before validation starts. Focused checks
 and reviews may run on such a commit. The final full gate runs on a clean
 checkout of a single candidate commit whose parent is the current master, and
 the landing is exactly that commit. When the integration owner commits a
-candidate under the test-refs bullet in AGENTS.md and CLAUDE.md and pushes it
-as a test ref, the only push a candidate receives, a full gate run by the
-standard launcher on that ref is this final full gate, and it gates only the
-fast-forward of master to that same commit.
+candidate under the Test refs bullet in AGENTS.md and CLAUDE.md and pushes it
+as a test ref, a full gate run by the standard launcher on that ref, with that
+bullet's records, is this final full gate, and it gates only the fast-forward
+of master to that same commit. A run on an author test ref counts exactly as
+the same run from a bundle of that commit would, and no more.
 
 The integration owner lands a candidate only by fast-forwarding master to
 exactly that gated commit, when the standing approval's conditions hold, and

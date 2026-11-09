@@ -33,6 +33,20 @@ Report failed reads as a recovery gap, not as an empty result. A host that
 cannot deliver these instructions after compaction must disclose that gap;
 their presence in a file alone does not prove delivery.
 
+### Keeping project memories tidy
+
+Memories hold lasting facts and notes that later sessions need, including notes
+that point to a rule's source. Queues, plans, status and other current state go
+on work items. Revise an existing entry instead of adding a dated copy.
+`forget` an entry once it stops being true, knowing that it retires the key for
+good: no read returns any of its revisions and the key can't be reused, though
+the rows stay in the store. So first read its current text and move anything
+still in force, above all Greg's words, to a live entry or an item. Tidying
+doesn't go through old revisions or recover forgotten entries. A session that
+may write fixes a stale entry it notices, a read-only session reports it to its
+parent, and a coordinator looks over the list now and then. This adds no gate
+and no size limit.
+
 ### Work only in the repository folder
 
 - Create, change, move and delete files only inside this repository's folder
@@ -76,9 +90,10 @@ their presence in a file alone does not prove delivery.
 
 - Never commit, push, rebase, or force-push without explicit user
   permission. Read-only Git inspection is always allowed. The standing
-  approval below is such permission for commit, push and install only, and
-  the candidate-commits bullet for a candidate commit only; neither covers a
-  rebase, force-push or history rewrite.
+  approval below is such permission for commit, push and install only, the
+  candidate-commits bullet for a candidate commit only, and the two test-ref
+  bullets for their own pushes only; none covers a rebase, force-push or
+  history rewrite.
 - Standing approval: once all of these hold, land the changeset without
   asking (commit it on master, or fast-forward master to its gated candidate
   commit), push and install it as described below, and report the landed
@@ -146,9 +161,10 @@ their presence in a file alone does not prove delivery.
 - Candidate commits (Greg, 2026-10-31: 'zatwierdzam opcje B', 'idzmy na
   prostsa opcja B / zatwierdzam'). So that focused checks, reviews and the
   full gate run on a clean commit, a writable session may commit its change
-  on its own feature branch or detached worktree, never on master and never
-  pushed. A candidate commit is not a landing and grants no push, install or
-  restart. The final full gate runs on a clean checkout of a single
+  on its own feature branch or detached worktree, never on master, and pushed
+  only as a test ref under the two test-ref bullets below. A candidate commit
+  is not a landing and grants no other push, install or restart. The final
+  full gate runs on a clean checkout of a single
   candidate commit whose parent is the current master. The integration
   owner lands it only by fast-forwarding master to exactly that gated
   commit, when the standing approval's conditions above hold. If master has
@@ -209,8 +225,9 @@ their presence in a file alone does not prove delivery.
   Greg's recorded word on that widening, verbatim with its source, by any
   route; recording his words, narrowing, or clarifying needs only (a), (b)
   and (c). No other approval is asked.
-- Outside the standing approval's conditions above and the candidate-commits
-  bullet, a commit or push needs Greg's own word, given in the acting session
+- Outside the standing approval's conditions above, the candidate-commits
+  bullet and the two test-ref bullets below, a commit or push needs Greg's own
+  word, given in the acting session
   or relayed by Engram::Asistant, the session Greg designated for talking with
   him directly. A relayed word counts only when Asistant quotes it verbatim
   with its source mailbox and sequence, and it names the change or commit it
@@ -276,10 +293,11 @@ their presence in a file alone does not prove delivery.
   run's records; it gates
   only a landing whose master commit has that tree id, and until then it is
   evidence only. A test-ref commit is also a candidate commit for the
-  candidate-commits bullet's fast-forward landing: its push under this bullet
-  is the only push such a candidate receives, and that bullet's "never pushed"
-  still governs every other candidate. A full gate run on its test ref is then
-  the candidate's final full gate and gates only fast-forwarding master to that
+  candidate-commits bullet's fast-forward landing: apart from an author test
+  ref of the same commit under the next bullet, its push under this bullet is
+  the only push such a candidate receives. A full gate run on the ref pushed
+  under this bullet, with the records above, is then the candidate's final
+  full gate and gates only fast-forwarding master to that
   same commit, so the test-ref commit and the landed commit are identical.
   Another commit with the same tree, such as a fresh candidate on a moved
   master, is gated afresh as that bullet describes. A change that touches
@@ -293,6 +311,33 @@ their presence in a file alone does not prove delivery.
   and at the latest when the input's items close, and records the push and the
   deletion (commit id, tree id, fingerprint, times) on the item. This grants
   no other commit, push, install or restart.
+- Author test refs (Greg, 2026-11-09, relayed by Engram::Asistant in mailbox
+  43498a6e #782: „prosze zapisac to jako skille i instrukcje w pamieci / ja
+  nie widze innego sensu”, answering his question in #780, „nie rozumiem,
+  czemu po prostu nie wysylamy brancha ?”, and the proposal relayed to him
+  in #781 that coders push their own candidate commits to test branches on
+  origin at any stage, so that remote runners test the exact commit). As a
+  further exception, the session that wrote a candidate commit may push
+  exactly that commit to origin as `refs/heads/author-test/<item>-<commit8>`,
+  where `<item>` is the item's short work ref and `<commit8>` is the first
+  eight hex digits of the commit id, with the explicit refspec
+  `<commit>:refs/heads/author-test/<item>-<commit8>`: never master or another
+  branch, another remote, a force-push, rebase or merge. The push only
+  creates that ref: the pusher first confirms it is absent on origin and
+  never updates an existing ref. The candidate's parent must already be on
+  origin, so that the push publishes no other commit. No review is needed
+  first. The repository is public and a pushed ref is visible to anyone, so
+  before pushing, the pusher confirms the whole candidate is safe to publish
+  and carries no secret. The runner fetches the ref into its own clone,
+  checks the commit out in a fresh worktree whose index and tracked files
+  equal that commit and which holds no untracked files, and confirms that
+  the commit it ran is the one the request names. A run on such a ref counts
+  exactly as the same run from a bundle of that commit would, and gains no
+  landing weight that such a bundle run lacks; the landing rules are
+  unchanged. The pusher deletes only that same ref, with an explicit refspec,
+  once the run's evidence is recorded, and at the latest when the item
+  closes, and records the push and the deletion (commit id, times) on the
+  item. This grants no other commit, push, install or restart.
 - S3 pilot folder exchange (Greg, 2026-10-20: option (c), "the private
   bare repository under target/s3-pilot/folder.git over the existing
   Windows↔Mac SSH path, never origin"). As an exception to the bullets
@@ -325,7 +370,7 @@ their presence in a file alone does not prove delivery.
 ### Commit messages
 Use a short imperative subject naming the concrete change and its purpose or observable effect. It must make sense without opening a hash or tracker item. An optional type/scope prefix or work reference may appear in the subject; a hash, fingerprint, work ref or vague "updates" alone is not a subject. A combined landing describes its actual combined changes. Merge/revert messages identify the change they merge or revert.
 Add a body only when it explains a non-obvious reason or constraint. Work references belong in the subject, not the body. Keep gate run ids and validation results on the work item and in its retained evidence; do not require a future gate result in a commit created before that gate.
-Remote test-ref commits use the same meaningful subject and include the complete review-freeze fingerprint in a body trailer: `Review-Freeze: <fingerprint>`. The test-ref name, recorded tree identity and all other review/gate/landing requirements stay unchanged.
+Commits the Merger pushes under the Test refs bullet use the same meaningful subject and include the complete review-freeze fingerprint in a body trailer: `Review-Freeze: <fingerprint>`. The test-ref name, recorded tree identity and all other review/gate/landing requirements stay unchanged.
 This rule is prospective: do not amend, rebase or force-push existing history or repeat a review/gate just to change a message. It adds no formatting gate and grants no new Git authority.
 
 ### Cross-project feedback
@@ -793,4 +838,4 @@ At session end: run the checks applicable to the changed files, update your
 Engram items (`note`, `done`), and report changed files and validation. Commit or
 push only on Greg's explicit word or under the standing approval in
 Authority and Git, or, for a candidate commit only, under its
-candidate-commits bullet.
+candidate-commits bullet, or, for a test ref only, under the test-ref bullets.

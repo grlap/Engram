@@ -338,7 +338,7 @@ outside the agreed scope or authority; reviewer leaves remain read-only.
 Do not commit, push, or sync remotes without explicit authority: Greg's word
 or, for commit, push and install only, the standing approval in AGENTS.md
 "Authority and Git", or, for a candidate commit only, its candidate-commits
-bullet.
+bullet, or, for a test ref only, its test-ref bullets.
 
 When `done` records a landing, copy each value from a command's output; never
 type it: the landed commit from `git rev-parse HEAD` run after the push, never
