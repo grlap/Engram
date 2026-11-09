@@ -36,6 +36,15 @@ as unavailable, spawns no further reviewer, and does not satisfy the standing
 approval's review condition. Do not substitute platform subagents, shell
 processes, raw HTTP, or nested TermAl review sessions for those reviewers.
 
+Under the family split the standing approval allows, record the family map on
+the item before the round, then obtain one such pair for each family on the
+same freeze, and give each pair's brief its family's paths. What this command
+says about the pair or both reviewers applies to each family's pair, and the
+round counts only when every family's pair has delivered two reviews that
+count. A fix round re-runs every family's pair on the new freeze. An optional
+third review may cover one family or the whole input. A Coder round adopted
+under section 6a that used the split includes its recorded family map.
+
 Kimi may give an optional third read-only review (Greg, 2026-09-29, 'mozemy
 trzymac Kimi jako 3 reviewer'a, decyzja dla rady obu projektow, moze byc
 niezalezna'; Engram's council chose optional on that date). The parent may

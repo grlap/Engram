@@ -117,6 +117,18 @@ and no size limit.
     stands in for both reviewers of the same round, and every other condition
     is unchanged; any out-of-scope finding was filed as an
     independent root with provenance.
+    For a large input, the parent may instead split one round by module
+    family across up to three Codex and Claude reviewer pairs running in
+    parallel on the same verified freeze. Its family map, recorded on the
+    item before the round, assigns every path the change touches against
+    its base (added, modified, deleted or mode-changed, and both sides of a
+    rename), with integration seams as their own family, to exactly one
+    pair. Such a round meets this condition only when every family's pair
+    has delivered two reviews that count, the Kimi stand-in rule above
+    applying within each pair, and all the pairs' findings together leave
+    no outstanding in-scope finding of Medium or higher. Each pair reviews
+    its whole family, and a fix round re-runs every family's pair on the
+    new freeze.
     A clean latest round completed by the Coder on a verified frozen
     package before its complete READY handoff also counts when the Merger
     cleanly carries its reviewed changes onto current master under
@@ -157,7 +169,8 @@ and no size limit.
   force-push or history rewrite is needed, or one of the two reviews the
   review condition requires is unavailable and no stand-in under the review
   condition above has reviewed the same frozen tree (an unavailable review
-  is not a clean review).
+  is not a clean review); under a family split this applies to each
+  family's pair, and a stand-in counts only for its own family.
 - Candidate commits (Greg, 2026-10-31: 'zatwierdzam opcje B', 'idzmy na
   prostsa opcja B / zatwierdzam'). So that focused checks, reviews and the
   full gate run on a clean commit, a writable session may commit its change
@@ -649,7 +662,8 @@ authority.
    run required project tests, freeze the current input, obtain exactly two
    independent read-only reviews from different vendors — Codex and Claude,
    with at most one Kimi stand-in, for an unavailable Codex or Claude, as the
-   standing approval describes — then consolidate findings. The parent
+   standing approval describes — or the family split the standing approval
+   allows, then consolidate findings. The parent
    owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
    Use supported host tools for required checks. Keep host-security acceptance
    separate from product review, with no competing owners or duplicate proof
@@ -688,7 +702,8 @@ waiting to integrate its documentation does not postpone it.
 
 - `/review-changes` runs parent-owned quality gates, freezes the worktree, and
   delegates exactly two `/review-code` reviewers from different vendors, one
-  Codex and one Claude, through TermAl with `writePolicy: readOnly`; at most
+  Codex and one Claude, or one such pair per family under the standing
+  approval's family split, through TermAl with `writePolicy: readOnly`; at most
   one Kimi stand-in, for an unavailable Codex or Claude, as the standing
   approval describes; the parent may add the optional third review below.
 - Kimi may give an optional third read-only review. The parent may
@@ -740,7 +755,8 @@ Review scheduling:
   has one focus.
 - Fix rounds keep both reviewers: a fix for a Low can turn into a High. Their
   brief may point at the change since the previous freeze, but both review the
-  whole input.
+  whole input; under a family split, each family's pair reviews its whole
+  family on the new freeze.
 
 This repository tracks its work in Engram (see Work Tracking below).
 
