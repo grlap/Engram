@@ -50,6 +50,14 @@ impl AgentVerbs {
             self.service
                 .project_memory_retirement_candidates(view.status.work.work_id, now)
         });
+        // Read once the completion is durable: a failure here is disclosed in
+        // the receipt and never undoes or refuses the completion.
+        let served_root = match &result {
+            WorkCompleteResult::Completed(completed) => {
+                Some(self.service.served_named_root(&completed.seal, now))
+            }
+            WorkCompleteResult::Refused(_) => None,
+        };
         let after = self.refreshed(&view, now)?;
         let child_resolution = match &result {
             WorkCompleteResult::Refused(refusal) => {
@@ -80,6 +88,12 @@ impl AgentVerbs {
                             short(&parent.status.work.title)
                         ),
                     );
+                }
+                if let Some(reminder) = served_root
+                    .as_ref()
+                    .and_then(|served| served_root_reminder(&work_ref, served))
+                {
+                    guidance.reminders.push(reminder);
                 }
                 let mut lines = vec![
                     format!("done {work_ref} \"{title}\""),
@@ -206,6 +220,12 @@ impl AgentVerbs {
                         self.service.display_identity(),
                     ),
                 });
+                if let Some(Ok(Some(served))) = &served_root {
+                    value["named_root"] = json!({
+                        "workspace": served.workspace_id,
+                        "shared_with_open_claim": served.shared,
+                    });
+                }
                 if receipt.landing.is_some() || receipt.landing_unavailable.is_some() {
                     value["landing"] = super::super::show::landing_value(
                         receipt.landing.as_ref(),
@@ -287,5 +307,24 @@ impl AgentVerbs {
             };
         }
         Ok(receipt)
+    }
+}
+
+/// The reminder that the item's named root has served it, unless another live
+/// claim of the same session still names that workspace. Engram removes
+/// nothing; the agent does, once nothing else needs the workspace.
+fn served_root_reminder(
+    work_ref: &str,
+    served: &Result<Option<crate::storage::ServedNamedRoot>, crate::StoreError>,
+) -> Option<String> {
+    match served {
+        Ok(Some(served)) if !served.shared => Some(format!(
+            "{work_ref}'s named root {} has served it: remove that worktree once nothing else needs it (Engram removes nothing)",
+            served.workspace_id
+        )),
+        Ok(_) => None,
+        Err(error) => Some(format!(
+            "could not read the named root {work_ref} used, so check yourself whether its worktree can be removed: {error}"
+        )),
     }
 }

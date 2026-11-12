@@ -1163,7 +1163,15 @@ another workspace recorded before the binding is displaced instead, and
 revision REV); captured before the named root, displaced and not verified`,
 then `foreign workspace changes: N more not shown (T in total)`; with
 `--json` they are in `foreign_workspace_changes` and
-`foreign_workspace_changes_omitted`. A peer's `next` delta for an
+`foreign_workspace_changes_omitted`. When the completed claim had a named
+root bound at its completion, `done` adds the reminder `REF's named root WS
+has served it: remove that worktree once nothing else needs it (Engram
+removes nothing)`, and `--json` and MCP carry `named_root` with `workspace`
+and `shared_with_open_claim`. While another live claim of the same session
+names the same workspace, `shared_with_open_claim` is true and the reminder
+is left out; a lapsed claim or another session's claim never holds it back.
+Engram removes and inspects no file. If the root cannot be read, a reminder
+says so and the completion stands. A peer's `next` delta for an
 execution observation begins with the change, in one word each: `changed:
 WORD` when the host said how it found the change, `changed` when it did
 not, `repeat; host: WORD` when the host said how it found a change the core

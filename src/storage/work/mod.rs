@@ -66,6 +66,8 @@ mod receipts;
 mod record_windows;
 mod sealed_source;
 pub(crate) use sealed_source::{SealedSourceBasis, SealedSourceDiagnostic, SealedSourceFact};
+mod served_root;
+pub(crate) use served_root::ServedNamedRoot;
 pub(crate) mod refusal_labels;
 mod verification_read;
 pub(crate) use verification_read::VerificationReadRequest;

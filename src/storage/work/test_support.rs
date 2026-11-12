@@ -496,6 +496,79 @@ pub(crate) fn verification_note_fixture(
     (work.short_ref, verification, claim.claim_id.0.to_string())
 }
 
+/// One item of [`named_roots_fixture`]: who claims it, for how long, and the
+/// workspace the host names as its root, if any.
+pub(crate) struct NamedRootClaim<'a> {
+    pub holder: &'a str,
+    pub ttl_seconds: i64,
+    pub root: Option<&'a str>,
+}
+
+/// A file store at `database` holding one item per entry of `claims`, each
+/// claimed at `claimed_at` and named by its holder's host as the entry says.
+/// Returns their short refs in the same order.
+pub(crate) fn named_roots_fixture(
+    database: &std::path::Path,
+    project: &str,
+    claimed_at: DateTime<Utc>,
+    claims: &[NamedRootClaim<'_>],
+) -> Vec<String> {
+    let mut store = SqliteStore::open(database).expect("store");
+    claims
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let holder = entry.holder;
+            let root = entry.root;
+            let work = store
+                .create_work(
+                    &root_request(project, &format!("named-roots-{index}"), 1),
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("work");
+            let claim = store
+                .claim_work(
+                    &ClaimWorkRequest {
+                        work_id: work.work_id,
+                        expected_work_revision: work.revision,
+                        expected_run_id: work.active_run_id,
+                        holder: SessionId(holder.into()),
+                        ttl_seconds: entry.ttl_seconds,
+                        recovery_reason: None,
+                        actor: actor(holder),
+                        idempotency_key: format!("named-roots-claim-{index}"),
+                        claimed_at,
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("claim work");
+            if let Some(workspace) = root {
+                let host =
+                    super::super::test_support::open_work_host(&mut store, holder, claimed_at);
+                store
+                    .bind_named_root(
+                        &work.project_id,
+                        &host.session_id,
+                        &host.connection_token,
+                        crate::storage::HostSessionAuthority::Work,
+                        claim.claim_id,
+                        claim.fence,
+                        workspace,
+                        1,
+                        claimed_at,
+                        crate::domain::NamedRootBindingKind::Bound,
+                        None,
+                        &mut actor(holder),
+                        &format!("named-roots-bind-{index}"),
+                        claimed_at,
+                    )
+                    .expect("host names the root");
+            }
+            work.short_ref
+        })
+        .collect()
+}
+
 /// A file store at `database` holding one item whose first criterion binds a
 /// test, claimed by `holder`: a flagged source change in workspace-old at R1,
 /// then a passed test of R2 in workspace-new, a move the host never reported

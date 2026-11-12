@@ -131,8 +131,11 @@ mod observation_windows;
 mod operations;
 mod projection;
 mod sealed_source;
+mod served_root;
 pub(crate) use deciding::{ShownDecidingObservation, bounded as bounded_shown_field};
 pub(crate) use projection::normalize_actor_context;
+#[cfg(test)]
+pub(crate) use served_root::FAIL_NEXT_SERVED_ROOT_READ;
 mod propose;
 mod record_windows;
 pub(crate) use record_windows::ASSESSMENT_CONTINUATION_REFUSAL;

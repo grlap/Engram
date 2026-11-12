@@ -80,6 +80,7 @@ pub(crate) use work::BindingReadRequest;
 #[cfg(test)]
 pub(crate) use work::FocusBinding;
 pub(crate) use work::RootReadScope;
+pub(crate) use work::ServedNamedRoot;
 pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
 #[cfg(test)]
@@ -283,10 +284,10 @@ pub(crate) use work::exchange_fixture;
 pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]
 pub(crate) use work::test_support::{
-    HostCheck, assessed_verification_fixture, bound_verification_refusal_fixture,
+    HostCheck, NamedRootClaim, assessed_verification_fixture, bound_verification_refusal_fixture,
     closed_then_live_verification_fixture, later_ended_and_open_verification_fixture,
-    stale_deciding_refusal_fixture, unreported_move_fixture, verification_note_fixture,
-    verification_workspace_notes_fixture,
+    named_roots_fixture, stale_deciding_refusal_fixture, unreported_move_fixture,
+    verification_note_fixture, verification_workspace_notes_fixture,
 };
 
 #[cfg(test)]
