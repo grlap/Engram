@@ -175,6 +175,12 @@ fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
              CREATE INDEX work_items_ready ON work_items(work_id);
              DROP INDEX work_run_active;
              CREATE UNIQUE INDEX work_run_active ON work_runs(run_id);
+             DROP INDEX work_items_replacement_reverse;
+             CREATE INDEX work_items_replacement_reverse ON work_items(work_id);
+             DROP INDEX work_completion_seals_work;
+             CREATE INDEX work_completion_seals_work ON work_completion_seals(seal_id);
+             DROP INDEX objects_task_sync_membership_checkpoint;
+             CREATE INDEX objects_task_sync_membership_checkpoint ON objects(object_id);
              DROP TABLE work_catalog_fts;
              CREATE TABLE work_catalog_fts (
                  work_id TEXT,
@@ -196,12 +202,14 @@ fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
         refused
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master
-                 WHERE name IN ('work_items_ready', 'work_run_active', 'work_catalog_fts')",
+                 WHERE name IN ('work_items_ready', 'work_run_active', 'work_catalog_fts',
+                     'work_items_replacement_reverse', 'work_completion_seals_work',
+                     'objects_task_sync_membership_checkpoint')",
                 [],
                 |row| row.get::<_, i64>(0),
             )
             .expect("count missing projections"),
-        3,
+        6,
         "ordinary open must preserve the wrong definitions"
     );
     drop(refused);
@@ -214,7 +222,13 @@ fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
         reopened.get_work_item(root.work_id).expect("work survives"),
         root
     );
-    for index in ["work_items_ready", "work_run_active"] {
+    for index in [
+        "work_items_ready",
+        "work_run_active",
+        "work_items_replacement_reverse",
+        "work_completion_seals_work",
+        "objects_task_sync_membership_checkpoint",
+    ] {
         assert_eq!(
             reopened
                 .connection

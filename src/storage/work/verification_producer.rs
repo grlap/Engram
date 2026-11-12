@@ -28,62 +28,7 @@ pub(in crate::storage) fn load_verification_producer_on(
         "registered_host_run" => {
             let producer: RegisteredHostRun =
                 load_typed_work_object(connection, id, "registered_host_run")?;
-            let check = producer
-                .request
-                .checks
-                .iter()
-                .find(|check| {
-                    check.check_kind == evidence.check_kind
-                        && check.check_fingerprint == evidence.check_fingerprint
-                        && check.completed_at == Some(evidence.completed_at)
-                        && matches!(
-                            (check.outcome, evidence.result),
-                            (
-                                RegisteredVerificationOutcome::Passed,
-                                VerificationResult::Passed
-                            ) | (
-                                RegisteredVerificationOutcome::Failed,
-                                VerificationResult::Failed
-                            ) | (
-                                RegisteredVerificationOutcome::Indeterminate,
-                                VerificationResult::Indeterminate
-                            )
-                        )
-                })
-                .ok_or_else(|| {
-                    StoreError::InvalidWorkProjection(format!(
-                        "verification has no matching terminal check in producer {id}"
-                    ))
-                })?;
-            let outcome = match check.outcome {
-                RegisteredVerificationOutcome::Passed => ExecutionOutcome::Succeeded,
-                RegisteredVerificationOutcome::Failed => ExecutionOutcome::Failed,
-                RegisteredVerificationOutcome::Indeterminate => ExecutionOutcome::Unknown,
-                RegisteredVerificationOutcome::NotRun => {
-                    return Err(StoreError::InvalidWorkProjection(
-                        "a not-run check cannot be verification evidence".into(),
-                    ));
-                }
-            };
-            let root = &producer.request.registration.root;
-            let source_basis = producer.request.input.source_basis(root);
-            Ok(VerificationProducerFacts {
-                project_id: producer.project_id,
-                binding: producer.request.registration.binding,
-                session_id: producer.session_id,
-                action_fingerprint: check.check_fingerprint.clone(),
-                outcome,
-                run_outcome: Some(match producer.request.run.outcome {
-                    RegisteredVerificationOutcome::Passed => ExecutionOutcome::Succeeded,
-                    RegisteredVerificationOutcome::Failed => ExecutionOutcome::Failed,
-                    RegisteredVerificationOutcome::Indeterminate
-                    | RegisteredVerificationOutcome::NotRun => ExecutionOutcome::Unknown,
-                }),
-                source_basis: Some(source_basis),
-                observed_at: check.completed_at,
-                actor: producer.actor,
-                recorded_at: producer.recorded_at,
-            })
+            registered_producer_facts(producer, evidence)
         }
         crate::domain::REMOTE_VERIFICATION_ASSOCIATION_KIND => {
             super::remote_verification::producer_facts_on(connection, id)
@@ -92,4 +37,67 @@ pub(in crate::storage) fn load_verification_producer_on(
             "verification producer {id} has unsupported kind {kind}"
         ))),
     }
+}
+
+pub(in crate::storage) fn registered_producer_facts(
+    producer: RegisteredHostRun,
+    evidence: &VerificationEvidence,
+) -> Result<VerificationProducerFacts, StoreError> {
+    let id = &evidence.producer_observation;
+    let check = producer
+        .request
+        .checks
+        .iter()
+        .find(|check| {
+            check.check_kind == evidence.check_kind
+                && check.check_fingerprint == evidence.check_fingerprint
+                && check.completed_at == Some(evidence.completed_at)
+                && matches!(
+                    (check.outcome, evidence.result),
+                    (
+                        RegisteredVerificationOutcome::Passed,
+                        VerificationResult::Passed
+                    ) | (
+                        RegisteredVerificationOutcome::Failed,
+                        VerificationResult::Failed
+                    ) | (
+                        RegisteredVerificationOutcome::Indeterminate,
+                        VerificationResult::Indeterminate
+                    )
+                )
+        })
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(format!(
+                "verification has no matching terminal check in producer {id}"
+            ))
+        })?;
+    let outcome = match check.outcome {
+        RegisteredVerificationOutcome::Passed => ExecutionOutcome::Succeeded,
+        RegisteredVerificationOutcome::Failed => ExecutionOutcome::Failed,
+        RegisteredVerificationOutcome::Indeterminate => ExecutionOutcome::Unknown,
+        RegisteredVerificationOutcome::NotRun => {
+            return Err(StoreError::InvalidWorkProjection(
+                "a not-run check cannot be verification evidence".into(),
+            ));
+        }
+    };
+    let root = &producer.request.registration.root;
+    let source_basis = producer.request.input.source_basis(root);
+    Ok(VerificationProducerFacts {
+        project_id: producer.project_id,
+        binding: producer.request.registration.binding,
+        session_id: producer.session_id,
+        action_fingerprint: check.check_fingerprint.clone(),
+        outcome,
+        run_outcome: Some(match producer.request.run.outcome {
+            RegisteredVerificationOutcome::Passed => ExecutionOutcome::Succeeded,
+            RegisteredVerificationOutcome::Failed => ExecutionOutcome::Failed,
+            RegisteredVerificationOutcome::Indeterminate
+            | RegisteredVerificationOutcome::NotRun => ExecutionOutcome::Unknown,
+        }),
+        source_basis: Some(source_basis),
+        observed_at: check.completed_at,
+        actor: producer.actor,
+        recorded_at: producer.recorded_at,
+    })
 }

@@ -27,8 +27,8 @@ fn setup_actor_context_materialize_preserves_raw_text_and_first_attribution() {
             let expected =
                 serde_json::to_value((!context.is_empty()).then_some(context.as_str())).unwrap();
             assert_eq!(first["attribution"]["actor_context"], expected);
-            let journal_path = fixture.root.join(format!(
-                ".git/engram-task-sync-materialize-{}-{}/journal.json",
+            let journal_path = fixture.admin.join(format!(
+                "engram-task-sync-materialize-{}-{}/journal.json",
                 fixture.setup, fixture.prepared
             ));
             let journal: Value = serde_json::from_slice(&fs::read(&journal_path).unwrap()).unwrap();

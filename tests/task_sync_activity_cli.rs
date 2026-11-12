@@ -4,6 +4,9 @@ mod test_support;
 #[path = "common/task_sync_opt_in.rs"]
 mod task_sync_opt_in;
 
+#[path = "common/task_sync_data_worktree.rs"]
+mod data_worktree;
+
 use std::{fs, path::Path, process::Command};
 
 use engram::{ProjectId, SqliteStore, project_database_path, task_sync::directory};
@@ -35,6 +38,7 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
     let fixture = test_support::temp_home().unwrap();
     let marker = fixture.path().join(".engram-project");
     fs::write(&marker, "activity-cli\n").unwrap();
+    let live = data_worktree::initialize(&marker);
     let project = ProjectId("activity-cli".into());
     let source = fixture.path().join("source");
     let target = fixture.path().join("target");
@@ -79,10 +83,11 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
     let receipt: Value = serde_json::from_slice(&success(
         command(&source, &marker)
             .args(["task-sync", "export"])
-            .arg(&candidate)
+            .arg(&live)
             .args(["--origin-machine", "machine-A"]),
     ))
     .unwrap();
+    data_worktree::retain_snapshot(&marker, &candidate);
     assert_eq!(receipt["notes_included"], false);
     assert_eq!(
         receipt["activity_omissions"]["counts"],
@@ -132,12 +137,14 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
         "--json",
     ]));
     let renewed = fixture.path().join("renewed");
+    data_worktree::clear(&marker);
     success(
         command(&source, &marker)
             .args(["task-sync", "export"])
-            .arg(&renewed)
+            .arg(&live)
             .args(["--origin-machine", "machine-A"]),
     );
+    data_worktree::retain_snapshot(&marker, &renewed);
     assert_eq!(
         directory::read_folder(&renewed)
             .unwrap()
@@ -147,6 +154,7 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
         documents
     );
     let import = |session: &str| -> Value {
+        data_worktree::stage_snapshot(&marker, &candidate);
         serde_json::from_slice(&success(
             command(&target, &marker)
                 .args([
@@ -157,7 +165,7 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
                     session,
                     "import",
                 ])
-                .arg(&candidate)
+                .arg(&live)
                 .arg("--empty-basis"),
         ))
         .unwrap()
@@ -172,12 +180,14 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
     // the imported activity unchanged under its own alias, or under none.
     for alias in [None, Some("machine-A"), Some("machine-B")] {
         let path = fixture.path().join(alias.unwrap_or("plain"));
+        data_worktree::clear(&marker);
         let mut export = command(&target, &marker);
-        export.args(["task-sync", "export"]).arg(&path);
+        export.args(["task-sync", "export"]).arg(&live);
         if let Some(alias) = alias {
             export.args(["--origin-machine", alias]);
         }
         success(&mut export);
+        data_worktree::retain_snapshot(&marker, &path);
         assert_eq!(
             directory::read_folder(&path)
                 .unwrap()

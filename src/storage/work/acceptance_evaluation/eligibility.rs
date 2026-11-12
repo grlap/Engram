@@ -208,22 +208,25 @@ pub(super) fn same_session_mark_author(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<Option<SessionId>, StoreError> {
-    Ok(mark_author(
-        canonical_work_mark_events_for_item(connection, item.work_id)?
-            .into_iter()
-            .map(|event| MarkStep {
-                transition: match event.transition {
-                    WorkTransition::Created { .. } if carried_over(&event.actor) => {
-                        MarkTransition::Other
-                    }
-                    WorkTransition::Created { .. } => MarkTransition::Created,
-                    WorkTransition::Revised { .. } => MarkTransition::Revised,
-                    _ => MarkTransition::Other,
-                },
-                marked: event.work.evaluation_mode == Some(AcceptanceEvaluationMode::SameSession),
-                session: event.actor.session_id,
-            }),
-    ))
+    Ok(historical_mark_author(canonical_work_mark_events_for_item(
+        connection,
+        item.work_id,
+    )?))
+}
+
+pub(super) fn historical_mark_author(
+    events: impl IntoIterator<Item = WorkEvent>,
+) -> Option<SessionId> {
+    mark_author(events.into_iter().map(|event| MarkStep {
+        transition: match event.transition {
+            WorkTransition::Created { .. } if carried_over(&event.actor) => MarkTransition::Other,
+            WorkTransition::Created { .. } => MarkTransition::Created,
+            WorkTransition::Revised { .. } => MarkTransition::Revised,
+            _ => MarkTransition::Other,
+        },
+        marked: event.work.evaluation_mode == Some(AcceptanceEvaluationMode::SameSession),
+        session: event.actor.session_id,
+    }))
 }
 
 /// Whether a creation copied the item from another one, as a detach does,
@@ -289,6 +292,25 @@ pub(super) fn same_session_ineligibility(
     mode: AcceptanceEvaluationMode,
     standing: &SessionStanding<'_>,
 ) -> Result<Option<SameSessionRefusal>, StoreError> {
+    let author = if mode == AcceptanceEvaluationMode::SameSession
+        && item.evaluation_mode == Some(AcceptanceEvaluationMode::SameSession)
+    {
+        same_session_mark_author(connection, item)?
+    } else {
+        None
+    };
+    Ok(same_session_ineligibility_with_author(
+        item, policy, mode, standing, author,
+    ))
+}
+
+pub(super) fn same_session_ineligibility_with_author(
+    item: &WorkItem,
+    policy: &AcceptanceEvaluationPolicy,
+    mode: AcceptanceEvaluationMode,
+    standing: &SessionStanding<'_>,
+    author: Option<SessionId>,
+) -> Option<SameSessionRefusal> {
     if mode == AcceptanceEvaluationMode::SubAgent {
         // A task marked for sub-agent evaluation refuses every other mode,
         // so its advice never names one.
@@ -297,7 +319,7 @@ pub(super) fn same_session_ineligibility(
         } else {
             host_evaluation_words(policy).unwrap_or("record it from the sub-agent's own session")
         };
-        return Ok(standing
+        return standing
             .evaluator
             .is_some_and(|evaluator| standing.holds_or_held(evaluator))
             .then(|| SameSessionRefusal {
@@ -306,40 +328,38 @@ pub(super) fn same_session_ineligibility(
                 ),
                 mismatch: EvaluationEligibilityMismatch::SubAgentEvaluatorAffiliated,
                 mark_author: None,
-            }));
+            });
     }
     if mode != AcceptanceEvaluationMode::SameSession {
-        return Ok(None);
+        return None;
     }
-    Ok(match item.evaluation_mode {
+    match item.evaluation_mode {
         None if !policy.admits_only_same_session() => Some(SameSessionRefusal {
             reason: unmarked_same_session(policy),
             mismatch: EvaluationEligibilityMismatch::SameSessionUnmarked,
             mark_author: None,
         }),
-        Some(AcceptanceEvaluationMode::SameSession) => {
-            match same_session_mark_author(connection, item)? {
-                None => Some(SameSessionRefusal {
-                    reason: ineligible_mark(
-                        policy,
-                        "has no author recorded on this item (it was restored, or carried over by a detach)",
-                    ),
-                    mismatch: EvaluationEligibilityMismatch::MarkAuthorUnrecorded,
-                    mark_author: None,
-                }),
-                Some(author) if standing.includes(&author) => Some(SameSessionRefusal {
-                    reason: ineligible_mark(
-                        policy,
-                        "was set by a session that evaluates, holds or executes its run",
-                    ),
-                    mismatch: EvaluationEligibilityMismatch::MarkAuthorAffiliated,
-                    mark_author: Some(author),
-                }),
-                Some(_) => None,
-            }
-        }
+        Some(AcceptanceEvaluationMode::SameSession) => match author {
+            None => Some(SameSessionRefusal {
+                reason: ineligible_mark(
+                    policy,
+                    "has no author recorded on this item (it was restored, or carried over by a detach)",
+                ),
+                mismatch: EvaluationEligibilityMismatch::MarkAuthorUnrecorded,
+                mark_author: None,
+            }),
+            Some(author) if standing.includes(&author) => Some(SameSessionRefusal {
+                reason: ineligible_mark(
+                    policy,
+                    "was set by a session that evaluates, holds or executes its run",
+                ),
+                mismatch: EvaluationEligibilityMismatch::MarkAuthorAffiliated,
+                mark_author: Some(author),
+            }),
+            Some(_) => None,
+        },
         _ => None,
-    })
+    }
 }
 
 pub(super) fn admit_identity(

@@ -277,7 +277,7 @@ async fn task_exchange_service_charges_admission_before_initial_capture() {
     let count = support.with(std::cell::Cell::get);
     super::super::super::test_support::SERVICE_STARTED.with(|value| {
         value.set(Some(
-            Instant::now().checked_sub(Duration::from_secs(3)).unwrap(),
+            Instant::now().checked_sub(Duration::from_secs(61)).unwrap(),
         ));
     });
     let error = service
@@ -285,7 +285,7 @@ async fn task_exchange_service_charges_admission_before_initial_capture() {
             &selection,
             &ExchangeOperation::Observe,
             RunLimits {
-                deadline: Duration::from_secs(2),
+                deadline: Duration::from_secs(60),
                 ..RunLimits::default()
             },
             &Cancellation::default(),

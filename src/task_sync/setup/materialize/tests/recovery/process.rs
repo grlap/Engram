@@ -18,7 +18,6 @@ struct Request {
     interrupt: Option<String>,
     response: PathBuf,
     git_query: Option<Vec<u8>>,
-    move_race: bool,
 }
 
 #[test]
@@ -63,12 +62,6 @@ fn task_materialize_process_entrypoint() {
         request.enabled,
         attribution(),
         &mut |point| {
-            if request.move_race && point == "before-move-0" {
-                fs::write(
-                    request.selection.repository.join(".gitignore"),
-                    b"concurrent ordinary edit\n",
-                )?;
-            }
             if request.interrupt.as_deref() == Some(point) {
                 // No Rust cleanup is run. OS exit releases locks and handles;
                 // every operation source/marker already written stays on disk.
@@ -85,15 +78,6 @@ fn task_materialize_process_entrypoint() {
 }
 
 fn child(fixture: &Fixture, boundary: Option<&str>, enabled: bool) -> std::process::Output {
-    child_with_race(fixture, boundary, enabled, false)
-}
-
-fn child_with_race(
-    fixture: &Fixture,
-    boundary: Option<&str>,
-    enabled: bool,
-    move_race: bool,
-) -> std::process::Output {
     let suffix = boundary.unwrap_or("finish");
     let request_path = fixture.owned.path().join(format!("process-{suffix}.json"));
     let response = fixture
@@ -107,7 +91,6 @@ fn child_with_race(
         interrupt: boundary.map(str::to_owned),
         response,
         git_query: None,
-        move_race,
     };
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     entry_command(fixture, &request_path).output().unwrap()
@@ -146,7 +129,7 @@ fn task_materialize_ignore_query_treats_glob_characters_as_literal_pathnames() {
     fs::create_dir(&tasks).unwrap();
     fs::write(tasks.join("[ab].json"), b"ordinary synthetic pathname").unwrap();
     fs::write(tasks.join("a.json"), b"separately ignored pathname").unwrap();
-    fs::write(fixture.root.join(".gitignore"), b"/.engram/tasks/a.json\n").unwrap();
+    fs::write(fixture.root.join(".engram/.gitignore"), b"/tasks/a.json\n").unwrap();
     // These are synthetic helper inputs. Real exported task names are UUID.json
     // and cannot contain glob characters; their format admission stays strict.
     let response = fixture.owned.path().join("query-response.json");
@@ -158,7 +141,6 @@ fn task_materialize_ignore_query_treats_glob_characters_as_literal_pathnames() {
         interrupt: None,
         response: response.clone(),
         git_query: Some(b".engram/tasks/[ab].json\0.engram/tasks/a.json\0".to_vec()),
-        move_race: false,
     };
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     let output = entry_command(&fixture, &request_path)
@@ -184,16 +166,6 @@ fn task_materialize_process_exit_recovers_every_publication_phase_from_retained_
     for existing in [false, true] {
         let mut boundaries = vec![
             "journal-published",
-            "replacement-ready-0",
-            "before-move-0",
-            "moved-0",
-            "before-setup-link-0",
-            "setup-linked-0",
-            "replacement-ready-1",
-            "before-move-1",
-            "moved-1",
-            "before-setup-link-1",
-            "setup-linked-1",
             "setup-checked",
             "public-checked",
             "complete-pending-created",
@@ -203,6 +175,12 @@ fn task_materialize_process_exit_recovers_every_publication_phase_from_retained_
         ];
         if existing {
             boundaries.extend([
+                "replacement-ready-0",
+                "before-setup-link-0",
+                "setup-linked-0",
+                "replacement-ready-1",
+                "before-setup-link-1",
+                "setup-linked-1",
                 "before-tasks-rename",
                 "tasks-renamed",
                 "before-project-link",
@@ -283,8 +261,11 @@ fn task_materialize_process_recovers_partial_completion_and_interrupted_repair_a
             let public = snapshot(&fixture.root.join(".engram"));
             let setup = [".gitignore", ".gitattributes"].map(|name| {
                 (
-                    fs::read(fixture.root.join(name)).unwrap(),
-                    file_identity(&fs::File::open(fixture.root.join(name)).unwrap()).unwrap(),
+                    fs::read(fixture.root.join(".engram").join(name)).unwrap(),
+                    file_identity(
+                        &fs::File::open(fixture.root.join(".engram").join(name)).unwrap(),
+                    )
+                    .unwrap(),
                 )
             });
             fixture.disable();
@@ -322,9 +303,15 @@ fn task_materialize_process_recovers_partial_completion_and_interrupted_repair_a
                 public_identity
             );
             for (index, name) in [".gitignore", ".gitattributes"].iter().enumerate() {
-                assert_eq!(fs::read(fixture.root.join(name)).unwrap(), setup[index].0);
                 assert_eq!(
-                    file_identity(&fs::File::open(fixture.root.join(name)).unwrap()).unwrap(),
+                    fs::read(fixture.root.join(".engram").join(name)).unwrap(),
+                    setup[index].0
+                );
+                assert_eq!(
+                    file_identity(
+                        &fs::File::open(fixture.root.join(".engram").join(name)).unwrap()
+                    )
+                    .unwrap(),
                     setup[index].1
                 );
             }

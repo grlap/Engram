@@ -56,6 +56,113 @@ fn task(title: &str) -> TaskDocument {
     }
 }
 
+#[test]
+fn selected_plan_reuses_folder_field_rules_without_deleting_omitted_context() {
+    let held = task("held");
+    let context = task("context");
+    let removed = task("removed");
+    let added = task("added");
+    let mut revised = held.clone();
+    revised.title = "updated held".into();
+    let current_tree = tree(&[held.clone(), context.clone(), removed.clone()]);
+    let resolved_tree = tree(&[revised.clone(), context.clone(), added.clone()]);
+    let current = current_tree
+        .tasks
+        .iter()
+        .map(|task| (task.id, task.clone()))
+        .collect();
+    let changes = BTreeMap::from([
+        (held.id, Some(revised)),
+        (removed.id, None),
+        (added.id, Some(added.clone())),
+    ]);
+    let membership = std::collections::BTreeSet::from([held.id, context.id, removed.id]);
+    let selected =
+        super::plan_selected(&current_tree.project, &current, &changes, &membership).unwrap();
+    let full = plan(
+        &current_tree,
+        &resolved_tree,
+        &membership.iter().copied().collect::<HashSet<_>>(),
+    )
+    .unwrap();
+    assert_eq!(selected.project, full.project);
+    assert_eq!(
+        selected.tasks,
+        full.tasks
+            .into_iter()
+            .filter(|task| changes.contains_key(&task.id))
+            .collect::<Vec<_>>()
+    );
+    assert!(!selected.tasks.iter().any(|task| task.id == context.id));
+    assert_eq!(
+        selected
+            .tasks
+            .iter()
+            .find(|task| task.id == removed.id)
+            .unwrap()
+            .delta,
+        TaskDelta::Deleted
+    );
+    assert_eq!(
+        selected
+            .tasks
+            .iter()
+            .find(|task| task.id == added.id)
+            .unwrap()
+            .delta,
+        TaskDelta::Added
+    );
+}
+
+#[test]
+fn selected_plan_refuses_unknown_removals_and_wrong_keys_and_preserves_unsupported_fields() {
+    let held = task("held");
+    let current_tree = tree(std::slice::from_ref(&held));
+    let current = BTreeMap::from([(held.id, held.clone())]);
+    let membership = std::collections::BTreeSet::from([held.id]);
+    assert!(
+        super::plan_selected(
+            &current_tree.project,
+            &current,
+            &BTreeMap::from([(held.id, None)]),
+            &std::collections::BTreeSet::new()
+        )
+        .is_err()
+    );
+    assert!(
+        super::plan_selected(
+            &current_tree.project,
+            &BTreeMap::new(),
+            &BTreeMap::from([(held.id, None)]),
+            &membership
+        )
+        .is_err()
+    );
+    assert!(
+        super::plan_selected(
+            &current_tree.project,
+            &current,
+            &BTreeMap::from([(WorkId::new(), Some(held.clone()))]),
+            &membership
+        )
+        .is_err()
+    );
+    let mut changed = held.clone();
+    changed.acceptance.push("new criterion".into());
+    let selected = super::plan_selected(
+        &current_tree.project,
+        &current,
+        &BTreeMap::from([(held.id, Some(changed))]),
+        &membership,
+    )
+    .unwrap();
+    let TaskDelta::Changed(change) = &selected.tasks[0].delta else {
+        panic!("changed task")
+    };
+    assert_eq!(change.unsupported, vec![TaskField::Acceptance]);
+    assert!(!change.is_applicable());
+}
+
 fn completed(title: &str) -> TaskDocument {
     TaskDocument {
         lifecycle: WorkLifecycle::Completed,

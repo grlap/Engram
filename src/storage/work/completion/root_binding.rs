@@ -17,6 +17,16 @@ pub(in crate::storage::work) fn validate_seal_root_event(
     seal_id: &ObjectId,
     event: &WorkEvent,
 ) -> Result<(), StoreError> {
+    validate_seal_event_fields(seal, seal_id, event)?;
+    let after = event.root_execution.as_ref().ok_or_else(invalid)?;
+    super::super::root_state::verify_completion_predecessor(connection, &seal.root_execution, after)
+}
+
+pub(in crate::storage::work) fn validate_seal_event_fields(
+    seal: &CompletionSeal,
+    seal_id: &ObjectId,
+    event: &WorkEvent,
+) -> Result<(), StoreError> {
     let after = event.root_execution.as_ref().ok_or_else(invalid)?;
     if !matches!(&event.transition, WorkTransition::Completed { seal } if seal == seal_id)
         || event.work_id != seal.work_id
@@ -38,7 +48,9 @@ pub(in crate::storage::work) fn validate_seal_root_event(
     {
         return Err(invalid());
     }
-    super::super::root_state::verify_completion_predecessor(connection, &seal.root_execution, after)
+    // `after` is required above; the caller verifies its exact predecessor.
+    let _ = after;
+    Ok(())
 }
 
 /// A canonical seal alone does not prove that its address was the state at

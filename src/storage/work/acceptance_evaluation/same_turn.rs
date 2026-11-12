@@ -25,7 +25,7 @@ use crate::domain::{
 
 /// The records after an evaluation's cut that do not ask it to resubmit.
 #[derive(Default)]
-pub(super) struct ExemptChecks {
+pub(crate) struct ExemptChecks {
     verifications: BTreeSet<ObjectId>,
     environments: BTreeSet<ObjectId>,
 }
@@ -71,18 +71,15 @@ impl ExemptChecks {
                 .ok_or(StoreError::InvalidStoredKey(stored))?;
             let check: VerificationEvidence =
                 load_typed_work_object(connection, &hash, "verification_evidence")?;
-            if check.result != VerificationResult::Passed || !on_declared(&check, declared, root) {
+            if check.result != VerificationResult::Passed
+                || !on_declared(&check, declared, root.map(|root| &root.event))
+            {
                 continue;
             }
             if live_commit {
                 let producer =
                     crate::storage::work::load_verification_producer_on(connection, &check)?;
-                if (producer.registered_git_basis(&check).is_none()
-                    && producer.registered_source_id_basis(&check).is_none())
-                    || producer.matches_registered_source(&check, &declared.identity) != Some(true)
-                    || producer.outcome != crate::domain::ExecutionOutcome::Succeeded
-                    || producer.run_outcome != Some(crate::domain::ExecutionOutcome::Succeeded)
-                {
+                if !registered_on_declared(&check, &producer, declared) {
                     continue;
                 }
             } else if check.applicability.is_some() {
@@ -100,12 +97,29 @@ impl ExemptChecks {
                     continue;
                 }
             }
-            if let Some(environment) = check.environment.clone() {
-                exempt.environments.insert(environment);
-            }
-            exempt.verifications.insert(hash);
+            exempt.record(hash, &check);
         }
         Ok(exempt)
+    }
+
+    pub(crate) fn record(&mut self, id: ObjectId, check: &VerificationEvidence) {
+        if let Some(environment) = check.environment.clone() {
+            self.environments.insert(environment);
+        }
+        self.verifications.insert(id);
+    }
+
+    pub(crate) fn covers_record(&self, kind: &str, id: &ObjectId) -> bool {
+        match kind {
+            "verification_evidence" => self.verifications.contains(id),
+            "environment_evidence" => self.environments.contains(id),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn covers_resolution(&self, event: &WorkObligationResolutionEvent) -> bool {
+        matches!(&event.resolution, WorkObligationResolution::Satisfied { evidence, .. }
+            if self.verifications.contains(evidence))
     }
 
     /// Whether the run-feed record `hash` of `kind` is exempt.
@@ -121,11 +135,7 @@ impl ExemptChecks {
             "work_obligation_resolution" if !self.verifications.is_empty() => {
                 let event: WorkObligationResolutionEvent =
                     load_typed_work_object(connection, hash, "work_obligation_resolution")?;
-                matches!(
-                    &event.resolution,
-                    WorkObligationResolution::Satisfied { evidence, .. }
-                        if self.verifications.contains(evidence)
-                )
+                self.covers_resolution(&event)
             }
             _ => false,
         })
@@ -135,10 +145,10 @@ impl ExemptChecks {
 /// Whether `check` ran on the declared revision: the same content revision,
 /// in the declared workspace when one is named, and within the claim's named
 /// root when it has one.
-fn on_declared(
+pub(crate) fn on_declared(
     check: &VerificationEvidence,
     declared: &AcceptanceSourceBasis,
-    root: Option<&NamedEvaluationRoot>,
+    root: Option<&crate::domain::NamedRootBindingEvent>,
 ) -> bool {
     let basis = &check.source_basis;
     basis.identity.same_source(&declared.identity)
@@ -147,8 +157,21 @@ fn on_declared(
             .as_ref()
             .is_none_or(|workspace| *workspace == basis.workspace_id)
         && root.is_none_or(|root| {
-            basis.workspace_id == root.event.workspace_id
-                && basis.source_root_generation == Some(root.event.generation)
+            basis.workspace_id == root.workspace_id
+                && basis.source_root_generation == Some(root.generation)
                 && basis.source_root_state == Some(SourceRootState::Named)
         })
+}
+
+/// Native registered-input success predicate, also used for qualified originals.
+pub(crate) fn registered_on_declared(
+    check: &VerificationEvidence,
+    producer: &crate::domain::VerificationProducerFacts,
+    declared: &AcceptanceSourceBasis,
+) -> bool {
+    (producer.registered_git_basis(check).is_some()
+        || producer.registered_source_id_basis(check).is_some())
+        && producer.matches_registered_source(check, &declared.identity) == Some(true)
+        && producer.outcome == crate::domain::ExecutionOutcome::Succeeded
+        && producer.run_outcome == Some(crate::domain::ExecutionOutcome::Succeeded)
 }

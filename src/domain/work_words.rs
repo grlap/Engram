@@ -8,6 +8,7 @@ impl WorkEvidenceKind {
             Self::Generic => "generic",
             Self::Verification => "verification",
             Self::Environment => "environment",
+            Self::Imported => "imported",
         }
     }
 }

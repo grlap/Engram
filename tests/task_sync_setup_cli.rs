@@ -8,11 +8,12 @@ mod task_sync_opt_in;
 
 #[path = "task_sync_setup_cli/attribution.rs"]
 mod attribution;
+#[path = "task_sync_setup_cli/data_commit.rs"]
+mod data_commit;
 
 use serde_json::Value;
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -20,6 +21,8 @@ use std::{
 struct Fixture {
     owned: test_support::TempHome,
     root: PathBuf,
+    code: PathBuf,
+    common: PathBuf,
     admin: PathBuf,
     home: PathBuf,
     global_config: PathBuf,
@@ -49,7 +52,11 @@ fn isolate_git(command: &mut Command, global: &Path) {
 
 fn git(root: &Path, args: &[&str]) -> Vec<u8> {
     let mut command = Command::new("git");
-    isolate_git(&mut command, &root.parent().unwrap().join(".gitconfig"));
+    let config_root = root
+        .ancestors()
+        .find(|path| path.join(".gitconfig").is_file())
+        .unwrap_or_else(|| root.parent().unwrap());
+    isolate_git(&mut command, &config_root.join(".gitconfig"));
     let output = command
         .current_dir(root)
         .args([
@@ -87,7 +94,7 @@ impl Fixture {
         } else {
             root.join(".git")
         };
-        let mut args = vec!["init", "--initial-branch=ordinary"];
+        let mut args = vec!["init", "--initial-branch=code"];
         let separate_arg = format!("--separate-git-dir={}", admin.display());
         if separate {
             args.push(&separate_arg);
@@ -114,11 +121,48 @@ impl Fixture {
                 "fixture",
             ],
         );
+        fs::write(admin.join("info/exclude"), b"/.engram-data/\n").unwrap();
+        let code = root;
+        let common = admin;
+        let root = code.join(".engram-data");
+        git(
+            &code,
+            &[
+                "worktree",
+                "add",
+                "--detach",
+                "--no-checkout",
+                root.to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        git(&root, &["symbolic-ref", "HEAD", "refs/heads/ordinary"]);
+        git(&root, &["read-tree", "--empty"]);
+        git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "Start metadata history",
+            ],
+        );
+        let admin = PathBuf::from(
+            String::from_utf8(git(&root, &["rev-parse", "--absolute-git-dir"]))
+                .unwrap()
+                .trim(),
+        );
         let home = owned.path().join("store-home");
         task_sync_opt_in::enable(&home, "fixture-project");
         Self {
             owned,
             root,
+            code,
+            common,
             admin,
             home,
             global_config,
@@ -162,7 +206,7 @@ impl Fixture {
     }
 
     fn prepare(&self) -> Output {
-        self.command(&self.root, &self.root.join(".engram-project"))
+        self.command(&self.root, &self.code.join(".engram-project"))
             .output()
             .unwrap()
     }
@@ -224,14 +268,13 @@ fn assert_refused(output: &Output, expected: &str) {
 #[test]
 fn setup_refuses_ignore_directory_before_a_child_filter_can_execute() {
     let fixture = Fixture::new(false);
-    git(&fixture.root, &["rm", ".gitignore"]);
     fs::create_dir(fixture.root.join(".gitignore")).unwrap();
     let payload = ".gitignore/payload";
     fs::write(fixture.root.join(payload), "tracked original\n").unwrap();
     git(&fixture.root, &["add", payload]);
     commit_fixture(&fixture);
     fs::write(
-        fixture.admin.join("info/attributes"),
+        fixture.common.join("info/attributes"),
         ".gitignore/payload filter=sentinel\n",
     )
     .unwrap();
@@ -245,7 +288,7 @@ fn setup_refuses_ignore_directory_before_a_child_filter_can_execute() {
     );
     fs::write(fixture.root.join(payload), "modified child\n").unwrap();
     let index = fs::read(fixture.admin.join("index")).unwrap();
-    fixture.refusal("setup input must be an ordinary bounded file");
+    fixture.refusal(".engram/");
     assert!(!fixture.root.join("ignore-filter-sentinel.txt").exists());
     assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
     assert_eq!(
@@ -263,7 +306,7 @@ fn setup_refuses_occupied_filtered_task_before_git_can_execute_its_filter() {
     git(&fixture.root, &["add", "-f", ".engram/tasks/specific.json"]);
     commit_fixture(&fixture);
     fs::write(
-        fixture.admin.join("info/attributes"),
+        fixture.common.join("info/attributes"),
         ".engram/tasks/specific.json filter=sentinel\n",
     )
     .unwrap();
@@ -287,143 +330,70 @@ fn setup_refuses_occupied_filtered_task_before_git_can_execute_its_filter() {
 }
 
 #[test]
-fn setup_checks_selected_custom_marker_with_literal_pathspecs() {
-    for state in [
-        "clean",
-        "dirty",
-        "staged",
-        "untracked",
-        "filtered",
-        "conflicted",
-    ] {
+fn setup_reads_the_selected_code_marker_without_running_a_filter_or_changing_its_index() {
+    for staged in [false, true] {
         let fixture = Fixture::new(false);
-        let name = "custom[marker]";
-        let marker = fixture.root.join(name);
-        fs::rename(fixture.root.join(".engram-project"), &marker).unwrap();
-        git(&fixture.root, &["add", "-A"]);
-        commit_fixture(&fixture);
-        match state {
-            "clean" => (),
-            "dirty" | "staged" => {
-                fs::write(&marker, "fixture-project\n\n").unwrap();
-                if state == "staged" {
-                    git(&fixture.root, &["--literal-pathspecs", "add", name]);
-                }
-            }
-            "untracked" => {
-                git(
-                    &fixture.root,
-                    &["--literal-pathspecs", "rm", "--cached", name],
-                );
-                commit_fixture(&fixture);
-            }
-            "filtered" => {
-                // Git attribute patterns are not pathspecs: escape brackets here.
-                fs::write(
-                    fixture.admin.join("info/attributes"),
-                    "custom\\[marker\\] filter=sentinel\n",
-                )
-                .unwrap();
-                git(
-                    &fixture.root,
-                    &[
-                        "config",
-                        "filter.sentinel.clean",
-                        "echo invoked > filter-sentinel.txt; cat",
-                    ],
-                );
-                fs::write(&marker, "fixture-project\n\n").unwrap();
-            }
-            "conflicted" => {
-                let blob =
-                    String::from_utf8(git(&fixture.root, &["rev-parse", "HEAD:custom[marker]"]))
-                        .unwrap();
-                let mut command = Command::new("git");
-                isolate_git(&mut command, &fixture.global_config);
-                let mut child = command
-                    .current_dir(&fixture.root)
-                    .args(["update-index", "--index-info"])
-                    .stdin(std::process::Stdio::piped())
-                    .spawn()
-                    .unwrap();
-                writeln!(
-                    child.stdin.take().unwrap(),
-                    "0 {}\t{name}\n100644 {} 1\t{name}\n100644 {} 2\t{name}",
-                    "0".repeat(blob.trim().len()),
-                    blob.trim(),
-                    blob.trim()
-                )
-                .unwrap();
-                assert!(child.wait().unwrap().success());
-            }
-            _ => unreachable!(),
+        let marker = fixture.code.join("custom[marker]");
+        fs::write(&marker, "fixture-project\n\n").unwrap();
+        if staged {
+            git(
+                &fixture.code,
+                &["--literal-pathspecs", "add", "custom[marker]"],
+            );
         }
-        let index = fs::read(fixture.admin.join("index")).unwrap();
+        fs::write(
+            fixture.common.join("info/attributes"),
+            "custom\\[marker\\] filter=sentinel\n",
+        )
+        .unwrap();
+        git(
+            &fixture.code,
+            &[
+                "config",
+                "filter.sentinel.clean",
+                "echo invoked > marker-filter-sentinel.txt; cat",
+            ],
+        );
+        let index = fs::read(fixture.common.join("index")).unwrap();
         let output = fixture.command(&fixture.root, &marker).output().unwrap();
-        if state == "clean" {
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        } else {
-            assert_refused(
-                &output,
-                if state == "filtered" {
-                    "filter=sentinel"
-                } else {
-                    "dirty, staged or conflicted"
-                },
-            );
-            assert!(!fixture.intent_path().exists());
-            assert!(!fixture.admin.join("engram-task-sync-setup.lock").exists());
-        }
-        assert!(!fixture.root.join("filter-sentinel.txt").exists());
-        assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
-        task_sync_opt_in::assert_no_database(&fixture.home);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!fixture.code.join("marker-filter-sentinel.txt").exists());
+        assert!(!fixture.root.join("marker-filter-sentinel.txt").exists());
+        assert_eq!(fs::read(fixture.common.join("index")).unwrap(), index);
+        assert_eq!(
+            bytes(&fixture.intent()["basis"]["marker"]),
+            b"fixture-project\n\n"
+        );
     }
 }
 
 #[test]
-fn setup_refuses_suppressed_setup_inspection_and_absent_reserved_index_entries() {
+fn setup_refuses_absent_metadata_still_held_by_index_or_head() {
     for flag in ["--assume-unchanged", "--skip-worktree"] {
-        for name in [".gitignore", ".gitattributes", ".engram-project"] {
-            let fixture = Fixture::new(false);
-            git(&fixture.root, &["update-index", flag, name]);
-            fs::write(
-                fixture.root.join(name),
-                if name == ".engram-project" {
-                    "fixture-project\n\n"
-                } else {
-                    "# dirty bytes hidden from status\n"
-                },
-            )
-            .unwrap();
-            let index = fs::read(fixture.admin.join("index")).unwrap();
-            fixture.refusal("index inspection is suppressed");
-            assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
-        }
         for name in [".engram/project.json", ".engram/tasks/specific.json"] {
             let fixture = Fixture::new(false);
             let path = fixture.root.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(&path, "unowned shared state\n").unwrap();
-            git(&fixture.root, &["add", "-f", name]);
-            commit_fixture(&fixture);
+            git(&fixture.root, &["add", name]);
             git(&fixture.root, &["update-index", flag, name]);
             fs::remove_file(&path).unwrap();
             if name.contains("tasks/") {
                 fs::remove_dir(path.parent().unwrap()).unwrap();
             }
             let index = fs::read(fixture.admin.join("index")).unwrap();
-            fixture.refusal("occupied in index");
+            fixture.refusal("data setup index must be empty");
             assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
         }
     }
     let fixture = Fixture::new(false);
     fs::create_dir(fixture.root.join(".engram")).unwrap();
     fs::write(fixture.root.join(".engram/project.json"), "unowned").unwrap();
-    git(&fixture.root, &["add", "-f", ".engram/project.json"]);
+    git(&fixture.root, &["add", ".engram/project.json"]);
     commit_fixture(&fixture);
     git(&fixture.root, &["rm", ".engram/project.json"]);
     fixture.refusal("occupied in HEAD");
@@ -435,7 +405,7 @@ fn setup_refuses_a_non_directory_engram_on_disk_in_the_index_and_in_head() {
     let file = Fixture::new(false);
     fs::write(file.root.join(".engram"), "not a directory\n").unwrap();
     let index = fs::read(file.admin.join("index")).unwrap();
-    file.refusal("reserved shared path is occupied: .engram is not a directory");
+    file.refusal(".engram/");
     assert_eq!(
         fs::read(file.root.join(".engram")).unwrap(),
         b"not a directory\n"
@@ -448,7 +418,7 @@ fn setup_refuses_a_non_directory_engram_on_disk_in_the_index_and_in_head() {
     git(&indexed.root, &["add", "-f", ".engram"]);
     fs::remove_file(indexed.root.join(".engram")).unwrap();
     let index = fs::read(indexed.admin.join("index")).unwrap();
-    indexed.refusal("reserved shared path is occupied in index: .engram");
+    indexed.refusal(".engram/");
     assert!(!indexed.root.join(".engram").exists());
     assert_eq!(fs::read(indexed.admin.join("index")).unwrap(), index);
 
@@ -459,100 +429,46 @@ fn setup_refuses_a_non_directory_engram_on_disk_in_the_index_and_in_head() {
     commit_fixture(&retained);
     git(&retained.root, &["rm", "-q", ".engram"]);
     let index = fs::read(retained.admin.join("index")).unwrap();
-    retained.refusal("reserved shared path is occupied in HEAD: .engram");
+    retained.refusal(".engram/");
     assert!(!retained.root.join(".engram").exists());
     assert_eq!(fs::read(retained.admin.join("index")).unwrap(), index);
 }
 
 #[test]
-fn setup_ignore_proposals_reopen_only_root_shared_paths_across_ignore_sources() {
-    for (source, rule) in [
-        ("root", "/.engram/"),
-        ("root", ".engram/"),
-        ("root", ".engram"),
-        ("root", "**/.engram"),
-        ("info", ".engram/"),
-        ("global", ".engram/"),
+fn setup_data_policy_exposes_only_shared_documents_and_its_own_policy_files() {
+    let fixture = Fixture::new(false);
+    fixture.success();
+    fs::create_dir(fixture.root.join(".engram")).unwrap();
+    let proposed = bytes(&fixture.intent()["basis"]["edits"][0]["after"]);
+    fs::write(fixture.root.join(".engram/.gitignore"), proposed).unwrap();
+    for (name, ignored) in [
+        ("project.json", false),
+        ("tasks/00000000-0000-7000-8000-000000000001.json", false),
+        (".gitignore", false),
+        (".gitattributes", false),
+        ("private.db", true),
+        ("tasks/private.db", true),
+        ("tasks/deeper/private.json", true),
     ] {
-        let fixture = Fixture::new(false);
-        match source {
-            "root" => {
-                fs::write(fixture.root.join(".gitignore"), format!("{rule}\n")).unwrap();
-                git(&fixture.root, &["add", ".gitignore"]);
-                commit_fixture(&fixture);
-            }
-            "info" => {
-                fs::write(fixture.root.join(".gitignore"), "# unrelated\n").unwrap();
-                git(&fixture.root, &["add", ".gitignore"]);
-                commit_fixture(&fixture);
-                fs::write(fixture.admin.join("info/exclude"), rule).unwrap();
-            }
-            "global" => {
-                fs::write(fixture.root.join(".gitignore"), "# unrelated\n").unwrap();
-                git(&fixture.root, &["add", ".gitignore"]);
-                commit_fixture(&fixture);
-                let excludes = fixture.owned.path().join("global.exclude");
-                fs::write(&excludes, rule).unwrap();
-                fs::write(
-                    &fixture.global_config,
-                    format!(
-                        "[core]\n attributesFile =\n excludesFile = \"{}\"\n",
-                        excludes.display().to_string().replace('\\', "/")
-                    ),
-                )
-                .unwrap();
-                let actual = git(&fixture.root, &["config", "--get", "core.excludesFile"]);
-                assert_eq!(
-                    String::from_utf8(actual).unwrap().trim(),
-                    excludes.display().to_string().replace('\\', "/")
-                );
-            }
-            _ => unreachable!(),
-        }
-        fs::create_dir(fixture.root.join(".engram")).unwrap();
-        fs::write(fixture.root.join(".engram/private.db"), "private").unwrap();
-        assert_eq!(
-            git(&fixture.root, &["check-ignore", ".engram/private.db"]),
-            b".engram/private.db\n"
-        );
-        fixture.success();
-        let proposed = bytes(&fixture.intent()["basis"]["edits"][0]["after"]);
-        // Apply only within this disposable fixture to assess Git's policy,
-        // independently of preparation (which must leave the checkout alone).
-        fs::write(fixture.root.join(".gitignore"), proposed).unwrap();
-        fs::create_dir_all(fixture.root.join(".engram/tasks")).unwrap();
-        for (name, ignored) in [
-            (".engram/project.json", false),
-            (
-                ".engram/tasks/00000000-0000-7000-8000-000000000001.json",
-                false,
-            ),
-            (".engram/private.db", true),
-            (".engram/tasks/private.db", true),
-            (".engram/tasks/deeper/private.json", true),
-        ] {
-            let path = fixture.root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let relative = format!(".engram/{name}");
+        let path = fixture.root.join(&relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        if name != ".gitignore" {
             fs::write(path, "fixture bytes").unwrap();
-            let mut command = Command::new("git");
-            isolate_git(&mut command, &fixture.global_config);
-            let output = command
-                .current_dir(&fixture.root)
-                .args(["check-ignore", "--no-index", "--quiet", "--", name])
-                .output()
-                .unwrap();
-            assert_eq!(
-                output.status.code(),
-                Some(i32::from(!ignored)),
-                "{source} {rule} {name}: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
         }
+        let mut command = Command::new("git");
+        isolate_git(&mut command, &fixture.global_config);
+        let output = command
+            .current_dir(&fixture.root)
+            .args(["check-ignore", "--no-index", "--quiet", "--", &relative])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(i32::from(!ignored)),
+            "{name}: {output:?}"
+        );
     }
-    let nested = Fixture::new(false);
-    fs::create_dir(nested.root.join(".engram")).unwrap();
-    fs::write(nested.root.join(".engram/.gitignore"), "*.json\n").unwrap();
-    nested.refusal(".engram/.gitignore");
 }
 
 #[test]
@@ -577,7 +493,7 @@ fn setup_default_process_attribution_can_repeat_and_retains_first_provenance() {
             .arg("--home")
             .arg(&fixture.home)
             .arg("--project-file")
-            .arg(fixture.root.join(".engram-project"))
+            .arg(fixture.code.join(".engram-project"))
             .args([
                 "task-sync",
                 "--actor-context",
@@ -635,13 +551,12 @@ fn setup_maximal_admitted_inputs_produce_a_readable_exact_repeat() {
     comment[0] = b'#';
     comment[64 * 1024 - 1] = b'\n';
     for name in [".gitignore", ".gitattributes"] {
-        fs::write(fixture.root.join(name), &comment).unwrap();
+        fs::write(fixture.code.join(name), &comment).unwrap();
     }
     let mut marker = b"fixture-project".to_vec();
     marker.resize(4096, b' ');
-    fs::write(fixture.root.join(".engram-project"), &marker).unwrap();
-    git(&fixture.root, &["add", "."]);
-    commit_fixture(&fixture);
+    fs::write(fixture.code.join(".engram-project"), &marker).unwrap();
+    git(&fixture.code, &["add", "."]);
     let first = fixture.success();
     let original = fs::read(fixture.intent_path()).unwrap();
     assert!(original.len() <= 2 * 1024 * 1024);
@@ -651,7 +566,7 @@ fn setup_maximal_admitted_inputs_produce_a_readable_exact_repeat() {
     assert_eq!(fs::read(fixture.intent_path()).unwrap(), original);
     let intent = fixture.intent();
     assert_eq!(bytes(&intent["basis"]["marker"]), marker);
-    assert_eq!(bytes(&intent["basis"]["edits"][0]["before"]), comment);
+    assert!(intent["basis"]["edits"][0]["before"].is_null());
 }
 
 #[test]
@@ -660,7 +575,7 @@ fn setup_first_call_race_publishes_complete_lock_and_preserves_unowned_empty_loc
     let children: Vec<_> = (0..4)
         .map(|_| {
             fixture
-                .command(&fixture.root, &fixture.root.join(".engram-project"))
+                .command(&fixture.root, &fixture.code.join(".engram-project"))
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .spawn()
@@ -690,13 +605,13 @@ fn setup_first_call_race_publishes_complete_lock_and_preserves_unowned_empty_loc
 fn setup_prepares_private_raw_edits_and_exact_repeat_without_mutating_local_state() {
     let fixture = Fixture::new(false);
     let index = fs::read(fixture.admin.join("index")).unwrap();
-    let config = fs::read(fixture.admin.join("config")).unwrap();
+    let config = fs::read(fixture.common.join("config")).unwrap();
     let head = fs::read(fixture.admin.join("HEAD")).unwrap();
-    let ignore = fs::read(fixture.root.join(".gitignore")).unwrap();
-    let attributes = fs::read(fixture.root.join(".gitattributes")).unwrap();
+    let ignore = fs::read(fixture.code.join(".gitignore")).unwrap();
+    let attributes = fs::read(fixture.code.join(".gitattributes")).unwrap();
     fs::create_dir(fixture.root.join(".engram")).unwrap();
     fs::write(fixture.root.join(".engram/private.db"), "private bytes").unwrap();
-    fs::write(fixture.root.join("unrelated.txt"), "local edit to preserve").unwrap();
+    fs::write(fixture.code.join("unrelated.txt"), "local edit to preserve").unwrap();
     let first = fixture.success();
     assert_eq!(first["prepared"], true);
     assert_eq!(first["enabled"], false);
@@ -720,16 +635,14 @@ fn setup_prepares_private_raw_edits_and_exact_repeat_without_mutating_local_stat
         intent["basis"]["assertions"]["readership"],
         "project maintainers"
     );
-    assert_eq!(bytes(&intent["basis"]["edits"][0]["before"]), ignore);
-    assert_eq!(bytes(&intent["basis"]["edits"][1]["before"]), attributes);
-    assert_eq!(bytes(&intent["basis"]["edits"][0]["after"]), b"# private state\r\n/target/\r\n*.db\r\n# BEGIN ENGRAM TASK SYNC\n!/.engram/\n/.engram/*\n!/.engram/project.json\n!/.engram/tasks/\n/.engram/tasks/*\n!/.engram/tasks/*.json\n# END ENGRAM TASK SYNC\n");
-    assert_eq!(bytes(&intent["basis"]["edits"][1]["after"]), b"*.md text eol=lf\n# BEGIN ENGRAM TASK SYNC\n/.engram/** text eol=lf -filter diff merge -working-tree-encoding -ident\n# END ENGRAM TASK SYNC\n");
+    assert!(intent["basis"]["edits"][0]["before"].is_null());
+    assert!(intent["basis"]["edits"][1]["before"].is_null());
     for (path, original) in [
         (fixture.admin.join("index"), index),
-        (fixture.admin.join("config"), config),
+        (fixture.common.join("config"), config),
         (fixture.admin.join("HEAD"), head),
-        (fixture.root.join(".gitignore"), ignore),
-        (fixture.root.join(".gitattributes"), attributes),
+        (fixture.code.join(".gitignore"), ignore),
+        (fixture.code.join(".gitattributes"), attributes),
     ] {
         assert_eq!(fs::read(path).unwrap(), original);
     }
@@ -746,7 +659,7 @@ fn setup_prepares_private_raw_edits_and_exact_repeat_without_mutating_local_stat
 fn setup_supports_actual_separate_git_directory_and_alias_without_notes() {
     let fixture = Fixture::new(true);
     let output = fixture
-        .command(&fixture.root, &fixture.root.join(".engram-project"))
+        .command(&fixture.root, &fixture.code.join(".engram-project"))
         .current_dir(fixture.owned.path())
         .args(["--origin-machine", "workstation-1"])
         .output()
@@ -778,7 +691,7 @@ fn setup_resolves_relative_git_directory_from_outside_repository() {
         fs::canonicalize(&fixture.root).unwrap()
     );
     let output = fixture
-        .command(&fixture.root, &fixture.root.join(".engram-project"))
+        .command(&fixture.root, &fixture.code.join(".engram-project"))
         .current_dir(fixture.owned.path())
         .output()
         .unwrap();
@@ -789,7 +702,7 @@ fn setup_resolves_relative_git_directory_from_outside_repository() {
     );
     let intent = fixture.intent();
     assert_eq!(intent["basis"]["branch"], "ordinary");
-    assert!(fixture.admin.join("config").is_file());
+    assert!(fixture.common.join("config").is_file());
     task_sync_opt_in::assert_no_database(&fixture.home);
 }
 
@@ -815,38 +728,25 @@ fn setup_refuses_applied_attributes_by_path_before_status_or_private_writes() {
     ] {
         let fixture = Fixture::new(false);
         fs::write(
-            fixture.root.join(".gitattributes"),
+            fixture.common.join("info/attributes"),
             format!(".engram/** {attribute}\n"),
         )
         .unwrap();
-        git(&fixture.root, &["add", ".gitattributes"]);
-        git(
-            &fixture.root,
-            &[
-                "-c",
-                "user.name=Fixture",
-                "-c",
-                "user.email=fixture@example.invalid",
-                "commit",
-                "-m",
-                "attribute basis",
-            ],
-        );
-        let before = fs::read(fixture.root.join(".gitattributes")).unwrap();
+        let before = fs::read(fixture.common.join("info/attributes")).unwrap();
         fixture.refusal(attribute.split('=').next().unwrap());
         assert!(
             String::from_utf8_lossy(&fixture.prepare().stderr).contains(".engram/project.json")
         );
         assert_eq!(
-            fs::read(fixture.root.join(".gitattributes")).unwrap(),
+            fs::read(fixture.common.join("info/attributes")).unwrap(),
             before
         );
     }
     let setup = Fixture::new(false);
     // info/attributes has the highest precedence and is queried as-is.
     fs::write(
-        setup.admin.join("info/attributes"),
-        ".gitignore filter=lfs\n",
+        setup.common.join("info/attributes"),
+        ".engram/.gitignore filter=lfs\n",
     )
     .unwrap();
     git(
@@ -858,7 +758,7 @@ fn setup_refuses_applied_attributes_by_path_before_status_or_private_writes() {
         ],
     );
     git(&setup.root, &["config", "filter.lfs.required", "true"]);
-    setup.refusal("filter=lfs applies to .gitignore");
+    setup.refusal("filter=lfs applies to .engram/.gitignore");
 }
 
 #[test]
@@ -870,10 +770,10 @@ fn setup_refuses_nested_attributes_and_admits_current_lf_policy() {
         "*.json filter=lfs\n",
     )
     .unwrap();
-    nested.refusal("nested attribute file is occupied");
+    nested.refusal("reserved shared path is occupied");
     let lf = Fixture::new(false);
     fs::write(
-        lf.admin.join("info/attributes"),
+        lf.common.join("info/attributes"),
         ".engram/** text eol=lf -filter diff merge -working-tree-encoding -ident\n",
     )
     .unwrap();
@@ -882,51 +782,22 @@ fn setup_refuses_nested_attributes_and_admits_current_lf_policy() {
 
 #[test]
 #[cfg(windows)]
-fn setup_refuses_case_aliases_in_reserved_head_index_and_setup_names() {
-    let removed = Fixture::new(false);
-    fs::create_dir(removed.root.join(".ENGRAM")).unwrap();
-    fs::write(removed.root.join(".ENGRAM/project.json"), "unowned\n").unwrap();
-    git(&removed.root, &["add", "-f", ".ENGRAM/project.json"]);
-    commit_fixture(&removed);
-    git(&removed.root, &["rm", ".ENGRAM/project.json"]);
-    let index = fs::read(removed.admin.join("index")).unwrap();
-    removed.refusal("reserved shared path is occupied in HEAD");
-    assert_eq!(fs::read(removed.admin.join("index")).unwrap(), index);
-
-    for flag in ["--skip-worktree", "--assume-unchanged"] {
-        let absent = Fixture::new(false);
-        fs::create_dir_all(absent.root.join(".ENGRAM/tasks")).unwrap();
-        let task = ".ENGRAM/tasks/item.json";
-        fs::write(absent.root.join(task), "unowned\n").unwrap();
-        git(&absent.root, &["add", "-f", task]);
-        commit_fixture(&absent);
-        git(&absent.root, &["update-index", flag, task]);
-        fs::remove_file(absent.root.join(task)).unwrap();
-        fs::remove_dir(absent.root.join(".ENGRAM/tasks")).unwrap();
-        fs::remove_dir(absent.root.join(".ENGRAM")).unwrap();
-        let index = fs::read(absent.admin.join("index")).unwrap();
-        absent.refusal("reserved shared path is occupied in index");
-        assert_eq!(fs::read(absent.admin.join("index")).unwrap(), index);
-    }
-
-    for original in [".gitignore", ".gitattributes", ".engram-project"] {
-        let alias = Fixture::new(false);
-        let upper = original.to_ascii_uppercase();
-        git(&alias.root, &["mv", original, "rename-intermediate"]);
-        git(&alias.root, &["mv", "rename-intermediate", &upper]);
-        commit_fixture(&alias);
-        let index = fs::read(alias.admin.join("index")).unwrap();
-        // The canonical marker name may itself preserve its on-disk case.
-        // Root setup aliases must still be refused before status.
-        if original == ".engram-project" {
-            git(&alias.root, &["update-index", "--assume-unchanged", &upper]);
-            let index = fs::read(alias.admin.join("index")).unwrap();
-            alias.refusal("index inspection is suppressed");
-            assert_eq!(fs::read(alias.admin.join("index")).unwrap(), index);
-        } else {
-            alias.refusal("case alias of setup path in index");
-            assert_eq!(fs::read(alias.admin.join("index")).unwrap(), index);
-        }
+fn setup_refuses_case_aliases_of_data_and_managed_policy_names() {
+    for relative in [
+        ".ENGRAM/project.json",
+        ".engram/.GITIGNORE",
+        ".engram/.GITATTRIBUTES",
+    ] {
+        let fixture = Fixture::new(false);
+        let path = fixture.root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"unowned alias\n").unwrap();
+        let index = fs::read(fixture.admin.join("index")).unwrap();
+        let output = fixture.prepare();
+        assert!(!output.status.success());
+        assert_eq!(fs::read(&path).unwrap(), b"unowned alias\n");
+        assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
+        assert!(!fixture.intent_path().exists());
     }
 }
 
@@ -963,15 +834,16 @@ fn setup_proposed_attributes_preserve_text_diffs_and_merge_conflict_markers() {
         fixture.success();
         let intent = fixture.intent();
         // Apply only in this owned disposable fixture to verify actual Git semantics.
+        fs::create_dir(fixture.root.join(".engram")).unwrap();
         fs::write(
-            fixture.root.join(".gitattributes"),
+            fixture.root.join(".engram/.gitattributes"),
             bytes(&intent["basis"]["edits"][1]["after"]),
         )
         .unwrap();
         let task = ".engram/tasks/item.json";
         fs::create_dir_all(fixture.root.join(".engram/tasks")).unwrap();
         fs::write(fixture.root.join(task), "{\n  \"title\": \"base\"\n}\n").unwrap();
-        git(&fixture.root, &["add", ".gitattributes"]);
+        git(&fixture.root, &["add", ".engram/.gitattributes"]);
         git(&fixture.root, &["add", "-f", task]);
         commit_fixture(&fixture);
         git(&fixture.root, &["switch", "-c", "other"]);
@@ -1028,46 +900,42 @@ fn setup_refuses_sparse_detached_and_wrong_branches_before_any_private_write() {
     detached.refusal("symbolic-ref");
     let wrong = Fixture::new(false);
     git(&wrong.root, &["checkout", "-b", "different"]);
-    wrong.refusal("attached branch differs");
+    wrong.refusal("not attached to the selected data branch");
 }
 
 #[test]
-fn setup_refuses_linked_pointer_bare_and_ambiguous_roots() {
+fn setup_refuses_any_root_outside_the_fixed_main_checkout_data_location() {
     let fixture = Fixture::new(false);
     let linked = fixture.owned.path().join("linked");
     git(
-        &fixture.root,
-        &["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
+        &fixture.code,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "linked",
+            linked.to_str().unwrap(),
+            "HEAD",
+        ],
     );
-    let output = fixture
-        .command(&linked, &linked.join(".engram-project"))
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("linked worktree"));
-    assert!(!fixture.intent_path().exists());
     let bare = fixture.owned.path().join("bare");
-    git(&fixture.root, &["init", "--bare", bare.to_str().unwrap()]);
-    fs::write(bare.join(".engram-project"), "fixture-project").unwrap();
-    let output = fixture
-        .command(&bare, &bare.join(".engram-project"))
-        .output()
-        .unwrap();
-    assert!(String::from_utf8_lossy(&output.stderr).contains("bare repository"));
-    let child = fixture.root.join("child");
+    git(&fixture.code, &["init", "--bare", bare.to_str().unwrap()]);
+    let child = fixture.code.join("child");
     fs::create_dir(&child).unwrap();
+    for root in [&linked, &bare, &child, &fixture.code] {
+        let output = fixture
+            .command(root, &fixture.code.join(".engram-project"))
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{}", root.display());
+        assert!(!fixture.intent_path().exists());
+    }
     fs::write(child.join(".engram-project"), "fixture-project").unwrap();
-    let output = fixture
-        .command(&child, &child.join(".engram-project"))
-        .output()
-        .unwrap();
-    // The hardened query cannot climb past the selected root's parent.
-    assert!(String::from_utf8_lossy(&output.stderr).contains("local Git admission query refused"));
     let output = fixture
         .command(&fixture.root, &child.join(".engram-project"))
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&output.stderr).contains("marker must belong"));
+    assert_refused(&output, "fixed .engram-data directory");
     assert!(!fixture.intent_path().exists());
 }
 
@@ -1078,7 +946,10 @@ fn setup_windows_case_aliases_bind_same_repository_and_exact_intent() {
     let first = fixture.success();
     let alias = PathBuf::from(fixture.root.to_str().unwrap().to_uppercase());
     let output = fixture
-        .command(&alias, &alias.join(".engram-project"))
+        .command(
+            &alias,
+            &PathBuf::from(fixture.code.to_str().unwrap().to_uppercase()).join(".engram-project"),
+        )
         .output()
         .unwrap();
     assert!(
@@ -1092,26 +963,8 @@ fn setup_windows_case_aliases_bind_same_repository_and_exact_intent() {
 }
 
 #[test]
-fn setup_refuses_dirty_staged_conflicted_setup_and_ignored_reserved_occupancy() {
-    for name in [".gitignore", ".gitattributes", ".engram-project"] {
-        for staged in [false, true] {
-            let fixture = Fixture::new(false);
-            fs::write(
-                fixture.root.join(name),
-                if name == ".engram-project" {
-                    "fixture-project\n\n"
-                } else {
-                    "changed\n"
-                },
-            )
-            .unwrap();
-            if staged {
-                git(&fixture.root, &["add", name]);
-            }
-            fixture.refusal("dirty, staged or conflicted");
-        }
-    }
-    for name in ["project.json", "tasks"] {
+fn setup_refuses_reserved_metadata_occupancy_without_replacing_it() {
+    for name in ["project.json", "tasks", ".gitignore", ".gitattributes"] {
         let fixture = Fixture::new(false);
         fs::create_dir(fixture.root.join(".engram")).unwrap();
         let occupied = fixture.root.join(".engram").join(name);
@@ -1123,33 +976,13 @@ fn setup_refuses_dirty_staged_conflicted_setup_and_ignored_reserved_occupancy() 
         fixture.refusal("occupied");
         assert!(occupied.exists());
     }
-    let fixture = Fixture::new(false);
-    let blob = String::from_utf8(git(&fixture.root, &["rev-parse", "HEAD:.gitignore"])).unwrap();
-    let mut command = Command::new("git");
-    isolate_git(&mut command, &fixture.global_config);
-    let mut child = command
-        .current_dir(&fixture.root)
-        .args(["update-index", "--index-info"])
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    writeln!(
-        child.stdin.take().unwrap(),
-        "0 {}\t.gitignore\n100644 {} 1\t.gitignore\n100644 {} 2\t.gitignore",
-        "0".repeat(blob.trim().len()),
-        blob.trim(),
-        blob.trim()
-    )
-    .unwrap();
-    assert!(child.wait().unwrap().success());
-    fixture.refusal("dirty, staged or conflicted");
 }
 
 #[test]
 fn setup_refuses_unknown_scope_invalid_alias_and_notes_without_alias() {
     let fixture = Fixture::new(false);
     let output = fixture
-        .command_with_readership(&fixture.root, &fixture.root.join(".engram-project"), " ")
+        .command_with_readership(&fixture.root, &fixture.code.join(".engram-project"), " ")
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -1159,7 +992,7 @@ fn setup_refuses_unknown_scope_invalid_alias_and_notes_without_alias() {
         vec!["--include-notes"],
     ] {
         let output = fixture
-            .command(&fixture.root, &fixture.root.join(".engram-project"))
+            .command(&fixture.root, &fixture.code.join(".engram-project"))
             .args(args)
             .output()
             .unwrap();
@@ -1168,7 +1001,7 @@ fn setup_refuses_unknown_scope_invalid_alias_and_notes_without_alias() {
         assert!(!fixture.admin.join("engram-task-sync-setup.lock").exists());
     }
     let output = fixture
-        .command(&fixture.root, &fixture.root.join(".engram-project"))
+        .command(&fixture.root, &fixture.code.join(".engram-project"))
         .args(["--include-notes", "--origin-machine", "local"])
         .output()
         .unwrap();
@@ -1189,7 +1022,7 @@ fn setup_preserves_divergent_and_unowned_private_records_and_refuses_busy_lock()
     fixture.success();
     let before = fs::read(fixture.intent_path()).unwrap();
     let output = fixture
-        .command(&fixture.root, &fixture.root.join(".engram-project"))
+        .command(&fixture.root, &fixture.code.join(".engram-project"))
         .args(["--origin-machine", "different"])
         .output()
         .unwrap();
@@ -1235,15 +1068,19 @@ fn setup_refuses_an_intent_whose_head_an_unrelated_commit_moved_and_keeps_its_by
     let intent = fs::read(fixture.intent_path()).unwrap();
     let lock_path = fixture.admin.join("engram-task-sync-setup.lock");
     let lock = fs::read(&lock_path).unwrap();
-    // The commit touches no setup or reserved path, so HEAD is the only part
-    // of the recorded basis it changes.
-    fs::write(
-        fixture.root.join("unrelated.txt"),
-        "ordinary code, revised\n",
-    )
-    .unwrap();
-    git(&fixture.root, &["add", "unrelated.txt"]);
-    commit_fixture(&fixture);
+    git(
+        &fixture.root,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Advance empty data history",
+        ],
+    );
     assert_ne!(head(&fixture), prepared_head);
     let output = fixture.prepare();
     assert_refused(
@@ -1262,32 +1099,74 @@ fn setup_refuses_an_intent_whose_head_an_unrelated_commit_moved_and_keeps_its_by
 }
 
 #[test]
-fn setup_proposals_handle_missing_files_and_preserve_unterminated_unrelated_bytes() {
+fn setup_does_not_adopt_or_rewrite_code_policy_bytes() {
     let fixture = Fixture::new(false);
-    fs::remove_file(fixture.root.join(".gitignore")).unwrap();
-    fs::write(fixture.root.join(".gitattributes"), b"*.md text eol=lf").unwrap();
-    git(&fixture.root, &["add", "."]);
-    git(
-        &fixture.root,
-        &[
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.invalid",
-            "commit",
-            "-m",
-            "setup basis",
-        ],
-    );
+    fs::remove_file(fixture.code.join(".gitignore")).unwrap();
+    fs::write(fixture.code.join(".gitattributes"), b"*.md text eol=lf").unwrap();
+    let index = fs::read(fixture.common.join("index")).unwrap();
     fixture.success();
     let intent = fixture.intent();
-    assert!(intent["basis"]["edits"][0]["before"].is_null());
-    assert!(bytes(&intent["basis"]["edits"][1]["after"]).starts_with(b"*.md text eol=lf\n# BEGIN"));
-    assert!(!fixture.root.join(".gitignore").exists());
+    assert!(
+        intent["basis"]["edits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|edit| edit["before"].is_null())
+    );
+    assert!(!fixture.code.join(".gitignore").exists());
     assert_eq!(
-        fs::read(fixture.root.join(".gitattributes")).unwrap(),
+        fs::read(fixture.code.join(".gitattributes")).unwrap(),
         b"*.md text eol=lf"
     );
+    assert_eq!(fs::read(fixture.common.join("index")).unwrap(), index);
+}
+
+#[test]
+fn data_init_creates_the_fixed_locked_orphan_and_repeats_without_sqlite_or_code_edits() {
+    let fixture = Fixture::new(false);
+    git(
+        &fixture.code,
+        &["worktree", "remove", fixture.root.to_str().unwrap()],
+    );
+    let index = fs::read(fixture.common.join("index")).unwrap();
+    let head = git(&fixture.code, &["rev-parse", "HEAD"]);
+    let ignore = fs::read(fixture.code.join(".gitignore")).unwrap();
+    let run = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_engram"));
+        isolate_git(&mut command, &fixture.global_config);
+        command
+            .env("TOKIO_WORKER_THREADS", "1")
+            .current_dir(&fixture.code)
+            .arg("--home")
+            .arg(&fixture.home)
+            .arg("--project-file")
+            .arg(fixture.code.join(".engram-project"))
+            .args(["task-sync", "data-init", "--branch", "fresh-data"]);
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let first = run();
+    assert_eq!(first["created"], true);
+    assert_eq!(first["locked"], true);
+    assert_eq!(first["reference"], "refs/heads/fresh-data");
+    let selected = engram::task_sync::data_worktree::DataWorktree::observe(
+        &fixture.code,
+        &fixture.root,
+        "fresh-data",
+    )
+    .unwrap();
+    assert!(selected.head.is_none());
+    assert!(selected.git_directory.join("locked").is_file());
+    assert_eq!(run()["created"], false);
+    assert_eq!(fs::read(fixture.common.join("index")).unwrap(), index);
+    assert_eq!(git(&fixture.code, &["rev-parse", "HEAD"]), head);
+    assert_eq!(fs::read(fixture.code.join(".gitignore")).unwrap(), ignore);
+    task_sync_opt_in::assert_no_database(&fixture.home);
 }
 
 #[cfg(windows)]

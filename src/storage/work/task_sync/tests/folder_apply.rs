@@ -915,6 +915,10 @@ fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
                 | "work_project_feed_tasks"
                 | "work_task_sync_baseline"
                 | "work_task_sync_baseline_heads"
+                | "work_task_sync_document_members"
+                | "work_task_sync_graph_nodes"
+                | "work_task_sync_graph_edges"
+                | "work_task_sync_graph_heads"
                 | "work_task_sync_import_heads"
         ) || name.starts_with("work_catalog_fts")
         {
@@ -937,6 +941,16 @@ fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
         Some(ImportedBaseline::Removed { head }) => head,
         other => panic!("a folder removal must retain an explicit removed baseline: {other:?}"),
     };
+    let tombstone: bool = store
+        .connection
+        .query_row(
+            "SELECT document_json IS NULL FROM work_task_sync_document_members
+         WHERE record_id=?1 AND work_id=?2",
+            params![removed_head.as_str(), fixture.first.0.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(tombstone, "the new member row records the exact removal");
     let kind: String = store
         .connection
         .query_row(

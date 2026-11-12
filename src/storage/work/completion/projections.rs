@@ -59,6 +59,7 @@ impl SqliteStore {
         let _origin_scope = super::super::task_sync::enter_origin_scope(connection)?;
         let mut checked = 0_usize;
         let mut invalid = Vec::new();
+        super::super::task_sync::evidence::verify(connection, &mut checked, &mut invalid)?;
         super::super::task_sync::verify_origins(connection, &mut checked, &mut invalid)?;
         super::super::task_sync::verify_exchange(connection, &mut checked, &mut invalid);
         super::super::task_sync::reconciliation::verify_reconciliation(
@@ -372,6 +373,12 @@ impl SqliteStore {
                         WorkEvidenceKind::Environment => {
                             expected_environment_projection(connection, evidence).ok()
                         }
+                        WorkEvidenceKind::Imported => {
+                            super::super::task_sync::evidence::consumption::expected_projection_on(
+                                connection, evidence,
+                            )
+                            .ok()
+                        }
                     };
                     if let Some(expected) = expected.filter(|expected| {
                         expected.work_id == event.work_id.0.to_string()
@@ -531,6 +538,13 @@ impl SqliteStore {
         super::super::note_index::verify(connection, &mut checked, &mut invalid)?;
         super::super::feed_tasks::verify(connection, &mut checked, &mut invalid)?;
         super::super::task_sync::baseline::verify(connection, &mut checked, &mut invalid)?;
+        super::super::task_sync::closure::documents::verify(
+            connection,
+            &mut checked,
+            &mut invalid,
+        )?;
+        super::super::task_sync::closure::source::verify(connection, &mut checked, &mut invalid)?;
+        super::super::task_sync::closure::graph::verify(connection, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
         verify_required_child_waiver_bindings(connection, &mut audit, &mut checked, &mut invalid)?;
@@ -646,6 +660,7 @@ fn seed_restored_projection_expectations(
              LEFT JOIN work_restored_records record
                ON record.record_id = object.object_id
              WHERE object.object_kind = 'work_restored_record'
+               AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=object.object_id)
                AND record.record_id IS NULL
              ORDER BY object.object_id",
         )?

@@ -6,6 +6,9 @@ use crate::{
 use std::{fs, path::PathBuf};
 
 mod guards;
+mod mixed_evidence;
+mod resolution;
+mod snapshot;
 mod validation;
 
 struct Fixture {

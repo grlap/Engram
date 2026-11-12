@@ -1,5 +1,5 @@
-//! Durable reconciliation facts and admission fences. Host settlement is a
-//! separate core proof; neither this loader nor an absent claim supplies it.
+//! Durable reconciliation facts and admission fences. Planning successors wait
+//! for local claims and unfinished runs; host requests keep their own identity.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -19,6 +19,7 @@ pub(in crate::storage::work) mod active;
 mod heads;
 pub(in crate::storage) mod holds;
 mod lookup;
+pub(in crate::storage::work) mod successor;
 mod versions;
 pub(super) use heads::advance_on;
 pub(in crate::storage) use heads::head_for_imported_task_on;
@@ -28,11 +29,25 @@ pub(super) use heads::validate_current_on as validate_current_heads_on;
 mod tests;
 
 pub(in crate::storage) use holds::refuse_held_on;
-pub(super) use versions::validate_receipt_on;
+pub(super) use versions::{validate_receipt_base, validate_receipt_intent, validate_receipt_on};
 
 const MAX_RECORDS: usize = 100_000;
 const MAX_BYTES: usize = 128 * 1024 * 1024;
 const MAX_RECORD_BYTES: usize = 16 * 1024 * 1024;
+
+pub(super) fn validate_imported_head_on(
+    connection: &Connection,
+    id: &ObjectId,
+    project: &ProjectId,
+    work: WorkId,
+) -> Result<Option<crate::task_sync::TaskDocument>, StoreError> {
+    versions::baseline_on(connection, id, project, work)
+}
+
+#[cfg(test)]
+thread_local! {
+    static AFFECTED_ITEM_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 fn family_on<T: serde::de::DeserializeOwned>(
     connection: &Connection,
@@ -52,7 +67,7 @@ fn family_on<T: serde::de::DeserializeOwned>(
     SqliteStore::get_typed_object_on(connection, id, kind)
 }
 
-fn validate_work_basis_links(
+pub(super) fn validate_work_basis_links(
     connection: &Connection,
     project: &ProjectId,
     basis: &ReconciliationWorkBasis,
@@ -198,12 +213,19 @@ fn prepared_on(
         &prepared.binding == binding_id,
         "reconciliation prepared binding differs",
     )?;
-    let Transition::Prepared { intent } = &prepared.transition else {
-        return Err(invalid("reconciliation requires a prepared intent"));
+    let (direction, actor) = match &prepared.transition {
+        Transition::Prepared { intent } => {
+            intent.validate()?;
+            (intent.direction, &intent.actor)
+        }
+        Transition::DeltaPrepared { intent, payload } => {
+            payload.validate_historical(binding_id, &binding, intent)?;
+            (intent.direction, &intent.actor)
+        }
+        _ => return Err(invalid("reconciliation requires a planning preparation")),
     };
-    intent.validate()?;
     require(
-        intent.direction == Direction::Incoming && prepared.actor == intent.actor,
+        direction == Direction::Incoming && &prepared.actor == actor,
         "reconciliation requires an incoming intent with matching attribution",
     )?;
     Ok((binding, prepared))
@@ -220,66 +242,74 @@ pub(in crate::storage) fn capture_affected_on(
         !seeds.is_empty() && seeds.len() <= MAX_RECORDS,
         "reconciliation scope requires bounded seeds",
     )?;
-    let mut statement =
-        connection.prepare("SELECT work_id FROM work_items WHERE project_id = ?1")?;
-    let ids = statement
-        .query_map([&project.0], |row| row.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut pending = seeds.iter().copied().collect::<BTreeSet<_>>();
     require(
-        ids.len() <= MAX_RECORDS,
-        "reconciliation project exceeds supported bound",
-    )?;
-    let mut items = HashMap::new();
-    for id in ids {
-        let id =
-            WorkId(uuid::Uuid::parse_str(&id).map_err(|_| invalid("invalid affected work id"))?);
-        items.insert(id, query::load_work_item(connection, id)?);
-    }
-    let mut selected: HashSet<_> = seeds.iter().copied().collect();
-    require(
-        selected.len() == seeds.len() && selected.iter().all(|id| items.contains_key(id)),
+        pending.len() == seeds.len(),
         "reconciliation seed is repeated, missing or cross-project",
     )?;
-    let mut statement =
-        connection.prepare("SELECT work_id, prerequisite_id FROM work_prerequisites")?;
-    let edges = statement
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    let edges = edges
-        .into_iter()
-        .map(|(a, b)| {
-            Ok((
-                WorkId(uuid::Uuid::parse_str(&a).map_err(|_| invalid("invalid prerequisite id"))?),
-                WorkId(uuid::Uuid::parse_str(&b).map_err(|_| invalid("invalid prerequisite id"))?),
-            ))
-        })
-        .collect::<Result<Vec<_>, StoreError>>()?;
-    loop {
-        let before = selected.len();
-        let roots: HashSet<_> = selected.iter().map(|id| items[id].root_id).collect();
-        selected.extend(
-            items
-                .iter()
-                .filter(|(_, item)| roots.contains(&item.root_id))
-                .map(|(id, _)| *id),
-        );
-        for (a, b) in &edges {
-            if selected.contains(a) || selected.contains(b) {
-                require(
-                    items.contains_key(a) && items.contains_key(b),
-                    "affected prerequisite crosses project",
-                )?;
-                selected.insert(*a);
-                selected.insert(*b);
+    let seed_ids = pending.clone();
+    let mut items = HashMap::new();
+    let mut roots = HashSet::new();
+    while let Some(id) = pending.pop_first() {
+        if items.contains_key(&id) {
+            continue;
+        }
+        require(
+            items.len() < MAX_RECORDS,
+            "reconciliation scope exceeds supported bound",
+        )?;
+        #[cfg(test)]
+        AFFECTED_ITEM_READS.with(|count| count.set(count.get() + 1));
+        let seed_error = "reconciliation seed is repeated, missing or cross-project";
+        let item = query::load_work_item(connection, id).map_err(|error| {
+            if seed_ids.contains(&id) && matches!(error, StoreError::WorkNotFound(_)) {
+                invalid(seed_error)
+            } else {
+                error
+            }
+        })?;
+        require(
+            item.project_id == *project,
+            if seed_ids.contains(&id) {
+                seed_error
+            } else {
+                "affected prerequisite crosses project"
+            },
+        )?;
+        let mut enqueue = |found: String| -> Result<(), StoreError> {
+            let found = query::parse_work_id(&found)?;
+            if found != id && !items.contains_key(&found) {
+                pending.insert(found);
+            }
+            require(
+                items.len() + pending.len() < MAX_RECORDS,
+                "reconciliation scope exceeds supported bound",
+            )
+        };
+        if roots.insert(item.root_id) {
+            for found in connection.prepare("SELECT work_id FROM work_items INDEXED BY work_items_root WHERE project_id=?1 AND root_id=?2")?
+                .query_map(params![&project.0, item.root_id.0.to_string()], |row| row.get::<_, String>(0))? {
+                enqueue(found?)?;
             }
         }
-        if selected.len() == before {
-            break;
+        for sql in [
+            "SELECT prerequisite_id FROM work_prerequisites WHERE work_id=?1",
+            "SELECT work_id FROM work_prerequisites INDEXED BY work_prerequisites_reverse WHERE prerequisite_id=?1",
+        ] {
+            for found in connection
+                .prepare(sql)?
+                .query_map([id.0.to_string()], |row| row.get::<_, String>(0))?
+            {
+                enqueue(found?)?;
+            }
         }
+        items.insert(id, item);
+        require(
+            items.len() + pending.len() <= MAX_RECORDS,
+            "reconciliation scope exceeds supported bound",
+        )?;
     }
-    let mut selected: Vec<_> = selected.into_iter().collect();
+    let mut selected: Vec<_> = items.keys().copied().collect();
     selected.sort_by_key(|id| id.0);
     selected.into_iter().map(|work_id| {
         let item = &items[&work_id];

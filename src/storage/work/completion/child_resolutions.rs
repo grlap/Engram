@@ -17,11 +17,9 @@ pub(super) fn validate_resolutions_on(
 ) -> Result<(), StoreError> {
     for resolution in &seal.required_child_resolutions {
         let RequiredChildResolution::ResolvedBySuccessor {
-            work_id,
-            work_revision,
             supersession,
-            successor,
             successor_seal,
+            ..
         } = resolution;
         let event: WorkEvent = load_typed_work_object(connection, supersession, "work_event")?;
         let proof: CompletionSeal =
@@ -31,39 +29,58 @@ pub(super) fn validate_resolutions_on(
             &proof.accepted_work_revision_hash,
             "work_item_revision",
         )?;
-        if !accounted.insert(*work_id)
-            || seal
-                .required_child_waivers
-                .iter()
-                .any(|waiver| waiver.work_id == *work_id)
-            || !seal.required_child_seals.contains(successor_seal)
-            || event.work_id != *work_id
-            || event.revision != *work_revision
-            || event.work.parent_id != Some(seal.work_id)
-            || event.root_id != seal.root_id
-            || *work_id == *successor
-            || !super::super::child_resolution::supersession_binds(
-                &event,
-                &event.work,
-                *successor,
-                seal.root_execution_id,
-            )
-            || proof.work_id != *successor
-            || proof.root_execution_id != seal.root_execution_id
-            || proof.root_id != seal.root_id
-            || accepted.work_id != *successor
-            || accepted.parent_id != Some(seal.work_id)
-            || accepted.root_id != seal.root_id
-            || accepted.project_id != event.project_id
-            || accepted.child_requirement != ChildRequirement::Required
-            || accepted.lifecycle != WorkLifecycle::Open
-            || accepted.revision != proof.accepted_work_revision
-            || accepted.active_run_id != Some(proof.run_id)
-        {
-            return Err(StoreError::InvalidWorkProjection(
+        validate_retained_resolution(seal, resolution, &event, &proof, &accepted, accounted)?;
+    }
+    Ok(())
+}
+
+pub(in crate::storage::work) fn validate_retained_resolution(
+    seal: &CompletionSeal,
+    resolution: &RequiredChildResolution,
+    event: &WorkEvent,
+    proof: &CompletionSeal,
+    accepted: &WorkItem,
+    accounted: &mut HashSet<WorkId>,
+) -> Result<(), StoreError> {
+    let RequiredChildResolution::ResolvedBySuccessor {
+        work_id,
+        work_revision,
+        supersession: _,
+        successor,
+        successor_seal,
+    } = resolution;
+    if !accounted.insert(*work_id)
+        || seal
+            .required_child_waivers
+            .iter()
+            .any(|waiver| waiver.work_id == *work_id)
+        || !seal.required_child_seals.contains(successor_seal)
+        || event.work_id != *work_id
+        || event.revision != *work_revision
+        || event.work.parent_id != Some(seal.work_id)
+        || event.root_id != seal.root_id
+        || *work_id == *successor
+        || !super::super::child_resolution::supersession_binds(
+            event,
+            &event.work,
+            *successor,
+            seal.root_execution_id,
+        )
+        || proof.work_id != *successor
+        || proof.root_execution_id != seal.root_execution_id
+        || proof.root_id != seal.root_id
+        || accepted.work_id != *successor
+        || accepted.parent_id != Some(seal.work_id)
+        || accepted.root_id != seal.root_id
+        || accepted.project_id != event.project_id
+        || accepted.child_requirement != ChildRequirement::Required
+        || accepted.lifecycle != WorkLifecycle::Open
+        || accepted.revision != proof.accepted_work_revision
+        || accepted.active_run_id != Some(proof.run_id)
+    {
+        return Err(StoreError::InvalidWorkProjection(
                 "required-child successor resolution differs from its immutable supersession or sibling seal binding".into(),
             ));
-        }
     }
     Ok(())
 }

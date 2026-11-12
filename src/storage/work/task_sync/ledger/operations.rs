@@ -21,6 +21,15 @@ use chrono::{DateTime, Utc};
 mod outgoing;
 mod plan;
 
+pub(super) fn verify_historical_plan(
+    connection: &rusqlite::Connection,
+    ledger: &Ledger,
+    input: &InspectedExchange,
+    retained: &crate::task_sync::ledger::ImportPlan,
+) -> Result<(), StoreError> {
+    plan::historical(connection, ledger, input, retained)
+}
+
 impl SqliteStore {
     /// Record a previously inspected retained request under one serialized writer.
     /// Same-key retry compares the complete attributed request, never only its key.
@@ -33,10 +42,51 @@ impl SqliteStore {
         now: DateTime<Utc>,
     ) -> Result<ObjectId, StoreError> {
         admit(input, &self.connection)?;
+        super::recovery::require_scope_on(&self.connection, &input.binding)?;
+        let request = super::origin_request(
+            "prepare",
+            &input.binding,
+            Some(&input.binding_id),
+            Some(&input.intent),
+            None,
+        )?;
+        super::super::producing_origin::with_exchange(
+            self,
+            &input.binding.project,
+            &input.binding.repository.git_directory,
+            Some(input.intent.operation),
+            &request,
+            |store, guard| store.prepare_task_sync_exchange_checked(input, now, guard, &request),
+        )
+    }
+
+    fn prepare_task_sync_exchange_checked(
+        &mut self,
+        input: &InspectedExchange,
+        now: DateTime<Utc>,
+        guard: Option<&crate::task_sync::origin::continuity::PreparedContinuity>,
+        request: &ObjectId,
+    ) -> Result<ObjectId, StoreError> {
+        admit(input, &self.connection)?;
+        let observed = super::custody::Observed::capture(&input.binding.repository.git_directory)?;
         let transaction = self.begin_work_mutation()?;
+        super::recovery::require_scope_on(&transaction, &input.binding)?;
+        super::super::producing_origin::check_exchange_on(
+            &transaction,
+            &input.binding.project,
+            guard,
+            request,
+        )?;
+        if guard.is_some() {
+            super::super::producing_origin::check_cut_on(
+                &transaction,
+                &input.binding.project,
+                &input.intent.candidate.source_cut,
+            )?;
+        }
         let mut ledger = Ledger::load(&transaction)?;
         active(&ledger, input)?;
-        external(&ledger, input)?;
+        external(&ledger, input, &observed)?;
         input
             .recheck_files()
             .map_err(|error| invalid(error.to_string()))?;
@@ -103,18 +153,10 @@ impl SqliteStore {
                 .filter(|event| event.binding == input.binding_id)
                 .max_by_key(|event| event.sequence)
                 .ok_or_else(|| invalid("exchange activation missing"))?;
+            // The common settlement contract, shared with evidence, delta and
+            // origin admission: any settled family outcome admits a new import.
             require(
-                matches!(
-                    tail.transition,
-                    Transition::Activated
-                        | Transition::ImportApplied { .. }
-                        | Transition::ReconciledImportApplied { .. }
-                        | Transition::PushObserved {
-                            observation:
-                                crate::task_sync::ledger::PublicationObservation::Confirmed { .. },
-                            ..
-                        }
-                ),
+                super::settled_tail(tail),
                 "new exchange bypasses unresolved operation",
             )?;
             let proposed = plan::create(&transaction, &ledger, input, now)?;
@@ -156,9 +198,75 @@ impl SqliteStore {
             input.intent.direction == Direction::Incoming,
             "exchange is not an import",
         )?;
+        if dry_run {
+            let enrolled =
+                super::super::producing_origin::load_on(&self.connection, &input.binding.project)?
+                    .is_some();
+            let guard = if enrolled {
+                Some(self.prepare_task_sync_origin(&input.binding.project)?)
+            } else {
+                None
+            };
+            if let Some(guard) = &guard {
+                guard.recheck()?;
+            }
+            return self.apply_task_sync_exchange_checked(input, true, now, guard.as_ref(), None);
+        }
+        let request = super::origin_request(
+            "apply",
+            &input.binding,
+            Some(&input.binding_id),
+            Some(&input.intent),
+            None,
+        )?;
+        super::super::producing_origin::with_exchange(
+            self,
+            &input.binding.project,
+            &input.binding.repository.git_directory,
+            Some(input.intent.operation),
+            &request,
+            |store, guard| {
+                store.apply_task_sync_exchange_checked(input, false, now, guard, Some(&request))
+            },
+        )
+    }
+
+    fn apply_task_sync_exchange_checked(
+        &mut self,
+        input: &InspectedExchange,
+        dry_run: bool,
+        now: DateTime<Utc>,
+        guard: Option<&crate::task_sync::origin::continuity::PreparedContinuity>,
+        request: Option<&ObjectId>,
+    ) -> Result<ImportReceipt, StoreError> {
+        admit(input, &self.connection)?;
+        require(
+            input.intent.direction == Direction::Incoming,
+            "exchange is not an import",
+        )?;
+        let observed = super::custody::Observed::capture(&input.binding.repository.git_directory)?;
         let transaction = self.begin_work_mutation()?;
+        if let Some(request) = request {
+            super::super::producing_origin::check_exchange_on(
+                &transaction,
+                &input.binding.project,
+                guard,
+                request,
+            )?;
+        } else if let Some(guard) = guard {
+            let checked = super::super::producing_origin::check_on(
+                &transaction,
+                &input.binding.project,
+                guard,
+            )?;
+            checked.require_on(&transaction)?;
+        } else if super::super::producing_origin::load_on(&transaction, &input.binding.project)?
+            .is_some()
+        {
+            return Err(invalid("origin enrollment changed before dry-run writer"));
+        }
         let mut ledger = Ledger::load(&transaction)?;
-        let (_, receipt) = apply_on(&transaction, &mut ledger, input, dry_run, now)?;
+        let (_, receipt) = apply_on(&transaction, &mut ledger, input, dry_run, now, &observed)?;
         if !dry_run {
             transaction.commit()?;
         }
@@ -167,6 +275,13 @@ impl SqliteStore {
 }
 
 fn admit(input: &InspectedExchange, connection: &rusqlite::Connection) -> Result<(), StoreError> {
+    require(
+        super::super::producing_origin::load_on(connection, &input.binding.project)?
+            .as_ref()
+            .map(|origin| &origin.origin_id)
+            == input.binding.store.origin.as_ref(),
+        "exchange binding does not name the current producing origin",
+    )?;
     input.binding.validate()?;
     input.intent.validate()?;
     super::super::validate_task_import(
@@ -201,92 +316,19 @@ fn active(ledger: &Ledger, input: &InspectedExchange) -> Result<(), StoreError> 
     )
 }
 
-fn external(ledger: &Ledger, input: &InspectedExchange) -> Result<(), StoreError> {
-    let inventory = retention::inventory(&input.binding.repository.git_directory)
-        .map_err(|error| invalid(error.to_string()))?;
-    let known = ledger
-        .events
-        .values()
-        .filter_map(|event| {
-            let binding = ledger.bindings.get(&event.binding)?;
-            if !super::same_directory(
-                &binding.repository.git_directory,
-                &input.binding.repository.git_directory,
-            ) {
-                return None;
-            }
-            match &event.transition {
-                Transition::Prepared { intent } => Some(intent.operation),
-                _ => None,
-            }
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    require(
-        inventory
-            .candidates
-            .union(&inventory.commits)
-            .all(|operation| *operation == input.intent.operation || known.contains(operation)),
-        "retained operations are ahead of this ledger; preserve both sides for reconciliation",
-    )?;
-    require(
-        inventory
-            .imports
-            .iter()
-            .all(|operation| known.contains(operation)),
-        "retained import plans are ahead of this ledger; preserve both sides for reconciliation",
-    )?;
-    for operation in &inventory.pushes {
-        let witness = retention::read_publication_witness(
-            &input.binding.repository.git_directory,
-            *operation,
-        )
-        .map_err(|error| invalid(error.to_string()))?
-        .ok_or_else(|| invalid("publication witness disappeared; preserve uncertainty"))?;
-        require(
-            ledger.events.get(&witness.event_id) == Some(&witness.event)
-                && ledger
-                    .bindings
-                    .get(&witness.event.binding)
-                    .is_some_and(|binding| {
-                        super::same_directory(
-                            &binding.repository.git_directory,
-                            &input.binding.repository.git_directory,
-                        )
-                    })
-                && ledger.events.values().any(|event| {
-                    event.binding == witness.event.binding
-                        && matches!(&event.transition,
-                        Transition::Prepared { intent } if intent.operation == *operation)
-                }),
-            "publication witness is ahead of this ledger; reconcile without retrying transport",
-        )?;
-    }
-    for event in ledger.events.values() {
-        if let Transition::PushStarted { prepared } = &event.transition {
-            let Some(binding) = ledger.bindings.get(&event.binding) else {
-                continue;
-            };
-            if !super::same_directory(
-                &binding.repository.git_directory,
-                &input.binding.repository.git_directory,
-            ) {
-                continue;
-            }
-            let operation = ledger
-                .events
-                .get(prepared)
-                .and_then(|event| match &event.transition {
-                    Transition::Prepared { intent } => Some(intent.operation),
-                    _ => None,
-                })
-                .ok_or_else(|| invalid("publication intent missing"))?;
-            require(
-                inventory.pushes.contains(&operation),
-                "publication witness is missing; preserve uncertainty",
-            )?;
-        }
-    }
-    Ok(())
+fn external(
+    ledger: &Ledger,
+    input: &InspectedExchange,
+    observed: &super::custody::Observed,
+) -> Result<(), StoreError> {
+    let root = &input.binding.repository.git_directory;
+    super::custody::check(
+        ledger,
+        root,
+        observed,
+        Some(input.intent.operation),
+        super::same_directory,
+    )
 }
 
 /// The local planning basis an exchange compares. An outgoing operation
@@ -364,7 +406,7 @@ fn append(
     Ok(object)
 }
 
-fn store_event(
+pub(super) fn store_event(
     connection: &rusqlite::Connection,
     ledger: &mut Ledger,
     object: &CanonicalObject,
@@ -379,13 +421,33 @@ fn store_event(
         "planned event identity already exists without an intact committed receipt",
     )?;
     let event: Event = object.decode()?;
+    let binding = ledger
+        .bindings
+        .get(&event.binding)
+        .ok_or_else(|| invalid("exchange binding is missing"))?;
+    require(
+        !super::recovery::quarantined(connection, &event.binding, binding)?,
+        "origin recovery quarantined this exchange; preserve predecessor history",
+    )?;
+    super::recovery::require_scope_on(connection, binding)?;
+    let proposed = super::view::append::propose(connection, binding, object)?;
     ledger.capacity(&[object])?;
     ledger.bytes += object.bytes().len();
     let created_at = event.recorded_at.format("%Y-%m-%d %H:%M:%S").to_string();
-    ledger.events.insert(object.key().clone(), event);
-    ledger.validate(connection)?;
+    ledger.events.insert(object.key().clone(), event.clone());
     connection.execute("INSERT INTO objects (object_id, object_kind, canonical_json, created_at) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![object.key().as_str(), EVENT_KIND, object.bytes(), created_at])?;
+    super::view::append::record(connection, &event.binding, &proposed)?;
+    if matches!(
+        event.transition,
+        Transition::CustodyCheckpoint { .. }
+            | Transition::DeltaPrepared { .. }
+            | Transition::DeltaImportApplied { .. }
+            | Transition::PlanningSuccessorPrepared { .. }
+            | Transition::PlanningSuccessorApplied { .. }
+    ) {
+        super::super::closure::documents::record_on(connection, EVENT_KIND, object)?;
+    }
     Ok(())
 }
 
@@ -395,9 +457,10 @@ fn apply_on(
     input: &InspectedExchange,
     dry_run: bool,
     now: DateTime<Utc>,
+    observed: &super::custody::Observed,
 ) -> Result<(ObjectId, ImportReceipt), StoreError> {
     active(ledger, input)?;
-    external(ledger, input)?;
+    external(ledger, input, observed)?;
     input
         .recheck_files()
         .map_err(|error| invalid(error.to_string()))?;
@@ -511,6 +574,10 @@ fn apply_on(
 }
 
 #[cfg(test)]
+mod checkpoint_tests;
+#[cfg(test)]
 mod compatibility;
+#[cfg(test)]
+mod origin_tests;
 #[cfg(test)]
 mod tests;

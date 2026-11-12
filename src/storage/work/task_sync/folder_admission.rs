@@ -21,11 +21,11 @@
 //! times, naming the additions the located failure involves.
 //! Each removal is independently rechecked at its writer.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod relations;
 
-use super::{ImportOrigin, origin, query};
+use super::{origin, query};
 use crate::{
     ActorContext, ProjectId, WorkId, WorkLifecycle, WorkOrigin,
     domain::{WorkPlanningAuthority, WorkTransition},
@@ -65,6 +65,7 @@ pub(super) struct Conflict {
 /// two sides of any field.
 pub(super) struct Prospective<'a> {
     pub(super) project: &'a ProjectId,
+    project_document: &'a ProjectDocument,
     /// The destination's current exported documents, by id.
     pub(super) current: HashMap<WorkId, &'a TaskDocument>,
     /// The resolved documents, by id.
@@ -73,31 +74,53 @@ pub(super) struct Prospective<'a> {
     pub(super) roots: HashMap<WorkId, WorkId>,
     /// Current roots include tasks that the resolved folder removes.
     current_roots: HashMap<WorkId, WorkId>,
-    /// Every origin-qualified activity identity the current documents hold,
-    /// including host-local tasks the folder omits.
-    current_activity: BTreeSet<(String, String)>,
+    /// Snapshots of the validated resolved scope, including added tasks.
+    snapshots: HashMap<WorkId, crate::WorkGraphSnapshotItem>,
     notes_included: bool,
 }
 
 impl<'a> Prospective<'a> {
     pub(super) fn new(current: &'a TaskTree, resolved: &'a TaskTree) -> Result<Self, StoreError> {
-        Ok(Self {
-            project: &resolved.project.project_id,
-            current: current.tasks.iter().map(|task| (task.id, task)).collect(),
-            resolved: resolved.tasks.iter().map(|task| (task.id, task)).collect(),
-            roots: resolved
+        Ok(Self::from_documents(
+            &resolved.project,
+            current.tasks.iter().map(|task| (task.id, task)).collect(),
+            resolved.tasks.iter().map(|task| (task.id, task)).collect(),
+            current
                 .snapshots()?
                 .into_iter()
                 .map(|item| (item.work_id, item.root_id))
                 .collect(),
-            current_activity: current.tasks.iter().flat_map(activity_keys).collect(),
-            notes_included: resolved.project.notes_included,
-            current_roots: current
+            resolved
                 .snapshots()?
                 .into_iter()
+                .map(|item| (item.work_id, item))
+                .collect(),
+        ))
+    }
+
+    /// Both maps are complete connected scopes with already validated graph
+    /// snapshots. The atomic owner captures them afresh inside its writer;
+    /// this private constructor grants no admission to a partial task folder.
+    pub(super) fn from_documents(
+        project: &'a ProjectDocument,
+        current: HashMap<WorkId, &'a TaskDocument>,
+        resolved: HashMap<WorkId, &'a TaskDocument>,
+        current_roots: HashMap<WorkId, WorkId>,
+        snapshots: HashMap<WorkId, crate::WorkGraphSnapshotItem>,
+    ) -> Self {
+        Self {
+            project: &project.project_id,
+            project_document: project,
+            current,
+            resolved,
+            roots: snapshots
+                .values()
                 .map(|item| (item.work_id, item.root_id))
                 .collect(),
-        })
+            current_roots,
+            snapshots,
+            notes_included: project.notes_included,
+        }
     }
 
     /// The resolved task's ancestors, nearest first. The resolved tree is a
@@ -125,30 +148,31 @@ impl<'a> Prospective<'a> {
     }
 }
 
-/// Identities the store's import origins already hold, read once per
-/// admission.
-struct OriginIdentities {
-    origins: Vec<ImportOrigin>,
-    notes: HashSet<String>,
-    activity: BTreeSet<(String, String)>,
+/// Complete immutable-origin components selected by the applying owner.
+/// Identity collisions use their separate global keyed lookup.
+pub(super) struct OriginGraph {
+    pub(super) documents: Vec<TaskDocument>,
+    pub(super) notes_included: bool,
 }
 
-impl OriginIdentities {
-    fn read(transaction: &rusqlite::Transaction<'_>) -> Result<Self, StoreError> {
+impl OriginGraph {
+    fn read(
+        transaction: &rusqlite::Transaction<'_>,
+        project: &ProjectId,
+    ) -> Result<Self, StoreError> {
         let origins = origin::all_origins(transaction)?;
-        let notes = origins
-            .iter()
-            .flat_map(|origin| origin.task.notes.iter())
-            .map(|note| note.id.as_str().to_owned())
-            .collect();
-        let activity = origins
-            .iter()
-            .flat_map(|origin| activity_keys(&origin.task))
+        let mut notes_included = false;
+        let documents = origins
+            .into_iter()
+            .filter(|origin| origin.project_id == *project)
+            .map(|origin| {
+                notes_included |= origin.notes_included;
+                origin.task
+            })
             .collect();
         Ok(Self {
-            origins,
-            notes,
-            activity,
+            documents,
+            notes_included,
         })
     }
 }
@@ -291,15 +315,67 @@ pub(super) fn apply_plan(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<(), StoreError> {
     let prospective = Prospective::new(current, resolved)?;
+    let origins = if plan.additions().next().is_some() {
+        Some(OriginGraph::read(transaction, prospective.project)?)
+    } else {
+        None
+    };
+    apply_on(
+        transaction,
+        plan,
+        &prospective,
+        origins.as_ref(),
+        || {
+            Ok(super::export_on(transaction, prospective.project)?
+                .tasks
+                .into_iter()
+                .map(|task| (task.id, task))
+                .collect())
+        },
+        || {
+            if super::super::integrity::combined_graph_is_acyclic(
+                transaction,
+                &prospective.project.0,
+            )? {
+                Ok(())
+            } else {
+                Err(StoreError::InvalidWorkProjection(
+                    "a folder relation change left a durable dependency cycle".into(),
+                ))
+            }
+        },
+        actor,
+        now,
+    )
+}
+
+/// One admission and ordered application implementation for full folders and
+/// fresh connected scopes. The caller owns graph capture, snapshot validation
+/// and the transaction; these inputs are not public admission observations.
+/// Graph readers remain lazy so earlier per-task refusals keep their ordering.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the applying owner supplies its two graph checks beside captured planning"
+)]
+pub(super) fn apply_on(
+    transaction: &rusqlite::Transaction<'_>,
+    plan: &DeltaPlan,
+    prospective: &Prospective<'_>,
+    origins: Option<&OriginGraph>,
+    durable: impl FnOnce() -> Result<HashMap<WorkId, TaskDocument>, StoreError>,
+    final_graph: impl FnOnce() -> Result<(), StoreError>,
+    actor: &ActorContext,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), StoreError> {
     let mut conflicts = BTreeMap::new();
     let mut batch = Vec::new();
     let mut reads = HeldReads::default();
     let additions = plan.additions().collect::<Vec<_>>();
-    let identities = if additions.is_empty() {
-        None
-    } else {
-        Some(OriginIdentities::read(transaction)?)
-    };
+    if !additions.is_empty() && origins.is_none() {
+        return Err(StoreError::InvalidWorkProjection(
+            "addition admission requires captured immutable-origin components".into(),
+        ));
+    }
     for task in &plan.tasks {
         if !matches!(task.delta, TaskDelta::Unchanged | TaskDelta::RetainedLocal) {
             let mut affected = HashSet::new();
@@ -342,7 +418,7 @@ pub(super) fn apply_plan(
             }
             TaskDelta::Changed(change) if !change.relations.is_empty() => relations::admit_owner(
                 transaction,
-                &prospective,
+                prospective,
                 &mut reads,
                 task.id,
                 &change.relations,
@@ -356,10 +432,8 @@ pub(super) fn apply_plan(
                     reason,
                     detail,
                 }),
-            TaskDelta::Added => match &identities {
-                Some(identities) => {
-                    admit_addition(transaction, &prospective, identities, &mut reads, task.id)?
-                }
+            TaskDelta::Added => match origins {
+                Some(_) => admit_addition(transaction, prospective, &mut reads, task.id)?,
                 None => None,
             },
             TaskDelta::Unchanged | TaskDelta::RetainedLocal | TaskDelta::Changed(_) => None,
@@ -381,7 +455,7 @@ pub(super) fn apply_plan(
     for &id in &removals {
         if !conflicts.contains_key(&id.0)
             && let Some(conflict) =
-                removal_ancestor_binding(transaction, &prospective, &mut reads, id)?
+                removal_ancestor_binding(transaction, prospective, &mut reads, id)?
         {
             bindings.insert(id.0, conflict);
         }
@@ -445,12 +519,12 @@ pub(super) fn apply_plan(
     for (id, conflict) in bindings {
         conflicts.entry(id).or_insert(conflict);
     }
-    if identities.is_some() {
+    if origins.is_some() {
         for &id in &additions {
             if !conflicts.contains_key(&id.0)
                 && let Some(conflict) = ancestor_binding(
                     transaction,
-                    &prospective,
+                    prospective,
                     &mut reads,
                     &relation_owners,
                     &conflicts,
@@ -460,7 +534,7 @@ pub(super) fn apply_plan(
                 conflicts.insert(id.0, conflict);
             }
         }
-        name_dependents_of_refusals(&prospective, &additions, &mut conflicts);
+        name_dependents_of_refusals(prospective, &additions, &mut conflicts);
     }
     let admitted = |conflicts: &BTreeMap<uuid::Uuid, Conflict>| {
         additions
@@ -470,31 +544,26 @@ pub(super) fn apply_plan(
             .collect::<Vec<_>>()
     };
     if plan.relation_changes().next().is_none() && (!additions.is_empty() || !removals.is_empty()) {
-        let retained = retained_graph(
-            &prospective,
-            resolved,
-            &admitted_removals,
-            &admitted(&conflicts),
-        )?;
+        let retained = retained_graph(prospective, &admitted_removals, &admitted(&conflicts))?;
         absorb(retained, &mut conflicts, &mut batch);
-        name_dependents_of_refusals(&prospective, &additions, &mut conflicts);
+        name_dependents_of_refusals(prospective, &additions, &mut conflicts);
     }
     if batch.is_empty()
-        && let Some(identities) = &identities
+        && let Some(origins) = origins
     {
-        let origins = origin_graph(&prospective, resolved, identities, &admitted(&conflicts))?;
+        let origins = origin_graph(prospective, origins, &admitted(&conflicts))?;
         absorb(origins, &mut conflicts, &mut batch);
-        name_dependents_of_refusals(&prospective, &additions, &mut conflicts);
+        name_dependents_of_refusals(prospective, &additions, &mut conflicts);
     }
     for (id, _) in plan.relation_changes() {
         if !conflicts.contains_key(&id.0)
             && let Some(conflict) =
-                relations::ancestor_binding(transaction, &prospective, &mut reads, id)?
+                relations::ancestor_binding(transaction, prospective, &mut reads, id)?
         {
             conflicts.insert(id.0, conflict);
         }
     }
-    relations::graphs(transaction, plan, &prospective, &mut conflicts, &mut batch)?;
+    relations::graphs(plan, prospective, &mut conflicts, &mut batch, durable)?;
     if !plan.project.is_empty() || !conflicts.is_empty() || !batch.is_empty() {
         let conflicts = conflicts.into_values().collect::<Vec<_>>();
         return Err(
@@ -510,17 +579,19 @@ pub(super) fn apply_plan(
         // Additions may reference one another in any order; the caller
         // checks every foreign key once they are all in place.
         transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
-        let mut snapshots = resolved
-            .snapshots()?
-            .into_iter()
-            .map(|item| (item.work_id, item))
-            .collect::<HashMap<_, _>>();
         for &id in &additions {
             let task = prospective.resolved_task(id)?;
-            let snapshot = snapshots.remove(&id).ok_or_else(|| {
+            let snapshot = prospective.snapshots.get(&id).cloned().ok_or_else(|| {
                 StoreError::InvalidWorkProjection("an added task has no snapshot".into())
             })?;
-            super::insert_task(transaction, resolved, task, snapshot, actor, now)?;
+            super::insert_task(
+                transaction,
+                prospective.project_document,
+                task,
+                snapshot,
+                actor,
+                now,
+            )?;
         }
     }
     for (id, change) in plan.scalar_changes() {
@@ -533,15 +604,8 @@ pub(super) fn apply_plan(
         )?;
     }
     relations::apply_additions(transaction, plan, actor, now)?;
-    if plan.relation_changes().next().is_some()
-        && !super::super::integrity::combined_graph_is_acyclic(
-            transaction,
-            &resolved.project.project_id.0,
-        )?
-    {
-        return Err(StoreError::InvalidWorkProjection(
-            "a folder relation change left a durable dependency cycle".into(),
-        ));
+    if plan.relation_changes().next().is_some() {
+        final_graph()?;
     }
     let mut ordered = removals
         .into_iter()
@@ -831,7 +895,6 @@ const fn unfinished(lifecycle: WorkLifecycle) -> bool {
 fn admit_addition(
     transaction: &rusqlite::Transaction<'_>,
     prospective: &Prospective<'_>,
-    identities: &OriginIdentities,
     reads: &mut HeldReads,
     id: WorkId,
 ) -> Result<Option<Conflict>, StoreError> {
@@ -876,13 +939,16 @@ fn admit_addition(
         }
     }
     for note in &task.notes {
-        if identities.notes.contains(note.id.as_str())
-            || held(
-                "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id = ?1)",
-                note.id.as_str(),
-                None,
-            )?
-        {
+        if super::closure::graph::identities::original_held(
+            transaction,
+            "note",
+            "",
+            note.id.as_str(),
+        )? || held(
+            "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id = ?1)",
+            note.id.as_str(),
+            None,
+        )? {
             return collision(format!("note {} is already held", note.id.as_str()));
         }
     }
@@ -891,14 +957,16 @@ fn admit_addition(
         // whatever alias an export asserts, by the id of the event that
         // recorded the claim; like a note id, an activity id that names a
         // record this store holds is held.
-        if identities.activity.contains(&key)
-            || prospective.current_activity.contains(&key)
-            || held(
-                "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id = ?1)",
-                &key.1,
-                None,
-            )?
-        {
+        if super::closure::graph::identities::original_held(
+            transaction,
+            "activity",
+            &key.0,
+            &key.1,
+        )? || held(
+            "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id = ?1)",
+            &key.1,
+            None,
+        )? {
             return collision(format!("activity {}/{} is already held", key.0, key.1));
         }
     }
@@ -1267,7 +1335,7 @@ fn over_limit_descendants(tree: &TaskTree) -> HashMap<WorkId, usize> {
 /// task that depends on itself. A task on a path between two cycles belongs
 /// to neither. The components come from one iterative pass of Tarjan's
 /// algorithm, linear in the tasks and their references.
-fn dependency_cycles(tasks: &[TaskDocument]) -> HashMap<WorkId, usize> {
+pub(super) fn dependency_cycles(tasks: &[TaskDocument]) -> HashMap<WorkId, usize> {
     const UNVISITED: usize = usize::MAX;
     let position = tasks
         .iter()
@@ -1486,7 +1554,6 @@ fn check_graph(
 /// only admitted execution-free removals belong in this set.
 fn retained_graph(
     prospective: &Prospective<'_>,
-    resolved: &TaskTree,
     removed: &HashSet<WorkId>,
     additions: &[WorkId],
 ) -> Result<GraphFindings, StoreError> {
@@ -1499,8 +1566,8 @@ fn retained_graph(
     base.sort_by_key(|task| task.id.0);
     check_graph(
         prospective,
-        &resolved.project.project_id,
-        resolved.project.notes_included,
+        prospective.project,
+        prospective.notes_included,
         &base,
         additions,
         "retained_graph",
@@ -1516,22 +1583,12 @@ fn retained_graph(
 /// current planning no longer holds can still close a cycle there.
 fn origin_graph(
     prospective: &Prospective<'_>,
-    resolved: &TaskTree,
-    identities: &OriginIdentities,
+    origins: &OriginGraph,
     additions: &[WorkId],
 ) -> Result<GraphFindings, StoreError> {
-    let project = &resolved.project.project_id;
-    let base = identities
-        .origins
-        .iter()
-        .filter(|origin| origin.project_id == *project)
-        .map(|origin| &origin.task)
-        .collect::<Vec<_>>();
-    let notes_included = resolved.project.notes_included
-        || identities
-            .origins
-            .iter()
-            .any(|origin| origin.project_id == *project && origin.notes_included);
+    let project = prospective.project;
+    let base = origins.documents.iter().collect::<Vec<_>>();
+    let notes_included = prospective.notes_included || origins.notes_included;
     check_graph(
         prospective,
         project,

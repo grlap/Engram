@@ -144,6 +144,7 @@ impl SqliteStore {
             let mut statement = self.connection.prepare(
                 "SELECT object_id, canonical_json FROM objects
                  WHERE object_kind = 'memory_assertion_event'
+                 AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
                  ORDER BY created_at, object_id",
             )?;
             let mapped = statement.query_map([], |row| {

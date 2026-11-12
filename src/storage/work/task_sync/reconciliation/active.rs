@@ -29,6 +29,19 @@ pub(in crate::storage::work) fn create_schema(connection: &Connection) -> Result
                     AND json_extract(event.canonical_json,'$.transition.prepared')=json_extract(held.canonical_json,'$.prepared')
                     AND json_extract(event.canonical_json,'$.transition.receipt.candidate_fingerprint')=json_extract(held.canonical_json,'$.candidate_fingerprint')
                     AND OLD.hold_id IN (SELECT value FROM json_each(event.canonical_json,'$.transition.receipt.holds')))
+                OR (event.object_kind='task_sync_exchange_event'
+                    AND json_extract(event.canonical_json,'$.transition.transition')='planning_successor_applied'
+                    AND json_extract(event.canonical_json,'$.binding')=json_extract(held.canonical_json,'$.binding')
+                    AND OLD.hold_id IN (SELECT value FROM json_each(event.canonical_json,'$.transition.receipt.holds'))
+                    AND EXISTS(SELECT 1 FROM objects preparation
+                        WHERE preparation.object_id=json_extract(event.canonical_json,'$.transition.prepared')
+                          AND preparation.object_kind='task_sync_exchange_event'
+                          AND json_extract(preparation.canonical_json,'$.transition.transition')='planning_successor_prepared'
+                          AND json_extract(preparation.canonical_json,'$.binding')=json_extract(held.canonical_json,'$.binding')
+                          AND json_extract(preparation.canonical_json,'$.transition.recipe.request.hold')=OLD.hold_id
+                          AND json_extract(preparation.canonical_json,'$.transition.recipe.request.original_prepared')=json_extract(held.canonical_json,'$.prepared')
+                          AND json_extract(preparation.canonical_json,'$.transition.recipe.request.original_candidate')=json_extract(held.canonical_json,'$.candidate_fingerprint')
+                          AND json_extract(preparation.canonical_json,'$.transition.recipe.outcome')=event.object_id))
          )
          BEGIN SELECT RAISE(ABORT,'active reconciliation membership has no canonical resolution'); END;",
     )?;
@@ -51,13 +64,6 @@ pub(super) fn lookup(
         .transpose()
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "The atomic reconciliation writer resolves active membership in the next slice"
-    )
-)]
 pub(in crate::storage) fn resolve_on(
     connection: &Connection,
     id: &ObjectId,

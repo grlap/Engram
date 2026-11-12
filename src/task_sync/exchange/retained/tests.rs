@@ -1,4 +1,5 @@
 use super::*;
+use sha2::{Digest, Sha256};
 
 async fn git(repository: &Path, args: &[&str]) -> Vec<u8> {
     local(

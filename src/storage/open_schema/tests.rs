@@ -1,3 +1,4 @@
+mod evidence_partition;
 mod verification_applicability;
 
 #[test]

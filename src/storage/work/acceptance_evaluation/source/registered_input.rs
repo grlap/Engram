@@ -67,13 +67,7 @@ fn qualifies_on(
         load_typed_work_object(connection, witness, "verification_evidence")?;
     let producer = crate::storage::work::load_verification_producer_on(connection, &evidence)?;
     let basis = &evidence.source_basis;
-    let binding = &evidence.binding;
-    if evidence.project_id != root.event.project_id
-        || binding.run_id != run_id
-        || binding.work_id != root.event.work_id
-        || binding.root_execution_id != root.event.root_execution_id
-        || binding.claim_id != root.event.claim_id
-        || producer.matches_registered_source(&evidence, &declared.identity) != Some(true)
+    if !super::registered_witness_matches(declared, &root.event, &evidence, &producer, run_id)
         || naming_mismatch(
             connection,
             run_id,

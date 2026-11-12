@@ -1,8 +1,8 @@
 use super::{
     ChildRequirement, DisposeWorkRequest, OptionalExtension, Redactor, ReopenWorkRequest,
-    RequiredChildWaiver, RootExecution, RootExecutionId, RootExecutionState, SCHEMA_VERSION,
-    SqliteStore, StoreError, WaiveRequiredChildRequest, WorkClaimState, WorkDisposition,
-    WorkEventDraft, WorkItem, WorkLifecycle, WorkRun, WorkRunId, WorkRunState, WorkTransition,
+    RequiredChildWaiver, RootExecution, RootExecutionState, SCHEMA_VERSION, SqliteStore,
+    StoreError, WaiveRequiredChildRequest, WorkClaimState, WorkDisposition, WorkEventDraft,
+    WorkItem, WorkLifecycle, WorkRun, WorkRunId, WorkRunState, WorkTransition,
     active_root_execution, append_work_event, assert_actor_session, assert_revision,
     combined_graph_is_acyclic_with_dependency, ensure_restored_execution_state,
     expire_handoff_offers, inspect_work_request, load_root_execution, load_work_claim_optional,
@@ -181,225 +181,12 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(run);
         }
-        let mut item = load_work_item(&transaction, request.work_id)?;
-        assert_revision(&item, request.expected_work_revision)?;
-        super::super::task_sync::reconciliation::refuse_held_on(&transaction, item.work_id)?;
-        let latest_run: Option<String> = transaction
-            .query_row(
-                "SELECT run_id FROM work_runs WHERE work_id=?1 ORDER BY generation DESC LIMIT 1",
-                [item.work_id.0.to_string()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        let retired = item.active_run_id.is_none()
-            && latest_run
-                .map(|id| {
-                    uuid::Uuid::parse_str(&id).map(WorkRunId).map_err(|_| {
-                        StoreError::InvalidWorkProjection("invalid latest run id".into())
-                    })
-                })
-                .transpose()?
-                .map(|id| load_work_run(&transaction, id))
-                .transpose()?
-                .is_some_and(|run| run.state == WorkRunState::SupersededByImport);
-        if item.lifecycle != WorkLifecycle::Completed
-            && !(item.lifecycle == WorkLifecycle::Open && retired)
-        {
-            return Err(StoreError::InvalidWork(
-                "only completed or import-retired work can be reopened".into(),
-            ));
-        }
-        if item.parent_id.is_some() {
-            refuse_completed_ancestor(&transaction, &item)?;
-        } else {
-            let open_descendants = transaction.query_row(
-                "WITH RECURSIVE descendants(work_id) AS (
-                     SELECT work_id FROM work_items WHERE parent_id = ?1
-                     UNION
-                     SELECT child.work_id FROM work_items child
-                     JOIN descendants parent ON child.parent_id = parent.work_id
-                 )
-                 SELECT COUNT(*) FROM descendants
-                 JOIN work_items item USING(work_id)
-                 WHERE item.lifecycle IN ('proposed', 'open')
-                   AND NOT (item.active_run_id IS NULL AND COALESCE((
-                       SELECT run.state FROM work_runs run WHERE run.work_id=item.work_id
-                       ORDER BY run.generation DESC LIMIT 1
-                   ), '') = 'superseded_by_import')",
-                [item.work_id.0.to_string()],
-                |row| row.get::<_, i64>(0),
-            )?;
-            if open_descendants != 0 {
-                return Err(StoreError::InvalidWork(
-                    "dispose unfinished descendants before reopening a completed root execution"
-                        .into(),
-                ));
-            }
-        }
-        if work_completed_by_restored_record_on(&transaction, &item)? {
-            item.lifecycle = WorkLifecycle::Open;
-            item.revision += 1;
-            item.updated_at = request.reopened_at;
-            let (root_execution, run, created) =
-                ensure_restored_execution_state(&transaction, &mut item, request.reopened_at)?;
-            if !created {
-                return Err(StoreError::InvalidWorkProjection(
-                    "restored reopen did not create a fresh run".into(),
-                ));
-            }
-            let event = WorkEventDraft {
-                schema_version: SCHEMA_VERSION,
-                project_id: item.project_id.clone(),
-                root_id: item.root_id,
-                work_id: item.work_id,
-                run_id: Some(run.run_id),
-                revision: item.revision,
-                work: item,
-                run: Some(run.clone()),
-                root_execution: Some(root_execution),
-                claim: None,
-                handoff_offer: None,
-                blocker: None,
-                transition: WorkTransition::Reopened {
-                    run_id: run.run_id,
-                    generation: run.generation,
-                    reason,
-                },
-                actor: request.actor.clone(),
-                created_at: request.reopened_at,
-            };
-            append_work_event(&transaction, &event)?;
-            persist_operation_result(
-                &transaction,
-                "reopen_work",
-                &request.idempotency_key,
-                request_object.key(),
-                &run,
-            )?;
-            transaction.commit()?;
-            return Ok(run);
-        }
-        let generation = transaction.query_row(
-            "SELECT COALESCE(MAX(generation), 0) + 1 FROM work_runs WHERE work_id = ?1",
-            [item.work_id.0.to_string()],
-            |row| row.get::<_, i64>(0),
+        let run = reopen_work_on(
+            &transaction,
+            request,
+            reason,
+            &super::super::planning::successor::NativePlanningEvent::Ordinary,
         )?;
-        let root_execution = if item.work_id == item.root_id {
-            let root_generation = transaction.query_row(
-                "SELECT COALESCE(MAX(generation), 0) + 1
-                 FROM work_root_executions WHERE root_id = ?1",
-                [item.root_id.0.to_string()],
-                |row| row.get::<_, i64>(0),
-            )?;
-            let execution = RootExecution {
-                schema_version: SCHEMA_VERSION,
-                root_execution_id: RootExecutionId::new(),
-                project_id: item.project_id.clone(),
-                root_id: item.root_id,
-                generation: root_generation,
-                state: RootExecutionState::Active,
-                revision: 1,
-                run_ids: Vec::new(),
-                required_child_seals: Vec::new(),
-                required_child_waivers: Vec::new(),
-                expected_contributors: Vec::new(),
-                contributions: Vec::new(),
-                waivers: Vec::new(),
-                created_at: request.reopened_at,
-                updated_at: request.reopened_at,
-            };
-            super::super::root_state::initialize(&transaction, &execution)?;
-            execution
-        } else {
-            let mut execution = active_root_execution(&transaction, item.root_id)?;
-            if item.child_requirement == ChildRequirement::Required {
-                let old_seal: Option<String> = transaction
-                    .query_row(
-                        "SELECT seal_id FROM work_completion_seals WHERE work_id = ?1
-                         ORDER BY rowid DESC LIMIT 1",
-                        [item.work_id.0.to_string()],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                if let Some(old_seal) = old_seal {
-                    execution
-                        .required_child_seals
-                        .retain(|hash| hash.as_str() != old_seal);
-                    execution.revision += 1;
-                    execution.updated_at = request.reopened_at;
-                    persist_root_execution(&transaction, &execution)?;
-                }
-            }
-            execution
-        };
-        let run = WorkRun {
-            schema_version: SCHEMA_VERSION,
-            run_id: WorkRunId::new(),
-            root_execution_id: root_execution.root_execution_id,
-            work_id: item.work_id,
-            generation,
-            executor: None,
-            state: WorkRunState::Open,
-            revision: 1,
-            last_checkpoint: None,
-            completion_seal: None,
-            created_at: request.reopened_at,
-            updated_at: request.reopened_at,
-        };
-        let mut root_execution = root_execution;
-        if !root_execution.run_ids.contains(&run.run_id) {
-            root_execution.run_ids.push(run.run_id);
-            root_execution
-                .run_ids
-                .sort_by(super::super::root_state::compare_runs);
-            root_execution.revision += 1;
-            root_execution.updated_at = request.reopened_at;
-            persist_root_execution(&transaction, &root_execution)?;
-        }
-        transaction.execute(
-            "INSERT INTO work_runs (
-                 run_id, root_execution_id, work_id, generation,
-                 executor_session_id, state, revision, claim_fence_head,
-                 last_checkpoint_id, completion_seal_id,
-                 created_at_ms, updated_at_ms, run_json
-             ) VALUES (?1, ?2, ?3, ?4, NULL, 'open', 1, 0, NULL, NULL, ?5, ?6, ?7)",
-            params![
-                run.run_id.0.to_string(),
-                run.root_execution_id.0.to_string(),
-                run.work_id.0.to_string(),
-                run.generation,
-                run.created_at.timestamp_millis(),
-                run.updated_at.timestamp_millis(),
-                serde_json::to_vec(&run)?
-            ],
-        )?;
-        item.lifecycle = WorkLifecycle::Open;
-        item.active_run_id = Some(run.run_id);
-        item.revision += 1;
-        item.updated_at = request.reopened_at;
-        persist_work_item(&transaction, &item)?;
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: Some(run.run_id),
-            revision: item.revision,
-            work: item.clone(),
-            run: Some(run.clone()),
-            root_execution: Some(root_execution.clone()),
-            claim: None,
-            handoff_offer: None,
-            blocker: None,
-            transition: WorkTransition::Reopened {
-                run_id: run.run_id,
-                generation: run.generation,
-                reason,
-            },
-            actor: request.actor.clone(),
-            created_at: request.reopened_at,
-        };
-        append_work_event(&transaction, &event)?;
         persist_operation_result(
             &transaction,
             "reopen_work",
@@ -861,4 +648,267 @@ fn waive_required_child_on(
         &waiver,
     )?;
     Ok(waiver)
+}
+
+pub(in crate::storage::work) fn reopen_successor_on(
+    checked: &super::super::task_sync::reconciliation::successor::CheckedPlanningSuccessor<
+        '_,
+        '_,
+        '_,
+    >,
+    request: &ReopenWorkRequest,
+    event: &crate::ObjectId,
+) -> Result<WorkRun, StoreError> {
+    let reason = normalize_text(
+        &request.reason,
+        crate::storage::refusal_labels::REOPEN_REASON,
+    )?;
+    reopen_work_on(
+        checked.transaction(),
+        request,
+        reason,
+        &super::super::planning::successor::NativePlanningEvent::Successor { checked, id: event },
+    )
+}
+
+fn reopen_work_on(
+    transaction: &rusqlite::Transaction<'_>,
+    request: &ReopenWorkRequest,
+    reason: String,
+    mutation: &super::super::planning::successor::NativePlanningEvent<'_, '_, '_, '_>,
+) -> Result<WorkRun, StoreError> {
+    mutation.check(transaction, request.work_id)?;
+    let item = load_work_item(transaction, request.work_id)?;
+    assert_revision(&item, request.expected_work_revision)?;
+    mutation.require_unheld(transaction, item.work_id)?;
+    let retired = is_import_retired_on(transaction, &item)?;
+    if item.lifecycle != WorkLifecycle::Completed
+        && !(item.lifecycle == WorkLifecycle::Open && retired)
+    {
+        return Err(StoreError::InvalidWork(
+            "only completed or import-retired work can be reopened".into(),
+        ));
+    }
+    if item.parent_id.is_some() {
+        refuse_completed_ancestor(transaction, &item)?;
+    } else {
+        let open_descendants = transaction.query_row(
+            "WITH RECURSIVE descendants(work_id) AS (
+                 SELECT work_id FROM work_items WHERE parent_id = ?1
+                 UNION
+                 SELECT child.work_id FROM work_items child
+                 JOIN descendants parent ON child.parent_id = parent.work_id
+             )
+             SELECT COUNT(*) FROM descendants
+             JOIN work_items item USING(work_id)
+             WHERE item.lifecycle IN ('proposed', 'open')
+               AND NOT (item.active_run_id IS NULL AND COALESCE((
+                   SELECT run.state FROM work_runs run WHERE run.work_id=item.work_id
+                   ORDER BY run.generation DESC LIMIT 1
+               ), '') = 'superseded_by_import')",
+            [item.work_id.0.to_string()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        if open_descendants != 0 {
+            return Err(StoreError::InvalidWork(
+                "dispose unfinished descendants before reopening a completed root execution".into(),
+            ));
+        }
+    }
+    reopen_generation_on(transaction, request, reason, mutation, item)
+}
+
+pub(in crate::storage::work) fn is_import_retired_on(
+    connection: &rusqlite::Connection,
+    item: &WorkItem,
+) -> Result<bool, StoreError> {
+    let latest_run: Option<String> = connection
+        .query_row(
+            "SELECT run_id FROM work_runs WHERE work_id=?1 ORDER BY generation DESC LIMIT 1",
+            [item.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(item.active_run_id.is_none()
+        && latest_run
+            .map(|id| {
+                uuid::Uuid::parse_str(&id)
+                    .map(WorkRunId)
+                    .map_err(|_| StoreError::InvalidWorkProjection("invalid latest run id".into()))
+            })
+            .transpose()?
+            .map(|id| load_work_run(connection, id))
+            .transpose()?
+            .is_some_and(|run| run.state == WorkRunState::SupersededByImport))
+}
+
+fn reopen_generation_on(
+    transaction: &rusqlite::Transaction<'_>,
+    request: &ReopenWorkRequest,
+    reason: String,
+    mutation: &super::super::planning::successor::NativePlanningEvent<'_, '_, '_, '_>,
+    mut item: WorkItem,
+) -> Result<WorkRun, StoreError> {
+    if work_completed_by_restored_record_on(transaction, &item)? {
+        item.lifecycle = WorkLifecycle::Open;
+        item.revision += 1;
+        item.updated_at = request.reopened_at;
+        let (root_execution, run, created) =
+            super::super::execution::ensure_restored_execution_state_for_event(
+                transaction,
+                &mut item,
+                request.reopened_at,
+                mutation,
+            )?;
+        if !created {
+            return Err(StoreError::InvalidWorkProjection(
+                "restored reopen did not create a fresh run".into(),
+            ));
+        }
+        let event = WorkEventDraft {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: Some(run.run_id),
+            revision: item.revision,
+            work: item,
+            run: Some(run.clone()),
+            root_execution: Some(root_execution),
+            claim: None,
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::Reopened {
+                run_id: run.run_id,
+                generation: run.generation,
+                reason,
+            },
+            actor: request.actor.clone(),
+            created_at: request.reopened_at,
+        };
+        mutation.append(transaction, &event)?;
+        return Ok(run);
+    }
+    let generation = transaction.query_row(
+        "SELECT COALESCE(MAX(generation), 0) + 1 FROM work_runs WHERE work_id = ?1",
+        [item.work_id.0.to_string()],
+        |row| row.get::<_, i64>(0),
+    )?;
+    let root_execution = if item.work_id == item.root_id {
+        let root_generation = transaction.query_row(
+            "SELECT COALESCE(MAX(generation), 0) + 1
+             FROM work_root_executions WHERE root_id = ?1",
+            [item.root_id.0.to_string()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let execution = RootExecution {
+            schema_version: SCHEMA_VERSION,
+            root_execution_id: mutation.root_id(item.work_id)?,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            generation: root_generation,
+            state: RootExecutionState::Active,
+            revision: 1,
+            run_ids: Vec::new(),
+            required_child_seals: Vec::new(),
+            required_child_waivers: Vec::new(),
+            expected_contributors: Vec::new(),
+            contributions: Vec::new(),
+            waivers: Vec::new(),
+            created_at: request.reopened_at,
+            updated_at: request.reopened_at,
+        };
+        super::super::root_state::initialize(transaction, &execution)?;
+        execution
+    } else {
+        let mut execution = active_root_execution(transaction, item.root_id)?;
+        if item.child_requirement == ChildRequirement::Required {
+            let old_seal: Option<String> = transaction
+                .query_row(
+                    "SELECT seal_id FROM work_completion_seals WHERE work_id = ?1
+                     ORDER BY rowid DESC LIMIT 1",
+                    [item.work_id.0.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(old_seal) = old_seal {
+                execution
+                    .required_child_seals
+                    .retain(|hash| hash.as_str() != old_seal);
+                execution.revision += 1;
+                execution.updated_at = request.reopened_at;
+                persist_root_execution(transaction, &execution)?;
+            }
+        }
+        execution
+    };
+    let run = WorkRun {
+        schema_version: SCHEMA_VERSION,
+        run_id: mutation.run_id(item.work_id)?,
+        root_execution_id: root_execution.root_execution_id,
+        work_id: item.work_id,
+        generation,
+        executor: None,
+        state: WorkRunState::Open,
+        revision: 1,
+        last_checkpoint: None,
+        completion_seal: None,
+        created_at: request.reopened_at,
+        updated_at: request.reopened_at,
+    };
+    let mut root_execution = root_execution;
+    if !root_execution.run_ids.contains(&run.run_id) {
+        root_execution.run_ids.push(run.run_id);
+        root_execution
+            .run_ids
+            .sort_by(super::super::root_state::compare_runs);
+        root_execution.revision += 1;
+        root_execution.updated_at = request.reopened_at;
+        persist_root_execution(transaction, &root_execution)?;
+    }
+    transaction.execute(
+        "INSERT INTO work_runs (
+             run_id, root_execution_id, work_id, generation,
+             executor_session_id, state, revision, claim_fence_head,
+             last_checkpoint_id, completion_seal_id,
+             created_at_ms, updated_at_ms, run_json
+         ) VALUES (?1, ?2, ?3, ?4, NULL, 'open', 1, 0, NULL, NULL, ?5, ?6, ?7)",
+        params![
+            run.run_id.0.to_string(),
+            run.root_execution_id.0.to_string(),
+            run.work_id.0.to_string(),
+            run.generation,
+            run.created_at.timestamp_millis(),
+            run.updated_at.timestamp_millis(),
+            serde_json::to_vec(&run)?
+        ],
+    )?;
+    item.lifecycle = WorkLifecycle::Open;
+    item.active_run_id = Some(run.run_id);
+    item.revision += 1;
+    item.updated_at = request.reopened_at;
+    persist_work_item(transaction, &item)?;
+    let event = WorkEventDraft {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id: Some(run.run_id),
+        revision: item.revision,
+        work: item.clone(),
+        run: Some(run.clone()),
+        root_execution: Some(root_execution.clone()),
+        claim: None,
+        handoff_offer: None,
+        blocker: None,
+        transition: WorkTransition::Reopened {
+            run_id: run.run_id,
+            generation: run.generation,
+            reason,
+        },
+        actor: request.actor.clone(),
+        created_at: request.reopened_at,
+    };
+    mutation.append(transaction, &event)?;
+    Ok(run)
 }

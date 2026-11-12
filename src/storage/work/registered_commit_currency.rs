@@ -541,9 +541,6 @@ pub(super) fn validate_decision_on(
     cut: i64,
     requirement: Option<&crate::domain::VerificationRequirement>,
 ) -> Result<VerificationEvidence, StoreError> {
-    let invalid = || {
-        StoreError::InvalidWorkProjection("registered input decision does not bind a clean, passed check and its exact named root at the recorded cut".into())
-    };
     let evidence: VerificationEvidence =
         load_typed_work_object(connection, &decision.verification, "verification_evidence")?;
     let producer = load_verification_producer_on(connection, &evidence)?;
@@ -567,6 +564,70 @@ pub(super) fn validate_decision_on(
         &decision.named_root_binding,
     )?
     .position;
+    validate_decision_facts(
+        DecisionFacts {
+            decision,
+            evidence: &evidence,
+            producer: &producer,
+            root: &root,
+            work,
+            run,
+            cut,
+            evidence_position,
+            producer_position,
+            root_position,
+            requirement,
+        },
+        || {
+            Ok(
+                latest_named_root_binding_on(connection, run, root.claim_id, cut)?
+                    .as_ref()
+                    .map(|(_, id, _)| id)
+                    == Some(&decision.named_root_binding),
+            )
+        },
+    )?;
+    refuse_newer_failed_on(connection, &decision.verification, &evidence, cut)?;
+    Ok(evidence)
+}
+
+/// Immutable proof fields; original feed positions remain in their own scope.
+#[derive(Clone, Copy)]
+pub(crate) struct DecisionFacts<'a> {
+    pub(crate) decision: &'a crate::domain::RegisteredInputDecision,
+    pub(crate) evidence: &'a VerificationEvidence,
+    pub(crate) producer: &'a crate::domain::VerificationProducerFacts,
+    pub(crate) root: &'a crate::domain::NamedRootBindingEvent,
+    pub(crate) work: WorkId,
+    pub(crate) run: WorkRunId,
+    pub(crate) cut: i64,
+    pub(crate) evidence_position: i64,
+    pub(crate) producer_position: i64,
+    pub(crate) root_position: i64,
+    pub(crate) requirement: Option<&'a crate::domain::VerificationRequirement>,
+}
+
+pub(crate) fn validate_decision_facts(
+    facts: DecisionFacts<'_>,
+    latest_root: impl FnOnce() -> Result<bool, StoreError>,
+) -> Result<(), StoreError> {
+    let DecisionFacts {
+        decision,
+        evidence,
+        producer,
+        root,
+        work,
+        run,
+        cut,
+        evidence_position,
+        producer_position,
+        root_position,
+        requirement,
+    } = facts;
+    let invalid = || {
+        StoreError::InvalidWorkProjection(
+        "registered input decision does not bind a clean, passed check and its exact named root at the recorded cut".into())
+    };
     let identity_matches = match &decision.source {
         crate::domain::RegisteredDecisionSource::Legacy {
             source_revision,
@@ -574,11 +635,11 @@ pub(super) fn validate_decision_on(
         } => {
             *clean
                 && source_revision.starts_with("git-commit:")
-                && producer.matches_registered_git_input(&evidence, source_revision) == Some(true)
+                && producer.matches_registered_git_input(evidence, source_revision) == Some(true)
         }
         crate::domain::RegisteredDecisionSource::SourceId { source_id } => {
             producer
-                .registered_source_id_basis(&evidence)
+                .registered_source_id_basis(evidence)
                 .is_some_and(|basis| basis == &evidence.source_basis)
                 && evidence.source_basis.source_id() == Some(source_id)
         }
@@ -595,10 +656,7 @@ pub(super) fn validate_decision_on(
         || root.root_execution_id != evidence.binding.root_execution_id
         || root.claim_id != evidence.binding.claim_id
         || root.kind != NamedRootBindingKind::Bound
-        || latest_named_root_binding_on(connection, run, root.claim_id, cut)?
-            .as_ref()
-            .map(|(_, id, _)| id)
-            != Some(&decision.named_root_binding)
+        || !latest_root()?
     {
         return Err(invalid());
     }
@@ -609,8 +667,8 @@ pub(super) fn validate_decision_on(
     crate::control::match_verification_evidence(&crate::control::VerificationEvidenceMatchInput {
         judged_basis: evidence.source_basis.legacy_basis().as_ref(),
         candidate_kind: crate::domain::WorkEvidenceKind::Verification,
-        evidence: Some(&evidence),
-        producer: Some(&producer),
+        evidence: Some(evidence),
+        producer: Some(producer),
         latest_mutation: None,
         measured_sighting: None,
         named_root: Some(crate::control::NamedRootEvidenceMatch {
@@ -625,8 +683,7 @@ pub(super) fn validate_decision_on(
         requirement: requirement.unwrap_or(&selected),
     })
     .map_err(|_| invalid())?;
-    refuse_newer_failed_on(connection, &decision.verification, &evidence, cut)?;
-    Ok(evidence)
+    Ok(())
 }
 
 fn refuse_newer_failed_on(
@@ -682,23 +739,40 @@ fn newer_failed_on(
         let id = ObjectId::from_stored(id.clone()).ok_or(StoreError::InvalidStoredKey(id))?;
         let newer: VerificationEvidence =
             load_typed_work_object(connection, &id, "verification_evidence")?;
-        if newer.check_kind != evidence.check_kind
-            || newer.check_fingerprint != evidence.check_fingerprint
-            || newer.source_basis != evidence.source_basis
-        {
+        if !same_registered_check(evidence, &newer) {
             continue;
         }
         let producer = load_verification_producer_on(connection, &newer)?;
-        if producer.registered_git_basis(&newer).is_some()
-            || producer.registered_source_id_basis(&newer).is_some()
-        {
-            if newer.result != crate::domain::VerificationResult::Passed
-                || producer.run_outcome != Some(ExecutionOutcome::Succeeded)
-            {
-                return Ok(Some(id));
-            }
-            break;
+        match registered_check_failed(&newer, &producer) {
+            Some(true) => return Ok(Some(id)),
+            Some(false) => break,
+            None => {}
         }
     }
     Ok(None)
+}
+
+/// A newer check replaces a decision only for this exact check and source.
+/// Kept separate from producer loading so native reads retain their order.
+pub(crate) fn same_registered_check(
+    selected: &VerificationEvidence,
+    newer: &VerificationEvidence,
+) -> bool {
+    newer.check_kind == selected.check_kind
+        && newer.check_fingerprint == selected.check_fingerprint
+        && newer.source_basis == selected.source_basis
+}
+
+/// `None` leaves an unrelated producer out of the registered-check ordering.
+/// A newer passing check also ends the search; an older failure cannot veto it.
+pub(crate) fn registered_check_failed(
+    evidence: &VerificationEvidence,
+    producer: &crate::domain::VerificationProducerFacts,
+) -> Option<bool> {
+    (producer.registered_git_basis(evidence).is_some()
+        || producer.registered_source_id_basis(evidence).is_some())
+    .then_some(
+        evidence.result != crate::domain::VerificationResult::Passed
+            || producer.run_outcome != Some(ExecutionOutcome::Succeeded),
+    )
 }

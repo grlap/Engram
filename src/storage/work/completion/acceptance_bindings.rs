@@ -28,6 +28,7 @@ pub(super) fn bind_acceptance_to_obligations_on(
     claim: &WorkClaim,
     cut: &FeedPosition,
     completion_evidence: &[ObjectId],
+    retired_imports: &[ObjectId],
     evaluated: bool,
     source_fingerprint: Option<&str>,
     source_id: Option<&crate::source::SourceId>,
@@ -65,6 +66,62 @@ pub(super) fn bind_acceptance_to_obligations_on(
         let Some(satisfying) = satisfied_binding(&records, binding) else {
             continue;
         };
+        let imported: bool = connection.query_row(
+            "SELECT object_kind=?2 FROM objects WHERE object_id=?1",
+            rusqlite::params![
+                satisfying.as_str(),
+                crate::task_sync::evidence::consumption::CONSUMPTION_KIND
+            ],
+            |row| row.get(0),
+        )?;
+        let mut import_floor = None;
+        if imported {
+            let record =
+                super::super::task_sync::evidence::consumption::load_on(connection, satisfying)?;
+            let position =
+                run_feed_position_for_object_on(connection, run_id, satisfying)?.position;
+            let newer = newest_verification_of_kind_on(
+                connection,
+                run_id,
+                &binding.requirement,
+                cut,
+                root.as_ref(),
+            )?;
+            if let Some((newer_position, _, checked)) = &newer
+                && *newer_position > position
+                && checked.result != crate::domain::VerificationResult::Passed
+            {
+                return Err(StoreError::WorkCompletionRefused {
+                    work: item.work_id,
+                    reason: "a later local check failed after the imported verification use".into(),
+                });
+            }
+            if !retired_imports.contains(satisfying)
+                && newer
+                    .as_ref()
+                    .is_none_or(|(newer_position, _, _)| *newer_position <= position)
+            {
+                if record.request.binding.work_id != item.work_id
+                    || record.request.binding.run_id != run_id
+                    || record.request.binding.claim_id != claim.claim_id
+                    || record.request.binding.claim_fence != claim.fence
+                {
+                    return Err(StoreError::WorkCompletionRefused {
+                        work: item.work_id,
+                        reason: "imported verification belongs to another completing claim".into(),
+                    });
+                }
+                if !evaluated
+                    && completion_evidence.contains(satisfying)
+                    && let Some(result) = acceptance.get_mut(index)
+                    && !result.evidence.contains(satisfying)
+                {
+                    result.evidence.push(satisfying.clone());
+                }
+                continue;
+            }
+            import_floor = Some(position);
+        }
         let mut carried_by = satisfying.clone();
         let newest = newest_verification_of_kind_on(
             connection,
@@ -96,6 +153,30 @@ pub(super) fn bind_acceptance_to_obligations_on(
             newest
         };
         if let Some((position, newest, evidence)) = newest {
+            if let Some(import_floor) = import_floor {
+                let obligation = super::binding_obligation(&records, binding).ok_or_else(|| {
+                    StoreError::InvalidWorkProjection("bound obligation is missing".into())
+                })?;
+                let assessment = assessment::VerificationAtCut::load_on(
+                    connection,
+                    evidence.clone(),
+                    &newest,
+                    cut.clone(),
+                )?
+                .assess_on(connection, &obligation.obligation)?;
+                if position <= import_floor
+                    || assessment != crate::control::ObligationAssessment::Matches
+                {
+                    return Err(StoreError::WorkCompletionRefused {
+                        work: item.work_id,
+                        reason: format!(
+                            "criterion {} needs a current passing native check after its obligation and retired imported use",
+                            binding.criterion
+                        ),
+                    });
+                }
+                carried_by = newest.clone();
+            }
             let kind = encode_state(binding.requirement.check_kind)?;
             if evidence.result != crate::domain::VerificationResult::Passed {
                 return Err(StoreError::WorkBoundVerificationRefused {
@@ -269,7 +350,7 @@ pub(super) fn bind_acceptance_to_obligations_on(
                 // ran, and the record that satisfied the obligation stays.
                 carried_by = newest;
             }
-        } else if root.is_some() {
+        } else if root.is_some() || retired_imports.contains(satisfying) {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
                 reason: format!(

@@ -39,7 +39,7 @@ pub struct Attribution {
 }
 
 impl Attribution {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         for (name, text, limit) in [
             ("actor", Some(self.actor_id.as_str()), 1024),
             ("session", Some(self.session_id.as_str()), 1024),
@@ -93,7 +93,7 @@ struct Basis {
     project_id: ProjectId,
     marker: Vec<u8>,
     branch: String,
-    head: String,
+    head: Option<String>,
     assertions: Assertions,
     edits: Vec<policy::Edit>,
 }

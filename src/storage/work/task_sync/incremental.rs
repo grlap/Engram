@@ -169,6 +169,14 @@ fn continuity(
             .map_err(Err)?
             .ok_or_else(|| Ok("prepared feed object is missing".into()))?;
             match entry.object_kind.as_str() {
+                crate::task_sync::origin::recovery::RECOVERY_KIND => {
+                    let recovery: crate::task_sync::origin::recovery::RecoveryRecord =
+                        object.decode().map_err(Err)?;
+                    recovery.validate().map_err(Err)?;
+                }
+                crate::task_sync::origin::PRODUCING_ORIGIN_KIND => {
+                    let _: crate::task_sync::origin::Enrollment = object.decode().map_err(Err)?;
+                }
                 "work_event" => {
                     let _: WorkEvent = object.decode().map_err(Err)?;
                 }

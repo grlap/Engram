@@ -299,8 +299,15 @@ fn load_head(
     #[cfg(test)]
     COST.with_borrow_mut(|cost| cost.head_loads += 1);
     let json: serde_json::Value = load_typed_work_object(connection, &value.head, KIND)?;
+    decode_head(value, &json)
+}
+
+fn decode_head(
+    value: &RootExecutionRef,
+    json: &serde_json::Value,
+) -> Result<RootExecutionDelta, StoreError> {
     let head: RootExecutionDelta = serde_json::from_value(json.clone())?;
-    if serde_json::to_value(&head)? != json {
+    if &serde_json::to_value(&head)? != json {
         return Err(invalid("unexpected canonical head fields"));
     }
     if head.header.schema_version != crate::domain::SCHEMA_VERSION
@@ -641,6 +648,14 @@ fn replay(
     address: &RootExecutionRef,
     checksums: Checksums,
 ) -> Result<History, ReplayFailure> {
+    replay_with(address, checksums, |address| load_head(connection, address))
+}
+
+fn replay_with(
+    address: &RootExecutionRef,
+    checksums: Checksums,
+    mut load: impl FnMut(&RootExecutionRef) -> Result<RootExecutionDelta, StoreError>,
+) -> Result<History, ReplayFailure> {
     // The backward walk keeps each decoded delta, so that a delta is loaded
     // once. Memory is therefore linear in the generation's delta payloads
     // until the forward walk has applied them, not in the current state only.
@@ -648,7 +663,7 @@ fn replay(
     let mut cursor = address.clone();
     let mut expected_sequence = None;
     loop {
-        let head = load_head(connection, &cursor)?;
+        let head = load(&cursor)?;
         if expected_sequence.is_some_and(|expected| expected != head.sequence) {
             return Err(invalid("noncontiguous delta sequence").into());
         }
@@ -770,6 +785,20 @@ pub(super) fn resolve(
     #[cfg(test)]
     COST.with_borrow_mut(|cost| cost.resolves += 1);
     match replay(connection, address, Checksums::EveryHead) {
+        Ok(history) => Ok(history.state),
+        Err(ReplayFailure::Store(error)) => Err(error),
+        Err(ReplayFailure::Checksum { .. }) => Err(invalid("replayed state checksum mismatch")),
+    }
+}
+
+/// The same root replay over qualified retained bytes, without native indexes.
+pub(crate) fn resolve_retained(
+    address: &RootExecutionRef,
+    mut load: impl FnMut(&ObjectId) -> Result<serde_json::Value, StoreError>,
+) -> Result<RootExecution, StoreError> {
+    match replay_with(address, Checksums::EveryHead, |address| {
+        decode_head(address, &load(&address.head)?)
+    }) {
         Ok(history) => Ok(history.state),
         Err(ReplayFailure::Store(error)) => Err(error),
         Err(ReplayFailure::Checksum { .. }) => Err(invalid("replayed state checksum mismatch")),
@@ -924,6 +953,29 @@ pub(super) fn verify_completion_predecessor(
 ) -> Result<(), StoreError> {
     let before = load_head(connection, pre_seal)?;
     let after = load_head(connection, completed)?;
+    verify_completion_heads(pre_seal, completed, &before, &after)
+}
+
+pub(crate) fn verify_retained_completion_predecessor(
+    pre_seal: &RootExecutionRef,
+    completed: &RootExecutionRef,
+    before: &serde_json::Value,
+    after: &serde_json::Value,
+) -> Result<(), StoreError> {
+    verify_completion_heads(
+        pre_seal,
+        completed,
+        &decode_head(pre_seal, before)?,
+        &decode_head(completed, after)?,
+    )
+}
+
+fn verify_completion_heads(
+    pre_seal: &RootExecutionRef,
+    completed: &RootExecutionRef,
+    before: &RootExecutionDelta,
+    after: &RootExecutionDelta,
+) -> Result<(), StoreError> {
     let mut same_generation = pre_seal.clone();
     same_generation.head = completed.head.clone();
     if same_generation != *completed
@@ -1125,7 +1177,7 @@ pub(super) fn verify_projections(
         }
     }
     let mut statement = connection
-        .prepare("SELECT object_id FROM objects WHERE object_kind = 'work_root_delta'")?;
+        .prepare("SELECT object_id FROM objects WHERE object_kind = 'work_root_delta' AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)")?;
     for row in statement.query_map([], |row| row.get::<_, String>(0))? {
         let stored = row?;
         *checked += 1;

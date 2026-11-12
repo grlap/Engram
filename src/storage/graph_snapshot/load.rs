@@ -2070,6 +2070,7 @@ fn graph_destination_is_empty_on(
         "SELECT EXISTS(
              SELECT 1 FROM objects
              WHERE object_kind = 'work_event'
+               AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
                AND json_extract(canonical_json, '$.project_id') = ?1
              LIMIT 1
          )",

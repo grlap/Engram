@@ -168,3 +168,79 @@ fn task_exchange_limits_and_ref_validation_refuse_before_launch() {
 
 #[cfg(windows)]
 pub(super) mod windows;
+
+#[tokio::test]
+async fn an_exchange_request_floor_is_checked_before_any_repository_or_process_effect() {
+    let selection = TargetSelection {
+        repository: PathBuf::from(".."),
+        remote: "origin".into(),
+        reference: "refs/heads/main".into(),
+    };
+    let cancel = Cancellation::default();
+    let mut pinned = target();
+    pinned.selection = selection.clone();
+    for seconds in [0, 1, 10, 30, 59, 121] {
+        let limits = RunLimits {
+            deadline: Duration::from_secs(seconds),
+            ..RunLimits::default()
+        };
+        assert_eq!(
+            ExchangeTarget::capture(&selection, limits, &cancel)
+                .await
+                .unwrap_err(),
+            RunError::InvalidLimits,
+        );
+        assert_eq!(
+            run(&pinned, &ExchangeOperation::Observe, limits, &cancel)
+                .await
+                .unwrap_err(),
+            RunError::InvalidLimits,
+        );
+    }
+    assert_eq!(RunLimits::default().deadline, Duration::from_secs(60));
+    for seconds in [60, 120] {
+        // Both permitted boundaries reach the independent lexical refusal,
+        // without touching a repository or launching a process.
+        let limits = RunLimits {
+            deadline: Duration::from_secs(seconds),
+            ..RunLimits::default()
+        };
+        assert_eq!(
+            ExchangeTarget::capture(&selection, limits, &cancel)
+                .await
+                .unwrap_err(),
+            RunError::InvalidSelection,
+        );
+    }
+}
+
+#[tokio::test]
+async fn spent_exchange_time_is_not_readmitted_or_extended_at_an_internal_capture() {
+    let selection = TargetSelection {
+        repository: PathBuf::from(".."),
+        remote: "origin".into(),
+        reference: "refs/heads/main".into(),
+    };
+    let original = RunLimits::default();
+    original.validate_request().unwrap();
+    let started = Instant::now().checked_sub(Duration::from_secs(31)).unwrap();
+    let spent = remaining(original, started).unwrap();
+    assert!(spent.deadline <= Duration::from_secs(29));
+    assert!(!spent.deadline.is_zero());
+    assert_eq!(spent.stdout_bytes, original.stdout_bytes);
+    assert_eq!(spent.stderr_bytes, original.stderr_bytes);
+    assert_eq!(spent.validate_request(), Err(RunError::InvalidLimits));
+    assert_eq!(
+        ExchangeTarget::capture_remaining(&selection, spent, &Cancellation::default())
+            .await
+            .unwrap_err(),
+        RunError::InvalidSelection,
+    );
+    // A later internal phase cannot replenish the original minute.
+    let exhausted = Instant::now().checked_sub(Duration::from_secs(61)).unwrap();
+    assert!(matches!(
+        remaining(original, exhausted),
+        Err(RunError::Deadline)
+    ));
+    assert_eq!(original.deadline, Duration::from_secs(60));
+}

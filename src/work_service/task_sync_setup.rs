@@ -11,6 +11,52 @@ use std::path::Path;
 mod tests;
 
 impl LocalWorkService {
+    /// Retain the caller's exact staged data commit under this project's
+    /// marker. Does not advance a branch, open SQLite or contact a remote.
+    /// Invocation supplies no commit or publication authority.
+    ///
+    /// # Errors
+    /// Refuses read-only use, missing opt-in, invalid attribution, another
+    /// project or data checkout, staged drift and changed retained selection.
+    pub fn create_task_sync_data_commit(
+        &self,
+        marker: &Path,
+        branch: &str,
+        request: &task_sync::data_worktree::StagedCommitRequest,
+    ) -> anyhow::Result<task_sync::ledger::RetainedCommit> {
+        self.require_task_sync_writer()?;
+        self.require_task_sync_enabled()?;
+        self.validate_read_attribution(chrono::Utc::now())?;
+        let data = task_sync::data_worktree::DataWorktree::observe_project(
+            marker,
+            &self.project_id,
+            branch,
+        )?;
+        data.create_retained(request)
+    }
+
+    /// Explicitly provision the ignored persistent data checkout, without SQLite.
+    ///
+    /// # Errors
+    /// Refuses read-only use, missing opt-in, invalid attribution or project paths.
+    pub fn initialize_task_sync_data_worktree(
+        &self,
+        marker: &Path,
+        branch: &str,
+    ) -> anyhow::Result<task_sync::data_worktree::Initialization> {
+        self.require_task_sync_writer()?;
+        self.require_task_sync_enabled()?;
+        self.validate_read_attribution(chrono::Utc::now())?;
+        setup::Attribution {
+            actor_id: self.actor_id.clone(),
+            session_id: self.session_id.0.clone(),
+            actor_context: self.setup_actor_context.clone(),
+            source_skill: self.source_skill.clone(),
+        }
+        .validate()?;
+        task_sync::data_worktree::initialize(marker, &self.project_id, branch)
+    }
+
     /// Observe the private opt-in before starting new task-exchange work.
     ///
     /// # Errors
@@ -28,7 +74,7 @@ impl LocalWorkService {
         Ok(())
     }
 
-    /// Prepare the private main-checkout intent through shared service admission.
+    /// Prepare the private data-worktree intent through shared service admission.
     /// This creates no SQLite store and publishes no shared planning files.
     ///
     /// # Errors

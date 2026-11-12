@@ -213,6 +213,7 @@ impl SqliteStore {
         hash: &ObjectId,
         object_kind: &str,
     ) -> Result<Option<CanonicalObject>, StoreError> {
+        super::work::task_sync::evidence::require_native(connection, hash)?;
         let stored: Option<(String, Vec<u8>)> = connection
             .query_row(
                 "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",

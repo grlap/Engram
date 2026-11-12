@@ -5,6 +5,7 @@ use std::{
 
 mod admission;
 mod configuration;
+mod data_branch;
 mod diagnostics_tests;
 mod policy;
 pub(in crate::task_sync::exchange) mod readiness;

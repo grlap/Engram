@@ -5,7 +5,7 @@ use crate::{
     storage::SqliteStore,
     task_sync::{
         FORMAT, ProjectDocument,
-        ledger::{Direction, RepositoryBasis, StoreBasis, TargetBasis},
+        ledger::{Direction, StoreBasis, TargetBasis},
         notes::NoteOmissions,
         progress::{ExportCut, ExportProfile, PreparedCandidate, PreparedProvenance},
     },
@@ -49,9 +49,39 @@ async fn commit(repository: &std::path::Path) -> String {
 #[tokio::test(flavor = "current_thread")]
 async fn inspected_exchange_matches_exact_git_blobs_and_refuses_branch_target_and_tree_drift() {
     let home = crate::test_support::temp_home().unwrap();
-    let repository = home.path().join("repository");
-    std::fs::create_dir(&repository).unwrap();
-    git(&repository, &["init", "--initial-branch=main", "."]).await;
+    let code = home.path().join("repository");
+    std::fs::create_dir(&code).unwrap();
+    git(&code, &["init", "--initial-branch=main", "."]).await;
+    let project = ProjectId("inspection-fixture".into());
+    std::fs::write(code.join(".engram-project"), "inspection-fixture\n").unwrap();
+    git(&code, &["add", ".engram-project"]).await;
+    git(
+        &code,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--no-gpg-sign",
+            "-m",
+            "Seed code",
+        ],
+    )
+    .await;
+    crate::task_sync::data_worktree::initialize(
+        &code.join(".engram-project"),
+        &project,
+        "engram-data",
+    )
+    .unwrap();
+    let data = crate::task_sync::data_worktree::DataWorktree::observe(
+        &code,
+        &code.join(".engram-data"),
+        "engram-data",
+    )
+    .unwrap();
+    let repository = data.checkout.clone();
     git(
         &repository,
         &[
@@ -63,7 +93,6 @@ async fn inspected_exchange_matches_exact_git_blobs_and_refuses_branch_target_an
     )
     .await;
     git(&repository, &["config", "--local", "credential.helper", ""]).await;
-    let project = ProjectId("inspection-fixture".into());
     let tree = TaskTree {
         project: ProjectDocument {
             format: FORMAT.into(),
@@ -99,7 +128,7 @@ async fn inspected_exchange_matches_exact_git_blobs_and_refuses_branch_target_an
         &TargetSelection {
             repository: repository.clone(),
             remote: "origin".into(),
-            reference: "refs/heads/main".into(),
+            reference: "refs/heads/engram-data".into(),
         },
         RunLimits::default(),
         &Cancellation::default(),
@@ -119,15 +148,11 @@ async fn inspected_exchange_matches_exact_git_blobs_and_refuses_branch_target_an
                 anchor: None,
             },
         },
-        repository: RepositoryBasis {
-            enrollment: uuid::Uuid::new_v4(),
-            main_checkout: repository.clone(),
-            git_directory: repository.join(".git"),
-        },
-        branch: "refs/heads/main".into(),
+        repository: data.repository_basis(uuid::Uuid::new_v4()),
+        branch: "refs/heads/engram-data".into(),
         target: TargetBasis {
             remote: "origin".into(),
-            reference: "refs/heads/main".into(),
+            reference: "refs/heads/engram-data".into(),
             configuration_fingerprint: target.fingerprint().unwrap(),
         },
         profile: profile.clone(),
@@ -195,6 +220,24 @@ async fn inspected_exchange_matches_exact_git_blobs_and_refuses_branch_target_an
     )
     .await
     .unwrap();
+    let code_before = git(&code, &["rev-parse", "HEAD"]).await;
+    let mut code_binding = binding.clone();
+    code_binding.repository.main_checkout = code.clone();
+    code_binding.repository.git_directory = code.join(".git");
+    assert!(
+        inspect_exchange(
+            &id,
+            &code_binding,
+            &intent,
+            RunLimits::default(),
+            &Cancellation::default()
+        )
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("dedicated .engram-data")
+    );
+    assert_eq!(git(&code, &["rev-parse", "HEAD"]).await, code_before);
     refuses_git_drift_after_inspection(&repository, &mut store, &id, &inspected, now).await;
     let receipt = apply_exchange(
         &mut store,
@@ -350,7 +393,11 @@ async fn refuses_git_drift_after_inspection(
         .to_string()
         .contains("selected branch changed")
     );
-    git(repository, &["symbolic-ref", "HEAD", "refs/heads/main"]).await;
+    git(
+        repository,
+        &["symbolic-ref", "HEAD", "refs/heads/engram-data"],
+    )
+    .await;
     git(
         repository,
         &[
@@ -418,7 +465,7 @@ async fn refuses_git_drift_after_inspection(
     );
     git(
         repository,
-        &["update-ref", "refs/heads/main", &inspected_head],
+        &["update-ref", "refs/heads/engram-data", &inspected_head],
     )
     .await;
     assert_eq!(store.task_sync_exchange_events(id).unwrap(), ledger_before);

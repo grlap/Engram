@@ -33,9 +33,10 @@ pub(crate) struct CommittedInput {
 /// Engram's Node launcher, this reader admits eligible pinned submodules.
 /// An unsupported repository is unavailable, never implicitly clean.
 pub(crate) fn read(root: &Path) -> Result<CommittedInput> {
+    let _warning = crate::operation_time::Warning::start("registered committed input read");
     capture(
         root,
-        Instant::now() + crate::source::MAX_BUDGET,
+        crate::operation_time::now() + crate::source::MAX_BUDGET,
         false,
         &mut None,
     )
@@ -49,6 +50,7 @@ struct Capture {
     source_id: Option<crate::source::SourceId>,
 }
 
+// The source API owns the warning through observation and final result processing.
 pub(crate) fn observe(root: &Path, budget: Duration) -> crate::source::Observation {
     use crate::source::{Observation, RefusalCode, Status};
     if budget.is_zero() || budget > crate::source::MAX_BUDGET {
@@ -61,7 +63,7 @@ pub(crate) fn observe(root: &Path, budget: Duration) -> crate::source::Observati
             ),
         );
     }
-    let deadline = Instant::now() + budget;
+    let deadline = crate::operation_time::now() + budget;
     let mut known_root = None;
     let mut observed = match capture(root, deadline, true, &mut known_root) {
         Ok(value) => Observation {
@@ -102,7 +104,7 @@ fn refusal_code(error: &anyhow::Error) -> crate::source::RefusalCode {
 // The shared process helper may return after its allowance (for example while
 // draining a closed child's pipe). An overdue result is never usable here.
 fn before_deadline<T>(deadline: Instant, result: Result<T>) -> Result<T> {
-    if Instant::now() >= deadline {
+    if crate::operation_time::now() >= deadline {
         return Err(crate::task_sync::git::QueryFailure::Deadline.into());
     }
     result
@@ -556,7 +558,7 @@ fn run_query_with_input(
     deadline: Instant,
     input: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
-    let remaining = deadline.saturating_duration_since(Instant::now());
+    let remaining = deadline.saturating_duration_since(crate::operation_time::now());
     if remaining.is_zero() {
         return Err(crate::task_sync::git::QueryFailure::Deadline.into());
     }
@@ -614,6 +616,45 @@ mod tests {
         ] {
             assert!(status_entries(bytes).is_err(), "{bytes:?}");
         }
+    }
+
+    #[test]
+    fn a_sixty_second_budget_is_one_deadline_and_a_longer_one_refuses_before_reading() {
+        use crate::source::{RefusalCode, Status};
+        let scratch = crate::test_support::temp_home().unwrap();
+        let root = scratch.path();
+        git(root, &["init", "-q"]);
+        let budget = Duration::from_millis(60_000);
+        let before = Instant::now();
+        let observation = observe(root, budget);
+        let after = Instant::now();
+        let deadline = observation
+            .deadline
+            .expect("an admitted budget sets the deadline");
+        assert!(deadline >= before + budget && deadline <= after + budget);
+
+        let observation = observe(root, budget + Duration::from_millis(1));
+        assert_eq!(observation.status, Status::Unavailable);
+        assert!(observation.deadline.is_none(), "refused before any read");
+        assert_eq!(
+            observation.refusal.unwrap().code,
+            RefusalCode::InputUnavailable
+        );
+    }
+
+    #[test]
+    fn a_thirty_second_public_override_reads_under_one_sixty_second_deadline() {
+        let scratch = crate::test_support::temp_home().unwrap();
+        let root = scratch.path();
+        git(root, &["init", "-q"]);
+        let floor = Duration::from_millis(crate::source::MIN_PUBLIC_BUDGET_MS);
+        let before = Instant::now();
+        let observation = crate::source::inspect(root, crate::source::public_budget(30_000));
+        let after = Instant::now();
+        let deadline = observation
+            .deadline
+            .expect("a raised public budget still sets one deadline");
+        assert!(deadline >= before + floor && deadline <= after + floor);
     }
 
     fn git(root: &Path, args: &[&str]) -> Vec<u8> {

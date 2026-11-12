@@ -4,10 +4,15 @@
 use super::*;
 use crate::storage::work::test_support::{evidence, host_verification_from_basis};
 
+mod evidence_capture;
 mod kept_root;
 
 fn prepared(bound: bool, fresh: bool) -> Fixture {
-    let mut fixture = super::prepared(bound, fresh);
+    prepared_in(SqliteStore::open_in_memory().unwrap(), bound, fresh)
+}
+
+fn prepared_in(store: SqliteStore, bound: bool, fresh: bool) -> Fixture {
+    let mut fixture = super::prepared_in(store, bound, fresh);
     fixture.request.input = RegisteredVerificationInput::StagedTree {
         tree: GitTreeId::parse(object_name("staged checked input")).unwrap(),
         base_commit: object_name("staged provenance"),

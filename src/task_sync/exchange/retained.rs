@@ -7,16 +7,12 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
 
 use super::{Cancellation, RunLimits, execute, remaining};
-use crate::{
-    ObjectId,
-    task_sync::{
-        git,
-        ledger::{RetainedCommit, oid},
-        retention::{commit_selection, reserve_commit},
-    },
+use crate::task_sync::{
+    git,
+    ledger::{RetainedCommit, oid},
+    retention::{commit_selection, reserve_commit},
 };
 
 /// Retain an already-created local commit without recreating its metadata.
@@ -32,6 +28,21 @@ pub async fn retain_commit(
     limits: RunLimits,
     cancel: &Cancellation,
 ) -> Result<RetainedCommit> {
+    let started = std::time::Instant::now();
+    limits.validate_request()?;
+    let _warning = crate::operation_time::Warning::start("task exchange retain commit");
+    let limits = crate::task_sync::exchange::remaining(limits, started)?;
+    retain_commit_remaining(repository, operation, commit, limits, cancel).await
+}
+
+// The public ingress admitted the full budget; internal calls spend its remainder.
+pub(crate) async fn retain_commit_remaining(
+    repository: &Path,
+    operation: uuid::Uuid,
+    commit: &str,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<RetainedCommit> {
     ensure!(
         !operation.is_nil() && repository.is_absolute(),
         "invalid commit retention selection"
@@ -39,6 +50,8 @@ pub async fn retain_commit(
     oid(commit)?;
     let started = Instant::now();
     let git_directory = git_directory(repository, remaining(limits, started)?, cancel).await?;
+    let reservation =
+        crate::task_sync::retention::audit::AuditReservation::acquire(&git_directory)?;
     let reference = format!("refs/engram/task-sync/exchange/{operation}/commit");
     let retained = inspect(
         repository,
@@ -53,7 +66,13 @@ pub async fn retain_commit(
             selected == retained,
             "retained commit selection differs; preserve it"
         );
-        verify_retained_commit(repository, &selected, remaining(limits, started)?, cancel).await?;
+        verify_retained_commit_remaining(
+            repository,
+            &selected,
+            remaining(limits, started)?,
+            cancel,
+        )
+        .await?;
         return Ok(selected);
     }
     let current = local(
@@ -71,7 +90,7 @@ pub async fn retain_commit(
         current.is_empty(),
         "unrecorded private commit ref exists; preserve it"
     );
-    reserve_commit(&git_directory, operation, &retained)?;
+    reserve_commit(&git_directory, operation, &retained, &reservation)?;
     let absent = "0".repeat(commit.len());
     local(
         repository,
@@ -80,7 +99,8 @@ pub async fn retain_commit(
         cancel,
     )
     .await?;
-    verify_retained_commit(repository, &retained, remaining(limits, started)?, cancel).await?;
+    verify_retained_commit_remaining(repository, &retained, remaining(limits, started)?, cancel)
+        .await?;
     Ok(retained)
 }
 
@@ -89,6 +109,20 @@ pub async fn retain_commit(
 /// # Errors
 /// Refuses a missing/moved ref, object changes and bounded process failures.
 pub async fn verify_retained_commit(
+    repository: &Path,
+    retained: &RetainedCommit,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<()> {
+    let started = std::time::Instant::now();
+    limits.validate_request()?;
+    let _warning = crate::operation_time::Warning::start("task exchange verify retained commit");
+    let limits = crate::task_sync::exchange::remaining(limits, started)?;
+    verify_retained_commit_remaining(repository, retained, limits, cancel).await
+}
+
+// The public ingress admitted the full budget; internal calls spend its remainder.
+pub(crate) async fn verify_retained_commit_remaining(
     repository: &Path,
     retained: &RetainedCommit,
     limits: RunLimits,
@@ -168,30 +202,13 @@ async fn inspect(
         cancel,
     )
     .await?;
-    let headers = bytes
-        .windows(2)
-        .position(|pair| pair == b"\n\n")
-        .context("commit header boundary missing")?;
-    let mut lines = bytes[..headers].split(|byte| *byte == b'\n');
-    let tree = std::str::from_utf8(lines.next().context("commit tree missing")?)?
-        .strip_prefix("tree ")
-        .context("commit tree header missing")?
-        .to_owned();
-    let mut parents = Vec::new();
-    for line in lines {
-        if let Some(parent) = line.strip_prefix(b"parent ") {
-            parents.push(std::str::from_utf8(parent)?.to_owned());
-        }
-    }
-    let digest = Sha256::digest(&bytes);
+    let observed = git::observe_commit(commit, &bytes)?;
     let retained = RetainedCommit {
-        oid: commit.into(),
-        tree,
-        parents,
+        oid: observed.oid,
+        tree: observed.tree,
+        parents: observed.parents,
         retention_ref: reference.into(),
-        raw_bytes_fingerprint: format!("{digest:x}")
-            .parse::<ObjectId>()
-            .map_err(anyhow::Error::msg)?,
+        raw_bytes_fingerprint: observed.raw_bytes_fingerprint,
     };
     retained.validate()?;
     Ok(retained)

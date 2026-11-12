@@ -7,6 +7,9 @@ mod test_support;
 #[path = "common/task_sync_opt_in.rs"]
 mod task_sync_opt_in;
 
+#[path = "common/task_sync_data_worktree.rs"]
+mod data_worktree;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -33,6 +36,7 @@ impl Fixture {
         let root = home.path().to_path_buf();
         let marker = root.join(".engram-project");
         fs::write(&marker, format!("{PROJECT}\n")).unwrap();
+        data_worktree::initialize(&marker);
         Self {
             _home: home,
             root,
@@ -60,25 +64,36 @@ impl Fixture {
         command
     }
 
-    fn sync(&self, home: &Path, operation: &str, path: &Path, json: bool) -> Output {
-        self.sync_command(home, operation, path, json)
+    fn exchange_snapshot(&self, home: &Path, operation: &str, path: &Path, json: bool) -> Output {
+        let output = self
+            .staged_snapshot_command(home, operation, path, json)
             .output()
-            .unwrap()
+            .unwrap();
+        if operation == "export" && output.status.success() && !path.exists() {
+            data_worktree::retain_snapshot(&self.marker, path);
+        }
+        output
     }
 
     /// An import into an empty destination, unless a test selects a basis.
-    fn sync_command(&self, home: &Path, operation: &str, path: &Path, json: bool) -> Command {
+    fn staged_snapshot_command(
+        &self,
+        home: &Path,
+        operation: &str,
+        path: &Path,
+        json: bool,
+    ) -> Command {
         let basis: &[&str] = if operation == "import" {
             &["--empty-basis"]
         } else {
             &[]
         };
-        self.sync_command_with(home, operation, path, json, basis)
+        self.staged_snapshot_command_with(home, operation, path, json, basis)
     }
 
     /// An import against this destination basis file.
     fn import_with_basis(&self, home: &Path, path: &Path, basis: &Path, json: bool) -> Output {
-        self.sync_command_with(
+        self.staged_snapshot_command_with(
             home,
             "import",
             path,
@@ -91,7 +106,7 @@ impl Fixture {
 
     /// A JSON dry run of an import against this destination basis file.
     fn dry_run_with_basis(&self, home: &Path, path: &Path, basis: &Path) -> Output {
-        self.sync_command_with(
+        self.staged_snapshot_command_with(
             home,
             "import",
             path,
@@ -102,7 +117,30 @@ impl Fixture {
         .unwrap()
     }
 
-    fn sync_command_with(
+    fn staged_snapshot_command_with(
+        &self,
+        home: &Path,
+        operation: &str,
+        path: &Path,
+        json: bool,
+        extra: &[&str],
+    ) -> Command {
+        if path.exists() {
+            data_worktree::stage_snapshot(&self.marker, path);
+        } else {
+            assert_eq!(operation, "export");
+            data_worktree::clear(&self.marker);
+        }
+        self.raw_command_with(
+            home,
+            operation,
+            &data_worktree::folder(&self.marker),
+            json,
+            extra,
+        )
+    }
+
+    fn raw_command_with(
         &self,
         home: &Path,
         operation: &str,
@@ -131,7 +169,7 @@ impl Fixture {
     /// The project document of this store's own folder export.
     fn own_basis(&self, home: &Path, name: &str) -> PathBuf {
         let path = self.root.join(name);
-        let output = self.sync(home, "export", &path, false);
+        let output = self.exchange_snapshot(home, "export", &path, false);
         assert!(output.status.success(), "{}", stderr(&output));
         path.join("project.json")
     }
@@ -158,7 +196,7 @@ impl Fixture {
         let source = self.store(&format!("{name}-source"));
         self.add(&source, "shared task");
         let path = self.root.join(name);
-        let output = self.sync(&source, "export", &path, false);
+        let output = self.exchange_snapshot(&source, "export", &path, false);
         assert!(output.status.success(), "{}", stderr(&output));
         path
     }
@@ -218,7 +256,7 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
         refusal(&fixture.dry_run_with_basis(&native, &candidate, &native_basis))["error"],
         refused["error"]
     );
-    let refused = refusal(&fixture.sync(&native, "import", &candidate, true));
+    let refused = refusal(&fixture.exchange_snapshot(&native, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "task_sync_divergent_planning");
 
     let target = fixture.store("target");
@@ -226,9 +264,12 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
     folder.tree.project.project_id = engram::ProjectId("another-project".into());
     let foreign = fixture.root.join("foreign");
     directory::write_folder(&foreign, &folder.tree, &folder.profile).unwrap();
-    let refused = refusal(&fixture.sync(&target, "import", &foreign, true));
+    let refused = refusal(&fixture.exchange_snapshot(&target, "import", &foreign, true));
     assert_eq!(refused["error"]["code"], "task_sync_origin_mismatch");
-    assert_plain_text_kept(&fixture.sync(&target, "import", &foreign, false), &refused);
+    assert_plain_text_kept(
+        &fixture.exchange_snapshot(&target, "import", &foreign, false),
+        &refused,
+    );
 
     // A basis must be this project's, share the folder's note selection, and
     // be well formed; its origin-machine alias is its own.
@@ -238,7 +279,7 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
     let notes_source = fixture.store("notes-source");
     let notes_basis = fixture.root.join("notes-basis");
     let output = fixture
-        .sync_command_with(
+        .staged_snapshot_command_with(
             &notes_source,
             "export",
             &notes_basis,
@@ -248,6 +289,7 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
+    data_worktree::retain_snapshot(&fixture.marker, &notes_basis);
     let refused = refusal(&fixture.import_with_basis(
         &target,
         &candidate,
@@ -264,10 +306,10 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
     fs::create_dir(&malformed).unwrap();
     fs::create_dir(malformed.join("tasks")).unwrap();
     fs::write(malformed.join("project.json"), "{}\n").unwrap();
-    let refused = refusal(&fixture.sync(&target, "import", &malformed, true));
+    let refused = refusal(&fixture.exchange_snapshot(&target, "import", &malformed, true));
     assert_eq!(refused["error"]["code"], "task_sync_invalid_graph");
     assert_plain_text_kept(
-        &fixture.sync(&target, "import", &malformed, false),
+        &fixture.exchange_snapshot(&target, "import", &malformed, false),
         &refused,
     );
 
@@ -276,17 +318,20 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
     fs::create_dir(unknown.join("tasks")).unwrap();
     fs::copy(candidate.join("project.json"), unknown.join("project.json")).unwrap();
     fs::write(unknown.join("notes.txt"), "not part of the format\n").unwrap();
-    let refused = refusal(&fixture.sync(&target, "import", &unknown, true));
+    let refused = refusal(&fixture.exchange_snapshot(&target, "import", &unknown, true));
     assert_eq!(
         refused["error"]["code"],
         "task_sync_destination_unknown_entry"
     );
-    assert_plain_text_kept(&fixture.sync(&target, "import", &unknown, false), &refused);
+    assert_plain_text_kept(
+        &fixture.exchange_snapshot(&target, "import", &unknown, false),
+        &refused,
+    );
 
     // Nothing above was imported, so the candidate still lands, and its
     // exact repeat replays the same receipt under --json too.
     let receipts = [0, 1].map(|_| {
-        let output = fixture.sync(&target, "import", &candidate, true);
+        let output = fixture.exchange_snapshot(&target, "import", &candidate, true);
         assert!(output.status.success(), "{}", stderr(&output));
         serde_json::from_slice::<Value>(&output.stdout).unwrap()
     });
@@ -310,7 +355,7 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
         );
     }
     // The already committed intent still replays its first receipt.
-    let output = fixture.sync(&target, "import", &candidate, true);
+    let output = fixture.exchange_snapshot(&target, "import", &candidate, true);
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(
         serde_json::from_slice::<Value>(&output.stdout).unwrap(),
@@ -322,7 +367,7 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
     let unopted = fixture.root.join("unopted");
     let output = fixture.engram(&unopted).arg("init").output().unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
-    let refused = refusal(&fixture.sync(&unopted, "import", &candidate, true));
+    let refused = refusal(&fixture.exchange_snapshot(&unopted, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "work_invalid");
     assert!(refused["error"]["details"].get("remedy").is_none());
 }
@@ -334,7 +379,7 @@ fn task_sync_resolved_folder_edits_import_and_omitted_members_are_cancelled() {
     fixture.add(&source, "first task");
     fixture.add(&source, "second task");
     let resolved = fixture.root.join("resolved");
-    let output = fixture.sync(&source, "export", &resolved, false);
+    let output = fixture.exchange_snapshot(&source, "export", &resolved, false);
     assert!(output.status.success(), "{}", stderr(&output));
 
     // A title edited while resolving a Git merge leaves the folder's embedded
@@ -353,7 +398,7 @@ fn task_sync_resolved_folder_edits_import_and_omitted_members_are_cancelled() {
     assert!(directory::read_folder(&resolved).is_err());
 
     let target = fixture.store("target");
-    let output = fixture.sync(&target, "import", &resolved, true);
+    let output = fixture.exchange_snapshot(&target, "import", &resolved, true);
     assert!(output.status.success(), "{}", stderr(&output));
     let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(receipt["changed"], true);
@@ -370,7 +415,7 @@ fn task_sync_resolved_folder_edits_import_and_omitted_members_are_cancelled() {
 
     // The destination's selected basis still binds: the source holds
     // planning, so the empty basis does not match it.
-    let refused = refusal(&fixture.sync(&source, "import", &resolved, true));
+    let refused = refusal(&fixture.exchange_snapshot(&source, "import", &resolved, true));
     assert_eq!(refused["error"]["code"], "task_sync_divergent_planning");
 
     // A resolved folder that lost a task file reads as a deletion, which an
@@ -389,7 +434,7 @@ fn task_sync_resolved_folder_edits_import_and_omitted_members_are_cancelled() {
     let receipt: Value = serde_json::from_slice(&removed.stdout).unwrap();
     assert_eq!(receipt["changed"], true);
     let after = fixture.root.join("after");
-    let output = fixture.sync(&target, "export", &after, false);
+    let output = fixture.exchange_snapshot(&target, "export", &after, false);
     assert!(output.status.success(), "{}", stderr(&output));
     let after_tree = directory::read_folder(&after).unwrap().tree;
     assert_eq!(after_tree.tasks, vec![imported.tree.tasks[1].clone()]);
@@ -423,10 +468,16 @@ fn task_sync_export_refusals_carry_stable_codes_and_json_prints_the_receipt() {
     fixture.add(&source, "shared task");
 
     let path = fixture.root.join("exported");
-    let output = fixture.sync(&source, "export", &path, true);
+    let output = fixture.exchange_snapshot(&source, "export", &path, true);
     assert!(output.status.success(), "{}", stderr(&output));
     let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(receipt["directory"], path.to_str().unwrap());
+    assert_eq!(
+        receipt["directory"],
+        std::fs::canonicalize(data_worktree::folder(&fixture.marker))
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
     assert_eq!(receipt["notes_included"], false);
     assert_eq!(
         receipt["export_basis"],
@@ -434,25 +485,29 @@ fn task_sync_export_refusals_carry_stable_codes_and_json_prints_the_receipt() {
     );
 
     fixture.add(&source, "another task");
-    let refused = refusal(&fixture.sync(&source, "export", &path, true));
+    let refused = refusal(&fixture.exchange_snapshot(&source, "export", &path, true));
     assert_eq!(refused["error"]["code"], "task_sync_destination_occupied");
     assert_eq!(
         refused["error"]["message"],
         "local work input is invalid: export destination already contains a different candidate"
     );
-    assert_plain_text_kept(&fixture.sync(&source, "export", &path, false), &refused);
+    assert_plain_text_kept(
+        &fixture.exchange_snapshot(&source, "export", &path, false),
+        &refused,
+    );
 
-    // An ordinary file named as a candidate directory is refused on read.
-    let file = fixture.root.join("plain-file");
+    // An ordinary file cannot stand in for the data folder. Admission stops
+    // before the folder reader and preserves the file.
+    data_worktree::clear(&fixture.marker);
+    let file = data_worktree::folder(&fixture.marker);
     fs::write(&file, "an ordinary file\n").unwrap();
-    let refused = refusal(&fixture.sync(&source, "import", &file, true));
-    assert_eq!(
-        refused["error"]["code"],
-        "task_sync_destination_not_directory"
-    );
-    assert_eq!(
-        refused["error"]["message"],
-        "local work input is invalid: task candidate directory must be an ordinary directory"
-    );
-    assert_plain_text_kept(&fixture.sync(&source, "import", &file, false), &refused);
+    for json in [false, true] {
+        let output = fixture
+            .raw_command_with(&source, "import", &file, json, &["--empty-basis"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, b"");
+    }
+    assert_eq!(fs::read(&file).unwrap(), b"an ordinary file\n");
 }

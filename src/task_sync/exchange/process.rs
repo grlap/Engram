@@ -64,10 +64,41 @@ pub(super) async fn execute_sanitized(
     })
 }
 
+/// Classify only a completed, drained push command. Deadline, cancellation,
+/// pipe and output-limit failures keep their original uncertainty.
+pub(super) async fn execute_push(
+    mut command: Command,
+    limits: RunLimits,
+    cancel: &Cancellation,
+    commit: &str,
+    reference: &str,
+) -> Result<RunOutput, RunError> {
+    command.env("LC_ALL", "C").env("LANG", "C");
+    let mut capture = Capture::default();
+    execute_into(
+        command,
+        limits,
+        cancel,
+        false,
+        &mut capture,
+        #[cfg(test)]
+        None,
+    )
+    .await
+    .map_err(|error| {
+        super::push::classify_failure(error, capture.exit_code, &capture.stdout, commit, reference)
+    })?;
+    Ok(RunOutput {
+        stdout: capture.stdout,
+        stderr_bytes: capture.stderr.len(),
+    })
+}
+
 #[derive(Default)]
 struct Capture {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
+    exit_code: Option<i32>,
 }
 
 // Only the owned test supervisor can receive raw failure output. The production
@@ -115,6 +146,8 @@ async fn execute_into(
     let mut stage_trace = super::tests::windows::readiness::Trace::for_command(&command);
     #[cfg(test)]
     let label = super::fixture_diagnostics::label(&command);
+    #[cfg(test)]
+    let subcommand = git_subcommand(&command);
     let mut wrapped = confined_command(command);
     // Native spawn itself is synchronous. Check the same deadline immediately
     // after it returns; no native-kernel preemption is claimed.
@@ -184,6 +217,7 @@ async fn execute_into(
                 }
             }
             if let Some(status) = status.as_ref().filter(|_| out_done && err_done) {
+                capture.exit_code = status.code();
                 if !(status.success() || allow_missing_config && status.code() == Some(1)) {
                     return Err(RunError::Git);
                 }
@@ -197,9 +231,66 @@ async fn execute_into(
         }
     }
     .await;
+    // The readers borrowed the captured output until the block above ended.
+    #[cfg(test)]
+    if let (Err(RunError::Git), Some(subcommand)) = (&result, &subcommand) {
+        report_git_failure(subcommand, capture.exit_code, &capture.stderr);
+    }
     #[cfg(test)]
     trace.finish(result.as_ref().err());
     result
+}
+
+/// The Git subcommand only: never its other arguments, which may name a URL.
+/// A command that does not run Git, such as a supervised test child, has none.
+#[cfg(test)]
+fn git_subcommand(command: &Command) -> Option<String> {
+    let program = std::path::Path::new(command.get_program());
+    if !program
+        .file_stem()
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("git"))
+    {
+        return None;
+    }
+    let mut option_value = false;
+    for arg in command.get_args() {
+        if std::mem::take(&mut option_value) {
+            continue;
+        }
+        if arg == "-c" || arg == "-C" {
+            option_value = true;
+            continue;
+        }
+        let arg = arg.to_string_lossy();
+        if !arg.starts_with('-') {
+            return Some(
+                arg.chars()
+                    .filter(char::is_ascii_graphic)
+                    .take(32)
+                    .collect(),
+            );
+        }
+    }
+    Some("unknown".into())
+}
+
+/// A failed Git command in a test build names its subcommand, exit code and a
+/// short single-line stderr excerpt, so a refusal can be classified. The
+/// production refusal stays the same sanitized `RunError` with no Git output.
+#[cfg(test)]
+fn report_git_failure(subcommand: &str, exit: Option<i32>, stderr: &[u8]) {
+    const EXCERPT: usize = 512;
+    let excerpt: String = String::from_utf8_lossy(&stderr[..stderr.len().min(EXCERPT)])
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect();
+    eprintln!("exchange-git-failure subcommand={subcommand} exit={exit:?} stderr={excerpt}");
 }
 
 async fn bounded_read(

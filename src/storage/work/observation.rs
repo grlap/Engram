@@ -378,7 +378,7 @@ pub(super) fn rebuild(connection: &Connection) -> Result<Vec<String>, StoreError
     let rows = connection
         .prepare(
             "SELECT object_id, canonical_json FROM objects
-        WHERE object_kind = 'work_observation' ORDER BY object_id",
+        WHERE object_kind = 'work_observation' AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id) ORDER BY object_id",
         )?
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -417,6 +417,7 @@ pub(super) fn verify_rows(
     let rows = connection
         .prepare(
             "SELECT object_id FROM objects WHERE object_kind = 'work_observation'
+        AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
         UNION SELECT observation_id FROM work_observations ORDER BY 1",
         )?
         .query_map([], |row| row.get::<_, String>(0))?

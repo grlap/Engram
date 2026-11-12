@@ -30,7 +30,11 @@ impl<'connection> Deref for WorkMutation<'connection> {
     }
 }
 
-impl WorkMutation<'_> {
+impl<'connection> WorkMutation<'connection> {
+    /// Borrow the already admitted writer for an atomic savepoint owner.
+    pub(super) fn transaction_mut(&mut self) -> &mut Transaction<'connection> {
+        &mut self.transaction
+    }
     pub(super) fn commit(self) -> rusqlite::Result<()> {
         let Self {
             origin_scope,

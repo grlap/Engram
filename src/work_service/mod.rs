@@ -136,11 +136,14 @@ pub(crate) use projection::normalize_actor_context;
 mod propose;
 mod record_windows;
 pub(crate) use record_windows::ASSESSMENT_CONTINUATION_REFUSAL;
+mod imported_evidence;
 mod note_admission;
 mod service;
 mod status;
+mod task_sync_audit;
 mod task_sync_exchange;
 mod task_sync_folder;
+mod task_sync_origin;
 mod task_sync_settings;
 mod task_sync_setup;
 pub(crate) mod unadmitted;
@@ -756,6 +759,49 @@ fn agent_change_object(
     position: Option<&FeedPosition>,
 ) -> Result<WorkChangeProjection, StoreError> {
     match object_kind {
+        crate::task_sync::origin::recovery::RECOVERY_KIND => {
+            let recovery: crate::task_sync::origin::recovery::RecoveryRecord =
+                serde_json::from_value(object)?;
+            recovery.validate()?;
+            if &recovery.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "origin recovery belongs to another project".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: SCHEMA_VERSION,
+                object_kind: object_kind.into(),
+                work_id: None,
+                work_ref: None,
+                revision: None,
+                change_kind: "task_sync_origin_recovered".into(),
+                summary: "New local task-sync origin recovered; predecessor history retained"
+                    .into(),
+                actor_id: Some(compact_text(&recovery.actor.actor_id)),
+                actor_context: projected_actor_context(&recovery.actor),
+                created_at: recovery.recovered_at,
+            }))
+        }
+        crate::task_sync::origin::PRODUCING_ORIGIN_KIND => {
+            let enrollment: crate::task_sync::origin::Enrollment = serde_json::from_value(object)?;
+            if &enrollment.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "origin enrollment belongs to another project".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: SCHEMA_VERSION,
+                object_kind: object_kind.into(),
+                work_id: None,
+                work_ref: None,
+                revision: None,
+                change_kind: "task_sync_origin_enrolled".into(),
+                summary: "Logical task-sync origin explicitly enrolled".into(),
+                actor_id: Some(compact_text(&enrollment.actor.actor_id)),
+                actor_context: projected_actor_context(&enrollment.actor),
+                created_at: enrollment.enrolled_at,
+            }))
+        }
         "work_event" => {
             let event = serde_json::from_value::<WorkEvent>(object)?;
             let position = position.ok_or_else(|| {

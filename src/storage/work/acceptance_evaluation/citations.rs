@@ -11,6 +11,10 @@ use super::{
 };
 
 pub(super) enum Citation {
+    ImportedVerification {
+        kind: crate::domain::VerificationKind,
+        check_fingerprint: ObjectId,
+    },
     VerificationPassed {
         applicability: Option<crate::domain::VerificationApplicability>,
         kind: crate::domain::VerificationKind,
@@ -117,7 +121,7 @@ pub(super) fn bind_verdicts(
             if input.verdict == AcceptanceVerdict::Pass {
                 admit_pass_citation(&context, input.basis, policy, &citation)?;
                 if let Some(binding) = binding {
-                    let matches = matches!(&citation, Citation::VerificationPassed { kind, check_fingerprint, .. }
+                    let matches = matches!(&citation, Citation::VerificationPassed { kind, check_fingerprint, .. } | Citation::ImportedVerification { kind, check_fingerprint }
                         if *kind == binding.requirement.check_kind
                             && binding
                                 .requirement
@@ -160,7 +164,7 @@ fn admit_pass_citation(
     let position = context.criterion;
     match basis {
         AcceptanceBasis::Observed => match citation {
-            Citation::VerificationPassed { .. } => Ok(()),
+            Citation::VerificationPassed { .. } | Citation::ImportedVerification { .. } => Ok(()),
             _ => Err(context.refused(
                 EvaluationCitationMismatch::PassedVerificationRequired,
                 format!(
@@ -214,6 +218,34 @@ pub(super) fn classify_citation(
         return Ok(None);
     };
     Ok(Some(match kind.as_str() {
+        "imported" => {
+            let record = super::super::task_sync::evidence::consumption::load_on(connection, hash)?;
+            if record.request.binding.run_id != run_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "imported citation crosses its local run".into(),
+                ));
+            }
+            let crate::task_sync::evidence::consumption::ConsumedProof::Verification {
+                origin,
+                original,
+                ..
+            } = &record.proof
+            else {
+                return Ok(Some(Citation::Note));
+            };
+            let (evidence, _, _) =
+                super::super::task_sync::evidence::verification::applicability::candidate_facts_on(
+                    connection,
+                    &record.project_id,
+                    origin,
+                    original,
+                )
+                .map_err(super::super::task_sync::evidence::store_error)?;
+            Citation::ImportedVerification {
+                kind: evidence.check_kind,
+                check_fingerprint: evidence.check_fingerprint,
+            }
+        }
         "verification" => {
             // The canonical object decides; the projection column is a
             // rebuildable index that must carry exactly the canonical result
@@ -284,7 +316,7 @@ pub(super) fn run_evidence_through(
     let mut statement = connection.prepare(
         "SELECT object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position <= ?2
-           AND object_kind IN ('work_evidence', 'verification_evidence', 'environment_evidence')
+           AND object_kind IN ('work_evidence', 'verification_evidence', 'environment_evidence', 'imported_evidence_consumption')
          ORDER BY position",
     )?;
     let rows = statement

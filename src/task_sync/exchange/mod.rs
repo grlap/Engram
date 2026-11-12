@@ -6,8 +6,28 @@
 //! hard parent exit before assignment can leave an inert suspended child: this
 //! is not atomic confinement. After assignment, dropping the job kills its tree.
 
+pub(crate) use attempt::publish_outgoing_remaining;
+pub(crate) use bootstrap::audit_incoming_data_commit_remaining;
+pub(crate) use delta::{
+    apply_delta_exchange_remaining, inspect_delta_resolution_remaining,
+    publish_delta_outgoing_remaining, publish_delta_retry_remaining,
+    record_delta_export_commit_remaining, record_delta_publication_remaining,
+    record_delta_resolution_remaining, record_delta_retry_progress_remaining,
+    retain_incoming_delta_remaining,
+};
+pub(crate) use evidence::apply_evidence_exchange_remaining;
+pub(crate) use retained::{retain_commit_remaining, verify_retained_commit_remaining};
+
 mod admission;
+mod attempt;
+mod bootstrap;
+pub use bootstrap::audit_incoming_data_commit;
 mod command;
+pub(crate) mod delta;
+pub(crate) mod evidence;
+pub use evidence::apply_evidence_exchange;
+mod successor;
+pub use successor::apply_planning_successor;
 #[cfg(all(test, windows))]
 #[path = "tests/windows/diagnostics.rs"]
 mod fixture_diagnostics;
@@ -28,7 +48,21 @@ mod process {
         drop(command);
         std::future::ready(Err(RunError::UnsupportedPlatform))
     }
+
+    pub(super) fn execute_push(
+        command: std::process::Command,
+        limits: RunLimits,
+        cancel: &Cancellation,
+        _commit: &str,
+        _reference: &str,
+    ) -> std::future::Ready<Result<RunOutput, RunError>> {
+        execute(command, limits, cancel, false)
+    }
 }
+#[cfg(test)]
+mod phase_trace;
+#[cfg(any(windows, test))]
+mod push;
 mod retained;
 mod target;
 #[cfg(test)]
@@ -46,6 +80,14 @@ pub(crate) mod test_support {
 
 pub use admission::{
     InspectedExchange, apply_exchange, inspect_exchange, prepare_exchange, record_exchange_progress,
+};
+pub use attempt::{PublicationAttempt, publish_outgoing};
+pub use delta::{
+    DeltaOutgoingSelection, DeltaPublicationRequest, DeltaResolutionRequest,
+    InspectedDeltaResolution, apply_delta_exchange, inspect_delta_resolution,
+    publish_delta_outgoing, publish_delta_retry, record_delta_export_commit,
+    record_delta_publication, record_delta_resolution, record_delta_retry_progress,
+    retain_incoming_delta,
 };
 pub use retained::{retain_commit, verify_retained_commit};
 pub use target::{ExchangeTarget, TargetSelection};
@@ -75,6 +117,8 @@ impl Cancellation {
 /// Per-request ceilings. They do not establish a transfer or repository quota.
 #[derive(Clone, Copy, Debug)]
 pub struct RunLimits {
+    /// A new request admits sixty through one hundred twenty seconds. Internal
+    /// phases receive only the unspent part of that operation's allowance.
     pub deadline: Duration,
     pub stdout_bytes: usize,
     pub stderr_bytes: usize,
@@ -83,7 +127,7 @@ pub struct RunLimits {
 impl Default for RunLimits {
     fn default() -> Self {
         Self {
-            deadline: Duration::from_secs(30),
+            deadline: crate::operation_time::MINIMUM,
             stdout_bytes: 1024 * 1024,
             stderr_bytes: 64 * 1024,
         }
@@ -91,7 +135,17 @@ impl Default for RunLimits {
 }
 
 impl RunLimits {
-    fn validate(self) -> Result<(), RunError> {
+    // Public overrides are complete operation budgets. Private subprocesses
+    // may receive less than a minute after part of that budget has been spent.
+    pub(crate) fn validate_request(self) -> Result<(), RunError> {
+        self.validate()?;
+        if self.deadline < crate::operation_time::MINIMUM {
+            return Err(RunError::InvalidLimits);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate(self) -> Result<(), RunError> {
         if self.deadline.is_zero()
             || self.deadline > Duration::from_secs(120)
             || self.stdout_bytes > 1024 * 1024
@@ -166,7 +220,7 @@ pub enum RunError {
     InvalidSelection,
     #[error("task exchange operation or retained commit/ref is invalid")]
     InvalidOperation,
-    #[error("task exchange process limits exceed supported bounds")]
+    #[error("task exchange process limits are outside supported bounds")]
     InvalidLimits,
     #[error("task exchange was cancelled; no success or publication is implied")]
     Cancelled,
@@ -180,6 +234,10 @@ pub enum RunError {
     Process,
     #[error("task exchange Git command failed; no success or publication is implied")]
     Git,
+    #[error(
+        "task exchange selected branch was refused as non-fast-forward; preserve the commit and reconcile the data tips"
+    )]
+    NonFastForward,
 }
 
 /// Execute a previously captured target after rechecking its effective configuration.
@@ -193,13 +251,43 @@ pub async fn run(
     limits: RunLimits,
     cancel: &Cancellation,
 ) -> Result<RunOutput, RunError> {
+    let started = std::time::Instant::now();
+    limits.validate_request()?;
+    let _warning = crate::operation_time::Warning::start("task exchange run");
+    let limits = crate::task_sync::exchange::remaining(limits, started)?;
+    run_remaining(target, operation, limits, cancel).await
+}
+
+// The public ingress admitted the full budget; internal calls spend its remainder.
+pub(crate) async fn run_remaining(
+    target: &ExchangeTarget,
+    operation: &ExchangeOperation,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<RunOutput, RunError> {
     limits.validate()?;
     let started = Instant::now();
-    let current = ExchangeTarget::capture(&target.selection, limits, cancel).await?;
+    let current =
+        ExchangeTarget::capture_remaining(&target.selection, remaining(limits, started)?, cancel)
+            .await?;
     if &current != target {
         return Err(RunError::TargetChanged);
     }
     let command = command::network(target, operation)?;
+    if let ExchangeOperation::Push { commit } = operation {
+        let remaining = remaining(limits, started)?;
+        if cancel.is_cancelled() {
+            return Err(RunError::Cancelled);
+        }
+        return process::execute_push(
+            command,
+            remaining,
+            cancel,
+            commit,
+            &target.selection.reference,
+        )
+        .await;
+    }
     execute(command, remaining(limits, started)?, cancel).await
 }
 

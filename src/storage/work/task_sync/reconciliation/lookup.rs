@@ -9,6 +9,7 @@ use super::{
 pub(super) const SCOPED_RECORDS_SQL: &str = "SELECT object_id, canonical_json FROM objects
     WHERE object_kind IN ('task_sync_reconciliation_hold', 'task_sync_exchange_event')
       AND object_kind=?1
+      AND json_valid(canonical_json)
       AND CASE WHEN object_kind='task_sync_reconciliation_hold'
           THEN json_extract(canonical_json, '$.project_id')
           ELSE json_extract(canonical_json, '$.binding') END=?2

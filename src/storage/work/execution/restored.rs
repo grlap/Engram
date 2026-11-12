@@ -4,14 +4,13 @@ use super::{
     ActorContext, AppendRestoredWorkGateRequest, CanonicalObject, Connection, DateTime,
     GATE_EVIDENCE_SUMMARY, GateEvidenceRecord, HashMap, HashSet, ObjectId,
     RecordRestoredWorkEvidenceRequest, Redactor, RestoredWorkEvidence, RestoredWorkEvidenceInput,
-    RootExecution, RootExecutionId, RootExecutionState, SCHEMA_VERSION, Serialize, SqliteStore,
-    StoreError, Transaction, Utc, WorkId, WorkItem, WorkLifecycle, WorkRun, WorkRunId,
-    WorkRunState, active_root_execution_optional, append_to_work_feeds, assert_actor_session,
-    assert_revision, inspect_work_request, latest_restored_record, load_root_execution,
-    load_typed_work_object, load_work_item, load_work_run, normalize_gate_evidence_input,
-    normalize_strings, params, persist_operation_result, persist_root_execution, persist_work_item,
-    replay_operation, request_object, validate_evidence_phase_marker,
-    work_completed_by_restored_record_on,
+    RootExecution, RootExecutionState, SCHEMA_VERSION, Serialize, SqliteStore, StoreError,
+    Transaction, Utc, WorkId, WorkItem, WorkLifecycle, WorkRun, WorkRunState,
+    active_root_execution_optional, append_to_work_feeds, assert_actor_session, assert_revision,
+    inspect_work_request, latest_restored_record, load_root_execution, load_typed_work_object,
+    load_work_item, load_work_run, normalize_gate_evidence_input, normalize_strings, params,
+    persist_operation_result, persist_root_execution, persist_work_item, replay_operation,
+    request_object, validate_evidence_phase_marker, work_completed_by_restored_record_on,
 };
 
 fn latest_restored_gate_evidence_on(
@@ -93,6 +92,21 @@ pub(in crate::storage::work) fn ensure_restored_execution_state(
     item: &mut WorkItem,
     now: DateTime<Utc>,
 ) -> Result<(RootExecution, WorkRun, bool), StoreError> {
+    ensure_restored_execution_state_for_event(
+        transaction,
+        item,
+        now,
+        &super::super::planning::successor::NativePlanningEvent::Ordinary,
+    )
+}
+
+pub(in crate::storage::work) fn ensure_restored_execution_state_for_event(
+    transaction: &Transaction<'_>,
+    item: &mut WorkItem,
+    now: DateTime<Utc>,
+    mutation: &super::super::planning::successor::NativePlanningEvent<'_, '_, '_, '_>,
+) -> Result<(RootExecution, WorkRun, bool), StoreError> {
+    mutation.check(transaction, item.work_id)?;
     if let Some(run_id) = item.active_run_id {
         let run = load_work_run(transaction, run_id)?;
         let execution = load_root_execution(transaction, run.root_execution_id)?;
@@ -111,7 +125,7 @@ pub(in crate::storage::work) fn ensure_restored_execution_state(
             (
                 RootExecution {
                     schema_version: SCHEMA_VERSION,
-                    root_execution_id: RootExecutionId::new(),
+                    root_execution_id: mutation.root_id(item.root_id)?,
                     project_id: item.project_id.clone(),
                     root_id: item.root_id,
                     generation: 1,
@@ -136,7 +150,7 @@ pub(in crate::storage::work) fn ensure_restored_execution_state(
     )?;
     let run = WorkRun {
         schema_version: SCHEMA_VERSION,
-        run_id: WorkRunId::new(),
+        run_id: mutation.run_id(item.work_id)?,
         root_execution_id: execution.root_execution_id,
         work_id: item.work_id,
         generation,

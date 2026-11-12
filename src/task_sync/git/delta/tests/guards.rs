@@ -115,6 +115,7 @@ fn deadline_and_repository_failures_do_not_request_an_unhelpful_rebuild() {
     let expired = Reader {
         repository: &fixture.root,
         started: Instant::now().checked_sub(BOUND).unwrap(),
+        total_bound: BOUND,
     };
     let error = expired.commit_tree(&prior, "prior").unwrap_err();
     assert_eq!(code(&error), "task_sync_git_query_failed");
@@ -155,6 +156,7 @@ fn oversized_blobs_and_other_responses_have_distinct_bounded_refusals() {
     let reader = Reader {
         repository: &fixture.root,
         started: Instant::now(),
+        total_bound: BOUND,
     };
     let error = reader.query(&["cat-file", "-p", &blob]).unwrap_err();
     assert_eq!(code(&error), "task_sync_destination_tree_limit");
@@ -191,6 +193,7 @@ fn aggregate_payload_limit_counts_real_selected_blob_bytes() {
     let reader = Reader {
         repository: &fixture.root,
         started: Instant::now(),
+        total_bound: BOUND,
     };
     // Exercise the production accumulator with a small budget, keeping the
     // fixture proportional rather than writing 128 MiB in the ordinary suite.
@@ -216,4 +219,48 @@ fn aggregate_payload_limit_counts_real_selected_blob_bytes() {
     )
     .unwrap_err();
     assert_eq!(code(&error), "task_sync_destination_tree_limit");
+}
+
+#[test]
+fn a_task_reader_keeps_its_minute_and_spends_bounded_or_cold_time_without_resetting() {
+    let fixture = Fixture::new(1);
+    let commit = fixture.commit();
+    let project = &fixture.tree.project.project_id;
+    let expected = fixture.text(&["rev-parse", "HEAD^{tree}"]);
+
+    let mut ordinary = Reader::new(&fixture.root, project).unwrap();
+    ordinary.started = Instant::now().checked_sub(Duration::from_secs(31)).unwrap();
+    assert_eq!(ordinary.commit_tree(&commit, "prior").unwrap(), expected);
+    ordinary.started = Instant::now().checked_sub(Duration::from_secs(61)).unwrap();
+    let error = ordinary.commit_tree(&commit, "prior").unwrap_err();
+    assert_eq!(code(&error), "task_sync_git_query_failed");
+    assert!(error.to_string().contains("deadline"));
+
+    // An internal phase can use less than a fresh minute; it must not renew
+    // the caller's already spent time or mistake that remainder for an override.
+    let mut bounded = Reader::bounded(&fixture.root, project, Duration::from_secs(29)).unwrap();
+    assert_eq!(bounded.commit_tree(&commit, "prior").unwrap(), expected);
+    bounded.started = Instant::now().checked_sub(Duration::from_secs(30)).unwrap();
+    assert!(
+        bounded
+            .commit_tree(&commit, "prior")
+            .unwrap_err()
+            .to_string()
+            .contains("deadline")
+    );
+
+    // Cold reads keep their longer allowance instead of being reduced to a
+    // fresh minute when they acquire the common warning observer.
+    let mut cold = Reader::cold(&fixture.root, project).unwrap();
+    cold.started = Instant::now().checked_sub(Duration::from_secs(90)).unwrap();
+    assert_eq!(cold.commit_tree(&commit, "prior").unwrap(), expected);
+    cold.started = Instant::now()
+        .checked_sub(Duration::from_secs(601))
+        .unwrap();
+    assert!(
+        cold.commit_tree(&commit, "prior")
+            .unwrap_err()
+            .to_string()
+            .contains("deadline")
+    );
 }

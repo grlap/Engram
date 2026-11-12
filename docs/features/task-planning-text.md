@@ -11,23 +11,30 @@ Full native history remains in [graph snapshots](work-graph-snapshot.md) and
 ## Commands and directory layout
 
 Select a project with its ordinary `.engram-project` marker and an explicit
-host-local store home. The directory argument is deliberate and may be relative
-to the current directory. Its parent must already exist. Initialize each local
-store with `engram init` before using these commands.
+host-local store home. Ordinary export and import accept only `PROJECT/.engram-data/.engram`
+in that project's dedicated orphan data worktree. A relative spelling is allowed;
+parent traversal, linked directories, another checkout or branch, and a folder in
+the code checkout refuse before export capture or import reads. Initialize each
+local store with `engram init` and provision its data worktree explicitly with
+`task-sync data-init` before using these commands. `--branch` selects the data
+branch and defaults to `engram-data`; it must match the observed worktree.
 
 ```text
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY --origin-machine host-A
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY --include-notes --origin-machine host-A
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --empty-basis --dry-run
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --empty-basis
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --basis OWN_EXPORT/project.json --json
+engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram
+engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --origin-machine host-A
+engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --include-notes --origin-machine host-A
+engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis --dry-run
+engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis
+engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --basis OWN_EXPORT/project.json --json
 ```
 
-The two homes contain isolated stores for the same stable project id. Export
+The two homes contain isolated stores for the same stable project id. Each host
+selects its own main-code marker and dedicated data worktree. Export
 publishes a new Git folder containing `project.json` and
 `tasks/<full-uuid>.json`. An existing equivalent folder is left byte-for-byte
-unchanged; a different one is refused. Publication prepares a sibling staging
+unchanged, including ordinary `.gitignore` and `.gitattributes` policy files;
+a different folder is refused. Export does not replace a resolved merge or advance
+a branch. Publication prepares a sibling staging
 directory, reads it back, and moves it without replacing an existing
 destination. An operating system that cannot perform that directory move
 without replacement refuses publication.
@@ -46,7 +53,9 @@ store identity or runtime cursor.
 ## Git folder exchange
 
 `task-sync export` and `task-sync import` are the folder route; no other
-command exchanges a folder. Export reads the store in one snapshot and
+command exchanges this folder profile. Private snapshots may be retained under
+`target/` for merge bases; they are not accepted as public import/export paths.
+Export reads the store in one snapshot and
 publishes its shared planning together with that snapshot's export basis. The
 first export of a store with no exchange history publishes its whole planning.
 
@@ -55,8 +64,9 @@ selects. Exactly one selection is required:
 
 - `--basis FILE` names this host's own `project.json` from its export before
   the Git merge, for example as written by
-  `git show PINNED_COMMIT:PATH/project.json`. Engram runs no Git and does not
-  resolve `ORIG_HEAD` or any other ref.
+  `git show PINNED_DATA_COMMIT:.engram/project.json`, retained privately before
+  editing the data folder. This command observes Git only to validate the data
+  worktree; it does not resolve the basis from `ORIG_HEAD` or any other ref.
 - `--empty-basis` imports into a destination that holds no shared planning yet.
   The import checks inside its write transaction that the destination is empty.
 
@@ -94,9 +104,11 @@ that import's receipt, as the real repeat would.
 A later export keeps the note selection its baseline was recorded with; an
 export under another note selection refuses.
 
-Candidates written by `task-sync prepare` or setup materialization carry no
-exchange envelope, so `task-sync import` refuses them; the plain-candidate
-library calls remain for tests only. Import requires `project.json`, rejects
+Candidates written by `task-sync prepare` carry no exchange envelope, so
+`task-sync import` refuses them. Setup materialization retains that raw candidate
+privately and publishes a folder-exchange envelope around the project document;
+task document bytes stay unchanged. The plain-candidate library calls remain
+for tests only. Import requires `project.json`, rejects
 unknown entries and symbolic links, and checks every task filename against
 its UUID. A folder with no tasks may omit its `tasks` directory, since Git
 keeps no empty directories. Import reads the resolved folder's inventory from
@@ -395,238 +407,158 @@ durability beyond sync and rename is not promised. Temporary files never count
 as configuration. Linked/nonordinary/unreadable paths and unsupported replacement
 operations refuse, with no delete-then-rename fallback.
 
+## Persistent data worktree
+
+Code and shared task/evidence data use separate histories. From the main code
+checkout, after the host-local opt-in:
+
+```text
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync data-init --branch engram-data
+```
+
+This explicit command creates the fixed `MAIN/.engram-data/` linked worktree on
+an unborn orphan branch, with Git's worktree lock already set. It never commits,
+fetches, pushes or opens SQLite. It preserves the code HEAD, index and tracked
+files. When the code checkout does not already ignore that directory, it appends
+`/.engram-data/` to the repository-local Git `info/exclude` before creating it;
+existing bytes are preserved, including an unterminated final line. No user or
+global configuration is changed. An existing admitted data worktree is reused
+and locked, without resetting its branch. An occupied path, another project's
+marker, a code-history branch or an existing branch without its admitted
+worktree refuses. Partial registration is preserved, never forcibly removed.
+Concurrent initialization on this host refuses immediately while its private
+Git-admin file lock is held.
+
+The directory is persistent project data, not build output or task evidence
+scratch. Ordinary `git worktree remove` refuses a locked worktree, and pruning
+keeps its registration even while its directory is temporarily absent. The lock
+is not protection against an explicit forced deletion. Retire it deliberately
+after preserving the data and reconciling pending exchange; ordinary coding-task
+cleanup must leave it in place. Code worktrees require no task-file sparsity.
+
+New exchange bindings select this data checkout and its own Git administration.
+The retained field `repository.main_checkout` keeps its historical wire name;
+it holds the data-worktree path for a new binding. Historical records are read
+unchanged. Exchange inspection refuses a binding that selects code, a changed
+data branch/admin directory, or a selected incoming/outgoing commit that shares
+code ancestry or has any root outside `.engram/`. Git task deltas and cold
+snapshots accept the two ordinary nested policy blobs without treating them as
+task documents. The separate resolved-data-folder reader also admits those
+files; raw private candidates still require their strict project/tasks layout.
+
+`DataWorktree::advance_retained` advances only the selected data branch to an
+existing operation-owned commit whose raw bytes and private retention ref still
+match. The staged tree must match that commit, and an existing branch head must
+be its ancestor. An agent-resolved commit can retain both data parents. A retry
+after a lost response observes the same retained commit rather than creating a
+replacement. This library operation does not stage files, change worktree bytes,
+contact a remote or append the caller's ledger outcome. Commit/push authority and
+the ordinary publication workflow remain separate caller responsibilities.
+
 ## Private Git setup preparation
 
 ```text
-engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync setup-prepare MAIN --branch ordinary --visibility private --readership "project maintainers"
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync setup-prepare MAIN/.engram-data --branch engram-data --visibility private --readership "project maintainers"
 ```
 
-This separate command does not open or initialize SQLite. It verifies the
-selected marker and project, the main repository root, an attached explicitly
-selected branch and a nonsparse checkout. Linked worktrees, bare repositories,
-ambiguous roots, links/reparse ancestors, applied unsafe attributes, and dirty,
-staged or conflicted reserved/setup paths refuse before preparation. An existing
-`.engram/project.json` or `.engram/tasks` is unowned occupancy, even if its bytes
-match an intended export; relocate it explicitly first. Reserved occupancy in
-the index or HEAD also refuses, including paths absent from disk and ASCII case
-aliases. Setup-file case aliases in the index or HEAD refuse before status. Setup files
-and the selected marker refuse index flags that suppress inspection
-(`assume-unchanged` or `skip-worktree`). Unrelated local state is preserved.
+Preparation opens no SQLite store and applies no public files. It reads the
+selected main-code marker and binds its project to the fixed ignored data
+worktree, its own Git administration, attached orphan branch and current HEAD
+(which may be unborn). The data index and committed tree must be empty for a
+new setup. Existing `.engram/project.json`, `.engram/tasks`, `.engram/.gitignore`
+or `.engram/.gitattributes` are unowned occupancy even when their bytes match;
+preserve and relocate them explicitly before preparing. Unrelated private
+siblings within an existing `.engram` directory remain. Files outside `.engram/`,
+sparse data worktrees, links/reparse ancestors and ambiguous roots refuse.
+No code-checkout policy or index flag is rewritten or normalized.
 
-Preparation queries current Git attributes on the manifest, a representative
-task filename, the setup files and the marker before status compares their
-contents. A filter, custom diff or merge driver, encoding or ident attribute, or
-a non-LF eol attribute, names its path and attribute in the refusal. Built-in
-text diffs (`diff`) and the boolean built-in merge attribute (`merge`) are admitted. Unused configured
-filters are admitted. Nested `.engram/.gitattributes` and `.engram/.gitignore`
-files refuse. The proposed ignore block reopens the root `.engram` directory
-before excluding private contents and admitting the shared paths. The proposed
-root block sets text and LF, enables built-in text diffs and the text merge
-driver, and unsets filters, encoding and ident. Preparation leaves it unapplied.
-The [explicit materializer](#materializing-a-selected-preparation) queries every
-actual task path after applying the block and before writing shared files,
-including overrides from Git-admin `info/attributes`. Preparation does not prove future filenames
-or the attributes of a hypothetical edited checkout.
+Current attributes are inspected without running filters. Applied filters,
+custom diff/merge drivers, encoding, ident or non-LF eol refuse with the affected
+path. Unused configured filters are allowed. Preparation records proposed
+`.engram/.gitignore` and `.engram/.gitattributes` bytes in an immutable private
+`engram-task-sync-setup.json` in the data worktree's Git administration. The
+ignore policy exposes only the project/task documents and the two policy files;
+the attribute policy selects text/LF and built-in text diff/merge, and disables
+filters, encoding and ident. Neither policy is applied by preparation. The code
+checkout's `.gitignore` and `.gitattributes` stay untouched.
 
-Visibility (`public` or `private`), nonblank intended readership, attribution,
-the planning profile, and optional `--include-notes --origin-machine ALIAS` are
-operator assertions, not authenticated disclosure scope. An alias without notes
-is accepted for future activity capture. The development redactor remains a
-no-op; this command does not approve protected task-field disclosure.
+Visibility, intended readership, profile, optional notes/machine alias and
+attribution are operator assertions, not authenticated disclosure consent. The
+redactor is a development no-op. The marker is bounded at 4 KiB and private
+records at 2 MiB. A repeated matching basis returns the original operation and
+intent bytes; another basis or unowned record refuses without replacement.
+Moving the data HEAD makes the intent stale. A contended private lock refuses
+immediately, without age-based reclamation or an automatic retry.
 
-The receipt names `engram-task-sync-setup.json` in the actual Git admin directory,
-including a separate Git directory. The private immutable intent holds the
-repository/branch/project basis, original setup bytes and proposed narrow ignore
-and LF attribute edits. Setup inputs are bounded at 64 KiB (the marker at 4 KiB).
-Compact JSON keeps the raw-byte arrays within the private reader's 2 MiB bound;
-publication also checks that bound.
-Managed setup blocks may enlarge the 64 KiB inputs. Materialization checks the
-complete published setup files against the recorded after-lengths and bytes;
-it does not apply the before-file cap to those derived outputs or truncate them.
-The edits are not applied: no `.engram` files, index, branch, global configuration
-or SQLite rows change. Preparation enables no sync and introduces no remote
-relay, sparse enrollment, commit or network operation.
-
-A matching disclosure assertion and repository basis returns the original
-operation and unchanged intent bytes. The first caller's attribution (including
-actor context and source skill) is recorded separately; a new process session
-does not change retry identity. Setup preparation and materialization preserve
-actor context verbatim, including whitespace and text longer than 256 bytes.
-When present, it must be nonblank, at most 4096 UTF-8 bytes, and contain no
-control characters. Invalid context refuses before creating setup or
-materialization state; it is never silently normalized. Both CLI
-`--actor-context` and `ENGRAM_ACTOR_CONTEXT` use this contract. An exactly empty
-actor context is absent; whitespace-only context is refused. These commands
-have no MCP tool. Previously recorded attribution remains unchanged on retry.
-A different or unowned record refuses without
-replacement. Moving HEAD makes the recorded basis stale; this preparation slice
-does not replace or retire it.
-An immediately contended private lock refuses; it is not retried or reclaimed
-by age. Lock ownership bytes and the intent are published with no-replace hard
-links of complete private pending
-file; unsupported filesystems refuse. An interruption can leave an owned
-pending file, which is not a published intent. This is process-interruption
-safety, not a power-loss guarantee. Materialization revalidates the recorded
-basis before applying edits or shared task bytes.
+Actor context is retained verbatim, including whitespace and text longer than
+256 bytes. When present it must be nonblank, at most 4096 UTF-8 bytes and contain
+no control characters. An exactly empty context is absent. Invalid context
+refuses before private setup/materialization state is created. The CLI accepts
+`--actor-context`/`ENGRAM_ACTOR_CONTEXT` and `--source-skill`; these commands have
+no MCP tool and a new process session does not replace the first attribution.
 
 ## Materializing a selected preparation
 
 ```text
-engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync setup-materialize MAIN --setup-operation SETUP_UUID --prepared-operation PREPARED_UUID --progress-directory PROGRESS --candidate-directory CANDIDATE
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync setup-materialize MAIN/.engram-data --setup-operation SETUP_UUID --prepared-operation PREPARED_UUID --progress-directory PROGRESS --candidate-directory CANDIDATE
 ```
 
-This explicit main-checkout operation consumes the immutable setup intent and
-one completed, matching prepared candidate. The shared `LocalWorkService`
-entrypoint performs the same actual repository admission as the CLI. There is
-no separate materialization MCP tool. Selection never falls back to the latest
-operation, recaptures SQLite or reserializes a task document. Recovery and exact
-repeat require the same recorded absolute path spellings for the repository,
-progress and candidate selection; reuse the original command paths even when
-another spelling names the same filesystem objects. The CLI refuses `..` parent
-components in selection paths before materialization; supply paths without
-parent components on every platform. Candidate documents
-must already use LF bytes; they are refused rather than normalized.
+The CLI and `LocalWorkService` consume the same explicitly selected setup intent
+and completed candidate. They never choose a latest operation, recapture SQLite
+or reserialize a task document. Reuse the original absolute selection spellings
+on recovery; `..` parent components refuse. Candidate documents must already
+use LF. Whole-candidate disclosure admission precedes new private/public writes:
+protected tasks and inadmissible notes/activity refuse with bounded IDs, counts
+and static reasons, without quoting field values. Receipts retain omissions,
+first attribution and the development no-op redactor, not real DLP assurance.
 
-The whole candidate passes current disclosure admission before any new private
-operation or public write. Tasks labelled `restricted`, `secret` or `secret-ref`
-are refused, including tasks without notes. Retained notes and activity receive
-their separate current admission checks. A refusal reports bounded task IDs,
-counts and a static reason, without quoting field values. The receipt reports
-the development no-op redactor, recorded note/activity omissions, asserted first
-attribution and the count of omitted linked worktrees. Assertions and quoted
-instructions are not authenticated human consent or real DLP.
+The recorded marker, data administration, branch, HEAD and index are rechecked.
+Only `.engram/` changes. A fresh shared directory is published atomically with
+its two policy files; when a private `.engram` already exists, absent policy
+files are linked before the shared project/tasks paths are published. Every
+actual task path receives an effective attribute/ignore check, including
+Git-admin overrides. Before a fresh publication, the retained policy is checked
+without temporarily writing it to a worktree. Case aliases, nested policy files,
+unsafe attributes, ignored task paths or unowned occupancy refuse.
 
-The repository must retain its main nonsparse checkout, attached branch, HEAD,
-project marker and relevant index basis. Setup and shared-path ASCII case
-aliases (including `Project.json` or `Tasks` inside an existing `.engram`),
-links/reparse points, suppressed index inspection and unowned occupancy
-refuse. After applying only the recorded root ignore and attribute edits, the
-operation queries effective text/LF, built-in diff/merge, filter, encoding,
-ident and ignore policy on **every actual** project/task filename, including
-Git-admin overrides. Unsafe policy refuses before shared task publication.
+An exclusive private Git-admin operation directory retains raw candidate bytes,
+separate publication sources, a bounded immutable journal and physical ownership
+identities. Publication sources contain the derived project envelope with the
+selected disclosure profile and canonical planning-content basis, while the raw
+candidate keeps its original project and task bytes and preparation fingerprint.
+Retries derive the same public envelope and check its retained publication link;
+they never substitute it for the raw candidate. Complete records and public files are linked without replacement;
+unsupported filesystems refuse. Git administration and checkout must share a
+filesystem supporting hard links. Windows identities use volume plus a 64-bit
+file index; wider filesystem identities such as ReFS may collide. Equal bytes
+and inventory are checked too, but an equal-byte identity collision can still
+misreport ownership. No power-loss guarantee beyond the recorded sync/rename
+operations is promised.
 
-An existing process-held setup lock is acquired without initialization; a
-contender creates nothing. An exclusive private operation directory in Git
-administration retains the exact raw candidate separately from publication
-sources, an immutable bounded journal, physical directory identities and first
-attribution. Git administration and checkout must share a filesystem that
-supports hard links. The Windows dependency exposes a volume serial and a file
-index reported as 64-bit, compared together with exact bytes and inventory.
-Filesystems with wider identities, such as ReFS with 128-bit IDs, can report
-colliding indices for distinct objects. An equal-byte false match on a published
-file can misreport it as already published; that check neither replaces nor
-deletes the file. Before-file admission also uses index plus exact before bytes:
-a false match can apply the declared setup edit to a distinct file whose bytes
-are identical to the approved before-content. Its displaced bytes are always
-retained privately; the journal records their location and approved before bytes.
-An unowned empty directory is never adopted or removed. A saved directory ID
-can collide or be reused after the original disappears, so repeat can misreport
-another empty directory as equal or complete while preserving it. Mismatched
-or unavailable IDs refuse. These comparisons are not collision-free ownership
-proofs. No ReFS or UNC runtime assurance is claimed, and no interpreter or
-volume-management subprocess is used.
+An admitted journal can finish after opt-out and without its original candidate
+or source store. Exact repeats require the original public and retained objects;
+equal independently replaced files are not adopted. A new unowned empty tasks
+directory is accepted only for an empty candidate, reported as unowned and never
+cleaned up. Existing private siblings are preserved. A pre-journal interruption
+is not adopted: the refusal names the whole private attempt. Preserve it and any
+unrelated edits, relocate it within Git administration, then repeat preparation
+on the unchanged basis and materialize a fresh attempt. No automatic deletion
+or general replacement command is supplied.
 
-Existing setup files move into fresh private replacement attempts. The arrived
-file must match its recorded physical identity and before bytes; an after file
-is then linked without replacing a public target. If a concurrent edit was
-moved, compensation links those displaced bytes back without replacing another
-target. A lost compensation reports `restore_incomplete` and names the retained
-private location. Both displaced and newly occupied public bytes are preserved.
-An attempt interrupted before its complete ownership marker is preserved and
-refused; names, age or equal bytes never justify adoption or cleanup.
+Managed ignore rules admit ordinary planning paths and evidence packs under
+their UUID-origin, two-character shard and UUID JSON filename hierarchy, so
+plain `git add .engram` stages both. Unrelated private files remain ignored;
+the evidence readers still enforce exact shard agreement, file modes and pack
+contents. Private raw candidates keep their planning-only inventory.
 
-Shared directories are staged privately and renamed into the absent target.
-Existing `.engram` private contents are preserved: only the tasks subtree and
-project file are published there. The accepted rename race can replace an
-empty target directory; a nonempty target fails without a delete fallback.
-An independently present empty tasks directory with an expected empty export
-is preserved and reported as equal unowned content. A nonempty expectation
-refuses that directory. Independent files with different reported identities
-remain unowned and refuse, including equal-byte files.
-An owned freshly published `.engram` also permits unrelated private siblings
-during recovery and exact repeat. Its directory identity, canonical reserved
-names, project ownership and exact tasks inventory are still checked; a case
-alias of `project.json` or `tasks` refuses even beside an unrelated sibling.
-Before admitting new state, bounded directory scans reserve room for every
-missing declared root or shared entry. An operation that would exceed the
-100,000-entry scan limit refuses before publication, so its own added paths
-cannot exceed the recovery and repeat reader's bound.
-
-Recoverable publication boundaries use retained physical source links and exact
-bytes. After admission, recovery needs neither the original B1 generation nor
-a current SQLite snapshot, and can finish after opt-out. Completion records the
-observed public directory and project/task identities; exact repeat rechecks
-those identities, bytes, inventory and repository policy without writing.
-Missing or edited completed state and detected independent replacement refuse.
-The reported-ID collision and reuse limitations above also apply to repeat.
-Ordinary public edits are covered; hostile same-user tampering with the private
-operation directory, multi-file atomicity and power-loss durability are not promised.
-
-### Resolving a materialization refusal
-
-Before admitting `journal.json`, materialization creates both private replacement
-directories and complete no-replace plan markers. The journal binds the directory
-and plan identities. After admission, each setup edit uses only these bound
-plans; no replacement directory or plan is created between public edits. A
-missing or replaced plan after admission is a refusal for changed private state,
-not an expected interruption state.
-
-The admission journal binds an exclusively created private completion-recovery
-directory and source file. If completion preparation is interrupted after public
-publication, retry preserves the original `.complete.pending` bytes and identity.
-It verifies the recovery source's complete prefix against the expected completion,
-appends only the missing suffix, syncs it and links the complete marker without
-replacement. Another interruption resumes the same bound file. A changed prefix,
-identity or inventory refuses with all witnesses retained. This admitted recovery
-also works after opt-out; new materialization still requires current opt-in.
-
-Retain the printed operation paths and refusal before changing anything. Stop
-concurrent writers while making a manual repair, and preserve copies of the
-private operation, setup intent and public files. The command never removes an
-incomplete operation or infers ownership from an empty directory.
-
-If an interruption or refusal occurred before `journal.json` was published,
-including during replacement-plan preparation, automatic recovery refuses that
-incomplete private attempt. The refusal prints the full operation path, of the
-form `GIT_DIR/engram-task-sync-materialize-<setup-operation>-<prepared-operation>`,
-and directs the operator to preserve it, relocate the whole directory within
-Git administration, rerun setup preparation, then materialize a fresh attempt.
-With an unchanged repository basis, that preparation repeats the existing setup
-intent before fresh materialization; it does not create a second setup intent.
-This is an explicit operator repair, not an automatic retry or a retire command.
-Do not delete or adopt an unfamiliar entry to make a refusal disappear.
-
-At `private-created`, `replace-created-0`, and `replace-created-1`, no public
-setup replacement has occurred: retain unrelated public files exactly as they
-are. At a later pre-journal refusal, inspect the actual retained state before
-repairing it. Preserve any displaced originals and unrelated public edits
-separately; never blindly restore recorded bytes over a new public occupant.
-Examples include setup-byte drift during admission, unavailable hard links, or
-a failed Git admission query after private initialization began. A changed
-index, branch or shared tree needs reconciliation before a new preparation;
-repeating preparation does not normalize that drift.
-
-After setup edits are published, `.gitignore` and `.gitattributes` are hard links
-to the operation's retained `after` sources. To fix an attribute-policy refusal,
-correct the separate override (for example Git-admin `info/attributes`) while
-leaving those managed files intact. An in-place edit to a managed file also
-changes its retained source; restore the exact `after` bytes recorded in the
-immutable journal, in place, before retrying. If an editor replaced the public
-file, preserve that replacement separately and explicitly restore the retained
-source's hard link without overwriting it. A refusal concerning displaced bytes
-keeps those bytes at the reported private path; `restore_incomplete=false`
-means that observed displaced object already occupies the public path, including
-on a later retry. These repairs require inspecting the actual retained state;
-there is no general retire or replacement-materialization command.
-If a public setup path becomes occupied after its original was moved, the
-refusal names both that path and the retained displaced path. Preserve both
-objects and reconcile the public entry explicitly before retrying; publication
-never overwrites the new occupant.
-
-This operation changes no SQLite rows/schema/projections, Git index, branch,
-configuration or commits. It enrolls no linked worktree, runs no network relay
-and adds no retire/replace or sparse-enrollment command. Disable changes only
-the private opt-in setting and removes no shared files.
+Managed policies are hard links to the retained `after` sources. Correct a
+separate unsafe override while leaving them intact; an in-place policy edit
+also changes that retained source, so restore the exact journaled bytes before
+retrying. Preserve an independently replaced public file before explicitly
+restoring the retained link; never overwrite it blindly. These operations do not
+change SQLite, Git index/configuration/branch or commits, run a network relay,
+or initialize a worktree. `data-init` is the separate explicit operation above.
+Disabling sync removes no shared files or persistent worktree.
 
 ## Opt-in shared notes
 
@@ -1044,6 +976,14 @@ enabled and HTTP redirects are refused. Errors contain categories, safe version
 numbers, and the bounded escaped file origin for scoped-helper refusals; they
 never contain raw Git/helper stderr or destination URLs. Successful stdout is bounded
 protocol data for the calling workflow, not a diagnostic to print unexamined.
+
+A completed single-ref push exiting with Git's rejection code is classified as
+`NonFastForward` only when its complete porcelain record names the exact selected
+commit and branch and reports `non-fast-forward` or `fetch first`. Push output
+uses the C locale. Other failures, multiple ref records, truncated output,
+cancellation and deadlines retain their existing categories and uncertainty.
+The named refusal describes that command only; it does not settle an earlier
+unknown attempt or authorize a retry or another push.
 
 On Windows, `process-wrap` starts the child suspended, assigns it to an owned
 kill-on-close Job Object, and then resumes it. Git's helpers and descendants

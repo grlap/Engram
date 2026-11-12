@@ -1,13 +1,29 @@
 //! Hardened local Git query construction for optional task exchange and diagnostics.
 
 mod delta;
+mod evidence;
+mod path;
 mod query;
+mod snapshot;
 
 pub use delta::{CommitTaskDelta, read_task_delta};
+pub(crate) use evidence::read_selected_evidence_remaining;
+pub use evidence::{CommitEvidenceBatch, SelectionMismatch, read_selected_evidence};
+pub use path::plain_path;
+#[cfg(test)]
+pub(crate) use query::BEFORE_QUERY;
 pub(crate) use query::Failure as QueryFailure;
 pub(crate) use query::StderrPolicy as QueryStderrPolicy;
 pub(crate) use query::run as query;
 pub(crate) use query::run_command as run_query_command;
+pub(crate) use query::run_observed as query_observed;
+#[cfg(all(test, windows))]
+pub(crate) use query::test_clock::PendingQuery;
+#[cfg(test)]
+pub(crate) use query::wait_until_exit;
+pub(crate) use snapshot::observe_commit;
+pub(crate) use snapshot::read_task_snapshot_bounded;
+pub use snapshot::{CommitObject, CommitTaskSnapshot, read_task_snapshot};
 
 use std::{
     path::Path,

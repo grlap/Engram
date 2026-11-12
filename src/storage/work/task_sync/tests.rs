@@ -9,11 +9,13 @@ use crate::{
 
 mod activity;
 mod baseline_view;
+mod document_members;
 mod exclusion;
 mod feed_changes;
 mod folder;
 mod folder_apply;
 mod folder_dry_run;
+mod graph_components;
 mod incremental;
 mod keyed_capture;
 pub(in crate::storage::work::task_sync) mod ledger;

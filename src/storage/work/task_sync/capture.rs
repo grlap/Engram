@@ -37,56 +37,64 @@ impl SqliteStore {
         let ids = ids.into_iter().collect::<BTreeSet<_>>();
         self.work_read_snapshot(|store| {
             with_origin_scope(&store.connection, || {
-                baseline::validate_note_selection(
-                    &store.connection,
-                    project,
-                    profile.include_notes,
-                )?;
-                let entries = baseline::entries(&store.connection, project, ids.iter().copied())?;
-                let mut documents = BTreeMap::new();
-                let mut omissions = NoteOmissions::default();
-                let mut activity_omissions = NoteOmissions::default();
-                for id in ids {
-                    let captured = if entries
-                        .get(&id)
-                        .is_some_and(|entry| entry.document.is_none())
-                    {
-                        CapturedTask::Retired
-                    } else {
-                        match query::load_work_item(&store.connection, id) {
-                            Ok(item) => {
-                                if item.project_id != *project {
-                                    return Err(TaskSyncRefusal::OriginMismatch
-                                        .invalid("selected task belongs to another project"));
-                                }
-                                let (document, _) = capture_document_on(
-                                    &store.connection,
-                                    item,
-                                    profile.include_notes,
-                                    profile.origin_machine.as_deref(),
-                                    false,
-                                    &mut omissions,
-                                    &mut activity_omissions,
-                                )?;
-                                CapturedTask::Present(Box::new(document))
-                            }
-                            Err(StoreError::WorkNotFound(_)) => CapturedTask::Absent,
-                            Err(error) => return Err(super::origin::classify_binding(error)),
-                        }
-                    };
-                    documents.insert(id, captured);
-                }
-                Ok(TaskDocumentCapture {
-                    documents,
-                    omissions,
-                    activity_omissions,
-                })
+                capture_on(&store.connection, project, profile, ids)
             })
         })
     }
 }
 
-pub(super) fn capture_document_on(
+/// The same selected capture for a caller-owned read snapshot or writer.
+/// The caller supplies validated project/profile values and the existing
+/// immutable-origin validation scope.
+pub(super) fn capture_on(
+    connection: &Connection,
+    project: &ProjectId,
+    profile: &ExportProfile,
+    ids: BTreeSet<WorkId>,
+) -> Result<TaskDocumentCapture, StoreError> {
+    baseline::validate_note_selection(connection, project, profile.include_notes)?;
+    let entries = baseline::entries(connection, project, ids.iter().copied())?;
+    let mut documents = BTreeMap::new();
+    let mut omissions = NoteOmissions::default();
+    let mut activity_omissions = NoteOmissions::default();
+    for id in ids {
+        let captured = if entries
+            .get(&id)
+            .is_some_and(|entry| entry.document.is_none())
+        {
+            CapturedTask::Retired
+        } else {
+            match query::load_work_item(connection, id) {
+                Ok(item) => {
+                    if item.project_id != *project {
+                        return Err(TaskSyncRefusal::OriginMismatch
+                            .invalid("selected task belongs to another project"));
+                    }
+                    let (document, _) = capture_document_on(
+                        connection,
+                        item,
+                        profile.include_notes,
+                        profile.origin_machine.as_deref(),
+                        false,
+                        &mut omissions,
+                        &mut activity_omissions,
+                    )?;
+                    CapturedTask::Present(Box::new(document))
+                }
+                Err(StoreError::WorkNotFound(_)) => CapturedTask::Absent,
+                Err(error) => return Err(origin::classify_binding(error)),
+            }
+        };
+        documents.insert(id, captured);
+    }
+    Ok(TaskDocumentCapture {
+        documents,
+        omissions,
+        activity_omissions,
+    })
+}
+
+pub(in crate::storage::work) fn capture_document_on(
     connection: &Connection,
     item: WorkItem,
     include_notes: bool,

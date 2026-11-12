@@ -27,6 +27,8 @@ use std::{
 struct Fixture {
     owned: test_support::TempHome,
     root: PathBuf,
+    code: PathBuf,
+    admin: PathBuf,
     home: PathBuf,
     marker: PathBuf,
     store: PathBuf,
@@ -47,7 +49,7 @@ impl Fixture {
         .unwrap();
         let root = owned.path().join("repository");
         fs::create_dir(&root).unwrap();
-        git(&root, &["init", "--initial-branch=ordinary"]);
+        git(&root, &["init", "--initial-branch=code"]);
         git(&root, &["config", "core.autocrlf", "false"]);
         for (key, name) in [
             ("core.attributesFile", "attributes"),
@@ -73,6 +75,40 @@ impl Fixture {
                 "-m",
                 "fixture",
             ],
+        );
+        fs::write(root.join(".git/info/exclude"), b"/.engram-data/\n").unwrap();
+        let code = root;
+        let root = code.join(".engram-data");
+        git(
+            &code,
+            &[
+                "worktree",
+                "add",
+                "--detach",
+                "--no-checkout",
+                root.to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        git(&root, &["symbolic-ref", "HEAD", "refs/heads/ordinary"]);
+        git(&root, &["read-tree", "--empty"]);
+        git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "Start metadata history",
+            ],
+        );
+        let admin = PathBuf::from(
+            String::from_utf8(git(&root, &["rev-parse", "--absolute-git-dir"]))
+                .unwrap()
+                .trim(),
         );
         let home = owned.path().join("home");
         let project = ProjectId("materialize-cli".into());
@@ -142,6 +178,8 @@ impl Fixture {
         let mut fixture = Self {
             owned,
             root,
+            code,
+            admin,
             home,
             marker,
             store,
@@ -211,6 +249,10 @@ impl Fixture {
 }
 
 fn isolate(command: &mut Command, root: &Path) {
+    let config_root = root
+        .ancestors()
+        .find(|path| path.join("global.config").is_file())
+        .unwrap_or_else(|| root.parent().unwrap());
     for name in [
         "GIT_DIR",
         "GIT_WORK_TREE",
@@ -223,15 +265,12 @@ fn isolate(command: &mut Command, root: &Path) {
         command.env_remove(name);
     }
     command
-        .env("HOME", root.parent().unwrap())
-        .env("XDG_CONFIG_HOME", root.parent().unwrap())
+        .env("HOME", config_root)
+        .env("XDG_CONFIG_HOME", config_root)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_ATTR_NOSYSTEM", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env(
-            "GIT_CONFIG_GLOBAL",
-            root.parent().unwrap().join("global.config"),
-        )
+        .env("GIT_CONFIG_GLOBAL", config_root.join("global.config"))
         .env_remove("ENGRAM_ACTOR_CONTEXT");
 }
 
@@ -287,11 +326,16 @@ fn task_materialize_cli_keeps_lf_bytes_and_index_unchanged_before_operator_stagi
     let fixture = Fixture::new();
     // Local autocrlf and the isolated global eol would normalize without the block.
     git(&fixture.root, &["config", "core.autocrlf", "true"]);
-    let index = fs::read(fixture.root.join(".git/index")).unwrap();
+    let index = fs::read(fixture.admin.join("index")).unwrap();
+    let code_head = git(&fixture.code, &["rev-parse", "HEAD"]);
+    let code_status = git(
+        &fixture.code,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    );
     let receipt = success(&fixture.materialize());
     let completion: Value = serde_json::from_slice(
-        &fs::read(fixture.root.join(format!(
-            ".git/engram-task-sync-materialize-{}-{}/complete",
+        &fs::read(fixture.admin.join(format!(
+            "engram-task-sync-materialize-{}-{}/complete",
             fixture.setup, fixture.prepared
         )))
         .unwrap(),
@@ -300,16 +344,32 @@ fn task_materialize_cli_keeps_lf_bytes_and_index_unchanged_before_operator_stagi
     assert_eq!(completion["operation"], receipt["operation"]);
     assert_eq!(receipt["repeated"], false);
     assert!(receipt["redactor"].as_str().unwrap().contains("no-op"));
-    assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+    assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
     assert_eq!(
         fs::read(&fixture.store).unwrap(),
         b"source must not be opened as SQLite"
     );
+    let mut published = BTreeMap::new();
+    let retained = fixture.admin.join(format!(
+        "engram-task-sync-materialize-{}-{}/raw",
+        fixture.setup, fixture.prepared
+    ));
     for (path, bytes) in &fixture.documents {
-        assert_eq!(
-            &fs::read(fixture.root.join(format!(".engram/{path}"))).unwrap(),
-            bytes
-        );
+        let output = fs::read(fixture.root.join(format!(".engram/{path}"))).unwrap();
+        assert!(output.ends_with(b"\n") && !output.contains(&b'\r'));
+        if path == "project.json" {
+            let envelope: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(
+                envelope["project"],
+                serde_json::from_slice::<Value>(bytes).unwrap()
+            );
+            assert_eq!(envelope["profile"]["include_notes"], false);
+            assert_eq!(envelope["folder_exchange"]["complete"], true);
+        } else {
+            assert_eq!(&output, bytes);
+        }
+        assert_eq!(&fs::read(retained.join(path)).unwrap(), bytes);
+        published.insert(path.clone(), output);
     }
     let before = snapshot(fixture.owned.path());
     assert_eq!(
@@ -317,12 +377,20 @@ fn task_materialize_cli_keeps_lf_bytes_and_index_unchanged_before_operator_stagi
         receipt["operation"]
     );
     assert_eq!(snapshot(fixture.owned.path()), before);
+    assert_eq!(git(&fixture.code, &["rev-parse", "HEAD"]), code_head);
+    assert_eq!(
+        git(
+            &fixture.code,
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        ),
+        code_status
+    );
     // This is the fixture operator's staging, after proving the command did none.
     git(
         &fixture.root,
         &["add", ".engram/project.json", ".engram/tasks"],
     );
-    for (path, bytes) in &fixture.documents {
+    for (path, bytes) in &published {
         assert_eq!(
             &git(&fixture.root, &["show", &format!(":.engram/{path}")]),
             bytes
@@ -350,7 +418,7 @@ fn task_materialize_cli_off_and_contended_existing_lock_create_no_state() {
     let lock = fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(fixture.root.join(".git/engram-task-sync-setup.lock"))
+        .open(fixture.admin.join("engram-task-sync-setup.lock"))
         .unwrap();
     lock.try_lock().unwrap();
     let output = fixture.materialize();

@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn command(fixture: &Fixture, context: &str, from_environment: bool) -> Command {
-    let mut command = fixture.command(&fixture.root, &fixture.root.join(".engram-project"));
+    let mut command = fixture.command(&fixture.root, &fixture.code.join(".engram-project"));
     command.env_remove("ENGRAM_ACTOR_CONTEXT");
     if from_environment {
         command.env("ENGRAM_ACTOR_CONTEXT", context);

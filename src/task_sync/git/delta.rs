@@ -16,8 +16,8 @@ use crate::{
 };
 use anyhow::{Context, Result};
 
-const BOUND: Duration = Duration::from_secs(30);
-const MAX_DELTA_BYTES: usize = 128 * 1024 * 1024;
+const BOUND: Duration = crate::operation_time::MINIMUM;
+pub(super) const MAX_DELTA_BYTES: usize = 128 * 1024 * 1024;
 
 /// Typed changed documents, not a complete admitted tree or a stored record.
 /// The caller supplies an already-admitted prior commit and validates the
@@ -48,20 +48,8 @@ pub fn read_task_delta(
     prior: &str,
     incoming: &str,
 ) -> Result<CommitTaskDelta> {
-    if !repository.is_absolute()
-        || repository
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
-        || project.0.trim().is_empty()
-    {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task commit delta requires an absolute repository and nonblank project")
-            .into());
-    }
-    let reader = Reader {
-        repository,
-        started: Instant::now(),
-    };
+    let _warning = crate::operation_time::Warning::start("Git task delta read");
+    let reader = Reader::new(repository, project)?;
     let prior_tree = reader.commit_tree(prior, "prior")?;
     let incoming_tree = reader.commit_tree(incoming, "incoming")?;
     let old = reader.metadata(&prior_tree, project)?;
@@ -76,6 +64,7 @@ pub fn read_task_delta(
     let raw = reader.query(&[
         "diff-tree",
         "-r",
+        "-t",
         "--raw",
         "-z",
         "--no-commit-id",
@@ -106,7 +95,7 @@ pub fn read_task_delta(
     })
 }
 
-fn read_documents(
+pub(super) fn read_documents(
     reader: &Reader<'_>,
     changes: Vec<Change>,
     project: &ProjectId,
@@ -117,7 +106,10 @@ fn read_documents(
     let mut removed = BTreeSet::new();
     let mut total_bytes = 0_usize;
     for change in changes {
-        if change.path == ".engram/project.json" {
+        if change.path == ".engram/project.json"
+            || policy_path(&change.path)
+            || evidence_path(&change.path)
+        {
             continue;
         }
         let id = task_path(&change.path)?;
@@ -149,47 +141,76 @@ fn read_documents(
         project_id: project.clone(),
         notes_included: include_notes,
     };
-    task_sync::validate_document_fields(&document, upserts.values())
+    task_sync::validate_selected_documents(&document, upserts.values())
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-    for task in upserts.values() {
-        // A parent is only a placeholder for this document-local shape check;
-        // the actual root and all graph edges are checked by the admission owner.
-        crate::storage::graph_snapshot::validate_snapshot_item_shape(
-            &task.snapshot_with_root(task.parent_id.unwrap_or(task.id)),
-        )
-        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-        for blocker in task.snapshot_blockers() {
-            crate::storage::graph_snapshot::validate_snapshot_blocker_shape(&blocker)
-                .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-        }
-        task_sync::notes::validate_notes(&task.notes, &task.labels)
-            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-        task_sync::activity::validate_disclosure(&task.activity, &task.labels)
-            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-    }
     Ok((upserts, removed))
 }
 
-struct Reader<'a> {
+pub(super) struct Reader<'a> {
     repository: &'a Path,
     started: Instant,
+    total_bound: Duration,
 }
 
-impl Reader<'_> {
+impl<'a> Reader<'a> {
+    pub(super) fn new(repository: &'a Path, project: &ProjectId) -> Result<Self> {
+        if !repository.is_absolute()
+            || repository
+                .components()
+                .any(|part| matches!(part, Component::ParentDir))
+            || project.0.trim().is_empty()
+        {
+            return Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task Git read requires an absolute repository and nonblank project")
+                .into());
+        }
+        Ok(Self {
+            repository,
+            started: Instant::now(),
+            total_bound: BOUND,
+        })
+    }
+
+    pub(super) fn cold(repository: &'a Path, project: &ProjectId) -> Result<Self> {
+        let mut reader = Self::new(repository, project)?;
+        reader.total_bound = Duration::from_secs(600);
+        Ok(reader)
+    }
+
+    pub(super) fn bounded(
+        repository: &'a Path,
+        project: &ProjectId,
+        deadline: Duration,
+    ) -> Result<Self> {
+        anyhow::ensure!(!deadline.is_zero(), "task Git read deadline is exhausted");
+        let mut reader = Self::new(repository, project)?;
+        reader.total_bound = deadline;
+        Ok(reader)
+    }
+
     fn query(&self, args: &[&str]) -> Result<Vec<u8>> {
         self.raw_query(args)
             .map_err(|error| query_error(args, &error, None))
     }
 
     fn raw_query(&self, args: &[&str]) -> Result<Vec<u8>> {
-        let remaining = BOUND
+        let remaining = self
+            .total_bound
             .checked_sub(self.started.elapsed())
             .filter(|left| !left.is_zero())
             .ok_or(super::QueryFailure::Deadline)?;
-        super::query(self.repository, args, false, None, remaining)
+        super::query::run_observed(self.repository, args, false, None, remaining.min(BOUND))
     }
 
     fn commit_tree(&self, commit: &str, selection: &str) -> Result<String> {
+        Ok(self.commit_object(commit, selection)?.tree)
+    }
+
+    pub(super) fn commit_object(
+        &self,
+        commit: &str,
+        selection: &str,
+    ) -> Result<super::CommitObject> {
         task_sync::ledger::oid(commit)
             .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
         let expression = format!("{commit}^{{commit}}");
@@ -220,23 +241,28 @@ impl Reader<'_> {
                 .into());
         }
         let bytes = self.query(&["cat-file", "commit", commit])?;
-        let tree = bytes
-            .split(|byte| *byte == b'\n')
-            .next()
-            .and_then(|line| line.strip_prefix(b"tree "))
-            .and_then(|line| std::str::from_utf8(line).ok())
-            .ok_or_else(|| missing_commit(selection))?;
-        task_sync::ledger::oid(tree)?;
-        Ok(tree.into())
+        super::observe_commit(commit, &bytes).map_err(|error| {
+            TaskSyncRefusal::InvalidGraph
+                .invalid(error.to_string())
+                .into()
+        })
     }
 
-    fn entries(&self, tree: &str, names: &[&str]) -> Result<Vec<Entry>> {
+    pub(super) fn entries(&self, tree: &str, names: &[&str]) -> Result<Vec<Entry>> {
         let mut args = vec!["ls-tree", "-z", tree, "--"];
         args.extend_from_slice(names);
         parse_entries(&self.query(&args)?)
     }
 
     fn metadata(&self, tree: &str, expected: &ProjectId) -> Result<FolderBasis> {
+        Ok(self.metadata_with_size(tree, expected)?.0)
+    }
+
+    pub(super) fn metadata_with_size(
+        &self,
+        tree: &str,
+        expected: &ProjectId,
+    ) -> Result<(FolderBasis, usize)> {
         let root = self.entries(tree, &[".engram"])?;
         let root = root
             .first()
@@ -268,14 +294,14 @@ impl Reader<'_> {
                 .invalid("task commit tasks entry must be a tree")
                 .into());
         }
-        let basis =
-            directory::folder_basis_from_bytes(&self.blob(&project.oid, ".engram/project.json")?)?;
+        let bytes = self.blob(&project.oid, ".engram/project.json")?;
+        let basis = directory::folder_basis_from_bytes(&bytes)?;
         if basis.project_id != *expected {
             return Err(TaskSyncRefusal::OriginMismatch
                 .invalid("task commit project differs from selected project")
                 .into());
         }
-        Ok(basis)
+        Ok((basis, bytes.len()))
     }
 
     fn blob(&self, oid: &str, path: &str) -> Result<Vec<u8>> {
@@ -284,6 +310,15 @@ impl Reader<'_> {
         let args = ["cat-file", "blob", oid];
         self.raw_query(&args)
             .map_err(|error| query_error(&args, &error, Some(path)))
+    }
+
+    pub(super) fn evidence_blob(&self, oid: &str, limit: usize) -> Result<Vec<u8>> {
+        let remaining = self
+            .total_bound
+            .checked_sub(self.started.elapsed())
+            .filter(|left| !left.is_zero())
+            .ok_or(super::QueryFailure::Deadline)?;
+        super::query::evidence_blob_observed(self.repository, oid, remaining.min(BOUND), limit)
     }
 }
 
@@ -315,11 +350,11 @@ fn missing_commit(selection: &str) -> StoreError {
     ))
 }
 
-struct Entry {
-    mode: String,
-    kind: String,
-    oid: String,
-    name: String,
+pub(super) struct Entry {
+    pub(super) mode: String,
+    pub(super) kind: String,
+    pub(super) oid: String,
+    pub(super) name: String,
 }
 
 fn parse_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
@@ -349,10 +384,10 @@ fn parse_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-struct Change {
-    path: String,
-    status: String,
-    new_oid: String,
+pub(super) struct Change {
+    pub(super) path: String,
+    pub(super) status: String,
+    pub(super) new_oid: String,
 }
 
 fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
@@ -380,18 +415,31 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
                 .invalid("invalid Git delta object ids")
                 .into());
         }
+        let path = pair[1];
+        if path != ".engram/project.json"
+            && !policy_path(path)
+            && !evidence_path(path)
+            && !directory_path(path)
+        {
+            task_path(path)?;
+        }
+        let mode = if directory_path(path) {
+            "040000"
+        } else {
+            "100644"
+        };
         let valid = match fields[4] {
             "A" => {
                 fields[0] == "000000"
-                    && fields[1] == "100644"
+                    && fields[1] == mode
                     && fields[2].bytes().all(|byte| byte == b'0')
             }
             "D" => {
-                fields[0] == "100644"
+                fields[0] == mode
                     && fields[1] == "000000"
                     && fields[3].bytes().all(|byte| byte == b'0')
             }
-            "M" => fields[0] == "100644" && fields[1] == "100644",
+            "M" => fields[0] == mode && fields[1] == mode,
             _ => false,
         };
         if !valid {
@@ -407,14 +455,13 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
         if fields[4] != "D" {
             task_sync::ledger::oid(fields[3])?;
         }
-        let path = pair[1];
-        if path != ".engram/project.json" {
-            task_path(path)?;
-        }
         if !seen.insert(path) {
             return Err(TaskSyncRefusal::InvalidGraph
                 .invalid("duplicate Git delta path")
                 .into());
+        }
+        if directory_path(path) {
+            continue;
         }
         changes.push(Change {
             path: path.into(),
@@ -425,7 +472,22 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
     Ok(changes)
 }
 
-fn task_path(path: &str) -> Result<WorkId> {
+fn policy_path(path: &str) -> bool {
+    matches!(path, ".engram/.gitignore" | ".engram/.gitattributes")
+}
+
+fn evidence_path(path: &str) -> bool {
+    crate::task_sync::evidence::path::kind(path)
+        == Some(crate::task_sync::evidence::path::Kind::Pack)
+}
+
+fn directory_path(path: &str) -> bool {
+    matches!(path, ".engram" | ".engram/tasks")
+        || crate::task_sync::evidence::path::kind(path)
+            == Some(crate::task_sync::evidence::path::Kind::Directory)
+}
+
+pub(super) fn task_path(path: &str) -> Result<WorkId> {
     let id = path
         .strip_prefix(".engram/tasks/")
         .and_then(|tail| tail.strip_suffix(".json"))

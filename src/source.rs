@@ -10,8 +10,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const MAX_BUDGET_MS: u64 = 30_000;
+pub const MAX_BUDGET_MS: u64 = 60_000;
+/// No public override may end a source read sooner: the operation-limit floor.
+/// Internal callers still pass what remains of their own absolute deadlines.
+pub const MIN_PUBLIC_BUDGET_MS: u64 = 60_000;
 pub const MAX_BUDGET: Duration = Duration::from_millis(MAX_BUDGET_MS);
+
+/// The budget a public caller's override actually receives: a shorter request
+/// is still accepted, for existing callers, but is raised to the floor.
+#[must_use]
+pub fn public_budget(requested_ms: u64) -> Duration {
+    Duration::from_millis(requested_ms.max(MIN_PUBLIC_BUDGET_MS))
+}
 pub const MAX_JSON_BYTES: usize = 1024 * 1024;
 
 type BoundedJson = Result<String, (RefusalCode, &'static str)>;
@@ -180,7 +190,7 @@ impl Observation {
     /// # Errors
     /// Returns a JSON serialization error if the observation cannot be encoded.
     pub fn json(&self) -> serde_json::Result<(Status, String)> {
-        self.json_with_clock(Instant::now)
+        self.json_with_clock(crate::operation_time::now)
     }
 
     fn json_with_clock(
@@ -218,7 +228,7 @@ impl Observation {
     }
 
     fn finalized(self) -> Self {
-        match self.bounded_json(&mut Instant::now) {
+        match self.bounded_json(&mut crate::operation_time::now) {
             Ok(Ok(_)) => self,
             Ok(Err((code, message))) => Self::unavailable(self.root, code, message.to_owned()),
             Err(error) => Self::unavailable(
@@ -245,8 +255,17 @@ impl Observation {
 
 /// Measure the sole committed-input predicate, with an optional shorter budget.
 pub fn inspect(root: &Path, budget: Duration) -> Observation {
-    crate::committed_input::observe(root, budget).finalized()
+    inspect_with(root, budget, std::convert::identity)
 }
+
+/// Keep the observation's warning active through the caller's final processing.
+pub fn inspect_with<T>(root: &Path, budget: Duration, finish: impl FnOnce(Observation) -> T) -> T {
+    let _warning = crate::operation_time::Warning::start("source observation");
+    finish(crate::committed_input::observe(root, budget).finalized())
+}
+
+#[cfg(test)]
+mod warning_tests;
 
 #[cfg(test)]
 mod tests {

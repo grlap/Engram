@@ -10,11 +10,11 @@ fn response(fixture: &Fixture) -> serde_json::Value {
 }
 
 #[test]
-fn task_materialize_maximal_setup_inputs_complete_and_recover_after_opt_out() {
-    // No final LF exercises the additional separator byte as well as the block.
+fn task_materialize_large_code_policies_are_unchanged_across_data_recovery() {
+    // Code policy bytes are independent of the managed data-worktree policy.
     let bytes = vec![b'#'; 64 * 1024];
     for boundary in [None, Some("setup-linked-1")] {
-        let fixture = Fixture::with_setup_bytes(false, &tree(1), Some([&bytes, &bytes]));
+        let fixture = Fixture::with_setup_bytes(true, &tree(1), Some([&bytes, &bytes]));
         let setup = intent::read(
             &Directory::open(&fixture.admin).unwrap(),
             fixture.selection.setup_operation,
@@ -25,7 +25,7 @@ fn task_materialize_maximal_setup_inputs_complete_and_recover_after_opt_out() {
                 .basis
                 .edits
                 .iter()
-                .all(|edit| edit.after.len() > bytes.len())
+                .all(|edit| edit.before.is_none() && edit.after.len() < bytes.len())
         );
         let operation = if let Some(boundary) = boundary {
             assert_eq!(
@@ -42,7 +42,8 @@ fn task_materialize_maximal_setup_inputs_complete_and_recover_after_opt_out() {
         };
         let linked = boundary.map(|_| {
             [".gitignore", ".gitattributes"].map(|name| {
-                file_identity(&fs::File::open(fixture.root.join(name)).unwrap()).unwrap()
+                file_identity(&fs::File::open(fixture.root.join(".engram").join(name)).unwrap())
+                    .unwrap()
             })
         });
         assert!(child(&fixture, None, boundary.is_none()).status.success());
@@ -52,54 +53,27 @@ fn task_materialize_maximal_setup_inputs_complete_and_recover_after_opt_out() {
             assert_eq!(result["receipt"]["operation"], operation);
         }
         for (index, edit) in setup.basis.edits.iter().enumerate() {
-            assert_eq!(fs::read(fixture.root.join(&edit.path)).unwrap(), edit.after);
+            assert_eq!(
+                fs::read(fixture.root.join(".engram").join(&edit.path)).unwrap(),
+                edit.after
+            );
             if let Some(ids) = linked {
                 assert_eq!(
-                    file_identity(&fs::File::open(fixture.root.join(&edit.path)).unwrap()).unwrap(),
+                    file_identity(
+                        &fs::File::open(fixture.root.join(".engram").join(&edit.path)).unwrap()
+                    )
+                    .unwrap(),
                     ids[index]
                 );
             }
         }
         fixture.assert_output();
+        for name in [".gitignore", ".gitattributes"] {
+            assert_eq!(fs::read(fixture.code.join(name)).unwrap(), bytes);
+        }
         let before = snapshot(fixture.owned.path());
         assert!(fixture.run().repeated);
         assert_eq!(snapshot(fixture.owned.path()), before);
-    }
-}
-
-#[test]
-fn task_materialize_occupied_root_after_move_preserves_both_paths_across_restart() {
-    for index in 0..2 {
-        let fixture = Fixture::new(false, 1);
-        assert_eq!(
-            child(&fixture, Some(&format!("moved-{index}")), true)
-                .status
-                .code(),
-            Some(77)
-        );
-        let name = [".gitignore", ".gitattributes"][index];
-        let public = fixture.root.join(name);
-        let retained = fixture.private().join(format!("replace-{index}/displaced"));
-        fs::write(&public, b"independent occupied public bytes\n").unwrap();
-        fixture.disable();
-        let before_public = snapshot(&public);
-        let before_private = snapshot(&fixture.private());
-        assert!(child(&fixture, None, false).status.success());
-        let result = response(&fixture);
-        let error = result["error"].as_str().unwrap();
-        assert!(
-            error.contains("public path") && error.contains("is occupied"),
-            "{error}"
-        );
-        assert!(error.contains(&public.display().to_string()), "{error}");
-        assert!(
-            error
-                .replace('\\', "/")
-                .contains(&retained.display().to_string().replace('\\', "/")),
-            "{error}"
-        );
-        assert_eq!(snapshot(&public), before_public);
-        assert_eq!(snapshot(&fixture.private()), before_private);
     }
 }
 
@@ -131,18 +105,13 @@ fn task_materialize_reserves_directory_capacity_before_publication_and_repeat() 
     // cannot distinguish a duplicate reservation from the intended names.
     for (existing, setup) in [
         (false, [Some(ignore), Some(attributes)]),
-        (true, [None, Some(attributes)]),
-        (true, [Some(ignore), None]),
+        (false, [None, Some(attributes)]),
+        (false, [Some(ignore), None]),
         (false, [None, None]),
     ] {
         let fixture = Fixture::with_setup_entries(existing, &tree(1), setup);
         assert!(!fixture.private().exists());
-        assert_capacity_boundary(
-            &fixture,
-            &fixture.root,
-            &[".engram", ".gitignore", ".gitattributes"],
-            false,
-        );
+        assert_capacity_boundary(&fixture, &fixture.root, &[".engram"], false);
     }
 
     let fixture = Fixture::new(true, 1);
@@ -150,7 +119,7 @@ fn task_materialize_reserves_directory_capacity_before_publication_and_repeat() 
     assert_capacity_boundary(
         &fixture,
         &fixture.root.join(".engram"),
-        &["project.json", "tasks"],
+        &[".gitignore", ".gitattributes", "project.json", "tasks"],
         true,
     );
 }
@@ -166,7 +135,7 @@ fn task_materialize_reserves_shared_capacity_during_empty_tasks_recovery_and_rep
     let receipt = assert_capacity_boundary(
         &fixture,
         &fixture.root.join(".engram"),
-        &["project.json", "tasks"],
+        &[".gitignore", ".gitattributes", "project.json", "tasks"],
         true,
     );
     assert!(receipt.recovered);
@@ -256,7 +225,7 @@ fn assert_capacity_boundary(
 #[test]
 fn task_materialize_policy_safe_setup_changes_still_refuse_before_shared_publication() {
     for grow in [false, true] {
-        let fixture = Fixture::new(false, 1);
+        let fixture = Fixture::new(true, 1);
         let lock = fixture.admin.join("engram-task-sync-setup.lock");
         let lock_bytes = fs::read(&lock).unwrap();
         let mut before = None;
@@ -268,7 +237,7 @@ fn task_materialize_policy_safe_setup_changes_still_refuse_before_shared_publica
             attribution(),
             &mut |point| {
                 if point == "setup-linked-1" {
-                    let path = fixture.root.join(".gitignore");
+                    let path = fixture.root.join(".engram/.gitignore");
                     let mut bytes = fs::read(&path)?;
                     if grow {
                         bytes.extend_from_slice(b"# concurrent ordinary comment\n");
@@ -293,7 +262,7 @@ fn task_materialize_policy_safe_setup_changes_still_refuse_before_shared_publica
                 .contains("differs from recorded after bytes"),
             "{error:#}"
         );
-        assert!(!fixture.root.join(".engram").exists());
+        assert!(!fixture.root.join(".engram/project.json").exists());
         assert_eq!(
             snapshot_with_lock_metadata(fixture.owned.path(), Some(&lock)),
             before.unwrap()

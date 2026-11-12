@@ -116,6 +116,8 @@ pub(in crate::storage) use verification_bind::bound_receipt_matches_on;
 
 pub(crate) use discovery::{DISCOVERY_ROWS, WorkDiscoveryRow};
 
+#[cfg(all(test, windows))]
+pub(crate) mod exchange_fixture;
 #[cfg(test)]
 pub(super) mod test_support;
 

@@ -112,9 +112,10 @@ explicitly agreed additive rule. Consumers fail closed on unknown codes.
 
 Clean and not-clean measurements exit 0; unavailable exits 1; invalid invocation
 exits 2. Consumers validate version, status and canonical root identity: exit 0
-alone is never credit. The reader has a thirty-second budget and one-MiB
-Git output bound; `--timeout-ms 1..30000` can shorten the budget. JSON expansion
-beyond one MiB refuses rather than truncating usable entries; the bound excludes
+alone is never credit. The reader has a sixty-second budget and one-MiB
+Git output bound. `--timeout-ms` still accepts `1..60000`, but a shorter value
+is raised to sixty seconds: no public override may end the read sooner. JSON
+expansion beyond one MiB refuses rather than truncating usable entries; the bound excludes
 the final newline. The same absolute deadline is checked after Git queries,
 final parsing and JSON serialization: an overdue result is unavailable, never
 usable source credit. Filesystem and OS scheduling delays can postpone the

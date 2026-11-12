@@ -16,6 +16,7 @@ pub mod graph_snapshot;
 pub mod host;
 pub mod mcp;
 pub mod memory;
+pub mod operation_time;
 pub mod phase_trace;
 pub mod project;
 pub mod schema;

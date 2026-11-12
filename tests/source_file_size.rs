@@ -428,7 +428,18 @@ fn within_report_budget(module: &str, report: &[String], budget: usize) -> Resul
 fn check_family(family: &Family) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let exceptions = load_exceptions(root).unwrap_or_else(|error| panic!("{error}"));
-    let report = family_report(root, family, &exceptions).unwrap_or_else(|error| panic!("{error}"));
+    let mut report =
+        family_report(root, family, &exceptions).unwrap_or_else(|error| panic!("{error}"));
+    // Keep every file/count/ceiling, printing a shared directory only once.
+    if let Some((directory, _)) = family.module.rsplit_once('/') {
+        let prefix = format!("{directory}/");
+        for line in &mut report {
+            if let Some(relative) = line.strip_prefix(&prefix) {
+                *line = relative.to_owned();
+            }
+        }
+        report.insert(0, format!("paths relative to {prefix}"));
+    }
     for line in &report {
         println!("{line}");
     }

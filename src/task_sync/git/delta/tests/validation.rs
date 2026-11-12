@@ -15,7 +15,7 @@ fn actor() -> SharedActor {
     }
 }
 
-fn note() -> SharedNote {
+pub(super) fn note() -> SharedNote {
     SharedNote {
         id: ObjectId::mint(),
         kind: SharedNoteKind::Generic,

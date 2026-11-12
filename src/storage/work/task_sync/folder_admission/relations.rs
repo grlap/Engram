@@ -132,11 +132,11 @@ pub(super) fn ancestor_binding(
 /// Patches the mutable relation view only; imported origin documents and
 /// historical retired owners keep their original relations.
 pub(super) fn graphs(
-    transaction: &rusqlite::Transaction<'_>,
     plan: &DeltaPlan,
     prospective: &Prospective<'_>,
     conflicts: &mut BTreeMap<uuid::Uuid, Conflict>,
     batch: &mut Vec<(&'static str, String)>,
+    durable: impl FnOnce() -> Result<HashMap<WorkId, super::TaskDocument>, StoreError>,
 ) -> Result<(), StoreError> {
     let changed = plan
         .relation_changes()
@@ -162,12 +162,7 @@ pub(super) fn graphs(
             .iter()
             .map(|(&id, &task)| (id, task.clone())),
     );
-    let all = super::super::export_on(transaction, prospective.project)?;
-    let mut durable = all
-        .tasks
-        .into_iter()
-        .map(|task| (task.id, task))
-        .collect::<HashMap<_, _>>();
+    let mut durable = durable()?;
     for (&id, &task) in &prospective.resolved {
         if let Some(old) = durable.get_mut(&id) {
             if changed.contains(&id) {

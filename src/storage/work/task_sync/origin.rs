@@ -197,6 +197,7 @@ pub(in crate::storage) fn verify_origins(
     checked: &mut usize,
     invalid_records: &mut Vec<String>,
 ) -> Result<(), StoreError> {
+    super::producing_origin::verify_on(connection, checked, invalid_records)?;
     #[cfg(test)]
     ENUMERATIONS.with(|count| count.set(count.get() + 1));
     let ids = connection

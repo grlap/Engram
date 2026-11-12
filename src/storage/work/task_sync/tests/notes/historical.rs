@@ -20,7 +20,7 @@ fn task_sync_notes_retained_history_uses_structure_not_current_admission_policy(
     for (task, snapshot) in tree.tasks.iter().zip(tree.snapshots().unwrap()) {
         insert_task(
             &transaction,
-            &tree,
+            &tree.project,
             task,
             snapshot,
             &actor("importer"),

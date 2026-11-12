@@ -9,6 +9,46 @@ use crate::{CanonicalObject, ObjectId, RestoredRecord, RestoredWorkEvidence};
 mod tests;
 
 const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
+    ("index", "work_task_sync_evidence_applicability_execution"),
+    ("table", "work_task_sync_evidence_applicability_keys"),
+    ("table", "work_task_sync_evidence_applicability"),
+    ("table", "work_task_sync_acceptance_uses"),
+    ("index", "work_task_sync_evidence_terminal_key"),
+    ("table", "work_task_sync_evidence_terminals"),
+    ("table", "work_task_sync_evidence_execution_keys"),
+    ("table", "work_task_sync_evidence_feed_members"),
+    ("table", "work_task_sync_evidence_witnesses"),
+    ("index", "work_task_sync_evidence_members_original"),
+    ("table", "work_task_sync_evidence_members"),
+    ("table", "work_task_sync_evidence_imported"),
+    ("table", "work_task_sync_evidence_origins"),
+    ("table", "work_task_sync_evidence_packs"),
+    ("table", "work_task_sync_origin_recovery_bindings"),
+    ("index", "objects_task_sync_origin_recovery_operation"),
+    ("index", "objects_task_sync_origin_recovery_predecessor"),
+    ("table", "work_task_sync_producing_origin_heads"),
+    ("table", "work_task_sync_producing_origin_members"),
+    ("index", "objects_task_sync_producing_origin_project"),
+    ("index", "objects_task_sync_producing_origin_operation"),
+    ("table", "work_task_sync_exchange_operations"),
+    ("table", "work_task_sync_exchange_heads"),
+    ("index", "objects_task_sync_exchange_sequence"),
+    ("index", "objects_task_sync_exchange_operation"),
+    ("index", "objects_task_sync_exchange_key"),
+    ("index", "objects_task_sync_exchange_prepared"),
+    ("index", "objects_task_sync_exchange_checkpoint"),
+    ("index", "objects_task_sync_exchange_incoming_completed"),
+    ("index", "objects_task_sync_exchange_outgoing_completed"),
+    ("index", "objects_task_sync_exchange_delta_planning"),
+    ("index", "objects_task_sync_exchange_successor_hold"),
+    ("index", "objects_task_sync_membership_checkpoint"),
+    ("index", "objects_task_sync_binding_scope"),
+    ("index", "objects_task_sync_binding_successor"),
+    ("index", "objects_task_sync_binding_root"),
+    ("index", "objects_task_sync_exchange_push_started"),
+    ("index", "objects_task_sync_exchange_reconciliation"),
+    ("index", "objects_task_sync_exchange_reconciliation_key"),
+    ("index", "objects_task_sync_exchange_retry_push_started"),
     ("table", "work_task_sync_reconciliation_active"),
     ("index", "work_task_sync_reconciliation_active_hold"),
     ("index", "work_task_sync_reconciliation_holds_by_hold"),
@@ -35,6 +75,8 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "work_items_catalog_after"),
     ("index", "work_items_ready"),
     ("index", "work_items_root"),
+    ("index", "work_items_replacement_reverse"),
+    ("index", "work_completion_seals_work"),
     ("index", "work_item_labels_lookup"),
     ("index", "work_prerequisites_reverse"),
     ("index", "work_root_execution_active"),
@@ -55,12 +97,28 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("table", "work_task_sync_baseline"),
     ("index", "work_task_sync_baseline_retired"),
     ("table", "work_task_sync_baseline_heads"),
+    ("table", "work_task_sync_graph_edges"),
+    ("index", "work_task_sync_graph_edges_target"),
+    ("table", "work_task_sync_graph_nodes"),
+    ("table", "work_task_sync_graph_identity_members"),
+    ("index", "work_task_sync_graph_identity_lookup"),
+    ("index", "work_task_sync_graph_identity_original"),
+    ("table", "work_task_sync_graph_heads"),
+    ("table", "work_task_sync_source_heads"),
+    ("table", "work_task_sync_shared_identity_members"),
+    ("index", "work_task_sync_shared_identity_lookup"),
+    ("table", "work_task_sync_document_members"),
 ];
 
 pub(in crate::storage) fn owns_schema_object(name: &str) -> bool {
     name.starts_with("work_")
         || name.starts_with("objects_work_")
         || name == "objects_task_sync_reconciliation_scope"
+        || name == "objects_task_sync_membership_checkpoint"
+        || name.starts_with("objects_task_sync_exchange_")
+        || name.starts_with("objects_task_sync_binding_")
+        || name.starts_with("objects_task_sync_producing_origin_")
+        || name.starts_with("objects_task_sync_origin_recovery_")
 }
 
 pub(in crate::storage) fn is_rebuildable_schema_object(object_type: &str, name: &str) -> bool {
@@ -225,6 +283,8 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
              ON work_items(parent_id, lifecycle);
          CREATE INDEX IF NOT EXISTS work_items_root
              ON work_items(project_id, root_id, work_id);
+         CREATE INDEX IF NOT EXISTS work_items_replacement_reverse
+             ON work_items(superseded_by, work_id) WHERE superseded_by IS NOT NULL;
          CREATE TABLE IF NOT EXISTS work_item_labels (
              work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
              label_key TEXT NOT NULL,
@@ -423,6 +483,8 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
              root_execution_id TEXT NOT NULL REFERENCES work_root_executions(root_execution_id),
              seal_json BLOB NOT NULL
          ) STRICT;
+         CREATE INDEX IF NOT EXISTS work_completion_seals_work
+             ON work_completion_seals(work_id, seal_id);
          CREATE TABLE IF NOT EXISTS work_feed_heads (
              feed_kind TEXT NOT NULL,
              feed_id TEXT NOT NULL,
@@ -459,7 +521,8 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
                       THEN json_extract(canonical_json, '$.project_id')
                       ELSE json_extract(canonical_json, '$.binding') END,
                  json_extract(canonical_json, '$.transition.prepared'))
-             WHERE object_kind IN ('task_sync_reconciliation_hold', 'task_sync_exchange_event');
+             WHERE object_kind IN ('task_sync_reconciliation_hold', 'task_sync_exchange_event')
+               AND json_valid(canonical_json);
          CREATE INDEX IF NOT EXISTS objects_work_evidence_gate_name
              ON objects(
                  json_extract(canonical_json, '$.run_id'),
@@ -526,10 +589,15 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
              ON work_session_state(project_id, updated_at_ms, session_id);",
     )?;
     super::observation::create_schema(connection)?;
+    super::task_sync::evidence::create_schema(connection)?;
     super::task_sync::reconciliation::active::create_schema(connection)?;
     super::note_index::create_schema(connection)?;
     super::feed_tasks::create_schema(connection)?;
     super::task_sync::baseline::create_schema(connection)?;
+    super::task_sync::ledger::view::create_schema(connection)?;
+    super::task_sync::producing_origin::view::create_schema(connection)?;
+    super::task_sync::closure::documents::create_schema(connection)?;
+    super::task_sync::closure::graph::create_schema(connection)?;
     connection.execute(
         "UPDATE work_schema_metadata SET schema_version = ?1 WHERE singleton = 1",
         [CURRENT_WORK_SCHEMA_VERSION],
@@ -563,6 +631,10 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_items(parent_id, lifecycle);
          CREATE INDEX IF NOT EXISTS work_items_root
              ON work_items(project_id, root_id, work_id);
+         CREATE INDEX IF NOT EXISTS work_items_replacement_reverse
+             ON work_items(superseded_by, work_id) WHERE superseded_by IS NOT NULL;
+         CREATE INDEX IF NOT EXISTS work_completion_seals_work
+             ON work_completion_seals(work_id, seal_id);
          CREATE INDEX IF NOT EXISTS work_item_labels_lookup
              ON work_item_labels(label_key, work_id);
          CREATE UNIQUE INDEX IF NOT EXISTS work_root_execution_active
@@ -633,7 +705,8 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
                       THEN json_extract(canonical_json, '$.project_id')
                       ELSE json_extract(canonical_json, '$.binding') END,
                  json_extract(canonical_json, '$.transition.prepared'))
-             WHERE object_kind IN ('task_sync_reconciliation_hold', 'task_sync_exchange_event');
+             WHERE object_kind IN ('task_sync_reconciliation_hold', 'task_sync_exchange_event')
+               AND json_valid(canonical_json);
          CREATE INDEX IF NOT EXISTS objects_work_evidence_gate_name
              ON objects(
                  json_extract(canonical_json, '$.run_id'),
@@ -662,16 +735,32 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_items(project_id, work_id);",
     )?;
     super::observation::create_schema(connection)?;
+    super::task_sync::evidence::create_schema(connection)?;
     super::task_sync::reconciliation::active::create_schema(connection)?;
     super::note_index::create_schema(connection)?;
     super::feed_tasks::create_schema(connection)?;
     super::task_sync::baseline::create_schema(connection)?;
+    super::task_sync::ledger::view::create_schema(connection)?;
+    super::task_sync::producing_origin::view::create_schema(connection)?;
+    super::task_sync::closure::documents::create_schema(connection)?;
+    super::task_sync::closure::graph::create_schema(connection)?;
+    super::task_sync::evidence::rebuild(connection)?;
     let mut restored_findings = rebuild_restored_projections_on(connection)?;
+    restored_findings.extend(super::task_sync::producing_origin::view::rebuild(
+        connection,
+    )?);
+    super::task_sync::ledger::recovery::projection::rebuild(connection)?;
+    restored_findings.extend(super::task_sync::ledger::view::rebuild_for_repair(
+        connection,
+    )?);
     super::task_sync::reconciliation::active::rebuild(connection)?;
     restored_findings.extend(super::observation::rebuild(connection)?);
     restored_findings.extend(super::note_index::rebuild_for_repair(connection)?);
     restored_findings.extend(super::feed_tasks::rebuild(connection)?);
     restored_findings.extend(super::task_sync::baseline::rebuild(connection)?);
+    restored_findings.extend(super::task_sync::closure::documents::rebuild(connection)?);
+    restored_findings.extend(super::task_sync::closure::source::rebuild(connection)?);
+    restored_findings.extend(super::task_sync::closure::graph::rebuild(connection)?);
     connection.execute("DELETE FROM work_catalog_fts", [])?;
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text)
@@ -735,7 +824,7 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<Vec<String
     };
     let mut statement = connection.prepare(
         "SELECT object_id, canonical_json FROM objects
-         WHERE object_kind = ?1 ORDER BY object_id",
+         WHERE object_kind = ?1 AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id) ORDER BY object_id",
     )?;
     let restored_records = statement
         .query_map(["work_restored_record"], |row| {

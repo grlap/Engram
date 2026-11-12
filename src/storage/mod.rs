@@ -17,10 +17,16 @@ pub(crate) mod graph_snapshot;
 pub(crate) use work::task_sync::OriginScopeGuard as WorkReadOriginScope;
 pub use work::task_sync::TaskSyncImportResult;
 pub use work::task_sync::TaskSyncNoteExport;
+pub use work::task_sync::evidence::{
+    NativeEvidenceCapture, NativeEvidenceCaptureRequest, NativeEvidenceCursor, NativeEvidenceFeed,
+    NativeEvidencePage,
+};
 pub(crate) use work::task_sync::folder::folder_apply_projection;
 #[cfg(test)]
 pub(crate) use work::task_sync::folder::folder_apply_summary;
 pub use work::task_sync::folder::{TaskSyncFolderApply, TaskSyncFolderExport};
+pub(crate) use work::task_sync::ledger::custody::Observed as TaskSyncCustodyObservation;
+pub(crate) use work::task_sync::ledger::origin_repositories_on as task_sync_origin_repositories_on;
 pub mod migration;
 mod named_root_read;
 pub use named_root_read::NamedRootReadRefusal;
@@ -271,6 +277,8 @@ mod test_support;
 
 #[cfg(test)]
 pub(crate) use work::bound_assessment_fixture;
+#[cfg(all(test, windows))]
+pub(crate) use work::exchange_fixture;
 #[cfg(test)]
 pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]

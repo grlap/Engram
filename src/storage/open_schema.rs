@@ -248,11 +248,14 @@ impl SqliteStore {
         // Owning the connection through `SqliteStore` lets `verify_all` reuse
         // the active snapshot; any error drops the connection and rolls back.
         connection.execute_batch("BEGIN IMMEDIATE;")?;
-        Self::repair_core_rebuildable_schema_on(&connection)?;
+        Self::prepare_core_rebuildable_schema_on(&connection)?;
         // Restored records, restored evidence and observations that cannot be
         // projected are left out and named; the repair still verifies
         // everything else so the refusal is complete.
         let restored_findings = work::repair_rebuildable_schema_on(&connection)?;
+        // Native-object reads validate the imported-evidence partition. Work
+        // repair must rebuild that partition before durable memory-head reads.
+        Self::repair_core_rebuildable_content_on(&connection)?;
         let store = Self {
             connection,
             writer_admission: None,
@@ -261,14 +264,14 @@ impl SqliteStore {
         };
         let after = store.verify_all()?;
         if !restored_findings.is_empty() || !after.is_healthy() {
-            // A record left out above is also reported by verification for
-            // its missing projection row; the record's own finding already
-            // names it, so that echo is dropped.
+            // Verification may repeat a semantic failure or report a missing
+            // projection for a record already named above. Drop either echo
+            // while preserving other, independently labelled findings.
             let named = |label: &String| {
                 let record = label.strip_suffix(":missing_projection").unwrap_or(label);
                 restored_findings
                     .iter()
-                    .any(|finding| finding.starts_with(&format!("{record}:")))
+                    .any(|finding| finding == label || finding.starts_with(&format!("{record}:")))
             };
             let work_records = restored_findings
                 .iter()
@@ -1111,6 +1114,7 @@ impl SqliteStore {
             Self::initialize_control_policy(connection, control_policy_preexisted)?;
             work::initialize_schema(connection, allow_initialization)?;
         } else {
+            work::task_sync::evidence::create_schema(connection)?;
             Self::initialize_control_policy_on(connection)?;
             // The work schema commits with the core schema, so no opener
             // ever sees a store that has one without the other.
@@ -1553,7 +1557,7 @@ impl SqliteStore {
         )
     }
 
-    fn repair_core_rebuildable_schema_on(connection: &Connection) -> Result<bool, StoreError> {
+    fn prepare_core_rebuildable_schema_on(connection: &Connection) -> Result<(), StoreError> {
         // The caller owns one repair transaction. Restore disposable indexes
         // before validation uses INDEXED BY; invalid durable heads still roll
         // back all schema changes, and are never rewritten by this repair.
@@ -1619,6 +1623,11 @@ impl SqliteStore {
                  change_position INTEGER NOT NULL CHECK(change_position >= 0)
              ) STRICT;",
         )?;
+        connection.execute_batch(super::VERIFICATION_APPLICABILITY_DDL)?;
+        Ok(())
+    }
+
+    fn repair_core_rebuildable_content_on(connection: &Connection) -> Result<(), StoreError> {
         let mut checked_heads = 0;
         let mut invalid_heads = Vec::new();
         Self::verify_memory_head_projections_on(
@@ -1633,7 +1642,6 @@ impl SqliteStore {
             )));
         }
         Self::rebuild_object_fts_from_heads_on(connection)?;
-        connection.execute_batch(super::VERIFICATION_APPLICABILITY_DDL)?;
         Self::rebuild_project_memory_state_on(connection)?;
         let mut checked = 0;
         let mut invalid = Vec::new();
@@ -1650,7 +1658,7 @@ impl SqliteStore {
                 "explicit core projection repair did not restore the current schema".into(),
             ));
         }
-        Ok(true)
+        Ok(())
     }
 
     pub(super) fn verify_memory_head_projections_on(

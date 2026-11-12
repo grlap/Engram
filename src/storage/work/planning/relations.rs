@@ -8,7 +8,7 @@ use super::{
     ObjectId, OptionalExtension, PlanRelationBasis, PlanningValidation, SCHEMA_VERSION, StoreError,
     Transaction, WorkBlocker, WorkEventDraft, WorkId, WorkItem, WorkLifecycle, WorkRelationBasis,
     WorkTransition, active_run_snapshot, assert_revision, load_work_item, params,
-    persist_work_item, rebase_planning_claim, validate_planning_authority, work_is_ancestor_of,
+    persist_work_item, rebase_planning_claim, work_is_ancestor_of,
 };
 
 /// Refuses a prerequisite set larger than one item may hold. The count is
@@ -61,6 +61,25 @@ pub(super) fn change_work_prerequisite_with_validation_on(
     validation: PlanningValidation,
     planned_relations: Option<&mut PlanRelationBasis>,
 ) -> Result<WorkItem, StoreError> {
+    change_work_prerequisite_native_on(
+        transaction,
+        request,
+        add,
+        validation,
+        planned_relations,
+        &super::successor::NativePlanningEvent::Ordinary,
+    )
+}
+
+pub(super) fn change_work_prerequisite_native_on(
+    transaction: &Transaction<'_>,
+    request: &ChangeWorkPrerequisiteRequest,
+    add: bool,
+    validation: PlanningValidation,
+    planned_relations: Option<&mut PlanRelationBasis>,
+    mutation: &super::successor::NativePlanningEvent<'_, '_, '_, '_>,
+) -> Result<WorkItem, StoreError> {
+    mutation.check(transaction, request.work_id)?;
     validate_prerequisite_input(request)?;
     let mut item = load_work_item(transaction, request.work_id)?;
     let prerequisite = load_work_item(transaction, request.prerequisite_id)?;
@@ -79,7 +98,7 @@ pub(super) fn change_work_prerequisite_with_validation_on(
         Some(checked_work_relation_basis(transaction, item.work_id)?)
     };
     assert_revision(&item, request.expected_revision)?;
-    validate_planning_authority(
+    mutation.authority(
         transaction,
         &item,
         &request.authority,
@@ -95,7 +114,7 @@ pub(super) fn change_work_prerequisite_with_validation_on(
         return Err(StoreError::WorkNotOpen(item.work_id));
     }
     if add {
-        super::super::task_sync::reconciliation::refuse_held_on(transaction, prerequisite.work_id)?;
+        mutation.require_unheld(transaction, prerequisite.work_id)?;
         if prerequisite.lifecycle == WorkLifecycle::Completed {
             return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
                 prerequisite.work_id,
@@ -170,27 +189,34 @@ pub(super) fn change_work_prerequisite_with_validation_on(
         actor: request.actor.clone(),
         created_at: request.changed_at,
     };
-    let (event_id, _) = match (planned_relations, checked) {
-        (Some(relations), _) => {
-            let appended = super::super::feeds::append_planned_prerequisite_event(
-                transaction,
-                &event,
-                &relations.basis,
-            )?;
-            apply_work_relation_transition(
-                &mut relations.basis,
-                &event.transition,
-                event.blocker.as_ref(),
-            )?;
-            appended
-        }
-        (None, Some(checked)) => {
-            super::super::feeds::append_checked_relation_event(transaction, &event, checked)?
-        }
-        (None, None) => {
-            return Err(StoreError::InvalidWorkProjection(
-                "a prerequisite change has no validated relation basis".into(),
-            ));
+    let (event_id, _) = if matches!(
+        mutation,
+        super::successor::NativePlanningEvent::Successor { .. }
+    ) {
+        mutation.append(transaction, &event)?
+    } else {
+        match (planned_relations, checked) {
+            (Some(relations), _) => {
+                let appended = super::super::feeds::append_planned_prerequisite_event(
+                    transaction,
+                    &event,
+                    &relations.basis,
+                )?;
+                apply_work_relation_transition(
+                    &mut relations.basis,
+                    &event.transition,
+                    event.blocker.as_ref(),
+                )?;
+                appended
+            }
+            (None, Some(checked)) => {
+                super::super::feeds::append_checked_relation_event(transaction, &event, checked)?
+            }
+            (None, None) => {
+                return Err(StoreError::InvalidWorkProjection(
+                    "a prerequisite change has no validated relation basis".into(),
+                ));
+            }
         }
     };
     if add {

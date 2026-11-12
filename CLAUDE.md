@@ -468,15 +468,16 @@ This rule is prospective: do not amend, rebase or force-push existing history or
 - SQLite is canonical on each host. Planned external backup may raise
   `local_backed_up`; backup and full-store migration retain their separate
   contracts. The selected [Git task sync](docs/features/git-task-sync.md) design
-  exchanges agent-merged task text on the ordinary code branch through explicit
-  export and import in the main checkout. Linked worktrees omit its task files
-  using the brief's sparse-checkout contract. Live claims, delivery state,
-  and private scratch never transfer. The design uses no global writer
-  lock, writer epochs, or release/acquire protocol, and does not prevent
-  duplicate work across hosts. Task sync is planned, not shipped. FTS and
-  work/query projections are rebuildable. Cross-host execution coordination,
-  proprietary adapters, embeddings, real DLP, signing, service storage, and
-  encryption are deferred—not silently assumed.
+  exchanges agent-merged task text and evidence packs on one long-lived orphan
+  data branch per project, through explicit operations in the dedicated
+  `MAIN/.engram-data/` worktree. Code commits carry no exported task or evidence
+  data, and linked code worktrees need no task-data sparse-checkout contract.
+  Live claims, delivery state and private scratch never transfer. The design
+  uses no global writer lock, writer epochs or release/acquire protocol, and
+  does not prevent duplicate work across hosts. FTS and work/query projections
+  are rebuildable. Cross-host execution coordination, proprietary adapters,
+  embeddings, real DLP, signing, service storage and encryption are deferred,
+  not silently assumed.
 
 ### Documentation and Skills
 
@@ -594,15 +595,13 @@ Choose landing validation by changed file type:
 | Runtime code, CLI implementation or schema | Full gate |
 | Any other path, including configuration, lockfiles and fixtures | Full gate |
 
-For the planned Git task sync layout, exported task data in
-`.engram/project.json` and `.engram/tasks/` is included in the normal
-code-branch commit that carries the code changes. That whole changeset is
-gated and reviewed once under the requirements above; its task-data changes
-need no separate full gate or review pair. A commit that changes only task
-data keeps the existing landing requirements, and no other landing condition
-changes. The task data in that commit is the export frozen with the changeset
-before its gate; tracker writes made after the gate, such as an evaluation or
-a completion, go with a later changeset and are never added to the gated tree.
+Exported `.engram/project.json`, `.engram/tasks/` and evidence packs stay in
+the dedicated data worktree on the orphan data branch and are excluded from
+code commits and code `source_id`. Code changes use the applicable gates and
+reviews above. A data commit is never tested code or a landing candidate. The
+existing commit and push authority rules still govern each data-branch
+operation; this layout change grants no new commit, push or history-rewrite
+authority.
 
 A Markdown code block or quoted command is prose and does not trigger the
 full gate by itself. Mixed or uncertain changes use the stronger applicable

@@ -44,6 +44,10 @@ pub(crate) struct WorkNoteRecord {
     pub recorded_at: DateTime<Utc>,
 }
 
+pub(super) fn imported_summary(decision: &ObjectId) -> String {
+    format!("explicit imported proof use; decision {decision}")
+}
+
 /// The public text searched by the catalog, shared by incremental projection,
 /// canonical rebuild and the scan equivalence oracle. Field boundaries matter.
 pub(super) fn search_fields(
@@ -162,6 +166,22 @@ pub(super) fn load_note(
                     refs: evidence.refs,
                     actor: evidence.actor,
                     recorded_at: evidence.recorded_at,
+                },
+            )
+        }
+        ("run", "imported_evidence_consumption") => {
+            let record = super::task_sync::evidence::consumption::load_on(connection, hash)?;
+            work_evidence_kind_on(connection, record.request.binding.run_id, hash)?;
+            (
+                record.request.binding.work_id,
+                WorkNoteRecord {
+                    kind: WorkEvidenceKind::Imported,
+                    summary: imported_summary(&record.request.decision),
+                    gate: None,
+                    verification: None,
+                    refs: vec![record.request.decision.to_string()],
+                    actor: record.actor,
+                    recorded_at: record.recorded_at,
                 },
             )
         }

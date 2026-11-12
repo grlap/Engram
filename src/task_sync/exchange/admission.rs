@@ -4,7 +4,7 @@
 use super::{
     Cancellation, ExchangeTarget, RunLimits, TargetSelection, remaining,
     retained::{git_directory, local},
-    verify_retained_commit,
+    verify_retained_commit_remaining,
 };
 use crate::{
     ObjectId,
@@ -76,6 +76,21 @@ impl InspectedExchange {
 /// # Errors
 /// Refuses binding/configuration drift, missing pins, tree mismatch and limits.
 pub async fn inspect_exchange(
+    binding_id: &ObjectId,
+    binding: &Binding,
+    intent: &Intent,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<InspectedExchange> {
+    let started = std::time::Instant::now();
+    limits.validate_request()?;
+    let _warning = crate::operation_time::Warning::start("task exchange inspect exchange");
+    let limits = crate::task_sync::exchange::remaining(limits, started)?;
+    inspect_exchange_remaining(binding_id, binding, intent, limits, cancel).await
+}
+
+// The public ingress admitted the full budget; internal calls spend its remainder.
+pub(crate) async fn inspect_exchange_remaining(
     binding_id: &ObjectId,
     binding: &Binding,
     intent: &Intent,
@@ -157,11 +172,8 @@ pub async fn inspect_exchange(
         let mut owned = Vec::new();
         let mut bytes = 0_usize;
         while offset + owned.len() < paths.len() && owned.len() < 64 {
-            let path = intent.candidate.directory.join(paths[offset + owned.len()]);
-            let path = path
-                .to_str()
-                .context("non-UTF8 retained candidate path")?
-                .to_owned();
+            let path =
+                git_path_argument(&intent.candidate.directory.join(paths[offset + owned.len()]))?;
             ensure!(
                 path.len() <= 8192,
                 "retained candidate path exceeds Git argument bound"
@@ -198,6 +210,22 @@ pub async fn inspect_exchange(
     Ok(inspected)
 }
 
+/// A retained candidate path as Git receives it on its command line. Canonical
+/// Windows paths are verbatim (`\\?\C:\...`), which Git for Windows cannot open
+/// as an argument; the shared Git spelling names the same file. Stored binding
+/// paths are unchanged.
+///
+/// # Errors
+/// Refuses a path with no supported Git spelling or that is not UTF-8.
+fn git_path_argument(path: &std::path::Path) -> Result<String> {
+    let plain = crate::task_sync::git::plain_path(path)
+        .context("retained candidate path has no supported Git spelling")?;
+    Ok(plain
+        .to_str()
+        .context("non-UTF8 retained candidate path")?
+        .to_owned())
+}
+
 /// The Git observations an inspection rests on. `published_head` admits an
 /// outgoing branch that already points at the operation's retained commit.
 async fn observe_git(
@@ -208,7 +236,71 @@ async fn observe_git(
     started: Instant,
     cancel: &Cancellation,
 ) -> Result<()> {
+    observe_git_selection(
+        binding,
+        GitSelection {
+            expected_head: intent.expected_head.as_deref(),
+            commit: &intent.commit,
+            common_commit: intent.common_commit.as_ref(),
+            published_head,
+        },
+        limits,
+        started,
+        cancel,
+    )
+    .await
+}
+
+/// The selected branch was read and points somewhere other than the request
+/// expects: a definite observation, unlike an unavailable or uncertain Git read.
+#[derive(Debug)]
+pub(super) struct SelectedHeadChanged;
+
+impl std::fmt::Display for SelectedHeadChanged {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("selected branch head changed")
+    }
+}
+
+impl std::error::Error for SelectedHeadChanged {}
+
+#[derive(Clone, Copy)]
+pub(super) struct GitSelection<'a> {
+    pub expected_head: Option<&'a str>,
+    pub commit: &'a crate::task_sync::ledger::RetainedCommit,
+    pub common_commit: Option<&'a crate::task_sync::ledger::RetainedCommit>,
+    pub published_head: bool,
+}
+
+pub(super) async fn observe_git_selection(
+    binding: &Binding,
+    selected: GitSelection<'_>,
+    limits: RunLimits,
+    started: Instant,
+    cancel: &Cancellation,
+) -> Result<()> {
+    observe_git_selection_data(binding, selected, limits, started, cancel)
+        .await
+        .map(|_| ())
+}
+
+/// Return this inspection's fresh worktree observation so callers can compare
+/// their captured basis without performing a second complete observation.
+pub(super) async fn observe_git_selection_data(
+    binding: &Binding,
+    selected: GitSelection<'_>,
+    limits: RunLimits,
+    started: Instant,
+    cancel: &Cancellation,
+) -> Result<crate::task_sync::data_worktree::DataWorktree> {
+    use crate::task_sync::data_worktree::{Budget, DataWorktree};
     let repository = &binding.repository.main_checkout;
+    let budget = Budget::within(started, limits.deadline)?;
+    let data = DataWorktree::from_binding_within(binding, budget)?;
+    data.check_commit_within(&selected.commit.oid, budget)?;
+    if let Some(base) = selected.common_commit {
+        data.check_commit_within(&base.oid, budget)?;
+    }
     let admin = git_directory(repository, remaining(limits, started)?, cancel).await?;
     ensure!(
         std::fs::canonicalize(&admin)? == std::fs::canonicalize(&binding.repository.git_directory)?,
@@ -236,15 +328,15 @@ async fn observe_git(
         cancel,
     )
     .await?;
-    let expected = intent.expected_head.as_ref().map_or_else(Vec::new, |head| {
+    let expected = selected.expected_head.map_or_else(Vec::new, |head| {
         format!("{} {head} \n", binding.branch).into_bytes()
     });
-    let published = format!("{} {} \n", binding.branch, intent.commit.oid).into_bytes();
+    let published = format!("{} {} \n", binding.branch, selected.commit.oid).into_bytes();
     ensure!(
-        head == expected || (published_head && head == published),
-        "selected branch head changed"
+        head == expected || (selected.published_head && head == published),
+        SelectedHeadChanged
     );
-    let target = ExchangeTarget::capture(
+    let target = ExchangeTarget::capture_remaining(
         &TargetSelection {
             repository: repository.clone(),
             remote: binding.target.remote.clone(),
@@ -258,17 +350,18 @@ async fn observe_git(
         target.fingerprint()? == binding.target.configuration_fingerprint,
         "selected target configuration changed"
     );
-    verify_retained_commit(
+    verify_retained_commit_remaining(
         repository,
-        &intent.commit,
+        selected.commit,
         remaining(limits, started)?,
         cancel,
     )
     .await?;
-    if let Some(base) = &intent.common_commit {
-        verify_retained_commit(repository, base, remaining(limits, started)?, cancel).await?;
+    if let Some(base) = selected.common_commit {
+        verify_retained_commit_remaining(repository, base, remaining(limits, started)?, cancel)
+            .await?;
     }
-    Ok(())
+    Ok(data)
 }
 
 /// Records an inspected request after observing its Git state again. This is
@@ -277,6 +370,21 @@ async fn observe_git(
 /// # Errors
 /// Refuses Git drift since inspection, and every refusal of the storage call.
 pub async fn prepare_exchange(
+    store: &mut SqliteStore,
+    input: &InspectedExchange,
+    now: DateTime<Utc>,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<ObjectId> {
+    let started = std::time::Instant::now();
+    limits.validate_request()?;
+    let _warning = crate::operation_time::Warning::start("task exchange prepare exchange");
+    let limits = crate::task_sync::exchange::remaining(limits, started)?;
+    prepare_exchange_remaining(store, input, now, limits, cancel).await
+}
+
+// The public ingress admitted the full budget; internal calls spend its remainder.
+pub(crate) async fn prepare_exchange_remaining(
     store: &mut SqliteStore,
     input: &InspectedExchange,
     now: DateTime<Utc>,
@@ -299,6 +407,22 @@ pub async fn apply_exchange(
     limits: RunLimits,
     cancel: &Cancellation,
 ) -> Result<ImportReceipt> {
+    let started = std::time::Instant::now();
+    limits.validate_request()?;
+    let _warning = crate::operation_time::Warning::start("task exchange apply exchange");
+    let limits = crate::task_sync::exchange::remaining(limits, started)?;
+    apply_exchange_remaining(store, input, dry_run, now, limits, cancel).await
+}
+
+// The public ingress admitted the full budget; internal calls spend its remainder.
+pub(crate) async fn apply_exchange_remaining(
+    store: &mut SqliteStore,
+    input: &InspectedExchange,
+    dry_run: bool,
+    now: DateTime<Utc>,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<ImportReceipt> {
     input.revalidate(limits, cancel).await?;
     Ok(store.apply_task_sync_exchange(input, dry_run, now)?)
 }
@@ -308,6 +432,22 @@ pub async fn apply_exchange(
 /// # Errors
 /// Refuses Git drift since inspection, and every refusal of the storage call.
 pub async fn record_exchange_progress(
+    store: &mut SqliteStore,
+    input: &InspectedExchange,
+    progress: OutgoingProgress,
+    now: DateTime<Utc>,
+    limits: RunLimits,
+    cancel: &Cancellation,
+) -> Result<ObjectId> {
+    let started = std::time::Instant::now();
+    limits.validate_request()?;
+    let _warning = crate::operation_time::Warning::start("task exchange record exchange progress");
+    let limits = crate::task_sync::exchange::remaining(limits, started)?;
+    record_exchange_progress_remaining(store, input, progress, now, limits, cancel).await
+}
+
+// The public ingress admitted the full budget; internal calls spend its remainder.
+pub(crate) async fn record_exchange_progress_remaining(
     store: &mut SqliteStore,
     input: &InspectedExchange,
     progress: OutgoingProgress,

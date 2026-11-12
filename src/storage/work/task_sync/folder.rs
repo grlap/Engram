@@ -428,7 +428,7 @@ fn changes(previous: Option<&TaskTree>, next: &TaskTree) -> BTreeMap<WorkId, Opt
     changes
 }
 
-fn folder_export_on(
+pub(super) fn folder_export_on(
     connection: &rusqlite::Connection,
     project: &ProjectId,
     profile: &ExportProfile,

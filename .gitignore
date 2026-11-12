@@ -11,6 +11,8 @@
 
 # Local Engram state. Exports intended for sharing must be written elsewhere.
 /.engram/
+# Persistent orphan-branch checkout; not build output or task evidence scratch.
+/.engram-data/
 # SQLite stores anywhere in the checkout stay local.
 *.db
 

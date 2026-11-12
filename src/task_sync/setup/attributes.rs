@@ -4,7 +4,7 @@ use super::repository::{git, ordinary_ancestors, read_optional};
 use anyhow::{Context, Result, ensure};
 use std::{fs, path::Path};
 
-pub(super) fn check(root: &Path, admin: &Path, marker_name: &str) -> Result<()> {
+pub(super) fn check(root: &Path, admin: &Path, _marker_name: &str) -> Result<()> {
     // A deeper file would override the proposed managed root block. Refuse
     // occupancy, including ignored files, before Git reads it or runs status.
     let nested = root.join(".engram/.gitattributes");
@@ -30,9 +30,8 @@ pub(super) fn check(root: &Path, admin: &Path, marker_name: &str) -> Result<()> 
     let paths = [
         ".engram/project.json",
         ".engram/tasks/00000000-0000-7000-8000-000000000001.json",
-        ".gitignore",
-        ".gitattributes",
-        marker_name,
+        ".engram/.gitignore",
+        ".engram/.gitattributes",
     ];
     let mut args = vec![
         "check-attr",
@@ -78,12 +77,7 @@ pub(super) fn materialized(
     documents: &std::collections::BTreeMap<String, Vec<u8>>,
 ) -> Result<()> {
     let root = &basis.repository;
-    for relative in [
-        ".engram/.gitattributes",
-        ".engram/.gitignore",
-        ".engram/tasks/.gitattributes",
-        ".engram/tasks/.gitignore",
-    ] {
+    for relative in [".engram/tasks/.gitattributes", ".engram/tasks/.gitignore"] {
         let path = root.join(relative);
         ordinary_ancestors(&path)?;
         ensure!(
@@ -95,23 +89,73 @@ pub(super) fn materialized(
     // Safely inspect the complete ordinary files before Git reads them. Report
     // effective policy refusals before checking exact recorded after bytes, so
     // an appended ignore rule retains its actionable policy/remedy diagnostic.
-    let directory = super::files::Directory::open(root)?;
+    let directory = super::files::Directory::open(root)?.child(Path::new(".engram"))?;
     for edit in &basis.edits {
         directory.read(Path::new(&edit.path))
             .with_context(|| format!("published setup {} cannot be fully inspected within the safety bound; preserve state and restore recorded after bytes", edit.path))?
             .with_context(|| format!("published setup {} is missing; preserve state and restore recorded after bytes", edit.path))?;
     }
-    let info = basis.git_directory.join("info/attributes");
+    let info = super::repository::git_path(root, "--git-common-dir")?.join("info/attributes");
     ordinary_ancestors(&info)?;
     if info.exists() {
         read_optional(&info)?;
     }
+    verify_paths(root, documents, None)?;
+    // Managed blocks can exceed the before-file cap. A policy-safe edit must
+    // still match the complete recorded output before any shared publication.
+    for edit in &basis.edits {
+        ensure!(
+            directory.read_bounded(Path::new(&edit.path), edit.after.len())
+                .with_context(|| format!("published setup {} differs from recorded after bytes; preserve state and restore them before retrying", edit.path))?
+                .as_ref() == Some(&edit.after),
+            "published setup {} differs from recorded after bytes; preserve state and restore them before retrying", edit.path
+        );
+    }
+    Ok(())
+}
+
+/// Evaluate the exact managed attribute rules from their retained file before a
+/// fresh metadata directory is published. Git's info attributes still override
+/// them, just as they will override the final nested policy; nothing is written.
+pub(super) fn staged(
+    basis: &super::Basis,
+    documents: &std::collections::BTreeMap<String, Vec<u8>>,
+    retained_attributes: &Path,
+) -> Result<()> {
+    let root = &basis.repository;
+    let info = super::repository::git_path(root, "--git-common-dir")?.join("info/attributes");
+    ordinary_ancestors(&info)?;
+    if info.exists() {
+        read_optional(&info)?;
+    }
+    ensure!(
+        super::repository::git_allow_missing(
+            root,
+            &["check-ignore", "--no-index", "--", ".engram"]
+        )?
+        .is_empty(),
+        "shared task path is ignored; resolve policy before publication"
+    );
+    verify_paths(root, documents, Some(retained_attributes))
+}
+
+fn verify_paths(
+    root: &Path,
+    documents: &std::collections::BTreeMap<String, Vec<u8>>,
+    staged_policy: Option<&Path>,
+) -> Result<()> {
     let paths: Vec<_> = documents
         .keys()
         .map(|path| format!(".engram/{path}"))
         .collect();
     for paths in paths.chunks(128) {
-        let mut args = vec![
+        let override_arg =
+            staged_policy.map(|path| format!("core.attributesFile={}", path.display()));
+        let mut args = Vec::new();
+        if let Some(value) = &override_arg {
+            args.extend(["-c", value]);
+        }
+        args.extend([
             "check-attr",
             "-z",
             "text",
@@ -122,7 +166,7 @@ pub(super) fn materialized(
             "working-tree-encoding",
             "ident",
             "--",
-        ];
+        ]);
         args.extend(paths.iter().map(String::as_str));
         let output = git(root, &args)?;
         let fields: Vec<_> = output.split(|byte| *byte == 0).collect();
@@ -163,29 +207,21 @@ pub(super) fn materialized(
                 "effective task attribute policy refused for {path}: {attribute}; no task publication approved"
             );
         }
-        let input: Vec<_> = paths
-            .iter()
-            .flat_map(|path| path.as_bytes().iter().copied().chain(std::iter::once(0)))
-            .collect();
-        ensure!(
-            super::repository::git_input_allow_missing(
-                root,
-                &["check-ignore", "--no-index", "-z", "--stdin"],
-                &input
-            )?
-            .is_empty(),
-            "shared task path is ignored; resolve policy before publication"
-        );
-    }
-    // Managed blocks can exceed the before-file cap. A policy-safe edit must
-    // still match the complete recorded output before any shared publication.
-    for edit in &basis.edits {
-        ensure!(
-            directory.read_bounded(Path::new(&edit.path), edit.after.len())
-                .with_context(|| format!("published setup {} differs from recorded after bytes; preserve state and restore them before retrying", edit.path))?
-                .as_ref() == Some(&edit.after),
-            "published setup {} differs from recorded after bytes; preserve state and restore them before retrying", edit.path
-        );
+        if staged_policy.is_none() {
+            let input: Vec<_> = paths
+                .iter()
+                .flat_map(|path| path.as_bytes().iter().copied().chain(std::iter::once(0)))
+                .collect();
+            ensure!(
+                super::repository::git_input_allow_missing(
+                    root,
+                    &["check-ignore", "--no-index", "-z", "--stdin"],
+                    &input
+                )?
+                .is_empty(),
+                "shared task path is ignored; resolve policy before publication"
+            );
+        }
     }
     Ok(())
 }

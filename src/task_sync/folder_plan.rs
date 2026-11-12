@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::BuildHasher;
 
-use super::{SharedBlocker, TaskDocument, TaskSyncRefusal, TaskTree};
+use super::{ProjectDocument, SharedBlocker, TaskDocument, TaskSyncRefusal, TaskTree};
 use crate::{WorkId, domain::WorkRevisionPatch, storage::StoreError};
 
 /// Every requested delta, classified.
@@ -322,6 +322,56 @@ pub fn plan<S: BuildHasher>(
                 delta,
             })
             .collect(),
+    })
+}
+
+/// Classify explicit local delta keys using the same field rules as a complete
+/// folder. Context documents omitted from `changes` never request deletion.
+/// The caller must independently admit the complete connected graphs and
+/// prove the baseline membership under its writer; this is pure classification.
+///
+/// # Errors
+/// Refuses malformed selected documents, mismatched map keys, excessive input,
+/// and removal of a missing or unenrolled local task.
+pub fn plan_selected(
+    project: &ProjectDocument,
+    current: &BTreeMap<WorkId, TaskDocument>,
+    changes: &BTreeMap<WorkId, Option<TaskDocument>>,
+    membership: &BTreeSet<WorkId>,
+) -> Result<DeltaPlan, StoreError> {
+    if current.len() > 200_000 || changes.len() > 200_000 || membership.len() > 200_000 {
+        return Err(
+            TaskSyncRefusal::InvalidGraph.invalid("selected planning exceeds supported bound")
+        );
+    }
+    super::validate_selected_documents(project, current.values())
+        .and_then(|()| {
+            super::validate_selected_documents(project, changes.values().filter_map(Option::as_ref))
+        })
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    if current.iter().any(|(id, task)| id != &task.id)
+        || changes
+            .iter()
+            .any(|(id, task)| task.as_ref().is_some_and(|task| id != &task.id))
+    {
+        return Err(TaskSyncRefusal::InvalidGraph.invalid("selected planning task key differs"));
+    }
+    let mut tasks = Vec::with_capacity(changes.len());
+    for (id, next) in changes {
+        let delta = match (current.get(id), next) {
+            (Some(held), Some(next)) => compare(held, next)?,
+            (None, Some(_)) => TaskDelta::Added,
+            (Some(_), None) if membership.contains(id) => TaskDelta::Deleted,
+            (_, None) => {
+                return Err(TaskSyncRefusal::InvalidGraph
+                    .invalid("selected planning removes a missing or unenrolled task"));
+            }
+        };
+        tasks.push(PlannedTask { id: *id, delta });
+    }
+    Ok(DeltaPlan {
+        project: Vec::new(),
+        tasks,
     })
 }
 

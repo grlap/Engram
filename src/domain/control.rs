@@ -599,6 +599,8 @@ pub enum WorkEvidenceKind {
     Generic,
     Verification,
     Environment,
+    /// An explicit local use of retained proof, not a locally observed check.
+    Imported,
 }
 
 /// Why one evidence object cannot satisfy an exact verification requirement.

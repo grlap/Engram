@@ -1,6 +1,6 @@
 //! Engram-owned host-local opt-in. No SQLite access or task-file publication.
 
-mod files;
+pub(crate) mod files;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;

@@ -131,6 +131,12 @@ pub(in crate::storage) fn record_remote_verification_on(
     };
     let object = CanonicalObject::mint(&record)?;
     SqliteStore::insert_object(tx, REMOTE_VERIFICATION_ASSOCIATION_KIND, &object)?;
+    super::task_sync::evidence::verification::index_remote_record_on(
+        tx,
+        object.key(),
+        REMOTE_VERIFICATION_ASSOCIATION_KIND,
+        object.bytes(),
+    )?;
     let Ok(item) = destination else {
         super::feeds::append_to_project_feed(
             tx,
@@ -382,6 +388,13 @@ pub(super) fn producer_facts_on(
 ) -> Result<VerificationProducerFacts, StoreError> {
     let record: RemoteVerificationAssociationRecord =
         super::feeds::load_typed_work_object(connection, id, REMOTE_VERIFICATION_ASSOCIATION_KIND)?;
+    producer_facts(&record, id)
+}
+
+pub(in crate::storage::work) fn producer_facts(
+    record: &RemoteVerificationAssociationRecord,
+    id: &ObjectId,
+) -> Result<VerificationProducerFacts, StoreError> {
     let completion = &record.request.completion;
     if !record.qualification.credited || record.origin.is_none() {
         return Err(StoreError::InvalidWorkProjection(format!(
@@ -398,7 +411,7 @@ pub(super) fn producer_facts_on(
         run_outcome: Some(ExecutionOutcome::Succeeded),
         source_basis: Some(source_basis(&record.request)?),
         observed_at: completion.finished_at,
-        actor: record.actor,
+        actor: record.actor.clone(),
         recorded_at: record.associated_at,
     })
 }

@@ -102,22 +102,18 @@ fn task_materialize_recovers_each_admitted_publication_boundary_after_opt_out() 
     for existing in [false, true] {
         let mut boundaries = vec![
             "journal-published",
-            "replacement-ready-0",
-            "before-move-0",
-            "moved-0",
-            "before-setup-link-0",
-            "setup-linked-0",
-            "replacement-ready-1",
-            "before-move-1",
-            "moved-1",
-            "before-setup-link-1",
-            "setup-linked-1",
             "setup-checked",
             "public-checked",
             "complete-published",
         ];
         if existing {
             boundaries.extend([
+                "replacement-ready-0",
+                "before-setup-link-0",
+                "setup-linked-0",
+                "replacement-ready-1",
+                "before-setup-link-1",
+                "setup-linked-1",
                 "before-tasks-rename",
                 "tasks-renamed",
                 "before-project-link",
@@ -158,7 +154,7 @@ fn task_materialize_preserves_incomplete_private_attempts_without_adopting_them(
 #[test]
 fn task_materialize_first_private_attempt_failure_names_the_retained_recovery_path() {
     let fixture = Fixture::new(false, 1);
-    let ordinary_code = fs::read(fixture.root.join("code.txt")).unwrap();
+    let ordinary_code = fs::read(fixture.code.join("code.txt")).unwrap();
     let error = super::super::run(
         &fixture.marker,
         &ProjectId("materialize/fixture".into()),
@@ -191,7 +187,7 @@ fn task_materialize_first_private_attempt_failure_names_the_retained_recovery_pa
     assert!(message.contains("move this attempt aside within Git administration"));
     assert!(message.contains("rerun setup preparation and materialization"));
     assert_eq!(
-        fs::read(fixture.root.join("code.txt")).unwrap(),
+        fs::read(fixture.code.join("code.txt")).unwrap(),
         ordinary_code
     );
     assert_eq!(
@@ -227,7 +223,7 @@ fn task_materialize_operator_can_preserve_and_reprepare_incomplete_private_attem
 
 #[test]
 fn task_materialize_operator_can_restore_managed_bytes_after_policy_refusal() {
-    let fixture = Fixture::new(false, 1);
+    let fixture = Fixture::new(true, 1);
     let error = super::super::run(
         &fixture.marker,
         &ProjectId("materialize/fixture".into()),
@@ -236,9 +232,9 @@ fn task_materialize_operator_can_restore_managed_bytes_after_policy_refusal() {
         attribution(),
         &mut |point| {
             if point == "setup-linked-1" {
-                let ignore = fixture.root.join(".gitignore");
+                let ignore = fixture.root.join(".engram/.gitignore");
                 let mut bytes = fs::read(&ignore)?;
-                bytes.extend_from_slice(b"/.engram/tasks/\n");
+                bytes.extend_from_slice(b"/tasks/\n");
                 fs::write(ignore, bytes)?;
             }
             Ok(())
@@ -249,7 +245,7 @@ fn task_materialize_operator_can_restore_managed_bytes_after_policy_refusal() {
     let private = Directory::open(&fixture.private()).unwrap();
     let record = super::super::journal::read(&private, &fixture.private()).unwrap();
     for edit in &record.basis.edits {
-        fs::write(fixture.root.join(&edit.path), &edit.after).unwrap();
+        fs::write(fixture.root.join(".engram").join(&edit.path), &edit.after).unwrap();
     }
     drop(private);
     fixture.run();
@@ -280,59 +276,4 @@ fn task_materialize_recovers_without_the_source_store_or_b1_generation() {
         b"independent store replacement"
     );
     assert_shared(&fixture);
-}
-
-#[test]
-fn task_materialize_setup_move_mismatch_restores_or_reports_the_displaced_bytes() {
-    for blocked in [false, true] {
-        let fixture = Fixture::new(false, 1);
-        let changed = b"concurrent ordinary public edit\n";
-        let replacement = b"another concurrent root target\n";
-        let result = super::super::run(
-            &fixture.marker,
-            &ProjectId("materialize/fixture".into()),
-            &fixture.selection,
-            true,
-            attribution(),
-            &mut |point| {
-                if point == "before-move-0" {
-                    fs::write(fixture.root.join(".gitignore"), changed)?;
-                }
-                if blocked && point == "before-restore-0" {
-                    fs::write(fixture.root.join(".gitignore"), replacement)?;
-                }
-                Ok(())
-            },
-        );
-        let error = result.unwrap_err().to_string();
-        assert!(
-            error.contains(&format!("restore_incomplete={blocked}")),
-            "{error}"
-        );
-        assert_eq!(
-            fs::read(fixture.private().join("replace-0/displaced")).unwrap(),
-            changed
-        );
-        assert_eq!(
-            fs::read(fixture.root.join(".gitignore")).unwrap(),
-            if blocked {
-                replacement.as_slice()
-            } else {
-                changed.as_slice()
-            }
-        );
-        assert!(!fixture.root.join(".engram/project.json").exists());
-        let before = snapshot(fixture.owned.path());
-        let repeated_error = fixture
-            .service
-            .materialize_task_sync_setup(&fixture.marker, &fixture.selection)
-            .unwrap_err();
-        assert!(
-            repeated_error
-                .to_string()
-                .contains(&format!("restore_incomplete={blocked}")),
-            "{repeated_error:#}"
-        );
-        assert_eq!(snapshot(fixture.owned.path()), before);
-    }
 }

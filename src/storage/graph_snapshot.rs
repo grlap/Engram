@@ -1100,6 +1100,29 @@ fn snapshot_note_from_row(
                 "verification",
             )
         }
+        "imported_evidence_consumption" => {
+            let evidence: crate::task_sync::evidence::consumption::ImportedEvidenceConsumption =
+                object.decode()?;
+            if evidence.request.binding.work_id != work_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "snapshot imported use crosses its work binding".into(),
+                ));
+            }
+            (
+                WorkGraphSnapshotNote {
+                    evidence_kind: WorkEvidenceKind::Imported,
+                    summary: format!(
+                        "reported imported proof use; decision {}",
+                        evidence.request.decision
+                    ),
+                    refs: Vec::new(),
+                    gate: None,
+                    actor: evidence.actor,
+                    recorded_at: evidence.recorded_at,
+                },
+                "imported",
+            )
+        }
         "environment_evidence" => {
             let evidence: EnvironmentEvidence = object.decode()?;
             if evidence.binding.work_id != work_id {

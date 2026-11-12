@@ -8,22 +8,22 @@ const SIBLING_BYTES: &[u8] = b"retain this unrelated sibling\n";
 fn task_materialize_rechecks_existing_shared_capacity_after_sibling_growth() {
     assert_refusal(
         true,
-        3,
+        5,
         "setup-checked",
         "materialization directory has no room for declared publication within entry bound",
     );
-    assert_permitted(true, 4, "setup-checked");
+    assert_permitted(true, 6, "setup-checked");
 }
 
 #[test]
 fn task_materialize_rechecks_owned_shared_capacity_after_sibling_growth() {
     assert_refusal(
         false,
-        2,
+        4,
         "engram-renamed",
         "materialization directory entry bound exceeded",
     );
-    assert_permitted(false, 3, "engram-renamed");
+    assert_permitted(false, 5, "engram-renamed");
 }
 
 fn assert_refusal(existing: bool, shared: usize, boundary: &str, reason: &str) {
@@ -51,9 +51,15 @@ fn assert_refusal(existing: bool, shared: usize, boundary: &str, reason: &str) {
                 insert_sibling(&fixture);
                 let public = Directory::open(&fixture.root.join(".engram")).unwrap();
                 let expected: &[&str] = if existing {
-                    &["private.db", SIBLING]
+                    &[".gitattributes", ".gitignore", "private.db", SIBLING]
                 } else {
-                    &["project.json", "tasks", SIBLING]
+                    &[
+                        ".gitattributes",
+                        ".gitignore",
+                        "project.json",
+                        "tasks",
+                        SIBLING,
+                    ]
                 };
                 let mut expected: Vec<_> = expected
                     .iter()
@@ -185,8 +191,8 @@ fn public_identities(fixture: &Fixture) -> BTreeMap<&'static str, PhysicalId> {
         ".engram/unrelated-private",
         ".engram/tasks",
         ".engram/project.json",
-        ".gitignore",
-        ".gitattributes",
+        ".engram/.gitignore",
+        ".engram/.gitattributes",
     ]
     .into_iter()
     .filter_map(|relative| {

@@ -65,12 +65,37 @@ pub(super) fn off_named_root(
     observation: &SourceObservation,
 ) -> bool {
     root.is_some_and(|root| {
-        observation.source_basis.as_ref().is_some_and(|basis| {
-            basis.workspace_id != root.event.workspace_id
-                || basis.source_root_generation != Some(root.event.generation)
-                || basis.source_root_state != Some(SourceRootState::Named)
-        })
+        observation
+            .source_basis
+            .as_ref()
+            .is_some_and(|basis| !within_named_root(&root.event, basis))
     })
+}
+
+/// Root/workspace scope remains independent of complete source equality.
+pub(crate) fn within_named_root(
+    root: &NamedRootBindingEvent,
+    basis: &VerificationSourceBasis,
+) -> bool {
+    basis.workspace_id == root.workspace_id
+        && basis.source_root_generation == Some(root.generation)
+        && basis.source_root_state == Some(SourceRootState::Named)
+}
+
+/// The immutable witness binding, shared by native and retained-history reads.
+pub(crate) fn registered_witness_matches(
+    declared: &crate::domain::AcceptanceSourceBasis,
+    root: &NamedRootBindingEvent,
+    evidence: &crate::domain::VerificationEvidence,
+    producer: &crate::domain::VerificationProducerFacts,
+    run: WorkRunId,
+) -> bool {
+    evidence.project_id == root.project_id
+        && evidence.binding.run_id == run
+        && evidence.binding.work_id == root.work_id
+        && evidence.binding.root_execution_id == root.root_execution_id
+        && evidence.binding.claim_id == root.claim_id
+        && producer.matches_registered_source(evidence, &declared.identity) == Some(true)
 }
 
 /// The named root's newest sighting at or before `through`, the record
@@ -884,6 +909,30 @@ pub(super) fn stale_bound_citation_live<'a>(
             .any(|binding| binding.criterion == criterion);
         for citation in citations {
             let classified = classify_citation(connection, run_id, citation)?;
+            if matches!(&classified, Some(Citation::ImportedVerification { .. })) {
+                let record =
+                    super::super::task_sync::evidence::consumption::load_on(connection, citation)?;
+                let matches = judged.is_some_and(|judged| {
+                    matches!(
+                        &judged.identity,
+                        crate::domain::VerificationSourceIdentity::SourceId { source_id }
+                            if source_id == &record.source
+                    )
+                });
+                let current = matches && (recorded_current
+                    || super::super::task_sync::evidence::consumption::verification_current_on(
+                        connection, &record, &record.source,
+                    )?);
+                if !current {
+                    return Ok(Some(StaleCitation {
+                        criterion,
+                        citation: citation.clone(),
+                        producer: None,
+                        cause: StaleCause::Unverifiable,
+                    }));
+                }
+                continue;
+            }
             let registered = if matches!(&classified, Some(Citation::VerificationPassed { .. })) {
                 let evidence: crate::domain::VerificationEvidence =
                     load_typed_work_object(connection, citation, "verification_evidence")?;
@@ -1251,17 +1300,39 @@ fn registered_mutation_after_check(
         let Some(change) = super::source_observation_if_accounted_on(connection, &id)? else {
             continue;
         };
-        if !off_named_root(root, &change)
-            && ((change.source_changed
-                && (ran <= position
-                    || recorded <= position
-                    || check.run_time() < change.observed_at.unwrap_or(change.recorded_at)))
-                || quiet_git_input_conflicts(witnessed_input, check.run_time(), &change))
-        {
+        if registered_input_change_conflicts(
+            check,
+            (ran, recorded),
+            root.map(|root| &root.event),
+            witnessed_input,
+            position,
+            &change,
+        ) {
             return Ok(Some(Moved::Mutation(change.label)));
         }
     }
     Ok(None)
+}
+
+/// Source movement at an immutable registered-input cut, without a new read.
+pub(crate) fn registered_input_change_conflicts(
+    check: &crate::domain::VerificationEvidence,
+    (ran, recorded): (i64, i64),
+    root: Option<&NamedRootBindingEvent>,
+    witnessed_input: Option<&VerificationSourceIdentity>,
+    position: i64,
+    change: &SourceObservation,
+) -> bool {
+    !root.is_some_and(|root| {
+        change
+            .source_basis
+            .as_ref()
+            .is_some_and(|basis| !within_named_root(root, basis))
+    }) && ((change.source_changed
+        && (ran <= position
+            || recorded <= position
+            || check.run_time() < change.observed_at.unwrap_or(change.recorded_at)))
+        || quiet_git_input_conflicts(witnessed_input, check.run_time(), change))
 }
 
 /// A Git identity can contradict a witnessed Git input. An unrelated

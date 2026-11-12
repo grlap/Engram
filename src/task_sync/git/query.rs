@@ -10,6 +10,16 @@ use std::{
 
 const MAX_BYTES: u64 = 1024 * 1024;
 
+#[cfg(all(test, windows))]
+pub(crate) mod test_clock;
+
+#[cfg(test)]
+type QueryHook = Box<dyn Fn(&str)>;
+#[cfg(test)]
+thread_local! {
+    pub(crate) static BEFORE_QUERY: std::cell::RefCell<Option<QueryHook>> = const { std::cell::RefCell::new(None) };
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(crate) enum StderrPolicy {
     ErrorOnly,
@@ -35,8 +45,21 @@ pub(crate) fn run(
     input: Option<&[u8]>,
     bound: Duration,
 ) -> Result<Vec<u8>> {
+    let _warning = crate::operation_time::Warning::start("local Git query");
+    run_observed(root, args, missing, input, bound)
+}
+
+// A multi-query read holds its own warning for the entire operation. Its
+// component queries keep the same process bounds without new warning attempts.
+pub(crate) fn run_observed(
+    root: &Path,
+    args: &[&str],
+    missing: bool,
+    input: Option<&[u8]>,
+    bound: Duration,
+) -> Result<Vec<u8>> {
     ensure!(
-        !bound.is_zero() && bound <= Duration::from_secs(30),
+        !bound.is_zero() && bound <= crate::source::MAX_BUDGET,
         "invalid local Git query deadline"
     );
     ensure!(
@@ -58,41 +81,97 @@ pub(crate) fn run(
             command.env_remove(name);
         }
     }
-    run_command(
+    run_command_bounded(
         command,
         args[0],
         missing,
         input,
         bound,
         StderrPolicy::ErrorOnly,
+        MAX_BYTES,
     )
 }
 
 /// Run an already isolated local query with the same output and time bounds.
 /// The caller owns its Git configuration and fixed argument vector.
 pub(crate) fn run_command(
-    mut command: std::process::Command,
+    command: std::process::Command,
     command_name: &str,
     missing: bool,
     input: Option<&[u8]>,
     bound: Duration,
     stderr_policy: StderrPolicy,
 ) -> Result<Vec<u8>> {
+    let _warning = crate::operation_time::Warning::start("local Git query");
+    run_command_bounded(
+        command,
+        command_name,
+        missing,
+        input,
+        bound,
+        stderr_policy,
+        MAX_BYTES,
+    )
+}
+
+/// Exact raw evidence blob under its reader's already observed operation.
+pub(super) fn evidence_blob_observed(
+    root: &Path,
+    oid: &str,
+    bound: Duration,
+    limit: usize,
+) -> Result<Vec<u8>> {
+    crate::task_sync::ledger::oid(oid)?;
     ensure!(
-        !bound.is_zero() && bound <= Duration::from_secs(30),
+        limit > 0 && limit <= crate::task_sync::evidence::limits::MAX_PACK_BYTES,
+        "invalid evidence Git blob bound"
+    );
+    let command = super::command(root, &["cat-file", "blob", oid]);
+    run_command_bounded(
+        command,
+        "cat-file",
+        false,
+        None,
+        bound,
+        StderrPolicy::RequireEmpty,
+        u64::try_from(limit)?,
+    )
+}
+
+fn run_command_bounded(
+    mut command: std::process::Command,
+    command_name: &str,
+    missing: bool,
+    input: Option<&[u8]>,
+    bound: Duration,
+    stderr_policy: StderrPolicy,
+    output_limit: u64,
+) -> Result<Vec<u8>> {
+    ensure!(
+        !bound.is_zero() && bound <= crate::source::MAX_BUDGET,
         "invalid local Git query deadline"
     );
     ensure!(
         input.is_none_or(|bytes| bytes.len() as u64 <= MAX_BYTES),
         "Git admission input exceeded byte bound"
     );
+    let start = Instant::now();
+    #[cfg(all(test, windows))]
+    let (start, pending_poll) = test_clock::begin(command_name, start);
     command.stdout(Stdio::piped());
-    if stderr_policy == StderrPolicy::RequireEmpty {
-        command.stderr(Stdio::piped());
-    }
+    // The hardened command starts with stderr disabled. Both policies need
+    // the bounded pipe: ErrorOnly preserves a failed command's diagnostic,
+    // while RequireEmpty also refuses diagnostics from successful commands.
+    command.stderr(Stdio::piped());
     if input.is_some() {
         command.stdin(Stdio::piped());
     }
+    #[cfg(test)]
+    BEFORE_QUERY.with(|hook| {
+        if let Some(hook) = hook.borrow().as_ref() {
+            hook(command_name);
+        }
+    });
     let mut child = command.spawn().context("start local Git admission query")?;
     let mut stderr_result = child.stderr.take().map(|stderr| {
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -123,26 +202,23 @@ pub(crate) fn run_command(
     std::thread::spawn(move || {
         let mut bytes = Vec::new();
         let result = stdout
-            .take(MAX_BYTES + 1)
+            .take(output_limit + 1)
             .read_to_end(&mut bytes)
             .map(|_| bytes);
         let _ = sender.send(result);
     });
-    let start = Instant::now();
-    let status = wait_for_exit(&mut child, start, bound)?;
-    let bytes = receiver.recv_timeout(
-        bound
-            .saturating_sub(start.elapsed())
-            .max(Duration::from_secs(1)),
-    )??;
+    let status = wait_for_exit(
+        &mut child,
+        start,
+        bound,
+        #[cfg(all(test, windows))]
+        pending_poll,
+    )?;
+    let bytes = receiver.recv_timeout(bound.saturating_sub(start.elapsed()))??;
     if let Some(receiver) = input_result {
-        receiver.recv_timeout(
-            bound
-                .saturating_sub(start.elapsed())
-                .max(Duration::from_secs(1)),
-        )??;
+        receiver.recv_timeout(bound.saturating_sub(start.elapsed()))??;
     }
-    if bytes.len() as u64 > MAX_BYTES {
+    if bytes.len() as u64 > output_limit {
         return Err(Failure::OutputLimit.into());
     }
     let strict_stderr = if stderr_policy == StderrPolicy::RequireEmpty {
@@ -172,7 +248,9 @@ pub(crate) fn run_command(
                 bytes.len() as u64 <= MAX_BYTES,
                 "Git admission error output exceeded byte bound"
             );
-            return Err(error.context(String::from_utf8_lossy(&bytes).trim().to_owned()));
+            if !bytes.is_empty() {
+                return Err(error.context(error_context(command_name, &bytes)));
+            }
         }
         return Err(error);
     }
@@ -202,6 +280,29 @@ fn stderr_failure(command: &str, bytes: &[u8]) -> Failure {
     }
 }
 
+// Worktree creation writes progress before its actual fatal diagnostic. Keep
+// bounded multiline context, including the tail, without replacing Nonzero's
+// typed cause or treating successful progress output as a failed admission.
+fn error_context(command: &str, bytes: &[u8]) -> String {
+    const LIMIT: usize = 4096;
+    const MARKER: &str = "\n[diagnostic truncated]\n";
+    let text = String::from_utf8_lossy(bytes);
+    let message = if text.len() <= LIMIT {
+        text.into_owned()
+    } else {
+        let mut head = 1024;
+        while !text.is_char_boundary(head) {
+            head -= 1;
+        }
+        let mut tail = text.len() - (LIMIT - head - MARKER.len());
+        while !text.is_char_boundary(tail) {
+            tail += 1;
+        }
+        format!("{}{}{}", &text[..head], MARKER, &text[tail..])
+    };
+    format!("local Git query {command} failed: {message}")
+}
+
 fn receive_stderr(
     receiver: &std::sync::mpsc::Receiver<std::io::Result<Vec<u8>>>,
     command: &str,
@@ -226,23 +327,41 @@ fn receive_stderr(
     Ok(bytes)
 }
 
-fn wait_for_exit(child: &mut Child, start: Instant, bound: Duration) -> Result<ExitStatus> {
+fn wait_for_exit(
+    child: &mut Child,
+    start: Instant,
+    bound: Duration,
+    #[cfg(all(test, windows))] mut pending_poll: bool,
+) -> Result<ExitStatus> {
+    let result = wait_until_exit(
+        || {
+            #[cfg(all(test, windows))]
+            if std::mem::take(&mut pending_poll) {
+                return Ok(None);
+            }
+            child.try_wait()
+        },
+        || bound.saturating_sub(start.elapsed()),
+        || std::thread::sleep(Duration::from_millis(10)),
+    );
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
+}
+
+pub(crate) fn wait_until_exit<T>(
+    mut poll: impl FnMut() -> std::io::Result<Option<T>>,
+    mut remaining: impl FnMut() -> Duration,
+    mut pause: impl FnMut(),
+) -> Result<T> {
     loop {
-        match child.try_wait() {
+        match poll() {
             Ok(Some(status)) => return Ok(status),
-            Ok(None) if start.elapsed() < bound => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(Failure::Deadline.into());
-            }
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error).context("local Git query failed");
-            }
+            Ok(None) if !remaining().is_zero() => pause(),
+            Ok(None) => return Err(Failure::Deadline.into()),
+            Err(error) => return Err(error).context("local Git query failed"),
         }
     }
 }
@@ -259,6 +378,11 @@ mod tests {
                 eprintln!("error: child path: Filename too long");
             } else if mode == "long" {
                 eprintln!("{}\nsecond line", "🙂".repeat(1024));
+            } else if mode == "failure" {
+                eprintln!("Preparing worktree (new branch 'engram-data')");
+                eprintln!("{}", "🙂".repeat(2048));
+                eprintln!("fatal: cannot create data worktree: diagnostic fixture");
+                std::process::exit(7);
             }
             return;
         }
@@ -296,6 +420,27 @@ mod tests {
         };
         assert_eq!(message.len(), 1024);
         assert!(!message.contains("second line"));
+        // Exercise the hardened constructor's disabled stderr, rather than
+        // relying on a caller that already happened to request a pipe.
+        let mut command = child("failure");
+        command.stderr(Stdio::null());
+        let error = run_command(
+            command,
+            "worktree",
+            false,
+            None,
+            Duration::from_secs(5),
+            StderrPolicy::ErrorOnly,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::Nonzero { code: Some(7), .. })
+        ));
+        assert!(format!("{error:#}").contains("diagnostic fixture"));
+        assert!(error.to_string().contains("Preparing worktree"));
+        assert!(error.to_string().contains("[diagnostic truncated]"));
+        assert!(error.to_string().len() <= 4096 + "local Git query worktree failed: ".len());
     }
 
     #[test]

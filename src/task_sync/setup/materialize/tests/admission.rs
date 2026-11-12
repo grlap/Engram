@@ -115,9 +115,9 @@ fn task_materialize_refuses_actual_filename_attribute_overrides_before_task_publ
         .keys()
         .find(|path| path.starts_with("tasks/"))
         .unwrap();
-    fs::create_dir_all(fixture.admin.join("info")).unwrap();
+    fs::create_dir_all(fixture.common.join("info")).unwrap();
     fs::write(
-        fixture.admin.join("info/attributes"),
+        fixture.common.join("info/attributes"),
         format!(".engram/{path} filter=unsafe-driver\n"),
     )
     .unwrap();
@@ -163,7 +163,7 @@ fn task_materialize_refuses_repository_and_selection_drift_without_new_state() {
 }
 
 #[test]
-fn task_materialize_reports_linked_worktree_omission_without_enrollment_or_edits() {
+fn task_materialize_leaves_other_worktrees_unchanged() {
     let fixture = Fixture::new(false, 1);
     let linked = fixture.owned.path().join("linked-worktree");
     git(
@@ -179,12 +179,12 @@ fn task_materialize_reports_linked_worktree_omission_without_enrollment_or_edits
     );
     let before = snapshot(&linked);
     let receipt = fixture.run();
-    assert_eq!(receipt.omitted_linked_worktrees, 1);
+    assert_eq!(receipt.omitted_linked_worktrees, 2);
     assert_eq!(snapshot(&linked), before);
     assert!(!linked.join(".engram").exists());
     assert!(
         !fixture
-            .admin
+            .common
             .join("worktrees/linked-worktree/info/sparse-checkout")
             .exists()
     );
@@ -193,7 +193,7 @@ fn task_materialize_reports_linked_worktree_omission_without_enrollment_or_edits
 
 #[test]
 fn task_materialize_refuses_an_ignored_actual_task_filename_before_publication() {
-    let fixture = Fixture::new(false, 1);
+    let fixture = Fixture::new(true, 1);
     let path = fixture
         .documents
         .keys()
@@ -209,9 +209,9 @@ fn task_materialize_refuses_an_ignored_actual_task_filename_before_publication()
             if point == "setup-linked-1" {
                 // A concurrent rule appended after the managed block takes precedence.
                 // info/exclude alone would lose to the root block's unignore rules.
-                let ignore = fixture.root.join(".gitignore");
+                let ignore = fixture.root.join(".engram/.gitignore");
                 let mut bytes = fs::read(&ignore)?;
-                bytes.extend_from_slice(format!("/.engram/{path}\n").as_bytes());
+                bytes.extend_from_slice(format!("/{path}\n").as_bytes());
                 fs::write(ignore, bytes)?;
             }
             Ok(())
@@ -222,7 +222,7 @@ fn task_materialize_refuses_an_ignored_actual_task_filename_before_publication()
         error.to_string().contains("shared task path is ignored"),
         "{error:#}"
     );
-    assert!(!fixture.root.join(".engram").exists());
+    assert!(!fixture.root.join(".engram/project.json").exists());
     assert_eq!(
         candidate::read(&Directory::open(&fixture.private().join("raw")).unwrap()).unwrap(),
         fixture.documents

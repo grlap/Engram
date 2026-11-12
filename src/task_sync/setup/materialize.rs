@@ -117,7 +117,7 @@ fn run_with_capacity(
         "selected setup project, marker or repository differs"
     );
     let root = Directory::open(&setup.basis.repository)?;
-    check_disk_names(&root, &setup.basis.project_file, capacity)?;
+    check_disk_names(&root, capacity)?;
     ensure!(
         root.identity()?.same_device(admin.identity()?),
         "materialization requires repository and Git administration on the same filesystem"
@@ -144,12 +144,35 @@ fn run_with_capacity(
         "retained raw candidate differs from admitted bytes"
     );
     candidate::disclose(&documents)?;
+    // Keep the admitted preparation byte-identical; only the public project
+    // document gains the folder exchange envelope required by Git readers.
+    let documents = candidate::publication_documents(&documents, &record.basis.assertions)?;
     journal::check_sources(&private, &record, &documents)?;
     let complete = journal::is_complete(&private, &root, record.operation)?;
-    for (index, edit) in record.basis.edits.iter().enumerate() {
-        replacement::apply(&root, &private, &record, index, edit, complete, checkpoint)?;
+    if record.existing_engram.is_some() {
+        let policy = root.child(Path::new(".engram"))?;
+        for (index, edit) in record.basis.edits.iter().enumerate() {
+            replacement::apply(
+                &policy, &private, &record, index, edit, complete, checkpoint,
+            )?;
+        }
+        super::attributes::materialized(&record.basis, &documents)?;
+    } else if root
+        .dir()
+        .symlink_metadata(".engram")
+        .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+    {
+        super::attributes::staged(
+            &record.basis,
+            &documents,
+            &record.basis.git_directory.join(format!(
+                "engram-task-sync-materialize-{}-{}/after/.gitattributes",
+                record.selection.setup_operation, record.selection.prepared_operation
+            )),
+        )?;
+    } else {
+        super::attributes::materialized(&record.basis, &documents)?;
     }
-    super::attributes::materialized(&record.basis, &documents)?;
     checkpoint("setup-checked")?;
     let equal_empty = publication::apply(
         &root,
@@ -161,6 +184,14 @@ fn run_with_capacity(
         checkpoint,
     )?;
     repository::recheck(&record.basis, &record.index)?;
+    let policy = root.child(Path::new(".engram"))?;
+    let after = private.child(Path::new("after"))?;
+    for edit in &record.basis.edits {
+        ensure!(
+            replacement::owned(&policy, Path::new(&edit.path), &after, &edit.after)?,
+            "published data policy lost its retained identity"
+        );
+    }
     super::attributes::materialized(&record.basis, &documents)?;
     checkpoint("public-checked")?;
     if !complete {
@@ -195,13 +226,9 @@ fn receipt(
     }
 }
 
-fn check_disk_names(root: &Directory, marker: &Path, capacity: DirectoryCapacity) -> Result<()> {
-    let marker = marker
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow::anyhow!("selected marker has no UTF-8 name"))?;
-    let selected = [".engram", ".gitignore", ".gitattributes", marker];
-    for name in root.names_with_room(capacity.root, &selected[..3])? {
+fn check_disk_names(root: &Directory, capacity: DirectoryCapacity) -> Result<()> {
+    let selected = [".engram"];
+    for name in root.names_with_room(capacity.root, &selected)? {
         if let Some(name) = name.to_str()
             && let Some(expected) = selected
                 .iter()
@@ -217,7 +244,10 @@ fn check_disk_names(root: &Directory, marker: &Path, capacity: DirectoryCapacity
         Ok(_) => {
             publication::check_reserved_names(&root.child(Path::new(".engram"))?, capacity.shared)?;
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ensure!(
+            capacity.shared >= 4,
+            "materialization directory has no room for declared publication within entry bound"
+        ),
         Err(error) => return Err(error.into()),
     }
     Ok(())

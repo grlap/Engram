@@ -11,6 +11,7 @@ use crate::{ClaimWorkRequest, ReleaseWorkRequest, SessionId};
 
 mod corrections;
 mod current_heads;
+mod selected;
 mod snapshots;
 
 #[test]
@@ -163,6 +164,7 @@ fn prepared_tree(
     };
     let object = CanonicalObject::mint(&event).unwrap();
     SqliteStore::insert_object(&store.connection, EVENT_KIND, &object).unwrap();
+    super::super::ledger::view::rebuild(&store.connection).unwrap();
     (binding_id, object.key().clone(), intent)
 }
 
@@ -240,6 +242,7 @@ fn assert_delivery(database: &std::path::Path, kind: &str) {
 }
 
 fn verify_fixture_write(connection: &Connection, event: &Event) {
+    super::super::ledger::view::rebuild(connection).unwrap();
     let binding: Binding =
         SqliteStore::get_typed_object_on(connection, &event.binding, BINDING_KIND)
             .unwrap()
@@ -1000,8 +1003,8 @@ fn reconciliation_retired_generation_has_no_seal_or_credit_and_reopens_unclaimed
     super::super::folder::record_complete_baseline_for_test(&mut store, &tree).unwrap();
     let planning_id: String = store.connection.query_row("SELECT object_id FROM work_feed_entries WHERE object_kind='task_sync_import_planning' ORDER BY position DESC LIMIT 1",[],|row|row.get(0)).unwrap();
     let receipt_id = ObjectId::mint();
-    // A canonical post-apply fixture, not a public API that treats missing
-    // claims as host settlement. The final writer belongs to core integration.
+    // A canonical historical post-apply fixture. Production successors wait
+    // for both the local claim and run to end; releasing a claim is insufficient.
     let tx = store.begin_work_mutation().unwrap();
     let mut item = query::load_work_item(&tx, work.work_id).unwrap();
     let mut run = query::load_work_run(&tx, original_run).unwrap();

@@ -69,7 +69,7 @@ pub(super) fn create(
             (item, restored, origin)
         } else {
             let constructed = super::super::super::construct_task(
-                &input.tree,
+                &input.tree.project,
                 task,
                 snapshot,
                 &input.intent.actor,
@@ -127,8 +127,17 @@ pub(super) fn create(
 
 fn common(input: &InspectedExchange, plan: &ImportPlan) -> Result<(), StoreError> {
     require(
+        plan.encoder == encoder()?,
+        "import plan encoder differs; reconcile without reminting",
+    )?;
+    recipe(input, plan)
+}
+
+// A completed historical recipe is read under its original encoder observation.
+// Replaying an uncommitted recipe still requires the current encoder above.
+fn recipe(input: &InspectedExchange, plan: &ImportPlan) -> Result<(), StoreError> {
+    require(
         plan.schema_version == 1
-            && plan.encoder == encoder()?
             && plan.binding == input.binding_id
             && plan.operation == input.intent.operation
             && plan.request_fingerprint == *CanonicalObject::freeze(&input.intent)?.key()
@@ -156,6 +165,41 @@ fn common(input: &InspectedExchange, plan: &ImportPlan) -> Result<(), StoreError
             == plan.receipt_fingerprint,
         "import plan cannot reproduce original receipt bytes",
     )
+}
+
+pub(super) fn historical(
+    connection: &rusqlite::Connection,
+    ledger: &Ledger,
+    input: &InspectedExchange,
+    plan: &ImportPlan,
+) -> Result<(), StoreError> {
+    recipe(input, plan)?;
+    require(
+        ledger.events.get(&plan.prepared)
+            == Some(&prepared_object(input, plan)?.decode::<Event>()?)
+            && ledger.events.get(&plan.receipt_id)
+                == Some(&receipt_object(input, plan)?.decode::<Event>()?),
+        "retained import plan differs from its canonical preparation or outcome",
+    )?;
+    // Current task state may have moved; these original immutable records cannot.
+    for task in &plan.tasks {
+        for (id, kind, expected) in [
+            (
+                &task.restored_id,
+                "work_restored_record",
+                &task.restored_fingerprint,
+            ),
+            (&task.origin_id, ORIGIN_KIND, &task.origin_fingerprint),
+        ] {
+            let object = SqliteStore::get_canonical_object_on(connection, id, kind)?
+                .ok_or_else(|| invalid("retained import plan canonical member missing"))?;
+            require(
+                ObjectId::from_canonical_bytes(object.bytes()) == *expected,
+                "retained import plan member differs from its canonical record",
+            )?;
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn new_admission(

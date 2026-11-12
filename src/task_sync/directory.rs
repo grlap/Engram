@@ -18,6 +18,10 @@ const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_TREE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_TASKS: usize = 100_000;
 
+mod envelope;
+mod evidence;
+pub(crate) use envelope::prepare_folder_documents;
+
 #[derive(Clone, Copy)]
 struct Limits {
     file_bytes: u64,
@@ -135,7 +139,42 @@ pub fn read_resolved_folder(path: &Path) -> Result<FolderExchange> {
 /// `verify_inventory` its embedded inventory fingerprint, without applying
 /// current note-disclosure admission.
 fn read_folder_stored(path: &Path, verify_inventory: bool) -> Result<FolderExchange> {
-    let mut documents = read_raw_documents_with_tasks(path, false)?;
+    folder_from_documents(
+        read_raw_documents_with_tasks(path, false)?,
+        verify_inventory,
+    )
+}
+
+/// Read resolved task text from an admitted data worktree, accepting its two
+/// ordinary policy files without treating them as task documents. Unknown
+/// entries still refuse. Private raw candidates retain their strict layout.
+///
+/// # Errors
+/// Refuses changed worktree selection, unsafe files or invalid task graphs.
+pub fn read_resolved_data_folder(
+    data: &super::data_worktree::DataWorktree,
+) -> Result<FolderExchange> {
+    data.revalidate()?;
+    let documents = read_documents_with_policy(
+        &data.checkout.join(".engram"),
+        LIMITS,
+        false,
+        true,
+        &mut |_, _| Ok(()),
+    )?;
+    let exchange = folder_from_documents(documents, false)?;
+    exchange
+        .tree
+        .validate_folder()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    data.revalidate()?;
+    Ok(exchange)
+}
+
+pub(crate) fn folder_from_documents(
+    mut documents: BTreeMap<String, Vec<u8>>,
+    verify_inventory: bool,
+) -> Result<FolderExchange> {
     let project = documents
         .remove("project.json")
         .ok_or_else(|| TaskSyncRefusal::InvalidGraph.invalid("project.json missing"))?;
@@ -255,6 +294,16 @@ fn read_documents_with(
     require_tasks: bool,
     checkpoint: &mut Checkpoint<'_>,
 ) -> Result<BTreeMap<String, Vec<u8>>> {
+    read_documents_with_policy(path, limits, require_tasks, false, checkpoint)
+}
+
+fn read_documents_with_policy(
+    path: &Path,
+    limits: Limits,
+    require_tasks: bool,
+    allow_policy: bool,
+    checkpoint: &mut Checkpoint<'_>,
+) -> Result<BTreeMap<String, Vec<u8>>> {
     regular_directory(path)?;
     let mut documents = BTreeMap::new();
     let mut total_bytes = 0;
@@ -294,6 +343,16 @@ fn read_documents_with(
                     limits,
                     checkpoint,
                 )?;
+            }
+        } else if allow_policy && name == "evidence" {
+            evidence::validate(&entry.path())?;
+        } else if allow_policy && (name == ".gitignore" || name == ".gitattributes") {
+            let bytes = read_file_with(&entry.path(), limits, checkpoint)?;
+            total_bytes += bytes.len();
+            if total_bytes > limits.tree_bytes {
+                return Err(TaskSyncRefusal::DestinationTreeLimit
+                    .invalid("task data and policy files exceed byte bound")
+                    .into());
             }
         } else {
             return Err(TaskSyncRefusal::DestinationUnknownEntry
@@ -441,31 +500,38 @@ pub fn write_folder(
     tree: &TaskTree,
     profile: &ExportProfile,
 ) -> Result<FolderExchange> {
-    profile.options().validate()?;
-    if tree.project.notes_included != profile.include_notes {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task folder profile and tree disclosure differ")
-            .into());
-    }
-    let mut documents = tree
+    write_folder_at(path, tree, profile, false)
+}
+
+/// Publish a folder only inside the admitted data checkout, preserving its
+/// ordinary policy files and evidence packs on an exact retry. Evidence carrier
+/// names and file types are checked without reading their payloads.
+/// No branch or index is changed.
+///
+/// # Errors
+/// Refuses worktree drift, unsafe files or an occupied divergent destination.
+pub fn write_data_folder(
+    data: &super::data_worktree::DataWorktree,
+    tree: &TaskTree,
+    profile: &ExportProfile,
+) -> Result<FolderExchange> {
+    let path = data.select_folder(&data.checkout.join(".engram"))?;
+    let written = write_folder_at(&path, tree, profile, true)?;
+    data.revalidate()?;
+    Ok(written)
+}
+
+fn write_folder_at(
+    path: &Path,
+    tree: &TaskTree,
+    profile: &ExportProfile,
+    allow_policy: bool,
+) -> Result<FolderExchange> {
+    let documents = tree
         .folder_documents()
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-    let export_basis = documents_fingerprint(&documents);
-    let envelope = FolderProjectDocument {
-        project: tree.project.clone(),
-        profile: profile.clone(),
-        folder_exchange: FolderExchangeDocument {
-            complete: true,
-            export_basis: FolderExportBasis {
-                inventory_fingerprint: export_basis.clone(),
-            },
-        },
-    };
-    documents.insert(
-        "project.json".into(),
-        pretty(&envelope).map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?,
-    );
-    write_folder_documents(path, &documents)?;
+    let (documents, export_basis) = prepare_folder_documents(&documents, profile)?;
+    write_folder_documents(path, &documents, allow_policy)?;
     Ok(FolderExchange {
         tree: tree.clone(),
         export_basis,
@@ -473,12 +539,22 @@ pub fn write_folder(
     })
 }
 
-fn write_folder_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+fn write_folder_documents(
+    path: &Path,
+    documents: &BTreeMap<String, Vec<u8>>,
+    allow_policy: bool,
+) -> Result<()> {
     admit_limits(documents)?;
     let absolute = std::path::absolute(path)?;
     let path = absolute.as_path();
     match fs::symlink_metadata(path) {
-        Ok(_) if read_raw_documents_with_tasks(path, false)? == *documents => return Ok(()),
+        Ok(_)
+            if read_documents_with_policy(path, LIMITS, false, allow_policy, &mut |_, _| {
+                Ok(())
+            })? == *documents =>
+        {
+            return Ok(());
+        }
         Ok(_) => return Err(occupied().into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),

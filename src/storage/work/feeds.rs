@@ -135,6 +135,7 @@ fn insert_reserved_feed_entry(
     object: &CanonicalObject,
     work_id: Option<WorkId>,
 ) -> Result<(), StoreError> {
+    super::task_sync::evidence::require_native(transaction, object.key())?;
     let (feed_kind, feed_id) = feed_parts(&position.feed);
     transaction.execute(
         "INSERT INTO work_feed_entries (
@@ -165,6 +166,11 @@ fn insert_reserved_feed_entry(
                 position.position,
                 object,
             )?;
+        }
+        if object_kind == super::task_sync::folder::IMPORT_PLANNING_KIND
+            || object_kind == crate::task_sync::reconciliation::SHARED_VERSION_KIND
+        {
+            super::task_sync::closure::documents::record_on(transaction, object_kind, object)?;
         }
     }
     Ok(())
@@ -204,8 +210,12 @@ pub(super) fn append_to_project_feed(
     object_kind: &str,
     object: &CanonicalObject,
 ) -> Result<FeedPosition, StoreError> {
+    super::task_sync::evidence::require_native(transaction, object.key())?;
     let position = reserve_feed_position(transaction, &FeedId::Project(project_id.clone()))?;
     insert_reserved_feed_entry(transaction, &position, object_kind, object, None)?;
+    if object_kind == crate::task_sync::origin::recovery::RECOVERY_KIND {
+        super::task_sync::ledger::recovery::projection::record(transaction, object.key())?;
+    }
     Ok(position)
 }
 
@@ -351,6 +361,7 @@ pub(super) fn verify_anchored_memory_feeds(
     let mut statement = connection.prepare(
         "SELECT object_id, object_kind, canonical_json FROM objects
          WHERE object_kind = 'memory_version'
+           AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
          ORDER BY object_id",
     )?;
     let rows = statement.query_map([], |row| {
@@ -762,6 +773,7 @@ pub(in crate::storage) fn source_observation_if_accounted_on(
     connection: &Connection,
     record: &ObjectId,
 ) -> Result<Option<SourceObservation>, StoreError> {
+    super::task_sync::evidence::require_native(connection, record)?;
     let (kind, bytes): (String, Vec<u8>) = connection
         .query_row(
             "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
@@ -993,11 +1005,26 @@ pub(in crate::storage) fn unadmitted_barrier_on(
             continue;
         }
         let follows = producer_position > position && evidence_position > position;
-        if !follows || completed_at < change.recorded_at {
+        if !unadmitted_check_follows(
+            (producer_position, evidence_position),
+            completed_at,
+            position,
+            &change,
+        ) {
             return Ok(Some((change, follows)));
         }
     }
     Ok(None)
+}
+
+/// The original position and recording-time floors of an accounted change.
+pub(crate) fn unadmitted_check_follows(
+    (producer, evidence): (i64, i64),
+    completed_at: DateTime<Utc>,
+    position: i64,
+    change: &SourceObservation,
+) -> bool {
+    producer > position && evidence > position && completed_at >= change.recorded_at
 }
 
 /// An unlocated source change after the name cannot be attributed safely to
@@ -1031,7 +1058,7 @@ pub(super) fn append_work_event(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
 ) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
-    append_work_event_on(transaction, event, None, None)
+    append_work_event_on(transaction, event, None, None, None)
 }
 
 pub(super) fn append_work_event_with_root(
@@ -1039,7 +1066,7 @@ pub(super) fn append_work_event_with_root(
     event: &WorkEventDraft,
     root: &super::root_state::WrittenRoot<'_>,
 ) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
-    append_work_event_on(transaction, event, Some(root), None)
+    append_work_event_on(transaction, event, Some(root), None, None)
 }
 
 /// Only the atomic-plan writer supplies this transaction-local relation basis.
@@ -1057,7 +1084,7 @@ pub(super) fn append_planned_prerequisite_event(
             "planned relation basis requires a prerequisite addition".into(),
         ));
     }
-    append_work_event_on(transaction, event, None, Some(basis))
+    append_work_event_on(transaction, event, None, Some(basis), None)
 }
 
 /// Only the ordinary prerequisite transition supplies this basis: the one it
@@ -1081,7 +1108,19 @@ pub(super) fn append_checked_relation_event(
             "a checked relation basis belongs to one item's prerequisite change".into(),
         ));
     }
-    append_work_event_on(transaction, event, None, Some(&basis))
+    append_work_event_on(transaction, event, None, Some(&basis), None)
+}
+
+/// A successor uses the native append owner with a local identity retained
+/// before execution. Its checked scope supplies the transaction and selected
+/// task; it supplies no permission to change the original run or seal.
+pub(super) fn append_successor_work_event(
+    checked: &super::task_sync::reconciliation::successor::CheckedPlanningSuccessor<'_, '_, '_>,
+    event: &WorkEventDraft,
+    id: &ObjectId,
+) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
+    checked.require_selected_event(event.work_id, id)?;
+    append_work_event_on(checked.transaction(), event, None, None, Some(id))
 }
 
 fn append_work_event_on(
@@ -1089,6 +1128,7 @@ fn append_work_event_on(
     event: &WorkEventDraft,
     written_root: Option<&super::root_state::WrittenRoot<'_>>,
     planned_relations: Option<&super::WorkRelationBasis>,
+    planned_identity: Option<&ObjectId>,
 ) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
     if event.actor.actor_id.trim().is_empty()
         || event
@@ -1124,7 +1164,10 @@ fn append_work_event_on(
     let event = event
         .clone()
         .finalize(work_relation_fingerprint(&relation_basis)?, root);
-    let object = CanonicalObject::mint(&event)?;
+    let object = match planned_identity {
+        Some(id) => CanonicalObject::identified(id, &event)?,
+        None => CanonicalObject::mint(&event)?,
+    };
     SqliteStore::insert_object(transaction, "work_event", &object)?;
     let positions = append_to_work_feeds(
         transaction,
@@ -1157,6 +1200,7 @@ pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
     hash: &ObjectId,
     object_kind: &str,
 ) -> Result<T, StoreError> {
+    super::task_sync::evidence::require_native(connection, hash)?;
     let stored: Option<(String, Vec<u8>)> = connection
         .query_row(
             "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",

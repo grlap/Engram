@@ -5,9 +5,19 @@ use serde::{Deserialize, Serialize};
 
 const BEGIN: &str = "# BEGIN ENGRAM TASK SYNC";
 const END: &str = "# END ENGRAM TASK SYNC";
-const IGNORE: &str = "!/.engram/\n/.engram/*\n!/.engram/project.json\n!/.engram/tasks/\n/.engram/tasks/*\n!/.engram/tasks/*.json\n";
-const ATTRIBUTES: &str =
-    "/.engram/** text eol=lf -filter diff merge -working-tree-encoding -ident\n";
+const IGNORE: &str =
+    "/*\n!/.gitignore\n!/.gitattributes\n!/project.json\n!/tasks/\n/tasks/*\n!/tasks/*.json\n";
+const ATTRIBUTES: &str = "* text eol=lf -filter diff merge -working-tree-encoding -ident\n";
+
+fn ignore() -> String {
+    let id = "[0-9a-f]".repeat(32);
+    let shard = "[0-9a-f]".repeat(2);
+    // Admit only the carrier's UUID directories and JSON leaves. The evidence
+    // reader still verifies shard agreement, ordinary modes and pack contents.
+    format!(
+        "{IGNORE}!/evidence/\n/evidence/*\n!/evidence/{id}/\n/evidence/*/*\n!/evidence/{id}/{shard}/\n/evidence/*/*/*\n!/evidence/{id}/{shard}/{id}.json\n"
+    )
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -40,14 +50,11 @@ pub(super) fn propose(path: &str, before: Option<Vec<u8>>) -> Result<Edit> {
         after.push(b'\n');
     }
     after.extend_from_slice(format!("{BEGIN}\n").as_bytes());
-    after.extend_from_slice(
-        if path == ".gitignore" {
-            IGNORE
-        } else {
-            ATTRIBUTES
-        }
-        .as_bytes(),
-    );
+    if path == ".gitignore" {
+        after.extend_from_slice(ignore().as_bytes());
+    } else {
+        after.extend_from_slice(ATTRIBUTES.as_bytes());
+    }
     after.extend_from_slice(format!("{END}\n").as_bytes());
     Ok(Edit {
         path: path.into(),

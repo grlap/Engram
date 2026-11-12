@@ -5,7 +5,8 @@
 ### MCP tools
 
 `engram mcp` registers the fifteen work tools below (fourteen words plus
-`search`) and the separate `task_sync_settings` configuration tool.
+`search`) and the separate `task_sync_settings` configuration tool — sixteen
+tools total.
 Its [settings contract](task-planning-text.md#project-opt-in-setting) uses
 `action: status|enable|disable`; project and attribution are connection-bound.
 
@@ -28,8 +29,12 @@ Its [settings contract](task-planning-text.md#project-opt-in-setting) uses
 | `forget` | Append an attributed terminal tombstone; never erase or reuse the key |
 | `task_sync_settings` | Read or explicitly enable/disable the connection-bound project's host-local task-sync opt-in setting |
 
-Task-text exchange remains an explicit CLI/shared-service operation, separate
-from that configuration tool. `task-sync setup-materialize MAIN` selects
+Task exchange uses explicit CLI/shared-service operations, separate from the
+MCP configuration tool. `engram task-sync step --request @FILE` selects one
+operation; `engram task-sync progress --binding ID` reads family capture and
+coverage without creating a store or advancing progress. See [exchange steps](git-task-sync.md#explicit-exchange-command-steps)
+for request variants, retries, bounded receipts and the dedicated data worktree.
+`task-sync setup-materialize MAIN` selects
 `--setup-operation`, `--prepared-operation`, `--progress-directory` and
 `--candidate-directory`; it publishes retained raw preparation bytes through
 owned local recovery, without opening SQLite, staging Git or sending a network
@@ -42,8 +47,8 @@ for admission, refusal, ownership, filesystem and recovery limits.
 
 `engram mcp --read-only`, with the same identity arguments, serves a host
 child that must not mutate the store. It lists the read words `next`, `ls`,
-`search`, `show` and `memories`, plus `task_sync_settings` with `action: status`,
-and admits only their reading forms:
+`search`, `show` and `memories`, plus `task_sync_settings` with `action: status`
+— six tools total — and admits only their reading forms:
 
 - `next` only with `peek` exactly `true`, which stages no delivery and
   records nothing;
@@ -74,7 +79,7 @@ lists all sixteen tools and marks none of them read-only,
 since `next` and `memories` have writing forms there. The text a read word
 returns may still suggest a writing command; in this mode such a call is
 refused. `initialize` gives a read-only connection its own instructions,
-naming the five read words, the separate configuration status read and their
+naming the five read words, configuration status and their
 admitted forms. The settings status read creates no files and opens no SQLite.
 The process still writes bounded [operational diagnostics](diagnostics.md)
 outside SQLite under the selected home's `diagnostics/` directory, including

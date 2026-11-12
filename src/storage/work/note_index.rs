@@ -65,6 +65,7 @@ const INSERT_NOTE: &str = "INSERT INTO work_note_fts
 pub(super) enum NativeNote<'a> {
     Evidence(&'a crate::WorkEvidence),
     Verification(&'a crate::VerificationEvidence),
+    Imported(&'a crate::task_sync::evidence::consumption::ImportedEvidenceConsumption),
     Observation(&'a crate::domain::WorkObservation),
     Restored(&'a crate::RestoredWorkEvidence),
     RemoteVerification(&'a crate::domain::RemoteVerificationAssociationRecord),
@@ -104,6 +105,15 @@ pub(super) fn append_native(
         NativeNote::Verification(note) => (
             note.binding.work_id,
             search_fields(&note.summary, &note.refs, None),
+            WorkRecordFamily::Notes,
+        ),
+        NativeNote::Imported(record) => (
+            record.request.binding.work_id,
+            search_fields(
+                &super::notes::imported_summary(&record.request.decision),
+                &[record.request.decision.to_string()],
+                None,
+            ),
             WorkRecordFamily::Notes,
         ),
         NativeNote::Observation(note) => (

@@ -12,17 +12,22 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     TaskTree,
-    ledger::{Binding, Event, ImportPlan, Intent, RetainedCandidate, RetainedCommit, Transition},
+    ledger::{Binding, Event, ImportPlan, Intent, RetainedCandidate, RetainedCommit},
     progress::{ExportCut, ExportProfile, PreparedCandidate, documents_fingerprint},
     setup::PrivateDirectory,
 };
 use crate::{ObjectId, ProjectId};
 
+pub mod audit;
+pub mod delta;
+pub mod evidence;
+pub mod successor;
+
 const ROOT: &str = "engram-task-sync-exchange";
 const COMMITS: &str = "engram-task-sync-commits";
 const IMPORTS: &str = "engram-task-sync-import-plans";
 const PUSHES: &str = "engram-task-sync-publication-attempts";
-const MAX_IMPORT_PLAN: usize = 2 * 1024 * 1024;
+pub(crate) const MAX_IMPORT_PLAN: usize = 2 * 1024 * 1024;
 const MAX_TASKS: usize = 100_000;
 const MAX_FILE: usize = 1024 * 1024;
 const MAX_TREE: usize = 128 * 1024 * 1024;
@@ -32,6 +37,9 @@ const MAX_TREE: usize = 128 * 1024 * 1024;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RetainedInventory {
     pub candidates: BTreeSet<uuid::Uuid>,
+    pub delta_candidates: BTreeMap<uuid::Uuid, delta::RetainedRequest>,
+    pub evidence_imports: BTreeMap<uuid::Uuid, crate::task_sync::ledger::EvidenceImportRecipe>,
+    pub planning_successors: BTreeMap<uuid::Uuid, successor::RetainedSuccessor>,
     pub commits: BTreeSet<uuid::Uuid>,
     pub imports: BTreeSet<uuid::Uuid>,
     pub pushes: BTreeSet<uuid::Uuid>,
@@ -49,7 +57,12 @@ pub fn inventory(git_directory: &Path) -> Result<RetainedInventory> {
         "Git admin path must be absolute"
     );
     let git = PrivateDirectory::open(git_directory)?;
-    let mut result = RetainedInventory::default();
+    let mut result = RetainedInventory {
+        delta_candidates: delta::inventory(&git, git_directory)?,
+        evidence_imports: evidence::inventory(&git)?,
+        planning_successors: successor::inventory(&git)?,
+        ..RetainedInventory::default()
+    };
     for (name, commits) in [(ROOT, false), (COMMITS, true)] {
         let root = match git.child(Path::new(name)) {
             Ok(root) => root,
@@ -136,6 +149,24 @@ pub fn inventory(git_directory: &Path) -> Result<RetainedInventory> {
         Err(error) if missing(&error) => (),
         Err(error) => return Err(error),
     }
+    ensure!(
+        result
+            .candidates
+            .iter()
+            .all(|operation| !result.delta_candidates.contains_key(operation)),
+        "operation has both legacy and delta retained candidates; preserve uncertainty"
+    );
+    ensure!(
+        result.planning_successors.keys().all(|operation| {
+            !result.candidates.contains(operation)
+                && !result.delta_candidates.contains_key(operation)
+                && !result.evidence_imports.contains_key(operation)
+                && !result.commits.contains(operation)
+                && !result.imports.contains(operation)
+                && !result.pushes.contains(operation)
+        }),
+        "planning successor aliases another retained family; preserve uncertainty"
+    );
     Ok(result)
 }
 
@@ -165,7 +196,7 @@ pub(crate) fn read_publication_witness(
                     && witness.event.schema_version == 1
                     && witness.event.sequence > 1
                     && witness.event.predecessor.is_some()
-                    && matches!(witness.event.transition, Transition::PushStarted { .. })
+                    && witness.event.transition.publication_request().is_some()
                     && crate::canonical::canonical_bytes(&witness)? == bytes,
                 "invalid or partial publication witness; preserve uncertainty"
             );
@@ -180,13 +211,14 @@ pub(crate) fn retain_publication_witness(
     git_directory: &Path,
     witness: &PublicationWitness,
 ) -> Result<()> {
-    let git = PrivateDirectory::open(git_directory)?;
-    let root = container(&git, Path::new(PUSHES))?;
     let bytes = crate::canonical::canonical_bytes(witness)?;
     ensure!(
         bytes.len() <= MAX_FILE,
         "publication witness exceeds byte bound"
     );
+    let _reservation = audit::AuditReservation::acquire(git_directory)?;
+    let git = PrivateDirectory::open(git_directory)?;
+    let root = container(&git, Path::new(PUSHES))?;
     write_new(
         &root,
         Path::new(&format!("{}.json", witness.operation)),
@@ -232,6 +264,7 @@ pub(crate) fn publish_import_plan(git_directory: &Path, plan: &ImportPlan) -> Re
         bytes.len() <= MAX_IMPORT_PLAN,
         "import plan exceeds supported byte bound"
     );
+    let _reservation = audit::AuditReservation::acquire(git_directory)?;
     let git = PrivateDirectory::open(git_directory)?;
     let root = container(&git, Path::new(IMPORTS))?;
     let name = plan.operation.to_string();
@@ -342,6 +375,7 @@ pub fn retain_prepared(
     };
     let bytes = crate::canonical::canonical_bytes(&manifest)?;
     ensure!(bytes.len() <= MAX_FILE, "candidate metadata exceeds bound");
+    let _reservation = audit::AuditReservation::acquire(git_directory)?;
     let git = PrivateDirectory::open(git_directory)?;
     let root = container(&git, Path::new(ROOT))?;
     let name = exchange.to_string();
@@ -475,7 +509,7 @@ fn fingerprint(documents: &BTreeMap<String, Vec<u8>>) -> Result<ObjectId> {
 // A write-ahead selection survives a missing ref and database rewind. Its
 // presence never asserts that update-ref completed. No recovery path overwrites
 // it or recreates its ref merely because the current ref is absent.
-pub(in crate::task_sync) fn commit_selection(
+pub(crate) fn commit_selection(
     git_directory: &Path,
     operation: uuid::Uuid,
 ) -> Result<Option<RetainedCommit>> {
@@ -499,8 +533,10 @@ pub(in crate::task_sync) fn reserve_commit(
     git_directory: &Path,
     operation: uuid::Uuid,
     retained: &RetainedCommit,
+    reservation: &audit::AuditReservation,
 ) -> Result<()> {
     retained.validate()?;
+    reservation.require_root(git_directory)?;
     let git = PrivateDirectory::open(git_directory)?;
     let root = container(&git, Path::new(COMMITS))?;
     let bytes = crate::canonical::canonical_bytes(retained)?;
@@ -517,7 +553,10 @@ fn missing(error: &anyhow::Error) -> bool {
         .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
 }
 
-fn container(parent: &PrivateDirectory, name: &Path) -> Result<PrivateDirectory> {
+pub(in crate::task_sync) fn container(
+    parent: &PrivateDirectory,
+    name: &Path,
+) -> Result<PrivateDirectory> {
     match parent.child(name) {
         Ok(directory) => Ok(directory),
         Err(error) if missing(&error) => parent.create_child(name),
@@ -525,7 +564,11 @@ fn container(parent: &PrivateDirectory, name: &Path) -> Result<PrivateDirectory>
     }
 }
 
-fn write_new(directory: &PrivateDirectory, name: &Path, bytes: &[u8]) -> Result<()> {
+pub(in crate::task_sync) fn write_new(
+    directory: &PrivateDirectory,
+    name: &Path,
+    bytes: &[u8],
+) -> Result<()> {
     let mut file = directory.open_file(name, true, true)?;
     file.write_all(bytes)?;
     file.sync_all()?;

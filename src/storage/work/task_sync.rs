@@ -18,14 +18,17 @@ use crate::{
 
 mod activity;
 pub(in crate::storage::work) mod baseline;
-mod capture;
+pub(in crate::storage::work) mod capture;
+pub(in crate::storage::work) mod closure;
+pub(crate) mod evidence;
 pub(crate) mod folder;
 mod folder_admission;
 mod folder_dry_run;
 mod incremental;
-mod ledger;
+pub(crate) mod ledger;
 mod notes;
 mod origin;
+pub(crate) mod producing_origin;
 pub(in crate::storage) mod reconciliation;
 pub(in crate::storage) use ledger::verify_exchange;
 pub(crate) use origin::OriginScopeGuard;
@@ -418,7 +421,7 @@ fn import_task_tree_on_with_scope(
                 .get(&task.id.0)
                 .ok_or_else(|| invalid("import plan task is missing"))?;
             let constructed = construct_task(
-                tree,
+                &tree.project,
                 task,
                 snapshot,
                 actor,
@@ -448,7 +451,7 @@ fn import_task_tree_on_with_scope(
             }
             insert_constructed_task(transaction, task, &constructed, Some(now))?;
         } else {
-            insert_task(transaction, tree, task, snapshot, actor, now)?;
+            insert_task(transaction, &tree.project, task, snapshot, actor, now)?;
         }
     }
     if transaction
@@ -617,14 +620,14 @@ fn export_on_snapshot(
 
 fn insert_task(
     connection: &Connection,
-    tree: &TaskTree,
+    project: &ProjectDocument,
     task: &TaskDocument,
     snapshot: crate::WorkGraphSnapshotItem,
     actor: &ActorContext,
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
     let constructed = construct_task(
-        tree,
+        project,
         task,
         snapshot,
         actor,
@@ -642,9 +645,15 @@ struct ConstructedTask {
     origin_object: CanonicalObject,
 }
 
+fn import_actor(actor: &ActorContext) -> ActorContext {
+    let mut actor = actor.clone();
+    actor.source_tool = Some(IMPORT_TOOL.into());
+    actor
+}
+
 #[allow(clippy::too_many_arguments)]
 fn construct_task(
-    tree: &TaskTree,
+    project: &ProjectDocument,
     task: &TaskDocument,
     snapshot: crate::WorkGraphSnapshotItem,
     actor: &ActorContext,
@@ -652,12 +661,11 @@ fn construct_task(
     record_id: &ObjectId,
     origin_id: &ObjectId,
 ) -> Result<ConstructedTask, StoreError> {
-    let mut actor = actor.clone();
-    actor.source_tool = Some(IMPORT_TOOL.into());
+    let actor = import_actor(actor);
     let actor = &actor;
     let record = RestoredRecord {
         schema_version: crate::WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION,
-        project_id: tree.project.project_id.clone(),
+        project_id: project.project_id.clone(),
         work_id: task.id,
         generation_index: 0,
         item: snapshot.clone(),
@@ -669,17 +677,17 @@ fn construct_task(
     };
     let object = CanonicalObject::identified(record_id, &record)?;
     let origin = ImportOrigin {
-        project_id: tree.project.project_id.clone(),
+        project_id: project.project_id.clone(),
         record_id: object.key().clone(),
         task: task.clone(),
         actor: actor.clone(),
         imported_at: now,
-        notes_included: tree.project.notes_included,
+        notes_included: project.notes_included,
     };
     let origin_object = CanonicalObject::identified(origin_id, &origin)?;
     let item = WorkItem {
         schema_version: crate::schema::SCHEMA_VERSION,
-        project_id: tree.project.project_id.clone(),
+        project_id: project.project_id.clone(),
         work_id: task.id,
         external_ref: snapshot.external_ref,
         short_ref: snapshot.short_ref,
@@ -739,6 +747,7 @@ fn insert_constructed_task(
             SqliteStore::insert_object(connection, kind, object)?;
         }
     }
+    closure::documents::record_on(connection, ORIGIN_KIND, origin_object)?;
     connection.execute("INSERT INTO work_restored_records (work_id, generation_index, record_id) VALUES (?1, 0, ?2)",
         params![task.id.0.to_string(), object.key().as_str()])?;
     connection.execute(

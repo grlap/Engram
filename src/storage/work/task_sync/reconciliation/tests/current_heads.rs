@@ -1,7 +1,7 @@
 use super::*;
 
-/// A storage-only atomic writer fixture. Actual host settlement remains a
-/// prerequisite of the later production apply owner, never inferred here.
+/// A storage-only historical writer fixture. Production successors recheck
+/// local execution and the held basis in their own atomic transaction.
 fn append_version(
     store: &mut SqliteStore,
     home: &std::path::Path,
@@ -134,6 +134,124 @@ fn append_version(
     let report = store.verify_all().unwrap();
     assert!(report.is_healthy(), "{report:?}");
     version_id
+}
+
+#[test]
+fn historical_lookup_returns_original_reconciled_outcome_without_task_payloads() {
+    use crate::task_sync::ledger::CompletedExchangeRequest;
+    let home = crate::test_support::temp_home().unwrap();
+    let mut store = SqliteStore::open(home.path().join("work.db")).unwrap();
+    let tree = candidate();
+    let project = tree.project.project_id.clone();
+    let profile = crate::task_sync::progress::ExportProfile {
+        include_notes: false,
+        origin_machine: None,
+    };
+    let empty = store.export_task_sync_folder(&project, &profile).unwrap();
+    store
+        .apply_task_sync_folder(
+            crate::storage::TaskSyncFolderApply {
+                project: &project,
+                actor: &actor("importer"),
+                tree: &tree,
+                export_basis: &empty.export_basis,
+                profile: &profile,
+                complete: true,
+                now: at(3),
+            },
+            "historical-reconciled-enrollment",
+        )
+        .unwrap();
+    let work = tree
+        .tasks
+        .iter()
+        .find(|task| task.parent_id.is_none() && task.lifecycle == crate::WorkLifecycle::Open)
+        .unwrap()
+        .id;
+    let version_id = append_version(
+        &mut store,
+        home.path(),
+        work,
+        "reconciled historical version",
+    );
+    let version: SharedImportVersion =
+        SqliteStore::get_typed_object_on(&store.connection, &version_id, SHARED_VERSION_KIND)
+            .unwrap()
+            .unwrap();
+    let event: Event =
+        SqliteStore::get_typed_object_on(&store.connection, &version.receipt, EVENT_KIND)
+            .unwrap()
+            .unwrap();
+    assert!(matches!(
+        event.transition,
+        Transition::ReconciledImportApplied { .. }
+    ));
+    let prepared: Event =
+        SqliteStore::get_typed_object_on(&store.connection, &version.prepared, EVENT_KIND)
+            .unwrap()
+            .unwrap();
+    let Transition::Prepared { intent } = prepared.transition else {
+        panic!("fixture requires an intent");
+    };
+    let request = CompletedExchangeRequest {
+        binding: version.binding,
+        intent: *intent,
+    };
+    let mut read_budget = super::super::super::ledger::view::read::ReadBudget::default();
+    let binding = super::super::super::ledger::view::read::binding_on(
+        &store.connection,
+        &request.binding,
+        &mut read_budget,
+    )
+    .unwrap();
+    let tail = super::super::super::ledger::view::read::tail_on(
+        &store.connection,
+        &request.binding,
+        &binding,
+        &mut read_budget,
+    )
+    .unwrap();
+    assert_eq!(tail.id, version.receipt);
+    assert_eq!(tail.event, event);
+    assert_eq!(
+        tail.operation.unwrap().intent.legacy(),
+        Some(&request.intent)
+    );
+    let original = store
+        .completed_task_sync_exchange(&request)
+        .unwrap()
+        .unwrap();
+    assert_eq!(original.prepared, version.prepared);
+    assert_eq!(original.outcome, version.receipt);
+    assert_eq!(original.event, event);
+    // The completed canonical outcome has enough historical information for
+    // this read. Repair and doctor still validate its full provenance.
+    let tx = store.begin_work_mutation().unwrap();
+    let findings = crate::storage::work::schema::repair_rebuildable_schema_on(&tx).unwrap();
+    assert_eq!(findings, [] as [String; 0]);
+    tx.commit().unwrap();
+    assert_eq!(
+        store.completed_task_sync_exchange(&request).unwrap(),
+        Some(original.clone())
+    );
+    append_version(&mut store, home.path(), work, "later reconciled version");
+    store
+        .connection
+        .execute(
+            "UPDATE objects SET canonical_json=x'00' WHERE object_kind IN (?1,?2)",
+            params![ORIGIN_KIND, SHARED_VERSION_KIND],
+        )
+        .unwrap();
+    store
+        .connection
+        .execute("UPDATE work_items SET item_json=x'00'", [])
+        .unwrap();
+    let before = state(&store);
+    assert_eq!(
+        store.completed_task_sync_exchange(&request).unwrap(),
+        Some(original)
+    );
+    assert_eq!(state(&store), before);
 }
 
 #[test]

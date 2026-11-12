@@ -154,6 +154,7 @@ test("source refuses invalid invocation and unavailable roots without requiring 
   for (const args of [[], ["--root", ".", "--json"], ["--root", fixture.root],
     ["--root", fixture.root, "--json", "--timeout-ms", "18446744073709551615"],
     ["--root", fixture.root, "--json", "--timeout-ms", "0"],
+    ["--root", fixture.root, "--json", "--timeout-ms", "60001"],
     ["--root", fixture.root, "--json", "--unknown"]]) assert.equal(run(args).status, 2);
   for (const root of [parent, join(parent, "missing"), join(fixture.root, "ignored")]) {
     const result = run(["--root", root, "--json"]);
@@ -177,14 +178,13 @@ test("source does not execute Git from the inspected tree", (t) => {
   assert.equal(JSON.parse(result.stdout).status, "not_clean");
 });
 
-test("source shorter deadline refuses instead of emitting clean input", (t) => {
-  const fixture = createSourceFixture(fixtureHome("source-deadline-", t), "clean");
-  const result = run(["--root", fixture.root, "--json", "--timeout-ms", "1"]);
-  assert.equal(result.status, 1, result.stdout || result.stderr);
-  const observation = JSON.parse(result.stdout);
-  assert.equal(observation.status, "unavailable");
-  assert.equal(observation.source, null);
-  assert.equal(observation.refusal.code, "deadline");
+test("source raises a shorter public budget to sixty seconds instead of refusing on it", (t) => {
+  const fixture = createSourceFixture(fixtureHome("source-budget-", t), "clean");
+  for (const budget of ["1", "60000"]) {
+    const result = run(["--root", fixture.root, "--json", "--timeout-ms", budget]);
+    assert.equal(result.status, 0, result.stdout || result.stderr);
+    assert.equal(JSON.parse(result.stdout).status, "clean");
+  }
 });
 
 test("source refuses non-UTF-8 changed paths without loss", {

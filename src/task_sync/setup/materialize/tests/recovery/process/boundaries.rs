@@ -6,7 +6,7 @@ use super::*;
 fn task_materialize_process_recovers_initially_absent_setup_links() {
     for index in 0..2 {
         for step in ["before-setup-link", "setup-linked"] {
-            let fixture = Fixture::with_setup(false, &tree(1), false);
+            let fixture = Fixture::with_setup(true, &tree(1), false);
             let boundary = format!("{step}-{index}");
             assert_eq!(
                 child(&fixture, Some(&boundary), true).status.code(),
@@ -36,7 +36,7 @@ fn task_materialize_process_preserves_unadmitted_partial_replacement_plans() {
         ] {
             let fixture = Fixture::new(false, 1);
             let setup = [".gitignore", ".gitattributes"]
-                .map(|name| fs::read(fixture.root.join(name)).unwrap());
+                .map(|name| fs::read(fixture.code.join(name)).unwrap());
             let boundary = format!("{step}-{index}");
             assert_eq!(
                 child(&fixture, Some(&boundary), true).status.code(),
@@ -45,7 +45,7 @@ fn task_materialize_process_preserves_unadmitted_partial_replacement_plans() {
             assert!(!fixture.private().join("journal.json").exists());
             assert!(!fixture.root.join(".engram").exists());
             for (position, name) in [".gitignore", ".gitattributes"].iter().enumerate() {
-                assert_eq!(fs::read(fixture.root.join(name)).unwrap(), setup[position]);
+                assert_eq!(fs::read(fixture.code.join(name)).unwrap(), setup[position]);
             }
             let preserved = snapshot(&fixture.private());
             fixture.disable();
@@ -71,7 +71,7 @@ fn task_materialize_process_preserves_relocates_and_freshly_admits_unowned_attem
     for existing_private in [false, true] {
         for boundary in ["private-created", "replace-created-0", "replace-created-1"] {
             let fixture = Fixture::new(existing_private, 1);
-            let ordinary_code = fs::read(fixture.root.join("code.txt")).unwrap();
+            let ordinary_code = fs::read(fixture.code.join("code.txt")).unwrap();
             let retained_private = existing_private
                 .then(|| fs::read(fixture.root.join(".engram/private.db")).unwrap());
             let source_store = fs::read(&fixture.store).unwrap();
@@ -124,7 +124,7 @@ fn task_materialize_process_preserves_relocates_and_freshly_admits_unowned_attem
             assert_eq!(fresh["receipt"]["recovered"], false, "{fresh}");
             fixture.assert_output();
             assert_eq!(
-                fs::read(fixture.root.join("code.txt")).unwrap(),
+                fs::read(fixture.code.join("code.txt")).unwrap(),
                 ordinary_code
             );
             assert_eq!(fs::read(&fixture.store).unwrap(), source_store);
@@ -149,46 +149,6 @@ fn task_materialize_process_preserves_relocates_and_freshly_admits_unowned_attem
 }
 
 #[test]
-fn task_materialize_process_preserves_compensation_across_restart() {
-    for boundary in ["before-restore-0", "restore-checked-0"] {
-        let fixture = Fixture::new(false, 1);
-        assert_eq!(
-            child_with_race(&fixture, Some(boundary), true, true)
-                .status
-                .code(),
-            Some(77)
-        );
-        let retained = fixture.private().join("replace-0/displaced");
-        assert_eq!(fs::read(&retained).unwrap(), b"concurrent ordinary edit\n");
-        fixture.disable();
-        assert!(child(&fixture, None, false).status.success());
-        let response: serde_json::Value = serde_json::from_slice(
-            &fs::read(fixture.owned.path().join("process-finish-response.json")).unwrap(),
-        )
-        .unwrap();
-        assert!(
-            response["error"]
-                .as_str()
-                .unwrap()
-                .contains("restore_incomplete=false"),
-            "{boundary}: {response}"
-        );
-        assert_eq!(fs::read(&retained).unwrap(), b"concurrent ordinary edit\n");
-        assert_eq!(
-            fs::read(fixture.root.join(".gitignore")).unwrap(),
-            b"concurrent ordinary edit\n"
-        );
-        assert_eq!(
-            file_identity(&fs::File::open(&retained).unwrap()).unwrap(),
-            file_identity(&fs::File::open(fixture.root.join(".gitignore")).unwrap()).unwrap()
-        );
-        let before = snapshot(&fixture.private());
-        assert!(child(&fixture, None, false).status.success());
-        assert_eq!(snapshot(&fixture.private()), before);
-    }
-}
-
-#[test]
 fn task_materialize_process_preserves_unadmitted_partial_journal() {
     for boundary in [
         "journal-pending-created",
@@ -196,7 +156,7 @@ fn task_materialize_process_preserves_unadmitted_partial_journal() {
         "journal-pending-synced",
     ] {
         let fixture = Fixture::new(false, 1);
-        let public = snapshot(&fixture.root);
+        let public = snapshot(&fixture.code);
         assert_eq!(
             child(&fixture, Some(boundary), true).status.code(),
             Some(77)
@@ -204,7 +164,7 @@ fn task_materialize_process_preserves_unadmitted_partial_journal() {
         assert!(!fixture.private().join("journal.json").exists());
         for name in [".gitignore", ".gitattributes"] {
             assert_eq!(
-                fs::read(fixture.root.join(name)).unwrap(),
+                fs::read(fixture.code.join(name)).unwrap(),
                 public[Path::new(name)].clone().unwrap()
             );
         }

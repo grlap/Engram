@@ -40,11 +40,14 @@ use crate::domain::{
 use crate::memory::Redactor;
 use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};
 use crate::storage::{DecidingObservation, StaleRecoveryContext};
-
 /// Canonical object kind and run-feed entry kind of one evaluation.
 pub(crate) const KIND: &str = "acceptance_evaluation";
 const OPERATION: &str = "record_acceptance_evaluation";
 const MAX_ATTEMPT_KEY_BYTES: usize = 256;
+
+mod historical;
+pub(crate) mod movement;
+pub(crate) use historical::{historical_evaluation_fault, historical_evaluation_mark_author};
 
 /// Feed entry kinds that describe host-observed workspace or check changes;
 /// later notes, gates, observations, and evaluations never appear here.
@@ -258,6 +261,28 @@ impl SqliteStore {
         } else {
             LiveCurrency::default()
         };
+        let imported_citations: Vec<ObjectId> = request
+            .verdicts
+            .iter()
+            .filter(|verdict| verdict.verdict == AcceptanceVerdict::Pass)
+            .flat_map(|verdict| verdict.evidence.iter().cloned())
+            .collect();
+        let imported_uses = if let Some(run) = before_run.filter(|_| has_pass) {
+            let attempt = attempt_identity(request, run)?;
+            if self.replay_acceptance_evaluation(&attempt)?.is_some() {
+                None
+            } else {
+                super::task_sync::evidence::consumption::measure_selected_on(
+                    &self.connection,
+                    request.work_id,
+                    run,
+                    &imported_citations,
+                    false,
+                )?
+            }
+        } else {
+            None
+        };
         let transaction = self.begin_work_mutation()?;
         if let Some((session_id, now)) = register {
             super::session::register_process_default_work_session_on(
@@ -312,6 +337,43 @@ impl SqliteStore {
             .ok_or_else(|| refused(item.work_id, "the item has no active run to evaluate"))?;
         let run = load_work_run(&transaction, run_id)?;
         let claim = load_work_claim_optional(&transaction, run_id)?;
+        if let Some(uses) = super::task_sync::evidence::consumption::reselect_on(
+            &transaction,
+            item.work_id,
+            run_id,
+            &imported_citations,
+            false,
+            imported_uses.as_ref(),
+        )? {
+            let claim = claim.as_ref().ok_or_else(|| {
+                refused(item.work_id, "imported citations require the current claim")
+            })?;
+            let binding = crate::domain::ControlWorkBinding {
+                root_execution_id: run.root_execution_id,
+                work_id: item.work_id,
+                run_id,
+                work_revision: item.revision,
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+            };
+            let declared = request
+                .source_basis
+                .as_ref()
+                .and_then(crate::domain::AcceptanceSourceBasis::source_id)
+                .ok_or_else(|| {
+                    refused(
+                        item.work_id,
+                        "imported citations require a complete source declaration",
+                    )
+                })?;
+            uses.validate_on(
+                &transaction,
+                &binding,
+                &imported_citations,
+                Some(declared),
+                request.recorded_at,
+            )?;
+        }
         let policy = SqliteStore::load_acceptance_evaluation_policy_on(&transaction)?;
         admit_mode(&item, &policy, request.mode)?;
         let holder = claim.as_ref().map(|claim| claim.holder.clone());
@@ -995,6 +1057,7 @@ pub(crate) fn validate_completion_seal_acceptance_evaluation_on(
     seal: &CompletionSeal,
 ) -> Result<Option<AcceptanceEvaluation>, StoreError> {
     let Some(hash) = &seal.acceptance_evaluation else {
+        super::completion::validate_imported_acceptance_on(connection, seal)?;
         return Ok(None);
     };
     let invalid = |reason: &str| {
@@ -1720,11 +1783,8 @@ fn basis_moved_after_live(
     // checks that link them.
     let exempt =
         same_turn::ExemptChecks::after(connection, run_id, position, declared, root, live_commit)?;
-    let mut seen = std::collections::BTreeSet::new();
-    let mut check = false;
-    // The newest sighting at another revision than the judged one, while no
-    // later sighting or declared change has put the source back.
-    let mut quiet_move: Option<DecidingObservation> = None;
+    let mut state =
+        movement::BasisMoveState::new(declared, judged, git_input, witnessed_after, live_commit);
     for (at, kind, stored) in rows {
         if !MUTATION_KINDS.contains(&kind.as_str()) {
             continue;
@@ -1736,8 +1796,6 @@ fn basis_moved_after_live(
         }
         match kind.as_str() {
             "execution_observation" | super::UNADMITTED_OBSERVATION_KIND => {
-                // An unadmitted record that was not accounted describes no
-                // source the run is held to.
                 let Some(observation) = source_observation_if_accounted_on(connection, &hash)?
                 else {
                     continue;
@@ -1745,66 +1803,24 @@ fn basis_moved_after_live(
                 if off_named_root(root, &observation) {
                     continue;
                 }
-                if live_commit {
-                    seen.insert(hash);
-                    continue;
-                }
-                if !observation.source_changed {
-                    if witnessed_after.is_some_and(|checked_at| {
-                        source::quiet_git_input_conflicts(
-                            declared.map(|basis| &basis.identity),
-                            checked_at,
-                            &observation,
-                        )
-                    }) {
-                        return Ok(Some(BasisMoveFinding {
-                            moved: EvaluationBasisMove::SourceChanged,
-                            observation: Some(name(at, &observation)),
-                        }));
-                    }
-                    // A quiet content sighting does not replace a judged
-                    // Git input. Actual changes still cross the cut below.
-                    if git_input {
-                        continue;
-                    }
-                    // The newest sighting decides where the source is.
-                    if let (Some(judged_at), Some(sighting)) =
-                        (judged, observation.source_basis.as_ref())
-                    {
-                        quiet_move = (!sighting.identity.same_source(judged_at))
-                            .then(|| name(at, &observation));
-                    }
-                    continue;
-                }
-                // An unadmitted change is a barrier the evaluation's checks
-                // did not follow, whatever revision it reports: it may describe
-                // the source from before them.
-                if git_input || !observation.admitted || !judged_revision(declared, &observation) {
+                if let Some(observation) = state.observe(at, observation) {
                     return Ok(Some(BasisMoveFinding {
                         moved: EvaluationBasisMove::SourceChanged,
-                        observation: Some(name(at, &observation)),
+                        observation: Some(name(observation.0, &observation.1)),
                     }));
                 }
-                // The reported change left the source at the declared
-                // revision, so any sighting of another revision before it
-                // is older than that change.
-                quiet_move = None;
-                seen.insert(hash);
             }
             "work_obligation" => {
                 let obligation: WorkObligation =
                     load_typed_work_object(connection, &hash, "work_obligation")?;
-                if !seen.contains(&obligation.triggering_observation) {
-                    check = true;
-                }
+                state.obligation(&obligation.triggering_observation);
             }
             "work_obligation_resolution" if live_commit => {
-                // A source report's accounting is history in this lane.
-                // Resolutions of other obligations still move the basis.
                 let resolution: crate::domain::WorkObligationResolutionEvent =
                     load_typed_work_object(connection, &hash, "work_obligation_resolution")?;
                 let obligation: WorkObligation =
                     load_typed_work_object(connection, &resolution.definition, "work_obligation")?;
+                // Keep the native short circuit and load order.
                 if !crate::control::is_source_change_obligation(&obligation.rule)
                     || source_observation_if_accounted_on(
                         connection,
@@ -1812,21 +1828,21 @@ fn basis_moved_after_live(
                     )?
                     .is_none()
                 {
-                    check = true;
+                    state.check();
                 }
             }
-            _ => check = true,
+            _ => state.check(),
         }
     }
-    if let Some(observation) = quiet_move {
-        return Ok(Some(BasisMoveFinding {
+    Ok(state.finish().map(|finding| match finding {
+        movement::BasisMove::Source(at, observation) => BasisMoveFinding {
             moved: EvaluationBasisMove::SourceChanged,
-            observation: Some(observation),
-        }));
-    }
-    Ok(check.then_some(BasisMoveFinding {
-        moved: EvaluationBasisMove::CheckRecorded,
-        observation: None,
+            observation: Some(name(at, &observation)),
+        },
+        movement::BasisMove::Check => BasisMoveFinding {
+            moved: EvaluationBasisMove::CheckRecorded,
+            observation: None,
+        },
     }))
 }
 
@@ -2447,7 +2463,7 @@ use eligibility::{
     SessionStanding, admit_identity, admit_mode, assess_mode_policy, run_holder_history,
     same_session_ineligibility,
 };
-mod source;
+pub(crate) mod source;
 use crate::domain::{
     AcceptanceEvaluationAdmissionCause, EvaluationCitationMismatch, EvaluationEligibilityMismatch,
     EvaluationRootMismatch,
@@ -2459,9 +2475,8 @@ pub(in crate::storage) use source::read_named_root_sighting_on;
 pub(in crate::storage::work) use source::sealed_source_basis_on;
 use source::{
     NamedEvaluationRoot, RootBinding, RootPhase, RootSource, StaleCause, assess_named_root_binding,
-    assess_named_root_source, judged_revision, judged_source, named_root_at_on, off_named_root,
-    passing_citations, require_named_root_judged_source, revision_seen_through,
-    stale_bound_citation,
+    assess_named_root_source, judged_source, named_root_at_on, off_named_root, passing_citations,
+    require_named_root_judged_source, revision_seen_through, stale_bound_citation,
 };
 mod history;
 pub(crate) use history::{AssessedAcceptanceEvaluation, SourceObservationRecord};
@@ -2471,7 +2486,7 @@ use identity_shape::{
     record_verdicts_malformed, validate_attempt_key, validate_evaluation_capacity, verdict_fault,
 };
 mod reroll;
-mod same_turn;
+pub(crate) mod same_turn;
 
 #[cfg(test)]
 mod tests;

@@ -449,6 +449,7 @@ pub(in crate::storage::work) fn verify_restored_evidence_rows(
         .prepare(
             "SELECT object_id FROM objects
              WHERE object_kind = 'work_restored_evidence'
+               AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
              ORDER BY object_id",
         )?
         .query_map([], |row| row.get::<_, String>(0))?

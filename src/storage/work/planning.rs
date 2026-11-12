@@ -88,6 +88,7 @@ mod folder_relations;
 mod plan;
 mod relations;
 mod shape;
+pub(in crate::storage::work) mod successor;
 pub(super) use folder_relations::{apply_folder_blocker_on, apply_folder_prerequisite_on};
 #[cfg(test)]
 pub(crate) use plan::plan_validations;
@@ -107,6 +108,7 @@ pub(crate) use shape::{
     DraftPrerequisiteEdge, RootDraftShape, validate_decomposition_drafts, validate_revision_patch,
     validate_root_draft,
 };
+use successor::NativePlanningEvent;
 
 /// Atomic plans defer whole-project cycle and root-size scans to their final
 /// commit checks and use their own child-count bound. Every other check stays
@@ -464,7 +466,7 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let (add_labels, remove_labels) = validate_revision_patch(&request.patch)?;
+        let _ = validate_revision_patch(&request.patch)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
@@ -476,170 +478,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(item);
         }
-        let mut item = load_work_item(&transaction, request.work_id)?;
-        assert_revision(&item, request.expected_revision)?;
-        validate_planning_authority(
-            &transaction,
-            &item,
-            &request.authority,
-            &request.actor,
-            request.updated_at,
-        )?;
-        if !matches!(
-            item.lifecycle,
-            WorkLifecycle::Open | WorkLifecycle::Proposed
-        ) {
-            return Err(StoreError::WorkNotOpen(item.work_id));
-        }
-        if let Some(title) = request.patch.title.as_deref() {
-            item.title = normalize_text(title, crate::storage::refusal_labels::TITLE)?;
-        }
-        if let Some(external) = request.patch.external_ref.as_deref() {
-            item.external_ref = crate::domain::normalize_external_reference(Some(external))
-                .map_err(StoreError::InvalidWork)?;
-        }
-        if request.patch.clear_external {
-            item.external_ref = None;
-        }
-        if let Some(outcome) = request.patch.outcome.as_deref() {
-            item.outcome = normalize_text(outcome, crate::storage::refusal_labels::OUTCOME)?;
-        }
-        let authored_before = (item.acceptance.clone(), item.acceptance_bindings.clone());
-        match (
-            request.patch.acceptance.as_ref(),
-            request.patch.acceptance_bindings.as_ref(),
-        ) {
-            // Bindings authored with a new list name its positions as typed.
-            (Some(acceptance), Some(bindings)) => {
-                let (acceptance, bindings) = normalize_acceptance(acceptance, bindings)?;
-                item.acceptance = acceptance;
-                item.acceptance_bindings = bindings;
-            }
-            // Positions name the list that was replaced; nothing is carried
-            // over to a list they were never authored against.
-            (Some(acceptance), None) => {
-                item.acceptance = normalize_acceptance_criteria(acceptance);
-                item.acceptance_bindings.clear();
-            }
-            // Bindings alone name the stored list, as `show` numbers it.
-            (None, Some(bindings)) => {
-                item.acceptance_bindings =
-                    crate::domain::normalize_acceptance_bindings(item.acceptance.len(), bindings)
-                        .map_err(StoreError::InvalidWork)?;
-            }
-            (None, None) => {}
-        }
-        if request.patch.acceptance_bindings.is_some() {
-            refuse_record_id_pins_on(&transaction, &item.acceptance_bindings)?;
-        }
-        // A binding the preceding revision did not carry unchanged (same
-        // position, same requirement, same sentence) is authored by this
-        // revision and owes its verification from here: an obligation an
-        // earlier revision resolved answered an earlier authoring, whether the
-        // sentence was rewritten or the binding was dropped and added again.
-        let reauthored = item
-            .acceptance_bindings
-            .iter()
-            .filter(|binding| {
-                let carried = authored_before.1.iter().any(|before| {
-                    before.criterion == binding.criterion
-                        && before.requirement == binding.requirement
-                }) && binding.criterion.checked_sub(1).is_some_and(|index| {
-                    authored_before.0.get(index) == item.acceptance.get(index)
-                });
-                !carried
-            })
-            .map(|binding| binding.criterion)
-            .collect::<Vec<_>>();
-        if let Some(kind) = request.patch.kind {
-            item.kind = kind;
-        }
-        if let Some(priority) = request.patch.priority {
-            item.priority = priority;
-        }
-        if let Some(labels) = request.patch.labels.as_ref() {
-            item.labels = normalize_strings(labels);
-        } else if !add_labels.is_empty() || !remove_labels.is_empty() {
-            let remove_label_keys = remove_labels
-                .iter()
-                .map(|label| normalize_work_catalog_key(label))
-                .collect::<HashSet<_>>();
-            item.labels.retain(|current| {
-                !remove_label_keys.contains(&normalize_work_catalog_key(current))
-            });
-            let mut current_label_keys = item
-                .labels
-                .iter()
-                .map(|label| normalize_work_catalog_key(label))
-                .collect::<HashSet<_>>();
-            for label in add_labels {
-                if current_label_keys.insert(normalize_work_catalog_key(&label)) {
-                    item.labels.push(label);
-                }
-            }
-            item.labels = normalize_strings(&item.labels);
-        }
-        if request.patch.clear_assignment {
-            item.assigned_to = None;
-        } else if request.patch.assigned_to.is_some() {
-            item.assigned_to = normalize_optional(request.patch.assigned_to.clone());
-        }
-        if request.patch.clear_deferral {
-            item.deferred_until = None;
-        } else if let Some(deferred_until) = request.patch.deferred_until {
-            item.deferred_until = Some(deferred_until);
-        }
-        if request.patch.clear_evaluation_mode {
-            item.evaluation_mode = None;
-        } else if let Some(mode) = request.patch.evaluation_mode {
-            item.evaluation_mode = Some(mode);
-        }
-        item.revision += 1;
-        item.updated_at = request.updated_at;
-        refuse_longer_text_search_cannot_read(&transaction, &item)?;
-        persist_work_item(&transaction, &item)?;
-        let (claim_snapshot, rebased_run) =
-            rebase_planning_claim(&transaction, &item, &request.authority, request.updated_at)?;
-        let run = match rebased_run {
-            Some(run) => Some(run),
-            None => active_run_snapshot(&transaction, &item)?,
-        };
-        let event = revised_event(
-            &item,
-            run,
-            claim_snapshot,
-            request.authority.clone(),
-            request.actor.clone(),
-            request.updated_at,
-        );
-        let (event_id, positions) = append_work_event(&transaction, &event)?;
-        if let Some(run_id) = item.active_run_id {
-            // A binding the revision removed retires its obligation in the
-            // revising actor's name; one it added opens from this revision.
-            super::completion::waive_unbound_obligations_on(
-                &transaction,
-                &item,
-                run_id,
-                &reauthored,
-                &request.actor,
-                request.updated_at,
-            )?;
-            if let Some(run) = event.run.as_ref()
-                && let Some(position) = positions
-                    .iter()
-                    .find(|position| position.feed == crate::domain::FeedId::RunExecution(run_id))
-            {
-                super::completion::open_binding_obligations_on(
-                    &transaction,
-                    &item,
-                    run,
-                    &event_id,
-                    position,
-                    &reauthored,
-                    request.updated_at,
-                )?;
-            }
-        }
+        let item = revise_work_on(&transaction, request, &NativePlanningEvent::Ordinary)?;
         persist_operation_result(
             &transaction,
             "revise_work",
@@ -727,7 +566,7 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkBlocker, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let detail = normalize_text(
+        let _detail = normalize_text(
             &request.detail,
             crate::storage::refusal_labels::BLOCKER_DETAIL,
         )?;
@@ -742,69 +581,8 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(blocker);
         }
-        let mut item = load_work_item(&transaction, request.work_id)?;
-        require_work_item_relation_integrity(&transaction, item.work_id)?;
-        assert_revision(&item, request.expected_work_revision)?;
-        validate_planning_authority(
-            &transaction,
-            &item,
-            &request.authority,
-            &request.actor,
-            request.blocked_at,
-        )?;
-        if item.lifecycle != WorkLifecycle::Open {
-            return Err(StoreError::WorkNotOpen(item.work_id));
-        }
-        let blocker = WorkBlocker {
-            blocker_id: uuid::Uuid::now_v7().to_string(),
-            work_id: item.work_id,
-            kind: request.kind,
-            detail,
-            created_by: request.actor.clone(),
-            created_at: request.blocked_at,
-        };
-        let blocker_object = CanonicalObject::mint(&blocker)?;
-        SqliteStore::insert_object(&transaction, "work_blocker", &blocker_object)?;
-        item.revision += 1;
-        item.updated_at = request.blocked_at;
-        persist_work_item(&transaction, &item)?;
-        let (claim_snapshot, rebased_run) =
-            rebase_planning_claim(&transaction, &item, &request.authority, request.blocked_at)?;
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: item.active_run_id,
-            revision: item.revision,
-            work: item.clone(),
-            run: match rebased_run {
-                Some(run) => Some(run),
-                None => active_run_snapshot(&transaction, &item)?,
-            },
-            root_execution: None,
-            claim: claim_snapshot,
-            handoff_offer: None,
-            blocker: Some(blocker.clone()),
-            transition: WorkTransition::Blocked {
-                blocker_id: blocker.blocker_id.clone(),
-            },
-            actor: request.actor.clone(),
-            created_at: request.blocked_at,
-        };
-        let (event_id, _) = append_work_event(&transaction, &event)?;
-        transaction.execute(
-            "INSERT INTO work_blockers (
-                 blocker_id, work_id, state, blocker_json, created_event_id
-             ) VALUES (?1, ?2, 'active', ?3, ?4)",
-            params![
-                blocker.blocker_id,
-                blocker.work_id.0.to_string(),
-                blocker_json_search_can_read(&item, &blocker)?,
-                event_id.as_str()
-            ],
-        )?;
-        refresh_work_catalog_projection(&transaction, &item)?;
+        let blocker =
+            add_work_blocker_on(&transaction, request, &NativePlanningEvent::Ordinary, None)?;
         persist_operation_result(
             &transaction,
             "add_work_blocker",
@@ -853,66 +631,7 @@ impl SqliteStore {
         if let Some(attempt) = attempt {
             attempt.require_pending_on(&transaction)?;
         }
-        let mut item = load_work_item(&transaction, request.work_id)?;
-        require_work_item_relation_integrity(&transaction, item.work_id)?;
-        assert_revision(&item, request.expected_work_revision)?;
-        validate_planning_authority(
-            &transaction,
-            &item,
-            &request.authority,
-            &request.actor,
-            request.cleared_at,
-        )?;
-        if item.lifecycle != WorkLifecycle::Open {
-            return Err(StoreError::WorkNotOpen(item.work_id));
-        }
-        let blocker_work: Option<String> = transaction
-            .query_row(
-                "SELECT work_id FROM work_blockers
-                 WHERE blocker_id = ?1 AND state = 'active'",
-                [&request.blocker_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if blocker_work.as_deref() != Some(&item.work_id.0.to_string()) {
-            return Err(StoreError::InvalidWork(
-                crate::storage::UNKNOWN_BLOCKER_REFUSAL.into(),
-            ));
-        }
-        item.revision += 1;
-        item.updated_at = request.cleared_at;
-        persist_work_item(&transaction, &item)?;
-        let (claim_snapshot, rebased_run) =
-            rebase_planning_claim(&transaction, &item, &request.authority, request.cleared_at)?;
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: item.active_run_id,
-            revision: item.revision,
-            work: item.clone(),
-            run: match rebased_run {
-                Some(run) => Some(run),
-                None => active_run_snapshot(&transaction, &item)?,
-            },
-            root_execution: None,
-            claim: claim_snapshot,
-            handoff_offer: None,
-            blocker: None,
-            transition: WorkTransition::Unblocked {
-                blocker_id: request.blocker_id.clone(),
-            },
-            actor: request.actor.clone(),
-            created_at: request.cleared_at,
-        };
-        let (event_id, _) = append_work_event(&transaction, &event)?;
-        transaction.execute(
-            "UPDATE work_blockers SET state = 'cleared', cleared_event_id = ?2
-             WHERE blocker_id = ?1",
-            params![request.blocker_id, event_id.as_str()],
-        )?;
-        refresh_work_catalog_projection(&transaction, &item)?;
+        let item = clear_work_blocker_on(&transaction, request, &NativePlanningEvent::Ordinary)?;
         persist_operation_result(
             &transaction,
             "clear_work_blocker",
@@ -1374,4 +1093,367 @@ pub(super) fn apply_folder_disposal_on(
         },
     )?;
     Ok(item)
+}
+
+fn revise_work_on(
+    transaction: &Transaction<'_>,
+    request: &ReviseWorkRequest,
+    mutation: &NativePlanningEvent<'_, '_, '_, '_>,
+) -> Result<WorkItem, StoreError> {
+    mutation.check(transaction, request.work_id)?;
+    let _ = validate_revision_patch(&request.patch)?;
+    let mut item = load_work_item(transaction, request.work_id)?;
+    assert_revision(&item, request.expected_revision)?;
+    mutation.authority(
+        transaction,
+        &item,
+        &request.authority,
+        &request.actor,
+        request.updated_at,
+    )?;
+    if !matches!(
+        item.lifecycle,
+        WorkLifecycle::Open | WorkLifecycle::Proposed
+    ) {
+        return Err(StoreError::WorkNotOpen(item.work_id));
+    }
+    let reauthored = apply_revision_fields_on(transaction, &mut item, &request.patch)?;
+    item.revision += 1;
+    item.updated_at = request.updated_at;
+    if matches!(mutation, NativePlanningEvent::Ordinary) {
+        refuse_longer_text_search_cannot_read(transaction, &item)?;
+    }
+    persist_work_item(transaction, &item)?;
+    let (claim_snapshot, rebased_run) =
+        rebase_planning_claim(transaction, &item, &request.authority, request.updated_at)?;
+    let run = match rebased_run {
+        Some(run) => Some(run),
+        None => active_run_snapshot(transaction, &item)?,
+    };
+    let event = revised_event(
+        &item,
+        run,
+        claim_snapshot,
+        request.authority.clone(),
+        request.actor.clone(),
+        request.updated_at,
+    );
+    let (event_id, positions) = mutation.append(transaction, &event)?;
+    if let NativePlanningEvent::Successor { checked, .. } = mutation {
+        super::completion::apply_successor_binding_obligations_on(
+            checked,
+            &item,
+            &event,
+            &event_id,
+            &positions,
+            &reauthored,
+            &request.actor,
+            request.updated_at,
+        )?;
+    } else if let Some(run_id) = item.active_run_id {
+        // A binding the revision removed retires its obligation in the
+        // revising actor's name; one it added opens from this revision.
+        super::completion::waive_unbound_obligations_on(
+            transaction,
+            &item,
+            run_id,
+            &reauthored,
+            &request.actor,
+            request.updated_at,
+        )?;
+        if let Some(run) = event.run.as_ref()
+            && let Some(position) = positions
+                .iter()
+                .find(|position| position.feed == crate::domain::FeedId::RunExecution(run_id))
+        {
+            super::completion::open_binding_obligations_on(
+                transaction,
+                &item,
+                run,
+                &event_id,
+                position,
+                &reauthored,
+                request.updated_at,
+            )?;
+        }
+    }
+    Ok(item)
+}
+
+fn add_work_blocker_on(
+    transaction: &Transaction<'_>,
+    request: &AddWorkBlockerRequest,
+    mutation: &NativePlanningEvent<'_, '_, '_, '_>,
+    incoming: Option<(&WorkBlocker, &ObjectId)>,
+) -> Result<WorkBlocker, StoreError> {
+    mutation.check(transaction, request.work_id)?;
+    let detail = normalize_text(
+        &request.detail,
+        crate::storage::refusal_labels::BLOCKER_DETAIL,
+    )?;
+    let mut item = load_work_item(transaction, request.work_id)?;
+    require_work_item_relation_integrity(transaction, item.work_id)?;
+    assert_revision(&item, request.expected_work_revision)?;
+    mutation.authority(
+        transaction,
+        &item,
+        &request.authority,
+        &request.actor,
+        request.blocked_at,
+    )?;
+    if item.lifecycle != WorkLifecycle::Open {
+        return Err(StoreError::WorkNotOpen(item.work_id));
+    }
+    let (blocker, blocker_object) = if let Some((blocker, id)) = incoming {
+        if blocker.work_id != item.work_id
+            || blocker.kind != request.kind
+            || blocker.detail != detail
+            || blocker.blocker_id.trim().is_empty()
+            || blocker.blocker_id.len() > 4096
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "successor blocker differs from the admitted native transition".into(),
+            ));
+        }
+        (blocker.clone(), CanonicalObject::identified(id, blocker)?)
+    } else {
+        let blocker = WorkBlocker {
+            blocker_id: uuid::Uuid::now_v7().to_string(),
+            work_id: item.work_id,
+            kind: request.kind,
+            detail,
+            created_by: request.actor.clone(),
+            created_at: request.blocked_at,
+        };
+        let blocker_object = CanonicalObject::mint(&blocker)?;
+        (blocker, blocker_object)
+    };
+    SqliteStore::insert_object(transaction, "work_blocker", &blocker_object)?;
+    item.revision += 1;
+    item.updated_at = request.blocked_at;
+    persist_work_item(transaction, &item)?;
+    let (claim_snapshot, rebased_run) =
+        rebase_planning_claim(transaction, &item, &request.authority, request.blocked_at)?;
+    let event = WorkEventDraft {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id: item.active_run_id,
+        revision: item.revision,
+        work: item.clone(),
+        run: match rebased_run {
+            Some(run) => Some(run),
+            None => active_run_snapshot(transaction, &item)?,
+        },
+        root_execution: None,
+        claim: claim_snapshot,
+        handoff_offer: None,
+        blocker: Some(blocker.clone()),
+        transition: WorkTransition::Blocked {
+            blocker_id: blocker.blocker_id.clone(),
+        },
+        actor: request.actor.clone(),
+        created_at: request.blocked_at,
+    };
+    let (event_id, _) = mutation.append(transaction, &event)?;
+    let blocker_json = match mutation {
+        NativePlanningEvent::Ordinary => blocker_json_search_can_read(&item, &blocker)?,
+        NativePlanningEvent::Successor { .. } => serde_json::to_vec(&blocker)?,
+    };
+    transaction.execute(
+        "INSERT INTO work_blockers (
+             blocker_id, work_id, state, blocker_json, created_event_id
+         ) VALUES (?1, ?2, 'active', ?3, ?4)",
+        params![
+            blocker.blocker_id,
+            blocker.work_id.0.to_string(),
+            blocker_json,
+            event_id.as_str()
+        ],
+    )?;
+    refresh_work_catalog_projection(transaction, &item)?;
+    Ok(blocker)
+}
+
+fn clear_work_blocker_on(
+    transaction: &Transaction<'_>,
+    request: &ClearWorkBlockerRequest,
+    mutation: &NativePlanningEvent<'_, '_, '_, '_>,
+) -> Result<WorkItem, StoreError> {
+    mutation.check(transaction, request.work_id)?;
+    let mut item = load_work_item(transaction, request.work_id)?;
+    require_work_item_relation_integrity(transaction, item.work_id)?;
+    assert_revision(&item, request.expected_work_revision)?;
+    mutation.authority(
+        transaction,
+        &item,
+        &request.authority,
+        &request.actor,
+        request.cleared_at,
+    )?;
+    if item.lifecycle != WorkLifecycle::Open {
+        return Err(StoreError::WorkNotOpen(item.work_id));
+    }
+    let blocker_work: Option<String> = transaction
+        .query_row(
+            "SELECT work_id FROM work_blockers
+             WHERE blocker_id = ?1 AND state = 'active'",
+            [&request.blocker_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if blocker_work.as_deref() != Some(&item.work_id.0.to_string()) {
+        return Err(StoreError::InvalidWork(
+            crate::storage::UNKNOWN_BLOCKER_REFUSAL.into(),
+        ));
+    }
+    item.revision += 1;
+    item.updated_at = request.cleared_at;
+    persist_work_item(transaction, &item)?;
+    let (claim_snapshot, rebased_run) =
+        rebase_planning_claim(transaction, &item, &request.authority, request.cleared_at)?;
+    let event = WorkEventDraft {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id: item.active_run_id,
+        revision: item.revision,
+        work: item.clone(),
+        run: match rebased_run {
+            Some(run) => Some(run),
+            None => active_run_snapshot(transaction, &item)?,
+        },
+        root_execution: None,
+        claim: claim_snapshot,
+        handoff_offer: None,
+        blocker: None,
+        transition: WorkTransition::Unblocked {
+            blocker_id: request.blocker_id.clone(),
+        },
+        actor: request.actor.clone(),
+        created_at: request.cleared_at,
+    };
+    let (event_id, _) = mutation.append(transaction, &event)?;
+    transaction.execute(
+        "UPDATE work_blockers SET state = 'cleared', cleared_event_id = ?2
+         WHERE blocker_id = ?1",
+        params![request.blocker_id, event_id.as_str()],
+    )?;
+    refresh_work_catalog_projection(transaction, &item)?;
+    Ok(item)
+}
+
+/// Normalize the proposed planning fields without writing. Retained successor
+/// construction and the mutating revision share this exact acceptance logic.
+fn apply_revision_fields_on(
+    transaction: &Connection,
+    item: &mut WorkItem,
+    patch: &crate::WorkRevisionPatch,
+) -> Result<Vec<usize>, StoreError> {
+    let (add_labels, remove_labels) = validate_revision_patch(patch)?;
+    if let Some(title) = patch.title.as_deref() {
+        item.title = normalize_text(title, crate::storage::refusal_labels::TITLE)?;
+    }
+    if let Some(external) = patch.external_ref.as_deref() {
+        item.external_ref = crate::domain::normalize_external_reference(Some(external))
+            .map_err(StoreError::InvalidWork)?;
+    }
+    if patch.clear_external {
+        item.external_ref = None;
+    }
+    if let Some(outcome) = patch.outcome.as_deref() {
+        item.outcome = normalize_text(outcome, crate::storage::refusal_labels::OUTCOME)?;
+    }
+    let authored_before = (item.acceptance.clone(), item.acceptance_bindings.clone());
+    match (
+        patch.acceptance.as_ref(),
+        patch.acceptance_bindings.as_ref(),
+    ) {
+        // Bindings authored with a new list name its positions as typed.
+        (Some(acceptance), Some(bindings)) => {
+            let (acceptance, bindings) = normalize_acceptance(acceptance, bindings)?;
+            item.acceptance = acceptance;
+            item.acceptance_bindings = bindings;
+        }
+        // Positions name the list that was replaced; nothing is carried
+        // over to a list they were never authored against.
+        (Some(acceptance), None) => {
+            item.acceptance = normalize_acceptance_criteria(acceptance);
+            item.acceptance_bindings.clear();
+        }
+        // Bindings alone name the stored list, as `show` numbers it.
+        (None, Some(bindings)) => {
+            item.acceptance_bindings =
+                crate::domain::normalize_acceptance_bindings(item.acceptance.len(), bindings)
+                    .map_err(StoreError::InvalidWork)?;
+        }
+        (None, None) => {}
+    }
+    if patch.acceptance_bindings.is_some() {
+        refuse_record_id_pins_on(transaction, &item.acceptance_bindings)?;
+    }
+    // A binding the preceding revision did not carry unchanged (same
+    // position, same requirement, same sentence) is authored by this
+    // revision and owes its verification from here: an obligation an
+    // earlier revision resolved answered an earlier authoring, whether the
+    // sentence was rewritten or the binding was dropped and added again.
+    let reauthored = item
+        .acceptance_bindings
+        .iter()
+        .filter(|binding| {
+            let carried = authored_before.1.iter().any(|before| {
+                before.criterion == binding.criterion && before.requirement == binding.requirement
+            }) && binding
+                .criterion
+                .checked_sub(1)
+                .is_some_and(|index| authored_before.0.get(index) == item.acceptance.get(index));
+            !carried
+        })
+        .map(|binding| binding.criterion)
+        .collect::<Vec<_>>();
+    if let Some(kind) = patch.kind {
+        item.kind = kind;
+    }
+    if let Some(priority) = patch.priority {
+        item.priority = priority;
+    }
+    if let Some(labels) = patch.labels.as_ref() {
+        item.labels = normalize_strings(labels);
+    } else if !add_labels.is_empty() || !remove_labels.is_empty() {
+        let remove_label_keys = remove_labels
+            .iter()
+            .map(|label| normalize_work_catalog_key(label))
+            .collect::<HashSet<_>>();
+        item.labels
+            .retain(|current| !remove_label_keys.contains(&normalize_work_catalog_key(current)));
+        let mut current_label_keys = item
+            .labels
+            .iter()
+            .map(|label| normalize_work_catalog_key(label))
+            .collect::<HashSet<_>>();
+        for label in add_labels {
+            if current_label_keys.insert(normalize_work_catalog_key(&label)) {
+                item.labels.push(label);
+            }
+        }
+        item.labels = normalize_strings(&item.labels);
+    }
+    if patch.clear_assignment {
+        item.assigned_to = None;
+    } else if patch.assigned_to.is_some() {
+        item.assigned_to = normalize_optional(patch.assigned_to.clone());
+    }
+    if patch.clear_deferral {
+        item.deferred_until = None;
+    } else if let Some(deferred_until) = patch.deferred_until {
+        item.deferred_until = Some(deferred_until);
+    }
+    if patch.clear_evaluation_mode {
+        item.evaluation_mode = None;
+    } else if let Some(mode) = patch.evaluation_mode {
+        item.evaluation_mode = Some(mode);
+    }
+    Ok(reauthored)
 }

@@ -43,7 +43,7 @@ pub(in crate::storage::work) fn named_root_at_cut_on(
 /// verified. The class depends only on where and when the change was sighted,
 /// never on which rule opened its obligation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ForeignChange {
+pub(crate) enum ForeignChange {
     /// Recorded in the root's workspace, or with no source basis while no
     /// root was bound on its claim: the root's own rules apply, or with no
     /// active root the rules for a claim without one.
@@ -78,17 +78,34 @@ pub(super) fn classify_change_on(
     change: &SourceObservation,
     change_position: i64,
 ) -> Result<ForeignChange, StoreError> {
+    classify_change_with_history(
+        root.map(|root| &root.binding),
+        change,
+        || {
+            Ok(latest_named_root_binding_on(
+                connection,
+                change.binding.run_id,
+                change.binding.claim_id,
+                change_position,
+            )?
+            .is_some_and(|(_, _, binding)| binding.kind == NamedRootBindingKind::Bound))
+        },
+        || stated_root_on(connection, change, change_position),
+    )
+}
+
+/// Keep the native classifier and lazy history reads identical for retained facts.
+pub(crate) fn classify_change_with_history(
+    root: Option<&NamedRootBindingEvent>,
+    change: &SourceObservation,
+    bound_at_change: impl FnOnce() -> Result<bool, StoreError>,
+    stated_root: impl FnOnce() -> Result<Option<String>, StoreError>,
+) -> Result<ForeignChange, StoreError> {
     let Some(basis) = change.source_basis.as_ref() else {
         // A change whose root cannot be established is placed by its run-feed
         // position: recorded while a root was bound, it keeps needing a fresh
         // named-root check after an end, a release or a later name.
-        let bound = latest_named_root_binding_on(
-            connection,
-            change.binding.run_id,
-            change.binding.claim_id,
-            change_position,
-        )?
-        .is_some_and(|(_, _, binding)| binding.kind == NamedRootBindingKind::Bound);
+        let bound = bound_at_change()?;
         return Ok(if bound {
             ForeignChange::Unlocated
         } else {
@@ -99,7 +116,7 @@ pub(super) fn classify_change_on(
         // With no active root only the history remains: a change foreign to
         // the root bound when it was recorded keeps needing its human waiver
         // after that root ended or the claim was released.
-        return Ok(match stated_root_on(connection, change, change_position)? {
+        return Ok(match stated_root()? {
             Some(bound_workspace) if bound_workspace != basis.workspace_id => ForeignChange::Open,
             _ => ForeignChange::NotForeign,
         });
@@ -107,7 +124,7 @@ pub(super) fn classify_change_on(
     // The current root's workspace decides only what its history leaves
     // open: a change foreign to the root bound when it was recorded stays
     // foreign even when the claim later names that very workspace.
-    let in_root = basis.workspace_id == root.binding.workspace_id;
+    let in_root = basis.workspace_id == root.workspace_id;
     let outside_root = |class| {
         if in_root {
             ForeignChange::NotForeign
@@ -118,13 +135,13 @@ pub(super) fn classify_change_on(
     let Some(generation) = basis.source_root_generation else {
         return Ok(outside_root(ForeignChange::Displaced));
     };
-    if generation >= root.binding.generation {
+    if generation >= root.generation {
         return Ok(outside_root(ForeignChange::Open));
     }
     // Under a still-bound earlier name, a change already foreign to that
     // name's own root keeps needing the human waiver it needed then, whatever
     // the claim names now; a later name displaces a change made in that root.
-    Ok(match stated_root_on(connection, change, change_position)? {
+    Ok(match stated_root()? {
         None => outside_root(ForeignChange::Unbound),
         Some(bound_workspace) if bound_workspace == basis.workspace_id => {
             outside_root(ForeignChange::Displaced)
@@ -306,18 +323,23 @@ pub(super) fn obligation_matches_named_root(
     // A change the root accounts for itself, an unbound one, or with no root a
     // change no earlier root left foreign or unlocated, can be satisfied by a
     // check; a displaced or foreign one never is. See [`classify_change_on`].
-    Ok(
-        match classify_change_on(
+    Ok(foreign_change_may_match(
+        classify_change_on(
             connection,
             root,
             &trigger,
             obligation.trigger_position.position,
-        )? {
-            ForeignChange::NotForeign | ForeignChange::Unbound => true,
-            ForeignChange::Unlocated => root.is_some(),
-            ForeignChange::Displaced | ForeignChange::Open => false,
-        },
-    )
+        )?,
+        root.is_some(),
+    ))
+}
+
+pub(crate) fn foreign_change_may_match(class: ForeignChange, has_root: bool) -> bool {
+    match class {
+        ForeignChange::NotForeign | ForeignChange::Unbound => true,
+        ForeignChange::Unlocated => has_root,
+        ForeignChange::Displaced | ForeignChange::Open => false,
+    }
 }
 
 /// Resolves the source-change obligations still open on `run_id`: no matching

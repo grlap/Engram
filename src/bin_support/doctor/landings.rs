@@ -11,6 +11,7 @@ use std::{
 };
 
 use anyhow::{Result, bail};
+use engram::task_sync::git::plain_path;
 use engram::{HostPathPolicy, ProjectId, SqliteStore, storage::RecordedLanding};
 
 use super::refusals::{Phase, report_error, with_build};
@@ -347,48 +348,6 @@ fn not_on_branch_unless_shallow(repository: &Path) -> LandingStatus {
         }
         (other, _) => unverifiable(other),
     }
-}
-
-/// `std::fs::canonicalize` gives a Windows path its verbatim form (`\\?\C:\…`
-/// or `\\?\UNC\server\share\…`); the check hands git the plain form, which
-/// names the same directory, for both its working directory and its ceiling.
-/// A path with no plain form, such as a volume without a drive letter, has
-/// none here; neither has one that is not Unicode, which UTF-8, the form git
-/// for Windows works in, cannot carry. Git would recognise no ceiling for
-/// either.
-#[cfg(windows)]
-fn plain_path(path: &Path) -> Option<PathBuf> {
-    use std::path::{Component, Prefix};
-    path.to_str()?;
-    let mut components = path.components();
-    let mut plain = match components.next() {
-        Some(Component::Prefix(prefix)) => match prefix.kind() {
-            Prefix::VerbatimDisk(letter) => PathBuf::from(format!("{}:", char::from(letter))),
-            Prefix::VerbatimUNC(server, share) => {
-                let mut unc = std::ffi::OsString::from(r"\\");
-                unc.push(server);
-                unc.push(r"\");
-                unc.push(share);
-                PathBuf::from(unc)
-            }
-            Prefix::Disk(_) | Prefix::UNC(..) => return Some(path.to_path_buf()),
-            Prefix::Verbatim(_) | Prefix::DeviceNS(_) => return None,
-        },
-        _ => return Some(path.to_path_buf()),
-    };
-    for component in components {
-        plain.push(component);
-    }
-    Some(plain)
-}
-
-#[cfg(not(windows))]
-#[allow(
-    clippy::unnecessary_wraps,
-    reason = "the Windows form has paths without a plain form"
-)]
-fn plain_path(path: &Path) -> Option<PathBuf> {
-    Some(path.to_path_buf())
 }
 
 /// The directory to run git in: `repository` with links, `..` and relative

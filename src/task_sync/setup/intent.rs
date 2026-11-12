@@ -10,7 +10,7 @@ use anyhow::{Result, ensure};
 use super::{Attribution, Basis, Intent, Receipt, files::Directory};
 use crate::task_sync::file_lock::HeldLock;
 
-const FORMAT: &str = "engram-task-sync-setup-v1";
+const FORMAT: &str = "engram-task-sync-setup-v2";
 const LOCK: &[u8] = b"engram-task-sync-setup-lock-v1\n";
 
 pub(super) fn record(basis: Basis, attribution: Attribution) -> Result<Receipt> {

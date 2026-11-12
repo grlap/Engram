@@ -18,13 +18,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::folder::IMPORT_PLANNING_KIND;
+use crate::task_sync::inventory::InventoryRoot as Root;
 use crate::{
     CanonicalObject, ObjectId, ProjectId, WorkId,
     storage::StoreError,
-    task_sync::{FORMAT, ProjectDocument, TaskDocument, TaskSyncRefusal, TaskTree, pretty},
+    task_sync::{FORMAT, ProjectDocument, TaskDocument, TaskSyncRefusal, TaskTree},
 };
 
 /// One exchange baseline, as the changes since its predecessor. A `None`
@@ -321,12 +321,23 @@ pub(in crate::storage::work) fn append(
         created_at: now,
     };
     let object = CanonicalObject::mint(&planning)?;
-    crate::storage::SqliteStore::insert_object(transaction, IMPORT_PLANNING_KIND, &object)?;
+    append_object(transaction, &object)
+}
+
+/// Append a caller's already frozen local baseline identity through the same
+/// feed and projection owner. The feed projector validates the exact current
+/// predecessor and recomputes membership; this grants no planning admission.
+pub(in crate::storage::work) fn append_object(
+    transaction: &rusqlite::Transaction<'_>,
+    object: &CanonicalObject,
+) -> Result<ObjectId, StoreError> {
+    let planning: TaskSyncImportPlanning = object.decode()?;
+    crate::storage::SqliteStore::insert_object(transaction, IMPORT_PLANNING_KIND, object)?;
     super::super::feeds::append_to_project_feed(
         transaction,
-        project,
+        &planning.project_id,
         IMPORT_PLANNING_KIND,
-        &object,
+        object,
     )?;
     Ok(object.key().clone())
 }
@@ -422,14 +433,7 @@ pub(in crate::storage::work) fn verify(
 /// The leaf one member contributes to the membership fingerprint: the
 /// fingerprint of its exported file, path included.
 pub(in crate::storage::work) fn leaf(document: &TaskDocument) -> Result<[u8; 32], StoreError> {
-    let path = format!("tasks/{}.json", document.id.0);
-    let bytes = pretty(document)?;
-    let mut hash = Sha256::new();
-    hash.update((path.len() as u64).to_le_bytes());
-    hash.update(path.as_bytes());
-    hash.update((bytes.len() as u64).to_le_bytes());
-    hash.update(&bytes);
-    Ok(hash.finalize().into())
+    crate::task_sync::inventory::leaf(document)
 }
 
 /// The membership fingerprint of a complete tree, computed from scratch.
@@ -439,67 +443,6 @@ pub(in crate::storage::work) fn tree_root(tree: &TaskTree) -> Result<String, Sto
         root = root.add(&leaf(task)?);
     }
     Ok(root.hex())
-}
-
-/// The order-independent sum of member leaves, modulo 2^256. Adding a leaf
-/// and subtracting it again restore the root, so a record updates it for
-/// exactly the tasks it changes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Root([u8; 32]);
-
-impl Root {
-    const ZERO: Self = Self([0; 32]);
-
-    fn parse(hex: &str) -> Option<Self> {
-        if hex.len() != 64
-            || !hex
-                .bytes()
-                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-        {
-            return None;
-        }
-        let mut bytes = [0; 32];
-        for (index, byte) in bytes.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(hex.get(index * 2..index * 2 + 2)?, 16).ok()?;
-        }
-        Some(Self(bytes))
-    }
-
-    fn hex(self) -> String {
-        const DIGITS: &[u8; 16] = b"0123456789abcdef";
-        let mut hex = String::with_capacity(64);
-        for byte in self.0 {
-            hex.push(char::from(DIGITS[usize::from(byte >> 4)]));
-            hex.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
-        }
-        hex
-    }
-
-    /// Big-endian addition with the final carry dropped.
-    fn add(self, leaf: &[u8; 32]) -> Self {
-        let mut sum = [0; 32];
-        let mut carry = false;
-        for index in (0..32).rev() {
-            let (partial, first) = self.0[index].overflowing_add(leaf[index]);
-            let (total, second) = partial.overflowing_add(u8::from(carry));
-            sum[index] = total;
-            carry = first || second;
-        }
-        Self(sum)
-    }
-
-    /// Big-endian subtraction with the final borrow dropped.
-    fn sub(self, leaf: &[u8; 32]) -> Self {
-        let mut difference = [0; 32];
-        let mut borrow = false;
-        for index in (0..32).rev() {
-            let (partial, first) = self.0[index].overflowing_sub(leaf[index]);
-            let (total, second) = partial.overflowing_sub(u8::from(borrow));
-            difference[index] = total;
-            borrow = first || second;
-        }
-        Self(difference)
-    }
 }
 
 /// One stored row: the canonical document bytes and their leaf.

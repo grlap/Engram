@@ -58,6 +58,8 @@ pub(super) fn select(
                 },
             )?;
             candidate::disclose(&prepared.documents)?;
+            let publication =
+                candidate::publication_documents(&prepared.documents, &setup.basis.assertions)?;
             let index = repository::index_basis(&setup.basis)?;
             repository::recheck(&setup.basis, &index)?;
             checkpoint("admitted-before-private")?;
@@ -72,6 +74,7 @@ pub(super) fn select(
                 selection.clone(),
                 attribution,
                 prepared,
+                &publication,
                 index,
                 checkpoint,
             )

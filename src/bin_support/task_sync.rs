@@ -1,4 +1,4 @@
-//! Thin explicit-directory planning interchange front door.
+//! Thin planning interchange front door confined to the dedicated data checkout.
 
 use super::attribution::resolve_shell_work_attribution;
 use anyhow::Result;
@@ -24,6 +24,70 @@ pub(crate) struct TaskSyncArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum TaskSyncCommand {
+    /// Execute one explicit ledger/data step; never dispatches network or merges.
+    Step {
+        /// Typed action as JSON or @FILE; retain it unchanged for exact retries.
+        #[arg(long)]
+        request: String,
+    },
+    /// Read selected family capture and coverage; never imports or publishes.
+    Progress {
+        #[arg(long)]
+        binding: engram::ObjectId,
+    },
+    /// Create or lock the fixed .engram-data orphan worktree; no commit or network.
+    DataInit {
+        #[arg(long, default_value = "engram-data")]
+        branch: String,
+    },
+    /// Retain an exact staged data commit; never advances the branch or pushes.
+    DataCommit {
+        #[arg(long, default_value = "engram-data")]
+        branch: String,
+        /// Exact commit selection as JSON or @FILE; keep it for replay.
+        #[arg(long)]
+        request: String,
+    },
+    /// Run an explicit cold custody audit; never enables ordinary managed writes.
+    CustodyAudit {
+        /// Exact typed audit request as JSON or @FILE; retain it for retries.
+        #[arg(long)]
+        request: String,
+    },
+    /// Read the logical producing origin; never enrolls or repairs continuity.
+    Origin,
+    /// Explicitly enroll this project-local store, or fork a named predecessor.
+    OriginEnroll {
+        #[arg(long)]
+        operation: uuid::Uuid,
+        #[arg(long)]
+        predecessor: Option<engram::ObjectId>,
+    },
+    /// Create a new local successor after cloning, rewind or migration import.
+    OriginRecover {
+        #[arg(long)]
+        operation: uuid::Uuid,
+        #[arg(long)]
+        predecessor: engram::ObjectId,
+        #[arg(long, value_parser = ["db-only-clone", "same-origin-rewind", "migration-import"])]
+        cause: String,
+    },
+    /// Release only an exact recovery intent proven uncommitted, keeping history.
+    OriginRecoveryCancel {
+        #[arg(long)]
+        operation: uuid::Uuid,
+        #[arg(long)]
+        predecessor: engram::ObjectId,
+        #[arg(long, value_parser = ["db-only-clone", "same-origin-rewind", "migration-import"])]
+        cause: String,
+    },
+    /// Cancel an exact uncommitted enrollment intent, preserving all artifacts.
+    OriginCancel {
+        #[arg(long)]
+        operation: uuid::Uuid,
+        #[arg(long)]
+        predecessor: Option<engram::ObjectId>,
+    },
     /// Observe this project's host-local opt-in without opening SQLite.
     Status {
         #[arg(long)]
@@ -69,7 +133,7 @@ enum TaskSyncCommand {
         #[arg(long)]
         origin_machine: Option<String>,
     },
-    /// Materialize selected preparation bytes in the main checkout; no commit or network.
+    /// Materialize selected preparation bytes in the data worktree; no commit or network.
     SetupMaterialize {
         repository: PathBuf,
         #[arg(long)]
@@ -81,10 +145,11 @@ enum TaskSyncCommand {
         #[arg(long)]
         candidate_directory: PathBuf,
     },
-    /// Publish the Git folder (project.json with its export basis, and
-    /// tasks/<uuid>.json) into an absent directory, or one holding the same bytes.
+    /// Publish .engram in the dedicated data worktree, or replay identical bytes.
     Export {
         directory: PathBuf,
+        #[arg(long, default_value = "engram-data")]
+        branch: String,
         /// Include eligible generic/status notes and report omissions.
         #[arg(long, requires = "origin_machine")]
         include_notes: bool,
@@ -96,10 +161,12 @@ enum TaskSyncCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Apply a resolved Git folder against this host's own pre-merge basis;
+    /// Apply the dedicated data worktree's .engram against this host's own basis;
     /// an exact repeat replays its first receipt.
     Import {
         directory: PathBuf,
+        #[arg(long, default_value = "engram-data")]
+        branch: String,
         /// This host's own project.json from its export before the merge.
         #[arg(
             long,
@@ -227,7 +294,39 @@ fn run_settings(database: PathBuf, project: ProjectId, args: &TaskSyncArgs) -> R
     }
 }
 
-pub(crate) fn run(
+fn recovery_request(
+    operation: uuid::Uuid,
+    predecessor: engram::ObjectId,
+    cause: &str,
+) -> Result<engram::task_sync::origin::recovery::RecoveryRequest> {
+    use engram::task_sync::origin::recovery::{RecoveryCause, RecoveryRequest};
+    let cause = match cause {
+        "db-only-clone" => RecoveryCause::DbOnlyClone,
+        "same-origin-rewind" => RecoveryCause::SameOriginRewind,
+        "migration-import" => RecoveryCause::MigrationImport,
+        _ => anyhow::bail!("unsupported origin recovery cause"),
+    };
+    Ok(RecoveryRequest {
+        operation,
+        predecessor,
+        cause,
+    })
+}
+
+pub(crate) async fn run(
+    database: PathBuf,
+    project: ProjectId,
+    project_file: &Path,
+    args: TaskSyncArgs,
+) -> Result<bool> {
+    Box::pin(engram::operation_time::observe(
+        "task-sync command",
+        run_observed(database, project, project_file, args),
+    ))
+    .await
+}
+
+async fn run_observed(
     database: PathBuf,
     project: ProjectId,
     project_file: &Path,
@@ -237,6 +336,7 @@ pub(crate) fn run(
         return run_settings(database, project, &args);
     }
     let attribution = resolve_shell_work_attribution(args.actor_id, args.session_id)?;
+    let selected_project = project.clone();
     let service = LocalWorkService::new_with_attribution(
         database,
         project,
@@ -272,6 +372,120 @@ pub(crate) fn run(
         return Ok(true);
     }
     match args.operation {
+        TaskSyncCommand::Step { request } => {
+            let request = crate::parse_bounded_json_input::<engram::task_sync::driver::StepRequest>(
+                &request,
+                "task exchange step",
+                2 * 1024 * 1024,
+            )?;
+            let receipt = Box::pin(service.task_sync_exchange_step(
+                &request,
+                engram::task_sync::exchange::RunLimits::default(),
+                &engram::task_sync::exchange::Cancellation::default(),
+            ))
+            .await?;
+            attribution.print_notices();
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
+        }
+        TaskSyncCommand::Progress { binding } => {
+            let receipt = service.task_sync_family_frontiers(&binding, chrono::Utc::now())?;
+            attribution.print_notices();
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
+        }
+        TaskSyncCommand::DataInit { branch } => {
+            let receipt = service.initialize_task_sync_data_worktree(project_file, &branch)?;
+            attribution.print_notices();
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
+        }
+        TaskSyncCommand::DataCommit { branch, request } => {
+            service.require_task_sync_enabled()?;
+            let request = crate::parse_bounded_json_input::<
+                engram::task_sync::data_worktree::StagedCommitRequest,
+            >(&request, "staged data commit request", 128 * 1024)?;
+            let receipt = service.create_task_sync_data_commit(project_file, &branch, &request)?;
+            attribution.print_notices();
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
+        }
+        TaskSyncCommand::CustodyAudit { request } => {
+            // Admission precedes reading a request file, repository or SQLite.
+            service.require_task_sync_enabled()?;
+            let request = crate::parse_bounded_json_input::<
+                engram::task_sync::delta::CustodyAuditRequest,
+            >(&request, "custody audit request", 16 * 1024)?;
+            attribution.print_notices();
+            let receipt = if matches!(
+                request.seed,
+                engram::task_sync::delta::CustodySeedSelection::IncomingDataCommit { .. }
+            ) {
+                service
+                    .audit_task_sync_incoming_data_commit(
+                        &request,
+                        engram::task_sync::exchange::RunLimits::default(),
+                        &engram::task_sync::exchange::Cancellation::default(),
+                    )
+                    .await?
+            } else {
+                service.audit_task_sync_custody(&request, chrono::Utc::now())?
+            };
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
+        }
+        TaskSyncCommand::OriginRecoveryCancel {
+            operation,
+            predecessor,
+            cause,
+        } => {
+            let request = recovery_request(operation, predecessor, &cause)?;
+            attribution.print_notices();
+            let cancelled =
+                service.cancel_task_sync_origin_recovery(&request, chrono::Utc::now())?;
+            println!("{}", serde_json::json!({ "cancelled": cancelled }));
+        }
+        TaskSyncCommand::OriginRecover {
+            operation,
+            predecessor,
+            cause,
+        } => {
+            let request = recovery_request(operation, predecessor, &cause)?;
+            attribution.print_notices();
+            let receipt = service.recover_task_sync_origin(&request, chrono::Utc::now())?;
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
+        }
+        TaskSyncCommand::OriginCancel {
+            operation,
+            predecessor,
+        } => {
+            attribution.print_notices();
+            let cancelled = service.cancel_task_sync_origin_enrollment(
+                &engram::task_sync::origin::EnrollRequest {
+                    operation,
+                    predecessor,
+                },
+                chrono::Utc::now(),
+            )?;
+            println!("{}", serde_json::json!({ "cancelled": cancelled }));
+        }
+        TaskSyncCommand::Origin => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&service.task_sync_origin(chrono::Utc::now())?)?
+            );
+        }
+        TaskSyncCommand::OriginEnroll {
+            operation,
+            predecessor,
+        } => {
+            // The current command has its own attribution; an exact retry
+            // returns the original immutable enrollment and its original actor.
+            attribution.print_notices();
+            let origin = service.enroll_task_sync_origin(
+                &engram::task_sync::origin::EnrollRequest {
+                    operation,
+                    predecessor,
+                },
+                chrono::Utc::now(),
+            )?;
+            println!("{}", serde_json::to_string_pretty(&origin)?);
+        }
         TaskSyncCommand::Status { .. }
         | TaskSyncCommand::Enable { .. }
         | TaskSyncCommand::Disable { .. } => unreachable!("settings handled before store access"),
@@ -322,19 +536,29 @@ pub(crate) fn run(
         }
         TaskSyncCommand::Export {
             directory: path,
+            branch,
             include_notes,
             origin_machine,
             json,
         } => {
             let outcome = (|| -> Result<()> {
-                let exported = service.export_task_sync_folder(
-                    &engram::task_sync::progress::ExportProfile {
-                        include_notes,
-                        origin_machine: origin_machine.clone(),
-                    },
-                    chrono::Utc::now(),
+                service.require_task_sync_enabled()?;
+                let profile = engram::task_sync::progress::ExportProfile {
+                    include_notes,
+                    origin_machine: origin_machine.clone(),
+                };
+                if let Some(alias) = profile.origin_machine.as_deref() {
+                    engram::task_sync::notes::validate_machine_alias(alias)?;
+                }
+                let data = engram::task_sync::data_worktree::DataWorktree::observe_project(
+                    project_file,
+                    &selected_project,
+                    &branch,
                 )?;
-                let written = directory::write_folder(&path, &exported.tree, &exported.profile)?;
+                let path = data.select_folder(&path)?;
+                let exported = service.export_task_sync_folder(&profile, chrono::Utc::now())?;
+                let written =
+                    directory::write_data_folder(&data, &exported.tree, &exported.profile)?;
                 attribution.print_notices();
                 eprintln!("REDACTOR: development no-op; task planning fields are shared text");
                 if json
@@ -361,6 +585,7 @@ pub(crate) fn run(
         }
         TaskSyncCommand::Import {
             directory: path,
+            branch,
             basis,
             empty_basis,
             dry_run,
@@ -368,7 +593,13 @@ pub(crate) fn run(
         } => {
             let outcome = (|| -> Result<()> {
                 service.require_task_sync_enabled()?;
-                let folder = directory::read_resolved_folder(&path)?;
+                let data = engram::task_sync::data_worktree::DataWorktree::observe_project(
+                    project_file,
+                    &selected_project,
+                    &branch,
+                )?;
+                data.select_folder(&path)?;
+                let folder = directory::read_resolved_data_folder(&data)?;
                 let basis = match (basis, empty_basis) {
                     (Some(file), false) => {
                         directory::DestinationBasis::Recorded(directory::read_folder_basis(&file)?)
@@ -376,6 +607,7 @@ pub(crate) fn run(
                     (None, true) => directory::DestinationBasis::Empty,
                     _ => anyhow::bail!("select exactly one of --basis or --empty-basis"),
                 };
+                data.revalidate()?;
                 let result = service.import_task_sync_folder(
                     &folder,
                     &basis,

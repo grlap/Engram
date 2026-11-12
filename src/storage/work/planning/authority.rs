@@ -117,6 +117,36 @@ pub(super) fn validate_planning_authority(
     at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
     crate::storage::work::task_sync::reconciliation::refuse_held_on(transaction, item.work_id)?;
+    validate_planning_authority_body(transaction, item, authority, actor, at)
+}
+
+pub(super) fn validate_successor_planning_authority(
+    checked: &super::super::task_sync::reconciliation::successor::CheckedPlanningSuccessor<
+        '_,
+        '_,
+        '_,
+    >,
+    item: &WorkItem,
+    authority: &WorkPlanningAuthority,
+    actor: &crate::ActorContext,
+    at: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    checked.require_affected(item.work_id)?;
+    if !matches!(authority, WorkPlanningAuthority::Project) {
+        return Err(StoreError::InvalidWork(
+            "a planning successor does not transfer claim authority".into(),
+        ));
+    }
+    validate_planning_authority_body(checked.transaction(), item, authority, actor, at)
+}
+
+fn validate_planning_authority_body(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    authority: &WorkPlanningAuthority,
+    actor: &crate::ActorContext,
+    at: DateTime<Utc>,
+) -> Result<(), StoreError> {
     if let Some(run_id) = item.active_run_id {
         expire_handoff_offers(transaction, run_id, at, actor)?;
     }

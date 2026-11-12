@@ -14,14 +14,23 @@ use crate::{
 
 pub mod activity;
 mod capture;
-pub use capture::{CapturedTask, TaskDocumentCapture};
+pub use capture::{
+    CapturedTask, TaskDocumentCapture, TaskGraphComponent, TaskGraphOverlay,
+    TaskMembershipComponent, TaskSyncGraphView, TaskSyncMembershipView,
+};
+pub mod data_worktree;
+pub mod delta;
 pub mod directory;
+pub mod driver;
+pub mod evidence;
 pub mod exchange;
 mod file_lock;
 pub mod folder_plan;
 pub mod notes;
+pub mod origin;
 pub use activity::TaskSyncExportOptions;
 pub mod git;
+pub mod inventory;
 pub mod ledger;
 pub mod progress;
 mod publication;
@@ -213,6 +222,28 @@ pub(crate) fn validate_document_fields<'a>(
             }
             validate_shared_actor(&blocker.created_by)?;
         }
+    }
+    Ok(())
+}
+
+/// Document-local admission shared by selected Git and retained delta payloads.
+/// Actual roots, graph closure and global identities remain with storage admission.
+pub(crate) fn validate_selected_documents<'a>(
+    project: &ProjectDocument,
+    tasks: impl Clone + IntoIterator<Item = &'a TaskDocument>,
+) -> Result<(), StoreError> {
+    validate_document_fields(project, tasks.clone())?;
+    for task in tasks {
+        // A parent is only a placeholder for this document-local shape check;
+        // the actual root and all graph edges are checked by the admission owner.
+        crate::storage::graph_snapshot::validate_snapshot_item_shape(
+            &task.snapshot_with_root(task.parent_id.unwrap_or(task.id)),
+        )?;
+        for blocker in task.snapshot_blockers() {
+            crate::storage::graph_snapshot::validate_snapshot_blocker_shape(&blocker)?;
+        }
+        notes::validate_notes(&task.notes, &task.labels)?;
+        activity::validate_disclosure(&task.activity, &task.labels)?;
     }
     Ok(())
 }

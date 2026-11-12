@@ -95,6 +95,17 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
             continue;
         }
         let expected = match entry_kind.as_str() {
+            crate::task_sync::origin::recovery::RECOVERY_KIND => object
+                .decode::<crate::task_sync::origin::recovery::RecoveryRecord>()
+                .ok()
+                .filter(|record| record.validate().is_ok())
+                .map(|record| HashSet::from([format!("project:{}", record.project_id.0)])),
+            crate::task_sync::origin::PRODUCING_ORIGIN_KIND => object
+                .decode::<crate::task_sync::origin::Enrollment>()
+                .ok()
+                .map(|record| {
+                    std::collections::HashSet::from([format!("project:{}", record.project_id.0)])
+                }),
             "task_sync_reconciliation_hold" => object
                 .decode::<crate::task_sync::reconciliation::ReconciliationHold>()
                 .ok()
@@ -252,6 +263,18 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
                     }
                     _ => None,
                 }
+            }
+            "imported_evidence_consumption" => {
+                let evidence =
+                    super::super::task_sync::evidence::consumption::load_on(connection, &hash)?;
+                super::super::task_sync::evidence::consumption::expected_projection_on(
+                    connection, &hash,
+                )?;
+                expected_feeds_for_work(
+                    work_items,
+                    evidence.request.binding.work_id,
+                    Some(evidence.request.binding.run_id),
+                )
             }
             "verification_evidence" => object
                 .decode::<VerificationEvidence>()
@@ -429,13 +452,14 @@ pub(in crate::storage::work) fn verify_work_feed_integrity(
            ON entry.object_id = object.object_id
          WHERE object.object_kind IN (
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
-              'verification_evidence', 'environment_evidence', 'named_root_binding', 'registered_host_run',
+              'verification_evidence', 'environment_evidence', 'imported_evidence_consumption', 'named_root_binding', 'registered_host_run',
              'remote_terminal_origin', 'remote_verification_association',
              'work_obligation', 'work_obligation_resolution', 'unadmitted_execution_observation',
-             'task_sync_import_planning', 'task_sync_reconciliation_hold',
+             'task_sync_import_planning', 'task_sync_producing_origin', 'task_sync_origin_recovery', 'task_sync_reconciliation_hold',
              'task_sync_shared_import_version'
          )
            AND entry.object_id IS NULL
+           AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=object.object_id)
          ORDER BY object.object_id",
     )?;
     let rows = statement.query_map([], |row| {

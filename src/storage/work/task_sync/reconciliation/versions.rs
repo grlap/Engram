@@ -407,42 +407,13 @@ pub(in crate::storage::work::task_sync) fn validate_receipt_on(
         &receipt.planning,
         &binding.project,
     )?;
-    require(
-        receipt.operation == intent.operation
-            && receipt.operation_key == intent.key
-            && receipt.candidate_fingerprint == intent.candidate.documents_fingerprint
-            && receipt.resolved == intent.commit,
-        "reconciled receipt differs from prepared intent",
-    )?;
+    validate_receipt_intent(intent, receipt)?;
     require(
         resolved.inventory_root == receipt.after_basis.as_str()
             && resolved.profile.include_notes == binding.profile.include_notes,
         "reconciled receipt graph or notes profile differs from retained resolved input",
     )?;
-    match (&receipt.base, &intent.common_commit) {
-        (ReconciliationBase::KnownBase { commit }, Some(expected)) => {
-            require(commit == expected, "reconciled common base differs")?;
-        }
-        (
-            ReconciliationBase::ExplicitUnbasedResolution {
-                local_basis,
-                incoming_basis,
-            },
-            None,
-        ) => require(
-            local_basis == &intent.local_planning_basis
-                && incoming_basis == &intent.candidate.planning_fingerprint,
-            "unbased resolution does not retain both inputs",
-        )?,
-        _ => return Err(invalid("reconciled base mode differs")),
-    }
-    require(
-        receipt.tasks.len() <= MAX_RECORDS
-            && receipt.before.len() <= MAX_RECORDS
-            && receipt.holds.len() <= MAX_RECORDS
-            && receipt.terminal_evidence.len() <= MAX_RECORDS,
-        "reconciled receipt exceeds supported bound",
-    )?;
+    validate_receipt_base(intent, receipt)?;
     let outcome: Event = SqliteStore::get_typed_object_on(connection, event_id, EVENT_KIND)?
         .ok_or_else(|| invalid("reconciled receipt event missing"))?;
     let Transition::ReconciledImportApplied { prepared, .. } = &outcome.transition else {
@@ -611,4 +582,51 @@ impl SqliteStore {
             },
         )
     }
+}
+
+// Pure historical comparisons shared with receipt-first lookup. These never
+// read current work, imported origins or retained planning documents.
+pub(in crate::storage::work::task_sync) fn validate_receipt_intent(
+    intent: &Intent,
+    receipt: &ModelAImportReceipt,
+) -> Result<(), StoreError> {
+    require(
+        receipt.operation == intent.operation
+            && receipt.operation_key == intent.key
+            && receipt.candidate_fingerprint == intent.candidate.documents_fingerprint
+            && receipt.resolved == intent.commit,
+        "reconciled receipt differs from prepared intent",
+    )?;
+    Ok(())
+}
+
+pub(in crate::storage::work::task_sync) fn validate_receipt_base(
+    intent: &Intent,
+    receipt: &ModelAImportReceipt,
+) -> Result<(), StoreError> {
+    match (&receipt.base, &intent.common_commit) {
+        (ReconciliationBase::KnownBase { commit }, Some(expected)) => {
+            require(commit == expected, "reconciled common base differs")?;
+        }
+        (
+            ReconciliationBase::ExplicitUnbasedResolution {
+                local_basis,
+                incoming_basis,
+            },
+            None,
+        ) => require(
+            local_basis == &intent.local_planning_basis
+                && incoming_basis == &intent.candidate.planning_fingerprint,
+            "unbased resolution does not retain both inputs",
+        )?,
+        _ => return Err(invalid("reconciled base mode differs")),
+    }
+    require(
+        receipt.tasks.len() <= MAX_RECORDS
+            && receipt.before.len() <= MAX_RECORDS
+            && receipt.holds.len() <= MAX_RECORDS
+            && receipt.terminal_evidence.len() <= MAX_RECORDS,
+        "reconciled receipt exceeds supported bound",
+    )?;
+    Ok(())
 }

@@ -98,7 +98,8 @@ enum Command {
         root: PathBuf,
         #[arg(long, required = true)]
         json: bool,
-        /// Shorten the source reader's maximum budget; never raises it.
+        /// The source reader's budget in milliseconds, at most the maximum; a
+        /// shorter request is raised to the 60-second floor, never honoured.
         #[arg(long, default_value_t = engram::source::MAX_BUDGET_MS, value_parser = clap::value_parser!(u64).range(1..=engram::source::MAX_BUDGET_MS))]
         timeout_ms: u64,
     },
@@ -1052,10 +1053,15 @@ async fn run_cli() -> Result<ExitCode> {
             eprintln!("source requires --json and an absolute --root worktree path");
             return Ok(ExitCode::from(2));
         }
-        let observation =
-            engram::source::inspect(root, std::time::Duration::from_millis(*timeout_ms));
-        let (status, json) = observation.json()?;
-        println!("{json}");
+        let status = engram::source::inspect_with(
+            root,
+            engram::source::public_budget(*timeout_ms),
+            |observation| -> Result<_> {
+                let (status, json) = observation.json()?;
+                println!("{json}");
+                Ok(status)
+            },
+        )?;
         return Ok(if status == engram::source::Status::Unavailable {
             ExitCode::FAILURE
         } else {
@@ -1222,7 +1228,14 @@ async fn run_cli() -> Result<ExitCode> {
             operation,
         )?,
         Command::TaskSync(args) => {
-            if !bin_support::task_sync::run(database, project_id, &project_file, args)? {
+            if !Box::pin(bin_support::task_sync::run(
+                database,
+                project_id,
+                &project_file,
+                args,
+            ))
+            .await?
+            {
                 return Ok(ExitCode::FAILURE);
             }
         }

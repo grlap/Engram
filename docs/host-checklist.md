@@ -169,10 +169,14 @@ assurance.
 3. **One MCP child per session.** Start
    `engram mcp --actor-id … --session-id … [--actor-context …]` on stdio; it
    exposes the fourteen work words and `search`, plus the separate
-   `task_sync_settings` configuration tool — sixteen tools total. For a child
-   that must not write, add `--read-only`: the server lists six tools, `next`,
-   `ls`, `search`, `show`, `memories`, and `task_sync_settings`. The configuration
-   tool is admitted only with `action: status`. Every other call and writing
+   `task_sync_settings` configuration tool — sixteen tools total. Explicit
+   exchange steps and binding-family progress use the CLI/shared service;
+   progress reports capture and coverage, not verification eligibility. See the
+   [exchange steps](features/git-task-sync.md#explicit-exchange-command-steps).
+   For a child that must not write, add `--read-only`: the server lists six
+   tools, `next`, `ls`, `search`, `show`, `memories` and `task_sync_settings`.
+   The configuration tool is admitted only with `action: status`.
+   Every other call and writing
    form is refused as a tool error with a stable code (see
    [read-only mode](features/cli-and-mcp.md#read-only-mode)). Stateful work calls
    reuse a cached store connection; each work read that records nothing

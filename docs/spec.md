@@ -45,7 +45,7 @@ knowledge graph or process scheduler.**
   work is underway.
 - Same-host multi-session coordination with atomic ownership, an ordered
   change feed, explicit handoffs, and a finalization barrier.
-- Optional explicit Git push/pull of task text on the code branch, local
+- Optional explicit Git push/pull of task text on the data branch, local
   offline writes on every machine, and agent-mediated conflict resolution
   without live-authority transfer.
 - Execution Observability: the host records execution, source and test
@@ -468,7 +468,16 @@ parts of the exact-current store and are recovered from a verified current
 backup. `engram doctor --repair-projections` rebuilds declared indexes, triggers,
 FTS5 content, project-memory state (`project_memory_state`), and the work
 projection tables (`work_restored_records`, `work_observations`, and
-`work_restored_evidence`) from verified retained state. It recreates disposable
+`work_restored_evidence`) from verified retained state. Rebuildable task-sync
+views include affected tasks (`work_project_feed_tasks`), baseline members and
+heads (`work_task_sync_baseline`, `work_task_sync_baseline_heads`), active holds
+(`work_task_sync_reconciliation_active`), exchange operation/head links
+(`work_task_sync_exchange_operations`, `work_task_sync_exchange_heads`),
+producing-origin members/heads (`work_task_sync_producing_origin_members`,
+`work_task_sync_producing_origin_heads`), embedded documents and identities
+(`work_task_sync_document_members`, `work_task_sync_shared_identity_members`),
+and graph nodes, edges and heads (`work_task_sync_graph_nodes`,
+`work_task_sync_graph_edges`, `work_task_sync_graph_heads`). It recreates disposable
 project-memory advertisement bookkeeping (`project_memory_advertisements`)
 empty; it never recreates durable tables from `objects`.
 `engram doctor` checks that stored records decode and agree, along with graph
@@ -510,8 +519,8 @@ the spec, not an implementation detail:
 
 **Selected design, not shipped.** Each machine keeps its writable local SQLite
 store. Explicit Git push/pull exchanges human-readable task documents on the
-same ordinary branch as code. Divergence is expected: an external agent reads
-the common base, local and incoming text, merges tasks alongside code, and
+dedicated long-lived orphan data branch. Divergence is expected: an external agent reads
+the common base, local and incoming text, merges tasks independently of code, and
 supplies the final state for Engram to validate and import. Engram never calls
 a model. This replaces sequential portable release/acquire as the selected
 personal cross-machine workflow; previous single-writer, remote-epoch,
@@ -553,20 +562,20 @@ provenance remains machine-qualified and conveys no local host-verification
 credit or session/source-root binding. This task projection is not
 a full-store backup or a claim to transfer complete native execution history.
 
-The main checkout owns export/import and normal `.engram/` conflict resolution.
-Linked worktrees use per-worktree cone-mode sparse-checkout to omit that
-directory while preserving it in Git trees; `.gitignore` is not the mechanism.
-A conflicting merge/rebase may materialize excluded task files: preserve the
-conflict, then abort/re-integrate in the main checkout or explicitly resolve in
-place without importing there. Do not pretend an in-progress merge transfers
-to another worktree. Enablement explicitly reconciles any existing ignored
-local `.engram/` state with the narrow tracked namespace, refusing collisions
-and retaining unrelated private files as ignored. All sessions/worktrees continue
-to share one host-local project database. The main export therefore includes
-project changes made in every worktree; it is not branch-isolated task state.
-The existing `.engram-project` identity marker remains available in worktrees.
-Checkout or branch changes never implicitly replace the database. A deliberate
-sync-branch rebind reconciles current state rather than rolling it backward.
+A dedicated persistent `MAIN/.engram-data/` worktree owns task/evidence export,
+import and resolution on the project's orphan data branch. Code branches and
+code worktrees never carry exported metadata; their complete code `source_id`
+stays unchanged by exports. No linked-code sparse-checkout contract is needed.
+`task-sync data-init` explicitly creates the ignored, registered and locked data
+worktree without SQLite, code edits, commits or network work; private setup and
+selected materialization are separate. Only `.engram/` belongs in a data commit.
+The worktree survives ordinary coding-task cleanup and is retired explicitly.
+All sessions/worktrees still share one host-local project database. Code branch
+changes never replace that database or its progress. Hosts fetch the data ref,
+use Engram's merge, then fast-forward without Git merge, rebase or forced push.
+A deliberate data-branch rebind reconciles current state instead of rolling it
+backward. Full historical evidence packs share that carrier, while local live
+claims, delivery and execution authority remain private.
 
 Two distinct durable local progress markers answer the transfer questions:
 
@@ -1159,7 +1168,7 @@ so their basis remains reproducible after the source changes or disappears.
   work graph is fully functional in `local` durability mode.
 - **V1 portability/compatibility:** previewed, round-trip Beads snapshot
   import/export; deterministic work-graph recovery snapshot/restore;
-  optional Git task-text export/import on the code branch, explicit push/pull,
+  optional Git task-text export/import on the data branch, explicit push/pull,
   local change cursors and agent-mediated merge (§3.2). Publication remains a separate deferred
   capability whose frozen-payload idempotency must be proved end to end.
 - **Later optional modes:** live concurrent `Sync`, real GitHub/Jira/
@@ -1293,7 +1302,7 @@ Codex::AgentMemory):
   coordination remains deferred (§3.3).
 - Timing of the proprietary tracker adapter — when work authorizes real
   publication.
-- The user configures the Git repository and code branch for optional task
+- The user configures the Git repository and orphan data branch for optional task
   exchange; there is no background cadence in the selected workflow. Backup
   copy kinds and defaults remain separate, as decided in
   [off-host backup](features/off-host-backup.md).

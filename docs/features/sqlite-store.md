@@ -301,7 +301,11 @@ recreates every declared rebuildable object, reconstructs project-memory state
 and work projection tables, recreates disposable project-memory advertisements
 empty, repopulates FTS from verified durable rows in one transaction, and runs
 full integrity verification afterward. Missing or malformed durable tables are
-never recreated. A
+never recreated. Core schema preparation precedes work projection reconstruction,
+including the imported-evidence partition. Durable memory-head validation and
+memory FTS/state reconstruction then use that rebuilt partition; retained foreign
+originals remain excluded from native readers. Invalid durable heads still refuse
+the entire transaction without rewriting them. A
 restored record, restored evidence object or observation that cannot be
 projected (it does not decode, its generation is out of range, its work item
 is missing, its planning basis does not hold, or its row breaks a
@@ -373,6 +377,15 @@ Declared indexes, triggers, full-text search (FTS5) content, project-memory
 state (`project_memory_state`), the observation index `work_observations`, and
 the restored-history projections `work_restored_records` and `work_restored_evidence` are disposable and
 rebuilt explicitly from verified durable rows and canonical objects.
+Task-sync projections follow the same rule: `work_project_feed_tasks`,
+`work_task_sync_baseline`, `work_task_sync_baseline_heads`,
+`work_task_sync_reconciliation_active`, `work_task_sync_exchange_operations`,
+`work_task_sync_exchange_heads`, `work_task_sync_producing_origin_members`,
+`work_task_sync_producing_origin_heads`, `work_task_sync_document_members`,
+`work_task_sync_shared_identity_members`, `work_task_sync_graph_nodes`,
+`work_task_sync_graph_edges`, and `work_task_sync_graph_heads`. Canonical
+enrollment, import and exchange records retain their IDs and bytes; rebuilding
+these views grants no execution or publication authority.
 Disposable project-memory advertisement bookkeeping (`project_memory_advertisements`)
 is instead recreated empty, causing a harmless memory reannouncement and renewed
 memory-list guidance. A row that cannot be rebuilt is named and refused as

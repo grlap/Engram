@@ -223,6 +223,45 @@ pub fn match_verification_evidence(
     explain_verification_evidence(input).map_err(|(mismatch, _)| mismatch)
 }
 
+/// The common kind decision, kept before source/run checks by native matching.
+pub(crate) fn check_verification_kind(
+    evidence: &VerificationEvidence,
+    requirement: &VerificationRequirement,
+) -> Result<(), VerificationEvidenceMismatch> {
+    if evidence.check_kind != requirement.check_kind {
+        return Err(VerificationEvidenceMismatch::CheckKindMismatch);
+    }
+    Ok(())
+}
+
+/// The same terminal and requirement rule for native and explicit imported use.
+/// Callers still validate producer provenance, source, scope and ordering.
+pub(crate) fn check_verification_result(
+    evidence: &VerificationEvidence,
+    producer: &crate::domain::VerificationProducerFacts,
+    requirement: &VerificationRequirement,
+) -> Result<(), VerificationEvidenceMismatch> {
+    check_verification_kind(evidence, requirement)?;
+    if evidence.check_fingerprint != producer.action_fingerprint
+        || requirement
+            .check_fingerprint
+            .as_ref()
+            .is_some_and(|required| required != &evidence.check_fingerprint)
+    {
+        return Err(VerificationEvidenceMismatch::CheckFingerprintMismatch);
+    }
+    if evidence.result != VerificationResult::Passed
+        || (evidence.source_basis.source_id().is_some()
+            && producer.outcome != crate::domain::ExecutionOutcome::Succeeded)
+        || producer
+            .run_outcome
+            .is_some_and(|outcome| outcome != crate::domain::ExecutionOutcome::Succeeded)
+    {
+        return Err(VerificationEvidenceMismatch::ResultNotPassed);
+    }
+    Ok(())
+}
+
 /// [`match_verification_evidence`], with the source record that decided a
 /// `stale_source_revision` mismatch beside it. The decision is the same; the
 /// decider is `Some` exactly when the mismatch is stale.
@@ -251,9 +290,7 @@ pub fn explain_verification_evidence(
         .producer
         .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?
         .verification_facts();
-    if evidence.check_kind != input.requirement.check_kind {
-        return Err(plain(VerificationEvidenceMismatch::CheckKindMismatch));
-    }
+    check_verification_kind(evidence, input.requirement).map_err(plain)?;
     let shared = evidence.source_basis.source_id().is_some();
     let revision = evidence.source_basis.legacy_revision();
     let registered_git = producer.registered_git_basis(evidence).is_some();
@@ -391,25 +428,7 @@ pub fn explain_verification_evidence(
             }
         }
     }
-    if evidence.check_fingerprint != producer.action_fingerprint
-        || input
-            .requirement
-            .check_fingerprint
-            .as_ref()
-            .is_some_and(|required| required != &evidence.check_fingerprint)
-    {
-        return Err(plain(
-            VerificationEvidenceMismatch::CheckFingerprintMismatch,
-        ));
-    }
-    if evidence.result != VerificationResult::Passed
-        || (shared && producer.outcome != crate::domain::ExecutionOutcome::Succeeded)
-        || producer
-            .run_outcome
-            .is_some_and(|outcome| outcome != crate::domain::ExecutionOutcome::Succeeded)
-    {
-        return Err(plain(VerificationEvidenceMismatch::ResultNotPassed));
-    }
+    check_verification_result(evidence, &producer, input.requirement).map_err(plain)?;
     if mutation.is_some_and(|(latest_mutation, latest_mutation_position, _, _)| {
         input.evidence_position <= latest_mutation_position
             || ((input.named_root.is_some() || !latest_mutation.admitted)

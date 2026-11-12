@@ -9,6 +9,20 @@ use crate::{ActorContext, ObjectId, ProjectId, WorkId};
 
 use super::progress::{ExportCut, ExportProfile};
 
+mod coverage;
+mod evidence;
+mod publication;
+pub use coverage::{
+    CaptureFrontier, CoverageFrontier, CoverageMeaning, ExchangeFamily, FamilyFrontiers,
+    FamilyProgress, FamilyRequestState,
+};
+pub use evidence::{
+    EvidenceImportRecipe, EvidenceIntent, EvidencePackSelection, EvidenceReceipt, EvidenceRefusal,
+    EvidenceStop,
+};
+pub(crate) use publication::DeltaResolutionRecipe;
+pub use publication::{OutgoingFailure, OutgoingReconciliation};
+
 pub const BINDING_KIND: &str = "task_sync_binding";
 pub const EVENT_KIND: &str = "task_sync_exchange_event";
 
@@ -29,6 +43,8 @@ pub struct StoreBasis {
 #[serde(deny_unknown_fields)]
 pub struct RepositoryBasis {
     pub enrollment: uuid::Uuid,
+    /// Historical wire name. New exchange bindings select the dedicated data
+    /// worktree here; existing records retain their original bytes and paths.
     pub main_checkout: PathBuf,
     pub git_directory: PathBuf,
 }
@@ -103,6 +119,23 @@ pub struct Intent {
     pub candidate: RetainedCandidate,
     pub commit: RetainedCommit,
     pub local_planning_basis: ObjectId,
+}
+
+/// Read-only historical selection. Equality covers the entire original intent,
+/// including attribution; possession of this request grants no mutation authority.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletedExchangeRequest {
+    pub binding: ObjectId,
+    pub intent: Intent,
+}
+
+/// Original canonical outcome, not a re-created receipt or current graph check.
+/// An outgoing outcome is complete only after confirmed publication.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletedExchange {
+    pub prepared: ObjectId,
+    pub outcome: ObjectId,
+    pub event: Event,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -182,19 +215,74 @@ pub enum PublicationObservation {
 
 /// Bookkeeping for a caller-owned outgoing operation. Recording a step never
 /// publishes a branch, starts transport or grants permission for either act.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OutgoingProgress {
     LocalCommitRecorded,
     PushStarted,
+    /// The remote completed an exact non-fast-forward refusal of that start.
+    /// Recorded before the replacement tip is fetched, so a lost fetch or
+    /// response stays a known refusal; it never permits another push.
+    PushRejected {
+        push_started: ObjectId,
+    },
     Observed(PublicationObservation),
+    Reconciled {
+        prepared: ObjectId,
+        reconciliation: Box<OutgoingReconciliation>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "transition", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Transition {
     Activated,
+    CustodyCheckpoint {
+        checkpoint: Box<super::delta::ManagedCustodyCheckpoint>,
+    },
     Prepared {
         intent: Box<Intent>,
+    },
+    DeltaPrepared {
+        intent: Box<super::delta::DeltaIntent>,
+        payload: Box<super::delta::DeltaCandidatePayload>,
+    },
+    PlanningSuccessorPrepared {
+        recipe: Box<super::delta::PlanningSuccessorRecipe>,
+        payload: Box<super::delta::DeltaCandidatePayload>,
+    },
+    PlanningSuccessorApplied {
+        prepared: ObjectId,
+        receipt: Box<super::delta::DeltaImportReceipt>,
+    },
+    EvidencePrepared {
+        intent: Box<EvidenceIntent>,
+    },
+    EvidenceImportApplied {
+        prepared: ObjectId,
+        receipt: EvidenceReceipt,
+    },
+    EvidenceStopped {
+        prepared: ObjectId,
+        outcome: EvidenceStop,
+    },
+    DeltaLocalCommitRecorded {
+        prepared: ObjectId,
+        commit: RetainedCommit,
+    },
+    DeltaImportApplied {
+        prepared: ObjectId,
+        receipt: Box<super::delta::DeltaImportReceipt>,
+    },
+    /// Settles this planning request without applying its candidate. The
+    /// existing reconciliation hold continues to fence the affected scope.
+    PlanningDeferred {
+        prepared: ObjectId,
+        hold: ObjectId,
+        candidate_fingerprint: ObjectId,
+        blocking_claims: Vec<ObjectId>,
+        /// Local bookkeeping capture, never an applied planning frontier.
+        after_cut: super::delta::OriginQualifiedCut,
     },
     LocalCommitRecorded {
         prepared: ObjectId,
@@ -210,9 +298,19 @@ pub enum Transition {
     PushStarted {
         prepared: ObjectId,
     },
+    /// An exact non-fast-forward refusal of the named start: the original
+    /// `PushStarted` or the retry's reconciliation start. No publication credit.
+    PushRejected {
+        prepared: ObjectId,
+        push_started: ObjectId,
+    },
     PushObserved {
         prepared: ObjectId,
         observation: PublicationObservation,
+    },
+    OutgoingReconciled {
+        prepared: ObjectId,
+        reconciliation: Box<OutgoingReconciliation>,
     },
 }
 
@@ -327,7 +425,7 @@ pub(crate) fn oid(value: &str) -> Result<(), crate::storage::StoreError> {
     )
 }
 
-fn fingerprint(value: &ObjectId) -> Result<(), crate::storage::StoreError> {
+pub(super) fn fingerprint(value: &ObjectId) -> Result<(), crate::storage::StoreError> {
     require(
         value.as_str().len() == 64,
         "exchange comparison requires a content fingerprint",
@@ -354,7 +452,7 @@ fn reference(value: &str, prefix: &str) -> Result<(), crate::storage::StoreError
     )
 }
 
-fn cut(value: &ExportCut) -> Result<(), crate::storage::StoreError> {
+pub(super) fn cut(value: &ExportCut) -> Result<(), crate::storage::StoreError> {
     require(
         value.position >= 0 && (value.position == 0) == value.anchor.is_none(),
         "invalid exchange feed cut",
@@ -365,7 +463,7 @@ fn cut(value: &ExportCut) -> Result<(), crate::storage::StoreError> {
     Ok(())
 }
 
-fn absolute(value: &std::path::Path) -> Result<(), crate::storage::StoreError> {
+pub(super) fn absolute(value: &std::path::Path) -> Result<(), crate::storage::StoreError> {
     require(
         value.is_absolute()
             && !value
@@ -375,7 +473,7 @@ fn absolute(value: &std::path::Path) -> Result<(), crate::storage::StoreError> {
     )
 }
 
-fn text(value: &str, limit: usize) -> Result<(), crate::storage::StoreError> {
+pub(super) fn text(value: &str, limit: usize) -> Result<(), crate::storage::StoreError> {
     require(
         !value.is_empty()
             && value.trim() == value

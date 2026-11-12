@@ -2,45 +2,42 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn task_sync_export_missing_parent_keeps_io_even_with_json() {
+fn task_sync_export_requires_the_fixed_data_folder_even_when_other_parent_exists() {
     let fixture = Fixture::new();
     let source = fixture.store("source");
     fixture.add(&source, "shared task");
-    let relative = Path::new("missing/candidate");
-    for json in [false, true] {
-        let output = fixture
-            .sync_command(&source, "export", relative, json)
-            .current_dir(&fixture.root)
-            .output()
-            .unwrap();
-        assert!(!output.status.success());
-        assert_eq!(output.stdout.as_slice(), b"");
-        let error = stderr(&output);
-        assert_ne!(error, "");
-        assert!(!error.contains("task_sync_"), "{error}");
-        assert!(
-            !error.contains("{\n"),
-            "unexpected structured refusal: {error}"
-        );
-        assert!(!fixture.root.join("missing").exists());
+    let relative = Path::new("missing/.engram");
+    for parent_exists in [false, true] {
+        if parent_exists {
+            fs::create_dir(fixture.root.join("missing")).unwrap();
+        }
+        for json in [false, true] {
+            let output = fixture
+                .raw_command_with(&source, "export", relative, json, &[])
+                .current_dir(&fixture.root)
+                .output()
+                .unwrap();
+            assert!(!output.status.success());
+            assert_eq!(output.stdout, b"");
+            assert!(stderr(&output).contains("dedicated data worktree"));
+            assert!(!fixture.root.join(relative).exists());
+        }
     }
-
-    // The same relative spelling works once its ordinary parent exists.
-    fs::create_dir(fixture.root.join("missing")).unwrap();
+    // A relative spelling of the fixed directory is accepted and replays.
     for _ in 0..2 {
         let output = fixture
-            .sync_command(&source, "export", relative, true)
+            .raw_command_with(
+                &source,
+                "export",
+                Path::new(".engram-data/.engram"),
+                true,
+                &[],
+            )
             .current_dir(&fixture.root)
             .output()
             .unwrap();
         assert!(output.status.success(), "{}", stderr(&output));
-        let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(receipt["directory"], "missing/candidate");
     }
-    assert_eq!(
-        fs::read_dir(fixture.root.join("missing")).unwrap().count(),
-        1
-    );
 }
 
 #[test]
@@ -90,7 +87,7 @@ fn task_sync_json_oversized_note_keeps_byte_details_without_a_work_remedy() {
     )
     .unwrap();
     let target = fixture.store("target");
-    let refused = refusal(&fixture.sync(&target, "import", &candidate, true));
+    let refused = refusal(&fixture.exchange_snapshot(&target, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "task_sync_invalid_graph");
     assert_eq!(
         refused["error"]["details"],
@@ -100,7 +97,7 @@ fn task_sync_json_oversized_note_keeps_byte_details_without_a_work_remedy() {
         })
     );
     assert_plain_text_kept(
-        &fixture.sync(&target, "import", &candidate, false),
+        &fixture.exchange_snapshot(&target, "import", &candidate, false),
         &refused,
     );
     assert_imports_once(&fixture, &target, &valid);
@@ -109,7 +106,7 @@ fn task_sync_json_oversized_note_keeps_byte_details_without_a_work_remedy() {
 /// The folder lands, and its exact repeat replays the same receipt.
 fn assert_imports_once(fixture: &Fixture, target: &Path, folder: &Path) {
     let receipts = [0, 1].map(|_| {
-        let output = fixture.sync(target, "import", folder, true);
+        let output = fixture.exchange_snapshot(target, "import", folder, true);
         assert!(output.status.success(), "{}", stderr(&output));
         serde_json::from_slice::<Value>(&output.stdout).unwrap()
     });
@@ -125,10 +122,15 @@ fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
     let path = candidate.join("project.json");
     let original = fs::read(&path).unwrap();
     fs::write(&path, vec![b' '; 1024 * 1024 + 1]).unwrap();
-    let plain = fixture.sync(&target, "import", &candidate, false);
+    let plain = fixture.exchange_snapshot(&target, "import", &candidate, false);
     assert!(!plain.status.success());
-    assert!(stderr(&plain).contains(&format!("reading {}", path.display())));
-    let refused = refusal(&fixture.sync(&target, "import", &candidate, true));
+    assert!(stderr(&plain).contains(&format!(
+            "reading {}",
+            data_worktree::folder(&fixture.marker)
+                .join("project.json")
+                .display()
+        )));
+    let refused = refusal(&fixture.exchange_snapshot(&target, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "task_sync_destination_file_limit");
     assert_eq!(
         refused["error"]["details"],
@@ -140,7 +142,12 @@ fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
         refused["error"]["message"],
         "local work input is invalid: task candidate file must be an ordinary bounded file"
     );
-    let encoded_path = serde_json::to_string(&path.to_string_lossy()).unwrap();
+    let encoded_path = serde_json::to_string(
+        &data_worktree::folder(&fixture.marker)
+            .join("project.json")
+            .to_string_lossy(),
+    )
+    .unwrap();
     // Compare JSON with JSON so Windows backslash escaping cannot hide a path.
     assert!(
         !refused
@@ -152,7 +159,7 @@ fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
     fs::write(&path, original).unwrap();
     assert!(
         fixture
-            .sync(&target, "import", &candidate, true)
+            .exchange_snapshot(&target, "import", &candidate, true)
             .status
             .success()
     );
@@ -170,8 +177,9 @@ async fn task_sync_real_locked_store_failure_keeps_its_generic_storage_code() {
     connection.execute_batch("BEGIN IMMEDIATE").unwrap();
     // The acquired transaction is the synchronization point. It stays owned
     // across the real CLI call; no sleep guesses when another process is ready.
-    let mut command =
-        tokio::process::Command::from(fixture.sync_command(&target, "import", &candidate, true));
+    let mut command = tokio::process::Command::from(
+        fixture.staged_snapshot_command(&target, "import", &candidate, true),
+    );
     command.kill_on_drop(true);
     let output = tokio::time::timeout(Duration::from_secs(60), command.output())
         .await

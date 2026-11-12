@@ -64,9 +64,13 @@ use crate::{
 };
 
 mod acceptance_bindings;
+mod binding_construction;
 #[cfg(test)]
 use acceptance_bindings::binding_freshness_mismatch;
 use acceptance_bindings::{bind_acceptance_to_obligations_on, bound_live_input_consumed_on};
+pub(super) use binding_construction::{
+    apply_successor_binding_obligations_on, plan_binding_obligation_identities_on,
+};
 mod assessment;
 pub(crate) use assessment::{
     AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
@@ -74,19 +78,26 @@ pub(crate) use assessment::{
 };
 mod child_barriers;
 mod child_resolutions;
+pub(super) use child_resolutions::validate_retained_resolution;
 mod landings;
 pub use landings::RecordedLanding;
 mod lifecycle;
+pub(super) use lifecycle::{is_import_retired_on, reopen_successor_on};
 mod named_root;
 mod obligation_audit;
+mod obligation_facts;
 pub(super) use obligation_audit::ObligationAudit;
+pub(crate) use obligation_facts::{binding_trigger_matches, source_trigger_matches};
 mod obligation_guidance;
 pub(super) use obligation_guidance::finished_run_cut_on;
 pub(crate) use obligation_guidance::{
     criteria_without_evidence_link, unlinked_criteria_owe_bound_check,
 };
 use obligation_guidance::{require_expected_obligations_on, require_projected_obligations_on};
+mod imported;
 mod projections;
+pub(in crate::storage::work) use imported::append_on as append_imported_evidence_on;
+pub(in crate::storage::work) use imported::validate_acceptance_on as validate_imported_acceptance_on;
 mod repeat;
 pub(in crate::storage) use repeat::newest_change_repeated_on;
 #[cfg(test)]
@@ -99,7 +110,12 @@ use named_root::{
 };
 
 pub(super) use named_root::named_root_at_cut_on;
-pub(super) use root_binding::{validate_seal_root_event, validate_stored_seal_root};
+pub(crate) use named_root::{
+    ForeignChange, classify_change_with_history, foreign_change_may_match,
+};
+pub(super) use root_binding::{
+    validate_seal_event_fields, validate_seal_root_event, validate_stored_seal_root,
+};
 
 pub(super) use child_barriers::{
     AncestorExecutionState, ancestors_admit_execution, blocking_ancestor_on, feed_head,
@@ -178,6 +194,17 @@ impl SqliteStore {
             )?
         } else {
             super::registered_commit_currency::LiveCurrency::default()
+        };
+        let imported_uses = if replay_exists {
+            None
+        } else {
+            super::task_sync::evidence::consumption::measure_selected_on(
+                &self.connection,
+                request.work_id,
+                request.run_id,
+                &request.evidence,
+                true,
+            )?
         };
         let transaction = self.begin_work_mutation()?;
         if let Some(seal) = replay_operation::<CompletionSeal>(
@@ -274,7 +301,14 @@ impl SqliteStore {
             });
         }
         let acceptance_policy = SqliteStore::load_acceptance_evaluation_policy_on(&transaction)?;
-        let (acceptance_results, acceptance_evaluation) = if acceptance_policy.is_evaluated() {
+        let selected_imports = imported::select_on(&transaction, request, imported_uses.as_ref())?;
+        let imported_acceptance = &selected_imports.acceptance;
+        let (acceptance_results, acceptance_evaluation) = if let Some(imported) =
+            &imported_acceptance
+        {
+            let derived = imported::derive_on(&item, request, &evidence, &imported.results)?;
+            (derived, None)
+        } else if acceptance_policy.is_evaluated() {
             if !request.acceptance.is_empty() {
                 return Err(StoreError::WorkCompletionRefused {
                     work: item.work_id,
@@ -393,6 +427,7 @@ impl SqliteStore {
             })
             .transpose()?
             .is_some_and(|evaluation| evaluation.registered_input_decision.is_some());
+        live_commit_consumed |= selected_imports.current_verification;
         for citation in acceptance
             .iter()
             .filter(|result| result.satisfied)
@@ -652,7 +687,8 @@ impl SqliteStore {
             &claim,
             &completion_cut,
             &evidence,
-            acceptance_evaluation.is_some(),
+            &selected_imports.retired_imports,
+            acceptance_evaluation.is_some() || imported_acceptance.is_some(),
             request.source_fingerprint.as_deref(),
             request.source_id.as_ref(),
             acceptance,
@@ -1318,25 +1354,11 @@ fn load_work_obligation_record_on(
             &obligation.triggering_observation,
             "work_event",
         )?;
-        trigger.project_id == obligation.project_id
-            && trigger.root_id == obligation.root_id
-            && trigger.work_id == obligation.work_id
-            && trigger.run_id == Some(obligation.run_id)
-            && trigger.revision == obligation.work_revision
-            && trigger.created_at == obligation.opened_at
-            && trigger.work.acceptance_bindings.iter().any(|binding| {
-                binding.criterion == criterion && binding.requirement == obligation.requirement
-            })
+        binding_trigger_matches(&obligation, &trigger, criterion)
             && trigger_entry_matches("work_event")?
     } else {
         let trigger = load_source_observation_on(connection, &obligation.triggering_observation)?;
-        trigger.source_changed
-            && trigger.project_id == obligation.project_id
-            && trigger.binding.root_execution_id == obligation.root_execution_id
-            && trigger.binding.work_id == obligation.work_id
-            && trigger.binding.run_id == obligation.run_id
-            && trigger.binding.work_revision == obligation.work_revision
-            && trigger.recorded_at == obligation.opened_at
+        source_trigger_matches(&obligation, &trigger)
             && trigger_entry_matches(if trigger.admitted {
                 "execution_observation"
             } else {
@@ -1464,6 +1486,29 @@ fn validate_obligation_resolution_projection(
                     "satisfied obligation {} has inconsistent terminal bindings",
                     obligation.obligation_id.0
                 )));
+            }
+            let imported: bool = connection.query_row(
+                "SELECT object_kind=?2 FROM objects WHERE object_id=?1",
+                params![
+                    evidence.as_str(),
+                    crate::task_sync::evidence::consumption::CONSUMPTION_KIND
+                ],
+                |row| row.get(0),
+            )?;
+            if imported {
+                if event.registered_input_decision.is_some()
+                    || !imported::historical_resolution_on(
+                        connection,
+                        evidence,
+                        obligation,
+                        evaluated_cut,
+                    )?
+                {
+                    return Err(StoreError::InvalidWorkProjection(
+                        "imported obligation satisfaction differs from its canonical use".into(),
+                    ));
+                }
+                return Ok(Some(resolution_position));
             }
             let verification = load_typed_work_object::<VerificationEvidence>(
                 connection,
@@ -1718,6 +1763,7 @@ fn append_control_typed_evidence_on(
         }
         WorkEvidenceKind::Verification => "verification_evidence",
         WorkEvidenceKind::Environment => "environment_evidence",
+        WorkEvidenceKind::Imported => crate::task_sync::evidence::consumption::CONSUMPTION_KIND,
     };
     SqliteStore::insert_object(transaction, object_kind, object)?;
     transaction.execute(
@@ -1761,6 +1807,8 @@ fn append_control_typed_evidence_on(
             object.key(),
             &super::note_index::NativeNote::Verification(note),
         )?;
+    } else if projection.kind == WorkEvidenceKind::Imported {
+        imported::append_note_on(transaction, &positions, object)?;
     }
     // A late record on a finished run is audit only: it never becomes a
     // contributor or a contribution of the root, whose sealed accounting
@@ -1896,7 +1944,18 @@ fn persist_obligation_on(
     transaction: &Transaction<'_>,
     obligation: &WorkObligation,
 ) -> Result<ObjectId, StoreError> {
-    let object = CanonicalObject::mint(obligation)?;
+    persist_obligation_with_id_on(transaction, obligation, None)
+}
+
+fn persist_obligation_with_id_on(
+    transaction: &Transaction<'_>,
+    obligation: &WorkObligation,
+    planned: Option<&ObjectId>,
+) -> Result<ObjectId, StoreError> {
+    let object = match planned {
+        Some(id) => CanonicalObject::identified(id, obligation)?,
+        None => CanonicalObject::mint(obligation)?,
+    };
     SqliteStore::insert_object(transaction, "work_obligation", &object)?;
     append_to_work_feeds(
         transaction,
@@ -1962,43 +2021,16 @@ pub(super) fn open_binding_obligations_on(
     reauthored: &[usize],
     now: DateTime<Utc>,
 ) -> Result<Vec<ObjectId>, StoreError> {
-    if item.acceptance_bindings.is_empty() {
-        return Ok(Vec::new());
-    }
-    let existing = load_work_obligation_records_on(transaction, run.run_id, None)?;
-    let (_, policy, _) = SqliteStore::load_control_policy_head(transaction)?;
-    let mut definitions = Vec::new();
-    for binding in &item.acceptance_bindings {
-        let rule = binding_rule(binding.criterion);
-        let held = existing.iter().any(|record| {
-            record.obligation.rule == rule
-                && record.obligation.requirement == binding.requirement
-                && record.state != WorkObligationState::Waived
-                && !(reauthored.contains(&binding.criterion)
-                    && record.obligation.work_revision < item.revision)
-        });
-        if held {
-            continue;
-        }
-        let obligation = WorkObligation {
-            schema_version: SCHEMA_VERSION,
-            obligation_id: WorkObligationId::new(),
-            project_id: item.project_id.clone(),
-            root_execution_id: run.root_execution_id,
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: run.run_id,
-            work_revision: item.revision,
-            rule_set: policy.obligation_rule_set.clone(),
-            rule,
-            triggering_observation: trigger.clone(),
-            trigger_position: trigger_position.clone(),
-            requirement: binding.requirement.clone(),
-            opened_at: now,
-        };
-        definitions.push(persist_obligation_on(transaction, &obligation)?);
-    }
-    Ok(definitions)
+    binding_construction::open_on(
+        transaction,
+        item,
+        run,
+        trigger,
+        trigger_position,
+        reauthored,
+        now,
+        None,
+    )
 }
 
 /// The obligation that answers for `binding` on a run: the newest, by
@@ -2046,53 +2078,7 @@ pub(super) fn waive_unbound_obligations_on(
     actor: &crate::domain::ActorContext,
     now: DateTime<Utc>,
 ) -> Result<Vec<ObjectId>, StoreError> {
-    let mut resolutions = Vec::new();
-    for record in load_complete_work_obligation_records_on(transaction, run_id)?
-        .into_iter()
-        .filter(|record| record.state == WorkObligationState::Open)
-    {
-        let Some(criterion) = binding_rule_criterion(&record.obligation.rule) else {
-            continue;
-        };
-        let rewritten =
-            reauthored.contains(&criterion) && record.obligation.work_revision < item.revision;
-        let still_bound = !rewritten
-            && item.acceptance_bindings.iter().any(|binding| {
-                binding.criterion == criterion
-                    && binding.requirement == record.obligation.requirement
-            });
-        if still_bound {
-            continue;
-        }
-        let change = if rewritten {
-            "was rewritten, and its verification is owed again"
-        } else {
-            "no longer requires this verification"
-        };
-        let event = WorkObligationResolutionEvent {
-            registered_input_decision: None,
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            obligation_id: record.obligation.obligation_id,
-            definition: record.definition_id.clone(),
-            run_id,
-            resolution: WorkObligationResolution::Waived {
-                waived_by: actor.actor_id.clone(),
-                reason: format!(
-                    "acceptance revised at revision {}: criterion {criterion} {change}",
-                    item.revision
-                ),
-            },
-            actor: actor.clone(),
-            created_at: now,
-        };
-        resolutions.push(append_obligation_resolution_on(
-            transaction,
-            &record,
-            &event,
-        )?);
-    }
-    Ok(resolutions)
+    binding_construction::waive_on(transaction, item, run_id, reauthored, actor, now, None)
 }
 
 /// Savepoint that brackets completion's untested-change waivers, so a
@@ -2319,6 +2305,15 @@ fn append_obligation_resolution_on(
     record: &WorkObligationRecord,
     event: &WorkObligationResolutionEvent,
 ) -> Result<ObjectId, StoreError> {
+    append_obligation_resolution_with_id_on(transaction, record, event, None)
+}
+
+fn append_obligation_resolution_with_id_on(
+    transaction: &Transaction<'_>,
+    record: &WorkObligationRecord,
+    event: &WorkObligationResolutionEvent,
+    planned: Option<&ObjectId>,
+) -> Result<ObjectId, StoreError> {
     let (state, kind, evidence_id) = match &event.resolution {
         WorkObligationResolution::Satisfied { evidence, .. } => (
             WorkObligationState::Satisfied,
@@ -2330,7 +2325,10 @@ fn append_obligation_resolution_on(
             (WorkObligationState::Displaced, "displaced", None)
         }
     };
-    let object = CanonicalObject::mint(event)?;
+    let object = match planned {
+        Some(id) => CanonicalObject::identified(id, event)?,
+        None => CanonicalObject::mint(event)?,
+    };
     SqliteStore::insert_object(transaction, "work_obligation_resolution", &object)?;
     append_to_work_feeds(
         transaction,

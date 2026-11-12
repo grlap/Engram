@@ -106,6 +106,7 @@ impl SqliteStore {
                     .query_row(
                         "SELECT object_id, canonical_json FROM objects
                          WHERE object_kind = 'named_root_binding'
+                           AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
                            AND json_extract(canonical_json, '$.claim_id') = ?1
                            AND json_extract(canonical_json, '$.generation') = ?2
                            AND json_extract(canonical_json, '$.kind') = 'bound'",

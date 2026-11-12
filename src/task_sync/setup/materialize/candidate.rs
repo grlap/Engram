@@ -62,8 +62,43 @@ pub(super) fn write(directory: &Directory, documents: &Documents) -> Result<()> 
 }
 
 pub(super) fn read(directory: &Directory) -> Result<Documents> {
+    read_inventory(directory, false, false)
+}
+
+pub(super) fn read_shared(directory: &Directory) -> Result<Documents> {
+    read_inventory(directory, true, true)
+}
+
+pub(super) fn read_publication(directory: &Directory) -> Result<Documents> {
+    read_inventory(directory, false, true)
+}
+
+pub(super) fn publication_documents(
+    documents: &Documents,
+    assertions: &super::super::Assertions,
+) -> Result<Documents> {
+    Ok(crate::task_sync::directory::prepare_folder_documents(
+        documents,
+        &crate::task_sync::progress::ExportProfile {
+            include_notes: assertions.include_notes,
+            origin_machine: assertions.origin_machine.clone(),
+        },
+    )?
+    .0)
+}
+
+fn read_inventory(directory: &Directory, policies: bool, enveloped: bool) -> Result<Documents> {
+    let expected = if policies {
+        vec![".gitattributes", ".gitignore", "project.json", "tasks"]
+    } else {
+        vec!["project.json", "tasks"]
+    };
     ensure!(
-        directory.names(2)? == ["project.json", "tasks"].map(std::ffi::OsString::from),
+        directory.names(expected.len())?
+            == expected
+                .into_iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>(),
         "retained materialization candidate inventory changed"
     );
     let tasks = directory.child(Path::new("tasks"))?;
@@ -108,7 +143,11 @@ pub(super) fn read(directory: &Directory) -> Result<Documents> {
         tasks.names(100_000)? == names,
         "retained task inventory changed during read"
     );
-    TaskTree::from_stored_documents(&documents)?;
+    if enveloped {
+        crate::task_sync::directory::folder_from_documents(documents.clone(), true)?;
+    } else {
+        TaskTree::from_stored_documents(&documents)?;
+    }
     Ok(documents)
 }
 

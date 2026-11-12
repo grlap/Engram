@@ -81,7 +81,8 @@ fn append_mints_a_record_per_call_and_round_trips_content() {
             invalid_graph_snapshot_audits: Vec::new(),
             checked_control_records: 3,
             invalid_control_records: Vec::new(),
-            checked_work_records: 2,
+            // Includes the producing-origin head projection consistency check.
+            checked_work_records: 3,
             invalid_work_records: Vec::new(),
         }
     );

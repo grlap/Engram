@@ -196,6 +196,7 @@ fn known_snapshot_on(
     let mut statement = connection.prepare(
         "SELECT object_id FROM objects INDEXED BY objects_work_source_key
          WHERE object_kind = 'work_source_snapshot'
+           AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
            AND json_extract(canonical_json, '$.adapter_kind') = ?1
            AND json_extract(canonical_json, '$.canonical_ref') = ?2
            AND canonical_json = ?3
@@ -227,6 +228,7 @@ fn source_snapshot_known_on(
     let native: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM objects INDEXED BY objects_work_source_proposal_work
          WHERE object_kind = 'work_source_proposal'
+           AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id)
            AND json_extract(canonical_json, '$.work_id') = ?1
            AND json_extract(canonical_json, '$.notice.proposed_snapshot') = ?2)",
         params![item.work_id.0.to_string(), snapshot.as_str()],

@@ -6,6 +6,8 @@ use crate::storage::work::{
 };
 use crate::task_sync::ledger::PublicationObservation;
 
+mod reconciliation;
+
 #[test]
 fn negative_tip_observations_remain_unresolved_across_restart_and_block_supersession() {
     let home = crate::test_support::temp_home().unwrap();

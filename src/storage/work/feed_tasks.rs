@@ -253,6 +253,7 @@ fn affected(
         | "named_root_binding"
         | super::UNADMITTED_OBSERVATION_KIND
         | "verification_evidence"
+        | crate::task_sync::evidence::consumption::CONSUMPTION_KIND
         | "environment_evidence"
         | "registered_host_run"
         | crate::domain::REMOTE_TERMINAL_ORIGIN_KIND
@@ -261,8 +262,10 @@ fn affected(
         | "work_obligation_resolution"
         | "memory_version"
         | "memory_assertion_event"
-        // These private reconciliation facts do not change exported task text.
+        // Private identity and reconciliation facts do not change exported task text.
         // Ordinary planning/work records name any actual task mutations.
+        | crate::task_sync::origin::PRODUCING_ORIGIN_KIND
+        | crate::task_sync::origin::recovery::RECOVERY_KIND
         | "task_sync_reconciliation_hold"
         | "task_sync_shared_import_version" => Ok(BTreeSet::new()),
         other => Err(invalid(format!(
@@ -280,8 +283,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn task_sync_reconciliation_facts_do_not_mint_exported_task_changes() {
+    fn task_sync_private_metadata_facts_do_not_mint_exported_task_changes() {
         for kind in [
+            crate::task_sync::origin::PRODUCING_ORIGIN_KIND,
+            crate::task_sync::origin::recovery::RECOVERY_KIND,
             "task_sync_reconciliation_hold",
             "task_sync_shared_import_version",
         ] {

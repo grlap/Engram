@@ -767,6 +767,36 @@ pub(super) fn work_evidence_summary(
                 created_at: evidence.completed_at,
             })
         }
+        WorkEvidenceKind::Imported => {
+            let record = store.imported_consumption_record(evidence_id)?;
+            Ok(WorkEvidenceSummary {
+                applicability: None,
+                display_actor_id: Some(record.actor.actor_id.clone()),
+                display_actor_session_id: record.actor.session_id.clone(),
+                display_actor_kind: Some(record.actor.actor_kind.clone()),
+                root_position: None,
+                evidence: evidence_id.clone(),
+                evidence_kind: WorkEvidenceKind::Imported,
+                non_holder: false,
+                gate: None,
+                workspace_id: None,
+                source_revision: None,
+                producer_session_id: None,
+                actor_id: Some(compact_text(&record.actor.actor_id)),
+                actor_context: projected_actor_context(&record.actor),
+                check_kind: None,
+                check_fingerprint: None,
+                verification_result: None,
+                environment_fingerprint: None,
+                environment: None,
+                environment_components: None,
+                summary: format!(
+                    "explicit imported proof use; decision {}",
+                    record.request.decision
+                ),
+                created_at: record.recorded_at,
+            })
+        }
         WorkEvidenceKind::Environment => {
             let evidence = store.load_environment_evidence(evidence_id)?;
             Ok(WorkEvidenceSummary {

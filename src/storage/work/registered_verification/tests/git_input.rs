@@ -14,6 +14,10 @@ fn object_name(label: &str) -> String {
 }
 
 fn unevaluated(bound: bool) -> Fixture {
+    unevaluated_in(SqliteStore::open_in_memory().unwrap(), bound)
+}
+
+fn unevaluated_in(store: SqliteStore, bound: bool) -> Fixture {
     let mut create = root_request("project-a", "git-input-work", 1);
     if bound {
         create.acceptance_bindings = vec![AcceptanceBinding {
@@ -24,14 +28,17 @@ fn unevaluated(bound: bool) -> Fixture {
             },
         }];
     }
-    let mut f =
-        fixture_with_create_and_root(SqliteStore::open_in_memory().unwrap(), 0, &create, false);
+    let mut f = fixture_with_create_and_root(store, 0, &create, false);
     live_currency::attach_root(&mut f);
     f
 }
 
 fn prepared(bound: bool, fresh: bool) -> Fixture {
-    let mut f = unevaluated(bound);
+    prepared_in(SqliteStore::open_in_memory().unwrap(), bound, fresh)
+}
+
+fn prepared_in(store: SqliteStore, bound: bool, fresh: bool) -> Fixture {
+    let mut f = unevaluated_in(store, bound);
     f.store
         .set_acceptance_evaluation_policy(
             &AcceptanceEvaluationPolicy {

@@ -71,7 +71,7 @@ pub(in crate::storage::work) fn verify_obligation_rows(
         ("work_obligation_resolution", &projected_resolutions),
     ] {
         let hashes = connection
-            .prepare("SELECT object_id FROM objects WHERE object_kind = ?1 ORDER BY object_id")?
+            .prepare("SELECT object_id FROM objects WHERE object_kind = ?1 AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record WHERE foreign_record.object_id=objects.object_id) ORDER BY object_id")?
             .query_map([kind], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for stored_hash in hashes {

@@ -729,6 +729,15 @@ fn load_work_evidence_selection_rows_on(
                         evidence.binding.run_id,
                     )
                 }
+                "imported_evidence_consumption" => {
+                    let evidence: crate::task_sync::evidence::consumption::ImportedEvidenceConsumption = object.decode()?;
+                    (
+                        WorkEvidenceKind::Imported,
+                        None,
+                        evidence.request.binding.work_id,
+                        evidence.request.binding.run_id,
+                    )
+                }
                 "environment_evidence" => {
                     let evidence: EnvironmentEvidence = object.decode()?;
                     if evidence.schema_version != SCHEMA_VERSION {
@@ -760,6 +769,7 @@ fn load_work_evidence_selection_rows_on(
                 WorkEvidenceKind::Generic => "generic",
                 WorkEvidenceKind::Verification => "verification",
                 WorkEvidenceKind::Environment => "environment",
+                WorkEvidenceKind::Imported => "imported",
             };
             if row.projected_kind != expected_kind
                 || projected_environment != environment
@@ -827,6 +837,13 @@ pub(in crate::storage::work) fn work_evidence_kind_on(
             ))
         })?;
     let (kind, expected) = match projected.evidence_kind.as_str() {
+        "imported" => (
+            WorkEvidenceKind::Imported,
+            crate::storage::work::task_sync::evidence::consumption::expected_projection_on(
+                connection,
+                evidence_id,
+            )?,
+        ),
         "generic" => {
             let evidence =
                 load_typed_work_object::<WorkEvidence>(connection, evidence_id, "work_evidence")?;

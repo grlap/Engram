@@ -10,6 +10,11 @@ use crate::{
 };
 use std::fs;
 
+mod data_commit;
+mod delta_commit;
+mod delta_resolution;
+mod driver;
+
 fn service(database: &Path) -> LocalWorkService {
     LocalWorkService::new(
         database.into(),
@@ -38,6 +43,92 @@ fn empty_folder() -> FolderExchange {
         profile: ExportProfile {
             include_notes: false,
             origin_machine: None,
+        },
+    }
+}
+
+fn audit_request() -> task_sync::delta::CustodyAuditRequest {
+    use task_sync::delta::{
+        CheckpointReason, CustodyAuditRequest, CustodySeedSelection, OriginQualifiedCut,
+    };
+    let binding = crate::ObjectId::mint();
+    CustodyAuditRequest {
+        binding: binding.clone(),
+        operation: uuid::Uuid::new_v4(),
+        key: "explicit audit".into(),
+        reason: CheckpointReason::NamedAudit,
+        previous_checkpoint: None,
+        expected_tail: crate::ObjectId::mint(),
+        expected_local_cut: OriginQualifiedCut {
+            binding,
+            origin: crate::ObjectId::mint(),
+            restore_occurrence: None,
+            position: crate::FeedPosition {
+                feed: crate::FeedId::Project(ProjectId("service/opt-in".into())),
+                position: 0,
+            },
+            anchor: None,
+        },
+        seed: CustodySeedSelection::CustodyOnly,
+    }
+}
+
+fn delta_export_request(service: &LocalWorkService) -> task_sync::delta::DeltaIntent {
+    use task_sync::delta::*;
+    let binding = crate::ObjectId::mint();
+    let operation = uuid::Uuid::new_v4();
+    let membership = OutputMembership {
+        inventory_root: task_sync::inventory::InventoryRoot::ZERO,
+        profile: empty_folder().profile,
+    };
+    let cut = OriginQualifiedCut {
+        binding,
+        origin: crate::ObjectId::mint(),
+        restore_occurrence: None,
+        position: crate::FeedPosition {
+            feed: crate::FeedId::Project(service.project_id.clone()),
+            position: 0,
+        },
+        anchor: None,
+    };
+    let payload = DeltaCandidatePayload {
+        format: DELTA_PAYLOAD_FORMAT.into(),
+        project_id: service.project_id.clone(),
+        operation,
+        output: membership.clone(),
+        documents: std::collections::BTreeMap::new(),
+    };
+    task_sync::delta::DeltaIntent {
+        operation,
+        key: operation.to_string(),
+        direction: task_sync::ledger::Direction::Outgoing,
+        actor: service.actor("task_sync_delta_export", "explicit selected export"),
+        producer: crate::CanonicalObject::freeze(&"fixture producer")
+            .unwrap()
+            .key()
+            .clone(),
+        expected_head: None,
+        common_commit: None,
+        local_cut: cut.clone(),
+        basis: DeltaBasis::Outgoing {
+            export_before: Box::new(PreparedExportBasis {
+                anchor: PreparedExportAnchor::Bootstrap {
+                    checkpoint: crate::ObjectId::mint(),
+                },
+                membership: membership.clone(),
+                cut,
+            }),
+            confirmed_before: None,
+        },
+        candidate: RetainedDeltaCandidate {
+            operation,
+            directory: service.database.parent().unwrap().join("candidate"),
+            content_fingerprint: crate::CanonicalObject::freeze(&payload)
+                .unwrap()
+                .key()
+                .clone(),
+            output: membership,
+            changed: std::collections::BTreeSet::new(),
         },
     }
 }
@@ -108,7 +199,10 @@ fn setup_actor_context_service_clone_refuses_raw_controls_before_repository_stat
         let materialize = service
             .materialize_task_sync_setup(&owned.path().join("marker"), &selection)
             .unwrap_err();
-        for error in [prepare, materialize] {
+        let initialize = service
+            .initialize_task_sync_data_worktree(&owned.path().join("marker"), "engram-data")
+            .unwrap_err();
+        for error in [prepare, materialize, initialize] {
             assert!(
                 error.to_string().contains(
                     "actor context must be nonblank bounded text without control characters"
@@ -151,6 +245,41 @@ fn task_sync_all_service_exchange_routes_refuse_without_opt_in_before_opening_sq
             }
         }
         let before = entries(owned.path());
+        let delta = delta_export_request(&service);
+        let error = service
+            .prepare_task_sync_delta_export(&delta.local_cut.binding, &delta, chrono::Utc::now())
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("task sync is not enabled"),
+            "{error}"
+        );
+        let error = service
+            .initialize_task_sync_data_worktree(&owned.path().join("marker"), "engram-data")
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("task sync is not enabled"),
+            "{error}"
+        );
+        let error = service
+            .audit_task_sync_custody(&audit_request(), chrono::Utc::now())
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("task sync is not enabled"),
+            "{error}"
+        );
+        let error = service
+            .enroll_task_sync_origin(
+                &task_sync::origin::EnrollRequest {
+                    operation: uuid::Uuid::new_v4(),
+                    predecessor: None,
+                },
+                chrono::Utc::now(),
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("task sync is not enabled"),
+            "{error}"
+        );
         let profile = ExportProfile {
             include_notes: false,
             origin_machine: None,
@@ -341,6 +470,39 @@ fn task_sync_read_only_mutation_refusal_precedes_opt_in_and_repository_reads() {
     );
     let service = service(&database).into_read_only();
     let before = entries(owned.path());
+    let delta = delta_export_request(&service);
+    let error = service
+        .prepare_task_sync_delta_export(&delta.local_cut.binding, &delta, chrono::Utc::now())
+        .unwrap_err();
+    assert!(error.to_string().contains("read-only"), "{error}");
+    let error = service
+        .initialize_task_sync_data_worktree(&owned.path().join("marker"), "engram-data")
+        .unwrap_err();
+    assert!(error.to_string().contains("read-only"), "{error}");
+    let error = service
+        .audit_task_sync_custody(&audit_request(), chrono::Utc::now())
+        .unwrap_err();
+    assert!(error.to_string().contains("read-only"), "{error}");
+    let cancel_error = service
+        .cancel_task_sync_origin_enrollment(
+            &task_sync::origin::EnrollRequest {
+                operation: uuid::Uuid::new_v4(),
+                predecessor: None,
+            },
+            chrono::Utc::now(),
+        )
+        .unwrap_err();
+    assert!(cancel_error.to_string().contains("read-only"));
+    let error = service
+        .enroll_task_sync_origin(
+            &task_sync::origin::EnrollRequest {
+                operation: uuid::Uuid::new_v4(),
+                predecessor: None,
+            },
+            chrono::Utc::now(),
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("read-only"), "{error}");
     let profile = ExportProfile {
         include_notes: false,
         origin_machine: None,
@@ -376,6 +538,52 @@ fn task_sync_read_only_mutation_refusal_precedes_opt_in_and_repository_reads() {
         .unwrap_err();
     assert!(error.to_string().contains("read-only"));
     assert_eq!(entries(owned.path()), before);
+}
+
+#[test]
+fn task_sync_delta_export_service_refuses_foreign_scope_before_opening_sqlite() {
+    let owned = crate::test_support::temp_home().unwrap();
+    let database = crate::project_database_path(
+        &owned.path().join("home"),
+        &ProjectId("service/opt-in".into()),
+    );
+    let service = service(&database);
+    service
+        .task_sync_settings(
+            &task_sync::settings::Request {
+                action: task_sync::settings::Action::Enable,
+                user_instruction: Some("Enable Git task sync for this test fixture.".into()),
+            },
+            chrono::Utc::now(),
+        )
+        .unwrap();
+    let original = delta_export_request(&service);
+    let before = entries(owned.path());
+    for scenario in ["project", "binding", "actor", "session"] {
+        let mut changed = original.clone();
+        let mut binding = original.local_cut.binding.clone();
+        match scenario {
+            "project" => {
+                changed.local_cut.position.feed =
+                    crate::FeedId::Project(ProjectId("another/project".into()));
+            }
+            "binding" => binding = crate::ObjectId::mint(),
+            "actor" => changed.actor.actor_id = "another-actor".into(),
+            "session" => changed.actor.session_id = Some(SessionId("another-session".into())),
+            _ => unreachable!(),
+        }
+        let error = service
+            .prepare_task_sync_delta_export(&binding, &changed, chrono::Utc::now())
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("belongs to another project, binding, actor or session"),
+            "{scenario}: {error}"
+        );
+        assert!(!database.exists(), "{scenario}");
+        assert_eq!(entries(owned.path()), before, "{scenario}");
+    }
 }
 
 #[test]

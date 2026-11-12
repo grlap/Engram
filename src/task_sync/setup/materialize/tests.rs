@@ -10,12 +10,15 @@ use std::{collections::BTreeMap, fs, process::Command};
 mod admission;
 mod aliases;
 mod capacity_recheck;
+mod evidence;
 mod ownership;
 mod recovery;
 
 struct Fixture {
     owned: crate::test_support::TempHome,
     root: PathBuf,
+    code: PathBuf,
+    common: PathBuf,
     marker: PathBuf,
     store: PathBuf,
     admin: PathBuf,
@@ -26,6 +29,10 @@ struct Fixture {
 }
 
 fn git(root: &Path, args: &[&str]) -> Vec<u8> {
+    let config_root = root
+        .ancestors()
+        .find(|path| path.join("global.config").is_file())
+        .unwrap_or_else(|| root.parent().unwrap());
     let output = Command::new("git")
         .current_dir(root)
         .env_remove("GIT_DIR")
@@ -35,14 +42,11 @@ fn git(root: &Path, args: &[&str]) -> Vec<u8> {
         .env_remove("GIT_CONFIG_COUNT")
         .env_remove("GIT_CONFIG_PARAMETERS")
         .env_remove("GIT_ATTR_SOURCE")
-        .env("HOME", root.parent().unwrap())
-        .env("XDG_CONFIG_HOME", root.parent().unwrap())
+        .env("HOME", config_root)
+        .env("XDG_CONFIG_HOME", config_root)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_ATTR_NOSYSTEM", "1")
-        .env(
-            "GIT_CONFIG_GLOBAL",
-            root.parent().unwrap().join("global.config"),
-        )
+        .env("GIT_CONFIG_GLOBAL", config_root.join("global.config"))
         .args([
             "--no-optional-locks",
             "-c",
@@ -152,7 +156,7 @@ impl Fixture {
         .unwrap();
         let root = owned.path().join("repository");
         fs::create_dir(&root).unwrap();
-        git(&root, &["init", "--initial-branch=ordinary"]);
+        git(&root, &["init", "--initial-branch=code"]);
         git(&root, &["config", "core.autocrlf", "false"]);
         git(
             &root,
@@ -186,6 +190,7 @@ impl Fixture {
                 fs::write(root.join(name), bytes).unwrap();
             }
         }
+        fs::write(root.join(".git/info/exclude"), b"/.engram-data/\n").unwrap();
         fs::write(root.join("code.txt"), b"ordinary code\n").unwrap();
         git(&root, &["add", "."]);
         git(
@@ -199,6 +204,40 @@ impl Fixture {
                 "-m",
                 "fixture",
             ],
+        );
+        let code = root;
+        let common = code.join(".git");
+        let root = code.join(crate::task_sync::data_worktree::DIRECTORY_NAME);
+        git(
+            &code,
+            &[
+                "worktree",
+                "add",
+                "--detach",
+                "--no-checkout",
+                root.to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        git(&root, &["symbolic-ref", "HEAD", "refs/heads/ordinary"]);
+        git(&root, &["read-tree", "--empty"]);
+        git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "Start metadata history",
+            ],
+        );
+        let admin = PathBuf::from(
+            String::from_utf8(git(&root, &["rev-parse", "--absolute-git-dir"]))
+                .unwrap()
+                .trim(),
         );
         if existing_private {
             fs::create_dir(root.join(".engram")).unwrap();
@@ -273,10 +312,12 @@ impl Fixture {
         };
         Self {
             owned,
-            admin: root.join(".git"),
             root,
+            code,
+            common,
             marker,
             store,
+            admin,
             service,
             selection,
             assertions,
@@ -420,7 +461,12 @@ fn task_materialize_retains_noncanonical_task_bytes_and_omission_provenance() {
 fn assert_shared(fixture: &Fixture) {
     let public = fixture.root.join(".engram");
     for (path, bytes) in &fixture.documents {
-        assert_eq!(&fs::read(public.join(path)).unwrap(), bytes, "{path}");
+        let published = fs::read(public.join(path)).unwrap();
+        if path == "project.json" {
+            evidence::assert_project_envelope(bytes, &published, &fixture.assertions);
+        } else {
+            assert_eq!(&published, bytes, "{path}");
+        }
     }
     let mut names: Vec<_> = fs::read_dir(public.join("tasks"))
         .unwrap()
@@ -485,12 +531,20 @@ fn snapshot_with_lock_metadata(
 }
 
 #[test]
-fn task_materialize_publishes_raw_bytes_with_private_state_and_exact_repeat() {
+fn task_materialize_publishes_task_bytes_and_project_envelope_with_exact_repeat() {
     for existing in [false, true] {
         let fixture = Fixture::new(existing, 2);
         let index = fs::read(fixture.admin.join("index")).unwrap();
-        let config = fs::read(fixture.admin.join("config")).unwrap();
+        let config = fs::read(fixture.common.join("config")).unwrap();
         let head = git(&fixture.root, &["rev-parse", "HEAD"]);
+        let code_head = git(&fixture.code, &["rev-parse", "HEAD"]);
+        let code_index = fs::read(fixture.common.join("index")).unwrap();
+        let code_status = git(
+            &fixture.code,
+            &["status", "--porcelain=v1", "--untracked-files=all"],
+        );
+        let code_policies =
+            [".gitignore", ".gitattributes"].map(|name| fs::read(fixture.code.join(name)).unwrap());
         let first = fixture.run();
         assert!(!first.repeated);
         let completion: serde_json::Value =
@@ -498,8 +552,32 @@ fn task_materialize_publishes_raw_bytes_with_private_state_and_exact_repeat() {
         assert_eq!(completion["operation"], first.operation.to_string());
         fixture.assert_output();
         assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
-        assert_eq!(fs::read(fixture.admin.join("config")).unwrap(), config);
+        assert_eq!(fs::read(fixture.common.join("config")).unwrap(), config);
         assert_eq!(git(&fixture.root, &["rev-parse", "HEAD"]), head);
+        assert_eq!(git(&fixture.code, &["rev-parse", "HEAD"]), code_head);
+        assert_eq!(fs::read(fixture.common.join("index")).unwrap(), code_index);
+        assert_eq!(
+            git(
+                &fixture.code,
+                &["status", "--porcelain=v1", "--untracked-files=all"]
+            ),
+            code_status
+        );
+        for (name, before) in [".gitignore", ".gitattributes"]
+            .into_iter()
+            .zip(code_policies)
+        {
+            assert_eq!(fs::read(fixture.code.join(name)).unwrap(), before);
+        }
+        assert!(
+            git(
+                &fixture.root,
+                &["ls-files", "--others", "--exclude-standard", "-z"]
+            )
+            .split(|byte| *byte == 0)
+            .filter(|name| !name.is_empty())
+            .all(|name| name.starts_with(b".engram/"))
+        );
         if existing {
             assert_eq!(
                 fs::read(fixture.root.join(".engram/private.db")).unwrap(),

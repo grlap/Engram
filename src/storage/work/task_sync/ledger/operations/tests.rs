@@ -17,6 +17,16 @@ pub(super) fn input(
     binding: &Binding,
     tree: crate::task_sync::TaskTree,
 ) -> InspectedExchange {
+    input_with_cut(store, binding_id, binding, tree, binding.store.cut.clone())
+}
+
+pub(super) fn input_with_cut(
+    store: &SqliteStore,
+    binding_id: &ObjectId,
+    binding: &Binding,
+    tree: crate::task_sync::TaskTree,
+    cut: crate::task_sync::progress::ExportCut,
+) -> InspectedExchange {
     std::fs::create_dir_all(&binding.repository.git_directory).unwrap();
     let operation = uuid::Uuid::new_v4();
     let producer = CanonicalObject::freeze(&"fixture producer")
@@ -35,7 +45,7 @@ pub(super) fn input(
             project: binding.project.clone(),
             profile: binding.profile.clone(),
             producer: producer.clone(),
-            cut: binding.store.cut.clone(),
+            cut,
             omissions: NoteOmissions::default(),
             activity_omissions: NoteOmissions::default(),
         },
@@ -114,9 +124,12 @@ fn typed_import_receipt_is_atomic_dry_run_and_post_commit_retry_is_a_noop() {
         files_before
     );
     {
+        let observed =
+            super::super::custody::Observed::capture(&binding.repository.git_directory).unwrap();
         let transaction = store.begin_work_mutation().unwrap();
         let mut ledger = Ledger::load(&transaction).unwrap();
-        let (id, receipt) = apply_on(&transaction, &mut ledger, &input, false, at(8)).unwrap();
+        let (id, receipt) =
+            apply_on(&transaction, &mut ledger, &input, false, at(8), &observed).unwrap();
         let event: Event = SqliteStore::get_typed_object_on(&transaction, &id, EVENT_KIND)
             .unwrap()
             .unwrap();
@@ -512,3 +525,7 @@ fn full_store_migration_carries_an_applied_import_receipt() {
             .is_healthy()
     );
 }
+
+mod historical_lookup;
+mod incremental_append;
+mod origin_recovery;

@@ -15,7 +15,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{io::Write, path::Path};
 
-const FORMAT: &str = "engram-task-sync-materialize-v1";
+const FORMAT: &str = "engram-task-sync-materialize-v3";
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +79,7 @@ pub(super) fn initialize(
     selection: MaterializeSelection,
     attribution: Attribution,
     prepared: PreparedCandidate,
+    publication: &Documents,
     index: Vec<u8>,
     checkpoint: &mut impl FnMut(&str) -> Result<()>,
 ) -> Result<Record> {
@@ -90,25 +91,38 @@ pub(super) fn initialize(
     let raw = private.create_child(Path::new("raw"))?;
     candidate::write(&raw, &prepared.documents)?;
     let pins = private.create_child(Path::new("pins"))?;
-    candidate::write(&pins, &prepared.documents)?;
+    candidate::write(&pins, publication)?;
     let stage = private.create_child(Path::new("stage"))?;
-    candidate::link_tree(&pins, &stage, &prepared.documents)?;
+    candidate::link_tree(&pins, &stage, publication)?;
     let after = private.create_child(Path::new("after"))?;
     let before = private.create_child(Path::new("before"))?;
     let completion_recovery = private.create_child(Path::new("completion-recovery"))?;
     let completion_source = completion_recovery.open_file(Path::new("source"), true, true)?;
     completion_source.sync_all()?;
     let mut before_ids = Vec::new();
+    let shared = existing_engram
+        .map(|_| root.child(Path::new(".engram")))
+        .transpose()?;
     for edit in &basis.edits {
         ensure!(
-            root.read(Path::new(&edit.path))? == edit.before,
+            shared
+                .as_ref()
+                .map(|directory| directory.read(Path::new(&edit.path)))
+                .transpose()?
+                .flatten()
+                == edit.before,
             "setup before bytes changed during admission"
         );
         let mut file = after.open_file(Path::new(&edit.path), true, true)?;
         file.write_all(&edit.after)?;
         file.sync_all()?;
+        after.dir().hard_link(&edit.path, stage.dir(), &edit.path)?;
         if edit.before.is_some() {
-            root.dir().hard_link(&edit.path, before.dir(), &edit.path)?;
+            shared
+                .as_ref()
+                .context("setup policy parent missing")?
+                .dir()
+                .hard_link(&edit.path, before.dir(), &edit.path)?;
             let file = before.open_file(Path::new(&edit.path), false, false)?;
             before_ids.push(Some(file_identity(&file)?));
             ensure!(
@@ -265,7 +279,7 @@ pub(super) fn check_sources(
     check_inventory(private)?;
     super::completion::check_source(private, record)?;
     ensure!(
-        candidate::read(&private.child(Path::new("pins"))?)? == *documents,
+        candidate::read_publication(&private.child(Path::new("pins"))?)? == *documents,
         "publication source bytes changed; preserve public and private state"
     );
     let after = private.child(Path::new("after"))?;

@@ -41,10 +41,10 @@ use crate::{
         POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE, POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE,
         RecordGateEvidenceRequest, RecordRestoredWorkEvidenceRequest, RecordWorkEvidenceRequest,
         RecordWorkNoteRequest, ReleaseWorkRequest, RestoredWorkEvidenceInput, RootExecution,
-        RootExecutionId, RootExecutionState, SCHEMA_VERSION, VerificationEvidence,
-        WorkAvailability, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState, WorkEvent,
-        WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
-        WorkItem, WorkLifecycle, WorkRelease, WorkRun, WorkRunId, WorkRunState, WorkTransition,
+        RootExecutionState, SCHEMA_VERSION, VerificationEvidence, WorkAvailability, WorkCheckpoint,
+        WorkClaim, WorkClaimId, WorkClaimState, WorkEvent, WorkEvidence, WorkEvidenceKind,
+        WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkItem, WorkLifecycle,
+        WorkRelease, WorkRun, WorkRunId, WorkRunState, WorkTransition,
         normalize_gate_evidence_input, validate_gate_evidence_payload,
     },
     memory::Redactor,
@@ -76,4 +76,6 @@ use evidence::{
     persist_post_completion_work_evidence_on, persist_work_evidence_on,
     validate_post_completion_evidence_basis_on,
 };
-pub(super) use restored::ensure_restored_execution_state;
+pub(super) use restored::{
+    ensure_restored_execution_state, ensure_restored_execution_state_for_event,
+};

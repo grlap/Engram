@@ -71,13 +71,14 @@ contract and keep the change narrow.
   assembly. Optional task-text exchange derives shared planning text from
   host-local state.
 - The selected [Git task sync](../../../docs/features/git-task-sync.md) design
-  exchanges agent-merged task text on the ordinary code branch through explicit
-  export and import in the main checkout. Linked worktrees omit its task files
-  using the brief's sparse-checkout contract. Live work claims, delivery state,
-  and agent-private scratch never transfer. The design uses no
-  global writer lock, writer epochs, or release/acquire protocol, and does not
-  prevent duplicate work across hosts. Backup and full-store migration retain
-  their separate contracts. Task sync is planned, not shipped.
+  exchanges agent-merged task text and evidence packs on one long-lived orphan
+  data branch per project, through explicit operations in the dedicated
+  `MAIN/.engram-data/` worktree. Code commits carry no exported task or evidence
+  data, and linked code worktrees need no task-data sparse-checkout contract.
+  Live work claims, delivery state, and agent-private scratch never transfer.
+  The design uses no global writer lock, writer epochs, or release/acquire
+  protocol, and does not prevent duplicate work across hosts. Backup and
+  full-store migration retain their separate contracts.
 - `report_ready` freezes report bytes and fingerprint. A separately requested
   publication freezes target and idempotency key. Failed publication returns
   to the same frozen report; revision creates a superseding report and intent.

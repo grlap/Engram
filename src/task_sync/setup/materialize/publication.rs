@@ -50,7 +50,7 @@ pub(super) fn apply(
             public.child(Path::new("tasks"))?.identity()? == record.stage_tasks,
             "shared task directory was independently replaced"
         );
-        // Only the staged source has an exact two-entry inventory. Once public,
+        // Only the staged source has an exact four-entry inventory. Once public,
         // unrelated private siblings may coexist with the owned shared paths.
         check_reserved_names(&public, capacity)?;
         check_owned_tree(&public, &pins, documents)?;
@@ -125,9 +125,10 @@ pub(super) fn apply(
 }
 
 pub(super) fn check_reserved_names(public: &Directory, capacity: usize) -> Result<()> {
-    for name in public.names_with_room(capacity, &["project.json", "tasks"])? {
+    let selected = ["project.json", "tasks", ".gitignore", ".gitattributes"];
+    for name in public.names_with_room(capacity, &selected)? {
         if let Some(name) = name.to_str()
-            && let Some(expected) = ["project.json", "tasks"]
+            && let Some(expected) = selected
                 .iter()
                 .find(|expected| name.eq_ignore_ascii_case(expected))
         {
@@ -142,7 +143,7 @@ pub(super) fn check_reserved_names(public: &Directory, capacity: usize) -> Resul
 
 fn check_tree(public: &Directory, pins: &Directory, documents: &Documents) -> Result<()> {
     ensure!(
-        candidate::read(public)? == *documents,
+        candidate::read_shared(public)? == *documents,
         "published task tree bytes or inventory changed"
     );
     check_owned_tree(public, pins, documents)

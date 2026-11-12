@@ -178,7 +178,7 @@ pub(in crate::storage) fn load_reconciliation_hold_on<'tx, 'conn>(
     }))
 }
 
-pub(super) fn validate_hold(
+pub(in crate::storage::work::task_sync) fn validate_hold(
     connection: &Connection,
     id: &ObjectId,
     hold: &ReconciliationHold,
@@ -193,12 +193,16 @@ pub(super) fn validate_hold(
     )?;
     crate::task_sync::ledger::attribution(&hold.actor)?;
     let (_, prepared) = prepared_on(connection, &hold.binding, &hold.prepared, &hold.project_id)?;
-    let Transition::Prepared { intent } = prepared.transition else {
-        return Err(invalid("reconciliation requires a prepared intent"));
+    let (actor, fingerprint) = match &prepared.transition {
+        Transition::Prepared { intent } => (&intent.actor, &intent.candidate.documents_fingerprint),
+        Transition::DeltaPrepared { intent, .. } => {
+            (&intent.actor, &intent.candidate.content_fingerprint)
+        }
+        _ => return Err(invalid("reconciliation requires a planning preparation")),
     };
     require(
-        hold.actor == intent.actor
-            && hold.candidate_fingerprint == intent.candidate.documents_fingerprint
+        &hold.actor == actor
+            && &hold.candidate_fingerprint == fingerprint
             && hold.created_at >= prepared.recorded_at,
         "hold differs from its prepared candidate",
     )?;
@@ -349,7 +353,7 @@ pub(super) fn resolution_on(
         resolutions.insert(event_id);
     }
     let mut statement = connection.prepare("SELECT object_id, canonical_json FROM objects
-        WHERE object_kind IN ('task_sync_reconciliation_hold','task_sync_exchange_event') AND object_kind=?1
+        WHERE object_kind IN ('task_sync_reconciliation_hold','task_sync_exchange_event') AND object_kind=?1 AND json_valid(canonical_json)
           AND CASE WHEN object_kind='task_sync_reconciliation_hold' THEN json_extract(canonical_json,'$.project_id') ELSE json_extract(canonical_json,'$.binding') END=?2
           AND json_extract(canonical_json,'$.transition.prepared')=?3 LIMIT ?4")?;
     for (event_id, event) in super::lookup::decode_rows::<Event>(statement.query(params![
@@ -370,6 +374,32 @@ pub(super) fn resolution_on(
             resolutions.insert(event_id);
         }
     }
+    let mut statement = connection.prepare(
+        "SELECT outcome.object_id,outcome.canonical_json FROM objects preparation
+         INDEXED BY objects_task_sync_exchange_successor_hold JOIN objects outcome
+         INDEXED BY objects_task_sync_exchange_prepared
+         ON json_extract(outcome.canonical_json,'$.transition.prepared')=preparation.object_id
+           AND json_extract(outcome.canonical_json,'$.binding')=json_extract(preparation.canonical_json,'$.binding')
+         WHERE preparation.object_kind='task_sync_exchange_event'
+           AND json_valid(preparation.canonical_json)
+           AND json_extract(preparation.canonical_json,'$.transition.transition')='planning_successor_prepared'
+           AND json_extract(preparation.canonical_json,'$.binding')=?1
+           AND json_extract(preparation.canonical_json,'$.transition.recipe.request.hold')=?2
+           AND outcome.object_kind='task_sync_exchange_event' AND json_valid(outcome.canonical_json)
+           AND json_extract(outcome.canonical_json,'$.transition.transition')='planning_successor_applied'
+         LIMIT ?3",
+    )?;
+    for (event_id, event) in super::lookup::decode_rows::<Event>(statement.query(params![
+        hold.binding.as_str(),
+        id.as_str(),
+        super::lookup::record_limit()?,
+    ])?)? {
+        require(
+            successor_resolution_on(connection, &event_id, &event, id, hold)?,
+            "hold successor receipt candidate differs",
+        )?;
+        resolutions.insert(event_id);
+    }
     require(
         resolutions.len() <= 1 && (resolutions.is_empty() || unresolved == 0),
         "hold slots have mixed resolutions",
@@ -387,7 +417,8 @@ pub(super) fn resolution_on(
                 SqliteStore::get_typed_object_on(connection, &resolution, EVENT_KIND)?
                     .ok_or_else(|| invalid("hold resolution is missing"))?;
             require(
-                matches!(&event.transition, Transition::ReconciledImportApplied {prepared,receipt} if prepared == &hold.prepared && receipt.holds.contains(id) && receipt.candidate_fingerprint == hold.candidate_fingerprint)
+                (matches!(&event.transition, Transition::ReconciledImportApplied {prepared,receipt} if prepared == &hold.prepared && receipt.holds.contains(id) && receipt.candidate_fingerprint == hold.candidate_fingerprint)
+                    || successor_resolution_on(connection, &resolution, &event, id, hold)?)
                     && event.binding == hold.binding,
                 "hold resolution is not its reconciled receipt",
             )?;
@@ -399,6 +430,36 @@ pub(super) fn resolution_on(
         "active hold slot membership is incomplete",
     )?;
     Ok(None)
+}
+
+fn successor_resolution_on(
+    connection: &Connection,
+    outcome: &ObjectId,
+    event: &Event,
+    id: &ObjectId,
+    hold: &ReconciliationHold,
+) -> Result<bool, StoreError> {
+    let Transition::PlanningSuccessorApplied { prepared, receipt } = &event.transition else {
+        return Ok(false);
+    };
+    let Some(preparation) =
+        SqliteStore::get_typed_object_on::<Event>(connection, prepared, EVENT_KIND)?
+    else {
+        return Ok(false);
+    };
+    let Transition::PlanningSuccessorPrepared { recipe, .. } = &preparation.transition else {
+        return Ok(false);
+    };
+    Ok(event.binding == hold.binding
+        && preparation.binding == hold.binding
+        && &recipe.prepared == prepared
+        && &recipe.outcome == outcome
+        && &recipe.request.hold == id
+        && recipe.request.original_prepared == hold.prepared
+        && recipe.request.original_candidate == hold.candidate_fingerprint
+        && receipt.holds == [id.clone()]
+        && receipt.before == recipe.before
+        && receipt.planning == recipe.planning)
 }
 
 pub(in crate::storage) fn refuse_held_on(
@@ -473,6 +534,81 @@ pub(super) fn verify_slots(
     Ok(())
 }
 
+/// Place the existing canonical hold in the caller's admitted writer. The
+/// caller supplies its already selected immutable identity and body.
+pub(in crate::storage::work::task_sync) fn place_on(
+    transaction: &Transaction<'_>,
+    object: &CanonicalObject,
+) -> Result<(), StoreError> {
+    let hold: ReconciliationHold = object.decode()?;
+    let hold = &hold;
+    for (id, old) in
+        super::lookup::scoped_on::<ReconciliationHold>(transaction, HOLD_KIND, &hold.project_id.0)?
+    {
+        require(
+            old.prepared != hold.prepared || resolution_on(transaction, &id, &old)?.is_some(),
+            "the prepared candidate already has an active hold",
+        )?;
+    }
+    require(
+        object.bytes().len() <= MAX_RECORD_BYTES,
+        "reconciliation hold exceeds supported record bound",
+    )?;
+    validate_hold(transaction, object.key(), hold)?;
+    super::super::ledger::require_pending_incoming_on(transaction, &hold.binding, &hold.prepared)?;
+    require(
+        capture_affected_on(transaction, &hold.project_id, &hold.seeds)? == hold.affected,
+        "reconciliation scope moved before hold placement",
+    )
+    .map_err(|error| crate::task_sync::TaskSyncRefusal::DivergentPlanning.classify(error))?;
+    for work in &hold.affected {
+        refuse_held_on(transaction, work.work_id)?;
+    }
+    SqliteStore::insert_object(transaction, HOLD_KIND, object)?;
+    for work in &hold.affected {
+        transaction.execute(
+            "INSERT INTO work_task_sync_reconciliation_active(work_id,hold_id) VALUES (?1,?2)",
+            params![work.work_id.0.to_string(), object.key().as_str()],
+        )?;
+    }
+    for run in slots(hold) {
+        transaction.execute("INSERT INTO work_task_sync_reconciliation_holds(run_id,hold_id,resolution_id) VALUES (?1,?2,NULL) ON CONFLICT(run_id) DO UPDATE SET hold_id=excluded.hold_id,resolution_id=NULL", params![run.0.to_string(),object.key().as_str()])?;
+    }
+    crate::storage::work::feeds::append_to_project_feed(
+        transaction,
+        &hold.project_id,
+        HOLD_KIND,
+        object,
+    )?;
+    // Exercise the same Work validator that the core's combined authority
+    // consumes. Success here proves only the hold, never host completeness.
+    let expected = HoldExpectation {
+        project: &hold.project_id,
+        hold: object.key(),
+        prepared: &hold.prepared,
+        scope: object.key(),
+        association: &hold.association,
+        candidate_revision: hold.candidate_revision,
+        hold_revision: hold.hold_revision,
+        scope_revision: hold.scope_revision,
+        owner_set_revision: hold.owner_set_revision,
+    };
+    let checked = match load_reconciliation_hold_on(transaction, &expected)? {
+        ReconciliationHoldCheck::Ready(checked) => checked,
+        ReconciliationHoldCheck::Pending(gap) => {
+            return Err(invalid(format!("new hold did not validate: {gap:?}")));
+        }
+    };
+    require(
+        checked.scope_ref() == object.key()
+            && checked.hold() == hold
+            && !checked.transaction().is_autocommit(),
+        "new hold scope differs",
+    )?;
+    drop(checked);
+    Ok(())
+}
+
 impl SqliteStore {
     /// Retain one incoming candidate's complete local scope and fence new
     /// admissions. This grants no execution, claim transfer or host settlement.
@@ -512,66 +648,7 @@ impl SqliteStore {
             }
         }
         let object = CanonicalObject::mint(hold)?;
-        require(
-            object.bytes().len() <= MAX_RECORD_BYTES,
-            "reconciliation hold exceeds supported record bound",
-        )?;
-        validate_hold(&transaction, object.key(), hold)?;
-        super::super::ledger::require_pending_incoming_on(
-            &transaction,
-            &hold.binding,
-            &hold.prepared,
-        )?;
-        require(
-            capture_affected_on(&transaction, &hold.project_id, &hold.seeds)? == hold.affected,
-            "reconciliation scope moved before hold placement",
-        )
-        .map_err(|error| crate::task_sync::TaskSyncRefusal::DivergentPlanning.classify(error))?;
-        for work in &hold.affected {
-            refuse_held_on(&transaction, work.work_id)?;
-        }
-        Self::insert_object(&transaction, HOLD_KIND, &object)?;
-        for work in &hold.affected {
-            transaction.execute(
-                "INSERT INTO work_task_sync_reconciliation_active(work_id,hold_id) VALUES (?1,?2)",
-                params![work.work_id.0.to_string(), object.key().as_str()],
-            )?;
-        }
-        for run in slots(hold) {
-            transaction.execute("INSERT INTO work_task_sync_reconciliation_holds(run_id,hold_id,resolution_id) VALUES (?1,?2,NULL) ON CONFLICT(run_id) DO UPDATE SET hold_id=excluded.hold_id,resolution_id=NULL", params![run.0.to_string(),object.key().as_str()])?;
-        }
-        crate::storage::work::feeds::append_to_project_feed(
-            &transaction,
-            &hold.project_id,
-            HOLD_KIND,
-            &object,
-        )?;
-        // Exercise the same Work validator that the core's combined authority
-        // consumes. Success here proves only the hold, never host completeness.
-        let expected = HoldExpectation {
-            project: &hold.project_id,
-            hold: object.key(),
-            prepared: &hold.prepared,
-            scope: object.key(),
-            association: &hold.association,
-            candidate_revision: hold.candidate_revision,
-            hold_revision: hold.hold_revision,
-            scope_revision: hold.scope_revision,
-            owner_set_revision: hold.owner_set_revision,
-        };
-        let checked = match load_reconciliation_hold_on(&transaction, &expected)? {
-            ReconciliationHoldCheck::Ready(checked) => checked,
-            ReconciliationHoldCheck::Pending(gap) => {
-                return Err(invalid(format!("new hold did not validate: {gap:?}")));
-            }
-        };
-        require(
-            checked.scope_ref() == object.key()
-                && checked.hold() == hold
-                && !checked.transaction().is_autocommit(),
-            "new hold scope differs",
-        )?;
-        drop(checked);
+        place_on(&transaction, &object)?;
         transaction.commit()?;
         Ok(object.key().clone())
     }

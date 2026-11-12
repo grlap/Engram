@@ -3,8 +3,8 @@ use super::*;
 #[test]
 fn task_materialize_refuses_equal_independent_and_edited_public_files() {
     for path in [
-        ".gitignore",
-        ".gitattributes",
+        ".engram/.gitignore",
+        ".engram/.gitattributes",
         ".engram/project.json",
         ".engram/tasks",
     ] {
@@ -111,11 +111,11 @@ fn task_materialize_completed_empty_directory_observation_refuses_recreation() {
 }
 
 #[test]
-fn task_materialize_repeat_requires_the_retained_displaced_before_file() {
+fn task_materialize_repeat_requires_the_retained_policy_source() {
     let fixture = Fixture::new(false, 1);
     fixture.run();
     fs::rename(
-        fixture.private().join("replace-0/displaced"),
+        fixture.private().join("after/.gitignore"),
         fixture.owned.path().join("retained-before-file"),
     )
     .unwrap();
@@ -124,10 +124,7 @@ fn task_materialize_repeat_requires_the_retained_displaced_before_file() {
         .service
         .materialize_task_sync_setup(&fixture.marker, &fixture.selection)
         .unwrap_err();
-    assert!(
-        error.to_string().contains("retained before file"),
-        "{error:#}"
-    );
+    assert!(error.to_string().contains("after"), "{error:#}");
     assert_eq!(snapshot(fixture.owned.path()), before);
 }
 
@@ -227,5 +224,5 @@ fn task_materialize_refuses_junction_public_paths_without_following_them() {
     // Only owned setup edits may have been applied before shared policy refusal.
     assert_eq!(fs::read(outside.join("sentinel.txt")).unwrap(), b"preserve");
     assert_eq!(snapshot(&outside), outside_before);
-    assert!(before.contains_key(Path::new("repository/.engram/tasks")));
+    assert!(before.contains_key(Path::new("repository/.engram-data/.engram/tasks")));
 }
