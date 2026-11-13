@@ -68,6 +68,7 @@ fn a_differing_root_is_named_without_claiming_an_invalid_graph() {
         "retained_graph",
         "the destination's planning",
         || {},
+        None,
     )
     .unwrap();
     assert!(findings.batch.is_empty(), "{:?}", findings.batch);
@@ -193,6 +194,7 @@ fn connected_admission_applies_and_rolls_back_without_scanning_disconnected_task
             },
             &actor("importer"),
             at(6),
+            false,
         )
         .unwrap();
         assert_eq!(native::NODE_LOOKUPS.with(std::cell::Cell::get), 4);

@@ -54,8 +54,15 @@ fn task_sync_primary_key_lookup_refuses_wrong_missing_and_duplicate_links() {
     let tree = candidate();
     let mut store = SqliteStore::open_in_memory().unwrap();
     import(&mut store, &tree);
-    let item = store.get_work_item(tree.tasks[0].id).unwrap();
-    let other = store.get_work_item(tree.tasks[1].id).unwrap();
+    // A valid child must retain a reference to the corrupted endpoint, so
+    // doctor's native-endpoint expansion also encounters the bad binding.
+    let child = tree
+        .tasks
+        .iter()
+        .find(|task| task.parent_id.is_some())
+        .unwrap();
+    let item = store.get_work_item(child.parent_id.unwrap()).unwrap();
+    let other = store.get_work_item(child.id).unwrap();
     let original = CanonicalObject::freeze(&item).unwrap();
     for case in ["other", "missing", "duplicate", "relation"] {
         let mut tampered = item.clone();
@@ -105,7 +112,12 @@ fn task_sync_primary_key_lookup_refuses_wrong_missing_and_duplicate_links() {
             "task_sync_origin_mismatch",
             "{case}: {error}"
         );
-        assert!(!store.verify_all().unwrap().is_healthy(), "{case}");
+        let report = store.verify_all().unwrap();
+        assert!(!report.is_healthy(), "{case}");
+        assert!(
+            format!("{report:?}").contains("task_sync_import_graph"),
+            "{case}: {report:?}"
+        );
         store
             .connection
             .execute(

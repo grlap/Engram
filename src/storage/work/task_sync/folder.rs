@@ -7,9 +7,7 @@ use rusqlite::params;
 use serde::Serialize;
 
 use super::baseline::{self, Baseline, TaskSyncImportPlanning};
-use super::{
-    TaskSyncImportResult, import_task_tree_on_with_profile, invalid, validate_task_sync_actor,
-};
+use super::{TaskSyncImportResult, invalid, validate_task_sync_actor};
 use crate::{
     ActorContext, CanonicalObject, ObjectId, ProjectId, WorkId,
     storage::{SqliteStore, StoreError},
@@ -52,8 +50,8 @@ pub struct TaskSyncFolderExport {
 }
 
 impl SqliteStore {
-    /// Applies an empty-graph folder baseline and records the exact exported
-    /// inventory atomically. A replayed idempotency key returns its receipt
+    /// Applies admitted folder changes and records their shared baseline
+    /// atomically, reporting unapplied tasks individually. A replayed idempotency key returns its receipt
     /// without adding a second baseline event.
     ///
     /// # Errors
@@ -165,6 +163,7 @@ pub(super) fn apply_task_sync_folder_on(
             task_count: request.tree.tasks.len(),
             changed: false,
             dry_run: false,
+            tasks: Vec::new(),
         };
         super::super::planning::persist_operation_result(
             transaction,
@@ -176,59 +175,70 @@ pub(super) fn apply_task_sync_folder_on(
         return Ok(result);
     }
     if current.export_basis != request.export_basis {
-        return Err(TaskSyncRefusal::DivergentPlanning
-            .invalid("task folder import refuses a locally changed planning inventory"));
+        return Err(TaskSyncRefusal::DivergentPlanning.invalid(format!(
+            "task folder import refuses a locally changed planning inventory; resolve against the retained common data commit; {}",
+            conflicting_documents(&current.tree, request.tree)?,
+        )));
     }
-    // An enrolled destination always reconciles the folder against its own
-    // planning, even when that planning is empty, so its exchange history
-    // keeps judging every later folder. The empty-graph import below serves
-    // only a destination that holds no exchange baseline.
-    if let Some(baseline) = &baseline {
-        let membership = baseline
-            .tree
-            .tasks
-            .iter()
-            .map(|task| task.id)
-            .collect::<HashSet<_>>();
-        let plan = folder_plan::plan(&current.tree, request.tree, &membership)?;
-        return apply_planned_changes(
-            transaction,
-            request,
-            &plan,
-            &current.tree,
-            baseline,
-            idempotency_key,
-            &request_object,
-        );
-    }
-    let mut result = import_task_tree_on_with_profile(
+    // One folder admission path, including the first --empty-basis import.
+    // With no prior baseline, every genuinely incoming identity is new and
+    // omitted local work remains outside shared membership.
+    let membership = baseline
+        .iter()
+        .flat_map(|baseline| baseline.tree.tasks.iter().map(|task| task.id))
+        .collect::<HashSet<_>>();
+    let plan = folder_plan::plan(&current.tree, request.tree, &membership)?;
+    apply_planned_changes(
         transaction,
-        request.project,
-        request.actor,
-        request.tree,
-        request.profile,
-        false,
-        request.now,
-    )?;
-    // Only a destination with no baseline reaches this import, and it always
-    // records the folder as its first one.
-    record_planning(transaction, request, None)?;
-    result.changed = true;
-    super::super::planning::persist_operation_result(
-        transaction,
-        APPLY_OPERATION,
+        request,
+        &plan,
+        &current.tree,
+        baseline.as_ref(),
         idempotency_key,
-        request_object.key(),
-        &result,
-    )?;
-    Ok(result)
+        &request_object,
+    )
+}
+
+/// The stale-basis refusal retains both visible sides of each differing task.
+/// It grants no automatic merge or last-writer-wins policy.
+fn conflicting_documents(local: &TaskTree, incoming: &TaskTree) -> Result<String, StoreError> {
+    let local = local
+        .tasks
+        .iter()
+        .map(|task| (task.id, task))
+        .collect::<BTreeMap<_, _>>();
+    let incoming = incoming
+        .tasks
+        .iter()
+        .map(|task| (task.id, task))
+        .collect::<BTreeMap<_, _>>();
+    let ids = local
+        .keys()
+        .chain(incoming.keys())
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut count = 0;
+    let mut conflicts = Vec::new();
+    for id in ids {
+        if local.get(&id) == incoming.get(&id) {
+            continue;
+        }
+        count += 1;
+        if conflicts.len() < super::folder_admission::NAMED_CONFLICT_LIMIT {
+            conflicts.push(serde_json::json!({
+                "task": id, "local": local.get(&id), "incoming": incoming.get(&id),
+            }));
+        }
+    }
+    Ok(serde_json::to_string(&serde_json::json!({
+        "conflicts": conflicts, "omitted_tasks": count - conflicts.len(),
+    }))?)
 }
 
 /// Applies a classified folder to an enrolled destination: every requested
-/// delta is an admitted addition, scalar edit, relation edit or
-/// execution-free removal, or the whole folder refuses, naming its refused
-/// tasks, and nothing is written. The baseline records the
-/// folder whenever its inventory differs from the latest baseline, even when
+/// delta is an admitted addition, planning edit, reported completion or
+/// execution-free removal, or a visible per-task held/refused result. The
+/// baseline records only applied documents, even when
 /// no task changes, so a host-local task the folder now carries joins the
 /// exchange. It is recorded before the final export check, which therefore
 /// reads the new exchange membership.
@@ -237,11 +247,11 @@ fn apply_planned_changes(
     request: TaskSyncFolderApply<'_>,
     plan: &DeltaPlan,
     current: &TaskTree,
-    baseline: &Baseline,
+    baseline: Option<&Baseline>,
     idempotency_key: &str,
     request_object: &CanonicalObject,
 ) -> Result<TaskSyncImportResult, StoreError> {
-    super::folder_admission::apply_plan(
+    let application = super::folder_admission::apply_plan(
         transaction,
         plan,
         current,
@@ -249,6 +259,26 @@ fn apply_planned_changes(
         request.actor,
         request.now,
     )?;
+    let plan = &application.plan;
+    let mut expected = request
+        .tree
+        .tasks
+        .iter()
+        .map(|task| (task.id, task.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for task in &plan.tasks {
+        if matches!(&task.delta, folder_plan::TaskDelta::Changed(change) if change.reported_completion)
+        {
+            let document = expected
+                .get_mut(&task.id)
+                .ok_or_else(|| invalid("reported task is absent from the incoming folder"))?;
+            super::activity::after_reported_completion(
+                transaction,
+                document,
+                request.profile.origin_machine.as_deref(),
+            )?;
+        }
+    }
     let changed = plan
         .changed_ids()
         .chain(plan.additions())
@@ -275,16 +305,91 @@ fn apply_planned_changes(
     }
     let result = TaskSyncImportResult {
         task_count: request.tree.tasks.len(),
-        changed: !changed.is_empty()
-            || baseline.tree.folder_documents()? != request.tree.folder_documents()?,
+        changed: !changed.is_empty() || !removed.is_empty(),
         dry_run: false,
+        tasks: application.tasks,
+    };
+    // Never consume a held/refused incoming document. Use its effective local
+    // support document so the baseline agrees with admission's mixed graph;
+    // comparing it with the pending incoming value still permits a fresh retry.
+    let unapplied = result
+        .tasks
+        .iter()
+        .filter(|task| task.status != super::TaskSyncTaskStatus::Applied)
+        .map(|task| task.task)
+        .collect::<HashSet<_>>();
+    let mut members = baseline
+        .iter()
+        .flat_map(|baseline| baseline.tree.tasks.iter())
+        .map(|task| (task.id, task.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for task in expected.values() {
+        if !unapplied.contains(&task.id) {
+            members.insert(task.id, task.clone());
+        }
+    }
+    for id in &removed {
+        members.remove(id);
+    }
+    // When no requested task applied, do not enroll carried membership or
+    // create even a first baseline just to record the refusal. The same
+    // intent must stay retryable after local execution ends.
+    if !unapplied.is_empty() && changed.is_empty() && removed.is_empty() {
+        return Ok(result);
+    }
+    // An admitted task can reference an existing, previously unenrolled task
+    // whose incoming edit is held/refused. Enrol its LOCAL document as support,
+    // never the unapplied incoming value, and close that support transitively.
+    let local = current
+        .tasks
+        .iter()
+        .map(|task| (task.id, task))
+        .collect::<BTreeMap<_, _>>();
+    for task in members.values_mut() {
+        if unapplied.contains(&task.id) {
+            *task = (*local
+                .get(&task.id)
+                .ok_or_else(|| invalid("unapplied baseline task has no local document"))?)
+            .clone();
+        }
+    }
+    let mut pending = members
+        .values()
+        .flat_map(super::origin::native_references)
+        .collect::<Vec<_>>();
+    while let Some(id) = pending.pop() {
+        if members.contains_key(&id) {
+            continue;
+        }
+        let task = local
+            .get(&id)
+            .ok_or_else(|| invalid("partial baseline reference has no local endpoint"))?;
+        pending.extend(super::origin::native_references(task));
+        members.insert(id, (*task).clone());
+    }
+    let applied_tree = TaskTree {
+        project: request.tree.project.clone(),
+        tasks: members.into_values().collect(),
+    };
+    let mut result = result;
+    result.changed |= match baseline {
+        None => true,
+        Some(baseline) => baseline.tree.folder_documents()? != applied_tree.folder_documents()?,
     };
     if result.changed {
-        record_planning(transaction, request, Some(baseline))?;
+        record_baseline(
+            transaction,
+            request.project,
+            baseline,
+            &applied_tree,
+            request.export_basis,
+            request.profile,
+            request.now,
+        )?;
     }
     if !changed.is_empty() || !removed.is_empty() {
-        // Each added or edited task now exports exactly as the folder
-        // carries it, whole document by whole document.
+        // Each added or edited task exports exactly as admitted, including
+        // the local activity closure produced by a reported completion.
         let applied = folder_export_on(transaction, request.project, request.profile)?;
         let applied = applied
             .tree
@@ -292,11 +397,7 @@ fn apply_planned_changes(
             .iter()
             .map(|task| (task.id, task))
             .collect::<std::collections::HashMap<_, _>>();
-        let resolved = request
-            .tree
-            .tasks
-            .iter()
-            .filter(|task| changed.contains(&task.id));
+        let resolved = expected.values().filter(|task| changed.contains(&task.id));
         for task in resolved {
             if applied.get(&task.id).copied() != Some(task) {
                 return Err(StoreError::InvalidWorkProjection(
@@ -327,13 +428,18 @@ fn apply_planned_changes(
             }
         }
     }
-    super::super::planning::persist_operation_result(
-        transaction,
-        APPLY_OPERATION,
-        idempotency_key,
-        request_object.key(),
-        &result,
-    )?;
+    // A changed export basis gives a later fresh retry a new intent. Retain
+    // this receipt for exact recovery after a lost response. With no applied
+    // change the same basis must remain retryable once execution ends.
+    if unapplied.is_empty() || !changed.is_empty() || !removed.is_empty() {
+        super::super::planning::persist_operation_result(
+            transaction,
+            APPLY_OPERATION,
+            idempotency_key,
+            request_object.key(),
+            &result,
+        )?;
+    }
     Ok(result)
 }
 
@@ -353,23 +459,6 @@ fn audit_origins(connection: &rusqlite::Connection) -> Result<(), StoreError> {
             failures.join(", ")
         )))
     }
-}
-
-/// Records the applied folder as the latest exchange baseline.
-fn record_planning(
-    transaction: &rusqlite::Transaction<'_>,
-    request: TaskSyncFolderApply<'_>,
-    baseline: Option<&Baseline>,
-) -> Result<(), StoreError> {
-    record_baseline(
-        transaction,
-        request.project,
-        baseline,
-        request.tree,
-        request.export_basis,
-        request.profile,
-        request.now,
-    )
 }
 
 /// Appends the record that turns `baseline` into `tree`: only the tasks that

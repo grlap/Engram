@@ -10,8 +10,8 @@
 //!
 //! Applicable deltas are additions, omissions of enrolled members, and
 //! scalar and relation edits of tasks both sides hold. Every other
-//! requested delta is classified with a named reason so that the whole folder
-//! can be refused, never applied in part or dropped in silence.
+//! requested delta is classified with a named reason. Admission can leave it
+//! unapplied and report it without dropping the folder's independent changes.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::BuildHasher;
@@ -53,7 +53,7 @@ pub enum TaskDelta {
     /// stays as it is and does not join the exchange.
     RetainedLocal,
     /// Both sides hold the task and its document differs.
-    Changed(TaskChange),
+    Changed(Box<TaskChange>),
     /// The resolved tree adds a task the destination does not hold.
     Added,
     /// The resolved tree omits a task of the last applied exchange.
@@ -67,10 +67,12 @@ pub enum TaskDelta {
 /// change of several kinds is judged once, as one change to one task.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TaskChange {
-    /// The new title, outcome or priority, when any of them changes.
+    /// Changed planning fields, admitted through the ordinary revision writer.
     pub scalar: Option<ScalarChange>,
     /// Net changes to prerequisite and blocker sets, preserving blocker ids.
     pub relations: RelationChange,
+    /// An incoming completed outcome, with no local seal or evidence credit.
+    pub reported_completion: bool,
     /// The other changed fields, in document order.
     pub unsupported: Vec<TaskField>,
 }
@@ -111,11 +113,21 @@ pub struct ScalarChange {
     pub title: Option<String>,
     pub outcome: Option<String>,
     pub priority: Option<i32>,
+    pub acceptance: Option<Vec<String>>,
+    pub acceptance_bindings: Option<Vec<crate::domain::AcceptanceBinding>>,
+    pub labels: Option<Vec<String>>,
+    pub assigned_to: Option<Option<String>>,
 }
 
 impl ScalarChange {
     fn is_empty(&self) -> bool {
-        self.title.is_none() && self.outcome.is_none() && self.priority.is_none()
+        self.title.is_none()
+            && self.outcome.is_none()
+            && self.priority.is_none()
+            && self.acceptance.is_none()
+            && self.acceptance_bindings.is_none()
+            && self.labels.is_none()
+            && self.assigned_to.is_none()
     }
 
     /// The same change as an ordinary planning revision patch.
@@ -125,6 +137,11 @@ impl ScalarChange {
             title: self.title.clone(),
             outcome: self.outcome.clone(),
             priority: self.priority,
+            acceptance: self.acceptance.clone(),
+            acceptance_bindings: self.acceptance_bindings.clone(),
+            labels: self.labels.clone(),
+            assigned_to: self.assigned_to.clone().flatten(),
+            clear_assignment: self.assigned_to == Some(None),
             ..WorkRevisionPatch::default()
         }
     }
@@ -221,11 +238,9 @@ impl DeltaPlan {
     /// The applicable scalar edits, in task-id order.
     pub fn scalar_changes(&self) -> impl Iterator<Item = (WorkId, &ScalarChange)> {
         self.tasks.iter().filter_map(|task| match &task.delta {
-            TaskDelta::Changed(TaskChange {
-                scalar: Some(change),
-                unsupported,
-                ..
-            }) if unsupported.is_empty() => Some((task.id, change)),
+            TaskDelta::Changed(change) if change.is_applicable() => {
+                change.scalar.as_ref().map(|scalar| (task.id, scalar))
+            }
             _ => None,
         })
     }
@@ -407,14 +422,16 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         notes,
         activity,
     } = held;
+    let reported_completion = incoming.lifecycle == crate::WorkLifecycle::Completed
+        && matches!(
+            held.lifecycle,
+            crate::WorkLifecycle::Open | crate::WorkLifecycle::Proposed
+        )
+        && incoming.completion.is_some();
     let unsupported = changed_fields![
         external_ref => ExternalRef,
-        acceptance => Acceptance,
-        acceptance_bindings => AcceptanceBindings,
         evaluation_mode => EvaluationMode,
         kind => Kind,
-        labels => Labels,
-        assigned_to => AssignedTo,
         deferred_until => DeferredUntil,
         lifecycle => Lifecycle,
         parent_id => ParentId,
@@ -426,15 +443,26 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         activity => Activity,
     ]
     .into_iter()
-    .filter_map(|(field, changed)| changed.then_some(field))
+    .filter_map(|(field, changed)| {
+        (changed
+            && !(reported_completion
+                && matches!(field, TaskField::Lifecycle | TaskField::Completion)))
+        .then_some(field)
+    })
     .collect::<Vec<_>>();
     let scalar = ScalarChange {
         title: (*title != incoming.title).then(|| incoming.title.clone()),
         outcome: (*outcome != incoming.outcome).then(|| incoming.outcome.clone()),
         priority: (*priority != incoming.priority).then_some(incoming.priority),
+        acceptance: (*acceptance != incoming.acceptance).then(|| incoming.acceptance.clone()),
+        acceptance_bindings: (*acceptance != incoming.acceptance
+            || *acceptance_bindings != incoming.acceptance_bindings)
+            .then(|| incoming.acceptance_bindings.clone()),
+        labels: (*labels != incoming.labels).then(|| incoming.labels.clone()),
+        assigned_to: (*assigned_to != incoming.assigned_to).then(|| incoming.assigned_to.clone()),
     };
     let relations = compare_relations(held, incoming);
-    if unsupported.is_empty() && scalar.is_empty() && relations.is_empty() {
+    if unsupported.is_empty() && scalar.is_empty() && relations.is_empty() && !reported_completion {
         return Ok(TaskDelta::Unchanged);
     }
     let scalar = (!scalar.is_empty()).then_some(scalar);
@@ -445,11 +473,12 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         crate::storage::validate_revision_patch(&change.patch())
             .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     }
-    Ok(TaskDelta::Changed(TaskChange {
+    Ok(TaskDelta::Changed(Box::new(TaskChange {
         scalar,
         relations,
+        reported_completion,
         unsupported,
-    }))
+    })))
 }
 
 fn compare_relations(held: &TaskDocument, incoming: &TaskDocument) -> RelationChange {

@@ -101,6 +101,21 @@ entry remains, and a later real import checks everything again. Its receipt
 reports `dry_run: true`; a dry run of an already committed import replays
 that import's receipt, as the real repeat would.
 
+The CLI exits `0` only when no incoming task is held or refused. If any task
+is unapplied, both import and `--dry-run` exit `3`, distinct from a whole-import
+refusal (`1`). Stdout still contains the complete JSON receipt, including all
+applied changes and each held/refused task's reason. Stderr names the task
+files that need attention. Applied changes stay applied; dry run writes nothing.
+Do not advance the incoming commit as the exchange base on exit `3`. Keep its
+task documents and Git commit before the next export:
+replacing them with a routine local export would overwrite the incoming edits.
+The existing export-overwrite refusal remains in force. After local execution
+ends, prepare a fresh local export and basis while preserving the incoming commit.
+Re-merge that retained commit against the fresh export using the common commit,
+preserving newer local edits, and import the newly resolved documents. Do not
+replay the old incoming documents against the fresh basis. Only a complete import
+advances the caller's base. No separate durable pending-document queue is introduced.
+
 A later export keeps the note selection its baseline was recorded with; an
 export under another note selection refuses.
 
@@ -130,8 +145,8 @@ at any depth, unsupported profiles and unresolved conflict text are refused.
 
 Once a destination holds an exchange baseline, import compares the folder with
 the destination's current planning, task by task, even when that planning is
-empty; only a destination with no baseline takes the empty-graph import. A
-task the destination holds outside the last applied exchange, which the
+empty. The first folder import uses the same admission with empty shared
+membership; it has the same per-task outcomes. A task the destination holds outside the last applied exchange, which the
 folder omits, is host-local: it stays as it is and does not join the
 exchange.
 
@@ -140,36 +155,49 @@ empty-graph import restores one: its UUID, an import origin and restored
 record, its prerequisites and blockers, and its notes and activity when the
 selection shares them, with no event and no run, claim or root execution. A
 completed addition keeps its reported completion, without a seal. An edit of
-a task's title, outcome or priority is recorded as an ordinary planning
-revision under project authority, attributed to the importing actor.
+a task's title, outcome, acceptance criteria and portable acceptance bindings,
+priority, labels or assignment is recorded as an ordinary planning revision
+under project authority, attributed to the importing actor. Assignment can be
+cleared; record-id acceptance pins still refuse before mutation.
 [Prerequisite and blocker changes](task-folder-relations.md) use their existing
 planning transitions in the same transaction, alongside scalar edits. Each
 added or edited task then exports exactly as the folder carries it, and an
 added task joins the exchange. An eligible task omitted from the last
 exchange is locally cancelled by an ordinary `Disposed` event, with no run
-or other runtime state. Every other requested change refuses the
-whole folder with `task_sync_import_conflict`, which names refused tasks with
-their reasons: a task whose removal cannot be admitted, and a change to any
-other field (`unsupported_fields`, with
-the field names). A note selection that differs from the baseline's refuses
-earlier, as for every folder import: with `task_sync_divergent_planning`, or
-with `task_sync_invalid_graph` when the folder's `project.json` and the
-requested selection disagree.
+or other runtime state. Other unsupported fields, including structural moves,
+produce a per-task refusal with their field names. A note selection that
+differs from the baseline's refuses earlier as `task_sync_divergent_planning`,
+or `task_sync_invalid_graph` when the folder and requested selection disagree.
 
-A task takes an edit only when nothing binds its current revision: it was
-restored by a task-sync import, it is Open, it has no run, and its history
-holds only admitted run-free project revisions, prerequisite transitions and
-blocker transitions, so a second edit after a first one
-applies. A task with a run (`active_run`, kept after a release), a task whose
-history records execution (`execution_history`, which includes a
-required-child waiver), a task whose history holds a planning change outside
-that explicit whitelist (`planning_history`), a completed task
-(`restored_completion`), a task in
-another lifecycle state (`lifecycle`), and work created on this host
-(`unsupported_origin`) refuse. Execution of another task, such as a claimed
-parent, child or sibling, does not block a scalar edit. Relation edits also
-check the [affected ancestor chain and root](task-folder-relations.md);
-execution there refuses the relation change.
+Edits and returned completions currently require the task's shared notes and
+activity notices to match the destination's retained values. New or changed
+notes or activity on an existing task are reported as unsupported fields,
+including when the same document reports completion. A planning-only exchange
+omits native notes and activity; importing a new task can restore both under
+their selected disclosure profile. Reporting completion never copies notes
+already retained by the destination into a second inherited history.
+
+Creation host does not control editability. Native and restored Open or
+Proposed tasks accept shared planning when they have no engaged local
+execution. A live unexpired claim holds an incoming change as `active_run`.
+An initial dormant run does not hold it, nor does a released or expired claim;
+old execution and planning history remain unchanged. A completed task keeps
+its `restored_completion` refusal and other terminal states keep `lifecycle`.
+A required-child waiver does not by itself hold a later description edit.
+Execution of another task does not block a scalar edit. Relation edits also
+check the [affected ancestor chain and root](task-folder-relations.md), where
+engaged execution holds that relation change. Claims and runs stay host-local.
+
+A reopened, unclaimed run is dormant too. A live handoff offer holds incoming
+changes until it is resolved or expires. Prerequisite changes require an Open
+owner; a Proposed owner's prerequisite edit is refused individually before
+the ordinary writer runs. A reported completion of an existing ancestor is
+held while a descendant has live execution authority, and refused while a
+required child would remain Open or Proposed after admitted changes. Reporting
+a child complete leaves an open root's aggregate available for its siblings.
+Reporting the root complete ends its aggregate even if optional children retain
+dormant runs; reopening after disposing unfinished descendants allocates the
+next execution generation.
 
 A task takes an addition only when nothing the destination holds
 contradicts it:
@@ -183,23 +211,31 @@ contradicts it:
   by the id of the event that recorded the claim.
 - A record-id pin in its acceptance bindings refuses before anything is
   written (`acceptance_pin`).
-- Every task it references as parent, prerequisite or replacement that the
-  destination holds was restored by a task-sync import
-  (`unsupported_origin`).
+- Existing parent, prerequisite and replacement endpoints may be native or
+  imported. Native endpoints are bound to their original canonical creation
+  snapshot and its prerequisite set, or their original restored record. No
+  mutable current snapshot or synthetic import origin replaces that history.
+  Only the outgoing native creation closure needed by retained or incoming
+  references joins the origin graph; unrelated native history stays outside
+  it. A native closure that would invalidate the immutable origin graph
+  refuses the incoming tasks that introduce it, preserving independent work.
+  Missing endpoints and invalid origin bindings still refuse.
 - Its ancestors can take unfinished work, and its root has no active
   execution (`ancestor_binding`). A held ancestor must itself be free to take
   an edit, and a held ancestor whose own change in the folder is refused,
   such as a move to another parent, refuses the additions beneath it. A
   blocker that came in through an import does not refuse an
-  addition, since blockers are planning, not execution. Existing ancestors
-  keep the stricter addition policy: only run-free project revisions are
-  admitted history; relation transitions remain eligible for later scalar,
-  relation and deletion imports, but do not authorize a new child.
-  Only a finished addition, such as completed history, may sit under a
-  completed ancestor, and only under a completion this store restored: a
-  completion sealed on this host accounts for exactly the children it named.
-  A root executes once any task under it is claimed, even while its other
-  tasks stay run-free.
+  addition, since blockers are planning, not execution. Past native execution,
+  revisions and relation transitions do not themselves bar decomposition.
+  A simultaneous ancestor relation change is held for a later fresh import.
+  Under an existing local completed ancestor, only a finished addition may
+  join, and only when that ancestor's completion was restored: a native seal
+  accounts for exactly its named children. An entirely new incoming subtree
+  preserves its reported lifecycle, including open descendants of cancelled,
+  superseded or completed remote ancestors. The first folder import accepts
+  the same reported state; it creates no run, claim or completion proof.
+  A root is engaged while any task under it has engaged local execution;
+  dormant runs do not engage the aggregate.
 - An addition that depends on a refused addition refuses too, naming it:
   through its parent chain as `ancestor_binding`, through a prerequisite or
   replacement as `refused_reference`.
@@ -236,26 +272,38 @@ the [relation contract](task-folder-relations.md) also checks durable retired
 edges separately from the immutable origin union.
 
 Existing tasks' notes and activity are compared exactly, so an unchanged note
-never blocks an addition. Unsupported changes, refused additions and blocked
-edits or removals are judged together, one reason per task, and the refusal names the
-first 20 refused tasks in task-id order, then gives the exact count of the
-rest. A task's own reasons come first: unsupported fields, edit or removal
-eligibility, and for an addition its identities, pins and
-references. Then come an addition's ancestor chain and root, then an addition
-it depends on that was refused, then the graph the import would leave, and
-last the origin history. When any task refuses, nothing is written: no task,
-revision, baseline or receipt. A completed task the folder leaves unchanged
-gains no event. The baseline records the folder whenever its inventory
-differs from the last one, even when no task changes, so a host-local task
-the folder now carries joins the exchange and its later omission is a
-deletion subject to admission. After additions or removals, a foreign-key
-check and the import-origin audit run as rollback guards. Admission has
-already judged every addition against the store's whole import-origin
-history, and a removal leaves the origins unchanged, so a failure there is
-reported as a projection bug, not as a refusal of the folder.
+never blocks an addition. Admission judges the requested task changes together,
+with one reason per task in task-id order. The receipt's `tasks` list gives
+`applied`, `held` or `refused` for every changed task, plus `reason` and `detail`
+for each unapplied task. Unsupported fields and a task's own eligibility come
+before ancestor, dependency and graph reasons. Every refused task remains at
+its local value while independent admitted changes apply. A missing refused
+addition holds its dependents; an existing refused task remains a real local
+endpoint and does not hold all tasks that reference it.
 
-A removal uses the same restored, Open, run-free eligibility as a scalar
-edit and additionally refuses any prior run or root-bound history. A
+The final mixed graph must remain valid. Applied incoming documents advance
+the exchange baseline; unapplied members retain effective local support,
+including their current relations, so stale shared edges cannot form a cycle
+with admitted changes. Their incoming values remain pending. A fresh-basis
+import after execution ends retries those values without a separate durable
+queue. An import that applies changes retains its partial receipt for exact
+lost-response replay; a no-change partial result stays retryable on the same
+basis and records no baseline, including on a first import. A completed task left unchanged gains no
+event. A host-local task now carried unchanged can join the baseline, making
+its later omission a deletion subject to admission. Foreign-key checks and
+the final import-origin audit remain transaction rollback guards: a storage,
+writer or integrity error rolls back every write, rather than becoming a
+per-task refusal. Malformed whole-folder input and profile/basis mismatches
+still refuse before application.
+
+This partial application rule belongs to complete-folder import. The strict
+delta ledger still defers or refuses a whole candidate when any selected task
+is held or refused; it never writes a partial delta receipt or advances source
+membership/progress for part of that candidate.
+
+A removal requires an Open task, checks engaged execution and additionally
+refuses any persisted run (`execution_history`). Proposed tasks may receive
+scalar edits but cannot be removed. A
 task-sync-restored member completed and sealed on this host refuses as
 `sealed_completion`; inert imported completion
 refuses as `restored_completion`. Every
@@ -307,10 +355,28 @@ same transaction and rolls it back; exact receipt replay never reapplies a
 removal over later work. Projection repair rebuilds only declared disposable
 projections and preserves durable cancellation history and old receipts.
 
-A task this host created natively, which another host imported and returns
-unchanged, passes through untouched. An edit of it still refuses as
-`unsupported_origin`, because it was created on this host rather than
-restored by a task-sync import, whether or not it was ever claimed.
+A task created on A may be imported, claimed, executed and completed on B
+while disconnected, then returned to A. A returned Completed document with a
+reported summary can close an eligible Open or Proposed local task. A canonical
+`CompletionReported` event links its inert restored record, retaining the
+reported author, time and summary separately from the local importing actor.
+An existing non-engaged run is cancelled, without a seal. Reporting the root
+also cancels its aggregate after admission excludes live descendant authority;
+reporting a child leaves the open root's aggregate available. No acceptance pass, host
+verification credit, contribution or obligation satisfaction is fabricated.
+Local obligations and prior execution history remain recorded. Doctor and
+projection repair validate the exact event-to-record link; full-store
+migration preserves those immutable identities.
+
+Import carries shared state rather than making the immediate sender its
+author. B's outcome relayed through C remains B's outcome, and C's independent
+planning edits remain visible when A imports it. Concurrent edits must be
+resolved against the last common data commit by Engram and the agent. The
+local export-basis guard rejects an unresolved stale local basis without
+writes and reports both local and incoming documents for the first 20 differing
+tasks, with the remaining count. There is no last-writer-wins overwrite.
+Incoming data must be read from the pinned resolved data commit: resetting a
+worktree does not remove untracked task files left by a local export.
 
 ## Shared fields
 
@@ -712,13 +778,16 @@ references must resolve; hierarchy/dependency cycles and ambiguous short refs
 refuse. A UUID already owned by another project in the store refuses.
 
 The destination's planning must first equal its selected basis, as the
-[folder exchange](#git-folder-exchange) describes. The initial target task
-graph must then be empty, or already hold exactly the imported planning state,
-which changes nothing. A different candidate or missing existing task refuses.
-Existing native work refuses even if its editable fields look equal. Dry-run
-executes the same inserts and constraint checks, then rolls back, retaining no
-task, origin, baseline or execution records. Store initialization is a separate
-operator operation; a missing home is not silently configured by task import.
+[folder exchange](#git-folder-exchange) describes. The first `--empty-basis`
+folder import checks that empty local planning basis, then treats incoming
+tasks as new under the same identity, origin-graph and held-run admission as
+later imports. A refused task and its dependent additions stay unapplied while
+independent tasks import. There is no separate stricter legacy folder path.
+The lower-level plain candidate-import API retains its own empty-target
+contract. Dry-run executes the same transaction and checks, then rolls back,
+retaining no task, origin, baseline or execution records. Store initialization
+is a separate operator operation; a missing home is not silently configured
+by task import.
 
 Without an inventory or prior local state, a first import into an empty,
 unenrolled store cannot detect an omitted isolated task, but can refuse an
@@ -733,10 +802,9 @@ an attributed restored completion, stay out of ready work and can satisfy an
 ordinary prerequisite. Cancelled and superseded tasks retain explicit disposal
 state and reasons. No local completion seal, acceptance pass or host proof is
 manufactured; native execution still uses its ordinary admission and policy.
-An enrolled destination restores the tasks a folder adds and applies title,
-outcome and priority edits, as the
-[folder exchange](#edits-on-an-enrolled-destination) describes; other changes
-to an existing graph await later reconciliation slices.
+An enrolled destination applies the supported planning fields, relations and
+reported completion described by the
+[folder exchange](#edits-on-an-enrolled-destination), with per-task outcomes.
 The profile contains no original disposal actor or time. Its local history
 labels disposal as `disposal_reported`, attributed to the importing actor as a
 report at import time, rather than claiming they performed the original act.

@@ -1,4 +1,5 @@
 use super::*;
+use crate::storage::work::task_sync::baseline;
 use crate::storage::work::test_support::{DevelopmentNoopRedactor, actor};
 use crate::task_sync::ledger::CompletedExchange;
 
@@ -10,6 +11,197 @@ mod writer;
 
 fn claimed_fixture() -> Fixture {
     claimed_fixture_with_setup(&candidate(), |_, _| {})
+}
+
+#[test]
+fn a_strict_delta_native_edit_does_not_expand_unrelated_creation_history() {
+    use crate::storage::work::test_support::child;
+    let mut tree = candidate();
+    let mut p = tree
+        .tasks
+        .iter()
+        .find(|task| task.lifecycle == crate::WorkLifecycle::Open && task.parent_id.is_none())
+        .unwrap()
+        .clone();
+    p.prerequisites.clear();
+    p.assigned_to = None;
+    p.deferred_until = None;
+    let mut q = p.clone();
+    q.id = crate::WorkId(uuid::Uuid::new_v4());
+    q.external_ref = None;
+    q.title = "Immutable origin requires P".into();
+    q.prerequisites.push(p.id);
+    tree.tasks = vec![p.clone(), q.clone()];
+    tree.tasks.sort_by_key(|task| task.id.0);
+    let mut fixture = Fixture::with_store_changes(
+        &tree,
+        |store, tree| {
+            let current = store.get_work_item(q.id).unwrap();
+            store
+                .remove_work_prerequisite(
+                    &crate::domain::ChangeWorkPrerequisiteRequest {
+                        work_id: q.id,
+                        prerequisite_id: p.id,
+                        expected_revision: current.revision,
+                        authority: crate::WorkPlanningAuthority::Project,
+                        actor: actor("planner"),
+                        idempotency_key: "remove-q-to-p".into(),
+                        changed_at: at(31),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap();
+            let parent = store.get_work_item(p.id).unwrap();
+            let created = store
+                .decompose_work(
+                    &crate::DecomposeWorkRequest {
+                        parent_id: p.id,
+                        expected_parent_revision: parent.revision,
+                        children: vec![child(
+                            "native",
+                            crate::ChildRequirement::Required,
+                            "Native child requiring Q",
+                        )],
+                        prerequisites: vec![crate::ChildWorkPrerequisite {
+                            work_key: "native".into(),
+                            prerequisite: crate::WorkDependencyRef::Existing(q.id),
+                        }],
+                        authority: crate::WorkPlanningAuthority::Project,
+                        actor: actor("planner"),
+                        idempotency_key: "native-child-after-q-edit".into(),
+                        created_at: at(32),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap();
+            let native = created.children[0].work_id;
+            let mut edited = store
+                .export_task_sync_folder(
+                    &tree.project.project_id,
+                    &crate::task_sync::progress::ExportProfile {
+                        include_notes: tree.project.notes_included,
+                        origin_machine: None,
+                    },
+                )
+                .unwrap()
+                .tree
+                .tasks
+                .into_iter()
+                .find(|task| task.id == native)
+                .unwrap();
+            edited.title = "Incoming native child title".into();
+            // The native creation closure would reintroduce Q->P around H.
+            // H is an edited seed, not a reference from a new import origin.
+            let mut resolved_q = q.clone();
+            resolved_q.prerequisites.clear();
+            BTreeMap::from([(native, Some(edited)), (q.id, Some(resolved_q))])
+        },
+        |_, _| {},
+        |_, _, _| {},
+    );
+    let native = fixture
+        .input
+        .payload
+        .documents
+        .values()
+        .flatten()
+        .find(|task| task.title == "Incoming native child title")
+        .unwrap()
+        .id;
+    let outcome = fixture.apply().unwrap();
+    assert!(
+        matches!(
+            outcome.event.transition,
+            Transition::DeltaImportApplied { .. }
+        ),
+        "{:?}",
+        outcome.event.transition
+    );
+    assert_eq!(
+        fixture.store.get_work_item(native).unwrap().title,
+        "Incoming native child title"
+    );
+    let health = fixture.store.verify_all().unwrap();
+    assert!(health.is_healthy(), "{health:?}");
+}
+
+#[test]
+fn a_delta_with_one_held_task_keeps_the_entire_candidate_unapplied() {
+    let mut tree = candidate();
+    let mut first = tree
+        .tasks
+        .iter()
+        .find(|task| task.lifecycle == crate::WorkLifecycle::Open && task.parent_id.is_none())
+        .unwrap()
+        .clone();
+    first.prerequisites.clear();
+    first.assigned_to = None;
+    first.deferred_until = None;
+    let mut second = first.clone();
+    second.id = crate::WorkId(uuid::Uuid::new_v4());
+    second.external_ref = None;
+    second.title = "Independent delta task".into();
+    tree.tasks = vec![first, second];
+    tree.tasks.sort_by_key(|task| task.id.0);
+    let mut fixture = Fixture::with_setup(
+        &tree,
+        |tree| {
+            tree.tasks
+                .iter()
+                .map(|task| {
+                    let mut incoming = task.clone();
+                    incoming.title = format!("Incoming {}", task.title);
+                    (task.id, Some(incoming))
+                })
+                .collect()
+        },
+        |store, selected| {
+            let item = store.get_work_item(selected).unwrap();
+            store
+                .claim_work(
+                    &crate::ClaimWorkRequest {
+                        work_id: selected,
+                        expected_work_revision: item.revision,
+                        expected_run_id: item.active_run_id,
+                        holder: crate::SessionId("runner".into()),
+                        ttl_seconds: 600,
+                        recovery_reason: None,
+                        actor: actor("runner"),
+                        idempotency_key: "whole-candidate-holder".into(),
+                        claimed_at: at(31),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap();
+        },
+    );
+    let before = fixture
+        .store
+        .export_task_sync_folder(
+            &fixture.input.binding.project,
+            &fixture.input.binding.profile,
+        )
+        .unwrap();
+    let head = baseline::head(&fixture.store.connection, &fixture.input.binding.project).unwrap();
+    let outcome = fixture.apply().unwrap();
+    assert!(matches!(
+        outcome.event.transition,
+        Transition::PlanningDeferred { .. }
+    ));
+    let after = fixture
+        .store
+        .export_task_sync_folder(
+            &fixture.input.binding.project,
+            &fixture.input.binding.profile,
+        )
+        .unwrap();
+    assert_eq!(after.tree, before.tree);
+    assert_eq!(
+        baseline::head(&fixture.store.connection, &fixture.input.binding.project).unwrap(),
+        head
+    );
+    let health = fixture.store.verify_all().unwrap();
+    assert!(health.is_healthy(), "{health:?}");
 }
 
 /// The selected root is ready to claim: not deferred, unassigned and without

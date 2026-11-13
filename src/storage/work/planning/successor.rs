@@ -205,6 +205,7 @@ pub(in crate::storage::work) fn change_prerequisite_successor_on(
         add,
         PlanningValidation::Immediate,
         None,
+        relations::PrerequisiteEndpointPolicy::Open,
         &NativePlanningEvent::Successor { checked, id: event },
     )
 }

@@ -30,6 +30,13 @@ struct Fixture {
     marker: PathBuf,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct NativeState {
+    item: Vec<u8>,
+    run: Option<Vec<u8>>,
+    imported_head: Option<String>,
+}
+
 impl Fixture {
     fn new() -> Self {
         let home = test_support::temp_home().unwrap();
@@ -200,6 +207,32 @@ impl Fixture {
         assert!(output.status.success(), "{}", stderr(&output));
         path
     }
+
+    fn native_state(home: &Path, id: engram::WorkId) -> NativeState {
+        let connection = rusqlite::Connection::open(engram::project_database_path(
+            home,
+            &engram::ProjectId(PROJECT.into()),
+        ))
+        .unwrap();
+        connection
+            .query_row(
+                "SELECT item.item_json, run.run_json, head.head_id
+             FROM work_items item
+             LEFT JOIN work_runs run ON run.run_id = item.active_run_id
+             LEFT JOIN work_task_sync_import_heads head
+               ON head.project_id = item.project_id AND head.work_id = item.work_id
+             WHERE item.work_id = ?1",
+                [id.0.to_string()],
+                |row| {
+                    Ok(NativeState {
+                        item: row.get(0)?,
+                        run: row.get(1)?,
+                        imported_head: row.get(2)?,
+                    })
+                },
+            )
+            .unwrap()
+    }
 }
 
 fn stderr(output: &Output) -> String {
@@ -207,8 +240,15 @@ fn stderr(output: &Output) -> String {
 }
 
 /// The structured refusal printed on stderr, after any plain notices.
+#[track_caller]
 fn refusal(output: &Output) -> Value {
-    assert!(!output.status.success(), "the command was refused");
+    assert!(
+        !output.status.success(),
+        "expected refusal, got {:?}; stdout: {}; stderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        stderr(output),
+    );
     let text = stderr(output);
     let start = text
         .find("{\n")
@@ -232,30 +272,9 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
     let fixture = Fixture::new();
     let candidate = fixture.candidate("candidate");
 
-    // Against its own basis a native store reaches the native-state refusal;
-    // against the empty basis its planning differs first.
+    // Native planning still prevents selecting an empty destination basis.
     let native = fixture.store("native");
     fixture.add(&native, "native task");
-    let native_basis = fixture.own_basis(&native, "native-basis");
-    let refused = refusal(&fixture.import_with_basis(&native, &candidate, &native_basis, true));
-    assert_eq!(refused["error"]["code"], "task_sync_native_state");
-    assert_eq!(
-        refused["error"]["message"],
-        "local work input is invalid: task import refuses existing native execution state"
-    );
-    assert_eq!(
-        refused["error"]["details"]["reason"],
-        "task import refuses existing native execution state"
-    );
-    assert_plain_text_kept(
-        &fixture.import_with_basis(&native, &candidate, &native_basis, false),
-        &refused,
-    );
-    // A dry run refuses exactly as the real import does.
-    assert_eq!(
-        refusal(&fixture.dry_run_with_basis(&native, &candidate, &native_basis))["error"],
-        refused["error"]
-    );
     let refused = refusal(&fixture.exchange_snapshot(&native, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "task_sync_divergent_planning");
 
@@ -370,6 +389,64 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
     let refused = refusal(&fixture.exchange_snapshot(&unopted, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "work_invalid");
     assert!(refused["error"]["details"].get("remedy").is_none());
+}
+
+#[test]
+fn task_sync_folder_import_keeps_native_work_and_applies_independent_tasks() {
+    let fixture = Fixture::new();
+    let candidate = fixture.candidate("candidate");
+    let incoming = directory::read_folder(&candidate)
+        .unwrap()
+        .tree
+        .tasks
+        .remove(0);
+    for json in [true, false] {
+        let name = if json { "json" } else { "plain" };
+        let native = fixture.store(name);
+        fixture.add(&native, "native task");
+        let basis = fixture.own_basis(&native, &format!("{name}-basis"));
+        let original = directory::read_folder(basis.parent().unwrap())
+            .unwrap()
+            .tree
+            .tasks
+            .remove(0);
+        let before = Fixture::native_state(&native, original.id);
+        assert!(before.imported_head.is_none());
+
+        let dry = fixture.dry_run_with_basis(&native, &candidate, &basis);
+        assert!(dry.status.success(), "{}", stderr(&dry));
+        let preview: Value = serde_json::from_slice(&dry.stdout).unwrap();
+        assert_eq!(preview["changed"], true);
+        assert_eq!(preview["dry_run"], true);
+        assert_eq!(preview["tasks"][0]["status"], "applied");
+        assert_eq!(Fixture::native_state(&native, original.id), before);
+        {
+            let store = engram::SqliteStore::open(engram::project_database_path(
+                &native,
+                &engram::ProjectId(PROJECT.into()),
+            ))
+            .unwrap();
+            assert!(matches!(
+                store.get_work_item(incoming.id),
+                Err(engram::StoreError::WorkNotFound(_))
+            ));
+        }
+
+        let applied = fixture.import_with_basis(&native, &candidate, &basis, json);
+        assert!(applied.status.success(), "{}", stderr(&applied));
+        if json {
+            let receipt: Value = serde_json::from_slice(&applied.stdout).unwrap();
+            assert_eq!(receipt["changed"], true);
+            assert_eq!(receipt["dry_run"], false);
+            assert_eq!(receipt["tasks"][0]["status"], "applied");
+        }
+        assert_eq!(Fixture::native_state(&native, original.id), before);
+        let after = fixture.own_basis(&native, &format!("{name}-after"));
+        let exported = directory::read_folder(after.parent().unwrap()).unwrap();
+        assert_eq!(exported.tree.tasks.len(), 2);
+        assert!(exported.tree.tasks.contains(&original));
+        assert!(exported.tree.tasks.contains(&incoming));
+    }
 }
 
 #[test]

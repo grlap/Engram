@@ -200,7 +200,7 @@ pub(super) fn apply(
         .into_iter()
         .map(|item| (item.work_id, item))
         .collect::<HashMap<_, _>>();
-    for id in plan.additions() {
+    for id in plan.additions().chain(plan.changed_ids()) {
         native_snapshots.insert(
             id,
             local_snapshots
@@ -275,6 +275,7 @@ pub(super) fn apply(
         },
         &input.intent.actor,
         now,
+        false,
     )?;
     Ok((changes, before))
 }

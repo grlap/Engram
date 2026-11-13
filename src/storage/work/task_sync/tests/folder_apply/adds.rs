@@ -119,7 +119,7 @@ fn unfinished_work_under_a_completed_ancestor_refuses() {
     let late = document("late work", Some(fixture.completed));
     let late_id = late.id;
     let resolved = with(&fixture.tree, vec![late]);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 6).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 6).unwrap());
     assert!(
         message.contains(&format!(
             "{}: ancestor_binding (ancestor {} is completed)",
@@ -151,12 +151,11 @@ fn an_addition_under_a_claimed_parent_refuses_and_a_dry_run_refuses_alike() {
         now: at(7),
     };
     let before = state(&store);
-    let dry = store
-        .dry_run_task_sync_folder(request, "add-1")
-        .unwrap_err();
-    let real = store.apply_task_sync_folder(request, "add-1").unwrap_err();
-    assert_eq!(dry.to_string(), real.to_string());
-    let message = conflict(&real);
+    let dry = store.dry_run_task_sync_folder(request, "add-1").unwrap();
+    let real = store.apply_task_sync_folder(request, "add-1").unwrap();
+    assert!(dry.dry_run && !real.dry_run);
+    assert_eq!(dry.tasks, real.tasks);
+    let message = refusals(&real);
     assert!(
         message.contains(&format!(
             "{}: ancestor_binding (ancestor {}: active_run (run {}))",
@@ -177,7 +176,7 @@ fn an_executing_root_refuses_an_addition_though_its_ancestors_are_run_free() {
     let grandchild_id = grandchild.id;
     let resolved = with(&fixture.tree, vec![grandchild]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!(
             "{}: ancestor_binding (root {} has active root execution ",
@@ -209,7 +208,7 @@ fn blocked_additions_and_edits_are_named_together() {
         vec![grandchild],
     );
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     let edit = format!("{}: active_run (run {})", fixture.first.0, claim.run_id.0);
     let addition = format!("{}: ancestor_binding (root ", grandchild_id.0);
     let (Some(edit_at), Some(addition_at)) = (message.find(&edit), message.find(&addition)) else {
@@ -224,7 +223,7 @@ fn blocked_additions_and_edits_are_named_together() {
 }
 
 #[test]
-fn an_addition_referencing_a_native_task_refuses() {
+fn an_addition_resolves_immutable_native_parent_and_prerequisite_endpoints() {
     let (mut store, _fixture) = enrolled();
     let native = native_root(&mut store, PROJECT, "native-task", 6);
     let child = document("under native", Some(native.work_id));
@@ -232,18 +231,15 @@ fn an_addition_referencing_a_native_task_refuses() {
     dependent.prerequisites = vec![native.work_id];
     let (child_id, dependent_id) = (child.id, dependent.id);
     let resolved = with(&exported(&store), vec![child, dependent]);
-    let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    assert!(exchange(&mut store, &resolved, "add-1", 7).unwrap().changed);
     for id in [child_id, dependent_id] {
-        assert!(
-            message.contains(&format!(
-                "{}: unsupported_origin (it references task {}",
-                id.0, native.work_id.0
-            )),
-            "{message}"
-        );
+        assert!(query::load_work_item(&store.connection, id).is_ok());
     }
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        query::load_work_item(&store.connection, native.work_id).unwrap(),
+        native
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -306,8 +302,9 @@ fn identities_the_store_already_holds_refuse_as_collisions() {
     }];
     let pinned_id = pinned.id;
     let resolved = with(&exported(&store), vec![taken, reused, pinned]);
+    enrol_current(&mut store, 10);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 10).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 10).unwrap());
     for expected in [
         format!(
             "{}: id_collision (the work id is already held by this store)",
@@ -338,7 +335,7 @@ fn a_task_the_exchange_retired_cannot_be_added_again() {
             .all(|task| task.id != fixture.completed)
     );
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &fixture.tree, "re-add", 6).unwrap_err());
+    let message = refusals(&exchange(&mut store, &fixture.tree, "re-add", 6).unwrap());
     assert!(
         message.contains(&format!(
             "{}: id_collision (the work id is already held by this store)",
@@ -405,8 +402,9 @@ fn an_addition_the_origin_history_cannot_take_refuses_as_origin_graph() {
     x.prerequisites = vec![q_id];
     let x_id = x.id;
     let resolved = with(&exported(&store), vec![x]);
+    enrol_current(&mut store, 7);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!("{}: origin_graph (", x_id.0)),
         "{message}"
@@ -539,8 +537,8 @@ fn shared_notes_on_an_addition_restore_and_a_held_note_id_collides() {
     )];
     let colliding_id = colliding.id;
     let before = state(&store);
-    let error = apply(&mut store, &with(&resolved, vec![colliding]), "add-2", 7).unwrap_err();
-    let message = conflict(&error);
+    let result = apply(&mut store, &with(&resolved, vec![colliding]), "add-2", 7).unwrap();
+    let message = refusals(&result);
     assert!(
         message.contains(&format!("{}: id_collision (note ", colliding_id.0)),
         "{message}"

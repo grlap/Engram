@@ -386,7 +386,7 @@ pub(super) fn unfinished_optional_children(
         .collect()
 }
 
-pub(super) fn live_descendant_execution_authority(
+pub(in crate::storage::work) fn live_descendant_execution_authority(
     connection: &Connection,
     root_id: WorkId,
     now: DateTime<Utc>,

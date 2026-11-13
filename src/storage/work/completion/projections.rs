@@ -189,6 +189,13 @@ impl SqliteStore {
                 continue;
             }
             match &event.transition {
+                WorkTransition::CompletionReported { .. } => {
+                    if let Err(error) =
+                        super::super::task_sync::reported::validate_on(connection, &event)
+                    {
+                        invalid.push(format!("{label}:reported_completion:{error}"));
+                    }
+                }
                 WorkTransition::Created { prerequisites } => {
                     for prerequisite in prerequisites {
                         prerequisite_rows.insert(
@@ -611,6 +618,18 @@ fn seed_restored_projection_expectations(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut latest = HashMap::<WorkId, (i64, ObjectId, RestoredRecord)>::new();
+    // Reports made after native execution are history layers, not the
+    // initial relation cut from which that execution's events replay.
+    let reported = connection
+        .prepare(
+            "SELECT json_extract(canonical_json, '$.transition.record') FROM objects
+         WHERE object_kind='work_event'
+         AND json_extract(canonical_json, '$.transition.kind')='completion_reported'
+         AND NOT EXISTS(SELECT 1 FROM work_task_sync_evidence_imported foreign_record
+                        WHERE foreign_record.object_id=objects.object_id)",
+        )?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<HashSet<_>, _>>()?;
     let mut next_generation = HashMap::<WorkId, i64>::new();
     for (stored_work_id, generation, stored_hash, object_kind, bytes) in rows {
         *checked += 1;
@@ -651,7 +670,9 @@ fn seed_restored_projection_expectations(
         if let Err(error) = source_audit {
             invalid.push(format!("{label}:source_notice:{error}"));
         }
-        latest.insert(work_id, (generation, hash, record));
+        if !reported.contains(hash.as_str()) {
+            latest.insert(work_id, (generation, hash, record));
+        }
     }
 
     let orphaned = connection

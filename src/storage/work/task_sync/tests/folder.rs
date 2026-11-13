@@ -1082,44 +1082,75 @@ fn task_sync_folder_seeded_retirement_filter_omits_deleted_member_but_keeps_loca
 }
 
 #[test]
-fn task_sync_folder_apply_refuses_a_partial_baseline_without_deleting_local_work() {
+fn task_sync_folder_apply_refuses_removing_proposed_members_but_allows_their_scalar_edits() {
     let tree = candidate();
     let mut store = SqliteStore::open_in_memory().unwrap();
     apply_folder(&mut store, &tree, "folder-import-1", at(5));
 
-    // Refresh the synthetic baseline so this fixture reaches the partial-input
-    // guard rather than the earlier freshness guard.
+    // Enrol the complete current inventory. Omitting an enrolled Proposed
+    // member requests deletion; this is not an incomplete-folder request.
     let baseline = store
         .export_task_sync_folder(&tree.project.project_id, &profile())
         .unwrap();
     super::super::folder::record_complete_baseline_for_test(&mut store, &baseline.tree).unwrap();
 
     let before = state(&store);
+    let proposed = tree
+        .tasks
+        .iter()
+        .find(|task| task.lifecycle == WorkLifecycle::Proposed)
+        .unwrap()
+        .id;
     let mut partial = tree;
-    // Keep the graph valid so the partial-inventory guard, rather than
-    // structural validation, is the behavior under test. `candidate()` sorts
-    // random UUIDs, so `pop()` could remove a referenced root or prerequisite.
     partial
         .tasks
         .retain(|task| task.lifecycle != WorkLifecycle::Proposed);
     let basis = destination_basis(&store, &partial.project.project_id);
-    let error = store
-        .apply_task_sync_folder(
-            folder_apply_request(
-                &partial.project.project_id,
-                &actor("folder-importer"),
-                &partial,
-                &basis,
-                &profile(),
-                true,
-                at(6),
-            ),
-            "folder-import-2",
-        )
-        .unwrap_err();
-    // An enrolled store sees the omitted members as removals. These members
-    // are Proposed, so lifecycle admission refuses the whole folder by name.
-    assert!(error.to_string().contains("lifecycle"), "{error:#}");
-    assert_eq!(refusal_code(&error), "task_sync_import_conflict");
-    assert_eq!(state(&store), before);
+    let importer = actor("folder-importer");
+    let export_profile = profile();
+    for dry_run in [true, false] {
+        let request = folder_apply_request(
+            &partial.project.project_id,
+            &importer,
+            &partial,
+            &basis,
+            &export_profile,
+            true,
+            at(6),
+        );
+        let result = if dry_run {
+            store.dry_run_task_sync_folder(request, "folder-import-2")
+        } else {
+            store.apply_task_sync_folder(request, "folder-import-2")
+        }
+        .unwrap();
+        assert_eq!(result.dry_run, dry_run);
+        assert!(!result.changed);
+        assert_eq!(result.tasks.len(), 1);
+        assert_eq!(result.tasks[0].task, proposed);
+        assert_eq!(
+            result.tasks[0].status,
+            super::super::TaskSyncTaskStatus::Refused
+        );
+        assert_eq!(result.tasks[0].reason.as_deref(), Some("lifecycle"));
+        assert_eq!(state(&store), before);
+    }
+
+    let mut edited = baseline.tree;
+    edited
+        .tasks
+        .iter_mut()
+        .find(|task| task.id == proposed)
+        .unwrap()
+        .title = "Revised proposal".into();
+    let result = apply_folder(&mut store, &edited, "revise-proposal", at(7));
+    assert!(result.changed);
+    assert_eq!(
+        result.tasks[0].status,
+        super::super::TaskSyncTaskStatus::Applied
+    );
+    let item = store.get_work_item(proposed).unwrap();
+    assert_eq!(item.title, "Revised proposal");
+    assert_eq!(item.lifecycle, WorkLifecycle::Proposed);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
