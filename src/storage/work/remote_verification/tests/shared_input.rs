@@ -67,10 +67,9 @@ fn remote_shared_equal_clean_and_dirty_qualify_for_both_purposes() {
 }
 
 #[test]
-fn remote_shared_pass_credits_focused_runs_optional_exits_and_remote_clock_skew() {
+fn remote_shared_focused_pass_verifies_with_optional_exits_but_is_no_landing_gate() {
     for dirty in [false, true] {
         for intended in [
-            committed(RemoteVerificationPurpose::Verification),
             committed(RemoteVerificationPurpose::LandingGate),
             test_ref(),
         ] {
@@ -80,38 +79,89 @@ fn remote_shared_pass_credits_focused_runs_optional_exits_and_remote_clock_skew(
                 f.request.completion.mode = RemoteRunMode::Focused;
                 f.request.completion.result.exit = exit;
                 f.request.completion.finished_at = Some(at(11));
-                let source = source(dirty);
-                equal(&mut f, &source);
-                let credited = f.record_at(10).unwrap();
-                assert!(credited.qualification.credited, "{credited:?}");
-                assert!(credited.origin.is_some());
-                assert_eq!(credited.verifications.len(), 1);
-                let evidence = f
-                    .store
-                    .load_verification_evidence(&credited.verifications[0].record_id)
-                    .unwrap();
-                assert_eq!(evidence.source_basis.source_id(), Some(&source));
-                assert_eq!(evidence.completed_at, at(11));
-                assert_eq!(evidence.recorded_at, at(10));
-                assert_eq!(f.record_at(12).unwrap(), credited);
-                f.assert_healthy();
-
-                let mut failed = fixture();
-                failed.request.association.intended_use = intended.clone();
-                failed.request.completion.mode = RemoteRunMode::Focused;
-                failed.request.completion.result.exit = exit;
-                failed.request.completion.result.verdict = RemoteRunVerdict::Fail;
-                failed.request.completion.finished_at = Some(at(11));
-                equal(&mut failed, &source);
-                let receipt = failed.record_at(10).unwrap();
-                assert!(!receipt.qualification.credited);
+                equal(&mut f, &source(dirty));
+                // Equal source ids do not make a focused run a landing gate.
+                let receipt = f.record_at(10).unwrap();
+                assert!(!receipt.qualification.credited, "{receipt:?}");
                 assert_eq!(
                     receipt.qualification.reason,
-                    Some(RemoteVerificationReason::ResultNotPass)
+                    Some(RemoteVerificationReason::NotFullMode)
                 );
                 assert_eq!(receipt.verifications, []);
-                failed.assert_healthy();
+                assert!(receipt.origin.is_some());
+                f.assert_healthy();
+
+                let mut full = fixture();
+                full.request.association.intended_use = intended.clone();
+                full.request.completion.result.exit = exit;
+                equal(&mut full, &source(dirty));
+                assert!(full.record().unwrap().qualification.credited);
+                full.assert_healthy();
             }
+        }
+    }
+    for dirty in [false, true] {
+        let intended = committed(RemoteVerificationPurpose::Verification);
+        for exit in [None, Some(0), Some(1)] {
+            let mut f = fixture();
+            f.request.association.intended_use = intended.clone();
+            f.request.completion.mode = RemoteRunMode::Focused;
+            f.request.completion.result.exit = exit;
+            f.request.completion.finished_at = Some(at(11));
+            let source = source(dirty);
+            equal(&mut f, &source);
+            let credited = f.record_at(10).unwrap();
+            assert!(credited.qualification.credited, "{credited:?}");
+            assert!(credited.origin.is_some());
+            assert_eq!(credited.verifications.len(), 1);
+            let evidence = f
+                .store
+                .load_verification_evidence(&credited.verifications[0].record_id)
+                .unwrap();
+            assert_eq!(evidence.source_basis.source_id(), Some(&source));
+            assert_eq!(evidence.completed_at, at(11));
+            assert_eq!(evidence.recorded_at, at(10));
+            assert_eq!(f.record_at(12).unwrap(), credited);
+            f.assert_healthy();
+
+            let mut failed = fixture();
+            failed.request.association.intended_use = intended.clone();
+            failed.request.completion.mode = RemoteRunMode::Focused;
+            failed.request.completion.result.exit = exit;
+            failed.request.completion.result.verdict = RemoteRunVerdict::Fail;
+            failed.request.completion.finished_at = Some(at(11));
+            equal(&mut failed, &source);
+            let receipt = failed.record_at(10).unwrap();
+            assert!(!receipt.qualification.credited);
+            assert_eq!(
+                receipt.qualification.reason,
+                Some(RemoteVerificationReason::ResultNotPass)
+            );
+            assert_eq!(receipt.verifications, []);
+            failed.assert_healthy();
+        }
+    }
+}
+
+#[test]
+fn remote_shared_focused_landing_gate_is_not_full_mode_before_any_input_check() {
+    let mut other = source(false);
+    other.commit = object_name("another commit");
+    for (before, after) in [
+        (Some(source(false)), Some(source(true))),
+        (Some(source(false)), None),
+        (None, None),
+        (Some(other.clone()), Some(other)),
+    ] {
+        for intended in [
+            committed(RemoteVerificationPurpose::LandingGate),
+            test_ref(),
+        ] {
+            let mut f = fixture();
+            f.request.association.intended_use = intended;
+            f.request.completion.mode = RemoteRunMode::Focused;
+            f.request.completion.input = endpoints(before.clone(), after.clone());
+            f.assert_uncredited(RemoteVerificationReason::NotFullMode);
         }
     }
 }

@@ -717,6 +717,42 @@ fn remote_verification_committed_input_accepts_clean_local_root_at_expected_comm
 }
 
 #[test]
+fn remote_verification_focused_committed_pass_is_cited_by_evaluation_and_completion() {
+    for bound in [false, true] {
+        for fresh in [false, true] {
+            let mut f = prepared(bound, fresh);
+            let _source = real_git_root(&mut f, committed(RemoteVerificationPurpose::Verification));
+            f.request.completion.mode = RemoteRunMode::Focused;
+            let receipt = f.record().unwrap();
+            assert!(receipt.qualification.credited, "{receipt:?}");
+            let check = &receipt.verifications[0].record_id;
+            let revision = f.request.association.intended_use.revision();
+            // An independent observed evaluation cites the focused remote test.
+            let recorded = f
+                .store
+                .record_acceptance_evaluation(
+                    &evaluation(&f, check, &revision),
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap();
+            assert!(recorded.record.all_pass());
+            let seal = complete(&mut f, check, &revision, "focused-remote-done").unwrap();
+            assert!(seal.acceptance[0].satisfied);
+            assert!(seal.evidence.contains(check));
+            assert_eq!(f.count("execution_observation"), 0);
+            f.assert_healthy();
+        }
+    }
+
+    // The same focused run offered as a landing gate mints no evidence to cite.
+    let mut f = prepared(true, true);
+    let _source = real_git_root(&mut f, committed(RemoteVerificationPurpose::LandingGate));
+    f.request.completion.mode = RemoteRunMode::Focused;
+    let receipt = f.assert_uncredited(RemoteVerificationReason::NotFullMode);
+    assert!(receipt.origin.is_some());
+}
+
+#[test]
 fn remote_verification_committed_input_uses_git_after_reports_and_real_changes() {
     for evaluated in [false, true] {
         for state in [

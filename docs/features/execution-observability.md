@@ -729,8 +729,9 @@ are the run's terminal, so a later delivery of the same run with more facts, suc
 as a fingerprint or finish time left out at first, is `result_conflict`. Only a
 provisional delivery can be followed by fuller facts.
 
-The receipt is `{operation, origin, verifications: [{stage: full, record_id}],
-qualification: {credited, reason?, detail?}}`. `operation` names the delivery's
+The receipt is `{operation, origin, verifications: [{stage, record_id}],
+qualification: {credited, reason?, detail?}}`, where `stage` is the run's mode,
+`full` or `focused`. `operation` names the delivery's
 record, and `origin` names the run's terminal record or is null. An exact retry
 under the same key returns the same receipt before its destination is judged
 again, even after the claim or root has moved; a changed request under the same
@@ -777,19 +778,24 @@ the current launcher records complete `source_id` values instead.
 5. `result_not_pass`: anything else but a terminal PASS with a finish
    time. The debris case above is the exception checked before these ordinary
    result predicates.
-6. `source_id_missing_or_changed`: shared input has an unavailable endpoint or
-   its complete before and after objects differ. Two nulls never qualify. This
-   applies to both `verification` and `landing_gate`, with local changes allowed.
-7. `commit_mismatch`: for `committed_input`, the tested commit is missing or
+6. `not_full_mode`: a `landing_gate` use of a focused run. Only a full run is a
+   landing gate; `verification` takes either mode.
+7. `source_id_missing_or_changed`: the run's before and after input identity is
+   missing or differs. For shared input, an endpoint is unavailable or the
+   complete before and after objects differ; two nulls never qualify, and this
+   applies to both `verification` and `landing_gate`, with local changes
+   allowed. For legacy input, it applies to `landing_gate` only, checked after
+   the commit and tree below, when the before and after fingerprints are not
+   both present and equal.
+8. `commit_mismatch`: for `committed_input`, the tested commit is missing or
    another commit, even with the same tree.
-8. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
+9. `tree_mismatch`: for `authorized_test_ref`, the tested tree is missing or
    another tree.
-9. `fingerprint_missing_or_changed`: for legacy `landing_gate` only, the before
-    and after fingerprints are not both present and equal.
 
-`detail` names missing data; there are no further reasons. An ordinary
-focused pass qualifies on the same basis as a full pass; an absent or nonzero
-exit value does not override the recorded PASS outcome. Historical refusals and
+`detail` names missing data; there are no further reasons. For `verification`
+a focused pass qualifies on the same basis as a full pass; a `landing_gate`
+needs a full run. An absent or nonzero exit value does not override the
+recorded PASS outcome. Historical refusals and
 provisional records remain readable as recorded, without gaining new credit.
 An ordinary
 `verification` has no legacy fingerprint rule, not even for differing optional

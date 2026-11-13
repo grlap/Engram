@@ -75,27 +75,27 @@ export function registerRequestMessageTests(support) {
     }
   });
 
-  for (const source of ["index", "registration"]) test(`request-message selection confirms ${source} before foreground execution`, async () => {
+  for (const full of [true, false]) for (const source of ["index", "registration"]) test(`request-message ${full ? "full" : "focused"} selection confirms ${source} before foreground execution`, async () => {
     await fixture(async ({ root, marker, marking, fixtureEnv }) => host(fixtureEnv, async ({ state, hostEnv }) => {
       state.source = source;
       const selected = native();
-      const runDir = await createRun({ root, full: true, requestMessageId: selected, stages: [marking] }, hostEnv);
+      const runDir = await createRun({ root, full, requestMessageId: selected, stages: [marking] }, hostEnv);
       assert.equal(json(join(runDir, "completion.request.json")).requestMessageId, selected);
       assert.equal(state.gets, 1);
       const result = await executeRun(runDir, hostEnv);
       assert.equal(result.state, "passed", result.error);
       assert.equal(result.exitCode, 0);
       assert.equal(state.gets, 2, "the foreground executor rechecks the exact existing GET");
-      assert.equal(result.preflight.length, 3);
+      assert.equal(result.preflight.length, full ? 3 : 0);
       assert.equal(readFileSync(marker, "utf8"), "x");
       assert.equal(result.requestMessageId, selected);
     }));
   });
 
-  for (const echo of ["missing", "different"]) test(`request-message selection refuses ${echo} launch echo despite a valid POST acknowledgement`, async () => {
+  for (const full of [true, false]) for (const echo of ["missing", "different"]) test(`request-message ${full ? "full" : "focused"} selection refuses ${echo} launch echo despite a valid POST acknowledgement`, async () => {
     await fixture(async ({ root, marker, marking, fixtureEnv }) => host(fixtureEnv, async ({ state, hostEnv }) => {
       state.echo = echo;
-      const runDir = await createRun({ root, full: true, requestMessageId: native(), stages: [marking] }, hostEnv);
+      const runDir = await createRun({ root, full, requestMessageId: native(), stages: [marking] }, hostEnv);
       const result = await executeRun(runDir, hostEnv);
       assert.equal(result.state, "failed");
       assert.equal(result.reason, "request-selection-unconfirmed");
@@ -107,9 +107,9 @@ export function registerRequestMessageTests(support) {
     }));
   });
 
-  for (const echo of ["missing", "different"]) test(`request-message selection refuses ${echo} worker echo before any probe or stage`, async () => {
+  for (const full of [true, false]) for (const echo of ["missing", "different"]) test(`request-message ${full ? "full" : "focused"} selection refuses ${echo} worker echo before any probe or stage`, async () => {
     await fixture(async ({ root, marker, marking, fixtureEnv }) => host(fixtureEnv, async ({ state, hostEnv }) => {
-      const runDir = await createRun({ root, full: true, requestMessageId: native(), stages: [marking] }, hostEnv);
+      const runDir = await createRun({ root, full, requestMessageId: native(), stages: [marking] }, hostEnv);
       state.echo = echo;
       const result = await executeRun(runDir, hostEnv);
       assert.equal(result.state, "failed");
@@ -122,13 +122,14 @@ export function registerRequestMessageTests(support) {
     }));
   });
 
-  for (const change of ["replace", "remove", "remove-request-and-result", "add", "missing-snapshot", "damaged-snapshot"]) test(`request-message selection refuses ${change} at worker admission`, async () => {
+  for (const full of [true, false]) for (const change of ["replace", "remove", "remove-request-and-result", "add", "mode", "missing-snapshot", "damaged-snapshot"]) test(`request-message ${full ? "full" : "focused"} selection refuses ${change} at worker admission`, async () => {
     await fixture(async ({ root, marker, marking, fixtureEnv }) => host(fixtureEnv, async ({ state, hostEnv }) => {
-      const runDir = await createRun({ root, full: true, stages: [marking],
+      const runDir = await createRun({ root, full, stages: [marking],
         ...(change === "add" ? {} : { requestMessageId: native() }) }, hostEnv);
       const request = json(join(runDir, "request.json"));
       if (change === "remove" || change === "remove-request-and-result") delete request.requestMessageId;
       else if (change === "replace" || change === "add") request.requestMessageId = native();
+      else if (change === "mode") request.full = !full;
       if (change === "remove-request-and-result") {
         const result = json(join(runDir, "results.json"));
         delete result.requestMessageId;
@@ -147,9 +148,9 @@ export function registerRequestMessageTests(support) {
     }));
   });
 
-  for (const echo of ["match", "missing", "different"]) test(`request-message actual detached worker handles ${echo} confirmation without fallback`, { timeout: 120_000 }, async () => {
+  for (const full of [true, false]) for (const echo of ["match", "missing", "different"]) test(`request-message ${full ? "full" : "focused"} actual detached worker handles ${echo} confirmation without fallback`, { timeout: 120_000 }, async () => {
     await fixture(async ({ root, marker, marking, fixtureEnv }) => host(fixtureEnv, async ({ state, hostEnv }) => {
-      const runDir = await createRun({ root, full: true, detached: true, notifyTo: "fixture-parent",
+      const runDir = await createRun({ root, full, detached: true, notifyTo: "fixture-parent",
         requestMessageId: relay(), stages: [marking] }, hostEnv);
       state.echo = echo;
       if (echo === "match") {
@@ -163,15 +164,16 @@ export function registerRequestMessageTests(support) {
         assert.equal(json(join(runDir, "results.json")).stages[0].state, "unrun");
       }
       assert.equal(state.gets, 2);
+      assert.equal(json(join(runDir, "request.json")).requestMessageId, json(join(runDir, "completion.request.json")).requestMessageId);
       assert.equal(existsSync(join(runDir, "execution.lock")), true);
       assert.equal(json(join(runDir, "notification.json")).ok, true);
       await assert.rejects(executeRun(runDir, hostEnv), /EEXIST/u);
     }));
   });
 
-  test("request-message identity is conditional and detects mutation during registration", async () => {
+  for (const full of [true, false]) test(`request-message ${full ? "full" : "focused"} identity is conditional and detects mutation during registration`, async () => {
     await fixture(async ({ root, marking, fixtureEnv }) => host(fixtureEnv, async ({ hostEnv }) => {
-      const runDir = await createRun({ root, full: true, stages: [marking] }, hostEnv);
+      const runDir = await createRun({ root, full, stages: [marking] }, hostEnv);
       const request = json(join(runDir, "request.json"));
       const fields = ["runId", "root", "stages", "notifyTo", "full", "scope", "detached", "creatorPid", "owner", "started",
         "requiredBinaryEnv", "prerequisiteFiles", "needsCargo", "liveEngram"];
@@ -199,12 +201,13 @@ export function registerRequestMessageTests(support) {
     }));
   });
 
-  test("request-message CLI accepts native and relay spellings but refuses standalone selection", async () => {
+  for (const mode of ["full", "focused"]) test(`request-message ${mode} CLI accepts native and relay spellings but refuses standalone selection`, async () => {
     await fixture(async ({ root, marker }) => {
       const local = copyLauncher(root);
       const standalone = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("TERMAL_")));
       for (const selected of [native(), relay()]) {
-        const result = spawnSync(process.execPath, [local, "full", "--request-message-id", selected],
+        const result = spawnSync(process.execPath, [local, mode, "--request-message-id", selected,
+          ...(mode === "focused" ? ["--", process.execPath, "-e", ""] : [])],
           { cwd: root, env: standalone, encoding: "utf8", windowsHide: true });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stdout, /reason: request-selection-unconfirmed/u);
@@ -218,20 +221,23 @@ export function registerRequestMessageTests(support) {
     });
   });
 
-  test("request-message rejects focused, malformed, missing and duplicate selectors before allocating a run", async () => {
+  for (const mode of ["full", "focused"]) test(`request-message ${mode} rejects malformed, missing and duplicate selectors before allocating a run`, async () => {
     await fixture(async ({ root, marking, fixtureEnv }) => {
-      await assert.rejects(createRun({ root, requestMessageId: native(), stages: [marking] }, fixtureEnv), /request-selection-full-only/u);
       for (const selected of ["", "bare-uuid", "mailbox-123", "relay-message-", "relay-message-bad=", "relay-message-" + "a".repeat(1025), null,
         "MAILBOX-MESSAGE-" + randomUUID(), "mailbox-message-ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB", "Relay-Message-a",
         "mailbox-meſſage-" + randomUUID(), "relay-message-ſ", "relay-message-K"]) {
-        await assert.rejects(createRun({ root, full: true, requestMessageId: selected, stages: [marking] }, fixtureEnv), /invalid-request-message-id/u);
+        await assert.rejects(createRun({ root, full: mode === "full", requestMessageId: selected, stages: [marking] }, fixtureEnv), /invalid-request-message-id/u);
       }
       const local = copyLauncher(root), selected = native();
-      for (const args of [["full", "--request-message-id"], ["full", "--request-message-id", "bad"],
-        ["full", "--request-message-id", selected, "--request-message-id", selected],
-        ["focused", "--request-message-id", selected, "--", process.execPath, "-e", ""]]) {
-        const result = spawnSync(process.execPath, [local, ...args], { cwd: root, env, encoding: "utf8", windowsHide: true });
+      const command = mode === "focused" ? ["--", process.execPath, "-e", ""] : [];
+      for (const [args, refusal] of [
+        [[mode, "--request-message-id"], mode === "focused" ? /invalid-request-message-id/u : /--request-message-id requires a value/u],
+        [[mode, "--request-message-id", "bad"], /invalid-request-message-id/u],
+        [[mode, "--request-message-id", selected, "--request-message-id", selected], /invalid launcher option/u],
+      ]) {
+        const result = spawnSync(process.execPath, [local, ...args, ...command], { cwd: root, env, encoding: "utf8", windowsHide: true });
         assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, refusal);
         assert.doesNotMatch(result.stdout, /^results:/mu);
       }
     });

@@ -761,7 +761,7 @@ catch {
 export async function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false,
   item, nextTransition, input: runInput, requestMessageId, selectInput = false, commitInputStatus = captureCommitInputStatus }, env = process.env, registrationOptions = {}) {
   if (runInput !== undefined && runInput !== "commit") throw usageFailure("unsupported run input; use --input commit");
-  try { validateRequestMessageSelection({ requestMessageId, full }); }
+  try { validateRequestMessageSelection({ requestMessageId }); }
   catch (error) { throw usageFailure(error.message); }
   validateLaunchMetadata({ item, nextTransition });
   const everyMs = heartbeatEveryMs(env);
@@ -814,7 +814,7 @@ export async function createRun({ root = repository, stages, notifyTo, requiredB
   } finally { clearInterval(registrationHeartbeat); }
   if (requestMessageId !== undefined && !registrationConfirmed(request.registration)) {
     Object.assign(initial, { state: "failed", exitCode: 1, reason: "request-selection-unconfirmed",
-      ended: new Date().toISOString(), error: `selected FULL request requires confirmed host registration (${request.registration?.reason ?? "unavailable"}); no stage ran` });
+      ended: new Date().toISOString(), error: `selected request requires confirmed host registration (${request.registration?.reason ?? "unavailable"}); no stage ran` });
     save(join(runDir, "results.json"), initial);
     publishLaunchRequest(runDir, request);
     return runDir;
@@ -1078,7 +1078,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     let registeredRequest = request;
     if (selected) {
       if (!admitted || request.requestMessageId !== result.requestMessageId || request.requestMessageId !== admitted.requestMessageId
-          || request.full !== true || admitted.full !== true
+          || request.full !== admitted.full
           || request.registration?.requestIdentity !== admitted.registration?.requestIdentity
           || result.registration?.requestIdentity !== admitted.registration?.requestIdentity) {
         throw because("request-selection-changed", new Error("selected request differs from its admitted intent; no stage ran"));
@@ -1097,7 +1097,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       result.heartbeat.at = new Date().toISOString();
       save(resultPath, result);
       if (selected && !registrationConfirmed(result.registration)) {
-        throw because("request-selection-unconfirmed", new Error(`selected FULL request confirmation failed (${result.registration?.reason ?? "unavailable"}); no stage ran`));
+        throw because("request-selection-unconfirmed", new Error(`selected request confirmation failed (${result.registration?.reason ?? "unavailable"}); no stage ran`));
       }
     }
     // The execution lock makes this the sole wait creator. Confirmation can
@@ -1761,7 +1761,7 @@ async function main(args) {
     catch (error) { throw workerFailure(runDir, error); }
     return;
   }
-  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--input commit] [--request-message-id MESSAGE_ID (full only)] [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR | stop RUN_ID --reason TEXT --actor TEXT");
+  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--input commit] [--request-message-id MESSAGE_ID] [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR | stop RUN_ID --reason TEXT --actor TEXT");
   let notifyTo, detach = false, item, nextOwner, nextAction, input, requestMessageId;
   const metadataFlags = new Set();
   const requiredBinaryEnv = [];
@@ -1772,7 +1772,7 @@ async function main(args) {
     else if (flag === "--request-message-id" && requestMessageId === undefined) {
       requestMessageId = args.shift();
       if (requestMessageId === undefined) throw usageFailure("--request-message-id requires a value");
-      try { validateRequestMessageSelection({ requestMessageId, full: mode === "full" }); }
+      try { validateRequestMessageSelection({ requestMessageId }); }
       catch (error) { throw usageFailure(error.message); }
     }
     else if (["--item", "--next-owner", "--next-action"].includes(flag)) {

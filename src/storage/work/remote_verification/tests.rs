@@ -405,8 +405,7 @@ fn remote_verification_ordinary_pass_needs_no_fingerprint_but_a_landing_gate_doe
             let mut f = fixture();
             f.request.association.intended_use = landing.clone();
             change(legacy_input(&mut f.request.completion.input));
-            let receipt =
-                f.assert_uncredited(RemoteVerificationReason::FingerprintMissingOrChanged);
+            let receipt = f.assert_uncredited(RemoteVerificationReason::SourceIdMissingOrChanged);
             assert!(
                 receipt
                     .qualification
@@ -416,6 +415,84 @@ fn remote_verification_ordinary_pass_needs_no_fingerprint_but_a_landing_gate_doe
                     .contains(detail),
                 "{receipt:?}"
             );
+        }
+    }
+}
+
+#[test]
+fn remote_verification_focused_run_verifies_but_is_never_a_landing_gate() {
+    for mode in [RemoteRunMode::Full, RemoteRunMode::Focused] {
+        let mut f = fixture();
+        f.request.completion.mode = mode;
+        let receipt = f.record().unwrap();
+        assert!(receipt.qualification.credited, "{mode:?}: {receipt:?}");
+        assert_eq!(receipt.verifications.len(), 1);
+        f.assert_healthy();
+
+        for landing in [
+            committed(RemoteVerificationPurpose::LandingGate),
+            test_ref(),
+        ] {
+            let mut f = fixture();
+            f.request.completion.mode = mode;
+            f.request.association.intended_use = landing.clone();
+            if mode == RemoteRunMode::Full {
+                assert!(f.record().unwrap().qualification.credited, "{landing:?}");
+            } else {
+                // Equal fingerprints do not make a focused run a landing gate.
+                let receipt = f.assert_uncredited(RemoteVerificationReason::NotFullMode);
+                assert_eq!(receipt.verifications, []);
+                assert!(
+                    receipt.origin.is_some(),
+                    "still a settled, visible terminal"
+                );
+            }
+            f.assert_healthy();
+        }
+    }
+
+    // Native failure and debris keep their reasons ahead of the mode.
+    for (verdict, reason, expected) in [
+        (
+            RemoteRunVerdict::Fail,
+            "stage-failed",
+            RemoteVerificationReason::ResultNotPass,
+        ),
+        (
+            RemoteRunVerdict::Fail,
+            NEW_UNTRACKED_ONLY_REASON,
+            RemoteVerificationReason::UntrackedDebrisPendingDisposition,
+        ),
+    ] {
+        let mut f = fixture();
+        f.request.completion.mode = RemoteRunMode::Focused;
+        f.request.association.intended_use = committed(RemoteVerificationPurpose::LandingGate);
+        f.request.completion.result.verdict = verdict;
+        f.request.completion.result.exit = Some(1);
+        f.request.completion.result.reason = reason.into();
+        f.assert_uncredited(expected);
+    }
+
+    // The mode is decided before any input fact a landing gate would check.
+    let spoiled: [fn(&mut LegacyRemoteRunInput); 4] = [
+        |input| input.commit = Some(object_name("another commit")),
+        |input| input.tree = Some(GitTreeId::parse(object_name("another tree")).unwrap()),
+        |input| input.after_fingerprint = Some("e".repeat(64)),
+        |input| {
+            input.before_fingerprint = None;
+            input.after_fingerprint = None;
+        },
+    ];
+    for landing in [
+        committed(RemoteVerificationPurpose::LandingGate),
+        test_ref(),
+    ] {
+        for spoil in spoiled {
+            let mut f = fixture();
+            f.request.completion.mode = RemoteRunMode::Focused;
+            f.request.association.intended_use = landing.clone();
+            spoil(legacy_input(&mut f.request.completion.input));
+            f.assert_uncredited(RemoteVerificationReason::NotFullMode);
         }
     }
 }

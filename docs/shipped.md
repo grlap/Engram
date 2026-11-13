@@ -64,7 +64,8 @@ evaluation declarations and cross-item binding retain their separate protocols.
 A test run on another host can enter typed verification through the private
 `remote_verification_record` operation, from the launcher's completion facts and a
 stated destination, with one immutable terminal per project, host and run and a
-named reason for every result it does not credit. It adds no durable schema, and
+named reason for every result it does not credit. A focused or full run can
+verify; only a full run is a landing gate. It adds no durable schema, and
 the first delivery requires every consumer of the store on the new build. See
 [remote verification](features/execution-observability.md#remote-verification).
 

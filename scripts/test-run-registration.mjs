@@ -22,7 +22,6 @@ const immutableFields = ["runId", "root", "stages", "notifyTo", "full", "scope",
 export function validateRequestMessageSelection(request) {
   const value = request.requestMessageId;
   if (value === undefined) return;
-  if (request.full !== true) throw new Error("request-selection-full-only");
   // Check the transport spelling here. The host validates the retained native
   // or relayed message and publishes the selected id in durable registration.
   if (typeof value !== "string" || !(/^(?:mailbox-message-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|relay-message-[A-Za-z0-9_-]{1,1024})$/u.test(value))) {
@@ -126,7 +125,7 @@ async function bounded(milliseconds, operation) {
 function reason(error) {
   return new Set(["partial-context", "invalid-context", "invalid-response", "query-unconfirmed", "query-refused",
     "query-identity-mismatch", "registration-timeout", "registration-refused", "invalid-acknowledgement",
-    "request-selection-full-only", "invalid-request-message-id"])
+    "invalid-request-message-id"])
     .has(error?.message) ? error.message : "registration-unconfirmed";
 }
 

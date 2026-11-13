@@ -385,7 +385,8 @@ pub enum RemoteVerificationReason {
     ResultNotPass,
     CommitMismatch,
     TreeMismatch,
-    FingerprintMissingOrChanged,
+    /// The run's before and after input identity is missing or differs: the
+    /// source id pair of shared input, or the fingerprints of historical input.
     SourceIdMissingOrChanged,
 }
 
@@ -401,7 +402,6 @@ impl RemoteVerificationReason {
             Self::ResultNotPass => "result_not_pass",
             Self::CommitMismatch => "commit_mismatch",
             Self::TreeMismatch => "tree_mismatch",
-            Self::FingerprintMissingOrChanged => "fingerprint_missing_or_changed",
             Self::SourceIdMissingOrChanged => "source_id_missing_or_changed",
         }
     }

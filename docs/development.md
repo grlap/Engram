@@ -486,15 +486,16 @@ or automatic fallback is provided. The landing record names the install order,
 runner pin updates and remaining older candidates; retire each old pin when its
 last recorded run or consumer need ends.
 
-`node scripts/test-launcher.mjs full --request-message-id MESSAGE_ID` selects
-one retained native or relayed FULL request under TermAl. Native
+`node scripts/test-launcher.mjs full --request-message-id MESSAGE_ID` or
+`node scripts/test-launcher.mjs focused --request-message-id MESSAGE_ID -- COMMAND ARGS...`
+selects one retained native or relayed request of the matching mode under TermAl. Native
 `mailbox-message-...` and opaque `relay-message-...` spellings are accepted
 without rewriting the selector. The host validates the retained request;
 the launcher requires the existing exact GET to echo the same
 `run.requestMessageId` before capture and again at execution admission,
 including detached workers. A missing or different echo, an unconfirmed host,
 standalone execution or a changed admitted selector refuses execution. The
-flag is full-only and is immutable in registration only when present, so
+flag is immutable in registration only when present, so
 ordinary request identities and their fallback behavior stay unchanged.
 
 This selector depends on TermAl's retained-request (K3) producer. Fixture and

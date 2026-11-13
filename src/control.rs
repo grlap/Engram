@@ -30,7 +30,8 @@ pub fn check_verification_applicability(
 
 /// Why a remote completion does not qualify for its stated use, by the native
 /// facts first and the input second; `None` when it qualifies. One decision
-/// serves every use. Shared input requires two available equal source ids for
+/// serves every use. A focused or full run can verify; only a full run can be
+/// a landing gate. Shared input requires two available equal source ids for
 /// either purpose. Historical input retains its landing-only fingerprint rule.
 /// Only the launcher's own
 /// verdict counts here, whatever its reason says, and `detail` names what is
@@ -42,7 +43,7 @@ pub fn remote_result_disqualification(
     _now: chrono::DateTime<chrono::Utc>,
 ) -> Option<(crate::domain::RemoteVerificationReason, Option<String>)> {
     use crate::domain::{
-        NEW_UNTRACKED_ONLY_REASON, RemoteRunInput, RemoteRunVerdict,
+        NEW_UNTRACKED_ONLY_REASON, RemoteRunInput, RemoteRunMode, RemoteRunVerdict,
         RemoteVerificationPurpose as Purpose, RemoteVerificationReason as Reason,
         RemoteVerificationUse as Use,
     };
@@ -61,6 +62,9 @@ pub fn remote_result_disqualification(
             Reason::ResultNotPass,
             Some("the passed run states no finish time".to_owned()),
         ));
+    }
+    if intended_use.purpose() == Purpose::LandingGate && completion.mode != RemoteRunMode::Full {
+        return Some((Reason::NotFullMode, None));
     }
     let input = match &completion.input {
         RemoteRunInput::SourceId(input) => {
@@ -117,7 +121,7 @@ pub fn remote_result_disqualification(
             (Some(before), Some(after)) if before == after => {}
             (Some(_), Some(_)) => {
                 return Some((
-                    Reason::FingerprintMissingOrChanged,
+                    Reason::SourceIdMissingOrChanged,
                     Some("the before and after fingerprints differ".to_owned()),
                 ));
             }
@@ -128,7 +132,7 @@ pub fn remote_result_disqualification(
                     _ => "after fingerprint",
                 };
                 return Some((
-                    Reason::FingerprintMissingOrChanged,
+                    Reason::SourceIdMissingOrChanged,
                     Some(format!("the result names no {missing}")),
                 ));
             }
