@@ -11,11 +11,12 @@ const ATTRIBUTES: &str = "* text eol=lf -filter diff merge -working-tree-encodin
 
 fn ignore() -> String {
     let id = "[0-9a-f]".repeat(32);
+    let stored_id = "[0-9a-f]".repeat(64);
     let shard = "[0-9a-f]".repeat(2);
     // Admit only the carrier's UUID directories and JSON leaves. The evidence
     // reader still verifies shard agreement, ordinary modes and pack contents.
     format!(
-        "{IGNORE}!/evidence/\n/evidence/*\n!/evidence/{id}/\n/evidence/*/*\n!/evidence/{id}/{shard}/\n/evidence/*/*/*\n!/evidence/{id}/{shard}/{id}.json\n"
+        "{IGNORE}!/memories/\n/memories/*\n!/memories/*/\n/memories/*/*\n!/memories/*/head.json\n!/memories/*/{id}.json\n!/memories/*/{stored_id}.json\n!/evidence/\n/evidence/*\n!/evidence/{id}/\n/evidence/*/*\n!/evidence/{id}/{shard}/\n/evidence/*/*/*\n!/evidence/{id}/{shard}/{id}.json\n"
     )
 }
 
@@ -61,4 +62,75 @@ pub(super) fn propose(path: &str, before: Option<Vec<u8>>) -> Result<Edit> {
         before,
         after,
     })
+}
+
+pub(super) fn validate_recorded(edit: &Edit) -> Result<bool> {
+    Ok(propose(&edit.path, edit.before.clone())? == *edit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn memory_sync_generated_policy_admits_both_stored_identity_shapes() {
+        let owned = crate::test_support::temp_home().unwrap();
+        let root = owned.path().join("policy-repository");
+        std::fs::create_dir(&root).unwrap();
+        let query = |args: &[&str], missing, input: Option<&[u8]>| {
+            crate::task_sync::git::query(
+                &root,
+                args,
+                missing,
+                input,
+                crate::operation_time::MINIMUM,
+            )
+        };
+        query(&["init", "-q", "--initial-branch=main"], false, None).unwrap();
+        let directory = root.join(".engram/memories/rule");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            root.join(".engram/.gitignore"),
+            propose(".gitignore", None).unwrap().after,
+        )
+        .unwrap();
+        let ids = [
+            crate::ObjectId::mint(),
+            crate::ObjectId::from_canonical_bytes(b"historical policy identity"),
+        ];
+        let mut input = Vec::new();
+        for name in
+            std::iter::once("head.json".to_owned()).chain(ids.iter().map(|id| format!("{id}.json")))
+        {
+            std::fs::write(directory.join(&name), "fixture").unwrap();
+            input.extend_from_slice(format!(".engram/memories/rule/{name}\0").as_bytes());
+        }
+        assert!(
+            query(
+                &["check-ignore", "--no-index", "-z", "--stdin"],
+                true,
+                Some(&input)
+            )
+            .unwrap()
+            .is_empty()
+        );
+        let unowned = b".engram/memories/rule/unrelated.json\0";
+        assert_eq!(
+            query(
+                &["check-ignore", "--no-index", "-z", "--stdin"],
+                true,
+                Some(unowned)
+            )
+            .unwrap(),
+            unowned.to_vec()
+        );
+    }
+
+    #[test]
+    fn memory_sync_policy_accepts_current_proposal_and_refuses_obsolete_bytes() {
+        let current = propose(".gitignore", Some(b"# operator rule\n".to_vec())).unwrap();
+        assert!(validate_recorded(&current).unwrap());
+        let mut recorded = current.clone();
+        recorded.after = b"obsolete proposal".to_vec();
+        assert!(!validate_recorded(&recorded).unwrap());
+    }
 }

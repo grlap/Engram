@@ -10,6 +10,55 @@ use super::{
 };
 
 impl LocalWorkService {
+    /// Exports opt-in project-memory text against the selected shared histories.
+    ///
+    /// # Errors
+    /// Refuses missing task-sync opt-in or unreadable canonical storage.
+    pub fn export_project_memory_sync(
+        &self,
+        selected: &std::collections::BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        now: DateTime<Utc>,
+    ) -> Result<crate::task_sync::memories::ExportOutcome, StoreError> {
+        self.require_task_sync_enabled()?;
+        self.read_store_at(now)?
+            .export_project_memory_sync(&self.project_id, selected)
+    }
+
+    /// Applies one selected memory after its task dependencies have been imported.
+    /// Source labels remain asserted; the local service actor records the write.
+    ///
+    /// # Errors
+    /// Refuses disabled/read-only use, foreign project scope and storage import
+    /// fences, disclosure, target, history or explicit rebaseline failures.
+    pub fn import_project_memory_sync(
+        &self,
+        selected: &crate::task_sync::memories::KeyHistory,
+        options: &crate::task_sync::memories::ImportOptions,
+        dry_run: bool,
+        now: DateTime<Utc>,
+    ) -> Result<crate::task_sync::memories::ImportOutcome, StoreError> {
+        self.require_task_sync_writer()?;
+        self.require_task_sync_enabled()?;
+        if selected.project_id != self.project_id {
+            return Err(StoreError::InvalidProjectMemory(
+                "memory import belongs to another project".into(),
+            ));
+        }
+        let mut store = self.lock_store_at(now)?;
+        let expected = store.project_memory_sync_head(&self.project_id, &selected.key)?;
+        let actor = self.actor("task-sync:import", "import reported project memory");
+        store.import_project_memory_sync(&crate::task_sync::memories::ImportRequest {
+            selected,
+            expected_local_head: expected.as_ref(),
+            actor: &actor,
+            session_id: &self.session_id,
+            now,
+            dry_run,
+            merge: options.merge.as_ref(),
+            seed: options.seed.as_ref(),
+            mark_untagged_seed: options.mark_untagged_seed,
+        })
+    }
     /// Active project memories whose current version names `work_id` as its
     /// local retiring target: bounded keys, the exact total and omitted count.
     ///
@@ -106,6 +155,50 @@ impl LocalWorkService {
         edit: &crate::domain::ProjectMemoryEdit,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        self.revise_project_memory_with_import_provenance(
+            body,
+            key,
+            revise,
+            expected_revision,
+            retiring_target,
+            edit,
+            None,
+            now,
+        )
+    }
+
+    /// Records asserted shared attribution while retaining the actual local
+    /// actor/session as recorder. The explicit tag is also used for first seeds.
+    ///
+    /// # Errors
+    /// Refuses malformed, unbound or oversized provenance and ordinary memory
+    /// write failures. Source metadata never grants authority.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "ordinary memory capture plus optional reported source metadata"
+    )]
+    pub fn revise_project_memory_with_import_provenance(
+        &self,
+        body: String,
+        key: Option<String>,
+        revise: bool,
+        expected_revision: Option<u64>,
+        retiring_target: crate::domain::ProjectMemoryRetiringTargetChange,
+        edit: &crate::domain::ProjectMemoryEdit,
+        import_provenance: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        let mut actor = self.actor("remember", "record attributed project memory");
+        if let Some(marked) = import_provenance {
+            if *edit != crate::domain::ProjectMemoryEdit::Whole {
+                return Err(StoreError::InvalidProjectMemory(
+                    "import provenance requires a whole-body capture".into(),
+                ));
+            }
+            let tag = crate::task_sync::memories::ImportProvenance::parse(marked)?;
+            tag.validate_capture(&self.project_id, key.as_deref(), &body)?;
+            tag.attach(&mut actor)?;
+        }
         let request = RememberProjectMemoryRequest {
             project_id: self.project_id.clone(),
             session_id: self.session_id.clone(),
@@ -114,7 +207,7 @@ impl LocalWorkService {
             expected_revision,
             body,
             retiring_target,
-            actor: self.actor("remember", "record attributed project memory"),
+            actor,
             created_at: now,
         };
         // Attribution and a read-only connection refuse first, as before; the

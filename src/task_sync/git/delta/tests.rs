@@ -11,6 +11,24 @@ mod resolution;
 mod snapshot;
 mod validation;
 
+#[test]
+fn memory_sync_task_delta_skips_memory_files_and_tree_entries() {
+    let fixture = Fixture::new(1);
+    let before = fixture.commit();
+    let memory = fixture.root.join(".engram/memories/rule");
+    fs::create_dir_all(&memory).unwrap();
+    fs::write(
+        memory.join("head.json"),
+        "task delta does not consume memory text",
+    )
+    .unwrap();
+    let id = crate::ObjectId::mint();
+    fs::write(memory.join(format!("{id}.json")), "separate component").unwrap();
+    let after = fixture.commit();
+    let delta = fixture.read(&before, &after).unwrap();
+    assert!(delta.upserts.is_empty() && delta.removed.is_empty());
+}
+
 struct Fixture {
     _owned: crate::test_support::TempHome,
     root: PathBuf,
