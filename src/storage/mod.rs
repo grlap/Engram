@@ -27,6 +27,7 @@ pub(crate) use work::task_sync::folder::folder_apply_summary;
 pub use work::task_sync::folder::{TaskSyncFolderApply, TaskSyncFolderExport};
 pub(crate) use work::task_sync::ledger::custody::Observed as TaskSyncCustodyObservation;
 pub(crate) use work::task_sync::ledger::origin_repositories_on as task_sync_origin_repositories_on;
+pub use work::task_sync::{TaskSyncTaskResult, TaskSyncTaskStatus};
 pub mod migration;
 mod named_root_read;
 pub use named_root_read::NamedRootReadRefusal;

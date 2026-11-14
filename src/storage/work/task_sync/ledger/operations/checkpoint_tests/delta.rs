@@ -65,6 +65,18 @@ impl Fixture {
         setup: impl FnOnce(&mut SqliteStore, crate::WorkId),
         repository: impl FnOnce(&std::path::Path, &crate::task_sync::TaskTree, &mut Binding),
     ) -> Self {
+        Self::with_store_changes(tree, |_, tree| changes(tree), setup, repository)
+    }
+
+    fn with_store_changes(
+        tree: &crate::task_sync::TaskTree,
+        changes: impl FnOnce(
+            &mut SqliteStore,
+            &crate::task_sync::TaskTree,
+        ) -> BTreeMap<crate::WorkId, Option<crate::task_sync::TaskDocument>>,
+        setup: impl FnOnce(&mut SqliteStore, crate::WorkId),
+        repository: impl FnOnce(&std::path::Path, &crate::task_sync::TaskTree, &mut Binding),
+    ) -> Self {
         let (home, mut store, mut binding, enrollment) =
             super::super::origin_tests::unenrolled_fixture();
         let empty = store
@@ -124,7 +136,7 @@ impl Fixture {
         let Some(CheckpointSeed::Incoming { snapshot, .. }) = checkpoint.seed else {
             panic!("incoming seed expected")
         };
-        let changes = changes(tree);
+        let changes = changes(&mut store, tree);
         let selected = *changes.keys().next().unwrap();
         setup(&mut store, selected);
         let mut inventory_root = snapshot.membership.inventory_root;

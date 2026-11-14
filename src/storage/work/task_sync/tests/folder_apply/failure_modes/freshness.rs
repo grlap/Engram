@@ -92,7 +92,7 @@ fn folder_write_lock_serializes_a_competing_revision_without_overwrite() {
 }
 
 #[test]
-fn folder_original_basis_allows_planning_aba_but_refuses_execution_aba() {
+fn folder_original_basis_allows_planning_and_released_execution_aba() {
     for case in ["scalar", "relation", "execution"] {
         let (mut store, fixture) = enrolled();
         let retained_basis = basis(&store);
@@ -159,16 +159,13 @@ fn folder_original_basis_allows_planning_aba_but_refuses_execution_aba() {
         let selected = edited(&fixture.tree, fixture.first, |task| {
             task.title = "incoming change".into();
         });
-        let before = state(&store);
+        let prior = events(&store, fixture.first);
         let result = apply_basis(&mut store, &selected, &retained_basis, "original-basis", 8);
-        if case == "execution" {
-            assert!(conflict(&result.unwrap_err()).contains("active_run"));
-            assert_eq!(state(&store), before);
-        } else {
-            assert!(result.unwrap().changed);
-            assert_eq!(exported(&store), selected);
-            assert_eq!(events(&store, fixture.first).len(), 3);
-        }
+        assert!(result.unwrap().changed);
+        assert_eq!(exported(&store), selected);
+        let after = events(&store, fixture.first);
+        assert_eq!(after.len(), prior.len() + 1);
+        assert_eq!(&after[..prior.len()], prior.as_slice());
         assert!(store.verify_all().unwrap().is_healthy());
     }
 }

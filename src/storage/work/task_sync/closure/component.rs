@@ -184,6 +184,10 @@ pub(super) fn capture_scope(
         baseline: scope.baseline,
     };
     let mut seen = BTreeSet::new();
+    // Seed ids select a component, not arbitrary native creation histories.
+    // Native fallback is justified only by outgoing references of documents
+    // actually reached in the immutable origin view.
+    let mut native_references = BTreeSet::new();
     while let Some(id) = pending.pop_first() {
         if !seen.insert(id) {
             continue;
@@ -201,6 +205,23 @@ pub(super) fn capture_scope(
                 project:row.get(0)?,record:row.get(1)?,root:row.get(2)?,notes:row.get(3)?,member_project:row.get(4)?,path:row.get(5)?,bytes:row.get(6)?,kind:row.get(7)?,
             })).optional()?;
         let Some(node) = node else {
+            if scope.view == Some(TaskSyncGraphView::Origin)
+                && native_references.contains(&id)
+                && let Some(endpoint) = origin::native_endpoint(connection, project, id)?
+            {
+                for (_, target) in document_edges(&endpoint.task) {
+                    native_references.insert(target);
+                    if result.missing.remove(&target) {
+                        seen.remove(&target);
+                    }
+                    pending.insert(target);
+                }
+                incoming(connection, scope.kind, scope.id, id, &mut pending)?;
+                result.expected_roots.insert(id, endpoint.root);
+                result.members.insert(id, endpoint.record);
+                result.documents.insert(id, endpoint.task);
+                continue;
+            }
             if let Some(view) = scope.view {
                 missing_node(connection, project, view, id)?;
             }
@@ -238,6 +259,10 @@ pub(super) fn capture_scope(
             EDGE_READS.with(|count| count.set(count.get() + 1));
             let (relation,target)=edge?; let target=work_id(&target)?;
             forward.insert((relation,target)); pending.insert(target);
+            if scope.view == Some(TaskSyncGraphView::Origin) {
+                native_references.insert(target);
+                if result.missing.remove(&target) { seen.remove(&target); }
+            }
         }
         let expected = document_edges(&document)
             .into_iter()

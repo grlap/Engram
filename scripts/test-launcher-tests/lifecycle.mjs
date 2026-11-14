@@ -133,14 +133,14 @@ for (const earlyExit of [false, true]) test(earlyExit
       child.on("message", (message) => ipcMessages.push(message));
       completion = once(child, "close");
       let stderr = "";
-      child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4096); });
+      child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr = (stderr + chunk).slice(-4096); });
       const ready = waitForStageReady(child, broker, t.signal);
       let output = "";
       const receipt = new Promise((done, reject) => {
         t.signal.addEventListener("abort", () => reject(t.signal.reason), { once: true });
         child.once("error", reject);
         child.once("close", () => reject(new Error("launcher ended before its startup receipt")));
-        child.stdout.on("data", (chunk) => {
+        child.stdout.setEncoding("utf8").on("data", (chunk) => {
           output += chunk;
           if (/^basis=source_id\n/mu.test(output)) done(output);
         });

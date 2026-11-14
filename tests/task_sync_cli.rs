@@ -10,6 +10,9 @@ mod data_worktree;
 #[path = "task_sync_cli/steps.rs"]
 mod steps;
 
+#[path = "task_sync_cli/any_host.rs"]
+mod any_host;
+
 use std::{
     fs,
     path::Path,
@@ -363,7 +366,14 @@ fn task_sync_cli_round_trips_a_git_folder_without_creating_runtime_state() {
     // The planning baseline is the only feed entry an import adds.
     assert_eq!(feed_rows(&database, false), 0);
 
-    // The source's own basis still matches it, so its native work refuses.
+    // The source may enrol its own unchanged task without replacing native
+    // creation or execution history.
+    let source_database = project_database_path(&source, &project);
+    let source_before = SqliteStore::open(&source_database)
+        .unwrap()
+        .get_work_item(original.tree.tasks[0].id)
+        .unwrap();
+    let source_events = feed_rows(&source_database, false);
     let output = snapshot_output(
         &source,
         &marker,
@@ -371,8 +381,21 @@ fn task_sync_cli_round_trips_a_git_folder_without_creating_runtime_state() {
         &path,
         &["--basis", &basis(&path)],
     );
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("native execution"));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["changed"], true);
+    assert!(receipt.get("tasks").is_none());
+    let source_store = SqliteStore::open(&source_database).unwrap();
+    assert_eq!(
+        source_store.get_work_item(source_before.work_id).unwrap(),
+        source_before
+    );
+    assert_eq!(feed_rows(&source_database, false), source_events);
+    assert!(source_store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -637,8 +660,8 @@ fn task_sync_enrolled_hosts_exchange_new_tasks_both_ways_with_notes_and_activity
     assert!(store.verify_all().unwrap().is_healthy());
     drop(store);
 
-    // An edit of A's native task, made on B, still refuses on A as
-    // unsupported_origin: it was created on A, not restored by an import.
+    // A still holds its live claim. The returned edit is held visibly for
+    // that reason, independently of which host originally created the task.
     work(
         &host_b,
         &marker,
@@ -653,18 +676,27 @@ fn task_sync_enrolled_hosts_exchange_new_tasks_both_ways_with_notes_and_activity
         &renamed,
         &["--basis", &basis(&folder_a2), "--json"],
     );
-    assert!(!output.status.success());
-    let text = String::from_utf8_lossy(&output.stderr);
-    let start = text
-        .find("{\n")
-        .unwrap_or_else(|| panic!("no JSON refusal on stderr: {text}"));
-    let refused: Value = serde_json::from_str(&text[start..]).unwrap();
-    assert_eq!(refused["error"]["code"], "task_sync_import_conflict");
-    let message = refused["error"]["message"].as_str().unwrap();
-    assert!(
-        message.contains(&format!("{}: unsupported_origin", native.0)),
-        "{message}"
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let held = result["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["task"] == native.0.to_string())
+        .unwrap();
+    assert_eq!(held["status"], "held");
+    assert_eq!(held["reason"], "active_run");
+    let store = SqliteStore::open(project_database_path(
+        &host_a,
+        &ProjectId("task-sync-adds".into()),
+    ))
+    .unwrap();
+    assert_eq!(store.get_work_item(native).unwrap().title, "native on A");
 }
 
 #[test]

@@ -70,18 +70,8 @@ pub(in crate::storage::work) fn validate_completion_seal_children_on(
                 seal.run_id.0
             )));
         }
-        let record: RestoredRecord =
-            load_typed_work_object(connection, record_id, "work_restored_record")?;
-        let child = load_work_item(connection, record.work_id)?;
-        let latest = super::super::query::latest_restored_record_hash(connection, child.work_id)?;
-        if latest.as_ref() != Some(record_id)
-            || record.history.completion.is_none()
-            || !seen_children.insert(child.work_id)
-            || child.parent_id != Some(seal.work_id)
-            || child.root_id != seal.root_id
-            || child.child_requirement != ChildRequirement::Required
-            || child.lifecycle != WorkLifecycle::Completed
-        {
+        let child = validate_restored_child_completion_on(connection, seal, record_id)?;
+        if !seen_children.insert(child) {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "completion seal for run {} cites unrelated restored child record {record_id}",
                 seal.run_id.0
@@ -97,6 +87,52 @@ pub(in crate::storage::work) fn validate_completion_seal_children_on(
         )));
     }
     Ok(())
+}
+
+/// A sealed citation names a historical record, even after the child reopens
+/// or receives another report. Live selection below still requires the latest
+/// currently completed child; auditing an old seal must retain its original cut.
+fn validate_restored_child_completion_on(
+    connection: &Connection,
+    seal: &CompletionSeal,
+    record_id: &ObjectId,
+) -> Result<WorkId, StoreError> {
+    let record: RestoredRecord =
+        load_typed_work_object(connection, record_id, "work_restored_record")?;
+    let parent: WorkItem = load_typed_work_object(
+        connection,
+        &seal.accepted_work_revision_hash,
+        "work_item_revision",
+    )?;
+    let projected: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM work_restored_records
+         WHERE work_id = ?1 AND generation_index = ?2 AND record_id = ?3)",
+        params![
+            record.work_id.0.to_string(),
+            i64::try_from(record.generation_index).ok(),
+            record_id.as_str()
+        ],
+        |row| row.get(0),
+    )?;
+    if !projected
+        || record.schema_version != crate::WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION
+        || record.work_id != record.item.work_id
+        || record.project_id != parent.project_id
+        || parent.work_id != seal.work_id
+        || parent.root_id != seal.root_id
+        || parent.revision != seal.accepted_work_revision
+        || record.history.completion.is_none()
+        || record.item.parent_id != Some(seal.work_id)
+        || record.item.root_id != seal.root_id
+        || record.item.child_requirement != ChildRequirement::Required
+        || record.item.lifecycle != WorkLifecycle::Completed
+    {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "completion seal for run {} cites unrelated restored child record {record_id}",
+            seal.run_id.0
+        )));
+    }
+    Ok(record.work_id)
 }
 
 pub(super) fn required_restored_child_completions(
@@ -386,7 +422,7 @@ pub(super) fn unfinished_optional_children(
         .collect()
 }
 
-pub(super) fn live_descendant_execution_authority(
+pub(in crate::storage::work) fn live_descendant_execution_authority(
     connection: &Connection,
     root_id: WorkId,
     now: DateTime<Utc>,

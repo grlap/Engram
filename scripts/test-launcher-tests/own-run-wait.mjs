@@ -263,8 +263,8 @@ export function registerOwnRunWaitTests({ env, repository, stage, json, copyLaun
           `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`],
         { cwd: root, env: context, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
         let stdout = "", stderr = "";
-        child.stdout.on("data", (chunk) => { stdout += chunk; });
-        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+        child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
         assert.equal((await once(child, "close"))[0], 1, (stdout + stderr).slice(-4096));
         assert.equal(waits, 1, (stdout + stderr).slice(-4096));
         assert.match(stderr, /FAIL launcher: test-run-wait-refused/u);

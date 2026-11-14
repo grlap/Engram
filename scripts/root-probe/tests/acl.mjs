@@ -16,15 +16,15 @@ export function registerAclReader(test, support) {
     const fixture = fakeAclReader(t);
     const captured = fixture.reader.read("capture");
     t.mock.timers.tick(HANG_GUARD_MS - 1);
-    fixture.child.stdout.emit("data", Buffer.from("rea"));
-    fixture.child.stdout.emit("data", Buffer.from("dy\r\n"));
+    fixture.child.stdout.write(Buffer.from("rea"));
+    fixture.child.stdout.write(Buffer.from("dy\r\n"));
     await drainAclEvents();
     t.mock.timers.tick(1000); // The old shared startup/read deadline would expire here.
-    fixture.child.stdout.emit("data", Buffer.from('"D:(A;;FA;;;BA)"\n'));
+    fixture.child.stdout.write(Buffer.from('"D:(A;;FA;;;BA)"\n'));
     assert.equal(await captured, "D:(A;;FA;;;BA)");
     const verified = fixture.reader.read("restore-verification");
     await drainAclEvents();
-    fixture.child.stdout.emit("data", Buffer.from('"D:AI(A;;FA;;;BA)"\n'));
+    fixture.child.stdout.write(Buffer.from('"D:AI(A;;FA;;;BA)"\n'));
     assert.equal(await verified, "D:AI(A;;FA;;;BA)");
     assert.equal(fixture.spawns, 1);
     assert.deepEqual(fixture.calls, ["read\n", "read\n"]);
@@ -32,7 +32,7 @@ export function registerAclReader(test, support) {
     assert.deepEqual(fixture.calls, ["read\n", "read\n", "close\n"]);
     assert.equal(fixture.kills, 0);
     for (const emitter of [fixture.child, fixture.child.stdin, fixture.child.stdout, fixture.child.stderr]) {
-      assert.deepEqual(emitter.eventNames(), []);
+      for (const event of ["data", "error", "close"]) assert.equal(emitter.listenerCount(event), 0);
     }
     t.mock.timers.tick(60000); // No startup, read or shutdown timer remains active.
     assert.equal(fixture.reader.failure, undefined);
@@ -79,9 +79,9 @@ export function registerAclReader(test, support) {
     });
     denial.windows = true;
     const applied = denial.apply();
-    fixture.child.stdout.emit("data", Buffer.from("ready\n"));
+    fixture.child.stdout.write(Buffer.from("ready\n"));
     await drainAclEvents();
-    fixture.child.stdout.emit("data", Buffer.from('"D:(A;;FA;;;BA)"\n'));
+    fixture.child.stdout.write(Buffer.from('"D:(A;;FA;;;BA)"\n'));
     await applied;
     const removed = [];
     const cleanup = cleanupDeniedResources({
@@ -115,9 +115,9 @@ export function registerAclReader(test, support) {
       const fixture = fakeAclReader(t);
       const reading = fixture.reader.read("capture");
       const rejected = assert.rejects(reading, { code: "ROOT_PROBE_ACL_FAILED", phase: "read" });
-      fixture.child.stdout.emit("data", Buffer.from("ready\n"));
+      fixture.child.stdout.write(Buffer.from("ready\n"));
       await drainAclEvents();
-      fixture.child.stdout.emit("data", Buffer.from(data));
+      fixture.child.stdout.write(Buffer.from(data));
       await rejected;
       assert.equal(fixture.kills, 1);
     }
@@ -128,12 +128,12 @@ export function registerAclReader(test, support) {
     for (const idleEvent of ["close", "unsolicited output"]) {
       const fixture = fakeAclReader(t);
       const captured = fixture.reader.read("capture");
-      fixture.child.stdout.emit("data", Buffer.from("ready\n"));
+      fixture.child.stdout.write(Buffer.from("ready\n"));
       await drainAclEvents();
-      fixture.child.stdout.emit("data", Buffer.from('"D:(A;;FA;;;BA)"\n'));
+      fixture.child.stdout.write(Buffer.from('"D:(A;;FA;;;BA)"\n'));
       await captured;
       if (idleEvent === "close") fixture.child.emit("close", 1, null);
-      else fixture.child.stdout.emit("data", Buffer.from('"D:(A;;FA;;;BA)"\n'));
+      else fixture.child.stdout.write(Buffer.from('"D:(A;;FA;;;BA)"\n'));
       const idleFailure = fixture.reader.failure;
       assert.equal(idleFailure.phase, "idle");
       assert.equal(idleFailure.operation, "observation");
@@ -151,7 +151,7 @@ export function registerAclReader(test, support) {
   test("ACL reader slow graceful shutdown confirms closure before fixture removal", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const fixture = fakeAclReader(t, { endCloses: false });
-    fixture.child.stdout.emit("data", Buffer.from("ready\n"));
+    fixture.child.stdout.write(Buffer.from("ready\n"));
     const removed = [];
     const cleanup = cleanupDeniedResources({
       shutdown: async () => {}, restore: async () => {}, closeReader: () => fixture.reader.close(),
@@ -172,7 +172,7 @@ export function registerAclReader(test, support) {
   test("ACL reader graceful-close deadline forces termination and confirms closure", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const fixture = fakeAclReader(t, { endCloses: false });
-    fixture.child.stdout.emit("data", Buffer.from("ready\n"));
+    fixture.child.stdout.write(Buffer.from("ready\n"));
     const closed = fixture.reader.close();
     t.mock.timers.tick(HANG_GUARD_MS);
     await assert.rejects(closed, { code: "ROOT_PROBE_ACL_TIMEOUT", phase: "shutdown" });
@@ -184,7 +184,7 @@ export function registerAclReader(test, support) {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     for (const [code, signal] of [[1, null], [null, "SIGTERM"]]) {
       const fixture = fakeAclReader(t, { endCloses: false });
-      fixture.child.stdout.emit("data", Buffer.from("ready\n"));
+      fixture.child.stdout.write(Buffer.from("ready\n"));
       const cleanup = cleanupDeniedResources({
         shutdown: async () => {}, restore: async () => {}, closeReader: () => fixture.reader.close(),
         deleteRoot: () => assert.fail("root deleted after failed reader exit"),
@@ -209,9 +209,9 @@ export function registerAclReader(test, support) {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     for (const idleEvent of ["stdin error", "unsolicited output"]) {
       const fixture = fakeAclReader(t);
-      fixture.child.stdout.emit("data", Buffer.from("ready\n"));
+      fixture.child.stdout.write(Buffer.from("ready\n"));
       if (idleEvent === "stdin error") fixture.child.stdin.emit("error", new Error("idle stdin failed"));
-      else fixture.child.stdout.emit("data", Buffer.from('"D:(A;;FA;;;BA)"\n'));
+      else fixture.child.stdout.write(Buffer.from('"D:(A;;FA;;;BA)"\n'));
       const idleFailure = fixture.reader.failure;
       assert.equal(idleFailure.phase, "idle");
       await assert.rejects(fixture.reader.close(), (error) => {

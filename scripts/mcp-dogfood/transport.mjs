@@ -2,10 +2,39 @@ import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { after } from "node:test";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import { createMcpClient } from "./client.mjs";
 import { CLOSE_BUDGET_MS, HostLoadSamples, McpCloseObservation } from "../mcp-close.mjs";
 
 export function registerTimingDiagnostics(support) {
   const { SOFT_TIMING_MS, timingLine, test } = support;
+test("MCP client preserves UTF-8 split across stdout and stderr chunks", async (t) => {
+  const child = new EventEmitter();
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  const Client = createMcpClient({ ...support, spawnImpl: () => child });
+  const client = new Client("unused", "split-utf8", undefined, "split-utf8", [], { phaseTrace: false });
+  t.after(() => {
+    for (const stream of [child.stdin, child.stdout, child.stderr]) stream.destroy();
+    child.emit("close", 0, null);
+  });
+  const value = { text: "żółć 🦀" };
+  const result = { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
+  const response = client.request("split-response");
+  const frame = Buffer.from(`${JSON.stringify({ jsonrpc: "2.0", id: 1, result })}\n`);
+  // Let both pipes enter flowing mode so each write reaches the real data
+  // listener separately rather than being coalesced before the reader starts.
+  await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  for (const byte of frame) child.stdout.write(Buffer.from([byte]));
+  assert.deepEqual(await response, result);
+  const diagnostic = "żółć 🦀\nfinal ż";
+  for (const byte of Buffer.from(diagnostic)) child.stderr.write(Buffer.from([byte]));
+  client.flushStderr();
+  assert.equal(client.stderr, diagnostic);
+});
+
 test("slow MCP diagnostics preserve the soft threshold and unknown WAL state", () => {
   assert.equal(timingLine("call", "note", SOFT_TIMING_MS - 1, 42), undefined);
   assert.equal(timingLine("call", "note", SOFT_TIMING_MS, 42), 'MCP timing: call="note" elapsed_ms=2000.0 soft_threshold_ms=2000 wal_bytes=42 (sampled floor; close may truncate WAL)');

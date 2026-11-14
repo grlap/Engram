@@ -1,7 +1,7 @@
 //! Named refusals of additions, and the bounded work admission does.
 
 use super::super::super::super::folder_admission::{
-    ELIGIBILITY_READS, ORIGIN_VALIDATIONS, REFERENCE_READS, RETAINED_VALIDATIONS,
+    ELIGIBILITY_READS, ORIGIN_VALIDATIONS, RETAINED_VALIDATIONS,
 };
 use super::*;
 use crate::task_sync::activity::{ActivityNotice, ActivityState};
@@ -149,7 +149,7 @@ fn an_activity_identity_an_import_origin_holds_collides() {
     let reuse_id = reuse.id;
     let resolved = with(&fixture.tree, vec![reuse]);
     let before = state(&store);
-    let message = conflict(&notes_exchange(&mut store, &resolved, "add-1", 6).unwrap_err());
+    let message = refusals(&notes_exchange(&mut store, &resolved, "add-1", 6).unwrap());
     assert!(
         message.contains(&format!(
             "{}: id_collision (activity laptop/{} is already held)",
@@ -181,7 +181,7 @@ fn an_activity_identity_of_a_host_local_task_collides() {
     let reuse_id = reuse.id;
     let resolved = with(&fixture.tree, vec![reuse]);
     let before = state(&store);
-    let message = conflict(&notes_exchange(&mut store, &resolved, "add-1", 8).unwrap_err());
+    let message = refusals(&notes_exchange(&mut store, &resolved, "add-1", 8).unwrap());
     assert!(
         message.contains(&format!(
             "{}: id_collision (activity host-a/{} is already held)",
@@ -238,7 +238,7 @@ fn an_activity_identity_of_a_native_task_in_another_project_collides() {
     let reuse_id = reuse.id;
     let resolved = with(&fixture.tree, vec![reuse]);
     let before = state(&store);
-    let message = conflict(&notes_exchange(&mut store, &resolved, "add-1", 8).unwrap_err());
+    let message = refusals(&notes_exchange(&mut store, &resolved, "add-1", 8).unwrap());
     assert_activity_collides(&message, reuse_id, &held);
     assert_eq!(state(&store), before);
 }
@@ -253,7 +253,7 @@ fn a_native_activity_reported_under_another_alias_collides() {
     let reuse_id = reuse.id;
     let resolved = with(&fixture.tree, vec![reuse]);
     let before = state(&store);
-    let message = conflict(&notes_exchange(&mut store, &resolved, "add-1", 8).unwrap_err());
+    let message = refusals(&notes_exchange(&mut store, &resolved, "add-1", 8).unwrap());
     assert_activity_collides(&message, reuse_id, &held);
     assert_eq!(state(&store), before);
 }
@@ -267,7 +267,7 @@ fn a_native_activity_collides_on_a_destination_without_an_alias() {
     let reuse_id = reuse.id;
     let resolved = with(&fixture.tree, vec![reuse]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 8).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 8).unwrap());
     assert_activity_collides(&message, reuse_id, &held);
     assert_eq!(state(&store), before);
 }
@@ -291,7 +291,7 @@ fn a_note_id_an_import_origin_holds_collides() {
     let reuse_id = reuse.id;
     let resolved = with(&fixture.tree, vec![reuse]);
     let before = state(&store);
-    let message = conflict(&notes_exchange(&mut store, &resolved, "add-1", 6).unwrap_err());
+    let message = refusals(&notes_exchange(&mut store, &resolved, "add-1", 6).unwrap());
     assert!(
         message.contains(&format!(
             "{}: id_collision (note {} is already held)",
@@ -313,7 +313,7 @@ fn a_short_ref_this_project_holds_collides() {
     let twin_id = twin.id;
     let resolved = with(&fixture.tree, vec![twin]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!(
             "{}: id_collision (short ref {} is already held in this project)",
@@ -332,7 +332,7 @@ fn a_claimed_grandparent_refuses_an_addition() {
     let grandchild_id = grandchild.id;
     let resolved = with(&fixture.tree, vec![grandchild]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!(
             "{}: ancestor_binding (ancestor {}: active_run (run {}))",
@@ -344,7 +344,7 @@ fn a_claimed_grandparent_refuses_an_addition() {
 }
 
 #[test]
-fn a_held_parent_with_planning_history_refuses_an_addition() {
+fn a_parent_with_planning_history_accepts_an_addition() {
     let (mut store, fixture) = enrolled();
     let redactor = crate::DevelopmentNoopRedactor;
     for (step, add) in [(6, true), (7, false)] {
@@ -367,36 +367,31 @@ fn a_held_parent_with_planning_history_refuses_an_addition() {
     let child = document("added child", Some(fixture.second));
     let child_id = child.id;
     let resolved = with(&exported(&store), vec![child]);
-    let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 8).unwrap_err());
-    assert!(
-        message.contains(&format!(
-            "{}: ancestor_binding (ancestor {}: planning_history (event ",
-            child_id.0, fixture.second.0
-        )),
-        "{message}"
-    );
-    assert_eq!(state(&store), before);
+    let prior = events(&store, fixture.second);
+    assert!(exchange(&mut store, &resolved, "add-1", 8).unwrap().changed);
+    assert!(query::load_work_item(&store.connection, child_id).is_ok());
+    assert_eq!(events(&store, fixture.second), prior);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
-fn an_added_ancestor_that_is_not_open_refuses_its_unfinished_child() {
+fn a_new_terminal_ancestor_and_its_incoming_child_are_restored_together() {
     let (mut store, fixture) = enrolled();
     let parent = completed_document("added completed parent", None);
-    let child = document("open under it", Some(parent.id));
+    let child = document("remote open child", Some(parent.id));
     let (parent_id, child_id) = (parent.id, child.id);
     let resolved = with(&fixture.tree, vec![parent, child]);
-    let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 6).unwrap_err());
+    let result = exchange(&mut store, &resolved, "add-1", 6).unwrap();
     assert!(
-        message.contains(&format!(
-            "{}: ancestor_binding (ancestor {} is Completed)",
-            child_id.0, parent_id.0
-        )),
-        "{message}"
+        result
+            .tasks
+            .iter()
+            .all(|task| task.status == crate::storage::TaskSyncTaskStatus::Applied)
     );
-    assert!(!message.contains(&format!("{}:", parent_id.0)), "{message}");
-    assert_eq!(state(&store), before);
+    assert_eq!(item(&store, parent_id).lifecycle, WorkLifecycle::Completed);
+    assert_eq!(item(&store, child_id).lifecycle, WorkLifecycle::Open);
+    assert_eq!(exported(&store), resolved);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -408,7 +403,7 @@ fn additions_beneath_a_bound_held_ancestor_refuse_together() {
     let (middle_id, leaf_id) = (middle.id, leaf.id);
     let resolved = with(&fixture.tree, vec![middle, leaf]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     for id in [middle_id, leaf_id] {
         assert!(
             message.contains(&format!(
@@ -448,7 +443,7 @@ fn an_addition_under_a_held_task_whose_move_is_refused_names_that_ancestor() {
     let added_id = added.id;
     let resolved = with(&moved, vec![added]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 6).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 6).unwrap());
     assert!(
         message.contains(&format!("{}: unsupported_fields (", held_id.0)),
         "{message}"
@@ -475,7 +470,7 @@ fn an_addition_beneath_a_refused_addition_names_that_ancestor() {
     let (parent_id, child_id) = (parent.id, child.id);
     let resolved = with(&fixture.tree, vec![parent, child]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!("{}: id_collision (short ref ", parent_id.0)),
         "{message}"
@@ -551,8 +546,9 @@ fn a_finished_addition_under_a_completion_sealed_here_refuses() {
     let history = completed_document("history under a sealed child", Some(fixture.second));
     let history_id = history.id;
     let resolved = with(&exported(&store), vec![history]);
+    enrol_current(&mut store, 10);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 10).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 10).unwrap());
     assert!(
         message.contains(&format!(
             "{}: ancestor_binding (ancestor {} was completed on this host)",
@@ -614,6 +610,7 @@ fn diverged_origin() -> (SqliteStore, WorkId, WorkId) {
             &crate::DevelopmentNoopRedactor,
         )
         .unwrap();
+    enrol_current(&mut store, 7);
     (store, p_id, q_id)
 }
 
@@ -647,7 +644,7 @@ fn origin_history_blame_names_only_the_culprit_beside_an_innocent() {
     let (culprit_id, innocent_id) = (culprit.id, innocent.id);
     let resolved = with(&exported(&store), vec![culprit, innocent]);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!("{}: origin_graph (", culprit_id.0)),
         "{message}"
@@ -667,7 +664,7 @@ fn origin_history_blame_names_two_culprits_and_spares_an_innocent() {
     let innocent = document("an unrelated root", None);
     let (first_id, second_id, innocent_id) = (first.id, second.id, innocent.id);
     let resolved = with(&exported(&store), vec![first, second, innocent]);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     for id in [first_id, second_id] {
         assert!(
             message.contains(&format!("{}: origin_graph (", id.0)),
@@ -688,13 +685,13 @@ fn origin_history_blame_names_nineteen_culprits_and_spares_an_innocent() {
     let innocent_id = innocent.id;
     additions.push(innocent);
     let resolved = with(&exported(&store), additions);
-    let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert_eq!(origin_blamed(&message), 19, "{message}");
     assert!(!message.contains(&innocent_id.0.to_string()), "{message}");
     assert!(validations().1 <= 3, "{:?}", validations());
-    assert_eq!(state(&store), before);
+    assert!(query::load_work_item(&store.connection, innocent_id).is_ok());
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -707,16 +704,16 @@ fn origin_history_blame_finds_one_culprit_among_many_innocents() {
         .collect::<Vec<_>>();
     additions.push(culprit);
     let resolved = with(&exported(&store), additions);
-    let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert_eq!(origin_blamed(&message), 1, "{message}");
     assert!(
         message.contains(&format!("{}: origin_graph (", culprit_id.0)),
         "{message}"
     );
     assert!(validations().1 <= 3, "{:?}", validations());
-    assert_eq!(state(&store), before);
+    assert_eq!(exported(&store).tasks.len(), resolved.tasks.len() - 1);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -728,11 +725,14 @@ fn origin_history_blame_names_every_culprit_in_one_validation() {
     let resolved = with(&exported(&store), additions);
     let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     // The history alone, then once with every addition: all are on the cycle.
     assert_eq!(validations().1, 2);
-    assert_eq!(origin_blamed(&message), NAMED_CONFLICT_LIMIT, "{message}");
-    assert!(message.ends_with("; and 5 more refused tasks"), "{message}");
+    assert_eq!(
+        origin_blamed(&message),
+        NAMED_CONFLICT_LIMIT + 5,
+        "{message}"
+    );
     assert_eq!(state(&store), before);
 }
 
@@ -810,9 +810,8 @@ fn origin_history_blame_names_a_pair_that_cycles_only_together_beside_a_lone_cul
     let innocents = padding.iter().map(|task| task.id).collect::<Vec<_>>();
     additions.extend(padding);
     let resolved = with(&exported(&store), additions);
-    let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         named_for(&message, lone_id, "origin_graph", ALONE_ON_A_CYCLE),
         "{message}"
@@ -827,7 +826,8 @@ fn origin_history_blame_names_a_pair_that_cycles_only_together_beside_a_lone_cul
         assert!(!message.contains(&id.0.to_string()), "{message}");
     }
     assert!(validations().1 <= 3, "{:?}", validations());
-    assert_eq!(state(&store), before);
+    assert_eq!(exported(&store).tasks.len(), resolved.tasks.len() - 3);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -845,9 +845,8 @@ fn origin_history_blame_spares_an_addition_that_only_bridges_two_cycles() {
     bridge.prerequisites = vec![roots[2]];
     let (near_id, far_id, bridge_id) = (near.id, far.id, bridge.id);
     let resolved = with(&exported(&store), vec![near, far, bridge]);
-    let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     for id in [near_id, far_id] {
         assert!(
             named_for(&message, id, "origin_graph", ALONE_ON_A_CYCLE),
@@ -858,7 +857,8 @@ fn origin_history_blame_spares_an_addition_that_only_bridges_two_cycles() {
     assert!(!message.contains("folder:"), "{message}");
     // The history alone, with every addition, then with the bridge alone.
     assert_eq!(validations().1, 3);
-    assert_eq!(state(&store), before);
+    assert!(query::load_work_item(&store.connection, bridge_id).is_ok());
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -873,21 +873,14 @@ fn origin_history_blame_names_many_culprits_and_spares_an_innocent() {
     let innocent_id = innocent.id;
     additions.push(innocent);
     let resolved = with(&exported(&store), additions);
-    let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
-    assert_eq!(origin_blamed(&message), NAMED_CONFLICT_LIMIT, "{message}");
-    assert!(
-        message.ends_with(&format!(
-            "; and {} more refused tasks",
-            culprits - NAMED_CONFLICT_LIMIT
-        )),
-        "{message}"
-    );
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
+    assert_eq!(origin_blamed(&message), culprits, "{message}");
     assert!(!message.contains(&innocent_id.0.to_string()), "{message}");
     // The history alone, with every addition, then with the innocent alone.
     assert_eq!(validations().1, 3);
-    assert_eq!(state(&store), before);
+    assert!(query::load_work_item(&store.connection, innocent_id).is_ok());
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -898,7 +891,7 @@ fn a_dependent_of_a_graph_culprit_is_named_for_its_reference() {
     dependent.prerequisites = vec![culprit.id];
     let (culprit_id, dependent_id) = (culprit.id, dependent.id);
     let resolved = with(&exported(&store), vec![culprit, dependent]);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!("{}: origin_graph (", culprit_id.0)),
         "{message}"
@@ -927,7 +920,7 @@ fn a_chain_of_dependents_of_a_graph_culprit_is_named_for_its_references() {
     let resolved = with(&exported(&store), chain);
     let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         named_for(&message, ids[0], "origin_graph", ALONE_ON_A_CYCLE),
         "{message}"
@@ -954,7 +947,7 @@ fn a_required_child_of_a_graph_culprit_is_named_for_its_ancestor() {
     let child = document("child of the culprit", Some(culprit.id));
     let (culprit_id, child_id) = (culprit.id, child.id);
     let resolved = with(&exported(&store), vec![culprit, child]);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         named_for(&message, culprit_id, "origin_graph", ALONE_ON_A_CYCLE),
         "{message}"
@@ -998,7 +991,7 @@ fn a_dependent_of_additions_over_the_open_descendant_limit_is_named_for_its_refe
     let resolved = with(&cancelled, additions);
     let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!(
             "{}: refused_reference (it references added task {}, which is refused)",
@@ -1012,16 +1005,10 @@ fn a_dependent_of_additions_over_the_open_descendant_limit_is_named_for_its_refe
         ),
         "{message}"
     );
-    assert!(
-        message.ends_with(&format!(
-            "; and {} more refused tasks",
-            refused - NAMED_CONFLICT_LIMIT
-        )),
-        "{message}"
-    );
+    assert_eq!(message.split("; ").count(), refused, "{message}");
     assert!(!message.contains("folder:"), "{message}");
     // The planning alone, then once with every addition.
-    assert_eq!(validations().0, 2);
+    assert_eq!(validations().0, 3);
     assert_eq!(state(&store), before);
 }
 
@@ -1052,28 +1039,28 @@ fn a_deletion_beside_a_host_local_child_does_not_blame_an_innocent_addition() {
             &crate::DevelopmentNoopRedactor,
         )
         .unwrap();
-    let run_id = item(&store, fixture.second)
+    let _run_id = item(&store, fixture.second)
         .active_run_id
         .expect("decomposition bootstraps the restored parent's run");
     let innocent = document("an unrelated root", None);
     let innocent_id = innocent.id;
     let mut resolved = with(&fixture.tree, vec![innocent]);
     resolved.tasks.retain(|task| task.id != fixture.second);
-    let before = state(&store);
     reset_counters();
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!(
-            "{}: active_run (run {})",
-            fixture.second.0, run_id.0
+            "{}: execution_history (a persisted run exists)",
+            fixture.second.0
         )),
         "{message}"
     );
     assert!(!message.contains(&innocent_id.0.to_string()), "{message}");
     assert!(!message.contains("folder:"), "{message}");
     let (retained, origins) = validations();
-    assert!(retained <= 2 && origins <= 2, "{:?}", validations());
-    assert_eq!(state(&store), before);
+    assert!(retained <= 3 && origins <= 2, "{:?}", validations());
+    assert!(query::load_work_item(&store.connection, innocent_id).is_ok());
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -1142,7 +1129,7 @@ fn a_host_local_task_the_folder_omits_cannot_close_a_cycle_with_an_addition() {
     current.tasks.retain(|task| task.id != h);
     let resolved = with(&current, vec![x]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 8).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 8).unwrap());
     assert!(
         message.contains(&format!("{}: retained_graph (", x_id.0)),
         "{message}"
@@ -1151,7 +1138,7 @@ fn a_host_local_task_the_folder_omits_cannot_close_a_cycle_with_an_addition() {
 }
 
 #[test]
-fn admission_reads_a_shared_reference_once() {
+fn many_additions_can_reference_the_same_existing_task() {
     let (mut store, fixture) = enrolled();
     let roots = (0..40)
         .map(|index| {
@@ -1161,10 +1148,8 @@ fn admission_reads_a_shared_reference_once() {
         })
         .collect::<Vec<_>>();
     let resolved = with(&fixture.tree, roots);
-    REFERENCE_READS.with(|count| count.set(0));
     assert!(exchange(&mut store, &resolved, "add-1", 6).unwrap().changed);
-    // Forty additions reference one held task; its origin is read once.
-    assert_eq!(REFERENCE_READS.with(std::cell::Cell::get), 1);
+    // All forty additions retain the same existing prerequisite endpoint.
     assert!(store.verify_all().unwrap().is_healthy());
 }
 
@@ -1178,7 +1163,7 @@ fn an_addition_requiring_a_refused_addition_is_named_for_it() {
     let (refused_id, dependent_id) = (refused.id, dependent.id);
     let resolved = with(&fixture.tree, vec![refused, dependent]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "add-1", 7).unwrap());
     assert!(
         message.contains(&format!(
             "{}: refused_reference (it references added task {}, which is refused)",

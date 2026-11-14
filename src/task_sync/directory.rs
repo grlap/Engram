@@ -467,8 +467,10 @@ fn add_document(
     limits: Limits,
     checkpoint: &mut Checkpoint<'_>,
 ) -> Result<()> {
-    let bytes = read_file_with(path, limits, checkpoint)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let bytes = read_file_with(path, limits, checkpoint).with_context(|| {
+        let display_path = super::git::plain_path(path).unwrap_or_else(|| path.to_path_buf());
+        format!("reading {}", display_path.display())
+    })?;
     *total += bytes.len();
     if *total > limits.tree_bytes {
         return Err(TaskSyncRefusal::DestinationTreeLimit

@@ -576,8 +576,8 @@ export class WindowsAclReader {
     this.child.on("error", this.onError);
     this.child.on("close", this.onClose);
     this.child.stdin.on("error", this.onError);
-    this.child.stdout.on("data", this.onData);
-    this.child.stderr.on("data", this.onStderr);
+    this.child.stdout.setEncoding("utf8").on("data", this.onData);
+    this.child.stderr.setEncoding("utf8").on("data", this.onStderr);
     this.ready = this.expect("startup", "capture");
     this.ready.catch(() => {}); // It can fail before the caller awaits read().
   }
@@ -941,10 +941,10 @@ export class McpSession {
     );
     this.child.on("error", (error) => this.#failAll(error));
     this.child.stdin.on("error", (error) => this.#failAll(error));
-    this.child.stderr.on("data", (chunk) => {
+    this.child.stderr.setEncoding("utf8").on("data", (chunk) => {
       this.stderr += chunk.toString("utf8");
     });
-    this.child.stdout.on("data", (chunk) => this.#receive(chunk));
+    this.child.stdout.setEncoding("utf8").on("data", (chunk) => this.#receive(chunk));
     this.closed = new Promise((resolvePromise) => {
       this.child.once("close", (code, signal) => resolvePromise({ code, signal }));
     });

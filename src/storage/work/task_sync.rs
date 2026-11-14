@@ -30,6 +30,7 @@ mod notes;
 mod origin;
 pub(crate) mod producing_origin;
 pub(in crate::storage) mod reconciliation;
+pub(in crate::storage) mod reported;
 pub(in crate::storage) use ledger::verify_exchange;
 pub(crate) use origin::OriginScopeGuard;
 pub(in crate::storage) use origin::enter_origin_scope;
@@ -96,6 +97,27 @@ pub struct TaskSyncImportResult {
     pub task_count: usize,
     pub changed: bool,
     pub dry_run: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<TaskSyncTaskResult>,
+}
+
+/// One requested task change, including changes left for a later import.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaskSyncTaskResult {
+    pub task: WorkId,
+    pub status: TaskSyncTaskStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskSyncTaskStatus {
+    Applied,
+    Held,
+    Refused,
 }
 
 #[cfg(test)]
@@ -204,46 +226,7 @@ pub(super) fn import_task_tree_on(
     dry_run: bool,
     now: DateTime<Utc>,
 ) -> Result<TaskSyncImportResult, StoreError> {
-    import_task_tree_on_with_scope(
-        transaction,
-        project,
-        actor,
-        tree,
-        ImportScope::legacy(),
-        dry_run,
-        now,
-        None,
-    )
-}
-
-/// Folder import supplies the full disclosure profile used to form its
-/// destination-local basis.  The machine alias is comparison input only; it
-/// is not an authority claim or persistent host identity.
-pub(super) fn import_task_tree_on_with_profile(
-    transaction: &rusqlite::Transaction<'_>,
-    project: &ProjectId,
-    actor: &ActorContext,
-    tree: &TaskTree,
-    profile: &crate::task_sync::progress::ExportProfile,
-    dry_run: bool,
-    now: DateTime<Utc>,
-) -> Result<TaskSyncImportResult, StoreError> {
-    profile.options().validate()?;
-    if tree.project.notes_included != profile.include_notes {
-        return Err(
-            TaskSyncRefusal::InvalidGraph.invalid("task folder profile and tree disclosure differ")
-        );
-    }
-    import_task_tree_on_with_scope(
-        transaction,
-        project,
-        actor,
-        tree,
-        ImportScope::folder(profile.origin_machine.as_deref()),
-        dry_run,
-        now,
-        None,
-    )
+    import_task_tree_on_with_optional_plan(transaction, project, actor, tree, dry_run, now, None)
 }
 
 /// Applies an import whose canonical bodies and record ids were planned and
@@ -255,72 +238,27 @@ pub(super) fn import_task_tree_with_plan_on(
     tree: &TaskTree,
     plan: &crate::task_sync::ledger::ImportPlan,
 ) -> Result<TaskSyncImportResult, StoreError> {
-    import_task_tree_on_with_scope(
+    import_task_tree_on_with_optional_plan(
         transaction,
         project,
         actor,
         tree,
-        ImportScope::legacy(),
         false,
         plan.recorded_at,
         Some(plan),
     )
 }
 
-#[derive(Clone, Copy)]
-struct ImportScope<'a> {
-    machine: Option<&'a str>,
-    allow_empty_notes_profile: bool,
-    /// The plain import writes tasks without a project-feed entry, so once
-    /// a project's feed has begun it would hide them from change capture.
-    /// A folder import records its baseline on the feed instead.
-    refuses_started_feed: bool,
-}
-
-impl<'a> ImportScope<'a> {
-    const fn legacy() -> Self {
-        Self {
-            machine: None,
-            allow_empty_notes_profile: false,
-            refuses_started_feed: true,
-        }
-    }
-
-    const fn folder(machine: Option<&'a str>) -> Self {
-        Self {
-            machine,
-            allow_empty_notes_profile: true,
-            refuses_started_feed: false,
-        }
-    }
-
-    fn documents(
-        self,
-        tree: &TaskTree,
-    ) -> Result<std::collections::BTreeMap<String, Vec<u8>>, StoreError> {
-        if self.allow_empty_notes_profile {
-            tree.folder_documents()
-        } else {
-            tree.documents()
-        }
-    }
-}
-
-#[allow(
-    clippy::too_many_arguments,
-    reason = "one import body serves the legacy, folder and planned entry points"
-)]
-fn import_task_tree_on_with_scope(
+fn import_task_tree_on_with_optional_plan(
     transaction: &rusqlite::Transaction<'_>,
     project: &ProjectId,
     actor: &ActorContext,
     tree: &TaskTree,
-    scope: ImportScope<'_>,
     dry_run: bool,
     now: DateTime<Utc>,
     plan: Option<&crate::task_sync::ledger::ImportPlan>,
 ) -> Result<TaskSyncImportResult, StoreError> {
-    validate_task_import(project, actor, tree, scope.allow_empty_notes_profile)?;
+    validate_task_import(project, actor, tree, false)?;
     let native: bool = transaction.query_row(
         "SELECT EXISTS(SELECT 1 FROM work_items WHERE project_id = ?1
              AND (json_extract(item_json, '$.restored') = 0 OR latest_event_id IS NOT NULL
@@ -340,17 +278,18 @@ fn import_task_tree_on_with_scope(
             transaction,
             project,
             tree.project.notes_included,
-            scope.machine,
+            None,
             true,
             &mut crate::task_sync::notes::NoteOmissions::default(),
             &mut crate::task_sync::notes::NoteOmissions::default(),
         )
     })?;
-    if scope.documents(&current)? == scope.documents(tree)? {
+    if current.documents()? == tree.documents()? {
         return Ok(TaskSyncImportResult {
             task_count: tree.tasks.len(),
             changed: false,
             dry_run,
+            tasks: Vec::new(),
         });
     }
     if !current.tasks.is_empty() {
@@ -394,14 +333,12 @@ fn import_task_tree_on_with_scope(
             }
         }
     }
-    if scope.refuses_started_feed
-        && transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM work_feed_heads
+    if transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM work_feed_heads
                  WHERE feed_kind = 'project' AND feed_id = ?1 AND position > 0)",
-            [project.0.as_str()],
-            |row| row.get::<_, bool>(0),
-        )?
-    {
+        [project.0.as_str()],
+        |row| row.get::<_, bool>(0),
+    )? {
         return Err(TaskSyncRefusal::NativeState.invalid(
             "a plain task import refuses a project whose feed has begun; its tasks would be invisible to change capture",
         ));
@@ -469,6 +406,7 @@ fn import_task_tree_on_with_scope(
         task_count: tree.tasks.len(),
         changed: true,
         dry_run,
+        tasks: Vec::new(),
     })
 }
 

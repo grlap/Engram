@@ -15,6 +15,14 @@ pub(in crate::storage::work) fn work_completed_by_restored_record_on(
         return Ok(false);
     }
     if let Some(event) = latest_canonical_work_event_for_item_optional(connection, item.work_id)? {
+        if super::super::task_sync::reported::validate_on(connection, &event)?.is_some() {
+            if event.work != *item {
+                return Err(StoreError::InvalidWorkProjection(
+                    "reported completion differs from its canonical item".into(),
+                ));
+            }
+            return Ok(true);
+        }
         let run = event.run.as_ref().ok_or_else(|| {
             StoreError::InvalidWorkProjection("native completed work has no canonical run".into())
         })?;
@@ -74,6 +82,7 @@ pub(in crate::storage::work) fn work_completed_by_restored_record_on(
     Ok(true)
 }
 
+#[cfg(test)]
 pub(in crate::storage) fn latest_restored_record_hash(
     connection: &Connection,
     work_id: WorkId,

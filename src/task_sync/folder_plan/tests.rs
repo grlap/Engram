@@ -149,6 +149,7 @@ fn selected_plan_refuses_unknown_removals_and_wrong_keys_and_preserves_unsupport
     );
     let mut changed = held.clone();
     changed.acceptance.push("new criterion".into());
+    changed.kind = WorkItemKind::Bug;
     let selected = super::plan_selected(
         &current_tree.project,
         &current,
@@ -159,7 +160,19 @@ fn selected_plan_refuses_unknown_removals_and_wrong_keys_and_preserves_unsupport
     let TaskDelta::Changed(change) = &selected.tasks[0].delta else {
         panic!("changed task")
     };
-    assert_eq!(change.unsupported, vec![TaskField::Acceptance]);
+    assert_eq!(change.unsupported, vec![TaskField::Kind]);
+    assert_eq!(
+        change
+            .scalar
+            .as_ref()
+            .unwrap()
+            .acceptance
+            .as_ref()
+            .unwrap()
+            .last()
+            .unwrap(),
+        "new criterion"
+    );
     assert!(!change.is_applicable());
 }
 
@@ -198,19 +211,19 @@ fn deltas(result: Result<DeltaPlan, StoreError>) -> DeltaPlan {
 
 /// A change of only the named fields beyond the scalar ones.
 fn fields(unsupported: Vec<TaskField>) -> TaskDelta {
-    TaskDelta::Changed(TaskChange {
+    TaskDelta::Changed(Box::new(TaskChange {
         scalar: None,
         unsupported,
         ..TaskChange::default()
-    })
+    }))
 }
 
 fn scalar(change: ScalarChange) -> TaskDelta {
-    TaskDelta::Changed(TaskChange {
+    TaskDelta::Changed(Box::new(TaskChange {
         scalar: Some(change),
         unsupported: Vec::new(),
         ..TaskChange::default()
-    })
+    }))
 }
 
 fn delta(plan: &DeltaPlan, id: WorkId) -> &TaskDelta {
@@ -287,6 +300,7 @@ fn title_change_is_a_scalar_edit() {
         title: Some("Renamed".into()),
         outcome: None,
         priority: None,
+        ..Default::default()
     };
     assert_eq!(delta(&plan, a.id), &scalar(expected.clone()));
     assert!(plan.is_applicable());
@@ -325,6 +339,7 @@ fn outcome_and_priority_change_together() {
             title: None,
             outcome: Some("Deliver more".into()),
             priority: Some(3),
+            ..Default::default()
         })
     );
 }
@@ -342,40 +357,66 @@ fn a_scalar_edit_of_a_completed_task_is_left_to_admission() {
     ));
     assert!(matches!(
         delta(&plan, b.id),
-        TaskDelta::Changed(TaskChange {
-            scalar: Some(_),
-            ..
-        })
+        TaskDelta::Changed(change) if change.scalar.is_some()
     ));
+}
+
+#[test]
+fn planning_edits_keep_acceptance_bindings_labels_and_assignment() {
+    let original = task("shared work");
+    let mut incoming = original.clone();
+    incoming.acceptance = vec!["Checked on the implementing host".into()];
+    incoming.acceptance_bindings = vec![AcceptanceBinding {
+        criterion: 1,
+        requirement: VerificationRequirement {
+            check_kind: VerificationKind::Test,
+            check_fingerprint: None,
+        },
+    }];
+    incoming.labels = vec!["ready".into()];
+    incoming.assigned_to = Some("implementer".into());
+    let classified = deltas(plan(
+        &tree(std::slice::from_ref(&original)),
+        &tree(std::slice::from_ref(&incoming)),
+        &members(&[&original]),
+    ));
+    assert!(classified.is_applicable());
+    let (_, change) = classified.scalar_changes().next().unwrap();
+    let patch = change.patch();
+    assert_eq!(patch.acceptance.as_ref(), Some(&incoming.acceptance));
+    assert_eq!(
+        patch.acceptance_bindings.as_ref(),
+        Some(&incoming.acceptance_bindings)
+    );
+    assert_eq!(patch.labels.as_ref(), Some(&incoming.labels));
+    assert_eq!(patch.assigned_to, incoming.assigned_to);
+    assert!(!patch.clear_assignment);
+
+    let mut cleared = incoming.clone();
+    cleared.assigned_to = None;
+    let classified = deltas(plan(
+        &tree(std::slice::from_ref(&incoming)),
+        &tree(&[cleared]),
+        &members(&[&incoming]),
+    ));
+    let (_, change) = classified.scalar_changes().next().unwrap();
+    let patch = change.patch();
+    assert!(patch.clear_assignment);
+    assert_eq!(patch.assigned_to, None);
+    assert_eq!(patch.acceptance, None);
 }
 
 #[test]
 fn every_other_field_change_is_unsupported_and_named() {
     type Edit = fn(&mut TaskDocument);
-    let cases: [(TaskField, Edit); 10] = [
+    let cases: [(TaskField, Edit); 6] = [
         (TaskField::ExternalRef, |task| {
             task.external_ref = Some("tracker#12".into());
-        }),
-        (TaskField::Acceptance, |task| {
-            task.acceptance = vec!["Something else".into()];
-        }),
-        (TaskField::AcceptanceBindings, |task| {
-            task.acceptance_bindings = vec![AcceptanceBinding {
-                criterion: 1,
-                requirement: VerificationRequirement {
-                    check_kind: VerificationKind::Test,
-                    check_fingerprint: None,
-                },
-            }];
         }),
         (TaskField::EvaluationMode, |task| {
             task.evaluation_mode = Some(AcceptanceEvaluationMode::SameSession);
         }),
         (TaskField::Kind, |task| task.kind = WorkItemKind::Bug),
-        (TaskField::Labels, |task| task.labels = vec!["sync".into()]),
-        (TaskField::AssignedTo, |task| {
-            task.assigned_to = Some("greg".into());
-        }),
         (TaskField::DeferredUntil, |task| {
             task.deferred_until = Some(at());
         }),
@@ -424,18 +465,18 @@ fn reparenting_stays_unsupported_while_prerequisites_are_planned() {
     let plan_ordered = deltas(plan(&current, &ordered, &membership));
     assert_eq!(
         delta(&plan_ordered, b.id),
-        &TaskDelta::Changed(TaskChange {
+        &TaskDelta::Changed(Box::new(TaskChange {
             relations: RelationChange {
                 prerequisite_additions: vec![a.id],
                 ..RelationChange::default()
             },
             ..TaskChange::default()
-        })
+        }))
     );
 }
 
 #[test]
-fn disposal_and_completion_name_every_changed_field_in_document_order() {
+fn disposal_names_changed_fields_and_completion_is_a_reported_outcome() {
     let a = task("a");
     let b = task("b");
     let current = tree(&[a.clone(), b.clone()]);
@@ -460,19 +501,28 @@ fn disposal_and_completion_name_every_changed_field_in_document_order() {
                 TaskField::DisposalReason,
             ],
         ),
-        (
-            edited(&a, |task| {
-                task.lifecycle = WorkLifecycle::Completed;
-                task.completion = completed("a").completion;
-            }),
-            vec![TaskField::Lifecycle, TaskField::Completion],
-        ),
     ];
     for (changed, fields) in cases {
         let resolved = tree(&[changed, b.clone()]);
         let plan = deltas(plan(&current, &resolved, &membership));
         assert_eq!(delta(&plan, a.id), &self::fields(fields));
     }
+    let resolved = tree(&[
+        edited(&a, |task| {
+            task.lifecycle = WorkLifecycle::Completed;
+            task.completion = completed("a").completion;
+        }),
+        b,
+    ]);
+    let reported = deltas(plan(&current, &resolved, &membership));
+    assert_eq!(
+        delta(&reported, a.id),
+        &TaskDelta::Changed(Box::new(TaskChange {
+            reported_completion: true,
+            ..TaskChange::default()
+        }))
+    );
+    assert!(reported.is_applicable());
 }
 
 #[test]
@@ -501,7 +551,7 @@ fn scalar_and_other_changes_report_only_the_unsupported_fields() {
     let a = task("a");
     let resolved = tree(&[edited(&a, |task| {
         task.title = "Renamed".into();
-        task.labels = vec!["sync".into()];
+        task.kind = WorkItemKind::Bug;
     })]);
     let plan = deltas(plan(
         &tree(std::slice::from_ref(&a)),
@@ -512,15 +562,16 @@ fn scalar_and_other_changes_report_only_the_unsupported_fields() {
     // inapplicable, so no scalar edit is offered.
     assert_eq!(
         delta(&plan, a.id),
-        &TaskDelta::Changed(TaskChange {
+        &TaskDelta::Changed(Box::new(TaskChange {
             scalar: Some(ScalarChange {
                 title: Some("Renamed".into()),
                 outcome: None,
                 priority: None,
+                ..Default::default()
             }),
-            unsupported: vec![TaskField::Labels],
+            unsupported: vec![TaskField::Kind],
             ..TaskChange::default()
-        })
+        }))
     );
     assert_eq!(plan.scalar_changes().count(), 0);
     assert!(!plan.is_applicable());
@@ -608,15 +659,26 @@ fn a_mixed_folder_lists_every_delta_in_task_id_order() {
     sorted.sort();
     assert_eq!(ids, sorted);
     assert_eq!(ids.len(), 4);
+    let mut scalar_ids = vec![a.id, b.id];
+    scalar_ids.sort_by_key(|id| id.0);
     assert_eq!(
         plan.scalar_changes().map(|(id, _)| id).collect::<Vec<_>>(),
-        [a.id]
+        scalar_ids
     );
     assert_eq!(plan.additions().collect::<Vec<_>>(), [n.id]);
-    assert_eq!(delta(&plan, b.id), &fields(vec![TaskField::Labels]));
+    assert_eq!(
+        delta(&plan, b.id),
+        &TaskDelta::Changed(Box::new(TaskChange {
+            scalar: Some(ScalarChange {
+                labels: Some(vec!["sync".into()]),
+                ..ScalarChange::default()
+            }),
+            ..TaskChange::default()
+        }))
+    );
     assert_eq!(delta(&plan, d.id), &TaskDelta::Deleted);
-    // The labels change makes the folder inapplicable; deletion needs admission.
-    assert!(!plan.is_applicable());
+    // Labels are ordinary planning; deletion still needs storage admission.
+    assert!(plan.is_applicable());
 }
 
 #[test]

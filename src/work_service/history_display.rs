@@ -146,6 +146,7 @@ fn transition_detail(
         T::MemoryCaptured { .. } => "shared work memory".into(),
         T::TypedEvidenceAdded { evidence_kind, .. } => format!("{} evidence", evidence_kind.word()),
         T::Completed { .. } => "completed".into(),
+        T::CompletionReported { .. } => "imported reported completion; no local seal".into(),
         T::SupersededByImport { reason, .. } => {
             format!("retired by import without successful completion because {reason}")
         }
@@ -333,6 +334,7 @@ fn work_transition_summary(
             )
         }
         WorkTransition::Completed { .. } => format!("\"{title}\""),
+        WorkTransition::CompletionReported { .. } => format!("reported outcome: \"{title}\""),
         WorkTransition::Disposed {
             lifecycle, reason, ..
         } => format!(
@@ -378,6 +380,7 @@ fn work_transition_kind(transition: &WorkTransition) -> &'static str {
         WorkTransition::MemoryCaptured { .. } => "memory_captured",
         WorkTransition::TypedEvidenceAdded { .. } => "typed_evidence_added",
         WorkTransition::Completed { .. } => "completed",
+        WorkTransition::CompletionReported { .. } => "completion_reported",
         WorkTransition::Disposed { .. } => "disposed",
         WorkTransition::RequiredChildWaived { .. } => "required_child_waived",
         WorkTransition::Reopened { .. } => "reopened",

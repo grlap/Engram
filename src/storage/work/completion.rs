@@ -119,14 +119,13 @@ pub(super) use root_binding::{
 
 pub(super) use child_barriers::{
     AncestorExecutionState, ancestors_admit_execution, blocking_ancestor_on, feed_head,
-    first_blocking_ancestor, run_uses_active_root_execution_in_scope,
-    validate_completion_seal_children_on, validated_required_child_waivers, work_is_ancestor_of,
-    work_run_uses_active_root_execution,
+    first_blocking_ancestor, live_descendant_execution_authority,
+    run_uses_active_root_execution_in_scope, validate_completion_seal_children_on,
+    validated_required_child_waivers, work_is_ancestor_of, work_run_uses_active_root_execution,
 };
 use child_barriers::{
-    live_descendant_execution_authority, refuse_completed_ancestor, required_child_seals,
-    required_restored_child_completions, unfinished_optional_children,
-    verify_required_child_waiver_bindings,
+    refuse_completed_ancestor, required_child_seals, required_restored_child_completions,
+    unfinished_optional_children, verify_required_child_waiver_bindings,
 };
 
 #[cfg(test)]

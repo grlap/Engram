@@ -28,6 +28,7 @@ pub(super) use execution_state::{
     active_run_snapshot, verify_retained_root_execution_reference_on,
     verify_root_execution_reference_on,
 };
+#[cfg(test)]
 pub(in crate::storage) use restored::latest_restored_record_hash;
 pub(super) use restored::{
     latest_restored_record, restored_records_for_item, restored_records_with_id_for_item,

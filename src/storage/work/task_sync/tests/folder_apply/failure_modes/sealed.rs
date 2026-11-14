@@ -9,7 +9,7 @@ fn folder_native_completion_survives_unrelated_apply_reopen_and_repair() {
     let sealed = query::load_work_item(&store.connection, fixture.sealed).unwrap();
     let native = native_rows(&store);
     let old_objects = objects(&store);
-    let selected = edited(&exported(&store), fixture.scalar, |task| {
+    let mut selected = edited(&exported(&store), fixture.scalar, |task| {
         task.title = "unrelated safe edit".into();
     });
     exchange(&mut store, &selected, "safe-beside-seal", 10).unwrap();
@@ -43,9 +43,9 @@ fn folder_native_completion_survives_unrelated_apply_reopen_and_repair() {
             _ => unreachable!(),
         };
         assert!(changed.validate_folder().is_ok(), "{case}");
-        let before = state(&store);
+        let before = query::load_work_item(&store.connection, fixture.sealed).unwrap();
         let message =
-            conflict(&exchange(&mut store, &changed, &format!("sealed-{case}"), 11).unwrap_err());
+            refusals(&exchange(&mut store, &changed, &format!("sealed-{case}"), 11).unwrap());
         let reason = match case {
             "outcome" => "restored_completion",
             "remove" => "sealed_completion",
@@ -55,7 +55,13 @@ fn folder_native_completion_survives_unrelated_apply_reopen_and_repair() {
             message.contains(&format!("{}: {reason}", fixture.sealed.0)),
             "{message}"
         );
-        assert_eq!(state(&store), before, "{case}");
+        assert_eq!(
+            query::load_work_item(&store.connection, fixture.sealed).unwrap(),
+            before,
+            "{case}"
+        );
+        selected = safe;
+        assert_eq!(exported(&store), selected);
     }
     assert!(store.verify_all().unwrap().is_healthy());
     let durable = all_durable_rows(&store);

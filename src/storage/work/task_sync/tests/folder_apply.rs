@@ -2,6 +2,7 @@ use super::super::folder::TaskSyncFolderApply;
 use super::super::folder_admission::{Conflict, NAMED_CONFLICT_LIMIT, conflict_message};
 use super::*;
 
+mod any_host;
 mod failure_modes;
 use crate::{
     ClaimWorkRequest, ReleaseWorkRequest, SessionId, WorkClaim,
@@ -153,13 +154,45 @@ fn exported(store: &SqliteStore) -> TaskTree {
         .tree
 }
 
-fn conflict(error: &StoreError) -> String {
-    assert_eq!(
-        refusal_code(error),
-        "task_sync_import_conflict",
-        "{error:#}"
+/// A refused-only import must not also be enrolling earlier local changes.
+fn enrol_current(store: &mut SqliteStore, second: i64) {
+    let current = exported(store);
+    let result = exchange(store, &current, "enrol-current-planning", second).unwrap();
+    assert_eq!(result.tasks, []);
+}
+
+/// Read the actual receipt without converting task refusals into whole-import errors.
+fn refusals(result: &TaskSyncImportResult) -> String {
+    use crate::storage::TaskSyncTaskStatus;
+    let rejected = result
+        .tasks
+        .iter()
+        .filter(|task| task.status != TaskSyncTaskStatus::Applied)
+        .collect::<Vec<_>>();
+    assert!(
+        !rejected.is_empty(),
+        "expected a refused or held task: {result:?}"
     );
-    error.to_string()
+    assert!(
+        result
+            .tasks
+            .windows(2)
+            .all(|pair| pair[0].task.0 < pair[1].task.0),
+        "receipt tasks are ordered and unique"
+    );
+    rejected
+        .into_iter()
+        .map(|task| {
+            assert!(task.reason.is_some() && task.detail.is_some(), "{task:?}");
+            format!(
+                "{}: {} ({})",
+                task.task.0,
+                task.reason.as_deref().unwrap(),
+                task.detail.as_deref().unwrap()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn claim_restored(store: &mut SqliteStore, id: WorkId, holder: &str, second: i64) -> WorkClaim {
@@ -256,7 +289,7 @@ fn a_restored_completion_stays_event_free_and_an_edit_of_it_refuses() {
     let completed = edited(&resolved, fixture.completed, |task| {
         task.title = "Renamed completion".into();
     });
-    let message = conflict(&exchange(&mut store, &completed, "edit-2", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &completed, "edit-2", 7).unwrap());
     assert!(
         message.contains(&format!("{}: restored_completion", fixture.completed.0)),
         "{message}"
@@ -265,10 +298,10 @@ fn a_restored_completion_stays_event_free_and_an_edit_of_it_refuses() {
 }
 
 #[test]
-fn an_active_run_refuses_the_whole_folder_naming_only_the_blocked_task() {
+fn an_active_run_holds_its_task_while_an_independent_edit_applies() {
     let (mut store, fixture) = enrolled();
     let claim = claim_restored(&mut store, fixture.first, "worker", 6);
-    let before = state(&store);
+    let held_before = query::load_work_item(&store.connection, fixture.first).unwrap();
     let resolved = edited(
         &edited(&fixture.tree, fixture.first, |task| {
             task.title = "Renamed first".into();
@@ -276,7 +309,7 @@ fn an_active_run_refuses_the_whole_folder_naming_only_the_blocked_task() {
         fixture.second,
         |task| task.title = "Renamed second".into(),
     );
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "edit-1", 7).unwrap());
     assert!(
         message.contains(&format!(
             "{}: active_run (run {})",
@@ -288,11 +321,21 @@ fn an_active_run_refuses_the_whole_folder_naming_only_the_blocked_task() {
         !message.contains(&fixture.second.0.to_string()),
         "{message}"
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.first).unwrap(),
+        held_before
+    );
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.second)
+            .unwrap()
+            .title,
+        "Renamed second"
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
-fn a_released_prior_run_still_refuses_as_its_active_run() {
+fn a_released_prior_run_allows_later_description_edits() {
     let (mut store, fixture) = enrolled();
     let claim = claim_restored(&mut store, fixture.first, "worker", 6);
     let item = query::load_work_item(&store.connection, fixture.first).unwrap();
@@ -314,20 +357,19 @@ fn a_released_prior_run_still_refuses_as_its_active_run() {
             &crate::DevelopmentNoopRedactor,
         )
         .unwrap();
-    let before = state(&store);
     let resolved = edited(&fixture.tree, fixture.first, |task| {
         task.title = "Renamed first".into();
     });
-    // A release keeps the run as the task's active run.
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 8).unwrap_err());
+    // Releasing execution preserves its run and history, but no longer holds descriptions.
     assert!(
-        message.contains(&format!(
-            "{}: active_run (run {})",
-            fixture.first.0, claim.run_id.0
-        )),
-        "{message}"
+        exchange(&mut store, &resolved, "edit-1", 8)
+            .unwrap()
+            .changed
     );
-    assert_eq!(state(&store), before);
+    let item = query::load_work_item(&store.connection, fixture.first).unwrap();
+    assert_eq!(item.title, "Renamed first");
+    assert_eq!(item.active_run_id, Some(claim.run_id));
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -340,11 +382,11 @@ fn unsupported_deltas_and_blocked_edits_refuse_together_in_task_id_order() {
             task.title = "Renamed first".into();
         }),
         fixture.second,
-        |task| task.labels = vec!["sync".into()],
+        |task| task.kind = WorkItemKind::Bug,
     );
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "edit-1", 7).unwrap());
     let blocked = format!("{}: active_run (run {})", fixture.first.0, claim.run_id.0);
-    let unsupported = format!("{}: unsupported_fields (labels)", fixture.second.0);
+    let unsupported = format!("{}: unsupported_fields (kind)", fixture.second.0);
     let (Some(blocked_at), Some(unsupported_at)) =
         (message.find(&blocked), message.find(&unsupported))
     else {
@@ -391,7 +433,7 @@ fn ordinary_run_free_project_relation_history_keeps_later_scalar_import_admissib
 }
 
 #[test]
-fn a_run_free_execution_event_refuses_as_execution_history() {
+fn retained_run_free_execution_does_not_hold_a_description() {
     // No public operation leaves an Open task run-free once it has executed,
     // so the guard is checked with a directly appended run-free event.
     let (mut store, fixture) = enrolled();
@@ -410,16 +452,25 @@ fn a_run_free_execution_event_refuses_as_execution_history() {
     crate::storage::work::feeds::append_work_event(&transaction, &draft).unwrap();
     transaction.commit().unwrap();
 
-    let before = state(&store);
-    let resolved = edited(&fixture.tree, fixture.second, |task| {
+    let prior = events(&store, fixture.second);
+    let resolved = edited(&exported(&store), fixture.second, |task| {
         task.title = "Renamed second".into();
     });
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 7).unwrap_err());
     assert!(
-        message.contains(&format!("{}: execution_history (event ", fixture.second.0)),
-        "{message}"
+        exchange(&mut store, &resolved, "edit-1", 8)
+            .unwrap()
+            .changed
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.second)
+            .unwrap()
+            .title,
+        "Renamed second"
+    );
+    assert_eq!(
+        &events(&store, fixture.second)[..prior.len()],
+        prior.as_slice()
+    );
 }
 
 #[test]
@@ -452,7 +503,7 @@ fn a_cancelled_restored_task_refuses_as_lifecycle() {
     let resolved = edited(&exported(&store), id, |task| {
         task.title = "Renamed standalone".into();
     });
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "edit-1", 7).unwrap());
     assert!(
         message.contains(&format!("{}: lifecycle (the task is Cancelled)", id.0)),
         "{message}"
@@ -499,38 +550,58 @@ fn execution_elsewhere_in_the_hierarchy_does_not_block_an_edit() {
 }
 
 #[test]
-fn any_unsupported_delta_refuses_the_whole_folder_by_name() {
+fn an_unsupported_task_leaves_independent_edits_and_additions_admissible() {
     let (mut store, fixture) = enrolled();
-    let before = state(&store);
+    let held_before = query::load_work_item(&store.connection, fixture.first).unwrap();
     let resolved = edited(
         &edited(&fixture.tree, fixture.parent, |task| {
             task.title = "Renamed parent".into();
         }),
         fixture.first,
-        |task| task.labels = vec!["sync".into()],
+        |task| task.kind = WorkItemKind::Bug,
     );
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 6).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "edit-1", 6).unwrap());
     assert!(
-        message.contains(&format!("{}: unsupported_fields (labels)", fixture.first.0)),
+        message.contains(&format!("{}: unsupported_fields (kind)", fixture.first.0)),
         "{message}"
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.first).unwrap(),
+        held_before
+    );
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.parent)
+            .unwrap()
+            .title,
+        "Renamed parent"
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
 
-    // An admissible addition beside an unsupported change is not applied
-    // on its own: the whole folder refuses.
+    // A later admissible addition also applies beside the same refused task.
     let mut added = resolved.clone();
     let addition = document("added elsewhere", None);
     let addition_id = addition.id;
     added.tasks.push(addition);
     added.tasks.sort_by_key(|task| task.id.0);
-    let message = conflict(&exchange(&mut store, &added, "edit-2", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &added, "edit-2", 7).unwrap());
     assert!(message.contains("unsupported_fields"), "{message}");
     assert!(!message.contains(&addition_id.0.to_string()), "{message}");
-    assert_eq!(state(&store), before);
+    assert!(query::load_work_item(&store.connection, addition_id).is_ok());
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.first).unwrap(),
+        held_before
+    );
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.parent)
+            .unwrap()
+            .title,
+        "Renamed parent"
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
-fn a_native_task_carried_by_the_folder_refuses_its_edit() {
+fn a_native_task_carried_by_the_folder_accepts_its_edit() {
     let (mut store, fixture) = enrolled();
     let native = store
         .create_work(
@@ -542,13 +613,16 @@ fn a_native_task_carried_by_the_folder_refuses_its_edit() {
     let resolved = edited(&carried, native.work_id, |task| {
         task.title = "Renamed native".into();
     });
-    let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 7).unwrap_err());
     assert!(
-        message.contains(&format!("{}: unsupported_origin", native.work_id.0)),
-        "{message}"
+        exchange(&mut store, &resolved, "edit-1", 7)
+            .unwrap()
+            .changed
     );
-    assert_eq!(state(&store), before);
+    let item = query::load_work_item(&store.connection, native.work_id).unwrap();
+    assert_eq!(item.title, "Renamed native");
+    assert_eq!(item.created_by, native.created_by);
+    assert_eq!(item.active_run_id, native.active_run_id);
+    assert!(store.verify_all().unwrap().is_healthy());
     assert_eq!(events(&store, fixture.parent), Vec::new());
 }
 
@@ -585,9 +659,9 @@ fn a_host_local_task_stays_until_enrolled_then_its_omission_is_a_refused_deletio
     let before = state(&store);
     let mut omitted = carried.clone();
     omitted.tasks.retain(|task| task.id != local.work_id);
-    let message = conflict(&exchange(&mut store, &omitted, "omit-enrolled", 9).unwrap_err());
+    let message = refusals(&exchange(&mut store, &omitted, "omit-enrolled", 9).unwrap());
     assert!(
-        message.contains(&format!("{}: unsupported_origin", local.work_id.0)),
+        message.contains(&format!("{}: execution_history", local.work_id.0)),
         "{message}"
     );
     assert_eq!(state(&store), before);
@@ -670,7 +744,7 @@ fn projection_repair_after_an_edit_preserves_every_durable_row() {
 }
 
 #[test]
-fn a_required_child_waiver_on_the_parent_refuses_its_edit_as_execution_history() {
+fn a_required_child_waiver_preserves_history_without_holding_descriptions() {
     // A waiver accounts for the root's execution: with only a child claimed,
     // the parent records it without a run of its own.
     let (mut store, fixture) = enrolled();
@@ -694,16 +768,25 @@ fn a_required_child_waiver_on_the_parent_refuses_its_edit_as_execution_history()
     let parent = query::load_work_item(&store.connection, fixture.parent).unwrap();
     assert_eq!(parent.active_run_id, None);
 
-    let before = state(&store);
+    let prior = events(&store, fixture.parent);
     let resolved = edited(&exported(&store), fixture.parent, |task| {
         task.title = "Renamed parent".into();
     });
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 8).unwrap_err());
     assert!(
-        message.contains(&format!("{}: execution_history (event ", fixture.parent.0)),
-        "{message}"
+        exchange(&mut store, &resolved, "edit-1", 8)
+            .unwrap()
+            .changed
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.parent)
+            .unwrap()
+            .title,
+        "Renamed parent"
+    );
+    assert_eq!(
+        &events(&store, fixture.parent)[..prior.len()],
+        prior.as_slice()
+    );
 }
 
 fn lifecycle_conflicts(count: usize) -> Vec<Conflict> {
@@ -754,7 +837,7 @@ fn a_refusal_names_at_most_the_limit_and_counts_the_rest_exactly() {
 }
 
 #[test]
-fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
+fn a_folder_receipt_names_every_refused_task_in_id_order() {
     let mut tasks = (0..NAMED_CONFLICT_LIMIT + 5)
         .map(|index| document(&format!("root {index}"), None))
         .collect::<Vec<_>>();
@@ -798,27 +881,26 @@ fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
         now: at(6),
     };
     let before = state(&store);
-    let dry = store
-        .dry_run_task_sync_folder(request, "empty")
-        .unwrap_err();
-    let real = store.apply_task_sync_folder(request, "empty").unwrap_err();
-    assert_eq!(dry.to_string(), real.to_string());
+    let dry = store.dry_run_task_sync_folder(request, "empty").unwrap();
+    let real = store.apply_task_sync_folder(request, "empty").unwrap();
+    assert!(dry.dry_run && !real.dry_run);
+    assert_eq!(dry.tasks, real.tasks);
     assert_eq!(state(&store), before);
 
-    let message = conflict(&real);
-    let mut previous = 0;
-    for id in &ids[..NAMED_CONFLICT_LIMIT] {
+    let message = refusals(&real);
+    let mut previous = None;
+    for id in &ids {
         let entry = format!("{}: lifecycle", id.0);
         let position = message
             .find(&entry)
             .unwrap_or_else(|| panic!("{entry} is named: {message}"));
-        assert!(position > previous, "{message}");
-        previous = position;
+        assert!(
+            previous.is_none_or(|previous| position > previous),
+            "{message}"
+        );
+        previous = Some(position);
     }
-    for id in &ids[NAMED_CONFLICT_LIMIT..] {
-        assert!(!message.contains(&id.0.to_string()), "{message}");
-    }
-    assert!(message.ends_with("; and 5 more refused tasks"), "{message}");
+    assert_eq!(real.tasks.len(), ids.len());
 }
 
 mod adds;
@@ -853,7 +935,7 @@ fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
     // A deletion-only import validates C minus D even with no additions.
     assert_eq!(
         super::super::folder_admission::RETAINED_VALIDATIONS.with(std::cell::Cell::get),
-        1
+        2
     );
     assert!(result.changed);
     let removed = query::load_work_item(&store.connection, fixture.first).unwrap();
@@ -1049,7 +1131,7 @@ fn folder_removal_refuses_hidden_local_incoming_references_without_writes() {
     // R omits native L, but current L still requires the removed member.
     let resolved = without(&fixture.tree, &[fixture.first]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "remove-member", 8).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "remove-member", 8).unwrap());
     assert!(
         message.contains(&format!("{}: retained_reference", fixture.first.0)),
         "{message}"
@@ -1074,7 +1156,7 @@ fn folder_removal_of_a_parent_refuses_when_its_claimed_child_stays() {
         selected.validate_folder().unwrap();
         let before = state(&store);
         let message =
-            conflict(&exchange(&mut store, &selected, "remove-claimed-subtree", 7).unwrap_err());
+            refusals(&exchange(&mut store, &selected, "remove-claimed-subtree", 7).unwrap());
         assert!(
             message.contains(&format!(
                 "{}: active_run (run {})",
@@ -1130,7 +1212,7 @@ fn folder_removal_of_a_native_sealed_member_refuses_without_changing_its_seal() 
     assert_eq!(seal.work_id, root.id);
     let selected = without(&exported(&store), &[root.id]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &selected, "remove-sealed", 10).unwrap_err());
+    let message = refusals(&exchange(&mut store, &selected, "remove-sealed", 10).unwrap());
     assert!(
         message.contains(&format!("{}: sealed_completion", root.id.0)),
         "{message}"
@@ -1162,18 +1244,17 @@ fn folder_removal_refuses_a_run_free_revision_with_root_bound_history() {
         at(7),
     );
     event.root_execution = Some(root);
-    let (event_id, _) =
+    let (_event_id, _) =
         crate::storage::work::feeds::append_work_event(&transaction, &event).unwrap();
     transaction.commit().unwrap();
     let selected = without(&exported(&store), &[item.work_id]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &selected, "remove-root-bound", 8).unwrap_err());
-    // Shared eligibility now rejects the root snapshot before the removal-only guards.
+    let message = refusals(&exchange(&mut store, &selected, "remove-root-bound", 8).unwrap());
+    // Live sibling execution, rather than historical planning, holds removal.
     assert!(
         message.contains(&format!(
-            "{}: execution_history (event {})",
-            item.work_id.0,
-            event_id.as_str()
+            "{}: ancestor_binding (root {} has active root execution",
+            item.work_id.0, item.root_id.0
         )),
         "{message}"
     );
@@ -1245,18 +1326,18 @@ fn folder_removal_uses_current_references_despite_refused_folder_edits() {
         fixture.first,
         |task| {
             task.prerequisites.clear();
-            task.labels.push("unsupported-edit".into());
+            task.kind = WorkItemKind::Bug;
         },
     );
     selected.validate_folder().unwrap();
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &selected, "remove-referenced", 6).unwrap_err());
+    let message = refusals(&exchange(&mut store, &selected, "remove-referenced", 6).unwrap());
     assert!(
         message.contains(&format!("{}: retained_reference", fixture.second.0)),
         "{message}"
     );
     assert!(
-        message.contains(&format!("{}: unsupported_fields (labels)", fixture.first.0)),
+        message.contains(&format!("{}: unsupported_fields (kind)", fixture.first.0)),
         "{message}"
     );
     assert_eq!(state(&store), before);
@@ -1278,7 +1359,7 @@ fn folder_removal_refusal_does_not_blame_an_added_indirect_dependent() {
         fixture.first,
         |task| {
             task.prerequisites.clear();
-            task.labels.push("unsupported-edit".into());
+            task.kind = WorkItemKind::Bug;
         },
     );
     let mut added = document("indirect dependent", None);
@@ -1287,9 +1368,9 @@ fn folder_removal_refusal_does_not_blame_an_added_indirect_dependent() {
     selected.tasks.push(added);
     selected.tasks.sort_by_key(|task| task.id.0);
     selected.validate_folder().unwrap();
-    let before = state(&store);
+    let held = query::load_work_item(&store.connection, fixture.first).unwrap();
     let message =
-        conflict(&exchange(&mut store, &selected, "mixed-retained-reference", 6).unwrap_err());
+        refusals(&exchange(&mut store, &selected, "mixed-retained-reference", 6).unwrap());
     assert!(
         message.contains(&format!("{}: unsupported_fields", fixture.first.0)),
         "{message}"
@@ -1300,7 +1381,12 @@ fn folder_removal_refusal_does_not_blame_an_added_indirect_dependent() {
     );
     assert!(!message.contains(&added_id.0.to_string()), "{message}");
     assert!(!message.contains("folder:"), "{message}");
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        query::load_work_item(&store.connection, fixture.first).unwrap(),
+        held
+    );
+    assert!(query::load_work_item(&store.connection, added_id).is_ok());
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -1319,7 +1405,7 @@ fn folder_removal_keeps_references_of_every_refused_deletion() {
     exchange(&mut store, &initial, "enrol", 5).unwrap();
     let selected = without(&exported(&store), &[first.id, second.id, third.id]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &selected, "remove-chain", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &selected, "remove-chain", 7).unwrap());
     assert!(
         message.contains(&format!("{}: lifecycle", first.id.0)),
         "{message}"
@@ -1341,7 +1427,7 @@ fn folder_removal_checks_sibling_root_execution_but_not_unrelated_roots() {
     claim_restored(&mut store, fixture.first, "worker", 6);
     let resolved = without(&exported(&store), &[fixture.second]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "remove-second", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "remove-second", 7).unwrap());
     assert!(message.contains("ancestor_binding"), "{message}");
     assert!(message.contains("root execution"), "{message}");
     assert_eq!(state(&store), before);
@@ -1378,7 +1464,7 @@ fn folder_removal_delete_all_stays_enrolled_and_reserves_retired_ids() {
     resurrection.tasks.push(root.clone());
     resurrection.tasks.sort_by_key(|task| task.id.0);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resurrection, "resurrection", 8).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resurrection, "resurrection", 8).unwrap());
     assert!(message.contains("id_collision"), "{message}");
     assert_eq!(state(&store), before);
     assert!(store.verify_all().unwrap().is_healthy());
@@ -1628,17 +1714,19 @@ fn folder_removal_subtree_is_postorder_beside_additions_and_scalar_edits() {
 }
 
 #[test]
-fn folder_removal_refusals_collect_with_other_deltas_and_roll_back_everything() {
+fn folder_removal_refusals_collect_while_an_independent_addition_applies() {
     let (mut store, fixture) = enrolled();
     let claim = claim_restored(&mut store, fixture.first, "worker", 6);
     let mut resolved = without(&exported(&store), &[fixture.first, fixture.completed]);
     resolved = edited(&resolved, fixture.second, |task| {
-        task.labels = vec!["unsupported".into()];
+        task.kind = WorkItemKind::Bug;
     });
-    resolved.tasks.push(document("safe addition", None));
+    let added = document("safe addition", None);
+    let added_id = added.id;
+    resolved.tasks.push(added);
     resolved.tasks.sort_by_key(|task| task.id.0);
-    let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "blocked-mixed", 7).unwrap_err());
+    let before = exported(&store);
+    let message = refusals(&exchange(&mut store, &resolved, "blocked-mixed", 7).unwrap());
     for expected in [
         format!("{}: active_run (run {})", fixture.first.0, claim.run_id.0),
         format!("{}: restored_completion", fixture.completed.0),
@@ -1646,7 +1734,11 @@ fn folder_removal_refusals_collect_with_other_deltas_and_roll_back_everything() 
     ] {
         assert!(message.contains(&expected), "{expected}: {message}");
     }
-    assert_eq!(state(&store), before);
+    assert!(query::load_work_item(&store.connection, added_id).is_ok());
+    let mut after = exported(&store);
+    after.tasks.retain(|task| task.id != added_id);
+    assert_eq!(after, before);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -1851,11 +1943,11 @@ fn folder_removal_of_a_released_prior_run_refuses_without_expiring_authority() {
         .unwrap();
     let selected = without(&exported(&store), &[fixture.first]);
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &selected, "remove-released", 8).unwrap_err());
+    let message = refusals(&exchange(&mut store, &selected, "remove-released", 8).unwrap());
     assert!(
         message.contains(&format!(
-            "{}: active_run (run {})",
-            fixture.first.0, claim.run_id.0
+            "{}: execution_history (a persisted run exists)",
+            fixture.first.0
         )),
         "{message}"
     );
@@ -1945,10 +2037,9 @@ fn folder_removal_mixed_with_addition_validates_the_retained_local_graph() {
     selected.tasks.sort_by_key(|task| task.id.0);
     selected.validate_folder().unwrap();
     // R and the original import union omit native H. Only C minus D plus R
-    // sees the cycle P -> H -> Q -> X -> P. The safe disjoint removal must
-    // remain unapplied when the addition is refused.
-    let before = state(&store);
-    let message = conflict(&exchange(&mut store, &selected, "mixed-cycle", 8).unwrap_err());
+    // sees the cycle P -> H -> Q -> X -> P. The disjoint removal still applies.
+    let held = query::load_work_item(&store.connection, local.work_id).unwrap();
+    let message = refusals(&exchange(&mut store, &selected, "mixed-cycle", 8).unwrap());
     assert!(
         message.contains(&format!("{}: retained_graph", added_id.0)),
         "{message}"
@@ -1957,5 +2048,16 @@ fn folder_removal_mixed_with_addition_validates_the_retained_local_graph() {
         !message.contains(&format!("{}:", removed.id.0)),
         "{message}"
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        query::load_work_item(&store.connection, local.work_id).unwrap(),
+        held
+    );
+    assert!(
+        !exported(&store)
+            .tasks
+            .iter()
+            .any(|task| task.id == removed.id)
+    );
+    assert!(query::load_work_item(&store.connection, added_id).is_err());
+    assert!(store.verify_all().unwrap().is_healthy());
 }
