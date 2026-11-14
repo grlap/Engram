@@ -57,8 +57,9 @@ impl LocalWorkService {
     ) -> Result<FolderImportReceipt> {
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
-        let incoming_basis =
-            directory::read_folder_basis(&data.checkout.join(".engram").join("project.json"))?;
+        let envelope = data.checkout.join(".engram").join("project.json");
+        let incoming_basis = directory::read_folder_basis(&envelope)
+            .with_context(|| format!("reading {}", envelope.display()))?;
         let lookup = ExportProfile {
             include_notes: incoming_basis.profile.include_notes,
             origin_machine: None,
