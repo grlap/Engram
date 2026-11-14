@@ -76,6 +76,31 @@ fn a_verified_delta_reads_old_and_new_changed_blobs_only_and_derives_the_incomin
 }
 
 #[test]
+fn a_commit_that_also_changes_shared_memories_reads_only_its_task_changes() {
+    let fixture = Fixture::new(2);
+    let base = fixture.commit();
+    let memories = fixture.root.join(".engram/memories");
+    fs::create_dir_all(&memories).unwrap();
+    fs::write(
+        memories.join("relayed-note.json"),
+        "{\"body\": \"shared\"}\n",
+    )
+    .unwrap();
+    let mut edited = fixture.tree.tasks[0].clone();
+    edited.title = "Edited beside a memory".into();
+    fixture.write(&edited);
+    let incoming = fixture.commit();
+    let mut tasks = fixture.tree.tasks.clone();
+    tasks[0] = edited.clone();
+    let delta = verified(&fixture, &base, root(&fixture.tree.tasks), &incoming).unwrap();
+    assert_eq!(
+        delta.changed.keys().copied().collect::<Vec<_>>(),
+        [edited.id]
+    );
+    delta.require_root(root(&tasks)).unwrap();
+}
+
+#[test]
 fn a_force_moved_branch_refuses_even_when_its_contents_match() {
     let fixture = Fixture::new(2);
     let first = fixture.commit();

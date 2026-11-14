@@ -423,6 +423,9 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
                 .into());
         }
         let path = pair[1];
+        if memory_path(path) {
+            continue;
+        }
         if path != ".engram/project.json"
             && !policy_path(path)
             && !evidence_path(path)
@@ -482,6 +485,12 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
 
 fn policy_path(path: &str) -> bool {
     matches!(path, ".engram/.gitignore" | ".engram/.gitattributes")
+}
+
+/// Shared project memories live beside the tasks and travel through their own
+/// export and import, which admit their files; a task delta passes over them.
+fn memory_path(path: &str) -> bool {
+    path == ".engram/memories" || path.starts_with(".engram/memories/")
 }
 
 fn evidence_path(path: &str) -> bool {
