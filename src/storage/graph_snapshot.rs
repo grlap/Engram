@@ -1165,6 +1165,11 @@ pub(in crate::storage) fn completion_from_events(
     if item.lifecycle != WorkLifecycle::Completed {
         return Ok(None);
     }
+    if let Some(event) = events.last()
+        && let Some(record) = super::work::task_sync::reported::validate_on(connection, event)?
+    {
+        return Ok(record.history.completion);
+    }
     let event = events
         .iter()
         .rev()
@@ -1329,6 +1334,9 @@ fn snapshot_event_on(
             ("typed_evidence_added", None, None, None, None)
         }
         WorkTransition::Completed { .. } => ("completed", None, None, None, None),
+        WorkTransition::CompletionReported { .. } => {
+            ("completion_reported", None, None, None, None)
+        }
         WorkTransition::Disposed {
             lifecycle,
             replacement_id,

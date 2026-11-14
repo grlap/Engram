@@ -289,6 +289,7 @@ pub(super) fn load_work_item_on_snapshot(
 ) -> Result<WorkItem, StoreError> {
     let item = load_work_item_projection(connection, work_id)?;
     if let Some(event) = latest_canonical_work_event_for_item_optional(connection, work_id)? {
+        super::super::task_sync::reported::validate_on(connection, &event)?;
         if event.work != item {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "work item {work_id:?} differs from its latest canonical event"

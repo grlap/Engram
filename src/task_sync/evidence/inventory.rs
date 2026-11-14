@@ -233,6 +233,7 @@ fn work_event(links: &mut Links, value: &domain::WorkEvent) {
             links.add(assertion, Some(K::MemoryAssertionEvent));
         }
         T::Completed { seal } => links.add(seal, Some(K::CompletionSeal)),
+        T::CompletionReported { record } => links.add(record, Some(K::WorkRestoredRecord)),
         // Custody belongs to the originating store. Preserve these references
         // in the original bytes without following them as evidence dependencies.
         T::SupersededByImport { .. }

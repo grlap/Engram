@@ -1176,7 +1176,7 @@ fn validate_disposal_proof(
     let latest_lifecycle_event = history.events.iter().rev().find(|event| {
         matches!(
             event.kind.as_str(),
-            "created" | "reopened" | "completed" | "disposed"
+            "created" | "reopened" | "completed" | "completion_reported" | "disposed"
         )
     });
     if !terminal {
@@ -1323,7 +1323,8 @@ fn validate_event_shape(event: &crate::WorkGraphSnapshotEvent) -> Result<(), Sto
         | "evidence_added"
         | "memory_captured"
         | "typed_evidence_added"
-        | "completed" => event.reason.is_none() && no_relation(),
+        | "completed"
+        | "completion_reported" => event.reason.is_none() && no_relation(),
         "claimed" => no_relation(),
         "blocked"
         | "unblocked"

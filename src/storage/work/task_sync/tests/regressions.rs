@@ -532,11 +532,20 @@ fn task_sync_integrity_refuses_decodable_mismatched_origin_and_missing_origin() 
     let tree = candidate();
     let mut store = SqliteStore::open_in_memory().unwrap();
     import(&mut store, &tree);
+    // Select the referenced root explicitly: object-id order is random and
+    // must not decide whether the audit has to expand a corrupt endpoint.
+    let child = tree
+        .tasks
+        .iter()
+        .find(|task| task.parent_id.is_some())
+        .unwrap();
+    let root = store.get_work_item(child.parent_id.unwrap()).unwrap();
+    let origin_id = origin_reference(&root.created_by).unwrap();
     let (id, bytes): (String, Vec<u8>) = store
         .connection
         .query_row(
-            "SELECT object_id, canonical_json FROM objects WHERE object_kind = ?1 LIMIT 1",
-            [ORIGIN_KIND],
+            "SELECT object_id, canonical_json FROM objects WHERE object_kind = ?1 AND object_id = ?2",
+            params![ORIGIN_KIND, origin_id.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();

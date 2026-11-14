@@ -8,6 +8,9 @@ use crate::RestoredRecord;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+mod native;
+pub(super) use native::{native_endpoint, native_endpoints, references as native_references};
+
 // Refusals that a task's import origin binding does not hold. The shared
 // validators return them as plain invalid input to every caller; task
 // export and import classify them as origin mismatches.
@@ -251,7 +254,30 @@ pub(in crate::storage) fn verify_origins(
             Err(_) => invalid_records.push(format!("task_sync_import_origin:{id}")),
         }
     }
-    for (project, (notes_included, tasks)) in projects {
+    for (project, (notes_included, mut tasks)) in projects {
+        // A rejected imported origin can still be referenced by a valid one.
+        // Loading that endpoint validates its binding again. Doctor records
+        // such corrupt data as an invalid graph; admission keeps its strict
+        // endpoint refusal. Database access errors still fail the audit.
+        let endpoints =
+            match native_endpoints(connection, &crate::ProjectId(project.clone()), &tasks) {
+                Ok(endpoints) => endpoints,
+                Err(
+                    StoreError::InvalidWork(_)
+                    | StoreError::InvalidWorkProjection(_)
+                    | StoreError::InvalidStoredKey(_)
+                    | StoreError::ObjectKindMismatch { .. }
+                    | StoreError::Json(_),
+                ) => {
+                    invalid_records.push(format!("task_sync_import_graph:{project}"));
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+        for endpoint in endpoints {
+            roots.insert((project.clone(), endpoint.task.id), endpoint.root);
+            tasks.push(endpoint.task);
+        }
         let tree = TaskTree {
             project: ProjectDocument {
                 format: FORMAT.into(),

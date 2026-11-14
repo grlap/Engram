@@ -522,8 +522,13 @@ fn reconciliation_zero_run_hold_fences_folder_scalar_removal_and_relation_endpoi
     endpoint.id = WorkId(uuid::Uuid::new_v4());
     endpoint.external_ref = None;
     endpoint.prerequisites.clear();
-    let endpoint_id = endpoint.id;
+    let selected = endpoint.id;
+    let mut independent = endpoint.clone();
+    independent.id = WorkId::new();
+    independent.title = "independent root".into();
+    let independent_id = independent.id;
     tree.tasks.push(endpoint);
+    tree.tasks.push(independent);
     tree.tasks.sort_by_key(|task| task.id.0);
     let profile = ExportProfile {
         include_notes: tree.project.notes_included,
@@ -546,11 +551,12 @@ fn reconciliation_zero_run_hold_fences_folder_scalar_removal_and_relation_endpoi
             "bootstrap",
         )
         .unwrap();
-    let selected = tree
+    let endpoint_id = tree
         .tasks
         .iter()
         .find(|task| {
-            task.id != endpoint_id
+            task.id != selected
+                && task.id != independent_id
                 && task.lifecycle == crate::WorkLifecycle::Open
                 && task.parent_id.is_none()
         })
@@ -559,7 +565,7 @@ fn reconciliation_zero_run_hold_fences_folder_scalar_removal_and_relation_endpoi
     let (binding, prepared, intent) = prepared(&mut store, home.path());
     let held = hold(&store, binding, prepared, &intent, vec![selected]);
     assert!(held.affected.iter().all(|basis| basis.runs.is_empty()));
-    store.place_task_sync_reconciliation_hold(&held).unwrap();
+    let hold_id = store.place_task_sync_reconciliation_hold(&held).unwrap();
     let basis = store
         .export_task_sync_folder(&tree.project.project_id, &profile)
         .unwrap();
@@ -590,44 +596,208 @@ fn reconciliation_zero_run_hold_fences_folder_scalar_removal_and_relation_endpoi
                     .unwrap()
                     .title = "held title".into();
             }
-            "removal" => resolved.tasks.clear(),
+            "removal" => resolved.tasks.retain(|task| task.id != selected),
             "relation" => {
-                resolved
+                let prerequisites = &mut resolved
                     .tasks
                     .iter_mut()
                     .find(|task| task.id == endpoint_id)
                     .unwrap()
-                    .prerequisites
-                    .push(selected);
+                    .prerequisites;
+                prerequisites.push(selected);
+                prerequisites.sort_by_key(|id| id.0);
+                prerequisites.dedup();
             }
             _ => unreachable!(),
         }
-        let error = store
-            .apply_task_sync_folder(
-                TaskSyncFolderApply {
-                    project: &tree.project.project_id,
-                    actor: &actor("importer"),
-                    tree: &resolved,
-                    export_basis: &basis.export_basis,
-                    profile: &profile,
-                    complete: true,
-                    now: at(9),
-                },
-                fault,
-            )
-            .unwrap_err();
-        assert!(
-            error.to_string().contains("task_sync_reconciliation_held")
-                || crate::store_error_value(&error)["error"]["code"]
-                    == "task_sync_reconciliation_held",
-            "{fault}: {error}"
-        );
-        assert_eq!(
-            state(&store),
-            before,
-            "{fault} must preserve graph, heads, baseline and operation result"
-        );
+        for dry_run in [true, false] {
+            let request = TaskSyncFolderApply {
+                project: &tree.project.project_id,
+                actor: &actor("importer"),
+                tree: &resolved,
+                export_basis: &basis.export_basis,
+                profile: &profile,
+                complete: true,
+                now: at(9),
+            };
+            let result = if dry_run {
+                store.dry_run_task_sync_folder(request, fault)
+            } else {
+                store.apply_task_sync_folder(request, fault)
+            }
+            .unwrap();
+            assert_eq!(result.dry_run, dry_run);
+            assert!(!result.changed, "{fault}: {result:?}");
+            assert_eq!(result.tasks.len(), 1, "{fault}: {result:?}");
+            assert_eq!(
+                result.tasks[0].status,
+                super::super::super::TaskSyncTaskStatus::Held
+            );
+            assert_eq!(
+                result.tasks[0].reason.as_deref(),
+                Some("task_sync_reconciliation_held")
+            );
+            assert_eq!(
+                state(&store),
+                before,
+                "{fault} must preserve graph, heads, baseline and operation result"
+            );
+        }
     }
+
+    let mut mixed = basis.tree.clone();
+    for task in &mut mixed.tasks {
+        if task.id == selected || task.id == independent_id {
+            task.title = "incoming title".into();
+        }
+    }
+    let held_basis = store
+        .task_sync_reconciliation_basis(&held.project_id, &held.seeds)
+        .unwrap();
+    let held_record = store.task_sync_reconciliation_hold(&hold_id).unwrap();
+    let request = TaskSyncFolderApply {
+        project: &tree.project.project_id,
+        actor: &actor("importer"),
+        tree: &mixed,
+        export_basis: &basis.export_basis,
+        profile: &profile,
+        complete: true,
+        now: at(9),
+    };
+    let dry = store
+        .dry_run_task_sync_folder(request, "mixed-hold")
+        .unwrap();
+    assert!(dry.changed && dry.dry_run);
+    assert_eq!(state(&store), before);
+    let real = store.apply_task_sync_folder(request, "mixed-hold").unwrap();
+    assert_eq!(
+        real,
+        crate::storage::TaskSyncImportResult {
+            dry_run: false,
+            ..dry
+        }
+    );
+    assert_eq!(
+        real.tasks
+            .iter()
+            .find(|task| task.task == selected)
+            .unwrap()
+            .status,
+        super::super::super::TaskSyncTaskStatus::Held
+    );
+    assert_eq!(
+        real.tasks
+            .iter()
+            .find(|task| task.task == independent_id)
+            .unwrap()
+            .status,
+        super::super::super::TaskSyncTaskStatus::Applied
+    );
+    assert_eq!(
+        store.get_work_item(independent_id).unwrap().title,
+        "incoming title"
+    );
+    assert_eq!(store.get_work_item(selected).unwrap(), item);
+    assert_eq!(
+        store
+            .task_sync_reconciliation_basis(&held.project_id, &held.seeds)
+            .unwrap(),
+        held_basis
+    );
+    assert_eq!(
+        store.task_sync_reconciliation_hold(&hold_id).unwrap(),
+        held_record
+    );
+    assert_eq!(
+        super::super::active::lookup(&store.connection, selected).unwrap(),
+        Some(hold_id.clone())
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
+
+    abandon_zero_run_hold(&mut store, &hold_id, &held, selected);
+    let fresh = store
+        .export_task_sync_folder(&tree.project.project_id, &profile)
+        .unwrap();
+    let mut retried = fresh.tree;
+    retried
+        .tasks
+        .iter_mut()
+        .find(|task| task.id == selected)
+        .unwrap()
+        .title = "incoming title".into();
+    let result = store
+        .apply_task_sync_folder(
+            TaskSyncFolderApply {
+                project: &tree.project.project_id,
+                actor: &actor("importer"),
+                tree: &retried,
+                export_basis: &fresh.export_basis,
+                profile: &profile,
+                complete: true,
+                now: at(11),
+            },
+            "retry-resolved-hold",
+        )
+        .unwrap();
+    assert!(result.changed);
+    assert_eq!(result.tasks.len(), 1);
+    assert_eq!(
+        result.tasks[0].status,
+        super::super::super::TaskSyncTaskStatus::Applied
+    );
+    assert_eq!(
+        store.get_work_item(selected).unwrap().title,
+        "incoming title"
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+/// Resolve the fixture through the same attributed abandonment event used by
+/// the snapshot round trip, without removing a hold or changing its membership.
+fn abandon_zero_run_hold(
+    store: &mut SqliteStore,
+    hold_id: &ObjectId,
+    held: &ReconciliationHold,
+    selected: WorkId,
+) {
+    use crate::storage::work::{WorkEventDraft, feeds, planning};
+    let tx = store.begin_work_mutation().unwrap();
+    let mut item = query::load_work_item(&tx, selected).unwrap();
+    assert!(item.active_run_id.is_none());
+    item.revision += 1;
+    item.updated_at = at(10);
+    planning::persist_work_item(&tx, &item).unwrap();
+    let (event_id, _) = feeds::append_work_event(
+        &tx,
+        &WorkEventDraft {
+            schema_version: 1,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: None,
+            revision: item.revision,
+            work: item,
+            run: None,
+            root_execution: None,
+            claim: None,
+            handoff_offer: None,
+            blocker: None,
+            transition: crate::WorkTransition::ReconciliationHoldAbandoned {
+                hold: hold_id.clone(),
+                reason: "original placer abandons candidate".into(),
+            },
+            actor: held.actor.clone(),
+            created_at: at(10),
+        },
+    )
+    .unwrap();
+    tx.execute(
+        "UPDATE work_task_sync_reconciliation_holds SET resolution_id=?1 WHERE hold_id=?2",
+        params![event_id.as_str(), hold_id.as_str()],
+    )
+    .unwrap();
+    super::super::active::resolve_on(&tx, hold_id).unwrap();
+    tx.commit().unwrap();
 }
 
 #[test]

@@ -5,8 +5,9 @@
 //! task on its own: what the planner found it asks, and whether this store
 //! lets that task take it. The second judges each addition in context: its
 //! ancestors, its root's execution and the store's whole import-origin
-//! history. Every conflict is collected, one per task, and any conflict
-//! refuses the whole folder. A task's first-stage reason takes precedence
+//! history. Every conflict is collected, one per task. Complete folders apply
+//! the admitted tasks and report the others; strict delta candidates retain
+//! their whole-candidate admission. A task's first-stage reason takes precedence
 //! over a second-stage one; within the second stage, an addition's own
 //! ancestor chain is judged first, then whether an addition it depends on
 //! was itself refused, then the graph the import would leave, and last the
@@ -15,10 +16,11 @@
 //! precedes ancestor/root binding, after the target's own eligibility.
 //!
 //! Admission builds every index once; a held
-//! ancestor's eligibility, a referenced task's origin, a root's execution and
+//! ancestor's eligibility, a root's engaged execution and
 //! a completion's provenance are each read once, however many additions
-//! share them; and each graph check validates its graph a fixed number of
-//! times, naming the additions the located failure involves.
+//! share them. The mixed-graph fixpoint checks the selected graph again after
+//! each refusal cascade; every retry sets aside at least one requested change,
+//! naming the tasks the located failure involves.
 //! Each removal is independently rechecked at its writer.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -27,8 +29,8 @@ mod relations;
 
 use super::{origin, query};
 use crate::{
-    ActorContext, ProjectId, WorkId, WorkLifecycle, WorkOrigin,
-    domain::{WorkPlanningAuthority, WorkTransition},
+    ActorContext, ProjectId, WorkId, WorkLifecycle,
+    domain::WorkTransition,
     storage::StoreError,
     task_sync::{
         FORMAT, ProjectDocument, TaskDocument, TaskSyncRefusal, TaskTree,
@@ -45,8 +47,6 @@ thread_local! {
     pub(super) static ELIGIBILITY_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// How many prospective origin histories admission validated, in this thread.
     pub(super) static ORIGIN_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    /// How many held references admission read for their origin, in this thread.
-    pub(super) static REFERENCE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// How many prospective destination graphs admission validated, in this thread.
     pub(super) static RETAINED_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -56,6 +56,12 @@ pub(super) struct Conflict {
     pub(super) id: WorkId,
     pub(super) reason: &'static str,
     pub(super) detail: String,
+}
+
+#[derive(Debug)]
+pub(super) struct Application {
+    pub(super) plan: DeltaPlan,
+    pub(super) tasks: Vec<super::TaskSyncTaskResult>,
 }
 
 /// The folder's prospective shared planning: the destination's current
@@ -162,14 +168,16 @@ impl OriginGraph {
     ) -> Result<Self, StoreError> {
         let origins = origin::all_origins(transaction)?;
         let mut notes_included = false;
-        let documents = origins
+        let mut documents = origins
             .into_iter()
             .filter(|origin| origin.project_id == *project)
             .map(|origin| {
                 notes_included |= origin.notes_included;
                 origin.task
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let endpoints = origin::native_endpoints(transaction, project, &documents)?;
+        documents.extend(endpoints.into_iter().map(|endpoint| endpoint.task));
         Ok(Self {
             documents,
             notes_included,
@@ -178,39 +186,23 @@ impl OriginGraph {
 }
 
 /// Reads about held tasks, each made once per admission.
-#[derive(Default)]
 struct HeldReads {
+    now: chrono::DateTime<chrono::Utc>,
     eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
-    addition_eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
     removal_eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
     executions: HashMap<WorkId, Option<String>>,
     restored_completions: HashMap<WorkId, bool>,
-    supported_origins: HashMap<WorkId, bool>,
-    relation_eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
 }
 
 impl HeldReads {
-    /// Whether a held task was restored by a task-sync import, which the
-    /// import-origin history requires of every task an addition references.
-    fn supported_origin(
-        &mut self,
-        transaction: &rusqlite::Transaction<'_>,
-        id: WorkId,
-    ) -> Result<bool, StoreError> {
-        if let Some(&known) = self.supported_origins.get(&id) {
-            return Ok(known);
+    fn new(now: chrono::DateTime<chrono::Utc>) -> Self {
+        Self {
+            now,
+            eligibility: HashMap::new(),
+            removal_eligibility: HashMap::new(),
+            executions: HashMap::new(),
+            restored_completions: HashMap::new(),
         }
-        #[cfg(test)]
-        REFERENCE_READS.with(|count| count.set(count.get() + 1));
-        let item = query::load_work_item(transaction, id).map_err(origin::classify_binding)?;
-        let supported = item.restored
-            && item.origin == WorkOrigin::Local
-            && item.source_snapshot_id.is_none()
-            && origin::for_item(transaction, &item)
-                .map_err(origin::classify_binding)?
-                .is_some();
-        self.supported_origins.insert(id, supported);
-        Ok(supported)
     }
 
     fn eligibility(
@@ -221,39 +213,13 @@ impl HeldReads {
         if let Some(known) = self.eligibility.get(&id) {
             return Ok(known.clone());
         }
-        let found = eligible(transaction, id)?.map(|conflict| (conflict.reason, conflict.detail));
+        let found =
+            eligible(transaction, id, self.now)?.map(|conflict| (conflict.reason, conflict.detail));
         self.eligibility.insert(id, found.clone());
         Ok(found)
     }
 
-    fn addition_eligibility(
-        &mut self,
-        transaction: &rusqlite::Transaction<'_>,
-        id: WorkId,
-    ) -> Result<Option<(&'static str, String)>, StoreError> {
-        if let Some(known) = self.addition_eligibility.get(&id) {
-            return Ok(known.clone());
-        }
-        let found = if let Some(conflict) = self.eligibility(transaction, id)? {
-            Some(conflict)
-        } else {
-            query::canonical_work_event_records_for_item(transaction, id)?
-                .into_iter()
-                .find_map(|(event_id, event)| {
-                    (!matches!(
-                        event.transition,
-                        WorkTransition::Revised {
-                            authority: WorkPlanningAuthority::Project
-                        }
-                    ))
-                    .then(|| ("planning_history", format!("event {}", event_id.as_str())))
-                })
-        };
-        self.addition_eligibility.insert(id, found.clone());
-        Ok(found)
-    }
-
-    /// The root's active execution, by id, when it has one.
+    /// An active root execution holds planning only while a run is engaged.
     fn execution(
         &mut self,
         transaction: &rusqlite::Transaction<'_>,
@@ -262,15 +228,31 @@ impl HeldReads {
         if let Some(known) = self.executions.get(&root) {
             return Ok(known.clone());
         }
-        let found = query::active_root_execution_optional(transaction, root)?
-            .map(|execution| execution.root_execution_id.0.to_string());
+        let mut found = None;
+        if let Some(execution) = query::active_root_execution_optional(transaction, root)? {
+            let mut statement = transaction.prepare(
+                "SELECT work_id FROM work_runs WHERE root_execution_id = ?1
+                 AND state NOT IN ('completed', 'cancelled', 'superseded_by_import')
+                 ORDER BY work_id",
+            )?;
+            let work = statement
+                .query_map([execution.root_execution_id.0.to_string()], |row| {
+                    row.get::<_, String>(0)
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for id in work {
+                if engaged_run(transaction, query::parse_work_id(&id)?, self.now)?.is_some() {
+                    found = Some(execution.root_execution_id.0.to_string());
+                    break;
+                }
+            }
+        }
         self.executions.insert(root, found.clone());
         Ok(found)
     }
 
-    /// Whether a completed held task is a completion this store only
-    /// restored: no run and no history of its own here, so no seal or
-    /// completed run accounts for its children.
+    /// Whether the completion is restored history, including a later report,
+    /// rather than a local seal that accounts for the task's children.
     fn restored_completion(
         &mut self,
         transaction: &rusqlite::Transaction<'_>,
@@ -280,9 +262,7 @@ impl HeldReads {
             return Ok(known);
         }
         let item = query::load_work_item(transaction, id).map_err(origin::classify_binding)?;
-        let restored = item.restored
-            && item.active_run_id.is_none()
-            && query::canonical_work_event_records_for_item(transaction, id)?.is_empty();
+        let restored = query::work_completed_by_restored_record_on(transaction, &item)?;
         self.restored_completions.insert(id, restored);
         Ok(restored)
     }
@@ -296,12 +276,12 @@ fn activity_keys(task: &TaskDocument) -> impl Iterator<Item = (String, String)> 
     })
 }
 
-/// Applies a classified folder whole, or refuses it before any write. Every
+/// Applies the admitted tasks of a classified folder. Every
 /// requested delta is judged first, in two stages: each task on its own,
 /// then each addition in the context of the prospective tree and the origin
 /// history. One conflict is kept per task, in the precedence the module
-/// describes. The refusal names the first conflicts in task-id order, up to
-/// a fixed limit, and gives the exact count of the rest.
+/// describes. Every unapplied task is returned with its reason; only an
+/// admitted task advances the caller's exchange baseline.
 ///
 /// Admitted changes remove old relations, restore additions, apply scalars
 /// and new relations, then dispose removals in hierarchy postorder. The caller checks
@@ -313,7 +293,7 @@ pub(super) fn apply_plan(
     resolved: &TaskTree,
     actor: &ActorContext,
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<(), StoreError> {
+) -> Result<Application, StoreError> {
     let prospective = Prospective::new(current, resolved)?;
     let origins = if plan.additions().next().is_some() {
         Some(OriginGraph::read(transaction, prospective.project)?)
@@ -346,6 +326,7 @@ pub(super) fn apply_plan(
         },
         actor,
         now,
+        true,
     )
 }
 
@@ -366,10 +347,11 @@ pub(super) fn apply_on(
     final_graph: impl FnOnce() -> Result<(), StoreError>,
     actor: &ActorContext,
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<(), StoreError> {
+    allow_partial: bool,
+) -> Result<Application, StoreError> {
     let mut conflicts = BTreeMap::new();
     let mut batch = Vec::new();
-    let mut reads = HeldReads::default();
+    let mut reads = HeldReads::new(now);
     let additions = plan.additions().collect::<Vec<_>>();
     if !additions.is_empty() && origins.is_none() {
         return Err(StoreError::InvalidWorkProjection(
@@ -423,20 +405,55 @@ pub(super) fn apply_on(
                 task.id,
                 &change.relations,
             )?,
-            TaskDelta::Changed(TaskChange {
-                scalar: Some(_), ..
-            }) => reads
-                .eligibility(transaction, task.id)?
-                .map(|(reason, detail)| Conflict {
-                    id: task.id,
-                    reason,
-                    detail,
-                }),
+            TaskDelta::Changed(change) if change.scalar.is_some() || change.reported_completion => {
+                reads
+                    .eligibility(transaction, task.id)?
+                    .map(|(reason, detail)| Conflict {
+                        id: task.id,
+                        reason,
+                        detail,
+                    })
+            }
             TaskDelta::Added => match origins {
-                Some(_) => admit_addition(transaction, prospective, &mut reads, task.id)?,
+                Some(_) => admit_addition(transaction, prospective, task.id)?,
                 None => None,
             },
             TaskDelta::Unchanged | TaskDelta::RetainedLocal | TaskDelta::Changed(_) => None,
+        };
+        let conflict = if conflict.is_none()
+            && matches!(&task.delta, TaskDelta::Changed(change) if change.reported_completion)
+            && super::super::completion::live_descendant_execution_authority(
+                transaction,
+                task.id,
+                now,
+            )? {
+            Some(Conflict {
+                id: task.id,
+                reason: "active_run",
+                detail: "a descendant holds live execution authority".into(),
+            })
+        } else {
+            conflict
+        };
+        let conflict = if conflict.is_none() {
+            if let TaskDelta::Changed(change) = &task.delta
+                && let Some(bindings) = change
+                    .scalar
+                    .as_ref()
+                    .and_then(|change| change.acceptance_bindings.as_ref())
+                && let Err(error) =
+                    super::super::planning::refuse_record_id_pins_on(transaction, bindings)
+            {
+                Some(Conflict {
+                    id: task.id,
+                    reason: "acceptance_pin",
+                    detail: error.to_string(),
+                })
+            } else {
+                None
+            }
+        } else {
+            conflict
         };
         if let Some(conflict) = conflict {
             conflicts.insert(conflict.id.0, conflict);
@@ -551,7 +568,7 @@ pub(super) fn apply_on(
     if batch.is_empty()
         && let Some(origins) = origins
     {
-        let origins = origin_graph(prospective, origins, &admitted(&conflicts))?;
+        let origins = origin_graph(transaction, prospective, origins, &admitted(&conflicts))?;
         absorb(origins, &mut conflicts, &mut batch);
         name_dependents_of_refusals(prospective, &additions, &mut conflicts);
     }
@@ -563,8 +580,12 @@ pub(super) fn apply_on(
             conflicts.insert(id.0, conflict);
         }
     }
-    relations::graphs(plan, prospective, &mut conflicts, &mut batch, durable)?;
-    if !plan.project.is_empty() || !conflicts.is_empty() || !batch.is_empty() {
+    let durable = if plan.relation_changes().next().is_some() {
+        Some(durable()?)
+    } else {
+        None
+    };
+    if !plan.project.is_empty() || !batch.is_empty() || (!allow_partial && !conflicts.is_empty()) {
         let conflicts = conflicts.into_values().collect::<Vec<_>>();
         return Err(
             TaskSyncRefusal::ImportConflict.invalid(conflict_message_with(
@@ -574,6 +595,218 @@ pub(super) fn apply_on(
             )),
         );
     }
+    // Refused values never become the basis of an admitted dependent. Check
+    // the actual mixed graph, retaining each refused task's local document.
+    // Each pass sets aside at least one requested change, so this terminates.
+    let candidates = plan
+        .tasks
+        .iter()
+        .filter(|task| !task.is_unchanged())
+        .map(|task| task.id)
+        .collect::<Vec<_>>();
+    loop {
+        name_dependents_of_refusals(prospective, &candidates, &mut conflicts);
+        let selected = selected_plan(plan, &conflicts);
+        let effective = effective_documents(&selected, prospective)?;
+        let mut refused_endpoint = false;
+        for (id, change) in selected.relation_changes() {
+            for target in &change.prerequisite_additions {
+                if let Some(endpoint) = effective.get(target) {
+                    // A shared edge can have been added while its target was
+                    // Open, then returned after that target ended. Preserve
+                    // that history only when the incoming and effective
+                    // lifecycles agree; a refused promotion cannot supply an
+                    // Open endpoint that this store still holds terminal.
+                    let terminal_history = matches!(
+                        endpoint.lifecycle,
+                        WorkLifecycle::Completed
+                            | WorkLifecycle::Cancelled
+                            | WorkLifecycle::Superseded
+                    ) && prospective.resolved_task(*target)?.lifecycle
+                        == endpoint.lifecycle;
+                    if endpoint.lifecycle == WorkLifecycle::Open || terminal_history {
+                        continue;
+                    }
+                    conflicts.insert(
+                        id.0,
+                        Conflict {
+                            id,
+                            reason: if endpoint.lifecycle == WorkLifecycle::Completed {
+                                "already_satisfied"
+                            } else {
+                                "prerequisite_lifecycle"
+                            },
+                            detail: format!(
+                                "prerequisite {} is {:?}",
+                                target.0, endpoint.lifecycle
+                            ),
+                        },
+                    );
+                    refused_endpoint = true;
+                    break;
+                }
+            }
+        }
+        if refused_endpoint {
+            continue;
+        }
+        let mut unfinished_child = false;
+        for task in &selected.tasks {
+            if !matches!(&task.delta, TaskDelta::Changed(change) if change.reported_completion) {
+                continue;
+            }
+            if let Some(child) = effective
+                .values()
+                .filter(|child| {
+                    child.parent_id == Some(task.id)
+                        && child.child_requirement == crate::ChildRequirement::Required
+                        && matches!(
+                            child.lifecycle,
+                            WorkLifecycle::Open | WorkLifecycle::Proposed
+                        )
+                })
+                .min_by_key(|child| child.id.0)
+            {
+                conflicts.insert(
+                    task.id.0,
+                    Conflict {
+                        id: task.id,
+                        reason: "required_child_unfinished",
+                        detail: format!("required child {} remains unfinished", child.id.0),
+                    },
+                );
+                unfinished_child = true;
+            }
+        }
+        if unfinished_child {
+            continue;
+        }
+        // A later owner refusal restores its current edges. Recheck removal
+        // targets against that actual mixed graph, including chains of targets
+        // retained by an earlier pass, before locating any remaining fault.
+        let deleted = selected
+            .tasks
+            .iter()
+            .filter_map(|task| matches!(task.delta, TaskDelta::Deleted).then_some(task.id))
+            .collect::<HashSet<_>>();
+        let mut retained_removal = false;
+        for task in effective.values() {
+            for target in origin::native_references(task).filter(|id| deleted.contains(id)) {
+                conflicts.entry(target.0).or_insert_with(|| Conflict {
+                    id: target,
+                    reason: "retained_reference",
+                    detail: format!("retained task {} references {}", task.id.0, target.0),
+                });
+                retained_removal = true;
+            }
+        }
+        if retained_removal {
+            continue;
+        }
+        // A refused move retains its current ancestry. Compare incoming
+        // roots only for tasks whose changes will actually be applied.
+        let mut expected_roots = prospective.current_roots.clone();
+        for task in selected.tasks.iter().filter(|task| !task.is_unchanged()) {
+            if let Some(root) = prospective.roots.get(&task.id) {
+                expected_roots.insert(task.id, *root);
+            }
+        }
+        let Some(fault) = locate_fault(
+            prospective.project,
+            prospective.notes_included,
+            effective.into_values().collect(),
+            &expected_roots,
+            count_retained_validation,
+        )?
+        else {
+            // Name visible retained-graph faults before checking additional
+            // paths through retired work in the durable graph.
+            if let Some(durable) = &durable {
+                let before = conflicts.len();
+                relations::graphs(&selected, prospective, &mut conflicts, &mut batch, durable)?;
+                if !batch.is_empty() {
+                    return Err(
+                        TaskSyncRefusal::ImportConflict.invalid(conflict_message_with(
+                            &plan.project,
+                            &batch,
+                            &conflicts.into_values().collect::<Vec<_>>(),
+                        )),
+                    );
+                }
+                if conflicts.len() != before {
+                    continue;
+                }
+            }
+            break;
+        };
+        let mut named = false;
+        if let Some(located) = fault.located {
+            for task in selected.tasks.iter().filter(|task| !task.is_unchanged()) {
+                if located.groups.contains_key(&task.id) {
+                    conflicts.insert(
+                        task.id.0,
+                        Conflict {
+                            id: task.id,
+                            reason: "retained_graph",
+                            detail: fault.diagnostic.clone(),
+                        },
+                    );
+                    named = true;
+                }
+            }
+        }
+        if !named {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "cannot locate a partial import graph refusal: {}",
+                fault.diagnostic
+            )));
+        }
+    }
+    if !allow_partial && !conflicts.is_empty() {
+        return Err(
+            TaskSyncRefusal::ImportConflict.invalid(conflict_message_with(
+                &plan.project,
+                &[],
+                &conflicts.into_values().collect::<Vec<_>>(),
+            )),
+        );
+    }
+    let selected = selected_plan(plan, &conflicts);
+    let tasks = plan
+        .tasks
+        .iter()
+        .filter(|task| !task.is_unchanged())
+        .map(|task| {
+            let conflict = conflicts.get(&task.id.0);
+            super::TaskSyncTaskResult {
+                task: task.id,
+                status: match conflict {
+                    None => super::TaskSyncTaskStatus::Applied,
+                    Some(conflict)
+                        if matches!(
+                            conflict.reason,
+                            "active_run"
+                                | "task_sync_reconciliation_held"
+                                | "ancestor_binding"
+                                | "refused_reference"
+                        ) =>
+                    {
+                        super::TaskSyncTaskStatus::Held
+                    }
+                    Some(_) => super::TaskSyncTaskStatus::Refused,
+                },
+                reason: conflict.map(|conflict| conflict.reason.to_owned()),
+                detail: conflict.map(|conflict| conflict.detail.clone()),
+            }
+        })
+        .collect();
+    let plan = &selected;
+    let additions = plan.additions().collect::<Vec<_>>();
+    let removals = plan
+        .tasks
+        .iter()
+        .filter_map(|task| matches!(task.delta, TaskDelta::Deleted).then_some(task.id))
+        .collect::<HashSet<_>>();
     relations::apply_removals(transaction, plan, actor, now)?;
     if !additions.is_empty() {
         // Additions may reference one another in any order; the caller
@@ -607,6 +840,27 @@ pub(super) fn apply_on(
     if plan.relation_changes().next().is_some() {
         final_graph()?;
     }
+    // Children close before their parent; no local child seal is fabricated.
+    let mut completions = plan
+        .tasks
+        .iter()
+        .filter_map(|task| match &task.delta {
+            TaskDelta::Changed(change) if change.reported_completion => Some(task.id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    completions.sort_by_key(|id| (std::cmp::Reverse(prospective.ancestors(*id).len()), id.0));
+    for id in completions {
+        super::reported::apply_on(
+            transaction,
+            prospective.resolved_task(id)?,
+            prospective.snapshots.get(&id).cloned().ok_or_else(|| {
+                StoreError::InvalidWorkProjection("reported task has no snapshot".into())
+            })?,
+            actor,
+            now,
+        )?;
+    }
     let mut ordered = removals
         .into_iter()
         .map(|id| {
@@ -626,13 +880,50 @@ pub(super) fn apply_on(
     for (_, id) in ordered {
         // No earlier phase mutates this disjoint set. Recheck at the writer
         // boundary rather than relying on a run-free field alone.
-        let admitted = removal_item(transaction, id)?;
+        let admitted = removal_item(transaction, id, now)?;
         super::super::planning::apply_folder_disposal_on(transaction, admitted, actor, now)?;
     }
-    Ok(())
+    Ok(Application {
+        plan: selected,
+        tasks,
+    })
 }
 
-/// Deletion adds stricter history checks without changing scalar admission.
+fn selected_plan(plan: &DeltaPlan, conflicts: &BTreeMap<uuid::Uuid, Conflict>) -> DeltaPlan {
+    let mut selected = plan.clone();
+    for task in &mut selected.tasks {
+        if conflicts.contains_key(&task.id.0) {
+            task.delta = TaskDelta::Unchanged;
+        }
+    }
+    selected
+}
+
+fn effective_documents(
+    plan: &DeltaPlan,
+    prospective: &Prospective<'_>,
+) -> Result<HashMap<WorkId, TaskDocument>, StoreError> {
+    let mut effective = prospective
+        .current
+        .iter()
+        .map(|(&id, &task)| (id, task.clone()))
+        .collect::<HashMap<_, _>>();
+    for task in &plan.tasks {
+        match task.delta {
+            TaskDelta::Changed(_) | TaskDelta::Added => {
+                effective.insert(task.id, prospective.resolved_task(task.id)?.clone());
+            }
+            TaskDelta::Deleted => {
+                effective.remove(&task.id);
+            }
+            TaskDelta::Unchanged | TaskDelta::RetainedLocal => {}
+        }
+    }
+    Ok(effective)
+}
+
+/// Deletion requires Open work and adds stricter history checks without
+/// changing scalar admission of Proposed work.
 fn removal_eligibility(
     transaction: &rusqlite::Transaction<'_>,
     reads: &mut HeldReads,
@@ -672,11 +963,19 @@ fn removal_history(
     transaction: &rusqlite::Transaction<'_>,
     id: WorkId,
 ) -> Result<Option<Conflict>, StoreError> {
-    let prior: bool = transaction.query_row(
-        "SELECT EXISTS(SELECT 1 FROM work_runs WHERE work_id = ?1)",
+    let (lifecycle, prior): (String, bool) = transaction.query_row(
+        "SELECT lifecycle, EXISTS(SELECT 1 FROM work_runs WHERE work_id = ?1)
+         FROM work_items WHERE work_id = ?1",
         [id.0.to_string()],
-        |row| row.get(0),
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
+    if lifecycle != "open" {
+        return Ok(Some(Conflict {
+            id,
+            reason: "lifecycle",
+            detail: "only Open tasks can be removed".into(),
+        }));
+    }
     if prior {
         return Ok(Some(Conflict {
             id,
@@ -690,8 +989,9 @@ fn removal_history(
 fn removal_item(
     transaction: &rusqlite::Transaction<'_>,
     id: WorkId,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<crate::WorkItem, StoreError> {
-    if let Some(conflict) = removal_eligibility(transaction, &mut HeldReads::default(), id)? {
+    if let Some(conflict) = removal_eligibility(transaction, &mut HeldReads::new(now), id)? {
         return Err(StoreError::InvalidWorkProjection(format!(
             "a folder removal lost admission: {} ({})",
             conflict.reason, conflict.detail
@@ -756,14 +1056,12 @@ fn unsupported_fields(id: WorkId, change: &TaskChange) -> Conflict {
     }
 }
 
-/// Whether a held task is free to take a planning change: restored by a
-/// task-sync import, Open, with no run, and with only admitted run-free
-/// history. Claims, handoffs, evaluations, obligations and seals all attach
-/// to a run of the task itself, so a run-free task carries none; other
-/// tasks' execution does not bind it.
+/// Descriptions belong to the shared task, regardless of its creation host
+/// or past execution. Only engaged local execution holds an incoming change.
 fn eligible(
     transaction: &rusqlite::Transaction<'_>,
     id: WorkId,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Option<Conflict>, StoreError> {
     #[cfg(test)]
     ELIGIBILITY_READS.with(|count| count.set(count.get() + 1));
@@ -774,20 +1072,8 @@ fn eligible(
     if let Some(held) = reconciliation_conflict(transaction, id)? {
         return Ok(Some(held));
     }
-    if !item.restored
-        || item.origin != WorkOrigin::Local
-        || item.source_snapshot_id.is_some()
-        || origin::for_item(transaction, &item)
-            .map_err(origin::classify_binding)?
-            .is_none()
-    {
-        return conflict(
-            "unsupported_origin",
-            "not a task restored by a task-sync import".into(),
-        );
-    }
     match item.lifecycle {
-        WorkLifecycle::Open => {}
+        WorkLifecycle::Open | WorkLifecycle::Proposed => {}
         WorkLifecycle::Completed => {
             return conflict("restored_completion", "the task is completed".into());
         }
@@ -795,23 +1081,35 @@ fn eligible(
             return conflict("lifecycle", format!("the task is {other:?}"));
         }
     }
-    if let Some(run) = item.active_run_id {
+    if let Some(run) = engaged_run(transaction, id, now)? {
         return conflict("active_run", format!("run {}", run.0));
     }
-    for (event_id, event) in query::canonical_work_event_records_for_item(transaction, id)? {
-        let run_bound = event.run_id.is_some()
-            || event.run.is_some()
-            || event.claim.is_some()
-            || event.handoff_offer.is_some()
-            || event.root_execution.is_some();
-        if run_bound || !is_planning(&event.transition) {
-            return conflict("execution_history", format!("event {}", event_id.as_str()));
-        }
-        if !admitted_history(&event.transition) {
-            return conflict("planning_history", format!("event {}", event_id.as_str()));
-        }
-    }
     Ok(None)
+}
+
+pub(super) fn engaged_run(
+    connection: &rusqlite::Connection,
+    id: WorkId,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<crate::WorkRunId>, StoreError> {
+    let item = query::load_work_item(connection, id)?;
+    let Some(run) = item.active_run_id else {
+        return Ok(None);
+    };
+    if super::super::execution::live_handoff_on(connection, run, now)?.is_some() {
+        return Ok(Some(run));
+    }
+    if let Some(claim) = query::load_work_claim_optional(connection, run)? {
+        return Ok(
+            (claim.state == crate::WorkClaimState::Active && claim.expires_at > now).then_some(run),
+        );
+    }
+    Ok(
+        query::canonical_work_event_records_for_item(connection, id)?
+            .into_iter()
+            .any(|(_, event)| event.run_id == Some(run) && !is_planning(&event.transition))
+            .then_some(run),
+    )
 }
 
 fn reconciliation_conflict(
@@ -827,30 +1125,13 @@ fn reconciliation_conflict(
     )
 }
 
-/// The run-free planning transitions a task's history may hold while it
-/// stays free to take a folder change. Each later kind of folder change that
-/// records its own planning transition adds it here.
-const fn admitted_history(transition: &WorkTransition) -> bool {
-    matches!(
-        transition,
-        WorkTransition::Revised {
-            authority: WorkPlanningAuthority::Project
-        } | WorkTransition::PrerequisiteAdded {
-            authority: WorkPlanningAuthority::Project,
-            ..
-        } | WorkTransition::PrerequisiteRemoved {
-            authority: WorkPlanningAuthority::Project,
-            ..
-        } | WorkTransition::Blocked { .. }
-            | WorkTransition::Unblocked { .. }
-    )
-}
-
 /// Whether a transition changes only planning, never execution. Every
 /// variant is named, so a new one cannot compile until it is classified.
 const fn is_planning(transition: &WorkTransition) -> bool {
     match transition {
         WorkTransition::Created { .. }
+        | WorkTransition::Reopened { .. }
+        | WorkTransition::RequiredChildWaived { .. }
         | WorkTransition::Decomposed { .. }
         | WorkTransition::Revised { .. }
         | WorkTransition::PrerequisiteAdded { .. }
@@ -858,8 +1139,7 @@ const fn is_planning(transition: &WorkTransition) -> bool {
         | WorkTransition::Blocked { .. }
         | WorkTransition::Unblocked { .. }
         | WorkTransition::Disposed { .. } => true,
-        // Execution, including a required-child waiver: it accounts for the
-        // root's execution and can be recorded without a run of its own.
+        // Execution transitions are distinct from administrative planning.
         WorkTransition::Claimed { .. }
         | WorkTransition::ClaimRenewed { .. }
         | WorkTransition::Released { .. }
@@ -872,8 +1152,7 @@ const fn is_planning(transition: &WorkTransition) -> bool {
         | WorkTransition::MemoryCaptured { .. }
         | WorkTransition::TypedEvidenceAdded { .. }
         | WorkTransition::Completed { .. }
-        | WorkTransition::RequiredChildWaived { .. }
-        | WorkTransition::Reopened { .. }
+        | WorkTransition::CompletionReported { .. }
         | WorkTransition::SupersededByImport { .. }
         | WorkTransition::ReconciliationHoldAbandoned { .. } => false,
     }
@@ -889,13 +1168,10 @@ const fn unfinished(lifecycle: WorkLifecycle) -> bool {
 }
 
 /// The first stage for an addition: every identity it brings is new to this
-/// store, its record-id pins are refused here rather than during insertion,
-/// and every task it references that this destination holds was restored by
-/// a task-sync import, as the import-origin history requires.
+/// store and its record-id pins are refused here rather than during insertion.
 fn admit_addition(
     transaction: &rusqlite::Transaction<'_>,
     prospective: &Prospective<'_>,
-    reads: &mut HeldReads,
     id: WorkId,
 ) -> Result<Option<Conflict>, StoreError> {
     let collision = |detail: String| -> Result<Option<Conflict>, StoreError> {
@@ -979,27 +1255,6 @@ fn admit_addition(
             detail: error.to_string(),
         }));
     }
-    let references = task
-        .parent_id
-        .into_iter()
-        .chain(task.prerequisites.iter().copied())
-        .chain(task.superseded_by);
-    for reference in references {
-        if !prospective.current.contains_key(&reference) {
-            // Another addition, admitted on its own.
-            continue;
-        }
-        if !reads.supported_origin(transaction, reference)? {
-            return Ok(Some(Conflict {
-                id,
-                reason: "unsupported_origin",
-                detail: format!(
-                    "it references task {}, which was not restored by a task-sync import",
-                    reference.0
-                ),
-            }));
-        }
-    }
     Ok(None)
 }
 
@@ -1030,7 +1285,6 @@ fn ancestor_binding(
     };
     let unfinished = unfinished(prospective.resolved_task(id)?.lifecycle);
     for ancestor in prospective.ancestors(id) {
-        let document = prospective.resolved_task(ancestor)?;
         if let Some(held) = prospective.current.get(&ancestor) {
             if let Some(refused) = conflicts.get(&ancestor.0) {
                 return binding(format!(
@@ -1056,16 +1310,14 @@ fn ancestor_binding(
                 }
                 continue;
             }
-            // Additions retain the original Revised(Project)-only ancestor history policy.
-            if let Some((reason, detail)) = reads.addition_eligibility(transaction, ancestor)? {
+            if let Some((reason, detail)) = reads.eligibility(transaction, ancestor)? {
                 return binding(format!("ancestor {}: {reason} ({detail})", ancestor.0));
             }
-        } else if unfinished && document.lifecycle != WorkLifecycle::Open {
-            return binding(format!(
-                "ancestor {} is {:?}",
-                ancestor.0, document.lifecycle
-            ));
         }
+        // An entirely new incoming subtree is reported state, including an
+        // open descendant of a cancelled or completed remote ancestor. It
+        // creates no execution authority. Existing local ancestors retain
+        // their lifecycle and execution guards above.
     }
     let root = prospective.root(id)?;
     if prospective.current.contains_key(&root)
@@ -1089,10 +1341,14 @@ fn name_dependents_of_refusals(
     conflicts: &mut BTreeMap<uuid::Uuid, Conflict>,
 ) {
     let dependents = dependents_among(prospective, additions);
-    let mut queue = additions
-        .iter()
-        .copied()
-        .filter(|id| conflicts.contains_key(&id.0))
+    let mut queue = conflicts
+        .values()
+        // A refused edit/deletion leaves a real local endpoint in place.
+        // It does not make every task referencing that endpoint unimportable.
+        // New identities that were never admitted do require their dependents
+        // to wait. Ancestry changes have their separate binding check above.
+        .filter(|conflict| !prospective.current.contains_key(&conflict.id))
+        .map(|conflict| conflict.id)
         .collect::<std::collections::VecDeque<_>>();
     while let Some(refused) = queue.pop_front() {
         for &(dependent, through_parent) in dependents.get(&refused).into_iter().flatten() {
@@ -1113,7 +1369,9 @@ fn name_dependents_of_refusals(
                 }
             };
             conflicts.insert(dependent.0, conflict);
-            queue.push_back(dependent);
+            if !prospective.current.contains_key(&dependent) {
+                queue.push_back(dependent);
+            }
         }
     }
 }
@@ -1133,22 +1391,15 @@ fn dependents_among(
     prospective: &Prospective<'_>,
     additions: &[WorkId],
 ) -> HashMap<WorkId, Vec<(WorkId, bool)>> {
-    let added = additions.iter().copied().collect::<HashSet<_>>();
     let mut dependents = HashMap::<WorkId, Vec<(WorkId, bool)>>::new();
     for &id in additions {
         let Some(task) = prospective.resolved.get(&id) else {
             continue;
         };
-        if let Some(parent) = task.parent_id.filter(|parent| added.contains(parent)) {
+        if let Some(parent) = task.parent_id {
             dependents.entry(parent).or_default().push((id, true));
         }
-        for reference in task
-            .prerequisites
-            .iter()
-            .copied()
-            .chain(task.superseded_by)
-            .filter(|reference| added.contains(reference))
-        {
+        for reference in task.prerequisites.iter().copied().chain(task.superseded_by) {
             dependents.entry(reference).or_default().push((id, false));
         }
     }
@@ -1441,6 +1692,7 @@ fn check_graph(
     reason: &'static str,
     what: &str,
     count: fn(),
+    native_connection: Option<&rusqlite::Connection>,
 ) -> Result<GraphFindings, StoreError> {
     let mut findings = GraphFindings::default();
     let base_documents = || base.iter().map(|&task| task.clone()).collect::<Vec<_>>();
@@ -1464,12 +1716,25 @@ fn check_graph(
         return Ok(findings);
     }
     let dependents = dependents_among(prospective, additions);
+    let expand = |tasks: &mut Vec<TaskDocument>| -> Result<Vec<TaskDocument>, StoreError> {
+        let support = if let Some(connection) = native_connection {
+            origin::native_endpoints(connection, project, tasks)?
+                .into_iter()
+                .map(|endpoint| endpoint.task)
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        tasks.extend(support.iter().cloned());
+        Ok(support)
+    };
     let mut remaining = additions.to_vec();
     for _ in 0..FAULT_PASSES {
         let mut tasks = base_documents();
         for &id in &remaining {
             tasks.push(prospective.resolved_task(id)?.clone());
         }
+        let support = expand(&mut tasks)?;
         let expected = remaining
             .iter()
             .filter_map(|id| prospective.roots.get(id).map(|root| (*id, *root)))
@@ -1479,6 +1744,10 @@ fn check_graph(
         };
         let Some(located) = fault
             .located
+            .map(|mut located| {
+                name_native_support_users(&mut located, &support, prospective, &remaining);
+                located
+            })
             .filter(|located| remaining.iter().any(|id| located.groups.contains_key(id)))
         else {
             findings.batch.push((
@@ -1528,6 +1797,7 @@ fn check_graph(
     for &id in &remaining {
         tasks.push(prospective.resolved_task(id)?.clone());
     }
+    expand(&mut tasks)?;
     let expected = remaining
         .iter()
         .filter_map(|id| prospective.roots.get(id).map(|root| (*id, *root)))
@@ -1542,6 +1812,52 @@ fn check_graph(
         ));
     }
     Ok(findings)
+}
+
+/// A new reference can retain a native creation component whose old edges
+/// close an origin cycle without the referencing task itself being on that
+/// cycle. Attribute that support to its incoming users, not to unrelated
+/// native work. The reverse walk is linear in the selected support graph.
+fn name_native_support_users(
+    located: &mut Located,
+    support: &[TaskDocument],
+    prospective: &Prospective<'_>,
+    additions: &[WorkId],
+) {
+    let mut dependents = HashMap::<WorkId, Vec<WorkId>>::new();
+    let directly_named = additions
+        .iter()
+        .filter_map(|id| located.groups.get(id).copied())
+        .collect::<HashSet<_>>();
+    for task in support.iter().chain(
+        additions
+            .iter()
+            .filter_map(|id| prospective.resolved.get(id).copied()),
+    ) {
+        for reference in origin::native_references(task) {
+            dependents.entry(reference).or_default().push(task.id);
+        }
+    }
+    let mut queue = support
+        .iter()
+        .filter_map(|task| {
+            located
+                .groups
+                .get(&task.id)
+                .filter(|group| !directly_named.contains(*group))
+                .map(|group| (task.id, *group))
+        })
+        .collect::<std::collections::VecDeque<_>>();
+    while let Some((id, group)) = queue.pop_front() {
+        for &dependent in dependents.get(&id).into_iter().flatten() {
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                located.groups.entry(dependent)
+            {
+                entry.insert(group);
+                queue.push_back((dependent, group));
+            }
+        }
+    }
 }
 
 /// The second stage across the admitted additions, first check: the graph
@@ -1573,6 +1889,7 @@ fn retained_graph(
         "retained_graph",
         "the destination's planning",
         count_retained_validation,
+        None,
     )
 }
 
@@ -1582,6 +1899,7 @@ fn retained_graph(
 /// origin keeps the structure its task was imported with, so an edge the
 /// current planning no longer holds can still close a cycle there.
 fn origin_graph(
+    connection: &rusqlite::Connection,
     prospective: &Prospective<'_>,
     origins: &OriginGraph,
     additions: &[WorkId],
@@ -1598,6 +1916,7 @@ fn origin_graph(
         "origin_graph",
         "the import-origin history",
         count_origin_validation,
+        Some(connection),
     )
 }
 

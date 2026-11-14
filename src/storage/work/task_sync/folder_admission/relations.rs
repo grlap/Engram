@@ -2,36 +2,12 @@
 
 use super::{
     ActorContext, BTreeMap, Conflict, DeltaPlan, HashMap, HashSet, HeldReads, Prospective,
-    StoreError, TaskDelta, WorkId, WorkLifecycle, count_retained_validation, dependency_cycles,
-    locate_fault,
+    StoreError, WorkId, WorkLifecycle, dependency_cycles,
 };
 use crate::task_sync::folder_plan::RelationChange;
 
 fn refusal(id: WorkId, reason: &'static str, detail: String) -> Conflict {
     Conflict { id, reason, detail }
-}
-
-fn eligibility(
-    transaction: &rusqlite::Transaction<'_>,
-    reads: &mut HeldReads,
-    id: WorkId,
-) -> Result<Option<(&'static str, String)>, StoreError> {
-    if let Some(found) = reads.relation_eligibility.get(&id) {
-        return Ok(found.clone());
-    }
-    let mut found = reads.eligibility(transaction, id)?;
-    if found.is_none() {
-        let prior: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM work_runs WHERE work_id = ?1)",
-            [id.0.to_string()],
-            |row| row.get(0),
-        )?;
-        if prior {
-            found = Some(("execution_history", "a persisted run exists".into()));
-        }
-    }
-    reads.relation_eligibility.insert(id, found.clone());
-    Ok(found)
 }
 
 pub(super) fn admit_owner(
@@ -65,8 +41,20 @@ pub(super) fn admit_owner(
             )));
         }
     }
-    if let Some((reason, detail)) = eligibility(transaction, reads, id)? {
+    if let Some((reason, detail)) = reads.eligibility(transaction, id)? {
         return Ok(Some(refusal(id, reason, detail)));
+    }
+    if prospective.current[&id].lifecycle != WorkLifecycle::Open
+        && (!change.prerequisite_additions.is_empty()
+            || !change.prerequisite_removals.is_empty()
+            || !change.blocker_additions.is_empty()
+            || !change.blocker_removals.is_empty())
+    {
+        return Ok(Some(refusal(
+            id,
+            "lifecycle",
+            "a relation owner must be Open".into(),
+        )));
     }
     let task = prospective.resolved_task(id)?;
     if !change.prerequisite_additions.is_empty()
@@ -79,19 +67,6 @@ pub(super) fn admit_owner(
         )));
     }
     for target in &change.prerequisite_additions {
-        let endpoint = prospective.resolved_task(*target)?;
-        if endpoint.lifecycle != WorkLifecycle::Open {
-            let reason = if endpoint.lifecycle == WorkLifecycle::Completed {
-                "already_satisfied"
-            } else {
-                "prerequisite_lifecycle"
-            };
-            return Ok(Some(refusal(
-                id,
-                reason,
-                format!("prerequisite {} is {:?}", target.0, endpoint.lifecycle),
-            )));
-        }
         if *target == id || prospective.ancestors(id).contains(target) {
             return Ok(Some(refusal(
                 id,
@@ -110,7 +85,7 @@ pub(super) fn ancestor_binding(
     id: WorkId,
 ) -> Result<Option<Conflict>, StoreError> {
     for ancestor in prospective.ancestors(id) {
-        if let Some((reason, detail)) = eligibility(transaction, reads, ancestor)? {
+        if let Some((reason, detail)) = reads.eligibility(transaction, ancestor)? {
             return Ok(Some(refusal(
                 id,
                 "ancestor_binding",
@@ -136,7 +111,7 @@ pub(super) fn graphs(
     prospective: &Prospective<'_>,
     conflicts: &mut BTreeMap<uuid::Uuid, Conflict>,
     batch: &mut Vec<(&'static str, String)>,
-    durable: impl FnOnce() -> Result<HashMap<WorkId, super::TaskDocument>, StoreError>,
+    retained: &HashMap<WorkId, super::TaskDocument>,
 ) -> Result<(), StoreError> {
     let changed = plan
         .relation_changes()
@@ -145,60 +120,23 @@ pub(super) fn graphs(
     if changed.is_empty() {
         return Ok(());
     }
-    let removed = plan
-        .tasks
-        .iter()
-        .filter_map(|task| matches!(task.delta, TaskDelta::Deleted).then_some(task.id))
-        .collect::<HashSet<_>>();
-    let mut exported = prospective
-        .current
-        .iter()
-        .filter(|(id, _)| !removed.contains(id))
-        .map(|(&id, &task)| (id, task.clone()))
-        .collect::<HashMap<_, _>>();
-    exported.extend(
-        prospective
-            .resolved
-            .iter()
-            .map(|(&id, &task)| (id, task.clone())),
-    );
-    let mut durable = durable()?;
-    for (&id, &task) in &prospective.resolved {
+    // Retired owners remain in the durable graph. Apply only the currently
+    // selected edits; a refused owner's historical edges must stay intact.
+    let mut durable = retained.clone();
+    for (id, _) in plan.relation_changes() {
+        let task = prospective.resolved_task(id)?;
         if let Some(old) = durable.get_mut(&id) {
-            if changed.contains(&id) {
-                old.prerequisites.clone_from(&task.prerequisites);
-            }
-        } else {
-            durable.insert(id, task.clone());
+            old.prerequisites.clone_from(&task.prerequisites);
         }
+    }
+    for id in plan.additions() {
+        durable.insert(id, prospective.resolved_task(id)?.clone());
     }
     let candidates = changed
         .iter()
         .copied()
         .chain(plan.additions())
         .collect::<HashSet<_>>();
-    if let Some(fault) = locate_fault(
-        prospective.project,
-        prospective.notes_included,
-        exported.into_values().collect(),
-        &prospective.roots,
-        count_retained_validation,
-    )? {
-        let mut named = false;
-        if let Some(located) = &fault.located {
-            for task in &plan.tasks {
-                if candidates.contains(&task.id) && located.groups.contains_key(&task.id) {
-                    named = true;
-                    conflicts.entry(task.id.0).or_insert_with(|| {
-                        refusal(task.id, "retained_graph", fault.diagnostic.clone())
-                    });
-                }
-            }
-        }
-        if !named {
-            batch.push(("retained_graph", fault.diagnostic));
-        }
-    }
     let cycles = dependency_cycles(&durable.into_values().collect::<Vec<_>>());
     if !cycles.is_empty() {
         let mut named = false;

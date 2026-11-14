@@ -283,21 +283,32 @@ fn task_sync_native_state_and_cross_project_id_collisions_are_refused() {
         )
         .unwrap();
     let before = state(&target);
-    let error = target
-        .import_task_tree(
-            &tree.project.project_id,
-            &actor("importer"),
-            &tree,
-            false,
-            at(5),
-        )
-        .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "local work input is invalid: task import refuses existing native execution state"
-    );
-    assert_eq!(refusal_code(&error), "task_sync_native_state");
-    assert_eq!(state(&target), before);
+    // The public plain-import wrapper is cfg(test); the CLI's resolved-folder
+    // route has a different contract. Assert this fixture refusal where its
+    // actual emitter is available, including the stable JSON rendering.
+    for dry_run in [true, false] {
+        let error = target
+            .import_task_tree(
+                &tree.project.project_id,
+                &actor("importer"),
+                &tree,
+                dry_run,
+                at(5),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "local work input is invalid: task import refuses existing native execution state"
+        );
+        let refused = crate::store_error_value(&error);
+        assert_eq!(refused["error"]["code"], "task_sync_native_state");
+        assert_eq!(refused["error"]["message"], error.to_string());
+        assert_eq!(
+            refused["error"]["details"]["reason"],
+            "task import refuses existing native execution state"
+        );
+        assert_eq!(state(&target), before);
+    }
     let mut foreign = tree;
     foreign.project.project_id = ProjectId("different-project".into());
     // Use an isolated leaf so the candidate still passes graph validation and
