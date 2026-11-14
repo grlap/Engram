@@ -262,7 +262,7 @@ test("host census refuses another cutover engine even when its wrapper is gone",
     const result = await new Promise((resolve, reject) => {
       const check = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", path.resolve("scripts/eo-cutover-host.ps1"),
         "-Action", "RehearsalConsumers", "-Target", directory, "-EnginePid", String(process.pid)], { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-      let text = ""; check.stdout.on("data", value => { text += value; });
+      let text = ""; check.stdout.setEncoding("utf8").on("data", value => { text += value; });
       check.once("error", reject); check.once("close", code => resolve({ code, count: Number(text.trim()) }));
     });
     assert.equal(result.code, 0);
@@ -279,7 +279,7 @@ test("public PowerShell entry invokes the engine and keeps malformed plan conten
     const entry = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", path.resolve("scripts/eo-cutover.ps1"),
       "-Plan", plan, "-WorkDirectory", work], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
-    entry.stdout.on("data", value => { text += value; }); entry.stderr.on("data", value => { text += value; });
+    entry.stdout.setEncoding("utf8").on("data", value => { text += value; }); entry.stderr.setEncoding("utf8").on("data", value => { text += value; });
     entry.once("error", reject); entry.once("close", code => resolve({ code, text }));
   });
   assert.equal(result.code, 1);
@@ -297,7 +297,7 @@ test("public PowerShell rollback reads the empty main-file journal key and resto
     const entry = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", path.resolve("scripts/eo-cutover.ps1"),
       "-RollbackJournal", result.journal], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
-    entry.stdout.on("data", value => { text += value; }); entry.stderr.on("data", value => { text += value; });
+    entry.stdout.setEncoding("utf8").on("data", value => { text += value; }); entry.stderr.setEncoding("utf8").on("data", value => { text += value; });
     entry.once("error", reject); entry.once("close", code => resolve({ code, text }));
   });
   assert.equal(rollback.code, 0);

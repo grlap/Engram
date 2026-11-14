@@ -338,7 +338,7 @@ test("open obligations guide evaluation timing across MCP, host observations, an
         "--home", engramHome, "control", "--work-session", "--actor-id", session,
         "--session-id", session, "--source-skill", "engram-dogfood",
       ], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
-      this.child.stdout.on("data", (chunk) => {
+      this.child.stdout.setEncoding("utf8").on("data", (chunk) => {
         this.buffer += chunk.toString("utf8");
         for (;;) {
           const newline = this.buffer.indexOf("\n");
@@ -348,7 +348,7 @@ test("open obligations guide evaluation timing across MCP, host observations, an
           if (line) this.pending.shift()?.(JSON.parse(line));
         }
       });
-      this.child.stderr.on("data", (chunk) => { this.stderr += chunk.toString("utf8"); });
+      this.child.stderr.setEncoding("utf8").on("data", (chunk) => { this.stderr += chunk.toString("utf8"); });
     }
     request(payload) {
       return new Promise((resolvePromise) => {

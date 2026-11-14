@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { writeFileSync, rmSync } from "node:fs";
 import { fixtureHome } from "../../test-temp.mjs";
 
@@ -43,8 +44,8 @@ function fakeAclReader(t, { killCloses = true, endCloses = true } = {}) {
   const directory = fixtureHome("rpj-reader-", t);
   const child = new EventEmitter();
   child.stdin = new EventEmitter();
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
   const calls = [];
   let kills = 0;
   let spawns = 0;

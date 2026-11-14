@@ -104,7 +104,7 @@ async function holdSqliteWriter(database, home) {
   let stderr = "";
   const lifecycle = new FixtureChild(child, "SQLite writer helper", () => stderr);
   registerFixtureChild(home, lifecycle);
-  child.stderr.on("data", (chunk) => {
+  child.stderr.setEncoding("utf8").on("data", (chunk) => {
     stderr += chunk.toString("utf8");
   });
   try {
@@ -114,7 +114,7 @@ async function holdSqliteWriter(database, home) {
         reject(lifecycle.error("readiness timed out"));
       }, HANG_GUARD_MS);
       lifecycle.onFailure = (error) => { clearTimeout(timer); reject(error); };
-      child.stdout.on("data", (chunk) => {
+      child.stdout.setEncoding("utf8").on("data", (chunk) => {
         output += chunk.toString("utf8");
         if (!output.includes("ready\n")) return;
         clearTimeout(timer);
@@ -189,8 +189,8 @@ class ControlClient {
     this.lifecycle = new FixtureChild(this.child, `control server ${sessionId}`, () => this.stderr);
     registerFixtureChild(engramHome, this.lifecycle);
     this.lifecycle.onFailure = (error) => this.#rejectPending(error);
-    this.child.stdout.on("data", (chunk) => this.#receive(chunk));
-    this.child.stderr.on("data", (chunk) => {
+    this.child.stdout.setEncoding("utf8").on("data", (chunk) => this.#receive(chunk));
+    this.child.stderr.setEncoding("utf8").on("data", (chunk) => {
       this.stderr += chunk.toString("utf8");
     });
     this.closed = this.lifecycle.closed;
@@ -1448,8 +1448,8 @@ test("failed control startup answers one frame, exits, and never dispatches muta
     let stderr = "";
     lifecycle = new FixtureChild(child, "failed startup control server", () => stderr);
     registerFixtureChild(home, lifecycle);
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
     child.stdin.write("x".repeat(256 * 1024 + 1));
     await withTimeout(lifecycle.closed, HANG_GUARD_MS, "oversize failed startup without EOF");
     assert.equal(lifecycle.signalCode, null);
@@ -1497,7 +1497,7 @@ test("an opted-in control process whose stderr nobody drains answers every frame
     });
     let buffer = "";
     const waiting = [];
-    child.stdout.on("data", (chunk) => {
+    child.stdout.setEncoding("utf8").on("data", (chunk) => {
       buffer += chunk.toString("utf8");
       for (let newline = buffer.indexOf("\n"); newline >= 0; newline = buffer.indexOf("\n")) {
         buffer = buffer.slice(newline + 1);

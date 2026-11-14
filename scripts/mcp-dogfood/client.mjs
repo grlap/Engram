@@ -11,7 +11,7 @@ import { HostLoadSamples, McpCloseObservation } from "../mcp-close.mjs";
 const REQUEST_HANG_GUARD_MS = 60000;
 
 // Bind the one client class to the entry point's shared support closures.
-export function createMcpClient({ root, binary, SOFT_TIMING_MS, PHASE_TRACE_ENV, MAX_PHASE_RECORDS, timingLine, recordWalSample, phaseNotice, phaseTraceLine, assertProseNamesFields }) {
+export function createMcpClient({ root, binary, SOFT_TIMING_MS, PHASE_TRACE_ENV, MAX_PHASE_RECORDS, timingLine, recordWalSample, phaseNotice, phaseTraceLine, assertProseNamesFields, spawnImpl = spawn }) {
 class McpClient {
   constructor(engramHome, sessionId, actorContext, actorId = sessionId, extraArgs = [], { phaseTrace = true, softTimingMs = SOFT_TIMING_MS, cwd = root } = {}) {
     this.engramHome = engramHome;
@@ -49,15 +49,15 @@ class McpClient {
     else environment.ENGRAM_ACTOR_CONTEXT = actorContext;
     if (phaseTrace) environment[PHASE_TRACE_ENV] = "1";
     else delete environment[PHASE_TRACE_ENV];
-    this.child = spawn(binary, args, {
+    this.child = spawnImpl(binary, args, {
       cwd,
       env: environment,
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.closeObservation = new McpCloseObservation();
     this.hostLoad = new HostLoadSamples();
-    this.child.stderr.on("data", (chunk) => this.receiveStderr(chunk));
-    this.child.stdout.on("data", (chunk) => this.#receive(chunk));
+    this.child.stderr.setEncoding("utf8").on("data", (chunk) => this.receiveStderr(chunk));
+    this.child.stdout.setEncoding("utf8").on("data", (chunk) => this.#receive(chunk));
     this.closed = new Promise((resolvePromise) => {
       this.child.once("close", (code, signal) => {
         this.closeObservation.didClose(code, signal);

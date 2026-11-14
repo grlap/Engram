@@ -115,7 +115,7 @@ test("a killed launcher's run reads as interrupted once its heartbeat stops", { 
         { cwd: root, env: { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: String(everyMs) }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       completion = once(child, "close");
       let output = "";
-      child.stdout.on("data", (chunk) => { output += chunk; });
+      child.stdout.setEncoding("utf8").on("data", (chunk) => { output += chunk; });
       child.stderr.resume();
       const parked = await Promise.race([fromBroker(),
         completion.then(([code]) => [`launcher ended before the stage parked (${code})`])]);
