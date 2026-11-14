@@ -79,6 +79,21 @@ impl ProjectMemoryFullResponse {
             ),
             terminal_safe_data_block(&self.memory.body),
         ];
+        if let Some(source) = &self.memory.reported_source {
+            lines.insert(
+                2,
+                format!(
+                    "reported source: {} at {}; reason: {} (asserted; recorded locally by {})",
+                    terminal_safe_actor_label(&source.actor_id, source.actor_context.as_deref()),
+                    source.remembered_at,
+                    super::terminal_safe_multiline(&source.reason),
+                    terminal_safe_actor_label(
+                        &self.memory.actor_id,
+                        self.memory.actor_context.as_deref()
+                    ),
+                ),
+            );
+        }
         lines.extend(retiring_target_lines(
             self.memory.retiring_target.as_ref(),
             self.memory.retiring_state.as_ref(),
