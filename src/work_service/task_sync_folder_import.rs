@@ -97,14 +97,17 @@ impl LocalWorkService {
                 .filter(|task| task.status != TaskSyncTaskStatus::Applied)
                 .map(|task| task.task)
                 .collect::<std::collections::BTreeSet<_>>();
-            let source = committed
-                .clone()
-                .filter(|_| pending.is_empty())
-                .map(|commit| FolderSource {
+            // A partial import keeps the earlier source, as the incremental
+            // route does, so the held tasks are read again by the next import.
+            let source = if pending.is_empty() {
+                committed.clone().map(|commit| FolderSource {
                     commit,
                     inventory_root: root,
                     task_count: count,
-                });
+                })
+            } else {
+                recorded.as_ref().and_then(|(_, head)| head.source.clone())
+            };
             let next = FolderHead {
                 project_id: self.project_id.clone(),
                 profile,

@@ -13,6 +13,9 @@ mod steps;
 #[path = "task_sync_cli/any_host.rs"]
 mod any_host;
 
+#[path = "task_sync_cli/incremental.rs"]
+mod incremental;
+
 use std::{
     fs,
     path::Path,
@@ -56,6 +59,10 @@ fn sync_output(home: &Path, marker: &Path, operation: &str, path: &Path, extra: 
     command.output().unwrap()
 }
 
+/// One exchange through a retained whole-folder snapshot. Snapshots are
+/// copied in and out of the data folder rather than committed and merged, so
+/// these exchanges take the complete route, `--rebuild`, on purpose; the
+/// committed incremental route has its own tests.
 fn snapshot_output(
     home: &Path,
     marker: &Path,
@@ -68,12 +75,14 @@ fn snapshot_output(
         "import" => data_worktree::stage_snapshot(marker, snapshot),
         _ => panic!("unsupported snapshot operation"),
     }
+    let mut extra = extra.to_vec();
+    extra.push("--rebuild");
     let output = sync_output(
         home,
         marker,
         operation,
         &data_worktree::folder(marker),
-        extra,
+        &extra,
     );
     if operation == "export" && output.status.success() {
         data_worktree::retain_snapshot(marker, snapshot);
@@ -700,18 +709,22 @@ fn task_sync_enrolled_hosts_exchange_new_tasks_both_ways_with_notes_and_activity
 }
 
 #[test]
-fn task_sync_import_requires_exactly_one_destination_basis() {
+fn task_sync_import_accepts_at_most_one_destination_basis() {
     let fixture = test_support::temp_home().unwrap();
     let marker = fixture.path().join(".engram-project");
     fs::write(&marker, "task-sync-cli\n").unwrap();
     let home = fixture.path().join("home");
     let folder = fixture.path().join("folder");
-    for extra in [&[][..], &["--empty-basis", "--basis", "project.json"][..]] {
-        let output = sync_output(&home, &marker, "import", &folder, extra);
-        assert_eq!(output.status.code(), Some(2), "{extra:?}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("--basis"), "{stderr}");
-    }
+    let output = sync_output(
+        &home,
+        &marker,
+        "import",
+        &folder,
+        &["--empty-basis", "--basis", "project.json"],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--basis"), "{stderr}");
     assert!(!home.exists(), "a usage error opens no store");
 }
 
@@ -742,7 +755,10 @@ fn task_sync_cli_uses_only_data_worktree_and_keeps_code_source_unchanged() {
         String::from_utf8_lossy(&exported.stderr)
     );
     let project_bytes = fs::read(folder.join("project.json")).unwrap();
-    // Policy files belong to the data folder and survive an exact repeat.
+    let first: Value = serde_json::from_slice(&exported.stdout).unwrap();
+    assert_eq!(first["route"], "bootstrap");
+    // Policy files belong to the data folder and survive a repeat, which
+    // finds nothing changed and writes nothing.
     fs::write(folder.join(".gitignore"), "*.pending\n").unwrap();
     fs::write(folder.join(".gitattributes"), "*.json text eol=lf\n").unwrap();
     let repeat = sync_output(&source, &marker, "export", &folder, &["--json"]);
@@ -751,7 +767,12 @@ fn task_sync_cli_uses_only_data_worktree_and_keeps_code_source_unchanged() {
         "{}",
         String::from_utf8_lossy(&repeat.stderr)
     );
-    assert_eq!(repeat.stdout, exported.stdout);
+    let repeat: Value = serde_json::from_slice(&repeat.stdout).unwrap();
+    assert_eq!(
+        (&repeat["route"], &repeat["written"], &repeat["removed"]),
+        (&Value::from("unchanged"), &Value::from(0), &Value::from(0))
+    );
+    assert_eq!(repeat["inventory_root"], first["inventory_root"]);
     assert_eq!(
         fs::read(folder.join("project.json")).unwrap(),
         project_bytes

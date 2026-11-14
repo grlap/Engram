@@ -261,9 +261,11 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 
 > Honesty here is what makes slide 6 credible.
 >
-> Folder import requires `--empty-basis` or this host's own pre-merge
-> `project.json` through `--basis FILE`. Local planning changed since that
-> export refuses the import. On an enrolled store, admitted additions, scalar
+> Folder export and import are incremental after a store's first exchange,
+> whose import requires `--empty-basis` or this host's own pre-merge
+> `project.json` through `--basis FILE`; `--rebuild` repeats that complete
+> route. Local planning changed since this host's last export refuses an import
+> that reads it. On an enrolled store, admitted additions, scalar
 > edits and removals apply together. Scalar edits require imported Open tasks
 > with no run and only admitted run-free project revision, prerequisite and
 > blocker history. Omitting an eligible

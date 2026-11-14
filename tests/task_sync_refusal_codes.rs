@@ -124,6 +124,8 @@ impl Fixture {
         .unwrap()
     }
 
+    /// Snapshots are copied in and out of the data folder rather than
+    /// committed, so these exchanges take the complete route on purpose.
     fn staged_snapshot_command_with(
         &self,
         home: &Path,
@@ -138,12 +140,14 @@ impl Fixture {
             assert_eq!(operation, "export");
             data_worktree::clear(&self.marker);
         }
+        let mut extra = extra.to_vec();
+        extra.push("--rebuild");
         self.raw_command_with(
             home,
             operation,
             &data_worktree::folder(&self.marker),
             json,
-            extra,
+            &extra,
         )
     }
 
@@ -561,17 +565,36 @@ fn task_sync_export_refusals_carry_stable_codes_and_json_prints_the_receipt() {
         directory::read_folder(&path).unwrap().export_basis.as_str()
     );
 
+    // A data folder that is not the one the last export recorded refuses the
+    // incremental route, names the complete one, and is left untouched.
     fixture.add(&source, "another task");
-    let refused = refusal(&fixture.exchange_snapshot(&source, "export", &path, true));
-    assert_eq!(refused["error"]["code"], "task_sync_destination_occupied");
+    data_worktree::clear(&fixture.marker);
+    let live = data_worktree::folder(&fixture.marker);
+    let refused = refusal(
+        &fixture
+            .raw_command_with(&source, "export", &live, true, &[])
+            .output()
+            .unwrap(),
+    );
     assert_eq!(
-        refused["error"]["message"],
-        "local work input is invalid: export destination already contains a different candidate"
+        refused["error"]["code"],
+        "task_sync_incremental_basis_unavailable"
+    );
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("--rebuild"),
+        "{refused}"
     );
     assert_plain_text_kept(
-        &fixture.exchange_snapshot(&source, "export", &path, false),
+        &fixture
+            .raw_command_with(&source, "export", &live, false, &[])
+            .output()
+            .unwrap(),
         &refused,
     );
+    assert!(!live.exists());
 
     // An ordinary file cannot stand in for the data folder. Admission stops
     // before the folder reader and preserves the file.

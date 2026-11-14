@@ -28,10 +28,18 @@ The ordinary CLI folder route is confined to the selected project's
 observe the dedicated worktree, orphan branch and data-only paths; they refuse
 an arbitrary candidate directory or the code checkout's `.engram/`. Their
 `--branch` defaults to `engram-data`. Folder imports accept the data folder's
-ordinary policy files; an exact export retry preserves them. The low-level
+ordinary policy files, and export leaves them alone. The ordinary cycle is
+export, commit, merge, commit, import. Both commands are incremental by
+default: export writes only the tasks the project feed changed since this
+host's recorded folder head, and import reads, through a verified Git diff,
+only the task paths changed since the last commit it applied completely, so
+their cost follows the change. `--rebuild` is the explicit complete route; see
+[task planning text](task-planning-text.md#git-folder-exchange) for the head,
+the refusals and their remedies. The low-level
 filesystem-neutral directory port remains available for private candidates,
 while `task-sync prepare` retains its separate private preparation contract.
-None of these folder commands advances a branch or publishes to a remote.
+None of these folder commands commits, advances a branch or publishes to a
+remote.
 
 ## Reconciliation storage foundation
 

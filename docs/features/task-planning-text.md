@@ -20,47 +20,84 @@ local store with `engram init` and provision its data worktree explicitly with
 branch and defaults to `engram-data`; it must match the observed worktree.
 
 ```text
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --origin-machine host-A
-engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --include-notes --origin-machine host-A
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis --dry-run
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --basis OWN_EXPORT/project.json --json
+engram --home HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram
+engram --home HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --include-notes --origin-machine host-A
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --json
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --empty-basis
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --basis OWN_EXPORT/project.json
+engram --home HOME --project-file PROJECT/.engram-project task-sync export PROJECT/.engram-data/.engram --rebuild
+engram --home HOME --project-file PROJECT/.engram-project task-sync import PROJECT/.engram-data/.engram --rebuild --basis OWN_EXPORT/project.json
 ```
 
-The two homes contain isolated stores for the same stable project id. Each host
-selects its own main-code marker and dedicated data worktree. Export
-publishes a new Git folder containing `project.json` and
-`tasks/<full-uuid>.json`. An existing equivalent folder is left byte-for-byte
-unchanged, including ordinary `.gitignore` and `.gitattributes` policy files;
-a different folder is refused. Export does not replace a resolved merge or advance
-a branch. Publication prepares a sibling staging
-directory, reads it back, and moves it without replacing an existing
-destination. An operating system that cannot perform that directory move
-without replacement refuses publication.
+Each host selects its own main-code marker, store home and dedicated data
+worktree for the same stable project id. The ordinary cycle is: export, commit
+the folder in the data worktree, merge the other host's data branch and commit
+the merge, then import. Both commands are incremental by default: they write or
+read only the tasks that changed since this host's last export or import, so
+their cost follows the change, not the size of the folder. `--rebuild` is the
+explicit complete route; each receipt names its `route`.
 
-A folder's `project.json` holds three members. `project` is the planning
-document: `format: "engram-task-planning-v1"`, `project_id`, and
-`notes_included: true` for an opt-in note export (otherwise the field and task
-note arrays are absent). `profile` is the disclosure profile the export used:
-`include_notes`, which both hosts share, and the exporting host's own asserted
-`origin_machine` alias, or `null`.
-`folder_exchange` marks the folder `complete` and carries its
-`export_basis.inventory_fingerprint`, the content fingerprint of the planning
-documents it holds. Activity is independent of note selection. There is no
-store identity or runtime cursor.
+A folder holds `project.json` and `tasks/<full-uuid>.json`, beside ordinary
+`.gitignore` and `.gitattributes` policy files that export leaves alone.
+`project.json` holds three members. `project` is the planning document:
+`format: "engram-task-planning-v1"`, `project_id`, and `notes_included: true`
+for an opt-in note export (otherwise the field and task note arrays are
+absent). `profile` is the disclosure profile the export used: `include_notes`,
+which both hosts share, and the exporting host's own asserted `origin_machine`
+alias, or `null`. `folder_exchange` marks the folder `complete` and carries its
+`incremental` membership basis: the order-independent `inventory_root` and
+`task_count` of the task files and the exporter's own project-feed `cut`. A
+complete export also carries `export_basis.inventory_fingerprint`, the ordered
+content fingerprint of every document, which an incremental export cannot keep
+without reading every task. A build that knows only the fingerprint refuses
+the membership basis rather than misreading it. Activity is independent of note
+selection. There is no store identity or runtime cursor.
 
 ## Git folder exchange
 
 `task-sync export` and `task-sync import` are the folder route; no other
 command exchanges this folder profile. Private snapshots may be retained under
 `target/` for merge bases; they are not accepted as public import/export paths.
-Export reads the store in one snapshot and
-publishes its shared planning together with that snapshot's export basis. The
-first export of a store with no exchange history publishes its whole planning.
 
-Import applies a resolved folder against a destination basis that the caller
-selects. Exactly one selection is required:
+Each export and import records a folder head per project and note selection:
+the folder it left on disk (its membership root and count), the project-feed
+cut it reflects, the last data commit an import applied completely (the next
+import's diff base), the commit the folder held after an import, and the tasks
+an import held. Recording a head checks, in the same transaction, that its
+predecessor is still current, so a concurrent export or import refuses as a
+moved head; the remedy is to export or import again. Heads are a rebuildable
+projection over immutable records.
+
+**Export.** The first export of a store, and `--rebuild`, write the complete
+folder: every exported task, with every other task file removed. Otherwise
+export first checks that the folder on disk is still the one the head
+records: unchanged since the import's commit, or carrying the envelope the last
+export wrote. It then takes the tasks the project feed changed since the head's
+cut, reads the old file of only those tasks, writes only those files and
+updates the membership root by arithmetic. When nothing changed it writes
+nothing and reports `route: "unchanged"`. A folder that is not the recorded one
+refuses as `task_sync_incremental_basis_unavailable`: commit or restore it, or
+run `--rebuild`. An export under another profile than its head's, or after the
+project feed lost its anchor, refuses the same way and names `--rebuild`. The
+export journals its exact file operations and its next head in the data
+worktree's Git directory, records the head, and only then touches the folder;
+the next export finishes an interrupted publication whose head was recorded and
+drops one whose head was not.
+
+**Import.** With a head that names an applied commit, import is incremental. It
+requires the folder committed in the data worktree (otherwise
+`task_sync_commit_context_required`) and reads, through Git, only the task
+paths changed between that commit and the worktree's HEAD. That commit must be
+an ancestor of HEAD: a force-moved branch refuses as
+`task_sync_source_history_diverged`, and a shallow clone that cannot prove it as
+`task_sync_source_history_unavailable`; both name `--rebuild`. The changed
+tasks are admitted one by one inside one transaction; a local change since the
+head to any task the admission reads refuses as divergent planning: export and
+commit it, merge, then import again. An incoming commit equal to the recorded
+one, with nothing held, reports `route: "unchanged"`.
+
+The complete route, the first import of a store or `--rebuild`, reads the whole
+folder against a destination basis that the caller selects:
 
 - `--basis FILE` names this host's own `project.json` from its export before
   the Git merge, for example as written by
@@ -70,14 +107,16 @@ selects. Exactly one selection is required:
 - `--empty-basis` imports into a destination that holds no shared planning yet.
   The import checks inside its write transaction that the destination is empty.
 
-The folder's own embedded basis is never used for this comparison, and
-omitting both flags is a usage error, not a fallback. A basis must belong to
-this project and share the folder's note selection (`include_notes`). The
-origin-machine alias is host-local: each host exports under its own alias, so
-a folder from another host may carry a different one. Import compares the
-destination's current planning, exported under the basis's own profile, with
-the selected basis inside its write transaction; any local planning change
-since that export refuses as divergent planning, and nothing is written.
+Selecting both is a usage error; selecting neither on the complete route
+refuses and names both. The folder's own embedded basis is never used for this
+comparison. A basis must belong to this project and share the folder's note
+selection (`include_notes`). The origin-machine alias is host-local: each host
+exports under its own alias, so a folder from another host may carry a
+different one. Import compares the destination's current planning, exported
+under the basis's own profile, with the selected basis inside its write
+transaction; any local planning change since that export refuses as divergent
+planning, and nothing is written. A basis written by an incremental export
+carries no fingerprint; it is compared by membership root and count instead.
 
 The basis is a content comparison, not an authenticated host identity. Equal
 bytes from another host cannot be told apart from this host's own, so
@@ -106,15 +145,14 @@ is unapplied, both import and `--dry-run` exit `3`, distinct from a whole-import
 refusal (`1`). Stdout still contains the complete JSON receipt, including all
 applied changes and each held/refused task's reason. Stderr names the task
 files that need attention. Applied changes stay applied; dry run writes nothing.
-Do not advance the incoming commit as the exchange base on exit `3`. Keep its
-task documents and Git commit before the next export:
-replacing them with a routine local export would overwrite the incoming edits.
-The existing export-overwrite refusal remains in force. After local execution
-ends, prepare a fresh local export and basis while preserving the incoming commit.
-Re-merge that retained commit against the fresh export using the common commit,
-preserving newer local edits, and import the newly resolved documents. Do not
-replay the old incoming documents against the fresh basis. Only a complete import
-advances the caller's base. No separate durable pending-document queue is introduced.
+On exit `3` the head keeps the earlier applied commit as its diff base and
+records the held tasks. Their incoming bytes stay in the folder: no export, the
+complete route included, rewrites a held task's file, and a complete export
+restores one that went missing from the commit the import read. An export
+refuses while a held task also changed locally. Resolve why each task was held
+here, for example by releasing the claim, then import again: the next import
+reads the held tasks again from the earlier commit. Only a complete import
+advances the diff base.
 
 A later export keeps the note selection its baseline was recorded with; an
 export under another note selection refuses.

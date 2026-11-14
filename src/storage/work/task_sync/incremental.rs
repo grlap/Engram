@@ -205,7 +205,10 @@ fn plan_folder_export(
         ));
     }
     if let Err(reason) = anchored(store, &feed, &head.cut, cut.position) {
-        return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(reason?));
+        return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(format!(
+            "{}; run `engram task-sync export --rebuild` to write the complete folder and record it afresh",
+            reason?
+        )));
     }
     super::baseline::validate_note_selection(connection, project, profile.include_notes)?;
     let changed = super::super::feed_tasks::changed_between(
@@ -220,7 +223,7 @@ fn plan_folder_export(
         .collect::<Vec<_>>();
     if !conflicting.is_empty() {
         return Err(TaskSyncRefusal::ImportConflict.invalid(format!(
-            "a task held by the last import changed here too; resolve it before exporting: {}",
+            "a task held by the last import changed here too; resolve why it was held and import again before exporting: {}",
             conflicting.join(", ")
         )));
     }

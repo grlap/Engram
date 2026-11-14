@@ -107,7 +107,7 @@ fn read(
     if old.profile.include_notes != new.profile.include_notes {
         return Err(TaskSyncRefusal::DivergentPlanning
             .invalid(
-                "task commit delta note selection differs from its prior basis; rebuild explicitly",
+                "task commit delta note selection differs from its prior basis; import the complete folder with `--rebuild`",
             )
             .into());
     }
@@ -183,7 +183,7 @@ impl VerifiedTaskDelta {
         if self.root != declared {
             return Err(TaskSyncRefusal::InventoryRootMismatch
                 .invalid(format!(
-                    "the Git delta from {} to {} implies inventory root {}, not the declared {declared}",
+                    "the Git delta from {} to {} implies inventory root {}, not the declared {declared}; import the complete folder with `--rebuild`",
                     self.base_commit, self.incoming_commit, self.root
                 ))
                 .into());
@@ -258,13 +258,13 @@ fn require_ancestor(reader: &Reader<'_>, base: &str, incoming: &str) -> Result<(
             {
                 return Err(TaskSyncRefusal::SourceHistoryUnavailable
                     .invalid(format!(
-                        "a shallow repository cannot prove {incoming} descends from the recorded source commit {base}; no object is fetched"
+                        "a shallow repository cannot prove {incoming} descends from the recorded source commit {base}; no object is fetched. Fetch the full history (`git fetch --unshallow`), or import the complete folder with `--rebuild`"
                     ))
                     .into());
             }
             Err(TaskSyncRefusal::SourceHistoryDiverged
                 .invalid(format!(
-                    "the recorded source commit {base} is not an ancestor of {incoming}; rebuild explicitly"
+                    "the recorded source commit {base} is not an ancestor of {incoming}, as after a force-moved data branch; import the complete folder with `--rebuild`"
                 ))
                 .into())
         }

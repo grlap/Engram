@@ -21,7 +21,7 @@ const MAX_TASKS: usize = 100_000;
 mod envelope;
 mod evidence;
 mod incremental;
-pub(crate) use envelope::prepare_folder_documents;
+pub(crate) use envelope::{complete_envelope, prepare_folder_documents};
 pub use incremental::FolderWrite;
 
 #[derive(Clone, Copy)]
@@ -98,9 +98,9 @@ struct FolderProjectDocument {
     folder_exchange: FolderExchangeDocument,
 }
 
-/// Exactly one basis: the complete folder's ordered fingerprint, or an
-/// incremental export's membership root. A build that knows only the
-/// fingerprint refuses the incremental form rather than misreading it.
+/// The complete folder's ordered fingerprint, an incremental export's
+/// membership root, or both after a complete export. A build that knows only
+/// the fingerprint refuses the membership root rather than misreading it.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FolderExchangeDocument {
@@ -119,14 +119,15 @@ impl FolderExchangeDocument {
                 .into());
         }
         match (&self.export_basis, &self.incremental) {
-            (Some(_), None) => Ok(()),
-            (None, Some(incremental)) if incremental.format == INCREMENTAL_FORMAT => Ok(()),
-            (None, Some(_)) => Err(TaskSyncRefusal::InvalidGraph
-                .invalid("unsupported incremental task folder format")
+            (_, Some(incremental)) if incremental.format != INCREMENTAL_FORMAT => {
+                Err(TaskSyncRefusal::InvalidGraph
+                    .invalid("unsupported incremental task folder format")
+                    .into())
+            }
+            (None, None) => Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task folder exchange must carry a basis")
                 .into()),
-            _ => Err(TaskSyncRefusal::InvalidGraph
-                .invalid("task folder exchange must carry exactly one basis")
-                .into()),
+            _ => Ok(()),
         }
     }
 }
@@ -271,12 +272,14 @@ pub(crate) fn folder_from_documents(
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     let fingerprint = documents_fingerprint(&tree.folder_documents()?);
     if verify_inventory {
-        let consistent = match (
-            &envelope.folder_exchange.export_basis,
-            &envelope.folder_exchange.incremental,
-        ) {
-            (Some(basis), _) => basis.inventory_fingerprint == fingerprint,
-            (None, Some(basis)) => {
+        let fingerprint_consistent = envelope
+            .folder_exchange
+            .export_basis
+            .as_ref()
+            .is_none_or(|basis| basis.inventory_fingerprint == fingerprint);
+        let root_consistent = match &envelope.folder_exchange.incremental {
+            None => true,
+            Some(basis) => {
                 basis.task_count == tree.tasks.len() as u64
                     && basis.inventory_root
                         == tree.tasks.iter().try_fold(
@@ -284,8 +287,8 @@ pub(crate) fn folder_from_documents(
                             crate::task_sync::inventory::InventoryRoot::including,
                         )?
             }
-            (None, None) => false,
         };
+        let consistent = fingerprint_consistent && root_consistent;
         if !consistent {
             return Err(TaskSyncRefusal::InvalidGraph
                 .invalid("task folder exchange inventory fingerprint is inconsistent")

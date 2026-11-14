@@ -671,7 +671,7 @@ fn import_exit_code(result: &TaskSyncImportResult, folder: &Path) -> ExitCode {
     }
     if partial {
         eprintln!(
-            "Partial task import: preserve the incoming Git commit before the next export; a routine export now would overwrite its pending edits. Re-merge that commit against a fresh local export using the common commit, then import the resolved documents with the fresh basis. Do not replay the old documents over newer local edits or advance the incoming commit as the exchange base. Applied changes remain applied; --dry-run writes nothing."
+            "Partial task import: each held task keeps the incoming bytes in the folder, and an export leaves them in place. Resolve why it was held here, for example by releasing the claim, then import again: the next import reads the held tasks again from the last completely imported commit. Applied changes remain applied; --dry-run writes nothing."
         );
         ExitCode::from(PARTIAL_IMPORT_EXIT)
     } else {

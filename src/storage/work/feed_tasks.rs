@@ -132,7 +132,7 @@ pub(super) fn changed_between(
     if covered != through.saturating_sub(after).max(0) {
         return Err(
             crate::task_sync::TaskSyncRefusal::FeedProjectionGap.invalid(format!(
-                "the changed-task index covers {covered} of the {} project-feed positions after {after}; repair the projections",
+                "the changed-task index covers {covered} of the {} project-feed positions after {after}; repair the projections with `engram doctor --repair-projections`",
                 through.saturating_sub(after).max(0)
             )),
         );

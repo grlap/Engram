@@ -145,10 +145,7 @@ fn task_sync_cli_partial_import_stops_base_advancement_and_preserves_held_remote
         ),
         "{guidance}"
     );
-    assert!(
-        guidance.contains("before the next export") && guidance.contains("overwrite"),
-        "{guidance}"
-    );
+    assert!(guidance.contains("import again"), "{guidance}");
     // This is the wrapper's success branch: partial status must not enter it.
     if output.status.success() {
         fs::write(&caller_base, &incoming_commit).unwrap();
@@ -164,8 +161,15 @@ fn task_sync_cli_partial_import_stops_base_advancement_and_preserves_held_remote
     let live = data_worktree::folder(&marker);
     let pending_file = live.join(format!("tasks/{}.json", held.0));
     let pending_bytes = fs::read(&pending_file).unwrap();
-    let export_refusal = sync_output(&a, &marker, "export", &live, &["--json"]);
-    assert_eq!(export_refusal.status.code(), Some(1));
+    // An ordinary export leaves the held task's incoming bytes in place.
+    let unchanged = sync_output(&a, &marker, "export", &live, &["--json"]);
+    assert!(
+        unchanged.status.success(),
+        "{}",
+        String::from_utf8_lossy(&unchanged.stderr)
+    );
+    let receipt: Value = serde_json::from_slice(&unchanged.stdout).unwrap();
+    assert_eq!(receipt["route"], "unchanged");
     assert_eq!(fs::read(&pending_file).unwrap(), pending_bytes);
     work(
         &a,
