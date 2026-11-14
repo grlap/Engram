@@ -116,20 +116,41 @@ fn assert_imports_once(fixture: &Fixture, target: &Path, folder: &Path) {
 
 #[test]
 fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
-    let fixture = Fixture::new();
+    let mut fixture = Fixture::new();
+    if cfg!(windows) {
+        let alias = fixture
+            .root
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_ascii_uppercase();
+        fixture.marker = fixture.root.with_file_name(alias).join(".engram-project");
+    }
     let candidate = fixture.candidate("candidate");
     let target = fixture.store("target");
     let path = candidate.join("project.json");
     let original = fs::read(&path).unwrap();
     fs::write(&path, vec![b' '; 1024 * 1024 + 1]).unwrap();
     let plain = fixture.exchange_snapshot(&target, "import", &candidate, false);
-    assert!(!plain.status.success());
-    assert!(stderr(&plain).contains(&format!(
-            "reading {}",
-            data_worktree::folder(&fixture.marker)
-                .join("project.json")
-                .display()
-        )));
+    let plain_stderr = stderr(&plain);
+    assert!(!plain.status.success(), "{plain_stderr}");
+    let data = engram::task_sync::data_worktree::DataWorktree::observe_project(
+        &fixture.marker,
+        &engram::ProjectId(PROJECT.into()),
+        "engram-data",
+    )
+    .unwrap();
+    let reading_path = data.checkout.join(".engram/project.json");
+    let reading_path = engram::task_sync::git::plain_path(&reading_path).unwrap_or(reading_path);
+    let input_path = data_worktree::folder(&fixture.marker).join("project.json");
+    if cfg!(windows) {
+        assert_ne!(input_path.as_os_str(), reading_path.as_os_str());
+    }
+    assert!(
+        plain_stderr.contains(&format!("reading {}", reading_path.display())),
+        "{plain_stderr}"
+    );
     let refused = refusal(&fixture.exchange_snapshot(&target, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "task_sync_destination_file_limit");
     assert_eq!(
@@ -142,18 +163,15 @@ fn task_sync_json_file_refusal_omits_the_plain_reading_path_context() {
         refused["error"]["message"],
         "local work input is invalid: task candidate file must be an ordinary bounded file"
     );
-    let encoded_path = serde_json::to_string(
-        &data_worktree::folder(&fixture.marker)
-            .join("project.json")
-            .to_string_lossy(),
-    )
-    .unwrap();
     // Compare JSON with JSON so Windows backslash escaping cannot hide a path.
-    assert!(
-        !refused
-            .to_string()
-            .contains(&encoded_path[1..encoded_path.len() - 1])
-    );
+    for omitted_path in [&reading_path, &input_path] {
+        let encoded_path = serde_json::to_string(&omitted_path.to_string_lossy()).unwrap();
+        assert!(
+            !refused
+                .to_string()
+                .contains(&encoded_path[1..encoded_path.len() - 1])
+        );
+    }
     assert!(refused["error"].get("path").is_none());
     assert_plain_text_kept(&plain, &refused);
     fs::write(&path, original).unwrap();
