@@ -278,7 +278,7 @@ fn derive(connection: &Connection) -> Result<(Heads, Vec<String>), StoreError> {
                 let mut seen = BTreeSet::new();
                 let mut cursor = Some((*tip).clone());
                 let mut sound = true;
-                while let Some(id) = cursor {
+                while let Some(id) = cursor.take() {
                     // A predecessor outside the chain or a repeated record
                     // leaves the chain unsound.
                     let Some(previous) = records.get(&id) else {
