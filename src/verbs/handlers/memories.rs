@@ -14,16 +14,30 @@ impl AgentVerbs {
     /// Returns [`VerbError`] when authorization, key, size, redaction, or
     /// revision-basis or terminal lifecycle admission fails.
     pub fn remember(&self, input: RememberInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        self.remember_with_import_provenance(input, None, now)
+    }
+
+    /// `remember` with explicit bounded, reported shared source metadata.
+    ///
+    /// # Errors
+    /// Refuses invalid source metadata or ordinary memory-write failures.
+    pub fn remember_with_import_provenance(
+        &self,
+        input: RememberInput,
+        import_provenance: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<Receipt, VerbError> {
         let retiring_target =
             parse_retiring_target(input.retires_with.as_deref(), input.clear_retires_with)?;
         let edit = super::super::memory_change::edit(input.append, input.section.as_deref())?;
-        let receipt = self.service.revise_project_memory(
+        let receipt = self.service.revise_project_memory_with_import_provenance(
             input.text,
             input.key,
             input.revise,
             input.expected_revision,
             retiring_target,
             &edit,
+            import_provenance,
             now,
         )?;
         let (changed, reads) = super::super::memory_change::lines(&receipt);

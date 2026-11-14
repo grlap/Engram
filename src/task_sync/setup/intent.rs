@@ -132,7 +132,7 @@ pub(super) fn read(bound: &Directory, operation: uuid::Uuid) -> Result<Intent> {
     );
     for edit in &intent.basis.edits {
         ensure!(
-            super::policy::propose(&edit.path, edit.before.clone())? == *edit,
+            super::policy::validate_recorded(edit)?,
             "prepared setup edit differs from its recorded input"
         );
     }

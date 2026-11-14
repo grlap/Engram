@@ -11,11 +11,12 @@ const ATTRIBUTES: &str = "* text eol=lf -filter diff merge -working-tree-encodin
 
 fn ignore() -> String {
     let id = "[0-9a-f]".repeat(32);
+    let stored_id = "[0-9a-f]".repeat(64);
     let shard = "[0-9a-f]".repeat(2);
     // Admit only the carrier's UUID directories and JSON leaves. The evidence
     // reader still verifies shard agreement, ordinary modes and pack contents.
     format!(
-        "{IGNORE}!/evidence/\n/evidence/*\n!/evidence/{id}/\n/evidence/*/*\n!/evidence/{id}/{shard}/\n/evidence/*/*/*\n!/evidence/{id}/{shard}/{id}.json\n"
+        "{IGNORE}!/memories/\n/memories/*\n!/memories/*/\n/memories/*/*\n!/memories/*/head.json\n!/memories/*/{id}.json\n!/memories/*/{stored_id}.json\n!/evidence/\n/evidence/*\n!/evidence/{id}/\n/evidence/*/*\n!/evidence/{id}/{shard}/\n/evidence/*/*/*\n!/evidence/{id}/{shard}/{id}.json\n"
     )
 }
 
@@ -61,4 +62,105 @@ pub(super) fn propose(path: &str, before: Option<Vec<u8>>) -> Result<Edit> {
         before,
         after,
     })
+}
+
+// Prepared intents own their exact proposed bytes. Extending new allowlists
+// must not invalidate an already prepared, unpublished operation.
+pub(super) fn validate_recorded(edit: &Edit) -> Result<bool> {
+    let current = propose(&edit.path, edit.before.clone())?;
+    if current == *edit {
+        return Ok(true);
+    }
+    if edit.path != ".gitignore" {
+        return Ok(false);
+    }
+    let text = String::from_utf8(current.after)?;
+    let (prefix, block) = text.split_at(
+        text.find(BEGIN)
+            .ok_or_else(|| anyhow::anyhow!("managed policy block missing"))?,
+    );
+    let id = "[0-9a-f]".repeat(32);
+    let stored_id = "[0-9a-f]".repeat(64);
+    let without_stored = block.replace(&format!("!/memories/*/{stored_id}.json\n"), "");
+    let before_memories = without_stored.replace(&format!("!/memories/\n/memories/*\n!/memories/*/\n/memories/*/*\n!/memories/*/head.json\n!/memories/*/{id}.json\n"), "");
+    Ok(
+        edit.after == format!("{prefix}{without_stored}").into_bytes()
+            || edit.after == format!("{prefix}{before_memories}").into_bytes(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn memory_sync_generated_policy_admits_both_stored_identity_shapes() {
+        let owned = crate::test_support::temp_home().unwrap();
+        let root = owned.path().join("policy-repository");
+        std::fs::create_dir(&root).unwrap();
+        let query = |args: &[&str], missing, input: Option<&[u8]>| {
+            crate::task_sync::git::query(
+                &root,
+                args,
+                missing,
+                input,
+                crate::operation_time::MINIMUM,
+            )
+        };
+        query(&["init", "-q", "--initial-branch=main"], false, None).unwrap();
+        let directory = root.join(".engram/memories/rule");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            root.join(".engram/.gitignore"),
+            propose(".gitignore", None).unwrap().after,
+        )
+        .unwrap();
+        let ids = [
+            crate::ObjectId::mint(),
+            crate::ObjectId::from_canonical_bytes(b"historical policy identity"),
+        ];
+        let mut input = Vec::new();
+        for name in
+            std::iter::once("head.json".to_owned()).chain(ids.iter().map(|id| format!("{id}.json")))
+        {
+            std::fs::write(directory.join(&name), "fixture").unwrap();
+            input.extend_from_slice(format!(".engram/memories/rule/{name}\0").as_bytes());
+        }
+        assert!(
+            query(
+                &["check-ignore", "--no-index", "-z", "--stdin"],
+                true,
+                Some(&input)
+            )
+            .unwrap()
+            .is_empty()
+        );
+        let unowned = b".engram/memories/rule/unrelated.json\0";
+        assert_eq!(
+            query(
+                &["check-ignore", "--no-index", "-z", "--stdin"],
+                true,
+                Some(unowned)
+            )
+            .unwrap(),
+            unowned.to_vec()
+        );
+    }
+
+    #[test]
+    fn memory_sync_policy_keeps_prepared_intent_bytes_admissible() {
+        let current = propose(".gitignore", Some(b"# operator rule\n".to_vec())).unwrap();
+        assert!(validate_recorded(&current).unwrap());
+        let id = "[0-9a-f]".repeat(32);
+        let stored = "[0-9a-f]".repeat(64);
+        let old = String::from_utf8(current.after.clone())
+            .unwrap()
+            .replace(&format!("!/memories/*/{stored}.json\n"), "");
+        let mut recorded = current.clone();
+        recorded.after = old.as_bytes().to_vec();
+        assert!(validate_recorded(&recorded).unwrap());
+        recorded.after = old.replace(&format!("!/memories/\n/memories/*\n!/memories/*/\n/memories/*/*\n!/memories/*/head.json\n!/memories/*/{id}.json\n"), "").into_bytes();
+        assert!(validate_recorded(&recorded).unwrap());
+        recorded.after.extend_from_slice(b"unexpected\n");
+        assert!(!validate_recorded(&recorded).unwrap());
+    }
 }

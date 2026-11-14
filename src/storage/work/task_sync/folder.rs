@@ -50,6 +50,130 @@ pub struct TaskSyncFolderExport {
 }
 
 impl SqliteStore {
+    /// Captures the task and memory components at one SQLite read cut, and
+    /// withholds a whole key if its historical task target is not disclosed.
+    ///
+    /// # Errors
+    /// Refuses inconsistent task planning or unreadable canonical storage.
+    pub fn export_task_sync_folder_with_memories(
+        &self,
+        project: &ProjectId,
+        profile: &ExportProfile,
+        selected: &BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        resolutions: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+    ) -> Result<
+        (
+            TaskSyncFolderExport,
+            crate::task_sync::memories::ExportOutcome,
+        ),
+        StoreError,
+    > {
+        self.work_read_snapshot(|store| {
+            let tasks = folder_export_on(&store.connection, project, profile)?;
+            let mut memories = store.export_project_memory_sync_with_resolutions(project, selected, resolutions)?;
+            let target_ids = tasks.tree.tasks.iter().map(|task| task.id).collect::<HashSet<_>>();
+            let withheld = memories.keys.iter().filter_map(|(key, history)| {
+                history.revisions.values().any(|revision| matches!(&revision.provenance.retiring_target, Some(crate::domain::ProjectMemoryRetiringTarget::Local { work_id, .. }) if !target_ids.contains(work_id))).then_some(key.clone())
+            }).collect::<Vec<_>>();
+            for key in withheld {
+                memories.keys.remove(&key);
+                memories.withheld.push(crate::task_sync::memories::WithheldKey { key, reason: "historical retirement target is outside selected task profile".into() });
+            }
+            Ok((tasks,memories))
+        })
+    }
+
+    /// Runs task application and dependent per-key memories in one transaction.
+    /// Successful keys retain their writes; a refused key rolls back to its
+    /// savepoint. Dry runs leave imported task targets visible until every
+    /// memory has been checked, then roll the entire operation back.
+    ///
+    /// # Errors
+    /// Refuses malformed/foreign input, task application errors or transaction
+    /// failures. Memory-specific refusals are reported without consuming a key.
+    pub fn apply_task_sync_folder_with_memories(
+        &mut self,
+        request: TaskSyncFolderApply<'_>,
+        idempotency_key: &str,
+        memories: &BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        options: &BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+        dry_run: bool,
+    ) -> Result<crate::task_sync::memories::FolderImportOutcome, StoreError> {
+        use crate::task_sync::memories::{FolderImportOutcome, ImportRequest, KeyImportResult};
+        for (key, selected) in memories {
+            selected.validate()?;
+            if key != &selected.key || &selected.project_id != request.project {
+                return Err(invalid("memory component belongs to another project/key"));
+            }
+        }
+        if options.keys().any(|key| !memories.contains_key(key)) {
+            return Err(invalid("memory resolution names an absent selected key"));
+        }
+        let session = request
+            .actor
+            .session_id
+            .as_ref()
+            .ok_or_else(|| invalid("memory import recorder requires its local session"))?;
+        let transaction = self.begin_work_mutation()?;
+        let mut tasks = apply_task_sync_folder_on(&transaction, request, idempotency_key)?;
+        tasks.dry_run = dry_run;
+        let mut results = Vec::new();
+        let mut partial = false;
+        for (key, selected) in memories {
+            let history = crate::storage::project_memory::project_memory_history_on(
+                &transaction,
+                request.project,
+                key,
+            )?;
+            let defaults = crate::task_sync::memories::ImportOptions::default();
+            let options = options.get(key).unwrap_or(&defaults);
+            transaction.execute_batch("SAVEPOINT engram_memory_key")?;
+            let applied = Self::import_project_memory_sync_on(
+                &transaction,
+                &ImportRequest {
+                    selected,
+                    expected_local_head: history.last().map(|entry| &entry.version_id),
+                    actor: request.actor,
+                    session_id: session,
+                    now: request.now,
+                    dry_run,
+                    merge: options.merge.as_ref(),
+                    seed: options.seed.as_ref(),
+                    mark_untagged_seed: options.mark_untagged_seed,
+                },
+            );
+            match applied {
+                Ok(outcome) => {
+                    transaction.execute_batch("RELEASE engram_memory_key")?;
+                    results.push(KeyImportResult::Applied {
+                        key: key.clone(),
+                        outcome,
+                    });
+                }
+                Err(error) => {
+                    transaction.execute_batch(
+                        "ROLLBACK TO engram_memory_key; RELEASE engram_memory_key",
+                    )?;
+                    partial = true;
+                    results.push(KeyImportResult::Refused {
+                        key: key.clone(),
+                        reason: error.to_string(),
+                    });
+                }
+            }
+        }
+        if dry_run {
+            transaction.rollback()?;
+        } else {
+            transaction.commit()?;
+        }
+        Ok(FolderImportOutcome {
+            tasks,
+            memories: results,
+            memory_partial: partial,
+        })
+    }
+
     /// Applies admitted folder changes and records their shared baseline
     /// atomically, reporting unapplied tasks individually. A replayed idempotency key returns its receipt
     /// without adding a second baseline event.

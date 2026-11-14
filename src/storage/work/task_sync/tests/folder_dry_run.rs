@@ -1,12 +1,138 @@
 use super::super::folder::TaskSyncFolderApply;
 use super::*;
 use crate::task_sync::progress::ExportProfile;
+use std::collections::BTreeMap;
 
 fn profile() -> ExportProfile {
     ExportProfile {
         include_notes: false,
         origin_machine: None,
     }
+}
+
+#[test]
+fn memory_sync_combined_dry_run_sees_new_task_targets_and_rolls_back_everything() {
+    use crate::task_sync::memories::{self, Head, ImportProvenance, KeyHistory, Revision, Source};
+    let tree = candidate();
+    let recorder = actor("combined-importer");
+    let target = &tree.tasks[0];
+    let body = "review this rule when the incoming task retires";
+    let id = ObjectId::mint();
+    let tag = ImportProvenance {
+        format: memories::FORMAT.into(),
+        project_id: tree.project.project_id.clone(),
+        key: "rule".into(),
+        revision_id: id.clone(),
+        previous: None,
+        body_sha256: memories::body_sha256(body),
+        retiring_target: Some(crate::domain::ProjectMemoryRetiringTarget::Local {
+            work_id: target.id,
+            work_ref: format!("w-{}", &target.id.0.simple().to_string()[20..]),
+        }),
+        source_clear: false,
+        source: Source::from_actor(&recorder, at(1)),
+    };
+    let selected = KeyHistory {
+        format: memories::FORMAT.into(),
+        project_id: tree.project.project_id.clone(),
+        key: "rule".into(),
+        head: Head::Active {
+            chain: vec![id.clone()],
+        },
+        revisions: BTreeMap::from([(
+            id,
+            Revision {
+                provenance: tag,
+                body: body.into(),
+            },
+        )]),
+    };
+    let mut held = selected.clone();
+    held.key = "held".into();
+    for revision in held.revisions.values_mut() {
+        revision.provenance.key = held.key.clone();
+        if let Some(crate::domain::ProjectMemoryRetiringTarget::Local { work_id, .. }) =
+            &mut revision.provenance.retiring_target
+        {
+            *work_id = WorkId::new();
+        }
+    }
+    let memories = BTreeMap::from([("rule".into(), selected), ("held".into(), held)]);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let profile = profile();
+    let basis = store
+        .export_task_sync_folder(&tree.project.project_id, &profile)
+        .unwrap()
+        .export_basis;
+    let before = state(&store);
+    let options = BTreeMap::new();
+    let dry = store
+        .apply_task_sync_folder_with_memories(
+            request(&tree, &recorder, &basis, &profile, at(5)),
+            "combined",
+            &memories,
+            &options,
+            true,
+        )
+        .unwrap();
+    assert!(dry.memory_partial && dry.tasks.dry_run);
+    assert!(
+        dry.memories
+            .iter()
+            .any(|r| matches!(r, memories::KeyImportResult::Applied { key, .. } if key == "rule"))
+    );
+    assert!(
+        dry.memories
+            .iter()
+            .any(|r| matches!(r, memories::KeyImportResult::Refused { key, .. } if key == "held"))
+    );
+    assert_eq!(state(&store), before);
+    let actual = store
+        .apply_task_sync_folder_with_memories(
+            request(&tree, &recorder, &basis, &profile, at(5)),
+            "combined",
+            &memories,
+            &options,
+            false,
+        )
+        .unwrap();
+    assert!(actual.memory_partial);
+    assert_eq!(actual.memories.len(), dry.memories.len());
+    assert!(
+        store
+            .project_memory_sync_head(&tree.project.project_id, "rule")
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        store
+            .project_memory_sync_head(&tree.project.project_id, "held")
+            .unwrap()
+            .is_none()
+    );
+    let after = state(&store);
+    let repeated = store
+        .apply_task_sync_folder_with_memories(
+            request(&tree, &recorder, &basis, &profile, at(6)),
+            "combined",
+            &memories,
+            &options,
+            false,
+        )
+        .unwrap();
+    assert!(repeated.memories.iter().any(|r| matches!(r, memories::KeyImportResult::Applied { key, outcome } if key == "rule" && outcome.duplicate)));
+    assert_eq!(state(&store), after);
+    let (_, exported) = store
+        .export_task_sync_folder_with_memories(
+            &tree.project.project_id,
+            &profile,
+            &memories,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+    assert!(exported.withheld.is_empty());
+    assert_eq!(exported.keys.len(), 1);
+    assert!(exported.keys.contains_key("rule"));
 }
 
 fn request<'a>(

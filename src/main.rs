@@ -697,6 +697,10 @@ enum WorkCommand {
         /// Memory body as an alternative to positional TEXT.
         #[arg(long = "text", value_name = "TEXT")]
         text_flag: Option<String>,
+        /// Reported shared source metadata: engram:project-memory-import:v1:JSON.
+        /// Bound to the project, explicit key and body; never grants authority.
+        #[arg(long, requires = "key")]
+        import_provenance: Option<String>,
         /// Safe permanent project-memory key.
         #[arg(long)]
         key: Option<String>,
@@ -1896,6 +1900,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         WorkCommand::Remember {
             text,
             text_flag,
+            import_provenance,
             key,
             revise,
             expected_revision,
@@ -1903,7 +1908,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             clear_retires_with,
             append,
             section,
-        } => verbs.remember(
+        } => verbs.remember_with_import_provenance(
             RememberInput {
                 text: text
                     .or(text_flag)
@@ -1916,6 +1921,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 append,
                 section,
             },
+            import_provenance.as_deref(),
             now,
         ),
         WorkCommand::Memories {

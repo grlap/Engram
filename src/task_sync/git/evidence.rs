@@ -88,7 +88,7 @@ pub(crate) fn read_selected_evidence_remaining(
             && commit.raw_bytes_fingerprint == intent.source.raw_bytes_fingerprint,
         "selected evidence carrier differs from retained commit bytes",
     )?;
-    let (metadata, _) = reader.metadata_with_size(&commit.tree, &binding.project)?;
+    let (metadata, _, _) = reader.metadata_with_size(&commit.tree, &binding.project)?;
     mismatch(
         metadata.profile == binding.profile,
         "selected evidence disclosure profile differs",

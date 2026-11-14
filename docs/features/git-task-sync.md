@@ -960,15 +960,18 @@ import event separately with source-commit provenance; no new local receipt id
 or timestamp is serialized back into the shared note. An altered original id/body
 pair is refused. An unchanged imported note retains its shared attribution.
 
-Project memories and complete native execution-history transfer are outside
-the initial task profile; unsupported data must be reported, never silently
-presented as a complete backup. Existing backup/migration formats remain separate.
+Project memories use the separately selected
+[memory profile](#project-memory-text-exchange). Complete native execution-history
+transfer remains outside the initial task profile; unsupported data must be
+reported, never silently presented as a complete backup. Existing backup/migration
+formats remain separate.
 
 For the first import into an empty, unenrolled store, a missing task file
 cannot dispose an existing task: no prior exchange inventory exists. An
 omitted isolated task cannot be detected; omitted referenced tasks refuse.
 Cancelled and superseded tasks carried in the folder remain documents with
-explicit terminal states. `forget` applies only to memories outside this profile.
+explicit terminal states. With the memory profile, `forget` travels as a permanent
+body-free tombstone; omission of a memory never means forget.
 An enrolled destination instead applies the
 [folder-removal rules](task-planning-text.md#edits-on-an-enrolled-destination):
 an omitted eligible member is cancelled by a local event and its id is retired
@@ -978,6 +981,170 @@ cause irreversible cancellation. Review an import with `--dry-run` before
 applying it. References resolve against the complete resulting task
 graph, and dependency/parent cycles are refused. Unknown fields/versions,
 duplicate or mismatched ids and unresolved conflict markers are refused.
+
+## Project memory text exchange
+
+`task-sync export MAIN/.engram-data/.engram --include-memories` selects the
+`engram-project-memories-v1` capability independently of `--include-notes`.
+The folder project's `memory_profile` field advertises it; older readers refuse
+the unknown field, and current task-only imports require explicit memory opt-in.
+Keep this host's exported task `project.json` as its pre-merge basis as usual.
+Export captures task and memory text from the same SQLite snapshot and withholds
+a whole key when one of its historical task targets is outside the selected task
+profile. After the ordinary fetch and agent merge of the data branch, use
+`task-sync import MAIN/.engram-data/.engram --basis BASIS/project.json
+--include-memories`. Tasks apply before their dependent memories. This route
+does not fetch, merge, commit or push. Git authority remains separate.
+
+Each key has `.engram/memories/KEY/head.json` and immutable `ID.json` revision
+files. The head selects one ordered predecessor chain, or an attributed
+tombstone with no revision bodies. The selected tree contains no unreferenced
+revision files. A revision's UUID is its authoring native version's minted
+ObjectId; historical 64-hex stored ObjectIds travel unchanged too. Imported
+native versions retain that shared identity in recognized
+provenance and receive fresh native ids. Shared revision numbers are chain
+positions; local numbers may differ after a merge or seed. Identities are never
+derived from body hashes. Existing file bytes cannot change under the same UUID.
+
+Only Internal active histories are admitted initially. A Restricted, SecretRef,
+Public or mixed local history is withheld as a whole key with a reason, even
+when a caller asks for wider disclosure. A withheld key does not erase a
+previous selection. Historical bodies and reported attribution are included
+within the ordinary body and actor bounds, the 1 MiB per-file bound and the
+128 MiB memory-tree bound. Tombstone metadata needs disclosure too. The
+development redactor is a labelled no-op, with no compliance assurance.
+
+The same whole-key disclosure check applies to tombstones. Windows device
+names (including names with extensions), and keys ending in a dot or space,
+are withheld visibly at export and refused by shared readers.
+
+An export into an existing data checkout takes its memory basis from that
+checkout's committed HEAD. Task re-export updates task files in place and carries
+the committed memory component unchanged. Missing or modified memory components
+refuse with `memory_export_component_missing` or
+`memory_export_component_changed`; restore or commit the intended component
+before retrying. Recreating the folder never turns an existing committed history
+into an empty bootstrap. Only an unborn data branch has an empty bootstrap basis.
+An older incoming selection that is a prefix of local history is a no-op,
+including after the local host has forgotten that key.
+
+Export checks the effective ignore policy through bounded `git check-ignore`.
+An existing committed blanket rule that excludes memory paths refuses with
+`memory_ignore_policy_excludes_tree`. Update the managed block in the data
+checkout's `.engram/.gitignore` explicitly, before its END marker, with:
+
+```text
+!/memories/
+/memories/*
+!/memories/*/
+/memories/*/*
+!/memories/*/head.json
+```
+
+Then add two revision allow rules of the form
+`!/memories/*/PATTERN.json`: replace PATTERN with `[0-9a-f]` repeated exactly 32
+times for one rule and 64 times for the other. Retain the existing task/evidence
+rules and unrelated operator text. Under the operator's separate data-commit
+authority, stage and commit that policy file in the data worktree. An uncommitted
+policy change refuses with `memory_ignore_policy_uncommitted`. Export does not
+edit policy or commit it. Already prepared setup intents retain their exact
+recorded edits; this update applies to newly prepared policy blocks.
+
+Ordinary prefix import appends missing revisions in order through the local
+remember writer. The actual importer remains the local recorder; original
+author, model context, time and reason are asserted source metadata. Receipt
+session/time never become new shared edits on relay. The newest matching local
+native id or imported shared-id tag is the anchor; export appends only later
+authored local versions and retains the selected shared prefix. An unchanged
+relay writes no native revision. Foreign times do not control local timestamps;
+the ordinary refusal of a backward local clock remains.
+
+Concurrent heads require an explicit agent merge. The chosen chain is the common
+shared prefix plus one freshly authored merged result, retaining both original
+branches in Git and their authoring stores. Independent same-key creation has
+an empty common prefix. A structurally clean Git union is still refused when
+it is not one predecessor chain. `--memory-resolution FILE` supplies per-key
+`ImportOptions` JSON: compared `common`, `local` and `incoming` histories under
+`merge`, or an exact `seed` manifest. The selected result and current local input
+are checked against that evidence; a stale input requires a new agent merge.
+On the authoring host, record the chosen result as an ordinary local revise,
+then export with `--include-memories --memory-resolution FILE`.
+Use `--expected-revision` for that revise so an identical chosen body still
+records the intended new merge revision. The export's compared
+inputs bind the local history before that newly authored head. Export proceeds
+only while the current selection equals one of the exact compared inputs or
+the identical already-published result for a retry; a newer incoming suffix
+requires another agent merge. Export writes
+the fresh native version UUID with the common-prefix predecessor on its first
+materialization, rather than first publishing a divergent predecessor and later
+rewriting immutable bytes. Receiving hosts select their own local compared
+input in the import resolution.
+
+Every selected historical retirement target must resolve to the exact local
+task UUID/ref, or the affected key is held. Import translates the resulting
+target into local Set/Clear/Keep while retaining the source clear marker.
+Completing a target never automatically forgets a memory. Known and unknown
+tombstones reserve the key permanently, and an active import/export cannot
+replace a learned tombstone. Unknown keys use the existing body-free terminal
+shape. SQLite history, FTS and schema remain unchanged.
+
+For a first host seed, create the memory with its source tag already present:
+
+```powershell
+engram work remember --key $memoryKey --text $memoryBody --import-provenance $memoryTag
+```
+
+`$memoryTag` is `engram:project-memory-import:v1:` followed by compact JSON with
+`format`, `project_id`, `key`, `revision_id`, `previous`, `body_sha256`,
+`retiring_target`, `source_clear`, and `source`. `source` contains `actor_id`,
+`actor_kind`, `actor_context`, `reason` and original RFC3339 `remembered_at`.
+The complete marked string is at most 4096 UTF-8 bytes. The revision id and
+predecessor come from Central's selected shared chain; the hash confirms the
+exact UTF-8 body. When a target is present, supply ordinary `--retires-with`
+too. `--actor-context` continues to describe the local recorder.
+
+An explicit seed manifest binds the project/key, exact seeded local version id,
+recorded Central shared revision id and body SHA-256. Rebaseline validates that
+record, its flat tag and selected chain content, then appends only the shared
+suffix. Earlier shared revisions remain in Git. An older untagged seed may gain
+one ordinary same-body tagged revision only with operator-selected
+`--mark-untagged-seeds` and its manifest. No automatic fallback, body banner,
+old-record rewrite or private mapping checkpoint is used.
+
+Task application and memory checks share one transaction, with a savepoint for
+each key. `--dry-run` leaves newly imported task targets visible to memory
+admission until all checks finish, then rolls tasks, memories, baselines, receipts
+and feed entries back together. A refused key rolls back all of its revisions
+while other admitted keys can apply.
+
+New immutable revision files are staged, synced and linked into place without
+replacement; heads are replaced atomically only after revision files exist.
+If export is interrupted, normal import/export refuses incomplete or pending
+files. Retain the complete pre-export `.engram` folder, then explicitly run the
+same export with `--include-memories --memory-recovery-basis RETAINED/.engram`.
+Recovery derives the intended output again from canonical local history and
+that selected basis. It checks the whole directory before cleaning only matching
+pending files or a torn newly created revision. Every current head must match
+the retained or intended selection. Unknown files, stale heads, missing retained
+keys and altered previously selected immutable bytes refuse without cleanup.
+The explicit recovery also handles a partial `project-UUID.pending` capability
+file: the current envelope must equal the retained envelope or its intended
+memory-capable form, and staging bytes must prefix the intended envelope.
+Other root files still refuse.
+There is no private mapping/checkpoint, body banner or rewrite of stored history.
+An unchanged recovery retry is idempotent. The combined task/memory text remains
+bounded by 128 MiB, with the existing per-file limits.
+Recovery streams at most the bounded union of the retained and intended trees
+plus one staged revision and head; these transient bytes are never an admitted
+shared tree.
+
+Memory receipts report per-key application/refusal; a partial import returns
+exit 3 and must not be treated as a fully consumed incoming basis. Exact repeats
+append nothing. Claims, live runs,
+grants, session registrations, private scratch, cursors, context generations,
+credentials and host verification credit never travel. Reported rules remain
+attributed notes. The ledger/delta step surface does not yet account for memory
+coverage; use the explicit folder route above and retain its memory receipt.
 
 ## Imported lifecycle and local execution
 
