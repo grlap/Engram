@@ -617,16 +617,7 @@ async fn run_observed(
                     &branch,
                 )?;
                 data.select_folder(&path)?;
-                let basis = match (basis, empty_basis) {
-                    (Some(file), false) => Some(directory::DestinationBasis::Recorded(
-                        directory::read_folder_basis(&file)?,
-                    )),
-                    (None, true) => Some(directory::DestinationBasis::Empty),
-                    (None, false) => None,
-                    (Some(_), true) => {
-                        anyhow::bail!("select at most one of --basis or --empty-basis")
-                    }
-                };
+                let basis = destination_basis(basis, empty_basis)?;
                 data.revalidate()?;
                 let receipt = service.import_task_sync_data_folder(
                     &data,
@@ -646,6 +637,22 @@ async fn run_observed(
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The destination basis an import selected: this host's own export, an
+/// empty store, or none for an import that reads its recorded folder head.
+fn destination_basis(
+    basis: Option<PathBuf>,
+    empty_basis: bool,
+) -> Result<Option<directory::DestinationBasis>> {
+    Ok(match (basis, empty_basis) {
+        (Some(file), false) => Some(directory::DestinationBasis::Recorded(
+            directory::read_folder_basis(&file)?,
+        )),
+        (None, true) => Some(directory::DestinationBasis::Empty),
+        (None, false) => None,
+        (Some(_), true) => anyhow::bail!("select at most one of --basis or --empty-basis"),
+    })
 }
 
 fn import_exit_code(result: &TaskSyncImportResult, folder: &Path) -> ExitCode {
