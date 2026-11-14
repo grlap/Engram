@@ -1,5 +1,8 @@
 //! Engram CLI: host/operator administration plus the fourteen-word agent surface.
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::{
     fs,
     io::{self, Read},
