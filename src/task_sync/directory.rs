@@ -74,6 +74,8 @@ struct FolderProjectDocument {
     project: ProjectDocument,
     profile: ExportProfile,
     folder_exchange: FolderExchangeDocument,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_profile: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -154,6 +156,24 @@ fn read_folder_stored(path: &Path, verify_inventory: bool) -> Result<FolderExcha
 pub fn read_resolved_data_folder(
     data: &super::data_worktree::DataWorktree,
 ) -> Result<FolderExchange> {
+    read_resolved_data_folder_profile(data, false)
+}
+
+/// Reads the task component of an explicitly selected memory-capable profile.
+/// The caller separately consumes its validated memory component after tasks.
+///
+/// # Errors
+/// Refuses unsafe worktrees or malformed task/memory data.
+pub fn read_resolved_data_folder_with_memories(
+    data: &super::data_worktree::DataWorktree,
+) -> Result<FolderExchange> {
+    read_resolved_data_folder_profile(data, true)
+}
+
+fn read_resolved_data_folder_profile(
+    data: &super::data_worktree::DataWorktree,
+    memories: bool,
+) -> Result<FolderExchange> {
     data.revalidate()?;
     let documents = read_documents_with_policy(
         &data.checkout.join(".engram"),
@@ -162,7 +182,7 @@ pub fn read_resolved_data_folder(
         true,
         &mut |_, _| Ok(()),
     )?;
-    let exchange = folder_from_documents(documents, false)?;
+    let exchange = folder_from_documents_profile(documents, false, memories)?;
     exchange
         .tree
         .validate_folder()
@@ -172,14 +192,32 @@ pub fn read_resolved_data_folder(
 }
 
 pub(crate) fn folder_from_documents(
+    documents: BTreeMap<String, Vec<u8>>,
+    verify_inventory: bool,
+) -> Result<FolderExchange> {
+    folder_from_documents_profile(documents, verify_inventory, false)
+}
+
+pub(in crate::task_sync) fn folder_from_documents_profile(
     mut documents: BTreeMap<String, Vec<u8>>,
     verify_inventory: bool,
+    memories: bool,
 ) -> Result<FolderExchange> {
     let project = documents
         .remove("project.json")
         .ok_or_else(|| TaskSyncRefusal::InvalidGraph.invalid("project.json missing"))?;
     let envelope: FolderProjectDocument = crate::task_sync::parse(&project)
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    if let Some(profile) = &envelope.memory_profile {
+        anyhow::ensure!(
+            profile == crate::task_sync::memories::FORMAT,
+            "unsupported memory capability"
+        );
+        anyhow::ensure!(
+            memories,
+            "memory-capable profile requires explicit --include-memories"
+        );
+    }
     if !envelope.folder_exchange.complete {
         return Err(TaskSyncRefusal::InvalidGraph
             .invalid("task folder exchange must be complete")
@@ -226,6 +264,12 @@ pub fn read_folder_basis(path: &Path) -> Result<FolderBasis> {
 pub(crate) fn folder_basis_from_bytes(bytes: &[u8]) -> Result<FolderBasis> {
     let envelope: FolderProjectDocument = crate::task_sync::parse(bytes)
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    if let Some(profile) = &envelope.memory_profile {
+        anyhow::ensure!(
+            profile == crate::task_sync::memories::FORMAT,
+            "unsupported memory capability"
+        );
+    }
     if envelope.project.format != crate::task_sync::FORMAT {
         return Err(TaskSyncRefusal::InvalidGraph
             .invalid("unsupported task format")
@@ -304,6 +348,25 @@ fn read_documents_with_policy(
     allow_policy: bool,
     checkpoint: &mut Checkpoint<'_>,
 ) -> Result<BTreeMap<String, Vec<u8>>> {
+    Ok(read_documents_with_memory_mode(
+        path,
+        limits,
+        require_tasks,
+        allow_policy,
+        checkpoint,
+        false,
+    )?
+    .0)
+}
+
+fn read_documents_with_memory_mode(
+    path: &Path,
+    limits: Limits,
+    require_tasks: bool,
+    allow_policy: bool,
+    checkpoint: &mut Checkpoint<'_>,
+    recovering_memories: bool,
+) -> Result<(BTreeMap<String, Vec<u8>>, usize)> {
     regular_directory(path)?;
     let mut documents = BTreeMap::new();
     let mut total_bytes = 0;
@@ -346,6 +409,19 @@ fn read_documents_with_policy(
             }
         } else if allow_policy && name == "evidence" {
             evidence::validate(&entry.path())?;
+        } else if allow_policy && name == "memories" {
+            if !recovering_memories {
+                let (_, bytes) = crate::task_sync::memories::directory::read_root_with_bytes(
+                    &crate::task_sync::setup::PrivateDirectory::open(path)?,
+                )?;
+                total_bytes = total_bytes
+                    .checked_add(bytes)
+                    .context("combined tree byte overflow")?;
+                anyhow::ensure!(
+                    total_bytes <= limits.tree_bytes,
+                    "combined task and memory tree exceeds byte bound"
+                );
+            }
         } else if allow_policy && (name == ".gitignore" || name == ".gitattributes") {
             let bytes = read_file_with(&entry.path(), limits, checkpoint)?;
             total_bytes += bytes.len();
@@ -365,7 +441,68 @@ fn read_documents_with_policy(
             .invalid("tasks directory missing")
             .into());
     }
-    Ok(documents)
+    anyhow::ensure!(
+        total_bytes <= limits.tree_bytes,
+        "combined task and memory tree exceeds byte bound"
+    );
+    Ok((documents, total_bytes))
+}
+
+pub(in crate::task_sync) fn read_resolved_data_folder_for_memory_recovery(
+    data: &super::data_worktree::DataWorktree,
+) -> Result<(FolderExchange, usize)> {
+    data.revalidate()?;
+    let (documents, bytes) = read_documents_with_memory_mode(
+        &data.checkout.join(".engram"),
+        LIMITS,
+        false,
+        true,
+        &mut |_, _| Ok(()),
+        true,
+    )?;
+    let folder = folder_from_documents_profile(documents, false, true)?;
+    folder.tree.validate_folder()?;
+    data.revalidate()?;
+    Ok((folder, bytes))
+}
+
+/// Explicitly advertises the memory capability in the shared project envelope.
+/// Old readers reject this unknown field instead of claiming complete import.
+///
+/// # Errors
+/// Refuses unsafe paths, unsupported envelopes or a concurrently changed file.
+pub fn enable_memory_profile(data: &super::data_worktree::DataWorktree) -> Result<()> {
+    data.revalidate()?;
+    let root = crate::task_sync::setup::PrivateDirectory::open(
+        &data.select_folder(&data.checkout.join(".engram"))?,
+    )?;
+    let before = root
+        .read_bounded(Path::new("project.json"), MAX_FILE_BYTES as usize)?
+        .context("project envelope missing")?;
+    let mut envelope: FolderProjectDocument = crate::task_sync::parse(&before)?;
+    if let Some(profile) = &envelope.memory_profile {
+        anyhow::ensure!(
+            profile == crate::task_sync::memories::FORMAT,
+            "unsupported memory capability"
+        );
+        return Ok(());
+    }
+    envelope.memory_profile = Some(crate::task_sync::memories::FORMAT.into());
+    let bytes = pretty(&envelope)?;
+    let pending = format!("project-{}.pending", uuid::Uuid::new_v4());
+    let mut file = root.open_file(Path::new(&pending), true, true)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    drop(file);
+    anyhow::ensure!(
+        root.read_bounded(Path::new("project.json"), MAX_FILE_BYTES as usize)?
+            .as_ref()
+            == Some(&before),
+        "project envelope changed before capability publication"
+    );
+    root.dir().rename(&pending, root.dir(), "project.json")?;
+    data.revalidate()?;
+    Ok(())
 }
 
 /// Preflight existing output without recording a pending operation.

@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
 mod evidence;
+mod memories;
 
 use super::delta::{self, Change, Reader};
 use crate::{
@@ -110,7 +111,8 @@ fn read_selected(
     byte_limit: usize,
 ) -> Result<CommitTaskSnapshot> {
     let commit = reader.commit_object(commit, "cold audit")?;
-    let (envelope, metadata_bytes) = reader.metadata_with_size(&commit.tree, project)?;
+    let (envelope, mut metadata_bytes, memory_profile) =
+        reader.metadata_with_size(&commit.tree, project)?;
     let roots = reader.entries(&commit.tree, &[".engram"])?;
     // metadata_with_size has already checked this exact immutable root's mode.
     let root = roots.first().context("task snapshot root disappeared")?;
@@ -148,6 +150,15 @@ fn read_selected(
                 }
             }
             "evidence" => evidence::validate(reader, entry)?,
+            "memories" => {
+                anyhow::ensure!(
+                    memory_profile,
+                    "memory Git tree requires its advertised project capability"
+                );
+                metadata_bytes = metadata_bytes
+                    .checked_add(memories::validate(reader, entry, project)?)
+                    .context("memory snapshot byte overflow")?;
+            }
             _ => {
                 return Err(TaskSyncRefusal::DestinationUnknownEntry
                     .invalid("task snapshot contains an unknown .engram entry")

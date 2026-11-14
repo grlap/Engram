@@ -262,7 +262,7 @@ impl<'a> Reader<'a> {
         &self,
         tree: &str,
         expected: &ProjectId,
-    ) -> Result<(FolderBasis, usize)> {
+    ) -> Result<(FolderBasis, usize, bool)> {
         let root = self.entries(tree, &[".engram"])?;
         let root = root
             .first()
@@ -301,7 +301,11 @@ impl<'a> Reader<'a> {
                 .invalid("task commit project differs from selected project")
                 .into());
         }
-        Ok((basis, bytes.len()))
+        let memory_profile = serde_json::from_slice::<serde_json::Value>(&bytes)?
+            .get("memory_profile")
+            .and_then(serde_json::Value::as_str)
+            == Some(crate::task_sync::memories::FORMAT);
+        Ok((basis, bytes.len(), memory_profile))
     }
 
     fn blob(&self, oid: &str, path: &str) -> Result<Vec<u8>> {

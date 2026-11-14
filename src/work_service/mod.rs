@@ -73,8 +73,9 @@ use completion::{completion_attempt_key, completion_capture_key};
 #[cfg(test)]
 use delivery::{source_is_from_session, verify_staged_work_change_page};
 pub(crate) use history_display::blocker_kind_word;
+pub(crate) use memories::ensure_project_memory_full_is_admissible;
 #[cfg(test)]
-pub(crate) use memories::{ensure_project_memory_full_is_admissible, project_memory_full_response};
+pub(crate) use memories::project_memory_full_response;
 pub(crate) use memories::{retiring_target_dropped_reminder, retiring_target_lines};
 use terminal::terminal_safe_data_block;
 pub(crate) use terminal::{render_agent_receipt_text, terminal_safe_multiline};
