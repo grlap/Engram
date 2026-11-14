@@ -545,6 +545,7 @@ impl SqliteStore {
         super::super::note_index::verify(connection, &mut checked, &mut invalid)?;
         super::super::feed_tasks::verify(connection, &mut checked, &mut invalid)?;
         super::super::task_sync::baseline::verify(connection, &mut checked, &mut invalid)?;
+        super::super::task_sync::folder_head::verify(connection, &mut checked, &mut invalid)?;
         super::super::task_sync::closure::documents::verify(
             connection,
             &mut checked,

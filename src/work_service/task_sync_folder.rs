@@ -32,6 +32,58 @@ impl LocalWorkService {
             .export_task_sync_folder(&self.project_id, profile)
     }
 
+    /// Plans one folder export on one snapshot: the named bootstrap when no
+    /// folder head is recorded, otherwise only the tasks changed since it.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a missing opt-in and every refusal of the storage plan.
+    pub fn plan_task_sync_folder_export(
+        &self,
+        profile: &ExportProfile,
+        rebuild: bool,
+        now: DateTime<Utc>,
+    ) -> Result<crate::storage::FolderExportPlan, StoreError> {
+        self.require_task_sync_enabled()?;
+        self.read_store_at(now)?
+            .plan_task_sync_folder_export(&self.project_id, profile, rebuild)
+    }
+
+    /// The recorded folder head of this project under `profile`, if any.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a missing opt-in and a damaged projected head.
+    pub fn task_sync_folder_head(
+        &self,
+        profile: &ExportProfile,
+        now: DateTime<Utc>,
+    ) -> Result<Option<(crate::ObjectId, crate::storage::FolderHead)>, StoreError> {
+        self.require_task_sync_enabled()?;
+        self.read_store_at(now)?
+            .task_sync_folder_head(&self.project_id, profile)
+    }
+
+    /// Records the next folder head if its predecessor is still current.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a read-only service, a missing opt-in, another project and a
+    /// moved head.
+    pub fn record_task_sync_folder_head(
+        &self,
+        head: &crate::storage::FolderHead,
+        now: DateTime<Utc>,
+    ) -> Result<crate::ObjectId, StoreError> {
+        self.require_task_sync_writer()?;
+        self.require_task_sync_enabled()?;
+        if head.project_id != self.project_id {
+            return Err(TaskSyncRefusal::OriginMismatch
+                .invalid("task folder head belongs to another project"));
+        }
+        self.lock_store_at(now)?.record_task_sync_folder_head(head)
+    }
+
     /// Applies a resolved folder against the destination basis the caller
     /// selected, never against the basis the folder itself carries. The note
     /// selection is shared by both hosts; the origin-machine alias is
@@ -63,7 +115,35 @@ impl LocalWorkService {
                     return Err(TaskSyncRefusal::DivergentPlanning
                         .invalid("task folder basis note selection differs from the folder's"));
                 }
-                (recorded.export_basis.clone(), recorded.profile.clone())
+                let export_basis = match (&recorded.export_basis, &recorded.incremental) {
+                    (Some(export_basis), _) => export_basis.clone(),
+                    // An incremental export records its membership root, not
+                    // the complete fingerprint. The complete route reads every
+                    // task anyway, so it proves the destination still has that
+                    // membership and compares by the fingerprint it computes.
+                    (None, Some(incremental)) => {
+                        let current = self
+                            .read_store_at(now)?
+                            .export_task_sync_folder(&self.project_id, &recorded.profile)?;
+                        let root = current.tree.tasks.iter().try_fold(
+                            crate::task_sync::inventory::InventoryRoot::ZERO,
+                            crate::task_sync::inventory::InventoryRoot::including,
+                        )?;
+                        if root != incremental.inventory_root
+                            || current.tree.tasks.len() as u64 != incremental.task_count
+                        {
+                            return Err(TaskSyncRefusal::DivergentPlanning.invalid(
+                                "local planning changed since this host's own export named by --basis",
+                            ));
+                        }
+                        current.export_basis
+                    }
+                    (None, None) => {
+                        return Err(TaskSyncRefusal::InvalidGraph
+                            .invalid("task folder basis carries no basis"));
+                    }
+                };
+                (export_basis, recorded.profile.clone())
             }
             // An empty destination exports nothing under any alias.
             DestinationBasis::Empty => (

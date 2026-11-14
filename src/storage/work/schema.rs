@@ -96,6 +96,7 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "work_feed_entries_planning"),
     ("index", "work_project_feed_tasks_task"),
     ("table", "work_project_feed_coverage"),
+    ("table", "work_task_sync_folder_heads"),
     ("table", "work_task_sync_baseline"),
     ("index", "work_task_sync_baseline_retired"),
     ("table", "work_task_sync_baseline_heads"),
@@ -596,6 +597,7 @@ pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<()
     super::note_index::create_schema(connection)?;
     super::feed_tasks::create_schema(connection)?;
     super::task_sync::baseline::create_schema(connection)?;
+    super::task_sync::folder_head::create_schema(connection)?;
     super::task_sync::ledger::view::create_schema(connection)?;
     super::task_sync::producing_origin::view::create_schema(connection)?;
     super::task_sync::closure::documents::create_schema(connection)?;
@@ -742,6 +744,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
     super::note_index::create_schema(connection)?;
     super::feed_tasks::create_schema(connection)?;
     super::task_sync::baseline::create_schema(connection)?;
+    super::task_sync::folder_head::create_schema(connection)?;
     super::task_sync::ledger::view::create_schema(connection)?;
     super::task_sync::producing_origin::view::create_schema(connection)?;
     super::task_sync::closure::documents::create_schema(connection)?;
@@ -760,6 +763,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
     restored_findings.extend(super::note_index::rebuild_for_repair(connection)?);
     restored_findings.extend(super::feed_tasks::rebuild(connection)?);
     restored_findings.extend(super::task_sync::baseline::rebuild(connection)?);
+    restored_findings.extend(super::task_sync::folder_head::rebuild(connection)?);
     restored_findings.extend(super::task_sync::closure::documents::rebuild(connection)?);
     restored_findings.extend(super::task_sync::closure::source::rebuild(connection)?);
     restored_findings.extend(super::task_sync::closure::graph::rebuild(connection)?);

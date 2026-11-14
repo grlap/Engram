@@ -101,6 +101,186 @@ impl SqliteStore {
     }
 }
 
+impl SqliteStore {
+    /// Plan one folder export of `project` under `profile` on one snapshot.
+    ///
+    /// With no recorded folder head this is the named bootstrap: the complete
+    /// export. Otherwise only the tasks the changed-task index names since the
+    /// head's cut are captured, through the same serializer as the complete
+    /// export; a task that left the project or the exchange is a removal.
+    /// Held tasks keep the other host's bytes and are never captured, and a
+    /// held task that also changed here refuses as a conflict.
+    ///
+    /// # Errors
+    /// Refuses a discontinuous head cut, an index gap, a changed held task,
+    /// note inclusion the profile omits, a reference to a retired task, and
+    /// every refusal of the complete export.
+    pub fn plan_task_sync_folder_export(
+        &self,
+        project: &ProjectId,
+        profile: &ExportProfile,
+        rebuild: bool,
+    ) -> Result<super::folder_head::FolderExportPlan, StoreError> {
+        profile.options().validate()?;
+        self.work_read_snapshot(|store| {
+            with_origin_scope(&store.connection, || {
+                plan_folder_export(store, project, profile, rebuild)
+            })
+        })
+    }
+
+    /// Record the next folder head if its predecessor is still current.
+    ///
+    /// # Errors
+    /// Refuses a moved head with
+    /// [`TaskSyncRefusal::BaselineHeadMoved`] and an invalid record.
+    pub fn record_task_sync_folder_head(
+        &mut self,
+        head: &super::folder_head::FolderHead,
+    ) -> Result<crate::ObjectId, StoreError> {
+        let transaction = self.begin_work_mutation()?;
+        let id = super::folder_head::append_on(&transaction, head)?;
+        transaction.commit()?;
+        Ok(id)
+    }
+
+    /// The project feed's current cut.
+    ///
+    /// # Errors
+    /// Refuses an unreadable feed.
+    pub fn task_sync_project_cut(&self, project: &ProjectId) -> Result<ExportCut, StoreError> {
+        self.work_read_snapshot(|store| current_cut(store, &FeedId::Project(project.clone())))
+    }
+
+    /// The recorded folder head of `project` under `profile`, if any.
+    ///
+    /// # Errors
+    /// Refuses a damaged projected head; repair is explicit.
+    pub fn task_sync_folder_head(
+        &self,
+        project: &ProjectId,
+        profile: &ExportProfile,
+    ) -> Result<Option<(crate::ObjectId, super::folder_head::FolderHead)>, StoreError> {
+        self.work_read_snapshot(|store| {
+            super::folder_head::head_on(&store.connection, project, profile)
+        })
+    }
+}
+
+fn plan_folder_export(
+    store: &SqliteStore,
+    project: &ProjectId,
+    profile: &ExportProfile,
+    rebuild: bool,
+) -> Result<super::folder_head::FolderExportPlan, StoreError> {
+    let connection = &store.connection;
+    let feed = FeedId::Project(project.clone());
+    let cut = current_cut(store, &feed)?;
+    let recorded = super::folder_head::head_on(connection, project, profile)?;
+    // The bootstrap and an explicit, named rebuild export every task; the
+    // rebuild keeps the recorded head as the predecessor it replaces.
+    if recorded.is_none() || rebuild {
+        let full = super::folder::folder_export_on(connection, project, profile)?;
+        return Ok(super::folder_head::FolderExportPlan {
+            head: recorded,
+            cut,
+            project: full.tree.project.clone(),
+            changes: full
+                .tree
+                .tasks
+                .into_iter()
+                .map(|task| (task.id, Some(task)))
+                .collect(),
+            omissions: full.omissions,
+            activity_omissions: full.activity_omissions,
+            complete: true,
+        });
+    }
+    let Some((id, head)) = recorded else {
+        return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid("no recorded folder head"));
+    };
+    if head.profile != *profile {
+        return Err(TaskSyncRefusal::DivergentPlanning.invalid(
+            "this export profile differs from the one the shared folder was recorded with; run `engram task-sync export --rebuild` to write the complete folder under it",
+        ));
+    }
+    if let Err(reason) = anchored(store, &feed, &head.cut, cut.position) {
+        return Err(TaskSyncRefusal::IncrementalBasisUnavailable.invalid(reason?));
+    }
+    super::baseline::validate_note_selection(connection, project, profile.include_notes)?;
+    let changed = super::super::feed_tasks::changed_between(
+        connection,
+        project,
+        head.cut.position,
+        cut.position,
+    )?;
+    let conflicting = changed
+        .intersection(&head.pending)
+        .map(|id| id.0.to_string())
+        .collect::<Vec<_>>();
+    if !conflicting.is_empty() {
+        return Err(TaskSyncRefusal::ImportConflict.invalid(format!(
+            "a task held by the last import changed here too; resolve it before exporting: {}",
+            conflicting.join(", ")
+        )));
+    }
+    let retired = super::baseline::retired(connection, project)?;
+    let mut omissions = NoteOmissions::default();
+    let mut activity_omissions = NoteOmissions::default();
+    let mut exported = std::collections::BTreeMap::new();
+    for &work in changed.difference(&head.pending) {
+        let member: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1 AND project_id = ?2)",
+            rusqlite::params![work.0.to_string(), project.0],
+            |row| row.get(0),
+        )?;
+        if !member || retired.contains(&work) {
+            exported.insert(work, None);
+            continue;
+        }
+        let item = super::super::query::load_work_item(connection, work)
+            .map_err(super::origin::classify_binding)?;
+        let (document, stored_inclusion) = super::capture::capture_document_on(
+            connection,
+            item,
+            profile.include_notes,
+            profile.origin_machine.as_deref(),
+            false,
+            &mut omissions,
+            &mut activity_omissions,
+        )?;
+        if stored_inclusion && !profile.include_notes {
+            return Err(TaskSyncRefusal::DivergentPlanning.invalid(
+                "a changed task retains shared notes this export profile omits; rebuild the folder explicitly",
+            ));
+        }
+        if let Some(target) = super::closure::graph::document_edges(&document)
+            .into_iter()
+            .map(|(_, target)| target)
+            .find(|target| retired.contains(target))
+        {
+            return Err(TaskSyncRefusal::DivergentPlanning.invalid(format!(
+                "task folder export would retain a reference to the exchange-retired task {}",
+                target.0
+            )));
+        }
+        exported.insert(work, Some(document));
+    }
+    Ok(super::folder_head::FolderExportPlan {
+        head: Some((id, head)),
+        cut,
+        project: crate::task_sync::ProjectDocument {
+            format: crate::task_sync::FORMAT.into(),
+            project_id: project.clone(),
+            notes_included: profile.include_notes,
+        },
+        changes: exported,
+        omissions,
+        activity_omissions,
+        complete: false,
+    })
+}
+
 /// The project feed's head and the object at it.
 fn current_cut(store: &SqliteStore, feed: &FeedId) -> Result<ExportCut, StoreError> {
     let head = store.work_feed_head(feed)?;

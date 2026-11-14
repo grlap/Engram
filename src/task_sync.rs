@@ -498,6 +498,9 @@ pub enum TaskSyncRefusal {
     /// The inventory root computed from a verified Git delta differs from the
     /// one the exchange declared.
     InventoryRootMismatch,
+    /// An incremental import needs the folder committed in the data worktree:
+    /// the changed tasks are read from the commit, not from loose files.
+    CommitContextRequired,
     /// Local Git could not complete a bounded read; rebuilding cannot fix it.
     GitQueryFailed,
     /// Another exchange baseline was recorded after the one this exchange
@@ -552,6 +555,7 @@ task_sync_refusal_codes! {
     SourceHistoryDiverged => "task_sync_source_history_diverged",
     SourceHistoryUnavailable => "task_sync_source_history_unavailable",
     InventoryRootMismatch => "task_sync_inventory_root_mismatch",
+    CommitContextRequired => "task_sync_commit_context_required",
     GitQueryFailed => "task_sync_git_query_failed",
     BaselineHeadMoved => "task_sync_baseline_head_moved",
     ReconciliationHeld => "task_sync_reconciliation_held",

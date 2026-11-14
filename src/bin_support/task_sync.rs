@@ -163,6 +163,10 @@ enum TaskSyncCommand {
         /// Imported notes and activity retain their original aliases.
         #[arg(long)]
         origin_machine: Option<String>,
+        /// Write the complete folder and record it afresh, instead of only the
+        /// tasks changed since the last recorded export or import.
+        #[arg(long)]
+        rebuild: bool,
         /// Print the receipt as JSON, and a refusal as a JSON error with its code on stderr.
         #[arg(long)]
         json: bool,
@@ -173,18 +177,19 @@ enum TaskSyncCommand {
         directory: PathBuf,
         #[arg(long, default_value = "engram-data")]
         branch: String,
-        /// This host's own project.json from its export before the merge.
-        #[arg(
-            long,
-            value_name = "PROJECT_JSON",
-            conflicts_with = "empty_basis",
-            required_unless_present = "empty_basis"
-        )]
+        /// This host's own project.json from its export before the merge, for
+        /// the complete route: the first import of a store, or `--rebuild`.
+        /// An incremental import reads its basis from the recorded folder head.
+        #[arg(long, value_name = "PROJECT_JSON", conflicts_with = "empty_basis")]
         basis: Option<PathBuf>,
         /// Import into a destination holding no shared planning yet; the import
         /// checks that it is empty.
         #[arg(long)]
         empty_basis: bool,
+        /// Import the complete folder against `--basis` and record it afresh,
+        /// instead of only the paths changed since the last recorded import.
+        #[arg(long)]
+        rebuild: bool,
         /// Run the whole import, then roll it back.
         #[arg(long)]
         dry_run: bool,
@@ -551,6 +556,7 @@ async fn run_observed(
             branch,
             include_notes,
             origin_machine,
+            rebuild,
             json,
         } => {
             let outcome = (|| -> Result<()> {
@@ -568,26 +574,25 @@ async fn run_observed(
                     &branch,
                 )?;
                 let path = data.select_folder(&path)?;
-                let exported = service.export_task_sync_folder(&profile, chrono::Utc::now())?;
-                let written =
-                    directory::write_data_folder(&data, &exported.tree, &exported.profile)?;
+                let receipt = service.export_task_sync_data_folder(
+                    &data,
+                    &profile,
+                    rebuild,
+                    chrono::Utc::now(),
+                )?;
                 attribution.print_notices();
                 eprintln!("REDACTOR: development no-op; task planning fields are shared text");
                 if json
                     || include_notes
                     || origin_machine.is_some()
-                    || !exported.activity_omissions.counts.is_empty()
+                    || !receipt.activity_omissions.counts.is_empty()
                 {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "directory": path,
-                            "notes_included": written.tree.project.notes_included,
-                            "export_basis": written.export_basis,
-                            "omissions": exported.omissions,
-                            "activity_omissions": exported.activity_omissions,
-                        }))?
-                    );
+                    let mut value = serde_json::to_value(&receipt)?;
+                    value["directory"] = serde_json::to_value(&path)?;
+                    value["next"] = serde_json::json!([
+                        "commit the exported folder in the data worktree before merging or importing"
+                    ]);
+                    println!("{}", serde_json::to_string_pretty(&value)?);
                 } else {
                     println!("{}", path.display());
                 }
@@ -600,6 +605,7 @@ async fn run_observed(
             branch,
             basis,
             empty_basis,
+            rebuild,
             dry_run,
             json,
         } => {
@@ -611,24 +617,27 @@ async fn run_observed(
                     &branch,
                 )?;
                 data.select_folder(&path)?;
-                let folder = directory::read_resolved_data_folder(&data)?;
                 let basis = match (basis, empty_basis) {
-                    (Some(file), false) => {
-                        directory::DestinationBasis::Recorded(directory::read_folder_basis(&file)?)
+                    (Some(file), false) => Some(directory::DestinationBasis::Recorded(
+                        directory::read_folder_basis(&file)?,
+                    )),
+                    (None, true) => Some(directory::DestinationBasis::Empty),
+                    (None, false) => None,
+                    (Some(_), true) => {
+                        anyhow::bail!("select at most one of --basis or --empty-basis")
                     }
-                    (None, true) => directory::DestinationBasis::Empty,
-                    _ => anyhow::bail!("select exactly one of --basis or --empty-basis"),
                 };
                 data.revalidate()?;
-                let result = service.import_task_sync_folder(
-                    &folder,
-                    &basis,
+                let receipt = service.import_task_sync_data_folder(
+                    &data,
+                    basis.as_ref(),
+                    rebuild,
                     dry_run,
                     chrono::Utc::now(),
                 )?;
                 attribution.print_notices();
-                println!("{}", serde_json::to_string_pretty(&result)?);
-                Ok(result)
+                println!("{}", serde_json::to_string_pretty(&receipt)?);
+                Ok(receipt.result)
             })();
             return match outcome {
                 Ok(result) => Ok(import_exit_code(&result, &path)),

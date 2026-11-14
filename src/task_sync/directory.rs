@@ -14,13 +14,15 @@ use crate::task_sync::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-const MAX_FILE_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_TREE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_TASKS: usize = 100_000;
 
 mod envelope;
 mod evidence;
+mod incremental;
 pub(crate) use envelope::prepare_folder_documents;
+pub use incremental::FolderWrite;
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -55,7 +57,27 @@ pub struct FolderExchange {
 pub struct FolderBasis {
     pub project_id: crate::ProjectId,
     pub profile: ExportProfile,
-    pub export_basis: String,
+    /// The complete folder's ordered fingerprint; absent from an incremental
+    /// envelope, which never reads every task to compute it.
+    pub export_basis: Option<String>,
+    /// The incremental membership basis, when the folder was written by an
+    /// incremental export.
+    pub incremental: Option<IncrementalBasis>,
+}
+
+pub const INCREMENTAL_FORMAT: &str = "engram-task-sync-folder-incremental-v1";
+
+/// An incremental folder envelope: the additive membership root and count of
+/// the folder on disk, and the exporter's own project-feed cut. The cut is
+/// meaningful only to the host that wrote it; an importer never trusts a cut
+/// carried by a merged folder.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IncrementalBasis {
+    pub format: String,
+    pub inventory_root: crate::task_sync::inventory::InventoryRoot,
+    pub task_count: u64,
+    pub cut: crate::task_sync::progress::ExportCut,
 }
 
 /// The destination basis selected for one folder import.
@@ -76,11 +98,65 @@ struct FolderProjectDocument {
     folder_exchange: FolderExchangeDocument,
 }
 
+/// Exactly one basis: the complete folder's ordered fingerprint, or an
+/// incremental export's membership root. A build that knows only the
+/// fingerprint refuses the incremental form rather than misreading it.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FolderExchangeDocument {
     complete: bool,
-    export_basis: FolderExportBasis,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    export_basis: Option<FolderExportBasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    incremental: Option<IncrementalBasis>,
+}
+
+impl FolderExchangeDocument {
+    fn one_basis(&self) -> Result<()> {
+        if !self.complete {
+            return Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task folder exchange must be complete")
+                .into());
+        }
+        match (&self.export_basis, &self.incremental) {
+            (Some(_), None) => Ok(()),
+            (None, Some(incremental)) if incremental.format == INCREMENTAL_FORMAT => Ok(()),
+            (None, Some(_)) => Err(TaskSyncRefusal::InvalidGraph
+                .invalid("unsupported incremental task folder format")
+                .into()),
+            _ => Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task folder exchange must carry exactly one basis")
+                .into()),
+        }
+    }
+}
+
+/// The project document of a folder written by an incremental export.
+///
+/// # Errors
+/// Refuses an invalid profile or a disclosure the project document does not
+/// match.
+pub(crate) fn incremental_envelope(
+    project: &ProjectDocument,
+    profile: &ExportProfile,
+    basis: IncrementalBasis,
+) -> Result<Vec<u8>> {
+    profile.options().validate()?;
+    if project.notes_included != profile.include_notes || basis.format != INCREMENTAL_FORMAT {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder profile and tree disclosure differ")
+            .into());
+    }
+    Ok(pretty(&FolderProjectDocument {
+        project: project.clone(),
+        profile: profile.clone(),
+        folder_exchange: FolderExchangeDocument {
+            complete: true,
+            export_basis: None,
+            incremental: Some(basis),
+        },
+    })
+    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?)
 }
 
 #[derive(Deserialize, Serialize)]
@@ -180,11 +256,7 @@ pub(crate) fn folder_from_documents(
         .ok_or_else(|| TaskSyncRefusal::InvalidGraph.invalid("project.json missing"))?;
     let envelope: FolderProjectDocument = crate::task_sync::parse(&project)
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-    if !envelope.folder_exchange.complete {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task folder exchange must be complete")
-            .into());
-    }
+    envelope.folder_exchange.one_basis()?;
     envelope.profile.options().validate()?;
     if envelope.project.notes_included != envelope.profile.include_notes {
         return Err(TaskSyncRefusal::InvalidGraph
@@ -198,12 +270,27 @@ pub(crate) fn folder_from_documents(
     let tree = TaskTree::from_stored_documents(&documents)
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     let fingerprint = documents_fingerprint(&tree.folder_documents()?);
-    if verify_inventory
-        && envelope.folder_exchange.export_basis.inventory_fingerprint != fingerprint
-    {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task folder exchange inventory fingerprint is inconsistent")
-            .into());
+    if verify_inventory {
+        let consistent = match (
+            &envelope.folder_exchange.export_basis,
+            &envelope.folder_exchange.incremental,
+        ) {
+            (Some(basis), _) => basis.inventory_fingerprint == fingerprint,
+            (None, Some(basis)) => {
+                basis.task_count == tree.tasks.len() as u64
+                    && basis.inventory_root
+                        == tree.tasks.iter().try_fold(
+                            crate::task_sync::inventory::InventoryRoot::ZERO,
+                            crate::task_sync::inventory::InventoryRoot::including,
+                        )?
+            }
+            (None, None) => false,
+        };
+        if !consistent {
+            return Err(TaskSyncRefusal::InvalidGraph
+                .invalid("task folder exchange inventory fingerprint is inconsistent")
+                .into());
+        }
     }
     Ok(FolderExchange {
         tree,
@@ -231,23 +318,23 @@ pub(crate) fn folder_basis_from_bytes(bytes: &[u8]) -> Result<FolderBasis> {
             .invalid("unsupported task format")
             .into());
     }
-    if !envelope.folder_exchange.complete {
-        return Err(TaskSyncRefusal::InvalidGraph
-            .invalid("task folder basis must be complete")
-            .into());
-    }
+    envelope.folder_exchange.one_basis()?;
     envelope.profile.options().validate()?;
     if envelope.project.notes_included != envelope.profile.include_notes {
         return Err(TaskSyncRefusal::InvalidGraph
             .invalid("task folder basis profile and disclosure differ")
             .into());
     }
-    let export_basis = envelope.folder_exchange.export_basis.inventory_fingerprint;
-    if export_basis.len() != 64
-        || !export_basis
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
+    let export_basis = envelope
+        .folder_exchange
+        .export_basis
+        .map(|basis| basis.inventory_fingerprint);
+    if export_basis.as_ref().is_some_and(|basis| {
+        basis.len() != 64
+            || !basis
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    }) {
         return Err(TaskSyncRefusal::InvalidGraph
             .invalid("task folder basis fingerprint is malformed")
             .into());
@@ -256,6 +343,7 @@ pub(crate) fn folder_basis_from_bytes(bytes: &[u8]) -> Result<FolderBasis> {
         project_id: envelope.project.project_id,
         profile: envelope.profile,
         export_basis,
+        incremental: envelope.folder_exchange.incremental,
     })
 }
 

@@ -131,6 +131,32 @@ impl DataWorktree {
         }
     }
 
+    /// The observed HEAD commit, when the `.engram` folder holds exactly its
+    /// content: nothing staged, modified or untracked beneath it.
+    ///
+    /// # Errors
+    /// Refuses a failed or unbounded Git status read.
+    pub fn committed_folder(&self) -> Result<Option<String>> {
+        let Some(head) = &self.head else {
+            return Ok(None);
+        };
+        let status = super::git::query(
+            &self.checkout,
+            &[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--",
+                ".engram",
+            ],
+            false,
+            None,
+            std::time::Duration::from_secs(10),
+        )?;
+        Ok(status.is_empty().then(|| head.clone()))
+    }
+
     /// Re-observe the exact worktree, administration, branch and HEAD.
     ///
     /// # Errors

@@ -25,9 +25,10 @@ pub(crate) fn prepare_folder_documents(
         profile: profile.clone(),
         folder_exchange: FolderExchangeDocument {
             complete: true,
-            export_basis: FolderExportBasis {
+            export_basis: Some(FolderExportBasis {
                 inventory_fingerprint: export_basis.clone(),
-            },
+            }),
+            incremental: None,
         },
     };
     let mut published = documents.clone();

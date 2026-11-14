@@ -201,7 +201,7 @@ fn task_sync_cli_round_trips_a_git_folder_without_creating_runtime_state() {
         directory::read_folder_basis(&path.join("project.json"))
             .unwrap()
             .export_basis,
-        original.export_basis
+        Some(original.export_basis)
     );
 
     // A dry run performs the import and leaves nothing behind.
