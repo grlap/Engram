@@ -121,7 +121,7 @@ pub(super) fn apply(
                 transaction,
                 &input.binding.project,
                 &input.intent.local_cut,
-                read.into_iter(),
+                read,
             )
         },
         now,

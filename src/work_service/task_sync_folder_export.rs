@@ -192,7 +192,7 @@ impl LocalWorkService {
         let mut missing = Vec::new();
         for &id in &pending {
             match on_disk(&folder, id)? {
-                Some(held) => tasks.push(held),
+                Some(incoming) => tasks.push(incoming),
                 None => missing.push(id),
             }
         }
@@ -303,21 +303,20 @@ fn incremental(
         .context("incremental plan without a head")?;
     // After an import the folder is exactly its commit; after an export it
     // carries the envelope that export wrote.
-    let recorded = match &head.folder_commit {
-        Some(commit) => data.committed_folder()?.as_deref() == Some(commit.as_str()),
-        None => {
-            let expected = IncrementalBasis {
-                format: INCREMENTAL_FORMAT.into(),
-                inventory_root: head.inventory_root,
-                task_count: head.task_count,
-                cut: head.cut.clone(),
-            };
-            directory::read_folder_basis(&folder.join("project.json")).is_ok_and(|basis| {
-                basis.incremental.as_ref() == Some(&expected)
-                    && basis.profile == *profile
-                    && basis.project_id == plan.project.project_id
-            })
-        }
+    let recorded = if let Some(commit) = &head.folder_commit {
+        data.committed_folder()?.as_deref() == Some(commit.as_str())
+    } else {
+        let expected = IncrementalBasis {
+            format: INCREMENTAL_FORMAT.into(),
+            inventory_root: head.inventory_root,
+            task_count: head.task_count,
+            cut: head.cut.clone(),
+        };
+        directory::read_folder_basis(&folder.join("project.json")).is_ok_and(|basis| {
+            basis.incremental.as_ref() == Some(&expected)
+                && basis.profile == *profile
+                && basis.project_id == plan.project.project_id
+        })
     };
     if !recorded {
         return Err(TaskSyncRefusal::IncrementalBasisUnavailable
