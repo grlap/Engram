@@ -1,6 +1,6 @@
 //! Local deltas from Git's reported paths, without a repository census.
 
-use super::{Child, Query, before_deadline, status_entries, submodule_states};
+use super::{Child, Query, before_deadline, status_entries, submodule_states, submodule_status};
 use crate::source::{Change, Entry, MAX_JSON_BYTES, Mode, SourceId, Submodule};
 use anyhow::{Context, Result, bail, ensure};
 use sha1::{Digest, Sha1};
@@ -91,10 +91,8 @@ pub(super) fn capture(
                 "source status changed during capture in '{path}'"
             );
         }
-        let mut after = submodule_states(
-            &query.run(root, &["submodule", "status", "--recursive"], None)?,
-            true,
-        )?;
+        let mut after =
+            submodule_states(&submodule_status(|args| query.run(root, args, None))?, true)?;
         after.sort_by(|a, b| a.path.cmp(&b.path));
         ensure!(
             after == children,

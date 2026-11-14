@@ -21,6 +21,13 @@ pub(crate) fn read_count() -> usize {
     READS.get()
 }
 
+// The Git subcommands this thread's observations ran, so tests can see which
+// processes an observation started.
+#[cfg(test)]
+thread_local! {
+    static COMMANDS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CommittedInput {
     pub(crate) root: PathBuf,
@@ -140,22 +147,53 @@ fn capture(
     let fallback = policy.materialize(&root, deadline, &environment)?;
     let global = fallback.as_ref().map(|value| value.file.as_path());
     let run = |args: &[&str], missing| query(&git, &root, args, missing, deadline, global);
-    let top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?;
-    ensure!(
-        top.canonicalize()? == root,
-        "the registered root is not this Git worktree's top level"
-    );
-    let admin = path_output(run(&["rev-parse", "--absolute-git-dir"], false)?)?.canonicalize()?;
-    let head = || -> Result<String> {
-        let bytes = run(&["rev-parse", "--verify", "HEAD^{commit}"], false)?;
-        let value = std::str::from_utf8(&bytes)?.trim();
+    let sha1 = |value: &str| -> Result<String> {
         ensure!(
             value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
             "registered committed input requires a SHA-1 commit; SHA-256 repositories are unsupported"
         );
         Ok(value.to_owned())
     };
-    let commit = head()?;
+    // One Git process reports the worktree top, its admin directory and HEAD;
+    // the same read at the end detects movement during the observation.
+    let locate = || -> Result<(PathBuf, PathBuf, String)> {
+        let bytes = run(
+            &[
+                "rev-parse",
+                "--show-toplevel",
+                "--absolute-git-dir",
+                "--verify",
+                "HEAD^{commit}",
+            ],
+            false,
+        )?;
+        let text = String::from_utf8(bytes).context("Git returned a non-UTF-8 root path")?;
+        if let [top, admin, head] = text.lines().collect::<Vec<_>>().as_slice()
+            && !top.is_empty()
+            && !admin.is_empty()
+        {
+            return Ok((
+                PathBuf::from(top).canonicalize()?,
+                PathBuf::from(admin).canonicalize()?,
+                sha1(head)?,
+            ));
+        }
+        // Git ends each value with a newline, so a path holding one (possible
+        // on Unix) cannot be framed in a shared reply: read each on its own.
+        let top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?;
+        let admin = path_output(run(&["rev-parse", "--absolute-git-dir"], false)?)?;
+        let head = run(&["rev-parse", "--verify", "HEAD^{commit}"], false)?;
+        Ok((
+            top.canonicalize()?,
+            admin.canonicalize()?,
+            sha1(std::str::from_utf8(&head)?.trim())?,
+        ))
+    };
+    let (top, admin, commit) = locate()?;
+    ensure!(
+        top == root,
+        "the registered root is not this Git worktree's top level"
+    );
     let tree = if details {
         let bytes = run(
             &["rev-parse", "--verify", &format!("{commit}^{{tree}}")],
@@ -183,7 +221,7 @@ fn capture(
         filters.is_empty(),
         "configured Git filters are unsupported for committed input"
     );
-    let modules = run(&["submodule", "status", "--recursive"], false)
+    let modules = submodule_status(|args| run(args, false))
         .context("cannot read recursive submodule status")?;
     let child_states = submodule_states(&modules, details)?;
     let children: Vec<_> = child_states
@@ -227,13 +265,11 @@ fn capture(
         guard_child_dirt(&children, &status)?;
         None
     };
+    let (end_top, end_admin, end_commit) = locate()?;
     ensure!(
-        head()? == commit,
+        end_commit == commit,
         "HEAD moved during the committed-input read"
     );
-    let end_top = path_output(run(&["rev-parse", "--show-toplevel"], false)?)?.canonicalize()?;
-    let end_admin =
-        path_output(run(&["rev-parse", "--absolute-git-dir"], false)?)?.canonicalize()?;
     ensure!(
         end_top == root && end_admin == admin,
         "the registered Git worktree changed during the read"
@@ -450,6 +486,22 @@ fn path_output(bytes: Vec<u8>) -> Result<PathBuf> {
     Ok(PathBuf::from(text))
 }
 
+/// The recursive submodule status. On Windows `git submodule` starts a shell
+/// script that costs seconds even in a repository without submodules. Its rows
+/// come only from gitlinks (mode 160000) in the index, so an index without one
+/// has the same empty status, read with one quick query. Any failure of that
+/// probe, such as a Git older than `ls-files --format`, runs the script itself.
+/// So does an index too large for the query's output bound (seven bytes per
+/// entry, so about 150,000 entries): the result is the same, only slower.
+fn submodule_status(run: impl Fn(&[&str]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+    let gitlink_free = run(&["ls-files", "-z", "--format=%(objectmode)"])
+        .is_ok_and(|modes| modes.split(|byte| *byte == 0).all(|mode| mode != b"160000"));
+    if gitlink_free {
+        return Ok(Vec::new());
+    }
+    run(&["submodule", "status", "--recursive"])
+}
+
 fn query(
     git: &Path,
     root: &Path,
@@ -490,6 +542,8 @@ fn query_with_input(
     global: Option<&Path>,
     input: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
+    #[cfg(test)]
+    COMMANDS.with_borrow_mut(|commands| commands.push(args.join(" ")));
     let mut command = git_command(git, root);
     if let Some(global) = global {
         // Git's config reader needs the plain Windows spelling, while Rust
@@ -751,6 +805,117 @@ mod tests {
         );
         git(root, &["config", "filter.test.clean", "must-not-run"]);
         assert!(read(root).unwrap_err().to_string().contains("filters"));
+    }
+
+    fn commit_all(root: &Path) {
+        git(root, &["add", "-A"]);
+        git(
+            root,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "--no-gpg-sign",
+                "-qm",
+                "fixture",
+            ],
+        );
+    }
+
+    /// Observe `root` and return the source and the Git subcommands it ran.
+    fn observed(root: &Path) -> (crate::source::SourceId, Vec<String>) {
+        COMMANDS.with_borrow_mut(Vec::clear);
+        let observation = observe(root, Duration::from_secs(60));
+        let source = observation
+            .source_id
+            .unwrap_or_else(|| panic!("{:?}", observation.refusal));
+        (source, COMMANDS.with_borrow_mut(std::mem::take))
+    }
+
+    fn ran(commands: &[String], prefix: &str) -> usize {
+        commands
+            .iter()
+            .filter(|command| command.starts_with(prefix))
+            .count()
+    }
+
+    #[test]
+    fn an_index_without_gitlinks_skips_the_submodule_script_clean_and_dirty() {
+        let scratch = crate::test_support::temp_home().unwrap();
+        let root = scratch.path();
+        git(root, &["init", "-q"]);
+        std::fs::write(root.join("tracked"), "checked\n").unwrap();
+        commit_all(root);
+        let head = String::from_utf8(git(root, &["rev-parse", "HEAD"])).unwrap();
+
+        let (clean, commands) = observed(root);
+        assert_eq!(clean.commit, head.trim());
+        assert!(clean.submodules.is_empty() && clean.changes.is_empty());
+        assert_eq!(ran(&commands, "submodule"), 0, "{commands:?}");
+        // Location and HEAD are one read at each end, beside the tree read.
+        assert!(ran(&commands, "rev-parse") <= 3, "{commands:?}");
+
+        // A dirty capture rechecks the gitlink set, still without the script.
+        std::fs::write(root.join("tracked"), "edited\n").unwrap();
+        let (dirty, commands) = observed(root);
+        assert_eq!(dirty.changes.len(), 1);
+        assert_eq!(ran(&commands, "submodule"), 0, "{commands:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_checkout_path_holding_a_newline_is_still_observed() {
+        let scratch = crate::test_support::temp_home().unwrap();
+        let root = scratch.path().join("repo\nname");
+        std::fs::create_dir(&root).unwrap();
+        git(&root, &["init", "-q"]);
+        std::fs::write(root.join("tracked"), "checked\n").unwrap();
+        commit_all(&root);
+        let head = String::from_utf8(git(&root, &["rev-parse", "HEAD"])).unwrap();
+        let (source, _) = observed(&root);
+        assert_eq!(source.commit, head.trim());
+        assert!(source.submodules.is_empty() && source.changes.is_empty());
+    }
+
+    #[test]
+    fn a_gitlink_runs_the_submodule_script_and_reports_the_pinned_child() {
+        let scratch = crate::test_support::temp_home().unwrap();
+        let source = scratch.path().join("child-source");
+        let root = scratch.path().join("parent");
+        for repository in [&source, &root] {
+            std::fs::create_dir(repository).unwrap();
+            git(repository, &["init", "-q"]);
+            std::fs::write(repository.join("tracked"), "checked\n").unwrap();
+            commit_all(repository);
+        }
+        git(
+            &root,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--",
+                source.to_str().unwrap(),
+                "child",
+            ],
+        );
+        commit_all(&root);
+        let pin = String::from_utf8(git(&root, &["rev-parse", "HEAD:child"])).unwrap();
+
+        let (clean, commands) = observed(&root);
+        assert_eq!(clean.submodules.len(), 1);
+        assert_eq!(clean.submodules[0].path, "child");
+        assert_eq!(clean.submodules[0].commit, pin.trim());
+        assert_eq!(ran(&commands, "submodule status"), 1, "{commands:?}");
+
+        // A dirty capture still rechecks the children through the script.
+        std::fs::write(root.join("tracked"), "edited\n").unwrap();
+        let (dirty, commands) = observed(&root);
+        assert_eq!(dirty.submodules, clean.submodules);
+        assert_eq!(ran(&commands, "submodule status"), 2, "{commands:?}");
     }
 
     #[test]
