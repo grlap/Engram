@@ -32,6 +32,7 @@ pub use activity::TaskSyncExportOptions;
 pub mod git;
 pub mod inventory;
 pub mod ledger;
+pub mod memories;
 pub mod progress;
 mod publication;
 pub mod reconciliation;

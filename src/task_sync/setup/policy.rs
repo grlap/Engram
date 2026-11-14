@@ -15,7 +15,7 @@ fn ignore() -> String {
     // Admit only the carrier's UUID directories and JSON leaves. The evidence
     // reader still verifies shard agreement, ordinary modes and pack contents.
     format!(
-        "{IGNORE}!/evidence/\n/evidence/*\n!/evidence/{id}/\n/evidence/*/*\n!/evidence/{id}/{shard}/\n/evidence/*/*/*\n!/evidence/{id}/{shard}/{id}.json\n"
+        "{IGNORE}!/memories/\n/memories/*\n!/memories/*/\n/memories/*/*\n!/memories/*/head.json\n!/memories/*/{id}.json\n!/evidence/\n/evidence/*\n!/evidence/{id}/\n/evidence/*/*\n!/evidence/{id}/{shard}/\n/evidence/*/*/*\n!/evidence/{id}/{shard}/{id}.json\n"
     )
 }
 

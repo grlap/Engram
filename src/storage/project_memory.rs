@@ -18,6 +18,7 @@ mod history;
 mod read;
 mod retirement;
 mod state;
+mod sync;
 #[cfg(test)]
 mod tests;
 use history::memory_full;
@@ -139,6 +140,14 @@ pub(crate) fn validate_remember_request<R: Redactor>(
         Some(key) => validate_project_memory_key(key)?,
         None => slug_project_memory_key(&request.body)?,
     };
+    if let Some(tag) = crate::task_sync::memories::ImportProvenance::from_actor(&actor)? {
+        if partial {
+            return Err(StoreError::InvalidProjectMemory(
+                "import provenance requires a whole-body capture".into(),
+            ));
+        }
+        tag.validate_capture(&request.project_id, Some(&key), &request.body)?;
+    }
     if (request.revise && request.key.is_none())
         || (!request.revise && request.expected_revision.is_some())
         || request.expected_revision == Some(0)
@@ -281,12 +290,9 @@ impl SqliteStore {
         R: Redactor,
         A: Fn(&ProjectMemoryFull, ProjectMemoryAdmission) -> Result<(), StoreError>,
     {
-        let partial = *edit != crate::domain::ProjectMemoryEdit::Whole;
-        let (actor, key) = validate_remember_request(request, edit, redactor)?;
-        let mut request = request.clone();
-        request.actor = actor;
-
         let work_schema_version = self.opened_work_schema_version();
+        // Refuse invalid input before registering a process-default session.
+        validate_remember_request(request, edit, redactor)?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -299,8 +305,36 @@ impl SqliteStore {
                 now,
             )?;
         }
-        let _ = project_memory_state_on(&transaction, &request.project_id)?;
-        let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
+        let receipt = Self::remember_project_memory_on(
+            &transaction,
+            request,
+            edit,
+            redactor,
+            admit_full_response,
+        )?;
+        transaction.commit()?;
+        Ok(receipt)
+    }
+
+    /// The ordinary writer inside a caller-owned transaction. Batch imports
+    /// use this path so every revision of a key has one atomic commit.
+    pub(crate) fn remember_project_memory_on<R, A>(
+        transaction: &rusqlite::Transaction<'_>,
+        request: &RememberProjectMemoryRequest,
+        edit: &crate::domain::ProjectMemoryEdit,
+        redactor: &R,
+        admit_full_response: A,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError>
+    where
+        R: Redactor,
+        A: Fn(&ProjectMemoryFull, ProjectMemoryAdmission) -> Result<(), StoreError>,
+    {
+        let partial = *edit != crate::domain::ProjectMemoryEdit::Whole;
+        let (actor, key) = validate_remember_request(request, edit, redactor)?;
+        let mut request = request.clone();
+        request.actor = actor;
+        let _ = project_memory_state_on(transaction, &request.project_id)?;
+        let history = lookup_project_memory_history_on(transaction, &request.project_id, &key)?;
         let existing = history.last();
         let current = history_revision(&history)?;
         // A partial edit stores the full body it builds from its basis, so
@@ -374,9 +408,17 @@ impl SqliteStore {
             }
             crate::domain::ProjectMemoryRetiringTargetChange::Clear => None,
             crate::domain::ProjectMemoryRetiringTargetChange::Set { target } => Some(
-                resolve_retiring_target_on(&transaction, &request.project_id, target)?,
+                resolve_retiring_target_on(transaction, &request.project_id, target)?,
             ),
         };
+        let imported = crate::task_sync::memories::ImportProvenance::from_actor(&request.actor)?;
+        if let Some(tag) = &imported
+            && tag.retiring_target != retiring_target
+        {
+            return Err(StoreError::InvalidProjectMemory(
+                "import provenance retirement target mismatch".into(),
+            ));
+        }
         if let Some(existing) = &existing {
             if existing.assertion.status == MemoryStatus::Tombstoned {
                 return Err(StoreError::ProjectMemoryRetired(key));
@@ -401,6 +443,8 @@ impl SqliteStore {
                 && replay.version.retiring_target_cleared == clears_target
                 && replay.version.actor.actor_id == request.actor.actor_id
                 && replay.version.actor.session_id == request.actor.session_id
+                && crate::task_sync::memories::ImportProvenance::from_actor(&replay.version.actor)?
+                    == imported
             {
                 let replay_index = usize::try_from(replay_revision - 1).map_err(|_| {
                     StoreError::InvalidProjectMemory("memory revision exceeds its range".into())
@@ -426,9 +470,6 @@ impl SqliteStore {
                     duplicate: true,
                     change,
                 };
-                // A replay writes nothing of its own; it commits so that a
-                // registration made in this transaction is kept.
-                transaction.commit()?;
                 return Ok(receipt);
             }
             if !request.revise {
@@ -471,6 +512,7 @@ impl SqliteStore {
             remembered_at: request.created_at,
             actor_id: request.actor.actor_id.clone(),
             actor_context: request.actor.attribution_context().map(str::to_owned),
+            reported_source: imported.map(|tag| tag.source),
             session_id: request.actor.session_id.clone(),
             retiring_target: retiring_target.clone(),
             retiring_state: None,
@@ -497,18 +539,18 @@ impl SqliteStore {
         let prepared =
             prepare_project_memory(&request, &key, existing, retiring_target, clears_target)?;
         Self::insert_project_memory_version_object(
-            &transaction,
+            transaction,
             &prepared.version_object,
             &request.project_id,
             &key,
         )?;
         Self::insert_object(
-            &transaction,
+            transaction,
             "memory_assertion_event",
             &prepared.assertion_object,
         )?;
         Self::apply_memory_projection(
-            &transaction,
+            transaction,
             prepared.version_object.key(),
             prepared.assertion_object.key(),
             &prepared.version,
@@ -516,14 +558,13 @@ impl SqliteStore {
             MemoryProjectionMode::Live,
         )?;
         advance_project_memory_state_on(
-            &transaction,
+            transaction,
             &request.project_id,
             i64::from(existing.is_none()),
         )?;
         let change = existing
             .filter(|_| request.revise)
             .map(|before| edit::change(edit, &before.version.body, &request.body));
-        transaction.commit()?;
         Ok(ProjectMemoryMutationReceipt {
             key,
             revision,
@@ -563,7 +604,7 @@ impl SqliteStore {
         redactor: &R,
         register_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        let (actor, key) = validate_forget_request(request, redactor)?;
+        validate_forget_request(request, redactor)?;
         let work_schema_version = self.opened_work_schema_version();
         let transaction = self
             .connection
@@ -577,8 +618,20 @@ impl SqliteStore {
                 now,
             )?;
         }
-        let _ = project_memory_state_on(&transaction, &request.project_id)?;
-        let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
+        let receipt = Self::forget_project_memory_on(&transaction, request, redactor)?;
+        transaction.commit()?;
+        Ok(receipt)
+    }
+
+    /// The ordinary terminal writer inside a caller-owned transaction.
+    pub(crate) fn forget_project_memory_on<R: Redactor>(
+        transaction: &rusqlite::Transaction<'_>,
+        request: &ForgetProjectMemoryRequest,
+        redactor: &R,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        let (actor, key) = validate_forget_request(request, redactor)?;
+        let _ = project_memory_state_on(transaction, &request.project_id)?;
+        let history = lookup_project_memory_history_on(transaction, &request.project_id, &key)?;
         let existing = history
             .last()
             .ok_or_else(|| StoreError::ProjectMemoryNotFound(key.clone()))?;
@@ -593,9 +646,6 @@ impl SqliteStore {
                 duplicate: true,
                 change: None,
             };
-            // A replay writes nothing of its own; it commits so that a
-            // registration made in this transaction is kept.
-            transaction.commit()?;
             return Ok(receipt);
         }
         if existing.assertion.status != MemoryStatus::Active {
@@ -620,17 +670,16 @@ impl SqliteStore {
             created_at: request.created_at,
         };
         let assertion_object = CanonicalObject::mint(&assertion)?;
-        Self::insert_object(&transaction, "memory_assertion_event", &assertion_object)?;
+        Self::insert_object(transaction, "memory_assertion_event", &assertion_object)?;
         Self::apply_memory_projection(
-            &transaction,
+            transaction,
             &existing.version_id,
             assertion_object.key(),
             &existing.version,
             &assertion,
             MemoryProjectionMode::Live,
         )?;
-        advance_project_memory_state_on(&transaction, &request.project_id, -1)?;
-        transaction.commit()?;
+        advance_project_memory_state_on(transaction, &request.project_id, -1)?;
         Ok(ProjectMemoryMutationReceipt {
             key,
             revision,
@@ -941,11 +990,24 @@ pub(super) fn validate_keyed_project_memory_shape(
     };
     let restored = version.source_snapshot.as_ref().is_some_and(|source| {
         (source.source_ref == super::graph_snapshot::RESTORED_MEMORY_SOURCE
-            || source.source_ref == super::graph_snapshot::RESTORED_REDACTED_MEMORY_SOURCE)
+            || source.source_ref == super::graph_snapshot::RESTORED_REDACTED_MEMORY_SOURCE
+            || (source.source_ref == crate::task_sync::memories::TERMINAL_SOURCE
+                && assertion.status == MemoryStatus::Tombstoned))
             && ObjectId::from_stored(source.fingerprint.clone()).is_some()
     });
     if let Some(target) = version.retiring_target.as_ref() {
         validate_retiring_target_shape(target).map_err(|error| invalid(&error.to_string()))?;
+    }
+    if let Some(tag) = crate::task_sync::memories::ImportProvenance::from_actor(&version.actor)? {
+        let Scope::Project { project } = &version.scope else {
+            unreachable!()
+        };
+        tag.validate_capture(project, Some(key), &version.body)?;
+        if tag.retiring_target != version.retiring_target {
+            return Err(invalid(
+                "reported memory source target differs from stored target",
+            ));
+        }
     }
     // A clear removes the previous version's target, so it never carries one
     // and never starts a chain.

@@ -4,6 +4,7 @@ use std::fs;
 mod advance;
 mod commit;
 mod evidence;
+mod memories;
 mod mixed_planning;
 mod reserved_path;
 
