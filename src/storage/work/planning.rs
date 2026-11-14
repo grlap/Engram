@@ -1011,9 +1011,8 @@ pub(super) fn revised_event(
 
 /// Applies an admitted scalar edit from a resolved task folder as an ordinary
 /// planning revision under project authority, on the caller's transaction.
-/// The caller admitted the item as restored, Open and run-free, so there is no
-/// claim to rebase and no obligation to open or waive; its origin, restored
-/// record and history stay as they are.
+/// Origin does not change planning authority. The ordinary writer owns field
+/// validation, canonical events, claim rebasing and binding obligations.
 pub(super) fn apply_folder_scalar_revision_on(
     transaction: &Transaction<'_>,
     work_id: WorkId,
@@ -1021,35 +1020,21 @@ pub(super) fn apply_folder_scalar_revision_on(
     actor: &crate::domain::ActorContext,
     at: DateTime<Utc>,
 ) -> Result<WorkItem, StoreError> {
-    let mut item = load_work_item(transaction, work_id)?;
-    if item.active_run_id.is_some() || item.lifecycle != WorkLifecycle::Open {
-        return Err(StoreError::InvalidWorkProjection(
-            "a folder scalar revision requires an admitted run-free Open item".into(),
-        ));
-    }
-    if let Some(title) = change.title.as_deref() {
-        item.title = normalize_text(title, crate::storage::refusal_labels::TITLE)?;
-    }
-    if let Some(outcome) = change.outcome.as_deref() {
-        item.outcome = normalize_text(outcome, crate::storage::refusal_labels::OUTCOME)?;
-    }
-    if let Some(priority) = change.priority {
-        validate_priority(priority, crate::storage::refusal_labels::PRIORITY)?;
-        item.priority = priority;
-    }
-    item.revision += 1;
-    item.updated_at = at;
-    persist_work_item(transaction, &item)?;
-    let event = revised_event(
-        &item,
-        None,
-        None,
-        WorkPlanningAuthority::Project,
-        actor.clone(),
-        at,
-    );
-    append_work_event(transaction, &event)?;
-    Ok(item)
+    let item = load_work_item(transaction, work_id)?;
+    revise_work_on(
+        transaction,
+        &ReviseWorkRequest {
+            work_id,
+            expected_revision: item.revision,
+            patch: change.patch(),
+            authority: WorkPlanningAuthority::Project,
+            actor: actor.clone(),
+            // The folder owner owns operation replay for the complete import.
+            idempotency_key: String::new(),
+            updated_at: at,
+        },
+        &NativePlanningEvent::Ordinary,
+    )
 }
 
 /// Materializes an admitted folder removal without creating execution state.

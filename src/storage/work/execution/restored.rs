@@ -118,17 +118,22 @@ pub(in crate::storage::work) fn ensure_restored_execution_state_for_event(
         ));
     }
 
-    let (mut execution, created_execution) =
-        if let Some(execution) = active_root_execution_optional(transaction, item.root_id)? {
-            (execution, false)
-        } else {
-            (
+    let (mut execution, created_execution) = if let Some(execution) =
+        active_root_execution_optional(transaction, item.root_id)?
+    {
+        (execution, false)
+    } else {
+        (
                 RootExecution {
                     schema_version: SCHEMA_VERSION,
                     root_execution_id: mutation.root_id(item.root_id)?,
                     project_id: item.project_id.clone(),
                     root_id: item.root_id,
-                    generation: 1,
+                    generation: transaction.query_row(
+                        "SELECT COALESCE(MAX(generation), 0) + 1 FROM work_root_executions WHERE root_id = ?1",
+                        [item.root_id.0.to_string()],
+                        |row| row.get(0),
+                    )?,
                     state: RootExecutionState::Active,
                     revision: 1,
                     run_ids: Vec::new(),
@@ -142,7 +147,7 @@ pub(in crate::storage::work) fn ensure_restored_execution_state_for_event(
                 },
                 true,
             )
-        };
+    };
     let generation = transaction.query_row(
         "SELECT COALESCE(MAX(generation), 0) + 1 FROM work_runs WHERE work_id = ?1",
         [item.work_id.0.to_string()],

@@ -4,9 +4,15 @@ use super::attribution::resolve_shell_work_attribution;
 use anyhow::Result;
 use engram::{
     LocalWorkService, ProjectId, SessionId,
+    storage::{TaskSyncImportResult, TaskSyncTaskStatus},
     task_sync::{directory, setup},
 };
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+// A partial folder import keeps admitted changes but must not advance the
+// caller's incoming-commit base as if every incoming document was consumed.
+const PARTIAL_IMPORT_EXIT: u8 = 3;
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct TaskSyncArgs {
@@ -318,7 +324,7 @@ pub(crate) async fn run(
     project: ProjectId,
     project_file: &Path,
     args: TaskSyncArgs,
-) -> Result<bool> {
+) -> Result<ExitCode> {
     Box::pin(engram::operation_time::observe(
         "task-sync command",
         run_observed(database, project, project_file, args),
@@ -331,9 +337,15 @@ async fn run_observed(
     project: ProjectId,
     project_file: &Path,
     args: TaskSyncArgs,
-) -> Result<bool> {
+) -> Result<ExitCode> {
     if args.settings_action().is_some() {
-        return run_settings(database, project, &args);
+        return run_settings(database, project, &args).map(|success| {
+            if success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        });
     }
     let attribution = resolve_shell_work_attribution(args.actor_id, args.session_id)?;
     let selected_project = project.clone();
@@ -369,7 +381,7 @@ async fn run_observed(
         )?;
         attribution.print_notices();
         println!("{}", serde_json::to_string_pretty(&receipt)?);
-        return Ok(true);
+        return Ok(ExitCode::SUCCESS);
     }
     match args.operation {
         TaskSyncCommand::Step { request } => {
@@ -591,7 +603,7 @@ async fn run_observed(
             dry_run,
             json,
         } => {
-            let outcome = (|| -> Result<()> {
+            let outcome = (|| -> Result<TaskSyncImportResult> {
                 service.require_task_sync_enabled()?;
                 let data = engram::task_sync::data_worktree::DataWorktree::observe_project(
                     project_file,
@@ -616,21 +628,55 @@ async fn run_observed(
                 )?;
                 attribution.print_notices();
                 println!("{}", serde_json::to_string_pretty(&result)?);
-                Ok(())
+                Ok(result)
             })();
-            return refusal_outcome(outcome, json);
+            return match outcome {
+                Ok(result) => Ok(import_exit_code(&result, &path)),
+                Err(error) => refusal_outcome(Err(error), json),
+            };
         }
     }
-    Ok(true)
+    Ok(ExitCode::SUCCESS)
+}
+
+fn import_exit_code(result: &TaskSyncImportResult, folder: &Path) -> ExitCode {
+    let mut partial = false;
+    for task in &result.tasks {
+        let status = match task.status {
+            TaskSyncTaskStatus::Applied => continue,
+            TaskSyncTaskStatus::Held => "held",
+            TaskSyncTaskStatus::Refused => "refused",
+        };
+        partial = true;
+        let task_file = folder.join("tasks").join(format!("{}.json", task.task.0));
+        let location = if task_file.is_file() {
+            task_file.display().to_string()
+        } else {
+            format!("omitted task {}", task.task.0)
+        };
+        eprintln!(
+            "{location}: {status} ({}: {})",
+            task.reason.as_deref().unwrap_or("unknown"),
+            task.detail.as_deref().unwrap_or("no detail")
+        );
+    }
+    if partial {
+        eprintln!(
+            "Partial task import: preserve the incoming Git commit before the next export; a routine export now would overwrite its pending edits. Re-merge that commit against a fresh local export using the common commit, then import the resolved documents with the fresh basis. Do not replay the old documents over newer local edits or advance the incoming commit as the exchange base. Applied changes remain applied; --dry-run writes nothing."
+        );
+        ExitCode::from(PARTIAL_IMPORT_EXIT)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// With `--json`, a store refusal is printed on stderr as the structured
 /// error, carrying its stable code, and the command fails. A work-item
 /// remedy never applies to these commands, so it is left out. Any other
 /// error, and every error without `--json`, propagates as before.
-fn refusal_outcome(outcome: Result<()>, json: bool) -> Result<bool> {
+fn refusal_outcome(outcome: Result<()>, json: bool) -> Result<ExitCode> {
     match outcome {
-        Ok(()) => Ok(true),
+        Ok(()) => Ok(ExitCode::SUCCESS),
         Err(error) if json => {
             let Some(refusal) = error.downcast_ref::<engram::StoreError>() else {
                 return Err(error);
@@ -640,7 +686,7 @@ fn refusal_outcome(outcome: Result<()>, json: bool) -> Result<bool> {
                 details.remove("remedy");
             }
             eprintln!("{}", serde_json::to_string_pretty(&value)?);
-            Ok(false)
+            Ok(ExitCode::FAILURE)
         }
         Err(error) => Err(error),
     }

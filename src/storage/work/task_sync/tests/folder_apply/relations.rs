@@ -17,13 +17,8 @@ fn roots(tasks: Vec<TaskDocument>) -> TaskTree {
     tree
 }
 
-fn assert_relation_conflict(error: &StoreError, expected: &str) {
-    assert_eq!(
-        conflict(error),
-        format!(
-            "local work input is invalid: task folder import refuses the selected changes: {expected}"
-        )
-    );
+fn assert_relation_refusal(result: &TaskSyncImportResult, expected: &str) {
+    assert_eq!(refusals(result), expected);
 }
 
 #[test]
@@ -154,8 +149,8 @@ fn folder_relations_preserve_blocker_identity_and_refuse_rewrite_or_resurrection
         task.blockers[0].detail = "rewritten".into();
     });
     let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &rewritten, "rewrite", 6).unwrap_err(),
+    assert_relation_refusal(
+        &exchange(&mut store, &rewritten, "rewrite", 6).unwrap(),
         &format!(
             "{}: immutable_blocker (blocker {} has different immutable content)",
             owner.id.0, original_blocker.blocker_id
@@ -165,8 +160,8 @@ fn folder_relations_preserve_blocker_identity_and_refuse_rewrite_or_resurrection
     let cleared = edited(&initial, owner.id, |task| task.blockers.clear());
     exchange(&mut store, &cleared, "clear", 7).unwrap();
     let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &initial, "resurrect", 8).unwrap_err(),
+    assert_relation_refusal(
+        &exchange(&mut store, &initial, "resurrect", 8).unwrap(),
         &format!(
             "{}: id_collision (blocker {} is already held, including cleared identities)",
             owner.id.0, original_blocker.blocker_id
@@ -197,8 +192,8 @@ fn folder_relations_distinguish_held_endpoint_from_changed_owner_and_completed_e
         task.blockers.push(blocker("blocked"));
     });
     let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &changed_owner, "held-owner", 8).unwrap_err(),
+    assert_relation_refusal(
+        &exchange(&mut store, &changed_owner, "held-owner", 8).unwrap(),
         &format!("{}: active_run (run {})", endpoint.id.0, claim.run_id.0),
     );
     assert_eq!(state(&store), before);
@@ -207,15 +202,33 @@ fn folder_relations_distinguish_held_endpoint_from_changed_owner_and_completed_e
     let completed_edge = edited(&fixture.tree, fixture.first, |task| {
         task.prerequisites.push(fixture.completed);
     });
-    let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &completed_edge, "completed-edge", 6).unwrap_err(),
-        &format!(
-            "{}: already_satisfied (prerequisite {} is Completed)",
-            fixture.first.0, fixture.completed.0
-        ),
+    let endpoint = store.get_work_item(fixture.completed).unwrap();
+    let owner = store.get_work_item(fixture.first).unwrap();
+    let ordinary = store
+        .add_work_prerequisite(
+            &crate::domain::ChangeWorkPrerequisiteRequest {
+                work_id: owner.work_id,
+                prerequisite_id: endpoint.work_id,
+                expected_revision: owner.revision,
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "ordinary-completed-edge".into(),
+                changed_at: at(6),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap_err();
+    assert!(
+        matches!(ordinary, StoreError::WorkPrerequisiteAlreadySatisfied(id) if id == endpoint.work_id)
     );
-    assert_eq!(state(&store), before);
+    let result = exchange(&mut store, &completed_edge, "completed-edge", 6).unwrap();
+    assert_eq!(
+        result.tasks[0].status,
+        crate::storage::TaskSyncTaskStatus::Applied
+    );
+    assert_eq!(store.get_work_item(endpoint.work_id).unwrap(), endpoint);
+    assert_eq!(exported(&store), completed_edge);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -233,8 +246,8 @@ fn folder_relations_refuse_affected_root_but_preserve_unrelated_scalar_changes()
         task.blockers.push(blocker("readiness"));
     });
     let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &changed, "bound-root", 7).unwrap_err(),
+    assert_relation_refusal(
+        &exchange(&mut store, &changed, "bound-root", 7).unwrap(),
         &format!(
             "{}: ancestor_binding (root {} has active root execution {})",
             fixture.second.0, fixture.parent.0, execution.root_execution_id.0
@@ -310,8 +323,8 @@ fn assert_bound_ancestor_refusal(indirect: bool, cancelled: bool) {
     });
     resolved.validate_folder().unwrap();
     let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &resolved, "bound-ancestor", 7).unwrap_err(),
+    assert_relation_refusal(
+        &exchange(&mut store, &resolved, "bound-ancestor", 7).unwrap(),
         &expected,
     );
     assert_eq!(state(&store), before);
@@ -384,7 +397,7 @@ fn folder_relations_dry_run_late_failure_and_replay_after_local_work_are_atomic(
 }
 
 #[test]
-fn folder_relations_allow_native_open_endpoint_but_never_a_native_owner() {
+fn folder_relations_allow_native_open_endpoints_and_native_owners() {
     let (mut store, fixture) = enrolled();
     let native = store
         .create_work(
@@ -404,15 +417,16 @@ fn folder_relations_allow_native_open_endpoint_but_never_a_native_owner() {
     let changed = edited(&resolved, native.work_id, |task| {
         task.blockers.push(blocker("not an owner"));
     });
-    let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &changed, "native-owner", 8).unwrap_err(),
-        &format!(
-            "{}: unsupported_origin (not a task restored by a task-sync import)",
-            native.work_id.0
-        ),
+    assert!(
+        exchange(&mut store, &changed, "native-owner", 8)
+            .unwrap()
+            .changed
     );
-    assert_eq!(state(&store), before);
+    let item = query::load_work_item(&store.connection, native.work_id).unwrap();
+    assert_eq!(item.created_by, native.created_by);
+    assert_eq!(item.active_run_id, native.active_run_id);
+    assert_eq!(exported(&store), changed);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -454,8 +468,8 @@ fn folder_relations_bound_replacement_removes_before_adding_and_overflow_is_atom
         task.prerequisites.sort_by_key(|id| id.0);
     });
     let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &overflow, "overflow", 6).unwrap_err(),
+    assert_relation_refusal(
+        &exchange(&mut store, &overflow, "overflow", 6).unwrap(),
         &format!(
             "{}: prerequisite_bound (the resulting prerequisite set exceeds the per-item bound)",
             owner.id.0
@@ -523,13 +537,22 @@ fn folder_relations_keep_original_origin_union_when_current_edges_are_removed() 
     let mut resolved = edited(&initial, q.id, |task| task.prerequisites.clear());
     resolved.tasks.push(child.clone());
     resolved.tasks.sort_by_key(|task| task.id.0);
-    let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "origin-cycle", 6).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "origin-cycle", 6).unwrap());
     assert!(
         message.contains(&format!("{}: origin_graph", child.id.0)),
         "{message}"
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        exported(&store)
+            .tasks
+            .iter()
+            .find(|task| task.id == q.id)
+            .unwrap()
+            .prerequisites,
+        []
+    );
+    assert!(query::load_work_item(&store.connection, child.id).is_err());
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -571,10 +594,10 @@ fn folder_relations_identity_refusal_does_not_overwrite_unsupported_field_preced
     exchange(&mut store, &initial, "enrol", 5).unwrap();
     let resolved = edited(&initial, owner.id, |task| {
         task.blockers[0].detail = "rewrite".into();
-        task.labels.push("unsupported".into());
+        task.kind = WorkItemKind::Bug;
     });
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "precedence", 6).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "precedence", 6).unwrap());
     assert!(message.contains("unsupported_fields"), "{message}");
     assert!(!message.contains("immutable_blocker"), "{message}");
     assert_eq!(message.matches(&owner.id.0.to_string()).count(), 1);
@@ -670,7 +693,7 @@ fn folder_relations_refuse_a_cycle_through_a_retired_required_child() {
     });
     assert!(resolved.validate_stored().is_ok());
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "hidden-cycle", 7).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "hidden-cycle", 7).unwrap());
     assert!(
         message.contains(&format!("{}: durable_graph", endpoint.id.0)),
         "{message}"
@@ -738,20 +761,30 @@ fn folder_relations_refuse_same_folder_addition_below_a_changed_held_ancestor() 
         });
         resolved.tasks.push(child.clone());
         resolved.tasks.sort_by_key(|task| task.id.0);
-        let before = state(&store);
-        assert_relation_conflict(
-            &exchange(&mut store, &resolved, "changed-ancestor", 6).unwrap_err(),
+        assert_relation_refusal(
+            &exchange(&mut store, &resolved, "changed-ancestor", 6).unwrap(),
             &format!(
                 "{}: ancestor_binding (ancestor {} has a relation change in this folder)",
                 child.id.0, ancestor.0
             ),
         );
-        assert_eq!(state(&store), before);
+        assert_eq!(
+            exported(&store)
+                .tasks
+                .iter()
+                .find(|task| task.id == ancestor)
+                .unwrap()
+                .blockers
+                .len(),
+            1
+        );
+        assert!(query::load_work_item(&store.connection, child.id).is_err());
+        assert!(store.verify_all().unwrap().is_healthy());
     }
 }
 
 #[test]
-fn folder_relations_refuse_new_edges_to_cancelled_prerequisites() {
+fn folder_relations_preserve_shared_edges_to_cancelled_prerequisites() {
     let owner = document("owner", None);
     let mut endpoint = document("cancelled endpoint", None);
     endpoint.lifecycle = WorkLifecycle::Cancelled;
@@ -762,15 +795,15 @@ fn folder_relations_refuse_new_edges_to_cancelled_prerequisites() {
     let resolved = edited(&initial, owner.id, |task| {
         task.prerequisites.push(endpoint.id);
     });
-    let before = state(&store);
-    assert_relation_conflict(
-        &exchange(&mut store, &resolved, "cancelled-endpoint", 6).unwrap_err(),
-        &format!(
-            "{}: prerequisite_lifecycle (prerequisite {} is Cancelled)",
-            owner.id.0, endpoint.id.0
-        ),
+    let held = store.get_work_item(endpoint.id).unwrap();
+    let result = exchange(&mut store, &resolved, "cancelled-endpoint", 6).unwrap();
+    assert_eq!(
+        result.tasks[0].status,
+        crate::storage::TaskSyncTaskStatus::Applied
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(store.get_work_item(endpoint.id).unwrap(), held);
+    assert_eq!(exported(&store), resolved);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 fn defend_dependency_edge_after_shape_validation(ancestor: bool) {
@@ -820,10 +853,16 @@ fn defend_dependency_edge_after_shape_validation(ancestor: bool) {
         &actor("folder-importer"),
         at(6),
     )
-    .unwrap_err();
+    .unwrap();
     drop(transaction);
-    assert_relation_conflict(
-        &error,
+    let result = TaskSyncImportResult {
+        task_count: resolved.tasks.len(),
+        changed: false,
+        dry_run: true,
+        tasks: error.tasks,
+    };
+    assert_relation_refusal(
+        &result,
         &format!(
             "{}: dependency_cycle (prerequisite {} is the owner or its ancestor)",
             fixture.first.0, target.0
@@ -889,7 +928,7 @@ fn folder_relations_validate_cycles_through_retained_local_nonmembers() {
     resolved.validate_folder().unwrap();
     // R omits local H and is valid; C plus R contains P -> H -> Q -> P.
     let before = state(&store);
-    let message = conflict(&exchange(&mut store, &resolved, "retained-cycle", 8).unwrap_err());
+    let message = refusals(&exchange(&mut store, &resolved, "retained-cycle", 8).unwrap());
     assert!(
         message.contains(&format!("{}: retained_graph (", q.id.0)),
         "{message}"

@@ -379,7 +379,8 @@ pub(super) fn validate(profile: &ExportProfile, record: &RecordEnvelope) -> Resu
                 | d::WorkTransition::EvidenceAdded { .. }
                 | d::WorkTransition::MemoryCaptured { .. }
                 | d::WorkTransition::TypedEvidenceAdded { .. }
-                | d::WorkTransition::Completed { .. } => {}
+                | d::WorkTransition::Completed { .. }
+                | d::WorkTransition::CompletionReported { .. } => {}
             }
         }
         K::WorkItemRevision => Disclosure::work(&decode(record)?)?,

@@ -1490,6 +1490,10 @@ pub enum WorkTransition {
     Completed {
         seal: ObjectId,
     },
+    /// An imported outcome, without local completion or verification credit.
+    CompletionReported {
+        record: ObjectId,
+    },
     Disposed {
         lifecycle: WorkLifecycle,
         replacement_id: Option<WorkId>,

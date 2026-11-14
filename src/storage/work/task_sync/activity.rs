@@ -88,6 +88,7 @@ fn native(
                 }
             }
             WorkTransition::Completed { .. }
+            | WorkTransition::CompletionReported { .. }
             | WorkTransition::Disposed { .. }
             | WorkTransition::SupersededByImport { .. } => {
                 if let Some((activity_id, claim)) = &current
@@ -124,6 +125,40 @@ fn native(
         }
     }
     Ok(entries)
+}
+
+/// A reported outcome can abandon this host's expired claim episode. Carry
+/// only that locally recorded transition into the expected export; every other
+/// incoming notice must still match the exported document exactly.
+pub(super) fn after_reported_completion(
+    connection: &Connection,
+    task: &mut crate::task_sync::TaskDocument,
+    machine: Option<&str>,
+) -> Result<(), StoreError> {
+    let Some(machine) = machine else {
+        return Ok(());
+    };
+    let item = super::super::query::load_work_item(connection, task.id)?;
+    let records = super::super::query::canonical_work_event_records_for_item(connection, task.id)?;
+    let Some(((_, event), preceding)) = records.split_last() else {
+        return Err(invalid("reported activity lacks its completion event"));
+    };
+    if !matches!(event.transition, WorkTransition::CompletionReported { .. }) {
+        return Err(invalid("reported activity lacks its completion event"));
+    }
+    let before = native(&item, preceding, machine)?;
+    let after = native(&item, &records, machine)?;
+    if let Some(entries) = task.activity.get_mut(machine) {
+        for (id, notice) in after {
+            if let Some(previous) = before.get(&id)
+                && previous != &notice
+                && entries.get(&id) == Some(previous)
+            {
+                entries.insert(id, notice);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn start(

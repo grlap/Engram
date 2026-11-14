@@ -1,19 +1,23 @@
 //! Transaction-local relation writers for a preflighted complete folder.
 //! The caller owns replay, whole-graph admission, final audit and commit.
 
+use super::relations::{PrerequisiteEndpointPolicy, change_work_prerequisite_native_on};
 use super::{
     CanonicalObject, ChangeWorkPrerequisiteRequest, DateTime, PlanningValidation, SCHEMA_VERSION,
     SqliteStore, StoreError, Transaction, Utc, WorkBlocker, WorkEventDraft, WorkId, WorkItem,
-    WorkLifecycle, WorkPlanningAuthority, WorkTransition, append_work_event,
-    change_work_prerequisite_with_validation_on, load_work_item, params, persist_work_item,
-    refresh_work_catalog_projection, require_work_item_relation_integrity,
+    WorkLifecycle, WorkPlanningAuthority, WorkTransition, active_run_snapshot, append_work_event,
+    load_work_item, params, persist_work_item, refresh_work_catalog_projection,
+    require_work_item_relation_integrity,
 };
 
-fn run_free_item(transaction: &Transaction<'_>, id: WorkId) -> Result<WorkItem, StoreError> {
+fn admitted_item(transaction: &Transaction<'_>, id: WorkId) -> Result<WorkItem, StoreError> {
     let item = load_work_item(transaction, id)?;
-    if item.lifecycle != WorkLifecycle::Open || item.active_run_id.is_some() || !item.restored {
+    // The folder admission owner checks live execution in this same writer
+    // transaction. A dormant native run or retained execution is not a ban
+    // on project planning, just as for the ordinary planning writer.
+    if item.lifecycle != WorkLifecycle::Open {
         return Err(StoreError::InvalidWorkProjection(
-            "a folder relation owner lost run-free admission".into(),
+            "a folder relation owner lost lifecycle admission".into(),
         ));
     }
     Ok(item)
@@ -27,12 +31,12 @@ pub(in crate::storage::work) fn apply_folder_prerequisite_on(
     actor: &crate::ActorContext,
     at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
-    let item = run_free_item(transaction, id)?;
+    let item = admitted_item(transaction, id)?;
     // Reuse the existing transaction-internal transition and checked event
     // basis. Only the repeated whole-project graph scan is deferred, as in
     // an atomic plan; folder admission checks the final durable graph and
     // the folder caller audits it again before its one commit.
-    change_work_prerequisite_with_validation_on(
+    change_work_prerequisite_native_on(
         transaction,
         &ChangeWorkPrerequisiteRequest {
             work_id: id,
@@ -46,6 +50,8 @@ pub(in crate::storage::work) fn apply_folder_prerequisite_on(
         add,
         PlanningValidation::AtomicPlan,
         None,
+        PrerequisiteEndpointPolicy::SharedTerminalHistory,
+        &super::successor::NativePlanningEvent::Ordinary,
     )?;
     Ok(())
 }
@@ -60,7 +66,7 @@ pub(in crate::storage::work) fn apply_folder_blocker_on(
     actor: &crate::ActorContext,
     at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
-    let mut item = run_free_item(transaction, id)?;
+    let mut item = admitted_item(transaction, id)?;
     require_work_item_relation_integrity(transaction, id)?;
     let blocker = if let Some(incoming) = added {
         if incoming.blocker_id != blocker_id {
@@ -114,8 +120,8 @@ pub(in crate::storage::work) fn apply_folder_blocker_on(
             work_id: id,
             revision: item.revision,
             work: item.clone(),
-            run_id: None,
-            run: None,
+            run_id: item.active_run_id,
+            run: active_run_snapshot(transaction, &item)?,
             root_execution: None,
             claim: None,
             handoff_offer: None,

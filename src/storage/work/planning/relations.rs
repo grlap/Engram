@@ -67,8 +67,17 @@ pub(super) fn change_work_prerequisite_with_validation_on(
         add,
         validation,
         planned_relations,
+        PrerequisiteEndpointPolicy::Open,
         &super::successor::NativePlanningEvent::Ordinary,
     )
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum PrerequisiteEndpointPolicy {
+    Open,
+    /// A preflighted shared folder may retain an edge added before its
+    /// endpoint ended elsewhere. This grants no local execution authority.
+    SharedTerminalHistory,
 }
 
 pub(super) fn change_work_prerequisite_native_on(
@@ -77,6 +86,7 @@ pub(super) fn change_work_prerequisite_native_on(
     add: bool,
     validation: PlanningValidation,
     planned_relations: Option<&mut PlanRelationBasis>,
+    endpoint_policy: PrerequisiteEndpointPolicy,
     mutation: &super::successor::NativePlanningEvent<'_, '_, '_, '_>,
 ) -> Result<WorkItem, StoreError> {
     mutation.check(transaction, request.work_id)?;
@@ -115,12 +125,19 @@ pub(super) fn change_work_prerequisite_native_on(
     }
     if add {
         mutation.require_unheld(transaction, prerequisite.work_id)?;
-        if prerequisite.lifecycle == WorkLifecycle::Completed {
+        let terminal_history = matches!(
+            endpoint_policy,
+            PrerequisiteEndpointPolicy::SharedTerminalHistory
+        ) && matches!(
+            prerequisite.lifecycle,
+            WorkLifecycle::Completed | WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+        );
+        if prerequisite.lifecycle == WorkLifecycle::Completed && !terminal_history {
             return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
                 prerequisite.work_id,
             ));
         }
-        if prerequisite.lifecycle != WorkLifecycle::Open {
+        if prerequisite.lifecycle != WorkLifecycle::Open && !terminal_history {
             return Err(StoreError::WorkNotOpen(prerequisite.work_id));
         }
         if work_is_ancestor_of(transaction, prerequisite.work_id, &item)? {
