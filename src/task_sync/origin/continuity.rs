@@ -131,6 +131,27 @@ impl PreparedContinuity {
         request: Option<&crate::ObjectId>,
         operation: Option<uuid::Uuid>,
     ) -> Result<(), StoreError> {
+        self.capture_custody_inner(connection, repository, request, operation, false)
+    }
+
+    pub(crate) fn capture_cold_custody(
+        &mut self,
+        connection: &rusqlite::Connection,
+        repository: Option<&Path>,
+        request: Option<&crate::ObjectId>,
+        operation: Option<uuid::Uuid>,
+    ) -> Result<(), StoreError> {
+        self.capture_custody_inner(connection, repository, request, operation, true)
+    }
+
+    fn capture_custody_inner(
+        &mut self,
+        connection: &rusqlite::Connection,
+        repository: Option<&Path>,
+        request: Option<&crate::ObjectId>,
+        operation: Option<uuid::Uuid>,
+        cold: bool,
+    ) -> Result<(), StoreError> {
         if !connection.is_autocommit() {
             return Err(invalid(
                 "observe origin custody outside the SQLite transaction",
@@ -143,7 +164,15 @@ impl PreparedContinuity {
         }
         let mut custody = BTreeMap::new();
         for root in roots {
-            custody.insert(root.clone(), Observed::capture(&root)?);
+            let mut observed = if cold {
+                Observed::capture_cold(&root)?
+            } else {
+                Observed::capture_for(&root, operation)?
+            };
+            if !cold {
+                observed.capture_related_on(connection)?;
+            }
+            custody.insert(root.clone(), observed);
         }
         self.custody = custody;
         self.request = request.cloned();

@@ -16,6 +16,11 @@ use crate::{
 };
 use anyhow::{Context, Result};
 
+mod verified;
+pub use verified::{
+    ChangedTask, VerifiedTaskDelta, read_rooted_task_diff, read_tasks_at, read_verified_task_delta,
+};
+
 const BOUND: Duration = crate::operation_time::MINIMUM;
 pub(super) const MAX_DELTA_BYTES: usize = 128 * 1024 * 1024;
 
@@ -387,6 +392,8 @@ fn parse_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
 pub(super) struct Change {
     pub(super) path: String,
     pub(super) status: String,
+    /// The base blob, so a verified delta can remove the old member exactly.
+    pub(super) old_oid: String,
     pub(super) new_oid: String,
 }
 
@@ -466,6 +473,7 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
         changes.push(Change {
             path: path.into(),
             status: fields[4].into(),
+            old_oid: fields[2].into(),
             new_oid: fields[3].into(),
         });
     }

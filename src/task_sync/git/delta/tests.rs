@@ -10,6 +10,7 @@ mod mixed_evidence;
 mod resolution;
 mod snapshot;
 mod validation;
+mod verified;
 
 struct Fixture {
     _owned: crate::test_support::TempHome,

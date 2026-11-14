@@ -231,14 +231,14 @@ pub(super) fn with_custody_audit<T>(
         }
     } else {
         if let Some((repository, operation)) = incoming_bootstrap {
-            guard.capture_custody(
+            guard.capture_cold_custody(
                 &store.connection,
                 Some(repository),
                 Some(request),
                 Some(operation),
             )?;
         } else {
-            guard.capture_custody(&store.connection, None, None, None)?;
+            guard.capture_cold_custody(&store.connection, None, None, None)?;
         }
         if let Some(retirement) = retirement {
             guard.admit_retained_construction(&store.connection, retirement)?;
@@ -765,6 +765,27 @@ fn with_exchange_inner<T>(
     drop(checked);
     drop(transaction);
     private::advance(&database, &reserved, &next)?;
+    // Settlement requires canonical custody without the current operation's
+    // pre-commit exception. Only then can the exact observed pending writes
+    // leave the repository journal; a lost acknowledgement remains replayable.
+    if guard
+        .custody()
+        .values()
+        .any(super::ledger::custody::Observed::is_managed)
+    {
+        let transaction = store.begin_work_mutation()?;
+        super::ledger::check_origin_custody_on(
+            &transaction,
+            project,
+            guard.custody(),
+            None,
+            None,
+            None,
+        )?;
+    }
+    for observed in guard.custody().values() {
+        observed.settle_managed()?;
+    }
     Ok(result)
 }
 

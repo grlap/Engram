@@ -63,7 +63,7 @@ fn append_version(
         &project,
         Some(previous.record),
         BTreeMap::from([(work, Some(task))]),
-        &previous.export_basis,
+        previous.export_basis.as_deref(),
         &crate::task_sync::progress::ExportProfile {
             include_notes: false,
             origin_machine: None,
@@ -377,7 +377,7 @@ fn current_shared_head_skips_historical_deltas_and_versions_but_doctor_audits_th
         &project,
         Some(baseline.record),
         BTreeMap::from([(work, Some(version.task))]),
-        &baseline.export_basis,
+        baseline.export_basis.as_deref(),
         &profile,
         at(9),
     )

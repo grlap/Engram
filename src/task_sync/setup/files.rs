@@ -126,6 +126,11 @@ impl Directory {
             names.push(entry?.file_name());
         }
         names.sort();
+        #[cfg(test)]
+        DIRECTORY_LISTINGS.with(|count| {
+            let (calls, entries) = count.get();
+            count.set((calls + 1, entries + names.len()));
+        });
         Ok(names)
     }
 
@@ -206,6 +211,11 @@ impl Directory {
         ensure!(bytes.len() <= limit, "setup input grew past byte bound");
         Ok(Some(bytes))
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static DIRECTORY_LISTINGS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
 }
 
 fn one_name(name: &Path) -> Result<()> {

@@ -109,14 +109,10 @@ impl SqliteStore {
                     actual.binding == input.binding && actual.payload == input.payload,
                     "outgoing delta changed before preparation",
                 )?;
-                // The existing full-ledger capacity/custody contract is kept.
-                // This writer removes full task export, not that separate cost.
-                let mut ledger = super::super::Ledger::load(&transaction)?;
+                // The binding, its successor and its tail are read by key, and
+                // capacity from stored lengths; no other exchange is replayed.
                 require(
-                    !ledger
-                        .bindings
-                        .values()
-                        .any(|binding| binding.supersedes.as_ref() == Some(binding_id)),
+                    view::select::successor(&transaction, binding_id)?.is_none(),
                     "outgoing delta binding was superseded",
                 )?;
                 require(
@@ -142,12 +138,13 @@ impl SqliteStore {
                     )?;
                     return Ok(prepared);
                 }
-                let (previous, tail) = ledger
-                    .events
-                    .iter()
-                    .filter(|(_, event)| event.binding == *binding_id)
-                    .max_by_key(|(_, event)| event.sequence)
-                    .ok_or_else(|| invalid("outgoing delta activation missing"))?;
+                let checked = view::read::tail_on(
+                    &transaction,
+                    binding_id,
+                    &input.binding,
+                    &mut view::read::ReadBudget::default(),
+                )?;
+                let (previous, tail) = (&checked.id, &checked.event);
                 require(
                     super::super::super::settled_tail(tail),
                     "outgoing delta cannot bypass an unresolved operation",
@@ -167,7 +164,7 @@ impl SqliteStore {
                         payload: Box::new(input.payload.clone()),
                     },
                 })?;
-                ledger.capacity(&[&object])?;
+                super::super::super::capacity::require_on(&transaction, &[&object])?;
                 // Validate the shared reducer before the first retained write.
                 view::append::propose(&transaction, &input.binding, &object)?;
                 crate::task_sync::retention::delta::retain_candidate(
@@ -177,7 +174,11 @@ impl SqliteStore {
                     &input.payload,
                 )
                 .map_err(|error| invalid(error.to_string()))?;
-                super::super::super::operations::store_event(&transaction, &mut ledger, &object)?;
+                super::super::super::operations::store_event_keyed(
+                    &transaction,
+                    &input.binding,
+                    &object,
+                )?;
                 transaction.commit()?;
                 Ok(object.key().clone())
             },

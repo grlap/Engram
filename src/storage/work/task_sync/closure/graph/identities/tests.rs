@@ -37,7 +37,7 @@ fn planning_member(store: &SqliteStore, task: &TaskDocument) -> ObjectId {
         previous: None,
         changes: BTreeMap::from([(task.id, Some(task.clone()))]),
         inventory_root: InventoryRoot::ZERO.including(task).unwrap().hex(),
-        export_basis: "fixture member".into(),
+        export_basis: Some("fixture member".into()),
         profile: ExportProfile {
             include_notes: true,
             origin_machine: Some("peer".into()),

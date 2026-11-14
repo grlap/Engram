@@ -85,7 +85,12 @@ pub fn retain(binding: &Binding, retained: &RetainedSuccessor) -> Result<()> {
         bytes.len() <= super::MAX_IMPORT_PLAN,
         "successor construction exceeds byte bound"
     );
-    let _guard = audit::AuditReservation::acquire(&binding.repository.git_directory)?;
+    let guard = audit::AuditReservation::acquire(&binding.repository.git_directory)?;
+    guard.reserve_artifact(
+        retained.recipe.request.intent.operation,
+        audit::journal::Family::Successor,
+        retained,
+    )?;
     let git = PrivateDirectory::open(&binding.repository.git_directory)?;
     let directory = container(&git, Path::new(ROOT))?;
     let name = format!("{}.json", retained.recipe.request.intent.operation);
@@ -141,6 +146,31 @@ fn decode(bytes: &[u8]) -> Result<RetainedSuccessor> {
         "retained successor is noncanonical or partial"
     );
     Ok(retained)
+}
+
+pub(super) fn selected(
+    git: &PrivateDirectory,
+    operation: uuid::Uuid,
+) -> Result<Option<RetainedSuccessor>> {
+    let directory = match git.child(Path::new(ROOT)) {
+        Ok(directory) => directory,
+        Err(error) if missing(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let Some(bytes) = audit::read_bytes(
+        &directory,
+        Path::new(&format!("{operation}.json")),
+        super::MAX_IMPORT_PLAN,
+    )?
+    else {
+        return Ok(None);
+    };
+    let retained = decode(&bytes)?;
+    ensure!(
+        retained.recipe.request.intent.operation == operation,
+        "successor operation differs"
+    );
+    Ok(Some(retained))
 }
 
 pub(super) fn inventory(git: &PrivateDirectory) -> Result<BTreeMap<uuid::Uuid, RetainedSuccessor>> {

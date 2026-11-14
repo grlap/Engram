@@ -138,6 +138,7 @@ fn read_selected(
                     changes.push(Change {
                         path,
                         status: "A".into(),
+                        old_oid: String::new(),
                         new_oid: task.oid,
                     });
                     if changes.len() > 100_000 {

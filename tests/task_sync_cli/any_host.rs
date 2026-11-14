@@ -477,3 +477,108 @@ fn task_sync_cli_any_host_execution_and_three_host_chain_preserve_outcomes_and_c
     );
     assert!(store.verify_all().unwrap().is_healthy());
 }
+
+// Two hosts that planned and executed work before ever exchanging: no
+// baseline, begun feeds and a live claim each. Each joins the exchange by
+// importing the merged folder against its own export from before the merge.
+#[test]
+fn task_sync_cli_native_hosts_without_a_baseline_enrol_with_their_own_basis_both_ways() {
+    let fixture = test_support::temp_home().unwrap();
+    let root = fixture.path();
+    let marker = root.join(".engram-project");
+    let project = "native-enrol-cli";
+    fs::write(&marker, format!("{project}\n")).unwrap();
+    data_worktree::initialize(&marker);
+    let hosts = [("A", root.join("home-a")), ("B", root.join("home-b"))];
+    let exported = |home: &Path, name: &str| {
+        let folder = root.join(name);
+        export(home, &marker, &folder);
+        folder
+    };
+    let row = |home: &Path, id: &str| -> Vec<rusqlite::types::Value> {
+        let database = project_database_path(home, &ProjectId(project.into()));
+        rusqlite::Connection::open(database)
+            .unwrap()
+            .query_row(
+                "SELECT item_json, latest_event_id, active_run_id FROM work_items
+                 WHERE work_id = ?1",
+                [id],
+                |row| (0..3_usize).map(|column| row.get(column)).collect(),
+            )
+            .unwrap()
+    };
+    let mut local = Vec::new();
+    for (host, home) in &hosts {
+        initialize(home, &marker, project);
+        work(home, &marker, &["add", &format!("Executed on {host}")]);
+        work(home, &marker, &["add", &format!("Planned on {host}")]);
+        let probe = exported(home, &format!("probe-{host}"));
+        let executed = tree(&probe)
+            .tasks
+            .iter()
+            .find(|task| task.title == format!("Executed on {host}"))
+            .unwrap()
+            .id
+            .0
+            .to_string();
+        work(home, &marker, &["claim", &executed]);
+        assert_ne!(row(home, &executed)[2], rusqlite::types::Value::Null);
+        let own = exported(home, &format!("own-{host}"));
+        let ids = tree(&own)
+            .tasks
+            .iter()
+            .map(|task| task.id.0.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(ids.len(), 2);
+        local.push((own, ids));
+    }
+    let mut merged_tree = tree(&local[0].0);
+    merged_tree.tasks.extend(tree(&local[1].0).tasks);
+    merged_tree.tasks.sort_by_key(|task| task.id.0);
+    let merged = root.join("merged");
+    directory::write_folder(
+        &merged,
+        &merged_tree,
+        &ExportProfile {
+            include_notes: false,
+            origin_machine: None,
+        },
+    )
+    .unwrap();
+
+    for (index, (host, home)) in hosts.iter().enumerate() {
+        let (own, ids) = &local[index];
+        let foreign = &local[1 - index].1;
+        let before = ids.iter().map(|id| row(home, id)).collect::<Vec<_>>();
+        let enrolled = import(home, &marker, &merged, own);
+        assert_eq!(enrolled["changed"], true, "{host}: {enrolled}");
+        let mut applied = enrolled["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|task| {
+                assert_eq!(task["status"], "applied", "{host}: {task}");
+                task["task"].as_str().unwrap().to_owned()
+            })
+            .collect::<Vec<_>>();
+        applied.sort();
+        let mut expected = foreign.clone();
+        expected.sort();
+        assert_eq!(
+            applied, expected,
+            "{host} adds exactly the other host's tasks"
+        );
+        assert_eq!(
+            ids.iter().map(|id| row(home, id)).collect::<Vec<_>>(),
+            before,
+            "{host}'s own tasks and their execution state are unchanged"
+        );
+        let after = exported(home, &format!("after-{host}"));
+        assert_eq!(tree(&after).tasks, merged_tree.tasks);
+        let again = import(home, &marker, &merged, &after);
+        assert_eq!(again["changed"], false, "{host}: {again}");
+        let store =
+            SqliteStore::open(project_database_path(home, &ProjectId(project.into()))).unwrap();
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+}

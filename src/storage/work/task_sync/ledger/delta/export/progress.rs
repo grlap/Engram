@@ -70,9 +70,9 @@ impl SqliteStore {
                     guard,
                     &request,
                 )?;
-                let mut ledger = super::commit::checked_on(&transaction, input, selection, guard)?;
+                let operation = super::commit::checked_on(&transaction, input, selection, guard)?;
                 require(
-                    ledger.events.values().any(|event| {
+                    operation.events.iter().any(|(_, event)| {
                         event.binding == input.binding_id
                             && matches!(&event.transition,
                                 Transition::DeltaLocalCommitRecorded { prepared, commit }
@@ -80,13 +80,15 @@ impl SqliteStore {
                     }),
                     "record the exact delta commit before publication",
                 )?;
-                if let Some((id, _)) = ledger.events.iter().find(|(_, event)| {
+                if let Some((id, _)) = operation.events.iter().find(|(_, event)| {
                     event.binding == input.binding_id && event.transition == transition
                 }) {
                     return Ok((id.clone(), false));
                 }
+                let mut chain =
+                    super::super::Chain::resume(&transaction, input, &selection.prepared)?;
                 let object =
-                    super::super::append(&transaction, &mut ledger, input, transition, now)?;
+                    super::super::append_keyed(&transaction, &mut chain, input, transition, now)?;
                 let event: Event = object.decode()?;
                 // Flush before SQL commit. Rollback or rewind leaves custody
                 // uncertainty, never a second dispatch permission.

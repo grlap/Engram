@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 mod deferred;
 mod historical;
+mod managed;
 mod recovery;
 mod settled;
 
@@ -77,6 +78,19 @@ impl Fixture {
         setup: impl FnOnce(&mut SqliteStore, crate::WorkId),
         repository: impl FnOnce(&std::path::Path, &crate::task_sync::TaskTree, &mut Binding),
     ) -> Self {
+        Self::with_store_changes_mode(tree, changes, setup, repository, false)
+    }
+
+    fn with_store_changes_mode(
+        tree: &crate::task_sync::TaskTree,
+        changes: impl FnOnce(
+            &mut SqliteStore,
+            &crate::task_sync::TaskTree,
+        ) -> BTreeMap<crate::WorkId, Option<crate::task_sync::TaskDocument>>,
+        setup: impl FnOnce(&mut SqliteStore, crate::WorkId),
+        repository: impl FnOnce(&std::path::Path, &crate::task_sync::TaskTree, &mut Binding),
+        managed: bool,
+    ) -> Self {
         let (home, mut store, mut binding, enrollment) =
             super::super::origin_tests::unenrolled_fixture();
         let empty = store
@@ -115,7 +129,7 @@ impl Fixture {
             })
             .unwrap()
             .unwrap();
-        let request = audit_request(
+        let mut request = audit_request(
             &store,
             &binding,
             &id,
@@ -123,6 +137,9 @@ impl Fixture {
                 outcome: original.outcome,
             },
         );
+        if managed {
+            request.reason = CheckpointReason::ManagedAudit;
+        }
         let audited = store
             .audit_task_sync_custody(&request, &binding.actor, at(30))
             .unwrap();
@@ -228,6 +245,18 @@ impl Fixture {
             .repository
             .git_directory
             .join("engram-task-sync-commits");
+        {
+            let reservation =
+                retention::audit::AuditReservation::acquire(&binding.repository.git_directory)
+                    .unwrap();
+            reservation
+                .reserve_artifact(
+                    operation,
+                    retention::audit::journal::Family::Commit,
+                    &commit,
+                )
+                .unwrap();
+        }
         std::fs::create_dir_all(&commits).unwrap();
         std::fs::write(
             commits.join(format!("{operation}.json")),
@@ -251,6 +280,76 @@ impl Fixture {
         self.store
             .apply_task_sync_delta_exchange(&self.input, at(40))
     }
+}
+
+#[test]
+fn strict_delta_baseline_omits_the_folder_basis_and_earlier_records_keep_theirs() {
+    use crate::storage::work::task_sync::{baseline, folder::IMPORT_PLANNING_KIND};
+    let mut f = Fixture::new();
+    let project = f.input.binding.project.clone();
+    let before = baseline::head(&f.store.connection, &project)
+        .unwrap()
+        .unwrap();
+    let recorded = before
+        .export_basis
+        .clone()
+        .expect("a folder writer records its basis");
+    f.apply().unwrap();
+    let after = baseline::head(&f.store.connection, &project)
+        .unwrap()
+        .unwrap();
+    assert_ne!(after.record, before.record);
+    assert_eq!(after.export_basis, None);
+    let bytes: Vec<u8> = f
+        .store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [after.record.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let stored: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(stored.get("export_basis").is_none(), "{stored}");
+    let earlier: baseline::TaskSyncImportPlanning =
+        SqliteStore::get_typed_object_on(&f.store.connection, &before.record, IMPORT_PLANNING_KIND)
+            .unwrap()
+            .unwrap();
+    assert_eq!(earlier.export_basis.as_deref(), Some(recorded.as_str()));
+    assert!(f.store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn an_unchanged_folder_after_a_strict_delta_is_a_no_op_and_a_stale_basis_is_refused() {
+    let mut f = Fixture::new();
+    f.apply().unwrap();
+    let exported = f
+        .store
+        .export_task_sync_folder(&f.input.binding.project, &f.input.binding.profile)
+        .unwrap();
+    let apply = |store: &mut SqliteStore, basis: &str, key: &str| {
+        store.apply_task_sync_folder(
+            crate::storage::TaskSyncFolderApply {
+                project: &f.input.binding.project,
+                actor: &f.input.binding.actor,
+                tree: &exported.tree,
+                export_basis: basis,
+                profile: &f.input.binding.profile,
+                complete: true,
+                now: at(50),
+            },
+            key,
+        )
+    };
+    let unchanged = apply(
+        &mut f.store,
+        &exported.export_basis,
+        "unchanged-after-delta",
+    )
+    .unwrap();
+    assert!(!unchanged.changed);
+    let stale = "0".repeat(exported.export_basis.len());
+    assert!(apply(&mut f.store, &stale, "stale-after-delta").is_err());
 }
 
 #[tokio::test]

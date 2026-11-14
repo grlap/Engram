@@ -48,13 +48,13 @@ impl SqliteStore {
                     guard,
                     &request,
                 )?;
-                let mut ledger = super::commit::checked_on(
+                let selected = super::commit::checked_on(
                     &transaction,
                     &input.original,
                     &input.selection,
                     guard,
                 )?;
-                let (recipe_id, recipe_event) = ledger.events.iter().find(|(_, event)|
+                let (recipe_id, recipe_event) = selected.events.iter().find(|(_, event)|
                 event.binding == input.original.binding_id && matches!(&event.transition,
                     Transition::OutgoingReconciled {prepared, reconciliation}
                     if prepared == &input.selection.prepared && reconciliation.as_ref() == &input.recipe))
@@ -95,7 +95,7 @@ impl SqliteStore {
                         ));
                     }
                 };
-                if let Some((id, _)) = ledger.events.iter().find(|(_, event)| {
+                if let Some((id, _)) = selected.events.iter().find(|(_, event)| {
                     event.binding == input.original.binding_id
                         && event.sequence > recipe_sequence
                         && event.transition == transition
@@ -105,9 +105,14 @@ impl SqliteStore {
                 input
                     .recheck_files()
                     .map_err(|error| invalid(error.to_string()))?;
-                let object = super::super::append(
+                let mut chain = super::super::Chain::resume(
                     &transaction,
-                    &mut ledger,
+                    &input.original,
+                    &input.selection.prepared,
+                )?;
+                let object = super::super::append_keyed(
+                    &transaction,
+                    &mut chain,
                     &input.original,
                     transition,
                     now,

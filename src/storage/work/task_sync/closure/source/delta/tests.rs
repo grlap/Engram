@@ -263,7 +263,7 @@ fn delta_membership_advances_source_against_its_own_basis_and_rebuilds_without_p
             .map(|(id, (_, task))| (*id, Some(task.clone())))
             .collect(),
         inventory_root: output.inventory_root.hex(),
-        export_basis: "already newer local baseline".into(),
+        export_basis: Some("already newer local baseline".into()),
         profile: f.binding.profile.clone(),
         created_at: at(29),
     })
@@ -308,7 +308,7 @@ fn delta_membership_advances_source_against_its_own_basis_and_rebuilds_without_p
         previous: Some(baseline),
         changes: BTreeMap::new(),
         inventory_root: output.inventory_root.hex(),
-        export_basis: "selected local destination".into(),
+        export_basis: Some("selected local destination".into()),
         profile: f.binding.profile.clone(),
         created_at: at(31),
     })

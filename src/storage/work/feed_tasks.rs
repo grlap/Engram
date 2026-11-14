@@ -27,6 +27,11 @@ pub(super) fn create_schema(connection: &Connection) -> Result<(), StoreError> {
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_project_feed_tasks_task
              ON work_project_feed_tasks(project_id, work_id);
+         CREATE TABLE IF NOT EXISTS work_project_feed_coverage (
+             project_id TEXT NOT NULL,
+             position INTEGER NOT NULL CHECK(position > 0),
+             PRIMARY KEY(project_id, position)
+         ) STRICT, WITHOUT ROWID;
          CREATE INDEX IF NOT EXISTS work_feed_entries_planning
              ON work_feed_entries(feed_id, position)
              WHERE feed_kind = 'project' AND object_kind = 'task_sync_import_planning';",
@@ -45,7 +50,14 @@ pub(super) fn record_on(
     work_id: Option<&str>,
 ) -> Result<(), StoreError> {
     let affected = affected(object_kind, Some(object), work_id)?;
-    insert_rows(connection, project, position, &affected)
+    insert_rows(connection, project, position, &affected)?;
+    // Every classified position is covered, also one that changes no task,
+    // so a missing row reads as a gap and never as "nothing changed".
+    connection.execute(
+        "INSERT INTO work_project_feed_coverage (project_id, position) VALUES (?1, ?2)",
+        params![project, position],
+    )?;
+    Ok(())
 }
 
 /// Rebuilds every row from the project feeds and their canonical objects,
@@ -53,12 +65,19 @@ pub(super) fn record_on(
 /// whole repair with every such object listed.
 pub(super) fn rebuild(connection: &Connection) -> Result<Vec<String>, StoreError> {
     connection.execute("DELETE FROM work_project_feed_tasks", [])?;
-    let (rows, findings) = derive(connection)?;
+    connection.execute("DELETE FROM work_project_feed_coverage", [])?;
+    let (rows, covered, findings) = derive(connection)?;
     for (project, position, work_id) in rows {
         connection.execute(
             "INSERT INTO work_project_feed_tasks (project_id, position, work_id)
              VALUES (?1, ?2, ?3)",
             params![project, position, work_id],
+        )?;
+    }
+    for (project, position) in covered {
+        connection.execute(
+            "INSERT INTO work_project_feed_coverage (project_id, position) VALUES (?1, ?2)",
+            params![project, position],
         )?;
     }
     Ok(findings)
@@ -70,7 +89,7 @@ pub(super) fn verify(
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
-    let (expected, findings) = derive(connection)?;
+    let (expected, expected_covered, findings) = derive(connection)?;
     invalid.extend(findings);
     let actual = connection
         .prepare("SELECT project_id, position, work_id FROM work_project_feed_tasks")?
@@ -83,17 +102,41 @@ pub(super) fn verify(
             "work_project_feed_tasks:{project}:{position}:{work_id}"
         ));
     }
+    let covered = connection
+        .prepare("SELECT project_id, position FROM work_project_feed_coverage")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<BTreeSet<(String, i64)>, _>>()?;
+    *checked += expected_covered.union(&covered).count();
+    for (project, position) in expected_covered.symmetric_difference(&covered) {
+        invalid.push(format!("work_project_feed_coverage:{project}:{position}"));
+    }
     Ok(())
 }
 
 /// The distinct tasks the project-feed interval `(after, through]` may have
-/// changed, read from the index alone.
+/// changed, read from the index alone. Every position of the interval must be
+/// covered, so an index that lost or never recorded a position refuses by name
+/// instead of reporting fewer changes.
 pub(super) fn changed_between(
     connection: &Connection,
     project: &ProjectId,
     after: i64,
     through: i64,
 ) -> Result<BTreeSet<WorkId>, StoreError> {
+    let covered: i64 = connection.query_row(
+        "SELECT count(*) FROM work_project_feed_coverage
+         WHERE project_id = ?1 AND position > ?2 AND position <= ?3",
+        params![project.0, after, through],
+        |row| row.get(0),
+    )?;
+    if covered != through.saturating_sub(after).max(0) {
+        return Err(
+            crate::task_sync::TaskSyncRefusal::FeedProjectionGap.invalid(format!(
+                "the changed-task index covers {covered} of the {} project-feed positions after {after}; repair the projections",
+                through.saturating_sub(after).max(0)
+            )),
+        );
+    }
     connection
         .prepare(
             "SELECT DISTINCT work_id FROM work_project_feed_tasks
@@ -152,7 +195,7 @@ fn insert_rows(
 /// that cannot be classified. Only a database failure is an error. Rows are
 /// streamed, and a record's bytes are read only for the kinds whose
 /// classification needs them: a work event names its task in the feed entry.
-fn derive(connection: &Connection) -> Result<(Rows, Vec<String>), StoreError> {
+fn derive(connection: &Connection) -> Result<(Rows, Covered, Vec<String>), StoreError> {
     let mut statement = connection.prepare(
         "SELECT entry.feed_id, entry.position, entry.object_kind, entry.object_id,
                 entry.work_id,
@@ -167,6 +210,7 @@ fn derive(connection: &Connection) -> Result<(Rows, Vec<String>), StoreError> {
     )?;
     let mut entries = statement.query([])?;
     let mut rows = BTreeSet::new();
+    let mut covered = BTreeSet::new();
     let mut findings = Vec::new();
     while let Some(entry) = entries.next()? {
         let project = entry.get::<_, String>(0)?;
@@ -184,11 +228,14 @@ fn derive(connection: &Connection) -> Result<(Rows, Vec<String>), StoreError> {
             })
             .and_then(|object| affected(&kind, object.as_ref(), work_id.as_deref()));
         match classified {
-            Ok(affected) => rows.extend(
-                affected
-                    .into_iter()
-                    .map(|work_id| (project.clone(), position, work_id)),
-            ),
+            Ok(affected) => {
+                covered.insert((project.clone(), position));
+                rows.extend(
+                    affected
+                        .into_iter()
+                        .map(|work_id| (project.clone(), position, work_id)),
+                );
+            }
             Err(StoreError::Sqlite(error)) => return Err(error.into()),
             Err(error) => findings.push(crate::storage::decode_failure_label(
                 format!("work_project_feed_tasks:{object_id}"),
@@ -196,10 +243,11 @@ fn derive(connection: &Connection) -> Result<(Rows, Vec<String>), StoreError> {
             )),
         }
     }
-    Ok((rows, findings))
+    Ok((rows, covered, findings))
 }
 
 type Rows = BTreeSet<(String, i64, String)>;
+type Covered = BTreeSet<(String, i64)>;
 
 /// The one field a subject-bound record contributes here. Reading only the
 /// subject keeps a feed append from decoding a whole record it does not use;

@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod commit;
 mod confirmed;
+mod managed;
 mod recovery;
 
 /// Fields drop in declaration order: the store closes its database before the
@@ -28,12 +29,26 @@ impl ExportFixture {
 
     fn from_store(
         home: crate::test_support::TempHome,
-        mut store: SqliteStore,
+        store: SqliteStore,
         binding: Binding,
         id: ObjectId,
         count: usize,
     ) -> Self {
-        let request = audit_request(&store, &binding, &id, CustodySeedSelection::LocalExport);
+        Self::from_store_mode(home, store, binding, id, count, false)
+    }
+
+    fn from_store_mode(
+        home: crate::test_support::TempHome,
+        mut store: SqliteStore,
+        binding: Binding,
+        id: ObjectId,
+        count: usize,
+        managed: bool,
+    ) -> Self {
+        let mut request = audit_request(&store, &binding, &id, CustodySeedSelection::LocalExport);
+        if managed {
+            request.reason = CheckpointReason::ManagedAudit;
+        }
         let audited = store
             .audit_task_sync_custody(&request, &binding.actor, at(30))
             .unwrap();

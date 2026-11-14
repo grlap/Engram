@@ -39,7 +39,11 @@ pub(in crate::storage::work) struct TaskSyncImportPlanning {
     /// The membership fingerprint after these changes. A content
     /// fingerprint for comparison, never an identity.
     pub inventory_root: String,
-    pub export_basis: String,
+    /// The full BEFORE-export folder fingerprint, written by complete-folder
+    /// writers. A strict delta writer, which never exports the whole folder,
+    /// omits it; nothing may read its absence as a match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_basis: Option<String>,
     pub profile: crate::task_sync::progress::ExportProfile,
     pub created_at: DateTime<Utc>,
 }
@@ -49,7 +53,10 @@ impl TaskSyncImportPlanning {
     /// envelope, and that each change names the task it carries.
     pub(in crate::storage::work) fn validate(&self, project: &ProjectId) -> Result<(), StoreError> {
         let consistent = self.project_id == *project
-            && !self.export_basis.trim().is_empty()
+            && self
+                .export_basis
+                .as_deref()
+                .is_none_or(|basis| !basis.trim().is_empty())
             && self.profile.options().validate().is_ok()
             && Root::parse(&self.inventory_root).is_some()
             && self.changes.iter().all(|(id, change)| {
@@ -71,7 +78,8 @@ pub(in crate::storage::work) struct BaselineHead {
     pub record: ObjectId,
     pub position: i64,
     pub inventory_root: String,
-    pub export_basis: String,
+    /// The head record's full-folder fingerprint, when its writer recorded one.
+    pub export_basis: Option<String>,
     pub include_notes: bool,
 }
 
@@ -307,7 +315,7 @@ pub(in crate::storage::work) fn append(
     project: &ProjectId,
     previous: Option<ObjectId>,
     changes: BTreeMap<WorkId, Option<TaskDocument>>,
-    export_basis: &str,
+    export_basis: Option<&str>,
     profile: &crate::task_sync::progress::ExportProfile,
     now: DateTime<Utc>,
 ) -> Result<ObjectId, StoreError> {
@@ -316,7 +324,7 @@ pub(in crate::storage::work) fn append(
         previous,
         inventory_root: next_root(transaction, project, &changes)?,
         changes,
-        export_basis: export_basis.into(),
+        export_basis: export_basis.map(str::to_owned),
         profile: profile.clone(),
         created_at: now,
     };
@@ -576,7 +584,9 @@ impl View for SqlView<'_> {
                     record: parse_record(record)?,
                     position,
                     inventory_root,
-                    export_basis,
+                    // The column stores an absent basis as '', which no
+                    // full-folder SHA can be.
+                    export_basis: (!export_basis.is_empty()).then_some(export_basis),
                     include_notes: notes == 1,
                 })
             })
@@ -638,7 +648,7 @@ impl View for SqlView<'_> {
                 head.record.as_str(),
                 head.position,
                 head.inventory_root,
-                head.export_basis,
+                head.export_basis.as_deref().unwrap_or(""),
                 i64::from(head.include_notes),
             ],
         )?;

@@ -378,6 +378,9 @@ state (`project_memory_state`), the observation index `work_observations`, and
 the restored-history projections `work_restored_records` and `work_restored_evidence` are disposable and
 rebuilt explicitly from verified durable rows and canonical objects.
 Task-sync projections follow the same rule: `work_project_feed_tasks`,
+`work_project_feed_coverage` (one row per classified project-feed position, so
+a change capture over a position the index lost refuses with
+`task_sync_feed_projection_gap` instead of reporting fewer changes),
 `work_task_sync_baseline`, `work_task_sync_baseline_heads`,
 `work_task_sync_reconciliation_active`, `work_task_sync_exchange_operations`,
 `work_task_sync_exchange_heads`, `work_task_sync_producing_origin_members`,

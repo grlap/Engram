@@ -1,6 +1,6 @@
 //! One incoming SQL commit owns preparation, native changes and its outcome.
-//! Legacy exhaustive custody and the legacy full export comparison remain
-//! explicit costs; managed ordinary admission is not enabled here.
+//! Custody admission stays with the existing origin guard; managed roots read
+//! selected artifacts and audit-only roots retain exhaustive observation.
 
 use super::super::{baseline, closure, folder, origin, producing_origin, reconciliation};
 use super::{
@@ -124,19 +124,82 @@ fn fresh(connection: &Connection, input: &InspectedDelta) -> Result<(), StoreErr
     )
 }
 
-fn append(
+/// The selected binding and its current tail, read by key. A delta writer
+/// holds this rather than the whole ledger, so its cost does not grow with
+/// other exchanges or with the history of this one. Full replay stays with
+/// doctor and repair.
+pub(super) struct Chain {
+    binding: Binding,
+    tail: (ObjectId, Event),
+}
+
+impl Chain {
+    /// Resume an existing operation at the binding's actual current tail.
+    /// The canonical reducer checks whether this operation can append there;
+    /// historical exact replay returns before append.
+    fn resume(
+        connection: &Connection,
+        input: &InspectedDelta,
+        prepared: &ObjectId,
+    ) -> Result<Self, StoreError> {
+        let mut budget = view::read::ReadBudget::default();
+        let binding = view::read::binding_on(connection, &input.binding_id, &mut budget)?;
+        require(
+            binding == input.binding
+                && view::select::successor(connection, &input.binding_id)?.is_none(),
+            "delta binding changed or was superseded",
+        )?;
+        let tail = view::read::tail_on(connection, &input.binding_id, &binding, &mut budget)?;
+        require(
+            tail.operation.as_ref().is_some_and(|operation| {
+                &operation.prepared == prepared
+                    && operation.progress.stage != super::reduce::Stage::Settled
+            }),
+            "delta append requires its exact current open operation",
+        )?;
+        Ok(Self {
+            binding,
+            tail: (tail.id, tail.event),
+        })
+    }
+
+    /// The unsuperseded binding the delta names, at a settled tail.
+    pub(super) fn open(
+        connection: &Connection,
+        input: &InspectedDelta,
+    ) -> Result<Self, StoreError> {
+        let mut budget = view::read::ReadBudget::default();
+        let binding = view::read::binding_on(connection, &input.binding_id, &mut budget)?;
+        require(
+            binding == input.binding
+                && view::select::successor(connection, &input.binding_id)?.is_none(),
+            "delta binding changed or was superseded",
+        )?;
+        let tail = view::read::tail_on(connection, &input.binding_id, &binding, &mut budget)?;
+        require(
+            super::settled_tail(&tail.event),
+            "delta cannot bypass an unresolved operation",
+        )?;
+        Ok(Self {
+            binding,
+            tail: (tail.id, tail.event),
+        })
+    }
+}
+
+/// Appends after a keyed [`Chain`] tail, without the whole ledger.
+fn append_keyed(
     connection: &Connection,
-    ledger: &mut Ledger,
+    chain: &mut Chain,
     input: &InspectedDelta,
     transition: Transition,
     now: DateTime<Utc>,
 ) -> Result<CanonicalObject, StoreError> {
-    let (previous, tail) = ledger
-        .events
-        .iter()
-        .filter(|(_, event)| event.binding == input.binding_id)
-        .max_by_key(|(_, event)| event.sequence)
-        .ok_or_else(|| invalid("delta binding activation missing"))?;
+    let (previous, tail) = &chain.tail;
+    require(
+        tail.binding == input.binding_id,
+        "delta binding activation missing",
+    )?;
     let event = Event {
         schema_version: 1,
         binding: input.binding_id.clone(),
@@ -150,7 +213,8 @@ fn append(
         transition,
     };
     let object = CanonicalObject::mint(&event)?;
-    super::operations::store_event(connection, ledger, &object)?;
+    let stored = super::operations::store_event_keyed(connection, &chain.binding, &object)?;
+    chain.tail = (object.key().clone(), stored);
     Ok(object)
 }
 
@@ -201,9 +265,12 @@ impl SqliteStore {
                     &request,
                 )?;
                 local_store(&transaction, &binding)?;
-                let ledger = Ledger::load(&transaction)?;
                 require(
-                    ledger.bindings.get(binding_id) == Some(&binding),
+                    view::read::binding_on(
+                        &transaction,
+                        binding_id,
+                        &mut view::read::ReadBudget::default(),
+                    )? == binding,
                     "delta recovery binding changed",
                 )?;
                 require(
@@ -255,27 +322,9 @@ impl SqliteStore {
                 input
                     .recheck_files()
                     .map_err(|error| invalid(error.to_string()))?;
-                let mut ledger = Ledger::load(&transaction)?;
-                require(
-                    ledger.bindings.get(&input.binding_id) == Some(&input.binding)
-                        && !ledger
-                            .bindings
-                            .values()
-                            .any(|binding| binding.supersedes.as_ref() == Some(&input.binding_id)),
-                    "delta binding changed or was superseded",
-                )?;
-                let tail = ledger
-                    .events
-                    .values()
-                    .filter(|event| event.binding == input.binding_id)
-                    .max_by_key(|event| event.sequence)
-                    .ok_or_else(|| invalid("delta activation missing"))?;
-                require(
-                    super::settled_tail(tail),
-                    "delta cannot bypass an unresolved operation",
-                )?;
+                let mut chain = Chain::open(&transaction, input)?;
                 origin::with_origin_scope(&transaction, || {
-                    apply_on(&transaction, &mut ledger, input, now)
+                    apply_on(&transaction, &mut chain, input, now)
                 })
                 .and_then(|result| {
                     transaction.commit()?;
@@ -288,24 +337,20 @@ impl SqliteStore {
 
 fn apply_on(
     transaction: &Transaction<'_>,
-    ledger: &mut Ledger,
+    chain: &mut Chain,
     input: &InspectedDelta,
     now: DateTime<Utc>,
 ) -> Result<CompletedExchange, StoreError> {
-    // Preserve the legacy field's full BEFORE-export meaning. Removing this
-    // complete capture is a separate remaining cost obligation, not a guessed
-    // substitution of the payload or modular membership fingerprint.
-    let comparison =
-        folder::folder_export_on(transaction, &input.binding.project, &input.binding.profile)?
-            .export_basis;
+    // A strict delta never exports the whole folder, so its baseline record
+    // carries no full-folder basis; its membership root binds the result.
     let previous = baseline::entries(
         transaction,
         &input.binding.project,
         input.intent.candidate.changed.iter().copied(),
     )?;
-    let prepared = append(
+    let prepared = append_keyed(
         transaction,
-        ledger,
+        chain,
         input,
         Transition::DeltaPrepared {
             intent: Box::new(input.intent.clone()),
@@ -313,7 +358,7 @@ fn apply_on(
         },
         now,
     )?;
-    if let Some(deferred) = deferred::try_defer_on(transaction, ledger, input, &prepared, now)? {
+    if let Some(deferred) = deferred::try_defer_on(transaction, chain, input, &prepared, now)? {
         return Ok(deferred);
     }
     let (changes, before) = scope::apply(transaction, input, now)?;
@@ -330,7 +375,7 @@ fn apply_on(
         &input.binding.project,
         Some(local_before.baseline.clone()),
         changes,
-        &comparison,
+        None,
         &input.binding.profile,
         now,
     )?;
@@ -380,9 +425,9 @@ fn apply_on(
         holds: Vec::new(),
         terminal_evidence: Vec::new(),
     };
-    let outcome = append(
+    let outcome = append_keyed(
         transaction,
-        ledger,
+        chain,
         input,
         Transition::DeltaImportApplied {
             prepared: prepared.key().clone(),

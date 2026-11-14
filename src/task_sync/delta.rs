@@ -287,6 +287,7 @@ pub enum CheckpointReason {
     Bootstrap,
     NamedAudit,
     NamedRebuild,
+    ManagedAudit,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]

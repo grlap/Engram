@@ -73,7 +73,7 @@ impl SqliteStore {
             "exchange is not outgoing",
         )?;
         let observed =
-            super::super::custody::Observed::capture(&input.binding.repository.git_directory)?;
+            super::super::custody::Observed::capture_cold(&input.binding.repository.git_directory)?;
         let transaction = self.begin_work_mutation()?;
         super::super::recovery::require_scope_on(&transaction, &input.binding)?;
         super::super::super::producing_origin::check_exchange_on(

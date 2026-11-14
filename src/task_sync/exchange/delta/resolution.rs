@@ -10,8 +10,7 @@ use crate::{
     storage::SqliteStore,
     task_sync::{
         delta::{DeltaCandidatePayload, DeltaCommitSelection, DeltaIntent, OutputMembership},
-        git::CommitTaskSnapshot,
-        inventory::InventoryRoot,
+        git::{CommitObject, VerifiedTaskDelta},
         ledger::{Binding, OutgoingReconciliation, RetainedCommit, Transition},
     },
 };
@@ -342,25 +341,20 @@ pub(crate) async fn inspect_delta_resolution_remaining(
         pin == format!("{} \n", failure.fetched_tip()).as_bytes(),
         "delta resolution fetched failure pin differs"
     );
-    let original_snapshot = crate::task_sync::git::read_task_snapshot_bounded(
+    // The original commit's membership was verified when it was recorded, so
+    // the merge is read as a diff from it. Graph validity of the merged
+    // membership is checked on the touched component when it is recorded.
+    let delta = crate::task_sync::git::read_rooted_task_diff(
         &request.binding.repository.main_checkout,
         &request.binding.project,
         &request.selection.commit.oid,
-        remaining(limits, started)?.deadline,
-    )?;
-    let merged_snapshot = crate::task_sync::git::read_task_snapshot_bounded(
-        &request.binding.repository.main_checkout,
-        &request.binding.project,
+        request.original.candidate.output.inventory_root,
         &commit.oid,
         remaining(limits, started)?.deadline,
     )?;
-    same_commit(&original_snapshot, &request.selection.commit)?;
-    same_commit(&merged_snapshot, commit)?;
-    ensure!(
-        membership(&original_snapshot)? == request.original.candidate.output,
-        "delta resolution original Git membership differs from native preparation"
-    );
-    validate_snapshots(&original_snapshot, &merged_snapshot, payload)?;
+    same_commit(&delta.base_object, &request.selection.commit)?;
+    same_commit(&delta.incoming_object, commit)?;
+    validate_resolved_delta(&delta, &request.original.candidate.output, payload)?;
     input.recheck_files()?;
     let observed = observe_git_selection_data(
         request.binding,
@@ -374,8 +368,7 @@ pub(crate) async fn inspect_delta_resolution_remaining(
     Ok(input)
 }
 
-fn same_commit(snapshot: &CommitTaskSnapshot, expected: &RetainedCommit) -> Result<()> {
-    let actual = &snapshot.commit;
+fn same_commit(actual: &CommitObject, expected: &RetainedCommit) -> Result<()> {
     ensure!(
         actual.oid == expected.oid
             && actual.tree == expected.tree
@@ -386,49 +379,29 @@ fn same_commit(snapshot: &CommitTaskSnapshot, expected: &RetainedCommit) -> Resu
     Ok(())
 }
 
-fn membership(snapshot: &CommitTaskSnapshot) -> Result<OutputMembership> {
-    Ok(OutputMembership {
-        inventory_root: snapshot
-            .tree
-            .tasks
-            .iter()
-            .try_fold(InventoryRoot::ZERO, InventoryRoot::including)?,
-        profile: snapshot.envelope.profile.clone(),
-    })
-}
-
-pub(crate) fn validate_snapshots(
-    original: &CommitTaskSnapshot,
-    merged: &CommitTaskSnapshot,
+/// The merged commit, read as a diff from the original publication, must
+/// carry exactly the resolved payload: the same project and profile, the
+/// declared root, and as its changed documents exactly those whose decoded
+/// value differs from the original's.
+pub(crate) fn validate_resolved_delta(
+    delta: &VerifiedTaskDelta,
+    original: &OutputMembership,
     payload: &DeltaCandidatePayload,
 ) -> Result<()> {
     ensure!(
-        original.tree.project == merged.tree.project
-            && payload.project_id == merged.tree.project.project_id
-            && original.envelope.profile == merged.envelope.profile
-            && payload.output == membership(merged)?,
-        "resolved Git project, profile or actual membership differs"
+        delta.base.project_id == delta.incoming.project_id
+            && payload.project_id == delta.incoming.project_id
+            && delta.base.profile == original.profile
+            && delta.incoming.profile == delta.base.profile
+            && payload.output.profile == delta.incoming.profile,
+        "resolved Git project or profile differs"
     );
-    let before = original
-        .tree
-        .tasks
+    delta.require_root(payload.output.inventory_root)?;
+    let changed = delta
+        .changed
         .iter()
-        .map(|task| (task.id, task))
-        .collect::<BTreeMap<_, _>>();
-    let after = merged
-        .tree
-        .tasks
-        .iter()
-        .map(|task| (task.id, task))
-        .collect::<BTreeMap<_, _>>();
-    let changed = before
-        .keys()
-        .chain(after.keys())
-        .copied()
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .filter(|id| before.get(id) != after.get(id))
-        .map(|id| (id, after.get(&id).map(|task| (*task).clone())))
+        .filter(|(_, task)| task.before != task.after)
+        .map(|(id, task)| (*id, task.after.clone()))
         .collect::<BTreeMap<_, _>>();
     ensure!(
         changed == payload.documents,

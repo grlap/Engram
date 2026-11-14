@@ -808,6 +808,9 @@ impl SqliteStore {
                     original == &audit,
                     "committed custody audit differs from retention",
                 )?;
+                reservation
+                    .resume_audit_journal(&audit)
+                    .map_err(|error| invalid(error.to_string()))?;
             }
             (audit, pending)
         } else {
@@ -892,7 +895,7 @@ impl SqliteStore {
             (audit, pending)
         };
         guard.refresh()?;
-        guard.capture_custody(
+        guard.capture_cold_custody(
             &self.connection,
             Some(&binding.repository.git_directory),
             Some(&pending.request),
@@ -947,7 +950,7 @@ impl SqliteStore {
         #[cfg(test)]
         failure_point("repository_ack")?;
         guard.refresh()?;
-        guard.capture_custody(
+        guard.capture_cold_custody(
             &self.connection,
             Some(&binding.repository.git_directory),
             Some(&pending.request),
@@ -968,9 +971,12 @@ impl SqliteStore {
         reservation
             .acknowledge(&audit, pending.repository_head.as_ref())
             .map_err(|error| invalid(error.to_string()))?;
+        reservation
+            .activate_audit_journal(&audit)
+            .map_err(|error| invalid(error.to_string()))?;
         #[cfg(test)]
         failure_point("private_cleanup")?;
-        guard.capture_custody(
+        guard.capture_cold_custody(
             &self.connection,
             Some(&binding.repository.git_directory),
             Some(&pending.request),

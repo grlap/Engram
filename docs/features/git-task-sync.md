@@ -650,8 +650,8 @@ the binding and full typed intent against its canonical preparation. A fresh
 writer's exception requires the exact typed request fingerprint; an operation
 UUID or a legacy request alone does not admit a delta candidate. Cold audits
 account for these candidates and their canonical commit/publication provenance.
-These checks retain the exhaustive history/filesystem cost and keep repository
-heads audit-only; they do not activate managed writes.
+Audit-only roots retain this exhaustive history/filesystem cost. Explicitly
+admitted managed roots instead use the selected custody journal described below.
 
 `completed_task_sync_delta_import` is a receipt-first historical observation.
 It compares the complete incoming intent using canonical covering metadata,
@@ -691,11 +691,11 @@ creates no SQL records or task effects. An already acknowledged repeat preserves
 the current private witness. Unlike offline receipt lookup, this operation can
 refuse when retained files or restore provenance are unavailable.
 
-This first incoming writer retains exhaustive ledger and filesystem custody
-validation. Its local baseline also retains the existing full destination
-BEFORE-export comparison, requiring a complete export capture. Those costs have
-not become proportional to the changed documents. Repository heads remain
-audit-only, with no ordinary CLI/MCP delta route or managed-writer activation.
+The incoming writer appends through the selected canonical chain, updates the
+local baseline from the declared changed documents, and keeps receipt replay
+separate from private-witness recovery. Audit-only roots still enumerate retained
+filesystem custody. The explicit managed checkpoint removes that historical
+enumeration; it does not add an unattended CLI/MCP sync route.
 
 `inspect_task_sync_delta_export` separately checks a declared outgoing request
 on one read snapshot. It reuses selected native capture and validates the
@@ -704,8 +704,10 @@ document bytes, output membership and connected export/native graphs. Confirmed
 publication remains a separate canonical basis; a legacy full-tree fingerprint
 cannot stand in for its missing membership root. The observation creates no
 retained candidate, preparation, progress or publication record and grants no
-later write authority. The writable outgoing lifecycle and its exact publication
-witness recovery remain pending.
+later write authority. The outgoing writer records preparation, the selected
+commit, publication attempts and observations through the same canonical reducer.
+Historical replay does not grant another dispatch. A confirmed publication is
+distinct from the prepared export and from the incoming source basis.
 
 The library's selected planner reuses the complete-folder field comparison
 rules for explicit local delta keys. Context omitted from that selection is
@@ -810,8 +812,9 @@ exact minted checkpoint/body comparison. The repository's
 appends the existing ledger's additive `CustodyCheckpoint` event and updates its
 exchange and source/export projections. Origin acknowledgement precedes the
 repository's immutable acknowledgement and `head.json`; private cleanup comes
-last. Repository heads remain explicitly `audit_only`: ordinary managed delta
-writes are not enabled by B1.
+last. An ordinary cold audit records an `audit_only` head. The explicit
+`managed_audit` reason, after those same complete checks and acknowledgement,
+records a managed head and activates write-ahead custody in that repository.
 
 An interrupted operation blocks another exchange or enrollment. Its exact
 retry uses the original retained event and cut, without recapturing newer task
@@ -827,9 +830,47 @@ Doctor and explicit projection repair derive source/export membership from
 canonical initial-import links or embedded checkpoint documents, without Git.
 Repair creates no private continuity proof. This full projection set joins the
 single coordinated every-store cutover; B1 has no separate landing or repair
-window. Managed artifact writers, outgoing atomic delta application and ordinary
-sync integration remain pending; `task-sync step` exposes the existing
-selected incoming application owners without enabling unattended integration.
+window. Ordinary sync integration remains separate; `task-sync step` exposes
+the selected application owners without enabling unattended integration.
+
+### Managed artifact continuity
+
+A managed checkpoint is an explicit cold boundary, not an inference from an
+empty directory or a missing file. The existing repository custody reservation
+owns `managed.json` and its atomic `managed.pending` publication. Before any
+supported retained candidate, delta payload, commit selection, import plan,
+publication witness, evidence recipe or planning successor is written, that
+reservation retains its complete exact typed request. Commit construction also
+reserves the selection before writing Git objects or its retention pin. No
+separate writer lock, repository epoch or transport authority is introduced.
+
+Ordinary custody opens only the checkpoint-selected journal, pending operations
+and the current operation's known locations. It validates those bytes against
+their canonical owners and the same selected-operation reducer. The admitted
+cold checkpoint accounts for disconnected earlier artifacts; ordinary managed
+operations do not enumerate them. Bootstrap, a named audit and explicit cold
+recovery still enumerate and validate the full retained inventory. Damage found
+there is preserved and refused. An external artifact writer that bypasses the
+managed reservation breaks its continuity contract and requires a named audit.
+Explicit legacy full-folder preparation, import and outgoing progress also
+retain their exhaustive custody contract; managed activation does not convert
+a deliberately selected full-folder operation into a delta.
+
+Exact retry compares the original request and retained bytes. A complete pending
+journal publication resumes its original revision. Partial or divergent files,
+a missing managed journal, stale checkpoint metadata, changed origin/restore
+state or visible SQL rewind refuse without deletion, replacement or a cold
+fallback. After SQL commits, canonical custody is checked without the pending
+operation exception before the captured writes are acknowledged. Losing that
+acknowledgement leaves the same request recoverable. A publication witness ahead
+of SQL preserves uncertainty and never permits a fresh dispatch.
+
+Managed checkpoint metadata uses a rebuildable covering index over canonical
+events; repairing it creates no private continuity proof. The additive managed
+checkpoint variant is not readable by old builds. Enabling it therefore joins
+the single coordinated task-sync store cutover, with old consumers gone and
+projection repair/readiness completed before managed use. There is no separate
+managed-custody installation or repair window.
 
 ## User contract and Git layout
 

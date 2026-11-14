@@ -6,7 +6,10 @@ mod path;
 mod query;
 mod snapshot;
 
-pub use delta::{CommitTaskDelta, read_task_delta};
+pub use delta::{
+    ChangedTask, CommitTaskDelta, VerifiedTaskDelta, read_rooted_task_diff, read_task_delta,
+    read_tasks_at, read_verified_task_delta,
+};
 pub(crate) use evidence::read_selected_evidence_remaining;
 pub use evidence::{CommitEvidenceBatch, SelectionMismatch, read_selected_evidence};
 pub use path::plain_path;

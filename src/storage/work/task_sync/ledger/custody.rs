@@ -8,10 +8,13 @@ use std::{
 use super::{Ledger, StoreError, Transition};
 use crate::task_sync::{ledger::require, retention};
 
+pub(super) mod managed;
+
 #[derive(Debug)]
 pub(crate) struct Observed {
     root: std::path::PathBuf,
     inventory: retention::RetainedInventory,
+    managed: Option<retention::audit::journal::Journal>,
     publications: BTreeMap<uuid::Uuid, retention::PublicationWitness>,
     audits: retention::audit::AuditInventory,
     abandoned: BTreeMap<uuid::Uuid, crate::task_sync::ledger::RetainedCommit>,
@@ -32,9 +35,45 @@ pub(crate) struct Observed {
 }
 
 impl Observed {
+    #[cfg(test)]
     pub(crate) fn capture(root: &Path) -> Result<Self, StoreError> {
-        let inventory =
-            retention::inventory(root).map_err(|e| super::super::invalid(e.to_string()))?;
+        Self::capture_for(root, None)
+    }
+
+    pub(crate) fn capture_for(
+        root: &Path,
+        operation: Option<uuid::Uuid>,
+    ) -> Result<Self, StoreError> {
+        let managed = retention::audit::journal::observe(root)
+            .map_err(|error| super::super::invalid(error.to_string()))?;
+        Self::capture_inner(root, operation, managed, &BTreeSet::new())
+    }
+
+    pub(crate) fn capture_cold(root: &Path) -> Result<Self, StoreError> {
+        Self::capture_inner(root, None, None, &BTreeSet::new())
+    }
+
+    fn capture_inner(
+        root: &Path,
+        operation: Option<uuid::Uuid>,
+        managed: Option<retention::audit::journal::Journal>,
+        related: &BTreeSet<uuid::Uuid>,
+    ) -> Result<Self, StoreError> {
+        let inventory = if let Some(journal) = &managed {
+            retention::validate_journal(root, journal)
+                .map_err(|error| super::super::invalid(error.to_string()))?;
+            let mut selected = journal
+                .writes
+                .values()
+                .map(|write| write.operation)
+                .collect::<BTreeSet<_>>();
+            selected.extend(operation);
+            selected.extend(related);
+            retention::selected_inventory(root, &selected)
+        } else {
+            retention::inventory(root)
+        }
+        .map_err(|error| super::super::invalid(error.to_string()))?;
         let mut publications = BTreeMap::new();
         for operation in &inventory.pushes {
             let witness = retention::read_publication_witness(root, *operation)
@@ -44,8 +83,12 @@ impl Observed {
                 })?;
             publications.insert(*operation, witness);
         }
-        let audits = retention::audit::inventory(root)
-            .map_err(|error| super::super::invalid(error.to_string()))?;
+        let audits = if managed.is_some() {
+            retention::audit::AuditInventory::default()
+        } else {
+            retention::audit::inventory(root)
+                .map_err(|error| super::super::invalid(error.to_string()))?
+        };
         let mut abandoned = BTreeMap::new();
         let mut retired = BTreeMap::new();
         for audit in audits.events.values() {
@@ -83,6 +126,7 @@ impl Observed {
         Ok(Self {
             root: root.to_owned(),
             inventory,
+            managed,
             publications,
             audits,
             abandoned,
@@ -92,6 +136,112 @@ impl Observed {
             retired,
             retirement: None,
         })
+    }
+
+    pub(crate) fn settle_managed(&self) -> Result<(), StoreError> {
+        if let Some(journal) = &self.managed {
+            retention::audit::AuditReservation::acquire(&self.root)
+                .and_then(|reservation| reservation.settle_journal(journal))
+                .map_err(|error| super::super::invalid(error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn is_managed(&self) -> bool {
+        self.managed.is_some()
+    }
+
+    fn selected_operations(&self) -> BTreeSet<uuid::Uuid> {
+        self.inventory
+            .candidates
+            .iter()
+            .chain(&self.inventory.commits)
+            .chain(&self.inventory.imports)
+            .chain(&self.inventory.pushes)
+            .chain(self.inventory.delta_candidates.keys())
+            .chain(self.inventory.evidence_imports.keys())
+            .chain(self.inventory.planning_successors.keys())
+            .copied()
+            .collect()
+    }
+
+    /// Original and resolved retention ids share one canonical operation.
+    /// Observe that operation's referenced artifacts before the SQL writer,
+    /// including its original publication witness, without scanning history.
+    pub(crate) fn capture_related_on(
+        &mut self,
+        connection: &rusqlite::Connection,
+    ) -> Result<(), StoreError> {
+        if self.managed.is_none() {
+            return Ok(());
+        }
+        require(
+            connection.is_autocommit(),
+            "observe related custody before the SQL writer",
+        )?;
+        let bindings = self.bindings_on(connection)?;
+        let mut related = BTreeSet::new();
+        let mut budget = super::view::read::ReadBudget::default();
+        for operation in self.selected_operations() {
+            for (id, binding) in &bindings {
+                let prepared =
+                    super::view::read::prepared_for_operation(connection, id, operation)?;
+                let resolved = super::view::read::reconciliation_parent_for_operation(
+                    connection, id, operation,
+                )?;
+                require(
+                    prepared.is_none() || resolved.is_none(),
+                    "retention operation aliases an original and resolved request",
+                )?;
+                if let Some(prepared) = prepared.or(resolved) {
+                    // Checkpoints are accounted by the cold boundary, not an
+                    // ordinary operation whose payload should be replayed here.
+                    let event: super::Event = super::view::read::object(
+                        connection,
+                        &prepared,
+                        super::EVENT_KIND,
+                        &mut budget,
+                    )?;
+                    if matches!(event.transition, Transition::CustodyCheckpoint { .. }) {
+                        continue;
+                    }
+                    let selected = super::view::read::operation_on(
+                        connection,
+                        id,
+                        binding,
+                        &prepared,
+                        &mut budget,
+                    )?;
+                    related.extend(
+                        selected
+                            .events
+                            .iter()
+                            .filter_map(|(_, event)| event.transition.retention_operation()),
+                    );
+                }
+            }
+        }
+        self.include_managed_operations(related)
+    }
+
+    fn include_managed_operations(
+        &mut self,
+        related: BTreeSet<uuid::Uuid>,
+    ) -> Result<(), StoreError> {
+        if self.managed.is_none() || related.is_subset(&self.selected_operations()) {
+            return Ok(());
+        }
+        require(
+            self.resolution.is_none()
+                && self.evidence.is_none()
+                && self.successor.is_none()
+                && self.retirement.is_none(),
+            "observe related custody before admitting construction context",
+        )?;
+        let mut selected = self.selected_operations();
+        selected.extend(related);
+        *self = Self::capture_inner(&self.root, None, self.managed.clone(), &selected)?;
+        Ok(())
     }
 
     pub(crate) fn admit_retirement(
@@ -260,6 +410,10 @@ impl Observed {
         input: &crate::task_sync::exchange::InspectedDeltaResolution,
         request: &crate::ObjectId,
     ) -> Result<(), StoreError> {
+        // A fresh recipe has no canonical reconciliation link yet. Its typed
+        // original supplies this one dependency; later retries derive it from
+        // the selected canonical operation in capture_related_on.
+        self.include_managed_operations(BTreeSet::from([input.original.intent.operation]))?;
         input
             .recheck_files()
             .map_err(|error| super::super::invalid(error.to_string()))?;
@@ -655,6 +809,16 @@ pub(super) fn check_on(
     budget: &mut super::view::read::ReadBudget,
 ) -> Result<(), StoreError> {
     use super::view::{read, select};
+    if let Some(journal) = &observed.managed {
+        managed::check_on(connection, root, journal, budget)?;
+        require(
+            retention::audit::journal::observe(root)
+                .map_err(|error| super::super::invalid(error.to_string()))?
+                .as_ref()
+                == Some(journal),
+            "managed custody changed after observation; retry the exact request",
+        )?;
+    }
     let mut bindings = BTreeMap::new();
     for id in select::bindings(connection, select::Bindings::Root(root))? {
         let binding = read::binding_on(connection, &id, budget)?;
@@ -946,7 +1110,18 @@ pub(super) fn check_on(
     )?;
     let mut required = BTreeSet::new();
     for binding in bindings.keys() {
-        for id in select::pushes(connection, binding)? {
+        let pushes = if observed.managed.is_some() {
+            operations
+                .iter()
+                .filter(|((owner, _), _)| owner == binding)
+                .flat_map(|(_, operation)| operation.events.iter())
+                .filter(|(_, event)| event.transition.publication_request().is_some())
+                .map(|(id, _)| id.clone())
+                .collect()
+        } else {
+            select::pushes(connection, binding)?
+        };
+        for id in pushes {
             let event: super::Event = read::object(connection, &id, super::EVENT_KIND, budget)?;
             let (Transition::PushStarted { prepared }
             | Transition::OutgoingReconciled { prepared, .. }) = &event.transition

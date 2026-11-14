@@ -219,7 +219,7 @@ fn only_the_bootstrap_writes_every_member_and_a_change_of_k_touches_k_rows() {
         &project(),
         Some(previous),
         changes.clone(),
-        "basis after five changes",
+        Some("basis after five changes"),
         &profile(),
         at(6),
     )
@@ -333,7 +333,7 @@ fn a_baseline_planned_against_an_older_head_refuses_by_name() {
         &project(),
         Some(stale),
         BTreeMap::from([(edited.id, Some(edited))]),
-        "stale basis",
+        Some("stale basis"),
         &profile(),
         at(7),
     )
@@ -351,7 +351,7 @@ fn a_baseline_planned_against_an_older_head_refuses_by_name() {
         &project(),
         None,
         BTreeMap::new(),
-        "unchained basis",
+        Some("unchained basis"),
         &profile(),
         at(7),
     )
@@ -493,7 +493,7 @@ fn record(
         previous: Some(head(store).record),
         changes,
         inventory_root,
-        export_basis: "hand-built basis".into(),
+        export_basis: Some("hand-built basis".into()),
         profile: crate::task_sync::progress::ExportProfile {
             include_notes,
             // Shared notes need an origin alias to be a valid profile.

@@ -469,7 +469,8 @@ backup. `engram doctor --repair-projections` rebuilds declared indexes, triggers
 FTS5 content, project-memory state (`project_memory_state`), and the work
 projection tables (`work_restored_records`, `work_observations`, and
 `work_restored_evidence`) from verified retained state. Rebuildable task-sync
-views include affected tasks (`work_project_feed_tasks`), baseline members and
+views include affected tasks (`work_project_feed_tasks`) and their per-position
+coverage (`work_project_feed_coverage`), baseline members and
 heads (`work_task_sync_baseline`, `work_task_sync_baseline_heads`), active holds
 (`work_task_sync_reconciliation_active`), exchange operation/head links
 (`work_task_sync_exchange_operations`, `work_task_sync_exchange_heads`),

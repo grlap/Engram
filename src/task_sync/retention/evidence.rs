@@ -44,7 +44,12 @@ pub fn retain_recipe(
 ) -> Result<()> {
     recipe.validate(binding_id, binding)?;
     let bytes = crate::canonical::canonical_bytes(recipe)?;
-    let _guard = audit::AuditReservation::acquire(&binding.repository.git_directory)?;
+    let guard = audit::AuditReservation::acquire(&binding.repository.git_directory)?;
+    guard.reserve_artifact(
+        recipe.intent()?.operation,
+        audit::journal::Family::Evidence,
+        recipe,
+    )?;
     let git = PrivateDirectory::open(&binding.repository.git_directory)?;
     let directory = container(&git, Path::new(ROOT))?;
     let name = format!("{}.json", recipe.intent()?.operation);
@@ -100,6 +105,31 @@ fn decode(bytes: &[u8]) -> Result<EvidenceImportRecipe> {
         "retained evidence recipe is noncanonical or partial"
     );
     Ok(recipe)
+}
+
+pub(super) fn selected(
+    git: &PrivateDirectory,
+    operation: uuid::Uuid,
+) -> Result<Option<EvidenceImportRecipe>> {
+    let directory = match git.child(Path::new(ROOT)) {
+        Ok(directory) => directory,
+        Err(error) if missing(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let Some(bytes) = audit::read_bytes(
+        &directory,
+        Path::new(&format!("{operation}.json")),
+        super::MAX_IMPORT_PLAN,
+    )?
+    else {
+        return Ok(None);
+    };
+    let retained = decode(&bytes)?;
+    ensure!(
+        retained.intent()?.operation == operation,
+        "evidence operation differs"
+    );
+    Ok(Some(retained))
 }
 
 pub(super) fn inventory(

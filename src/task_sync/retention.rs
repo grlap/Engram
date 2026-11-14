@@ -170,6 +170,117 @@ pub fn inventory(git_directory: &Path) -> Result<RetainedInventory> {
     Ok(result)
 }
 
+/// Open only selected operations. Complete namespace discovery remains the
+/// named cold audit's job after managed continuity has been admitted.
+pub(crate) fn selected_inventory(
+    git_directory: &Path,
+    operations: &BTreeSet<uuid::Uuid>,
+) -> Result<RetainedInventory> {
+    let git = PrivateDirectory::open(git_directory)?;
+    let mut result = RetainedInventory::default();
+    for operation in operations {
+        let name = operation.to_string();
+        match git
+            .child(Path::new(ROOT))
+            .and_then(|root| root.child(Path::new(&name)))
+        {
+            Ok(directory) => {
+                let (manifest, _) = read_operation(&directory)?;
+                ensure!(
+                    manifest.exchange == *operation,
+                    "candidate operation differs"
+                );
+                result.candidates.insert(*operation);
+            }
+            Err(error) if missing(&error) => (),
+            Err(error) => return Err(error),
+        }
+        if let Some(commit) = commit_selection(git_directory, *operation)? {
+            ensure!(
+                commit.retention_ref
+                    == format!("refs/engram/task-sync/exchange/{operation}/commit"),
+                "commit selection names another operation"
+            );
+            result.commits.insert(*operation);
+        }
+        if read_import_plan(git_directory, *operation)?.is_some() {
+            result.imports.insert(*operation);
+        }
+        if read_publication_witness(git_directory, *operation)?.is_some() {
+            result.pushes.insert(*operation);
+        }
+        if let Some(retained) = delta::selected(&git, git_directory, *operation)? {
+            result.delta_candidates.insert(*operation, retained);
+        }
+        if let Some(retained) = evidence::selected(&git, *operation)? {
+            result.evidence_imports.insert(*operation, retained);
+        }
+        if let Some(retained) = successor::selected(&git, *operation)? {
+            result.planning_successors.insert(*operation, retained);
+        }
+    }
+    ensure!(
+        result
+            .candidates
+            .iter()
+            .all(|operation| !result.delta_candidates.contains_key(operation)),
+        "operation has both legacy and delta retained candidates; preserve uncertainty"
+    );
+    ensure!(
+        result
+            .planning_successors
+            .keys()
+            .all(|operation| !result.candidates.contains(operation)
+                && !result.delta_candidates.contains_key(operation)
+                && !result.evidence_imports.contains_key(operation)
+                && !result.commits.contains(operation)
+                && !result.imports.contains(operation)
+                && !result.pushes.contains(operation)),
+        "planning successor aliases another retained family; preserve uncertainty"
+    );
+    Ok(result)
+}
+
+pub(crate) fn validate_journal(root: &Path, journal: &audit::journal::Journal) -> Result<()> {
+    use audit::journal::Family;
+    let git = PrivateDirectory::open(root)?;
+    for write in journal.writes.values() {
+        let operation = write.operation;
+        let actual = match write.family {
+            Family::Candidate => {
+                let directory = git
+                    .child(Path::new(ROOT))?
+                    .child(Path::new(&operation.to_string()))?;
+                let candidate = read_operation(&directory)?;
+                serde_json::to_value(candidate)?
+            }
+            Family::Delta => serde_json::to_value(delta::observe_construction(root, operation)?)?,
+            Family::Commit => serde_json::to_value(
+                commit_selection(root, operation)?.context("pending commit selection missing")?,
+            )?,
+            Family::Import => serde_json::to_value(
+                read_import_plan(root, operation)?.context("pending import plan missing")?,
+            )?,
+            Family::Publication => serde_json::to_value(
+                read_publication_witness(root, operation)?
+                    .context("pending publication witness missing")?,
+            )?,
+            Family::Evidence => serde_json::to_value(
+                evidence::selected(&git, operation)?.context("pending evidence recipe missing")?,
+            )?,
+            Family::Successor => serde_json::to_value(
+                successor::selected(&git, operation)?
+                    .context("pending successor recipe missing")?,
+            )?,
+        };
+        ensure!(
+            actual == write.request,
+            "retained artifact differs from its exact custody write request"
+        );
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PublicationWitness {
@@ -216,7 +327,12 @@ pub(crate) fn retain_publication_witness(
         bytes.len() <= MAX_FILE,
         "publication witness exceeds byte bound"
     );
-    let _reservation = audit::AuditReservation::acquire(git_directory)?;
+    let reservation = audit::AuditReservation::acquire(git_directory)?;
+    reservation.reserve_artifact(
+        witness.operation,
+        audit::journal::Family::Publication,
+        witness,
+    )?;
     let git = PrivateDirectory::open(git_directory)?;
     let root = container(&git, Path::new(PUSHES))?;
     write_new(
@@ -264,7 +380,8 @@ pub(crate) fn publish_import_plan(git_directory: &Path, plan: &ImportPlan) -> Re
         bytes.len() <= MAX_IMPORT_PLAN,
         "import plan exceeds supported byte bound"
     );
-    let _reservation = audit::AuditReservation::acquire(git_directory)?;
+    let reservation = audit::AuditReservation::acquire(git_directory)?;
+    reservation.reserve_artifact(plan.operation, audit::journal::Family::Import, plan)?;
     let git = PrivateDirectory::open(git_directory)?;
     let root = container(&git, Path::new(IMPORTS))?;
     let name = plan.operation.to_string();
@@ -375,7 +492,12 @@ pub fn retain_prepared(
     };
     let bytes = crate::canonical::canonical_bytes(&manifest)?;
     ensure!(bytes.len() <= MAX_FILE, "candidate metadata exceeds bound");
-    let _reservation = audit::AuditReservation::acquire(git_directory)?;
+    let reservation = audit::AuditReservation::acquire(git_directory)?;
+    reservation.reserve_artifact(
+        exchange,
+        audit::journal::Family::Candidate,
+        &(&manifest, &prepared.documents),
+    )?;
     let git = PrivateDirectory::open(git_directory)?;
     let root = container(&git, Path::new(ROOT))?;
     let name = exchange.to_string();
@@ -537,6 +659,7 @@ pub(in crate::task_sync) fn reserve_commit(
 ) -> Result<()> {
     retained.validate()?;
     reservation.require_root(git_directory)?;
+    reservation.reserve_artifact(operation, audit::journal::Family::Commit, retained)?;
     let git = PrivateDirectory::open(git_directory)?;
     let root = container(&git, Path::new(COMMITS))?;
     let bytes = crate::canonical::canonical_bytes(retained)?;

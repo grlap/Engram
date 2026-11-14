@@ -770,7 +770,7 @@ fn current_baseline_case(unchanged: bool) {
         &tree.project.project_id,
         Some(baseline.record),
         BTreeMap::from([(work, Some(version.task.clone()))]),
-        &baseline.export_basis,
+        baseline.export_basis.as_deref(),
         &profile,
         at(8),
     )

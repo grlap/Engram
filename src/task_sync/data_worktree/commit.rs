@@ -144,6 +144,11 @@ impl DataWorktree {
             .is_empty(),
             "unrecorded data commit pin exists; preserve it"
         );
+        guard.reserve_artifact(
+            request.operation,
+            retention::audit::journal::Family::Commit,
+            &selected,
+        )?;
         let created = git::query(
             &current.checkout,
             &["hash-object", "-t", "commit", "-w", "--stdin"],

@@ -68,7 +68,9 @@ impl SqliteStore {
         request: &ObjectId,
     ) -> Result<ObjectId, StoreError> {
         admit(input, &self.connection)?;
-        let observed = super::custody::Observed::capture(&input.binding.repository.git_directory)?;
+        // This explicit full-folder operation retains its exhaustive contract.
+        let observed =
+            super::custody::Observed::capture_cold(&input.binding.repository.git_directory)?;
         let transaction = self.begin_work_mutation()?;
         super::recovery::require_scope_on(&transaction, &input.binding)?;
         super::super::producing_origin::check_exchange_on(
@@ -244,7 +246,8 @@ impl SqliteStore {
             input.intent.direction == Direction::Incoming,
             "exchange is not an import",
         )?;
-        let observed = super::custody::Observed::capture(&input.binding.repository.git_directory)?;
+        let observed =
+            super::custody::Observed::capture_cold(&input.binding.repository.git_directory)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(request) = request {
             super::super::producing_origin::check_exchange_on(
@@ -411,6 +414,39 @@ pub(super) fn store_event(
     ledger: &mut Ledger,
     object: &CanonicalObject,
 ) -> Result<(), StoreError> {
+    let event: Event = object.decode()?;
+    let binding = ledger
+        .bindings
+        .get(&event.binding)
+        .ok_or_else(|| invalid("exchange binding is missing"))?
+        .clone();
+    ledger.capacity(&[object])?;
+    write_event(connection, &binding, object, &event)?;
+    ledger.bytes += object.bytes().len();
+    ledger.events.insert(object.key().clone(), event);
+    Ok(())
+}
+
+/// The same write as [`store_event`] for a caller that read its binding and
+/// tail by key instead of loading the whole ledger. Capacity is checked from
+/// stored lengths, without decoding or replaying any other exchange.
+pub(super) fn store_event_keyed(
+    connection: &rusqlite::Connection,
+    binding: &Binding,
+    object: &CanonicalObject,
+) -> Result<Event, StoreError> {
+    let event: Event = object.decode()?;
+    super::capacity::require_on(connection, &[object])?;
+    write_event(connection, binding, object, &event)?;
+    Ok(event)
+}
+
+fn write_event(
+    connection: &rusqlite::Connection,
+    binding: &Binding,
+    object: &CanonicalObject,
+    event: &Event,
+) -> Result<(), StoreError> {
     let exists: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id = ?1)",
         [object.key().as_str()],
@@ -420,21 +456,13 @@ pub(super) fn store_event(
         !exists,
         "planned event identity already exists without an intact committed receipt",
     )?;
-    let event: Event = object.decode()?;
-    let binding = ledger
-        .bindings
-        .get(&event.binding)
-        .ok_or_else(|| invalid("exchange binding is missing"))?;
     require(
         !super::recovery::quarantined(connection, &event.binding, binding)?,
         "origin recovery quarantined this exchange; preserve predecessor history",
     )?;
     super::recovery::require_scope_on(connection, binding)?;
     let proposed = super::view::append::propose(connection, binding, object)?;
-    ledger.capacity(&[object])?;
-    ledger.bytes += object.bytes().len();
     let created_at = event.recorded_at.format("%Y-%m-%d %H:%M:%S").to_string();
-    ledger.events.insert(object.key().clone(), event.clone());
     connection.execute("INSERT INTO objects (object_id, object_kind, canonical_json, created_at) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![object.key().as_str(), EVENT_KIND, object.bytes(), created_at])?;
     super::view::append::record(connection, &event.binding, &proposed)?;

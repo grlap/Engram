@@ -6,7 +6,7 @@ use super::{
     original_facts_on, original_on, producing_origin, reconciliation, require, view,
 };
 use crate::storage::work::planning;
-use crate::storage::work::task_sync::{baseline, closure, folder, origin};
+use crate::storage::work::task_sync::{baseline, closure, origin};
 use crate::task_sync::{
     TaskDocument, TaskSyncMembershipView,
     delta::{
@@ -295,14 +295,17 @@ impl SqliteStore {
                     "successor construction changed after retention",
                 )?;
                 let selected = fresh_output_on(&transaction, binding, retained)?;
-                let mut ledger = super::super::super::Ledger::load(&transaction)?;
                 require(
-                    ledger.bindings.get(&retained.binding) == Some(binding),
+                    super::super::super::view::read::binding_on(
+                        &transaction,
+                        &retained.binding,
+                        &mut super::super::super::view::read::ReadBudget::default(),
+                    )? == *binding,
                     "successor binding changed",
                 )?;
                 let checked = admit_on(&transaction, &retained.binding, &retained.recipe)?;
                 let result = origin::with_origin_scope(&transaction, || {
-                    apply_on(&checked, &mut ledger, binding, retained, selected)
+                    apply_on(&checked, binding, retained, selected)
                 })?;
                 drop(checked);
                 transaction.commit()?;
@@ -314,7 +317,6 @@ impl SqliteStore {
 
 fn apply_on(
     checked: &reconciliation::successor::CheckedPlanningSuccessor<'_, '_, '_>,
-    ledger: &mut super::super::super::Ledger,
     binding: &Binding,
     retained: &RetainedSuccessor,
     selected: Changes,
@@ -327,7 +329,6 @@ fn apply_on(
         .as_ref()
         .ok_or_else(|| invalid("successor envelope missing"))?
         .recorded_at;
-    let comparison = folder::folder_export_on(tx, &binding.project, &binding.profile)?.export_basis;
     let previous = baseline::entries(tx, &binding.project, selected.keys().copied())?;
     let prepared = CanonicalObject::identified(
         &recipe.prepared,
@@ -335,7 +336,7 @@ fn apply_on(
             .prepared_event(binding)
             .map_err(|error| invalid(error.to_string()))?,
     )?;
-    super::super::super::operations::store_event(tx, ledger, &prepared)?;
+    super::super::super::operations::store_event_keyed(tx, binding, &prepared)?;
     planning::successor::apply_successor_effects_on(checked, &retained.payload)?;
     let actual = closure::native::capture_on(
         tx,
@@ -362,7 +363,8 @@ fn apply_on(
         previous: Some(local_before.baseline.clone()),
         inventory_root: baseline::next_root(tx, &binding.project, &selected)?,
         changes: selected,
-        export_basis: comparison,
+        // A strict successor never exports the whole folder either.
+        export_basis: None,
         profile: binding.profile.clone(),
         created_at: now,
     };
@@ -412,7 +414,7 @@ fn apply_on(
     };
     let event = recipe.applied_event(&retained.binding, binding, receipt)?;
     let outcome = CanonicalObject::identified(&recipe.outcome, &event)?;
-    super::super::super::operations::store_event(tx, ledger, &outcome)?;
+    super::super::super::operations::store_event_keyed(tx, binding, &outcome)?;
     tx.execute("UPDATE work_task_sync_reconciliation_holds SET resolution_id=?1 WHERE hold_id=?2 AND resolution_id IS NULL",
         rusqlite::params![recipe.outcome.as_str(), recipe.request.hold.as_str()])?;
     reconciliation::active::resolve_on(tx, &recipe.request.hold)?;

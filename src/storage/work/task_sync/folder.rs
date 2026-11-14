@@ -154,8 +154,26 @@ pub(super) fn apply_task_sync_folder_on(
     super::reconciliation::validate_current_heads_on(transaction, request.project, selected)
         .map_err(super::origin::classify_binding)?;
 
+    // A head written by a strict delta records no full-folder basis. Its
+    // absence never matches: the request's basis is then compared with this
+    // folder's freshly computed one, and the head's membership with the tree.
+    let basis_matches =
+        baseline
+            .as_ref()
+            .is_some_and(|baseline| match baseline.head.export_basis.as_deref() {
+                Some(recorded) => recorded == request.export_basis,
+                None => current.export_basis == request.export_basis,
+            });
+    let membership_matches = match &baseline {
+        Some(baseline) if baseline.head.export_basis.is_none() => {
+            baseline.head.inventory_root == baseline::tree_root(request.tree)?
+                && baseline.head.include_notes == request.profile.include_notes
+        }
+        _ => true,
+    };
     if let Some(baseline) = &baseline
-        && baseline.head.export_basis == request.export_basis
+        && basis_matches
+        && membership_matches
         && baseline.tree.folder_documents()? == request.tree.folder_documents()?
         && current.tree.folder_documents()? == baseline.tree.folder_documents()?
     {
@@ -481,7 +499,7 @@ fn record_baseline(
         project,
         baseline.map(|baseline| baseline.head.record.clone()),
         changes,
-        export_basis,
+        Some(export_basis),
         profile,
         now,
     )?;

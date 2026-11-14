@@ -486,6 +486,18 @@ pub enum TaskSyncRefusal {
     /// An incremental exchange's recorded basis no longer continues the
     /// store's history, so its changed tasks cannot be named exactly.
     IncrementalBasisUnavailable,
+    /// The changed-task index does not cover every project-feed position of
+    /// the interval asked for; an explicit projection repair restores it.
+    FeedProjectionGap,
+    /// The recorded source commit is not an ancestor of the incoming one,
+    /// for example after a force-moved data branch.
+    SourceHistoryDiverged,
+    /// Local Git cannot prove the incoming commit descends from the recorded
+    /// one, as in a shallow clone; no object is fetched to find out.
+    SourceHistoryUnavailable,
+    /// The inventory root computed from a verified Git delta differs from the
+    /// one the exchange declared.
+    InventoryRootMismatch,
     /// Local Git could not complete a bounded read; rebuilding cannot fix it.
     GitQueryFailed,
     /// Another exchange baseline was recorded after the one this exchange
@@ -536,6 +548,10 @@ task_sync_refusal_codes! {
     DestinationMissingTasks => "task_sync_destination_missing_tasks",
     ImportConflict => "task_sync_import_conflict",
     IncrementalBasisUnavailable => "task_sync_incremental_basis_unavailable",
+    FeedProjectionGap => "task_sync_feed_projection_gap",
+    SourceHistoryDiverged => "task_sync_source_history_diverged",
+    SourceHistoryUnavailable => "task_sync_source_history_unavailable",
+    InventoryRootMismatch => "task_sync_inventory_root_mismatch",
     GitQueryFailed => "task_sync_git_query_failed",
     BaselineHeadMoved => "task_sync_baseline_head_moved",
     ReconciliationHeld => "task_sync_reconciliation_held",

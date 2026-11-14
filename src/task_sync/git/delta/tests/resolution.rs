@@ -1,34 +1,34 @@
-//! Actual Git snapshots feed the resolved graph/delta comparison; no writer or
-//! remote publication is exercised here.
+//! A merged commit read as a rooted diff from the original publication feeds
+//! the resolved payload comparison; no writer or remote is exercised here.
 
 use super::*;
 use crate::task_sync::{
     delta::{DELTA_PAYLOAD_FORMAT, DeltaCandidatePayload, OutputMembership},
-    exchange::delta::resolution::validate_snapshots,
-    git::{CommitTaskSnapshot, read_task_snapshot},
+    exchange::delta::resolution::validate_resolved_delta,
+    git::{CommitTaskSnapshot, VerifiedTaskDelta, read_rooted_task_diff, read_task_snapshot},
     inventory::InventoryRoot,
 };
 
-fn payload(
-    f: &Fixture,
-    prior: &str,
-    next: &str,
-    snapshot: &CommitTaskSnapshot,
-) -> DeltaCandidatePayload {
+fn membership(snapshot: &CommitTaskSnapshot) -> OutputMembership {
+    OutputMembership {
+        inventory_root: snapshot
+            .tree
+            .tasks
+            .iter()
+            .try_fold(InventoryRoot::ZERO, InventoryRoot::including)
+            .unwrap(),
+        profile: snapshot.envelope.profile.clone(),
+    }
+}
+
+fn payload(f: &Fixture, prior: &str, next: &str) -> DeltaCandidatePayload {
     let delta = f.read(prior, next).unwrap();
+    let merged = read_task_snapshot(&f.root, &f.tree.project.project_id, next).unwrap();
     DeltaCandidatePayload {
         format: DELTA_PAYLOAD_FORMAT.into(),
         project_id: f.tree.project.project_id.clone(),
         operation: uuid::Uuid::new_v4(),
-        output: OutputMembership {
-            inventory_root: snapshot
-                .tree
-                .tasks
-                .iter()
-                .try_fold(InventoryRoot::ZERO, InventoryRoot::including)
-                .unwrap(),
-            profile: snapshot.envelope.profile.clone(),
-        },
+        output: membership(&merged),
         documents: delta
             .upserts
             .into_iter()
@@ -38,11 +38,24 @@ fn payload(
     }
 }
 
+fn diff(f: &Fixture, original: &OutputMembership, prior: &str, next: &str) -> VerifiedTaskDelta {
+    read_rooted_task_diff(
+        &f.root,
+        &f.tree.project.project_id,
+        prior,
+        original.inventory_root,
+        next,
+        std::time::Duration::from_secs(60),
+    )
+    .unwrap()
+}
+
 #[test]
 fn resolved_git_admission_compares_actual_additions_removals_and_unchanged_graph_context() {
     let mut f = Fixture::new(3);
     let prior = f.commit();
-    let original = read_task_snapshot(&f.root, &f.tree.project.project_id, &prior).unwrap();
+    let original =
+        membership(&read_task_snapshot(&f.root, &f.tree.project.project_id, &prior).unwrap());
     f.tree.tasks[0].title = "Agent merged planning".into();
     f.write(&f.tree.tasks[0]);
     let removed = f.tree.tasks[1].id;
@@ -51,22 +64,18 @@ fn resolved_git_admission_compares_actual_additions_removals_and_unchanged_graph
     added.prerequisites.push(f.tree.tasks[2].id);
     f.write(&added);
     let next = f.commit();
-    let merged = read_task_snapshot(&f.root, &f.tree.project.project_id, &next).unwrap();
-    let payload = payload(&f, &prior, &next, &merged);
+    let payload = payload(&f, &prior, &next);
     let before = f.identity();
-    validate_snapshots(&original, &merged, &payload).unwrap();
+    reads();
+    let delta = diff(&f, &original, &prior, &next);
+    // Only the changed paths are opened: the edit's two blobs, the removal's
+    // old one and the addition's new one, never the unchanged prerequisite.
+    assert_eq!(task_reads().len(), 4);
+    validate_resolved_delta(&delta, &original, &payload).unwrap();
     assert_eq!(payload.documents.len(), 3);
     assert_eq!(payload.documents[&removed], None);
     assert!(!payload.documents.contains_key(&f.tree.tasks[2].id));
-    assert_ne!(
-        payload.output.inventory_root,
-        original
-            .tree
-            .tasks
-            .iter()
-            .try_fold(InventoryRoot::ZERO, InventoryRoot::including)
-            .unwrap()
-    );
+    assert_ne!(payload.output.inventory_root, original.inventory_root);
     assert_eq!(f.identity(), before);
 }
 
@@ -74,12 +83,13 @@ fn resolved_git_admission_compares_actual_additions_removals_and_unchanged_graph
 fn resolved_git_admission_refuses_omitted_changed_bytes_false_deletions_and_claimed_root() {
     let mut f = Fixture::new(2);
     let prior = f.commit();
-    let original = read_task_snapshot(&f.root, &f.tree.project.project_id, &prior).unwrap();
+    let original =
+        membership(&read_task_snapshot(&f.root, &f.tree.project.project_id, &prior).unwrap());
     f.tree.tasks[0].title = "Changed selected bytes".into();
     f.write(&f.tree.tasks[0]);
     let next = f.commit();
-    let merged = read_task_snapshot(&f.root, &f.tree.project.project_id, &next).unwrap();
-    let payload = payload(&f, &prior, &next, &merged);
+    let payload = payload(&f, &prior, &next);
+    let delta = diff(&f, &original, &prior, &next);
     let before = f.identity();
     for scenario in ["missing", "bytes", "deletion", "root", "profile", "project"] {
         let mut changed = payload.clone();
@@ -103,7 +113,7 @@ fn resolved_git_admission_refuses_omitted_changed_bytes_false_deletions_and_clai
             _ => unreachable!(),
         }
         assert!(
-            validate_snapshots(&original, &merged, &changed).is_err(),
+            validate_resolved_delta(&delta, &original, &changed).is_err(),
             "{scenario}"
         );
         assert_eq!(f.identity(), before);

@@ -995,6 +995,7 @@ fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
                 // Projections of the feed entries and the new baseline,
                 // which the doctor below compares with their records.
                 | "work_project_feed_tasks"
+                | "work_project_feed_coverage"
                 | "work_task_sync_baseline"
                 | "work_task_sync_baseline_heads"
                 | "work_task_sync_document_members"

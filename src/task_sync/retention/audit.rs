@@ -23,6 +23,8 @@ const TOTAL_LIMIT: usize = 128 * 1024 * 1024;
 const MAX_AUDITS: usize = 100_000;
 const MAX_ENTRIES: usize = MAX_AUDITS * 2 + 3;
 
+pub(crate) mod journal;
+
 /// A minted event retained before its owning SQL transaction is attempted.
 /// Possession proves no commit or admission.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -36,6 +38,7 @@ pub struct RetainedAudit {
 #[serde(rename_all = "snake_case")]
 pub enum AuditMode {
     AuditOnly,
+    Managed,
 }
 
 /// Filesystem acknowledgement of an exact canonical checkpoint. The caller
@@ -95,7 +98,11 @@ impl RetainedAudit {
             restore_occurrence: checkpoint.local_cut.restore_occurrence,
             checkpoint: self.event_id.clone(),
             event_fingerprint: self.event_fingerprint()?,
-            mode: AuditMode::AuditOnly,
+            mode: if checkpoint.reason == crate::task_sync::delta::CheckpointReason::ManagedAudit {
+                AuditMode::Managed
+            } else {
+                AuditMode::AuditOnly
+            },
         })
     }
 }
@@ -355,7 +362,13 @@ fn inventory_at(directory: &PrivateDirectory) -> Result<AuditInventory> {
             .strip_prefix("head-")
             .and_then(|name| name.strip_suffix(".pending"));
         let acknowledgement = name.ends_with(".ack.json");
-        let limit = if acknowledgement || pending.is_some() || name == "head.json" {
+        ensure!(
+            name != journal::PENDING,
+            "custody journal publication remains pending"
+        );
+        let limit = if name == journal::FILE {
+            TOTAL_LIMIT
+        } else if acknowledgement || pending.is_some() || name == "head.json" {
             SMALL_LIMIT
         } else {
             EVENT_LIMIT
@@ -369,7 +382,13 @@ fn inventory_at(directory: &PrivateDirectory) -> Result<AuditInventory> {
             total <= TOTAL_LIMIT,
             "custody audit inventory exceeds byte bound"
         );
-        if name == "head.json" {
+        if name == journal::FILE {
+            let journal: journal::Journal = serde_json::from_slice(&bytes)?;
+            ensure!(
+                crate::canonical::canonical_bytes(&journal)? == bytes,
+                "invalid custody journal"
+            );
+        } else if name == "head.json" {
             result.head = read_head(directory)?;
         } else if let Some(id) = pending {
             let id = ObjectId::from_stored(id.to_owned())
