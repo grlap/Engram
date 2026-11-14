@@ -490,16 +490,37 @@ fn path_output(bytes: Vec<u8>) -> Result<PathBuf> {
 /// script that costs seconds even in a repository without submodules. Its rows
 /// come only from gitlinks (mode 160000) in the index, so an index without one
 /// has the same empty status, read with one quick query. Any failure of that
-/// probe, such as a Git older than `ls-files --format`, runs the script itself.
-/// So does an index too large for the query's output bound (seven bytes per
-/// entry, so about 150,000 entries): the result is the same, only slower.
+/// probe, such as a Git older than `ls-files --format`, falls through to the
+/// full status below. So does an index too large for the query's output bound
+/// (seven bytes per entry, so about 150,000 entries): the same, only slower.
+///
+/// The script's status command only runs `submodule--helper status`, which
+/// holds every submodule rule, after checking that it runs at the worktree
+/// top; this reader has already proven that. Calling the helper directly skips
+/// the shell. If the helper exits non-zero, for example because a future Git
+/// removed it, the script runs once and its result is returned as it is.
 fn submodule_status(run: impl Fn(&[&str]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
     let gitlink_free = run(&["ls-files", "-z", "--format=%(objectmode)"])
         .is_ok_and(|modes| modes.split(|byte| *byte == 0).all(|mode| mode != b"160000"));
     if gitlink_free {
         return Ok(Vec::new());
     }
-    run(&["submodule", "status", "--recursive"])
+    match run(&["submodule--helper", "status", "--recursive", "--"]) {
+        Err(error) if exited_nonzero(&error) => run(&["submodule", "status", "--recursive"]),
+        result => result,
+    }
+}
+
+/// Whether Git ran and exited non-zero. A diagnostic on stderr wraps that
+/// failure as context, so the whole chain is searched; a deadline, an output
+/// limit or a failure to start the process is not this.
+fn exited_nonzero(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<crate::task_sync::git::QueryFailure>(),
+            Some(crate::task_sync::git::QueryFailure::Nonzero { .. })
+        )
+    })
 }
 
 fn query(
@@ -551,7 +572,12 @@ fn query_with_input(
         command.env("GIT_CONFIG_GLOBAL", crate::storage::store_path_text(global));
     }
     command.args(args);
-    run_query_with_input(command, args[0], missing, deadline, input)
+    // The helper stands in for `git submodule`, so its refusals name that.
+    let label = match args[0] {
+        "submodule--helper" => "submodule",
+        name => name,
+    };
+    run_query_with_input(command, label, missing, deadline, input)
 }
 
 fn git_command(git: &Path, root: &Path) -> Command {
@@ -880,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gitlink_runs_the_submodule_script_and_reports_the_pinned_child() {
+    fn a_gitlink_reads_status_through_the_helper_and_reports_the_pinned_child() {
         let scratch = crate::test_support::temp_home().unwrap();
         let source = scratch.path().join("child-source");
         let root = scratch.path().join("parent");
@@ -909,13 +935,230 @@ mod tests {
         assert_eq!(clean.submodules.len(), 1);
         assert_eq!(clean.submodules[0].path, "child");
         assert_eq!(clean.submodules[0].commit, pin.trim());
-        assert_eq!(ran(&commands, "submodule status"), 1, "{commands:?}");
+        assert_eq!(
+            ran(&commands, "submodule--helper status"),
+            1,
+            "{commands:?}"
+        );
+        assert_eq!(ran(&commands, "submodule status"), 0, "{commands:?}");
 
-        // A dirty capture still rechecks the children through the script.
+        // A dirty capture rechecks the children through the helper too.
         std::fs::write(root.join("tracked"), "edited\n").unwrap();
         let (dirty, commands) = observed(&root);
         assert_eq!(dirty.submodules, clean.submodules);
-        assert_eq!(ran(&commands, "submodule status"), 2, "{commands:?}");
+        assert_eq!(
+            ran(&commands, "submodule--helper status"),
+            2,
+            "{commands:?}"
+        );
+        assert_eq!(ran(&commands, "submodule status"), 0, "{commands:?}");
+    }
+
+    /// Runs Git like `git` but returns whether it succeeded, for steps such as
+    /// a conflicting merge that are expected to fail.
+    fn git_succeeds(root: &Path, args: &[&str]) -> bool {
+        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        let mut command = Command::new("git");
+        for (name, _) in std::env::vars_os() {
+            if name
+                .to_string_lossy()
+                .to_ascii_uppercase()
+                .starts_with("GIT_")
+            {
+                command.env_remove(name);
+            }
+        }
+        command
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", null)
+            .env("GIT_ATTR_NOSYSTEM", "1")
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+            ])
+            .args(["-c", "protocol.file.allow=always"])
+            .current_dir(root)
+            .args(args)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    }
+
+    #[test]
+    fn helper_status_matches_the_submodule_script_for_every_submodule_state() {
+        let scratch = crate::test_support::temp_home().unwrap();
+        let base = scratch.path();
+        let repository = |name: &str| {
+            let path = base.join(name);
+            std::fs::create_dir(&path).unwrap();
+            git(&path, &["init", "-q"]);
+            std::fs::write(path.join("tracked"), "checked\n").unwrap();
+            commit_all(&path);
+            path
+        };
+        let add = |parent: &Path, source: &Path, path: &str| {
+            assert!(git_succeeds(
+                parent,
+                &[
+                    "submodule",
+                    "add",
+                    "-q",
+                    "--",
+                    source.to_str().unwrap(),
+                    path
+                ]
+            ));
+            commit_all(parent);
+        };
+        let inner = repository("inner");
+        let child = repository("child");
+        add(&child, &inner, "deep");
+
+        // Pinned, nested two levels deep, at a path holding a space.
+        let pinned = repository("pinned");
+        add(&pinned, &child, "sub dir");
+        assert!(git_succeeds(
+            &pinned,
+            &["submodule", "update", "-q", "--init", "--recursive"]
+        ));
+        // A child whose HEAD moved off its pin.
+        let off_pin = repository("off-pin");
+        add(&off_pin, &child, "sub");
+        std::fs::write(off_pin.join("sub/moved"), "moved\n").unwrap();
+        commit_all(&off_pin.join("sub"));
+        // A child that was never initialized here.
+        let uninitialized = repository("uninitialized");
+        add(&uninitialized, &child, "sub");
+        assert!(git_succeeds(
+            &uninitialized,
+            &["submodule", "deinit", "-q", "-f", "--", "sub"]
+        ));
+        // A gitlink with no .gitmodules mapping: Git itself refuses.
+        let unmapped = repository("unmapped");
+        add(&unmapped, &child, "sub");
+        git(&unmapped, &["rm", "-q", "--cached", ".gitmodules"]);
+        std::fs::remove_file(unmapped.join(".gitmodules")).unwrap();
+        commit_all(&unmapped);
+        // Two branches pinning different child commits, merged into a conflict.
+        let conflicted = repository("conflicted");
+        add(&conflicted, &child, "sub");
+        let pin = String::from_utf8(git(&conflicted.join("sub"), &["rev-parse", "HEAD"])).unwrap();
+        git(&conflicted, &["checkout", "-q", "-b", "other"]);
+        std::fs::write(conflicted.join("sub/a"), "a\n").unwrap();
+        commit_all(&conflicted.join("sub"));
+        commit_all(&conflicted);
+        git(&conflicted, &["checkout", "-q", "-"]);
+        git(&conflicted.join("sub"), &["checkout", "-q", pin.trim()]);
+        std::fs::write(conflicted.join("sub/b"), "b\n").unwrap();
+        commit_all(&conflicted.join("sub"));
+        commit_all(&conflicted);
+        assert!(!git_succeeds(&conflicted, &["merge", "-q", "other"]));
+
+        // The state each fixture's first row reports, or None where Git refuses.
+        let expected = [
+            (&pinned, Some(b' ')),
+            (&off_pin, Some(b'+')),
+            (&uninitialized, Some(b'-')),
+            (&unmapped, None),
+            (&conflicted, Some(b'U')),
+        ];
+        for (root, state) in expected {
+            let root = root.canonicalize().unwrap();
+            let git = resolve_git(&root).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let run = |args: &[&str]| query(&git, &root, args, false, deadline, None);
+            let helper = run(&["submodule--helper", "status", "--recursive", "--"]);
+            let script = run(&["submodule", "status", "--recursive"]);
+            match (&helper, &script, state) {
+                (Ok(helper), Ok(script), Some(state)) => {
+                    assert_eq!(helper, script, "{}", root.display());
+                    assert_eq!(helper.first(), Some(&state), "{}", root.display());
+                }
+                (Err(helper), Err(script), None) => {
+                    assert_eq!(format!("{helper:#}"), format!("{script:#}"));
+                }
+                _ => panic!("{}: {helper:?} against {script:?}", root.display()),
+            }
+            COMMANDS.with_borrow_mut(Vec::clear);
+            let ours = submodule_status(run);
+            let fell_back = ran(
+                &COMMANDS.with_borrow_mut(std::mem::take),
+                "submodule status",
+            );
+            match (ours, helper) {
+                (Ok(ours), Ok(helper)) => {
+                    assert_eq!(ours, helper, "{}", root.display());
+                    assert_eq!(fell_back, 0, "{}", root.display());
+                }
+                (Err(ours), Err(_)) => {
+                    assert_eq!(format!("{ours:#}"), format!("{:#}", script.unwrap_err()));
+                    assert_eq!(fell_back, 1, "{}", root.display());
+                }
+                (ours, _) => panic!("{}: {ours:?}", root.display()),
+            }
+        }
+    }
+
+    #[test]
+    fn a_failing_helper_returns_the_script_result_and_other_failures_do_not_fall_back() {
+        use crate::task_sync::git::QueryFailure;
+        // How the helper's failure reaches the caller, from the exit failure.
+        type Failure = fn(QueryFailure) -> anyhow::Error;
+        let nonzero = |code| QueryFailure::Nonzero {
+            command: "submodule--helper".to_owned(),
+            code: Some(code),
+        };
+        let cases: [(&str, Failure, Option<i32>); 5] = [
+            ("removed helper", anyhow::Error::from, Some(1)),
+            ("unknown subcommand", anyhow::Error::from, Some(129)),
+            (
+                "exit with a diagnostic",
+                |failure| {
+                    anyhow::Error::from(failure).context(QueryFailure::Stderr {
+                        command: "submodule--helper".to_owned(),
+                        message: "not a git command".to_owned(),
+                    })
+                },
+                Some(1),
+            ),
+            ("deadline", |_| QueryFailure::Deadline.into(), None),
+            ("output limit", |_| QueryFailure::OutputLimit.into(), None),
+        ];
+        for (case, failure, code) in cases {
+            let calls = std::cell::RefCell::new(Vec::new());
+            let run = |args: &[&str]| -> Result<Vec<u8>> {
+                calls.borrow_mut().push(args.join(" "));
+                match args[0] {
+                    "ls-files" => Ok(b"160000\0".to_vec()),
+                    "submodule--helper" => Err(failure(nonzero(code.unwrap_or(1)))),
+                    _ => Ok(b"script rows\n".to_vec()),
+                }
+            };
+            let result = submodule_status(run);
+            let scripted = ran(&calls.borrow(), "submodule status");
+            if code.is_some() {
+                assert_eq!(result.unwrap(), b"script rows\n", "{case}");
+                assert_eq!(scripted, 1, "{case}");
+            } else {
+                assert!(result.is_err(), "{case}");
+                assert_eq!(scripted, 0, "{case}");
+            }
+        }
+        // A helper that succeeds is the result; the script never runs.
+        let calls = std::cell::RefCell::new(Vec::new());
+        let run = |args: &[&str]| -> Result<Vec<u8>> {
+            calls.borrow_mut().push(args.join(" "));
+            Ok(if args[0] == "ls-files" {
+                b"160000\0".to_vec()
+            } else {
+                b"helper rows\n".to_vec()
+            })
+        };
+        assert_eq!(submodule_status(run).unwrap(), b"helper rows\n");
+        assert_eq!(ran(&calls.borrow(), "submodule status"), 0);
     }
 
     #[test]
