@@ -32,6 +32,7 @@ pub use activity::TaskSyncExportOptions;
 pub mod git;
 pub mod inventory;
 pub mod ledger;
+pub mod memories;
 pub mod progress;
 mod publication;
 pub mod reconciliation;
@@ -493,6 +494,20 @@ pub enum TaskSyncRefusal {
     BaselineHeadMoved,
     /// A retained reconciliation candidate currently fences affected admission.
     ReconciliationHeld,
+    /// The committed memory component has not been restored on disk.
+    MemoryExportComponentMissing,
+    /// The on-disk memory component differs from the committed basis.
+    MemoryExportComponentChanged,
+    /// The committed ignore policy excludes memory files.
+    MemoryIgnorePolicyExcludesTree,
+    /// The on-disk ignore policy differs from its committed form.
+    MemoryIgnorePolicyUncommitted,
+    /// Explicit recovery evidence differs from the selected committed basis.
+    MemoryExportBasisChanged,
+    /// A prepared setup intent uses an obsolete policy proposal.
+    SetupIntentPolicyObsolete,
+    /// A memory-capable folder requires explicit memory import/export selection.
+    MemoryProfileRequiresOptIn,
 }
 
 // One mapping generates both the exhaustive match and the test inventory.
@@ -539,11 +554,18 @@ task_sync_refusal_codes! {
     GitQueryFailed => "task_sync_git_query_failed",
     BaselineHeadMoved => "task_sync_baseline_head_moved",
     ReconciliationHeld => "task_sync_reconciliation_held",
+    MemoryExportComponentMissing => "memory_export_component_missing",
+    MemoryExportComponentChanged => "memory_export_component_changed",
+    MemoryIgnorePolicyExcludesTree => "memory_ignore_policy_excludes_tree",
+    MemoryIgnorePolicyUncommitted => "memory_ignore_policy_uncommitted",
+    MemoryExportBasisChanged => "memory_export_basis_changed",
+    SetupIntentPolicyObsolete => "setup_intent_policy_obsolete",
+    MemoryProfileRequiresOptIn => "memory_profile_requires_opt_in",
 }
 
 impl TaskSyncRefusal {
     /// Refuse with this family, keeping the invalid-input text unchanged.
-    pub(crate) fn invalid(self, reason: impl Into<String>) -> StoreError {
+    pub fn invalid(self, reason: impl Into<String>) -> StoreError {
         self.wrap(invalid(reason))
     }
 

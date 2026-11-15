@@ -147,6 +147,38 @@ pub(super) fn advance_project_memory_state_on(
     Ok(())
 }
 
+/// A first-seen retired key contributes one assertion/change but no active
+/// memory. Ordinary zero-delta revisions require an active key, so terminal
+/// creation has this separate admission using the state read before insertion.
+pub(super) fn record_project_memory_retirement_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    before: (usize, i64),
+) -> Result<(), StoreError> {
+    let active = i64::try_from(before.0).map_err(|_| {
+        StoreError::InvalidMemoryProjection("project memory count exceeds SQLite range".into())
+    })?;
+    let next = before.1.checked_add(1).ok_or_else(|| {
+        StoreError::InvalidMemoryProjection(
+            "project memory change position exceeds SQLite range".into(),
+        )
+    })?;
+    let changed = connection.execute(
+        "INSERT INTO project_memory_state (project_id, active_count, change_position)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(project_id) DO UPDATE SET change_position = excluded.change_position
+         WHERE project_memory_state.active_count = ?2
+           AND project_memory_state.change_position = ?4",
+        params![project_id.0, active, next, before.1],
+    )?;
+    if changed != 1 {
+        return Err(StoreError::InvalidMemoryProjection(
+            "project memory state changed during terminal creation".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub(in crate::storage) fn derived_project_memory_state_rows_on(
     connection: &Connection,
 ) -> Result<Vec<(String, i64, i64)>, StoreError> {

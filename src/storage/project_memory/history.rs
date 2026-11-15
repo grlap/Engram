@@ -157,6 +157,13 @@ pub(super) fn memory_full(
         remembered_at: entry.version.created_at,
         actor_id: entry.version.actor.actor_id.clone(),
         actor_context: entry.version.actor.attribution_context().map(str::to_owned),
+        // History admission validates recognized source tags before rendering.
+        reported_source: crate::task_sync::memories::ImportProvenance::from_actor(
+            &entry.version.actor,
+        )
+        .ok()
+        .flatten()
+        .map(|tag| tag.source),
         session_id: entry.version.actor.session_id.clone(),
         retiring_target: entry.version.retiring_target.clone(),
         retiring_state: None,

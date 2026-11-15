@@ -407,8 +407,20 @@ pub struct ProjectMemoryKeyChange {
 /// How many changed keys a memories signal or listing names.
 pub const MAX_NAMED_PROJECT_MEMORY_CHANGES: usize = 8;
 
-/// Dedicated full-read envelope whose exact serialized size is checked before
-/// the corresponding memory is persisted.
+/// Asserted source attribution carried by an explicitly imported memory,
+/// separate from the local actor and session that recorded it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectMemoryReportedSource {
+    pub actor_id: String,
+    pub actor_kind: String,
+    pub actor_context: Option<String>,
+    pub reason: String,
+    pub remembered_at: DateTime<Utc>,
+}
+
+/// Dedicated full-read envelope, retaining the local recorder separately from
+/// an imported revision's asserted original source.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectMemoryFull {
     pub key: String,
@@ -419,6 +431,8 @@ pub struct ProjectMemoryFull {
     pub actor_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actor_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_source: Option<ProjectMemoryReportedSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<SessionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
