@@ -20,7 +20,9 @@ runner as described below; it does not become a reviewer or validation owner.
 **Never commit, push, rebase, or sync remotes without explicit user
 authority.** That is Greg's word or, for commit, push and install only, the
 standing approval in AGENTS.md "Authority and Git", or, for a candidate
-commit only, its candidate-commits bullet.
+commit only, its candidate-commits bullet, or, for a test ref only, its
+test-ref bullets, or, for the data branch only, its task-sync data-branch
+bullet.
 
 This workflow requires TermAl MCP delegation tools. Obtain the review pair —
 at most two reviews that count, from different vendors: spawn one Codex and

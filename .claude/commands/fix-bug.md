@@ -34,6 +34,7 @@ Fix the Engram work item whose ref is supplied in `$ARGUMENTS`.
    push, or sync without explicit authority: Greg's word or, for commit,
    push and install only, the standing approval in AGENTS.md "Authority and
    Git", or, for a candidate commit only, its candidate-commits bullet, or,
-   for a test ref only, its test-ref bullets.
+   for a test ref only, its test-ref bullets, or, for the data branch only,
+   its task-sync data-branch bullet.
 
 If `$ARGUMENTS` is omitted, run `engram work next` and ask which bug to take.

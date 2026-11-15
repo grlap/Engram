@@ -91,8 +91,9 @@ and no size limit.
 - Never commit, push, rebase, or force-push without explicit user
   permission. Read-only Git inspection is always allowed. The standing
   approval below is such permission for commit, push and install only, the
-  candidate-commits bullet for a candidate commit only, and the two test-ref
-  bullets for their own pushes only; none covers a rebase, force-push or
+  candidate-commits bullet for a candidate commit only, the two test-ref
+  bullets for their own pushes only, and the task-sync data-branch bullet
+  for its own commits and pushes only; none covers a rebase, force-push or
   history rewrite.
 - Standing approval: once all of these hold, land the changeset without
   asking (commit it on master, or fast-forward master to its gated candidate
@@ -171,8 +172,7 @@ and no size limit.
   condition above has reviewed the same frozen tree (an unavailable review
   is not a clean review); under a family split this applies to each
   family's pair, and a stand-in counts only for its own family.
-- Candidate commits (Greg, 2026-10-31: 'zatwierdzam opcje B', 'idzmy na
-  prostsa opcja B / zatwierdzam'). So that focused checks, reviews and the
+- Candidate commits. So that focused checks, reviews and the
   full gate run on a clean commit, a writable session may commit its change
   on its own feature branch or detached worktree, never on master, and pushed
   only as a test ref under the two test-ref bullets below. A candidate commit
@@ -239,7 +239,8 @@ and no size limit.
   route; recording his words, narrowing, or clarifying needs only (a), (b)
   and (c). No other approval is asked.
 - Outside the standing approval's conditions above, the candidate-commits
-  bullet and the two test-ref bullets below, a commit or push needs Greg's own
+  bullet, the two test-ref bullets and the task-sync data-branch bullet
+  below, a commit or push needs Greg's own
   word, given in the acting session
   or relayed by Engram::Asistant, the session Greg designated for talking with
   him directly. A relayed word counts only when Asistant quotes it verbatim
@@ -271,9 +272,9 @@ and no size limit.
   Installing is not deploying: running processes keep their build until they
   restart by the supported routes above; the landing report says whether
   running sessions need the new build, with its build hash and reason.
-- Test refs for remote runs (Greg, 2026-10-19: "tak, Opus moze wypychac"; a
-  test ref is a merge-ready patch, not scratch; Mac and Windows gates carry
-  equal weight). As an exception to the previous bullet, to give a remote
+- Test refs for remote runs. A test ref is a merge-ready patch, not scratch,
+  and Mac and Windows gates carry equal weight. As an exception to the
+  previous bullet, to give a remote
   runner an exact input, Engram::Merger may commit a merge-ready input tree
   and push it as `refs/heads/test/<item>-<fingerprint8>`, where `<item>` is
   the item's short work ref and `<fingerprint8>` is the first eight hex digits
@@ -324,13 +325,9 @@ and no size limit.
   and at the latest when the input's items close, and records the push and the
   deletion (commit id, tree id, fingerprint, times) on the item. This grants
   no other commit, push, install or restart.
-- Author test refs (Greg, 2026-11-09, relayed by Engram::Asistant in mailbox
-  43498a6e #782: „prosze zapisac to jako skille i instrukcje w pamieci / ja
-  nie widze innego sensu”, answering his question in #780, „nie rozumiem,
-  czemu po prostu nie wysylamy brancha ?”, and the proposal relayed to him
-  in #781 that coders push their own candidate commits to test branches on
-  origin at any stage, so that remote runners test the exact commit). As a
-  further exception, the session that wrote a candidate commit may push
+- Author test refs. So that remote runners test the exact commit at any
+  stage, the session that wrote a candidate commit may, as a further
+  exception, push
   exactly that commit to origin as `refs/heads/author-test/<item>-<commit8>`,
   where `<item>` is the item's short work ref and `<commit8>` is the first
   eight hex digits of the commit id, with the explicit refspec
@@ -352,9 +349,8 @@ and no size limit.
   the latest when the item closes, and records the push and the deletion
   (commit id, times) on the item. This grants no other commit, push, install
   or restart.
-- S3 pilot folder exchange (Greg, 2026-10-20: option (c), "the private
-  bare repository under target/s3-pilot/folder.git over the existing
-  Windows↔Mac SSH path, never origin"). As an exception to the bullets
+- S3 pilot folder exchange, through a private bare repository over the
+  existing Windows↔Mac SSH path, never origin. As an exception to the bullets
   above, for the two-host Git-folder sync pilot only, an agent assigned as
   a pilot host's lane by the pilot item may run Git in exactly these ways.
   It may create the private bare repository `target/s3-pilot/folder.git`
@@ -377,6 +373,15 @@ and no size limit.
   pilot item (host, commit id, tree id, time). The bare repository and
   pilot clones are removed when the pilot item closes. This grants no
   other commit, push, install or restart.
+- Task-sync data branch. An agent session may commit task and memory exports
+  in the project's dedicated data worktree (MAIN/.engram-data/) to the orphan
+  branch engram-data and push that branch to origin as a routine sync step.
+  Only that branch, fast-forward only (fetch, agent merge, commit, push);
+  never force-push, rebase or history rewrite, never master or another
+  branch, never code, docs or tests. The origin repository may be public, so
+  every pushed export is visible to anyone: before each push the pusher
+  confirms the export carries no secret, credential or private personal
+  data. This grants no other commit, push, install or restart.
 - Implementers claim their own Engram items and complete them with the
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.
@@ -573,16 +578,10 @@ Never add an automated test or check that reads, pins or compares the
 content of AGENTS.md, CLAUDE.md or another agent instruction file. Never add
 a test that only pins text or mirrors the implementation, so that every
 change must be edited twice; where a test is needed, it verifies observable
-behavior (Greg, 2026-11-07, relayed by Engram::Asistant in mailbox 43498a6e
-#487: 'USUNAC TESTY sprawdzajace claud.md czy agents.md Natychmiast!! Nigdy
-ich niedodawac', and #490: 'Zero tautologi. Tak marnujemy cykle. Te testy
-nic nie wnosza. Teraz kazda zmiana wymusza zmiane testow. Czyli edycja 2
-razy. O ile zlapiemy to odrazu. Absurd! Nigdy wiecej.').
+behavior.
 
-No test reads a Markdown file to check that it contains given phrases
-(Greg, 2026-11-07, relayed by Engram::Asistant in mailbox 43498a6e #495:
-'Nie ma testów czytających pliki md i sprawdzania czy mają okreslone frazy.
-Usunąć natychmiast.'). General-purpose checks that process Markdown uniformly,
+No test reads a Markdown file to check that it contains given phrases.
+General-purpose checks that process Markdown uniformly,
 such as link validation or review input fingerprinting, are not such tests.
 
 Choose landing validation by changed file type:
@@ -598,10 +597,9 @@ Choose landing validation by changed file type:
 Exported `.engram/project.json`, `.engram/tasks/` and evidence packs stay in
 the dedicated data worktree on the orphan data branch and are excluded from
 code commits and code `source_id`. Code changes use the applicable gates and
-reviews above. A data commit is never tested code or a landing candidate. The
-existing commit and push authority rules still govern each data-branch
-operation; this layout change grants no new commit, push or history-rewrite
-authority.
+reviews above. A data commit is never tested code or a landing candidate.
+The task-sync data-branch bullet under Authority and Git governs each
+data-branch commit and push.
 
 A Markdown code block or quoted command is prose and does not trigger the
 full gate by itself. Mixed or uncertain changes use the stronger applicable
@@ -854,4 +852,5 @@ At session end: run the checks applicable to the changed files, update your
 Engram items (`note`, `done`), and report changed files and validation. Commit or
 push only on Greg's explicit word or under the standing approval in
 Authority and Git, or, for a candidate commit only, under its
-candidate-commits bullet, or, for a test ref only, under the test-ref bullets.
+candidate-commits bullet, or, for a test ref only, under the test-ref bullets,
+or, for the data branch only, under the task-sync data-branch bullet.
