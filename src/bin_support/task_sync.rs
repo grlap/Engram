@@ -669,56 +669,25 @@ fn run_folder_exchange(
                     complete.extend(captured.keys.clone());
                     complete
                 });
-                if let Some(complete) = &complete {
-                    engram::task_sync::memories::directory::preflight(
+                let written = if include_memories {
+                    directory::publish_memory_export(
                         &data,
-                        &memory_basis,
-                        complete,
-                        memory_recovery_basis.is_some(),
-                        &exported.tree,
-                        &exported.profile,
-                    )?;
-                }
-                let existing = if include_memories {
-                    directory::matching_memory_task_export(
-                        &data,
-                        &exported.tree,
-                        &exported.profile,
-                        memory_recovery_basis.is_some(),
+                        &directory::MemoryTaskExport {
+                            tree: &exported.tree,
+                            profile: &exported.profile,
+                            basis: &memory_basis,
+                            selected: complete
+                                .as_ref()
+                                .context("complete memory selection missing")?,
+                            recovery_basis: memory_recovery_basis.as_deref(),
+                        },
+                        memory_lock.as_ref().context("memory lock missing")?,
                     )?
                 } else {
-                    None
-                };
-                let written = match existing {
-                    Some(existing) => existing,
-                    None if include_memories => directory::write_data_folder_with_memories(
-                        &data,
-                        &exported.tree,
-                        &exported.profile,
-                    )?,
-                    None => directory::write_data_folder(&data, &exported.tree, &exported.profile)?,
+                    directory::write_data_folder(&data, &exported.tree, &exported.profile)?
                 };
                 let memory_receipt = if include_memories {
-                    let selected = memory_basis;
                     let captured = memory_capture.context("memory capture missing")?;
-                    let complete = complete.context("complete memory selection missing")?;
-                    if let Some(retained) = &memory_recovery_basis
-                        && directory::memory_profile_recovery_pending(&data)?
-                    {
-                        directory::recover_memory_profile_locked(
-                            &data,
-                            retained,
-                            memory_lock.as_ref().context("memory lock missing")?,
-                        )?;
-                    }
-                    directory::enable_memory_profile(&data)?;
-                    engram::task_sync::memories::directory::write_locked(
-                        &data,
-                        &selected,
-                        &complete,
-                        memory_recovery_basis.is_some(),
-                        memory_lock.as_ref().context("memory lock missing")?,
-                    )?;
                     for withheld in &captured.withheld {
                         eprintln!("Memory key {} withheld: {}", withheld.key, withheld.reason);
                     }

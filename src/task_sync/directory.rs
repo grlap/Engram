@@ -20,7 +20,9 @@ const MAX_TASKS: usize = 100_000;
 
 mod envelope;
 mod evidence;
+pub(in crate::task_sync) mod memory_refresh;
 pub(crate) use envelope::prepare_folder_documents;
+pub use memory_refresh::{MemoryTaskExport, publish_memory_export};
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -482,14 +484,15 @@ fn read_documents_with_memory_mode(
             let bytes = read_file_with(&entry.path(), limits, checkpoint)?;
             anyhow::ensure!(
                 intended.starts_with(&bytes),
-                "pending memory capability differs from retained selection"
+                TaskSyncRefusal::MemoryTaskExportRecoveryMismatch.invalid(format!(
+                    "pending memory capability differs from retained selection; check=pending_envelope_prefix; path={name:?}; intended_bytes={}; observed_bytes={}; preserve staging and recapture the intended export before explicit recovery", intended.len(), bytes.len()))
             );
             total_bytes = total_bytes
                 .checked_add(bytes.len())
                 .context("capability staging byte overflow")?;
         } else {
             return Err(TaskSyncRefusal::DestinationUnknownEntry
-                .invalid("unknown task directory entry")
+                .invalid(format!("unknown task directory entry; check=allowed_component_entry; observed={name:?}; preserve the entry and reconcile the folder before exchange"))
                 .into());
         }
     }

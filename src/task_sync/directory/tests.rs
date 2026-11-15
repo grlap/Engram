@@ -15,7 +15,7 @@ fn profile() -> crate::task_sync::progress::ExportProfile {
     }
 }
 
-fn candidate() -> TaskTree {
+pub(in crate::task_sync::directory) fn candidate() -> TaskTree {
     TaskTree {
         project: ProjectDocument {
             format: FORMAT.into(),
@@ -50,7 +50,7 @@ fn candidate() -> TaskTree {
 }
 
 /// The structured code of a store refusal, through any added context.
-fn refusal_code(error: &anyhow::Error) -> serde_json::Value {
+pub(in crate::task_sync::directory) fn refusal_code(error: &anyhow::Error) -> serde_json::Value {
     let error = error
         .downcast_ref::<crate::storage::StoreError>()
         .unwrap_or_else(|| panic!("not a store refusal: {error:#}"));

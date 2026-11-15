@@ -294,27 +294,9 @@ fn memory_sync_cli_recovery_uses_current_task_envelope_after_task_change() {
     git(data, &["commit", "-m", "Record first shared memory"]);
     let memory_before = files(&folder.join("memories"));
     work(&home, &marker, &["add", "second task"]);
-    data_worktree::clear(&marker);
-    // Model interruption after the new task component was staged. A routine
-    // task-only export is deliberately forbidden on this memory-capable HEAD.
-    let project_id = ProjectId("memory-cli-fixture".into());
-    let store = SqliteStore::open(project_database_path(&home, &project_id)).unwrap();
-    let current = store
-        .export_task_sync_folder(
-            &project_id,
-            &ExportProfile {
-                include_notes: false,
-                origin_machine: None,
-            },
-        )
-        .unwrap();
-    directory::write_folder(&folder, &current.tree, &current.profile).unwrap();
-    drop(store);
-    copy_tree(&retained.join("memories"), &folder.join("memories"));
     let project = folder.join("project.json");
-    let current_tasks = fs::read(&project).unwrap();
-    // Capture the exact bytes produced by this CLI, then simulate interruption
-    // while that same capability envelope is being staged before its rename.
+    // Refresh through the supported CLI, then model the older capability-only
+    // interruption with complete tasks and an envelope lacking the capability.
     success(sync_output(
         &home,
         &marker,
@@ -323,7 +305,11 @@ fn memory_sync_cli_recovery_uses_current_task_envelope_after_task_change() {
         &["--include-memories", "--json"],
     ));
     let intended = fs::read(&project).unwrap();
-    fs::write(&project, &current_tasks).unwrap();
+    let mut envelope: Value = serde_json::from_slice(&intended).unwrap();
+    envelope.as_object_mut().unwrap().remove("memory_profile");
+    let mut current_tasks = serde_json::to_vec_pretty(&envelope).unwrap();
+    current_tasks.push(b'\n');
+    fs::write(&project, current_tasks).unwrap();
     let pending = folder.join(format!("project-{}.pending", uuid::Uuid::new_v4()));
     fs::write(&pending, &intended[..intended.len() / 2]).unwrap();
     let args = [
@@ -384,6 +370,192 @@ fn memory_sync_cli_uncommitted_memory_refusal_leaves_worktree_untouched() {
         "memory_export_component_changed"
     );
     assert_eq!(files(&folder), before);
+}
+
+fn prepare_refresh_peer(
+    author_home: &Path,
+    marker: &Path,
+    folder: &Path,
+    owned: &Path,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let peer_home = owned.join("refresh-peer");
+    task_sync_opt_in::enable(&peer_home, "memory-cli-fixture");
+    success(command(&peer_home, marker).arg("init").output().unwrap());
+    work(author_home, marker, &["add", "initial task"]);
+    work(
+        author_home,
+        marker,
+        &["remember", "first rule", "--key", "rule"],
+    );
+    let data = folder.parent().unwrap();
+    let export_flags = ["--include-memories", "--json"];
+    success(sync_output(
+        author_home,
+        marker,
+        "export",
+        folder,
+        &export_flags,
+    ));
+    git(data, &["add", ".engram"]);
+    git(data, &["commit", "-m", "Publish initial task and rule"]);
+    success(sync_output(
+        &peer_home,
+        marker,
+        "import",
+        folder,
+        &["--include-memories", "--empty-basis", "--json"],
+    ));
+    success(sync_output(
+        &peer_home,
+        marker,
+        "export",
+        folder,
+        &export_flags,
+    ));
+    let peer_basis = owned.join("peer-project.json");
+    fs::copy(folder.join("project.json"), &peer_basis).unwrap();
+    (peer_home, peer_basis)
+}
+
+#[test]
+fn memory_sync_cli_refresh_round_trips_changed_tasks_and_memory_history() {
+    let (owned, marker, author_home) = setup();
+    let folder = data_worktree::folder(&marker);
+    let data = folder.parent().unwrap();
+    let export_flags = ["--include-memories", "--json"];
+    let (peer_home, peer_basis) =
+        prepare_refresh_peer(&author_home, &marker, &folder, owned.path());
+    let initial: Value =
+        serde_json::from_slice(&fs::read(folder.join("project.json")).unwrap()).unwrap();
+    let project = ProjectId("memory-cli-fixture".into());
+    let store = SqliteStore::open(project_database_path(&author_home, &project)).unwrap();
+    let captured = store
+        .export_task_sync_folder(
+            &project,
+            &ExportProfile {
+                include_notes: false,
+                origin_machine: None,
+            },
+        )
+        .unwrap();
+    let identifier = captured.tree.tasks[0].id.0.to_string();
+    drop(store);
+    work(
+        &author_home,
+        &marker,
+        &["update", &identifier, "--title", "changed task"],
+    );
+    work(
+        &author_home,
+        &marker,
+        &[
+            "remember",
+            "revised rule",
+            "--key",
+            "rule",
+            "--revise",
+            "--expected-revision",
+            "1",
+        ],
+    );
+    let output = success(sync_output(
+        &author_home,
+        &marker,
+        "export",
+        &folder,
+        &export_flags,
+    ));
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["memories"]["exported_keys"], 1);
+    assert_eq!(receipt["memories"]["withheld"].as_array().unwrap().len(), 0);
+    assert_ne!(
+        serde_json::from_slice::<Value>(&fs::read(folder.join("project.json")).unwrap()).unwrap(),
+        initial
+    );
+    let published = files(&folder);
+    success(sync_output(
+        &author_home,
+        &marker,
+        "export",
+        &folder,
+        &export_flags,
+    ));
+    assert_eq!(files(&folder), published);
+    git(data, &["add", ".engram"]);
+    git(
+        data,
+        &["commit", "-m", "Publish changed task and revised rule"],
+    );
+    let import_flags = [
+        "--include-memories",
+        "--basis",
+        peer_basis.to_str().unwrap(),
+        "--json",
+    ];
+    let imported = success(sync_output(
+        &peer_home,
+        &marker,
+        "import",
+        &folder,
+        &import_flags,
+    ));
+    let receipt: Value = serde_json::from_slice(&imported.stdout).unwrap();
+    assert_eq!(receipt["memory_partial"], false);
+    assert_eq!(receipt["memories"][0]["status"], "applied");
+    assert_eq!(receipt["memories"][0]["outcome"]["appended_revisions"], 1);
+    assert_refreshed_peer(&peer_home, &marker, &folder, &published);
+}
+
+fn assert_refreshed_peer(
+    peer_home: &Path,
+    marker: &Path,
+    folder: &Path,
+    published: &BTreeMap<std::path::PathBuf, Vec<u8>>,
+) {
+    let project = ProjectId("memory-cli-fixture".into());
+    let peer = SqliteStore::open(project_database_path(peer_home, &project)).unwrap();
+    let captured = peer
+        .export_task_sync_folder(
+            &project,
+            &ExportProfile {
+                include_notes: false,
+                origin_machine: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(captured.tree.tasks[0].title, "changed task");
+    drop(peer);
+    for (revision, body) in [("1", "first rule"), ("2", "revised rule")] {
+        let read = success(
+            command(peer_home, marker)
+                .args([
+                    "work",
+                    "--actor-id",
+                    "reader",
+                    "--session-id",
+                    "refresh-reader",
+                    "--json",
+                    "memories",
+                    "rule",
+                    "--full",
+                    "--revision",
+                    revision,
+                ])
+                .output()
+                .unwrap(),
+        );
+        let read: Value = serde_json::from_slice(&read.stdout).unwrap();
+        assert_eq!(read["body"], body);
+        assert_eq!(read["reported_source"]["actor_id"], "memory-fixture");
+    }
+    success(sync_output(
+        peer_home,
+        marker,
+        "export",
+        folder,
+        &["--include-memories", "--json"],
+    ));
+    assert_eq!(&files(folder), published);
 }
 
 #[test]

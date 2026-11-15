@@ -198,10 +198,15 @@ pub fn preflight(
         Some(root) if recovering => {
             recovery::validate(&root, basis, selected)?;
         }
-        Some(root) => ensure!(
-            read_root_for_capability(&root, true)?.0 == *basis,
-            crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged.invalid("memory_export_component_changed: on-disk memory tree differs from the committed basis")
-        ),
+        Some(root) => {
+            ensure!(
+                read_root_for_capability(&root, true)?.0 == *basis,
+                crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged.invalid("memory_export_component_changed: on-disk memory tree differs from the committed basis")
+            );
+            // Check every retained immutable file before a combined export can
+            // change tasks; the writer must not discover this after mutation.
+            recovery::validate(&root, basis, selected)?;
+        }
         None => ensure!(
             basis.is_empty(),
             crate::task_sync::TaskSyncRefusal::MemoryExportComponentMissing.invalid("memory_export_component_missing: restore the committed memory component before export")
@@ -264,6 +269,61 @@ pub(in crate::task_sync) fn read_root_with_bytes(
     root: &PrivateDirectory,
 ) -> Result<(BTreeMap<String, KeyHistory>, usize)> {
     read_root_for_capability(root, false)
+}
+
+/// Exact publication bytes, including every selected file and no pending files.
+pub(in crate::task_sync) fn publication_matches(
+    root: &PrivateDirectory,
+    selected: &BTreeMap<String, KeyHistory>,
+) -> Result<bool> {
+    let memories = match root.child(Path::new("memories")) {
+        Ok(directory) => directory,
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            return Ok(selected.is_empty());
+        }
+        Err(error) => return Err(error),
+    };
+    let names = memories.names(ENTRY_LIMIT)?;
+    if names.len() != selected.len() {
+        return Ok(false);
+    }
+    for name in names {
+        let Some(history) = name.to_str().and_then(|name| selected.get(name)) else {
+            return Ok(false);
+        };
+        let directory = memories.child(Path::new(&name))?;
+        let entries = directory.names(ENTRY_LIMIT)?;
+        if entries.len() != history.revisions.len() + 1 {
+            return Ok(false);
+        }
+        let head = serde_json::to_vec_pretty(&HeadDocument {
+            format: FORMAT.into(),
+            project_id: history.project_id.clone(),
+            key: history.key.clone(),
+            head: history.head.clone(),
+        })?;
+        if directory
+            .read_bounded(Path::new("head.json"), FILE_LIMIT)?
+            .as_ref()
+            != Some(&head)
+        {
+            return Ok(false);
+        }
+        for (id, revision) in &history.revisions {
+            if directory
+                .read_bounded(Path::new(&format!("{id}.json")), FILE_LIMIT)?
+                .as_ref()
+                != Some(&serde_json::to_vec_pretty(revision)?)
+            {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 fn read_root_for_capability(
@@ -588,9 +648,13 @@ pub fn write_locked(
                 file.write_all(&bytes)?;
                 file.sync_all()?;
                 drop(file);
+                #[cfg(test)]
+                crate::task_sync::directory::memory_refresh::checkpoint("memory_revision_staged")?;
                 directory
                     .dir()
                     .hard_link(&pending, directory.dir(), &name)?;
+                #[cfg(test)]
+                crate::task_sync::directory::memory_refresh::checkpoint("memory_revision_linked")?;
                 directory.dir().remove_file(&pending)?;
             }
         }
@@ -605,9 +669,13 @@ pub fn write_locked(
         file.write_all(&head)?;
         file.sync_all()?;
         drop(file);
+        #[cfg(test)]
+        crate::task_sync::directory::memory_refresh::checkpoint("memory_head_staged")?;
         directory
             .dir()
             .rename(&temporary, directory.dir(), "head.json")?;
+        #[cfg(test)]
+        crate::task_sync::directory::memory_refresh::checkpoint("memory_head_published")?;
         // Only old, validated selected revision files are removed. Their Git
         // history and original canonical local histories remain unchanged.
         if let Some(old) = basis.get(key) {

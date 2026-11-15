@@ -1030,9 +1030,27 @@ abort export; only memory-admission refusals withhold an individual key.
 
 An export into an existing data checkout takes its memory basis from that
 checkout's committed HEAD, even when task files have just been exported anew.
-This memory option writes only the memory component and its capability. Task
-export retains its existing contract: a different occupied task folder refuses
-with `task_sync_destination_occupied`; it never overwrites an unimported merge.
+Refresh an existing memory-capable export in place with:
+
+```text
+engram task-sync export MAIN/.engram-data/.engram --include-memories
+```
+
+Keep the committed folder in place. The task component, index, policy and
+evidence files must match the selected data HEAD before a fresh refresh.
+The command captures tasks and memories together, rewrites the task component
+and its envelope, and publishes memories under the same publication lock.
+It preserves policy files and evidence. Continue to check that HEAD is this
+host's recorded imported commit and keep this host's own pre-merge basis:
+clean Git state alone does not prove that the local store imported HEAD.
+Task-only export keeps its existing no-overwrite contract.
+Uncommitted task/envelope or auxiliary changes refuse with
+`memory_task_export_component_changed`; staged changes refuse with
+`memory_task_export_index_changed`. Refusals name the deciding check and
+observed path, fingerprint, size or state, with a remedy, without printing bodies.
+A complete unchanged retry compares the entire intended task, envelope and
+memory output and returns without publication writes. Matching tasks alone
+does not establish a completed retry.
 Missing or modified memory components
 refuse with `memory_export_component_missing` or
 `memory_export_component_changed`; restore or commit the intended component
@@ -1195,6 +1213,18 @@ replacement; heads are replaced atomically only after revision files exist.
 If export is interrupted, normal import/export refuses incomplete or pending
 files. Retain the complete pre-export `.engram` folder, then explicitly run the
 same export with `--include-memories --memory-recovery-basis RETAINED/.engram`.
+For a task refresh, the full intended `project-UUID.pending` envelope is synced
+before any task mutation and remains until both components validate. Ordinary
+export reports `memory_task_export_recovery_required` while that fence exists.
+Explicit recovery also checks the retained task component against committed
+HEAD and validates every interrupted task path against old and intended bytes.
+Only planned additions, removals and interrupted intended writes are admitted;
+unknown or foreign bytes and stale intended envelopes refuse without cleanup
+with `memory_task_export_recovery_mismatch`. Preserve the interrupted folder
+when investigating a refusal. Recovery validates tasks and memories before
+changing either component and removes the publication fence only after both
+complete components match. The existing capability-only recovery remains
+available for an otherwise complete task component.
 Recovery derives the intended output again from canonical local history and
 that selected basis. It checks the whole directory before cleaning only matching
 pending files or a torn newly created revision. Every current head must match

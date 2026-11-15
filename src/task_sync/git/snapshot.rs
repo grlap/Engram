@@ -32,6 +32,93 @@ pub struct CommitTaskSnapshot {
     pub envelope: FolderBasis,
 }
 
+/// Raw committed task bytes and identities of untouched policy/evidence files.
+/// This is transient publication admission, not a retained exchange checkpoint.
+pub(crate) struct TaskPublicationBasis {
+    pub documents: std::collections::BTreeMap<String, Vec<u8>>,
+    pub auxiliary: std::collections::BTreeMap<String, String>,
+    pub memory_files: std::collections::BTreeMap<String, String>,
+}
+
+pub(crate) fn read_task_publication_basis(
+    repository: &Path,
+    project: &ProjectId,
+    commit: &str,
+) -> Result<Option<TaskPublicationBasis>> {
+    let reader = Reader::new(repository, project)?;
+    let object = reader.commit_object(commit, "task refresh basis")?;
+    let roots = reader.entries(&object.tree, &[".engram"])?;
+    let Some(root) = roots.first() else {
+        return Ok(None);
+    };
+    if !reader
+        .entries(&root.oid, &[])?
+        .iter()
+        .any(|entry| entry.name == "project.json")
+    {
+        return Ok(None);
+    }
+    reader.metadata_with_size(&object.tree, project)?;
+    let mut pending = vec![(format!("{}:.engram", object.oid), String::new())];
+    let mut documents = std::collections::BTreeMap::new();
+    let mut auxiliary = std::collections::BTreeMap::new();
+    let mut memory_files = std::collections::BTreeMap::new();
+    let mut total = 0usize;
+    let mut count = 0usize;
+    while let Some((tree, prefix)) = pending.pop() {
+        for entry in reader.entries(&tree, &[])? {
+            count += 1;
+            anyhow::ensure!(count <= 100_000, "task refresh basis entry bound exceeded");
+            let name = format!("{prefix}{}", entry.name);
+            if entry.kind == "tree" && entry.mode == "040000" {
+                anyhow::ensure!(
+                    name == "tasks"
+                        || name == "evidence"
+                        || name.starts_with("evidence/")
+                        || name == "memories"
+                        || name.starts_with("memories/"),
+                    "task refresh basis has an unknown directory"
+                );
+                pending.push((entry.oid, format!("{name}/")));
+                continue;
+            }
+            anyhow::ensure!(
+                entry.kind == "blob" && entry.mode == "100644",
+                "task refresh basis requires ordinary blobs"
+            );
+            if name == "project.json" || name.starts_with("tasks/") {
+                if name.starts_with("tasks/") {
+                    delta::task_path(&format!(".engram/{name}"))?;
+                }
+                let bytes = reader.evidence_blob(&entry.oid, 1024 * 1024)?;
+                total = total
+                    .checked_add(bytes.len())
+                    .context("task refresh basis byte overflow")?;
+                anyhow::ensure!(
+                    total <= delta::MAX_DELTA_BYTES,
+                    "task refresh basis byte bound exceeded"
+                );
+                documents.insert(name, bytes);
+            } else if name.starts_with("memories/") {
+                memory_files.insert(name, entry.oid);
+            } else {
+                anyhow::ensure!(
+                    name == ".gitignore"
+                        || name == ".gitattributes"
+                        || name.starts_with("evidence/"),
+                    "task refresh basis has an unknown file"
+                );
+                auxiliary.insert(name, entry.oid);
+            }
+        }
+    }
+    Ok(Some(TaskPublicationBasis {
+        documents,
+        auxiliary,
+        memory_files,
+    }))
+}
+
 /// Parse the same commit object for cold reads and explicit retained execution.
 /// Callers establish exact object selection before supplying these bytes.
 pub(crate) fn observe_commit(commit: &str, bytes: &[u8]) -> Result<CommitObject> {

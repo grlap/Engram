@@ -25,6 +25,7 @@ pub(crate) use snapshot::observe_commit;
 pub use snapshot::read_memory_snapshot;
 pub(crate) use snapshot::read_task_snapshot_bounded;
 pub use snapshot::{CommitObject, CommitTaskSnapshot, read_task_snapshot};
+pub(crate) use snapshot::{TaskPublicationBasis, read_task_publication_basis};
 
 use std::{
     path::Path,

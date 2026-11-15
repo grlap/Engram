@@ -508,6 +508,14 @@ pub enum TaskSyncRefusal {
     SetupIntentPolicyObsolete,
     /// A memory-capable folder requires explicit memory import/export selection.
     MemoryProfileRequiresOptIn,
+    /// A combined refresh would overwrite edits outside its committed basis.
+    MemoryTaskExportComponentChanged,
+    /// The data index no longer selects the committed refresh basis.
+    MemoryTaskExportIndexChanged,
+    /// An interrupted combined publication needs explicit retained input.
+    MemoryTaskExportRecoveryRequired,
+    /// Interrupted task bytes disagree with retained and intended input.
+    MemoryTaskExportRecoveryMismatch,
 }
 
 // One mapping generates both the exhaustive match and the test inventory.
@@ -561,6 +569,10 @@ task_sync_refusal_codes! {
     MemoryExportBasisChanged => "memory_export_basis_changed",
     SetupIntentPolicyObsolete => "setup_intent_policy_obsolete",
     MemoryProfileRequiresOptIn => "memory_profile_requires_opt_in",
+    MemoryTaskExportComponentChanged => "memory_task_export_component_changed",
+    MemoryTaskExportIndexChanged => "memory_task_export_index_changed",
+    MemoryTaskExportRecoveryRequired => "memory_task_export_recovery_required",
+    MemoryTaskExportRecoveryMismatch => "memory_task_export_recovery_mismatch",
 }
 
 impl TaskSyncRefusal {
