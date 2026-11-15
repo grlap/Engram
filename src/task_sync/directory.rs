@@ -419,6 +419,7 @@ fn read_documents_with_memory_mode(
     let mut documents = BTreeMap::new();
     let mut total_bytes = 0;
     let mut task_count = 0;
+    let mut staging_bytes = 0usize;
     let mut has_tasks = false;
     for entry in fs::read_dir(path)? {
         let entry = entry?;
@@ -485,11 +486,19 @@ fn read_documents_with_memory_mode(
             anyhow::ensure!(
                 intended.starts_with(&bytes),
                 TaskSyncRefusal::MemoryTaskExportRecoveryMismatch.invalid(format!(
-                    "pending memory capability differs from retained selection; check=pending_envelope_prefix; path={name:?}; intended_bytes={}; observed_bytes={}; preserve staging and recapture the intended export before explicit recovery", intended.len(), bytes.len()))
+                    "pending memory capability differs from retained selection; check=pending_envelope_prefix; path={name:?}; intended_bytes={}; observed_bytes={}; {}", intended.len(), bytes.len(), memory_refresh::RESTORE))
             );
-            total_bytes = total_bytes
+            staging_bytes = staging_bytes
                 .checked_add(bytes.len())
                 .context("capability staging byte overflow")?;
+            anyhow::ensure!(
+                staging_bytes <= usize::try_from(limits.file_bytes)? * 2,
+                TaskSyncRefusal::MemoryTaskExportRecoveryMismatch.invalid(format!(
+                    "check=pending_envelope_bytes; observed={staging_bytes}; limit={}; {}",
+                    limits.file_bytes * 2,
+                    memory_refresh::RESTORE
+                ))
+            );
         } else {
             return Err(TaskSyncRefusal::DestinationUnknownEntry
                 .invalid(format!("unknown task directory entry; check=allowed_component_entry; observed={name:?}; preserve the entry and reconcile the folder before exchange"))

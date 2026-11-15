@@ -40,6 +40,10 @@ pub(crate) struct TaskPublicationBasis {
     pub memory_files: std::collections::BTreeMap<String, String>,
 }
 
+fn publication_basis_refusal(check: &str, detail: impl std::fmt::Display) -> anyhow::Error {
+    TaskSyncRefusal::MemoryTaskExportBasisInvalid.invalid(format!("check={check}; {detail}; preserve the selected commit and reconcile its task/data paths and limits before retrying refresh")).into()
+}
+
 pub(crate) fn read_task_publication_basis(
     repository: &Path,
     project: &ProjectId,
@@ -68,7 +72,13 @@ pub(crate) fn read_task_publication_basis(
     while let Some((tree, prefix)) = pending.pop() {
         for entry in reader.entries(&tree, &[])? {
             count += 1;
-            anyhow::ensure!(count <= 100_000, "task refresh basis entry bound exceeded");
+            anyhow::ensure!(
+                count <= 400_016,
+                publication_basis_refusal(
+                    "committed_entry_limit",
+                    format_args!("observed={count}; limit=400016")
+                )
+            );
             let name = format!("{prefix}{}", entry.name);
             if entry.kind == "tree" && entry.mode == "040000" {
                 anyhow::ensure!(
@@ -77,14 +87,23 @@ pub(crate) fn read_task_publication_basis(
                         || name.starts_with("evidence/")
                         || name == "memories"
                         || name.starts_with("memories/"),
-                    "task refresh basis has an unknown directory"
+                    publication_basis_refusal(
+                        "committed_directory",
+                        format_args!("path={name:?}; allowed=false")
+                    )
                 );
                 pending.push((entry.oid, format!("{name}/")));
                 continue;
             }
             anyhow::ensure!(
                 entry.kind == "blob" && entry.mode == "100644",
-                "task refresh basis requires ordinary blobs"
+                publication_basis_refusal(
+                    "committed_blob_mode",
+                    format_args!(
+                        "path={name:?}; kind={}; mode={}; expected=blob/100644",
+                        entry.kind, entry.mode
+                    )
+                )
             );
             if name == "project.json" || name.starts_with("tasks/") {
                 if name.starts_with("tasks/") {
@@ -96,7 +115,10 @@ pub(crate) fn read_task_publication_basis(
                     .context("task refresh basis byte overflow")?;
                 anyhow::ensure!(
                     total <= delta::MAX_DELTA_BYTES,
-                    "task refresh basis byte bound exceeded"
+                    publication_basis_refusal(
+                        "committed_byte_limit",
+                        format_args!("observed={total}; limit={}", delta::MAX_DELTA_BYTES)
+                    )
                 );
                 documents.insert(name, bytes);
             } else if name.starts_with("memories/") {
@@ -106,7 +128,10 @@ pub(crate) fn read_task_publication_basis(
                     name == ".gitignore"
                         || name == ".gitattributes"
                         || name.starts_with("evidence/"),
-                    "task refresh basis has an unknown file"
+                    publication_basis_refusal(
+                        "committed_file",
+                        format_args!("path={name:?}; allowed=false")
+                    )
                 );
                 auxiliary.insert(name, entry.oid);
             }

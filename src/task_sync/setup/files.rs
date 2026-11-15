@@ -81,6 +81,17 @@ impl Directory {
         self.0.last().expect("retained directory")
     }
 
+    pub fn sync(&self) -> Result<()> {
+        // Match graph publication: Linux directory handles may be O_PATH, so
+        // open a normal read descriptor for fsync. Windows has no portable
+        // directory fsync here; file sync_all and completed renames are used.
+        #[cfg(unix)]
+        self.dir().open(".")?.sync_all()?;
+        #[cfg(not(unix))]
+        let _ = self.dir();
+        Ok(())
+    }
+
     pub fn identity(&self) -> Result<PhysicalId> {
         identity(&self.dir().dir_metadata()?)
     }

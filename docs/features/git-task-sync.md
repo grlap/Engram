@@ -1038,6 +1038,9 @@ engram task-sync export MAIN/.engram-data/.engram --include-memories
 
 Keep the committed folder in place. The task component, index, policy and
 evidence files must match the selected data HEAD before a fresh refresh.
+Only the shared note selection (`include_notes`) must match the committed
+profile; each host supplies its own `--origin-machine` alias with
+`--include-notes`. That alias is not an admission identity.
 The command captures tasks and memories together, rewrites the task component
 and its envelope, and publishes memories under the same publication lock.
 It preserves policy files and evidence. Continue to check that HEAD is this
@@ -1048,13 +1051,20 @@ Uncommitted task/envelope or auxiliary changes refuse with
 `memory_task_export_component_changed`; staged changes refuse with
 `memory_task_export_index_changed`. Refusals name the deciding check and
 observed path, fingerprint, size or state, with a remedy, without printing bodies.
+Commit intended staged changes or unstage them to match HEAD before retrying.
+Task comparisons use exact bytes. A CRLF mismatch reports the checkout line
+endings and the `eol=lf` remedy: fix and commit the JSON line-ending policy,
+then restore that checkout from HEAD. An `info/attributes` override can defeat
+the managed policy and must be reconciled explicitly as well.
 A complete unchanged retry compares the entire intended task, envelope and
 memory output and returns without publication writes. Matching tasks alone
 does not establish a completed retry.
 Missing or modified memory components
 refuse with `memory_export_component_missing` or
 `memory_export_component_changed`; restore or commit the intended component
-before retrying. Recreating the folder never turns an existing committed history
+before retrying. In particular, removing `memories/` when HEAD contains memory
+files reports `memory_export_component_missing`. An empty advertised selection
+needs no memory files. Recreating the folder never turns an existing committed history
 into an empty bootstrap. A HEAD with no memory component or no valid task project
 envelope has an empty memory basis. Task-only export does not read memory HEAD.
 Ignore-policy, size, immutable-content and basis checks run before any task or
@@ -1216,6 +1226,12 @@ same export with `--include-memories --memory-recovery-basis RETAINED/.engram`.
 For a task refresh, the full intended `project-UUID.pending` envelope is synced
 before any task mutation and remains until both components validate. Ordinary
 export reports `memory_task_export_recovery_required` while that fence exists.
+On Unix the containing directory is synced after creating the fence; task
+entries, project and memory head renames are synced before removing it, and
+its directory is synced again afterwards. Windows follows the existing graph
+publication convention: files use `sync_all` and renames must complete; there
+is no portable directory fsync in this implementation, so Unix power-loss
+directory-ordering guarantees are not claimed for Windows.
 Explicit recovery also checks the retained task component against committed
 HEAD and validates every interrupted task path against old and intended bytes.
 Only planned additions, removals and interrupted intended writes are admitted;
@@ -1225,6 +1241,27 @@ when investigating a refusal. Recovery validates tasks and memories before
 changing either component and removes the publication fence only after both
 complete components match. The existing capability-only recovery remains
 available for an otherwise complete task component.
+The interrupted task union is bounded by the old plus intended task/byte
+limits; the completed output still obeys the ordinary limits. Pending envelope
+bytes have a separate bounded staging allowance and are not shared output.
+
+If the local store changes after an interruption, its new intended envelope
+may no longer match the fence. `memory_task_export_recovery_mismatch` names a
+supported restart route; recovery does not silently discard the prior intent:
+
+1. Preserve the complete interrupted folder and receipts outside the active
+   shared folder, and inspect its tracked and untracked paths.
+2. In the data worktree, restore tracked tasks, `project.json` and memories from
+   the chosen HEAD with `git restore --source=HEAD --worktree -- .engram`.
+3. Inspect and remove only new task/memory files and `project-*.pending` fences
+   belonging to that interrupted export. Restore does not remove untracked
+   additions. Preserve unrecognized files separately; do not broadly clean the
+   folder, index or unrelated paths.
+4. Confirm the active components match HEAD and the index is reconciled, then
+   run the ordinary combined refresh again with the current local store.
+
+This is an explicit operator restoration procedure, not new Git authority or
+automatic rollback. It retains the newer local store changes for the next export.
 Recovery derives the intended output again from canonical local history and
 that selected basis. It checks the whole directory before cleaning only matching
 pending files or a torn newly created revision. Every current head must match

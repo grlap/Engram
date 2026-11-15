@@ -16,6 +16,8 @@ use std::{
     time::Duration,
 };
 
+mod review;
+
 fn git(root: &Path, arguments: &[&str]) -> Vec<u8> {
     let mut command = task_sync::git::command(root, arguments);
     command
@@ -454,6 +456,39 @@ fn memory_task_refresh_stale_recovery_selection_preserves_every_file() {
     let mut changed = tree;
     changed.tasks[0].outcome = "new local change after interruption".into();
     let before = inventory(&fixture.folder());
-    assert!(fixture.publish(&changed, &selected, true).is_err());
+    let error = fixture.publish(&changed, &selected, true).unwrap_err();
+    assert_eq!(
+        directory::tests::refusal_code(&error),
+        "memory_task_export_recovery_mismatch"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("git restore --source=HEAD --worktree -- .engram")
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("new task/memory files and project-*.pending")
+    );
     assert_eq!(inventory(&fixture.folder()), before);
+    // Carry out the documented route in the throwaway data repository only.
+    git(
+        &fixture.data,
+        &["restore", "--source=HEAD", "--worktree", "--", ".engram"],
+    );
+    let retained = inventory(&fixture.retained);
+    for path in inventory(&fixture.folder())
+        .keys()
+        .filter(|path| !retained.contains_key(*path))
+    {
+        fs::remove_file(fixture.folder().join(path)).unwrap();
+    }
+    fixture.publish(&changed, &selected, false).unwrap();
+    assert_eq!(
+        directory::read_resolved_data_folder_with_memories(&fixture.observe())
+            .unwrap()
+            .tree,
+        changed
+    );
 }

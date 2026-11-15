@@ -516,6 +516,8 @@ pub enum TaskSyncRefusal {
     MemoryTaskExportRecoveryRequired,
     /// Interrupted task bytes disagree with retained and intended input.
     MemoryTaskExportRecoveryMismatch,
+    /// The committed refresh component has unsafe shape or exceeds its bounds.
+    MemoryTaskExportBasisInvalid,
 }
 
 // One mapping generates both the exhaustive match and the test inventory.
@@ -573,6 +575,7 @@ task_sync_refusal_codes! {
     MemoryTaskExportIndexChanged => "memory_task_export_index_changed",
     MemoryTaskExportRecoveryRequired => "memory_task_export_recovery_required",
     MemoryTaskExportRecoveryMismatch => "memory_task_export_recovery_mismatch",
+    MemoryTaskExportBasisInvalid => "memory_task_export_basis_invalid",
 }
 
 impl TaskSyncRefusal {

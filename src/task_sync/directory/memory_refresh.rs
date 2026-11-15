@@ -13,7 +13,9 @@ use crate::task_sync::{
     setup::PrivateDirectory,
 };
 use anyhow::{Context, ensure};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
+
+pub(super) const RESTORE: &str = "preserve the interrupted folder first; restore tracked .engram/tasks, .engram/project.json and .engram/memories from HEAD (git restore --source=HEAD --worktree -- .engram); inspect and remove only the new task/memory files and project-*.pending fences from that interrupted export, then refresh again; preserve all unrecognized files separately";
 
 /// Transient inputs captured together by the ordinary export service.
 pub struct MemoryTaskExport<'a> {
@@ -25,9 +27,19 @@ pub struct MemoryTaskExport<'a> {
 }
 
 fn refusal(code: TaskSyncRefusal, check: &str, detail: impl std::fmt::Display) -> anyhow::Error {
-    code.invalid(format!(
-        "check={check}; {detail}; preserve the folder and index; import or reconcile edits before refresh; interrupted publication requires --memory-recovery-basis RETAINED/.engram"
-    )).into()
+    let remedy = if code == TaskSyncRefusal::MemoryTaskExportIndexChanged {
+        "commit the intended staged data or unstage it to match HEAD, then restart refresh"
+    } else if matches!(
+        code,
+        TaskSyncRefusal::MemoryTaskExportRecoveryRequired
+            | TaskSyncRefusal::MemoryTaskExportRecoveryMismatch
+    ) {
+        RESTORE
+    } else {
+        "preserve the folder and index; import or reconcile edits before refresh; interrupted publication requires --memory-recovery-basis RETAINED/.engram; verify a committed eol=lf policy for JSON when checkout line endings differ"
+    };
+    code.invalid(format!("check={check}; {detail}; {remedy}"))
+        .into()
 }
 
 fn query(data: &DataWorktree, arguments: &[&str]) -> Result<Vec<u8>> {
@@ -45,7 +57,7 @@ fn revalidate(data: &DataWorktree) -> Result<()> {
     let observed = std::str::from_utf8(&observed)?.trim();
     ensure!(data.head.as_deref().unwrap_or("") == observed,
         TaskSyncRefusal::MemoryExportBasisChanged.invalid(format!(
-            "check=data_head; captured={:?}; observed={observed:?}; preserve output and restart admission against the intended imported commit", data.head)));
+            "check=data_head; captured={}; observed={observed}; preserve output and restart admission against the intended imported commit", data.head.as_deref().unwrap_or("unborn"))));
     data.revalidate()
 }
 
@@ -81,7 +93,14 @@ fn auxiliary_files(root: &PrivateDirectory, prefix: &str, result: &mut Vec<Strin
     for name in root.names(MAX_TASKS)? {
         let name = name.to_str().context("non-UTF8 auxiliary path")?;
         let relative = format!("{prefix}{name}");
-        ensure!(result.len() < MAX_TASKS, "auxiliary path bound exceeded");
+        ensure!(
+            result.len() < MAX_TASKS,
+            refusal(
+                TaskSyncRefusal::MemoryTaskExportComponentChanged,
+                "auxiliary_entry_limit",
+                format_args!("observed={}; limit={MAX_TASKS}", result.len())
+            )
+        );
         let metadata = root.dir().symlink_metadata(name)?;
         if metadata.is_dir() && !metadata.file_type().is_symlink() {
             auxiliary_files(
@@ -92,7 +111,11 @@ fn auxiliary_files(root: &PrivateDirectory, prefix: &str, result: &mut Vec<Strin
         } else {
             ensure!(
                 metadata.is_file() && !metadata.file_type().is_symlink(),
-                "auxiliary input must be an ordinary file"
+                refusal(
+                    TaskSyncRefusal::MemoryTaskExportComponentChanged,
+                    "auxiliary_file_type",
+                    format_args!("path={relative:?}; ordinary_file=false")
+                )
             );
             result.push(relative);
         }
@@ -144,11 +167,48 @@ fn require_file_identities(
     expected: &BTreeMap<String, String>,
     code: TaskSyncRefusal,
 ) -> Result<()> {
+    for batch in present.chunks(1024) {
+        require_identity_batch(data, batch, expected, code)?;
+    }
+    Ok(())
+}
+
+fn require_identity_batch(
+    data: &DataWorktree,
+    present: &[String],
+    expected: &BTreeMap<String, String>,
+    code: TaskSyncRefusal,
+) -> Result<()> {
+    let mut input = Vec::new();
     for path in present {
-        // --no-filters neither executes configured clean filters nor writes objects.
-        let relative = format!(".engram/{path}");
-        let observed = query(data, &["hash-object", "--no-filters", "--", &relative])?;
-        let observed = std::str::from_utf8(&observed)?.trim();
+        ensure!(
+            !path.contains(['\n', '\r', '"', '\\']),
+            refusal(
+                code,
+                "component_path",
+                format_args!("path={path:?}; stdin_path_safe=false")
+            )
+        );
+        input.extend_from_slice(format!(".engram/{path}\n").as_bytes());
+    }
+    // --no-filters neither executes configured clean filters nor writes objects.
+    let output = git::query(
+        &data.checkout,
+        &["hash-object", "--no-filters", "--stdin-paths"],
+        false,
+        Some(&input),
+        QUERY_BOUND,
+    )?;
+    let identities: Vec<_> = std::str::from_utf8(&output)?.lines().collect();
+    ensure!(
+        identities.len() == present.len(),
+        refusal(
+            code,
+            "component_identity_count",
+            format_args!("expected={}; observed={}", present.len(), identities.len())
+        )
+    );
+    for (path, observed) in present.iter().zip(identities) {
         ensure!(
             expected[path] == observed,
             refusal(
@@ -176,7 +236,16 @@ fn require_memory_basis(
             "memories/",
             &mut present,
         )?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            ensure!(
+                expected.is_empty(),
+                refusal(
+                    TaskSyncRefusal::MemoryExportComponentMissing,
+                    "memory_directory",
+                    format_args!("present=false; committed_files={}", expected.len())
+                )
+            );
+        }
         Err(error) => return Err(error.into()),
     }
     let code = TaskSyncRefusal::MemoryExportComponentChanged;
@@ -203,6 +272,7 @@ fn intended_documents(
     let mut envelope: FolderProjectDocument = super::super::parse(&documents["project.json"])?;
     envelope.memory_profile = Some(crate::task_sync::memories::FORMAT.into());
     documents.insert("project.json".into(), pretty(&envelope)?);
+    super::admit_limits_with(&documents, final_limits())?;
     Ok((
         documents,
         FolderExchange {
@@ -213,10 +283,50 @@ fn intended_documents(
     ))
 }
 
+fn memory_validation(error: anyhow::Error) -> anyhow::Error {
+    if error
+        .downcast_ref::<crate::storage::StoreError>()
+        .is_some_and(|error| !matches!(error, crate::storage::StoreError::InvalidWork(_)))
+        || error.downcast_ref::<std::io::Error>().is_some()
+    {
+        return error;
+    }
+    refusal(
+        TaskSyncRefusal::MemoryTaskExportRecoveryMismatch,
+        "memory_publication_validation",
+        format_args!("accepted=false; reason={error}"),
+    )
+}
+
 fn raw_tasks(path: &Path, intended: &[u8]) -> Result<BTreeMap<String, Vec<u8>>> {
+    raw_tasks_with_limits(path, intended, union_limits())
+}
+
+fn final_limits() -> super::Limits {
+    #[cfg(test)]
+    if let Some(limits) = TEST_LIMITS.with(std::cell::Cell::get) {
+        return limits;
+    }
+    LIMITS
+}
+
+fn union_limits() -> super::Limits {
+    let limits = final_limits();
+    super::Limits {
+        tasks: limits.tasks * 2,
+        tree_bytes: limits.tree_bytes * 2,
+        ..limits
+    }
+}
+
+fn raw_tasks_with_limits(
+    path: &Path,
+    intended: &[u8],
+    limits: super::Limits,
+) -> Result<BTreeMap<String, Vec<u8>>> {
     Ok(super::read_documents_with_memory_mode(
         path,
-        LIMITS,
+        limits,
         false,
         true,
         &mut |_, _| Ok(()),
@@ -255,8 +365,14 @@ fn task_mismatch(code: TaskSyncRefusal, path: &str, observed: Option<&Vec<u8>>) 
         code,
         "task_component_bytes",
         format_args!(
-            "path={path:?}; observed_bytes={:?}; expected=committed_or_intended",
-            observed.map(Vec::len)
+            "path={path:?}; present={}; observed_bytes={}; expected=admitted_component; checkout_line_endings={}",
+            observed.is_some(),
+            observed.map_or(0, Vec::len),
+            if observed.is_some_and(|bytes| bytes.windows(2).any(|pair| pair == b"\r\n")) {
+                "CRLF; commit an eol=lf policy for JSON and restore the checkout from HEAD before retrying"
+            } else {
+                "no_CRLF"
+            }
         ),
     )
 }
@@ -306,11 +422,47 @@ fn validate_recovery(
     Ok(())
 }
 
-fn write_bytes(root: &PrivateDirectory, name: &Path, bytes: &[u8]) -> Result<()> {
-    let exists = root
-        .read_bounded(name, usize::try_from(MAX_FILE_BYTES)?)?
-        .is_some();
-    let mut file = root.open_file(name, true, !exists)?;
+fn write_bytes(
+    data: &DataWorktree,
+    root: &PrivateDirectory,
+    name: &Path,
+    expected: Option<&Vec<u8>>,
+    bytes: &[u8],
+) -> Result<()> {
+    require_index(data)?;
+    let code = TaskSyncRefusal::MemoryTaskExportComponentChanged;
+    let mut file = root
+        .open_file(name, true, expected.is_none())
+        .map_err(|error| {
+            if error.downcast_ref::<std::io::Error>().is_some_and(|e| {
+                matches!(
+                    e.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::AlreadyExists
+                )
+            }) {
+                refusal(
+                    code,
+                    "task_mutation_open",
+                    format_args!(
+                        "path={name:?}; expected_present={}; opened=false",
+                        expected.is_some()
+                    ),
+                )
+            } else {
+                error
+            }
+        })?;
+    let mut observed = Vec::new();
+    Read::by_ref(&mut file)
+        .take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut observed)?;
+    ensure!(
+        expected.is_none_or(|bytes| bytes == &observed)
+            && (expected.is_some() || observed.is_empty()),
+        task_mismatch(code, &name.to_string_lossy(), Some(&observed))
+    );
+    require_index(data)?;
+    file.seek(SeekFrom::Start(0))?;
     file.set_len(0)?;
     file.write_all(bytes)?;
     file.sync_all()?;
@@ -322,10 +474,43 @@ fn stage_envelope(root: &PrivateDirectory, bytes: &[u8]) -> Result<std::ffi::OsS
     let mut file = root.open_file(Path::new(&name), true, true)?;
     file.write_all(bytes)?;
     file.sync_all()?;
+    drop(file);
+    root.sync()?;
+    #[cfg(test)]
+    checkpoint("fence_directory_synced")?;
     Ok(name)
 }
 
-fn write_tasks(root: &PrivateDirectory, desired: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+fn recheck_inventory(
+    data: &DataWorktree,
+    expected: &BTreeMap<String, Vec<u8>>,
+    desired: &BTreeMap<String, Vec<u8>>,
+) -> Result<()> {
+    revalidate(data)?;
+    require_index(data)?;
+    let current = raw_tasks(&data.checkout.join(".engram"), &desired["project.json"])?;
+    if current != *expected {
+        let path = current
+            .keys()
+            .chain(expected.keys())
+            .find(|path| current.get(*path) != expected.get(*path))
+            .context("changed inventory path missing")?;
+        return Err(task_mismatch(
+            TaskSyncRefusal::MemoryTaskExportComponentChanged,
+            path,
+            current.get(path),
+        ));
+    }
+    Ok(())
+}
+
+fn write_tasks(
+    data: &DataWorktree,
+    root: &PrivateDirectory,
+    admitted: &BTreeMap<String, Vec<u8>>,
+    desired: &BTreeMap<String, Vec<u8>>,
+) -> Result<()> {
+    let mut expected = admitted.clone();
     let tasks = match root.child(Path::new("tasks")) {
         Ok(tasks) => tasks,
         Err(error)
@@ -337,33 +522,79 @@ fn write_tasks(root: &PrivateDirectory, desired: &BTreeMap<String, Vec<u8>>) -> 
         }
         Err(error) => return Err(error),
     };
+    #[cfg(test)]
+    checkpoint("before_task_mutation")?;
+    recheck_inventory(data, &expected, desired)?;
+    write_desired_tasks(data, &tasks, &mut expected, desired)?;
+    #[cfg(test)]
+    checkpoint("before_task_removal")?;
+    // Bound enumeration by old + intended, and never delete an unadmitted name.
+    recheck_inventory(data, &expected, desired)?;
+    let removals: Vec<_> = expected
+        .keys()
+        .filter(|path| path.starts_with("tasks/") && !desired.contains_key(*path))
+        .cloned()
+        .collect();
+    for path in removals {
+        let name = Path::new(&path[6..]);
+        require_index(data)?;
+        let observed = tasks.read_bounded(name, usize::try_from(MAX_FILE_BYTES)?)?;
+        ensure!(
+            observed.as_ref() == expected.get(&path),
+            task_mismatch(
+                TaskSyncRefusal::MemoryTaskExportComponentChanged,
+                &path,
+                observed.as_ref()
+            )
+        );
+        tasks.dir().remove_file(name)?;
+        expected.remove(&path);
+        #[cfg(test)]
+        checkpoint("task_removed")?;
+    }
+    tasks.sync()?;
+    #[cfg(test)]
+    checkpoint("task_entries_synced")?;
+    let temporary = stage_envelope(root, &desired["project.json"])?;
+    #[cfg(test)]
+    checkpoint("before_project_rename")?;
+    recheck_inventory(data, &expected, desired)?;
+    root.dir().rename(&temporary, root.dir(), "project.json")?;
+    root.sync()?;
+    #[cfg(test)]
+    checkpoint("project_entry_synced")?;
+    #[cfg(test)]
+    checkpoint("project_published")?;
+    Ok(())
+}
+
+fn write_desired_tasks(
+    data: &DataWorktree,
+    tasks: &PrivateDirectory,
+    expected: &mut BTreeMap<String, Vec<u8>>,
+    desired: &BTreeMap<String, Vec<u8>>,
+) -> Result<()> {
     for (path, bytes) in desired
         .iter()
         .filter(|(path, _)| path.starts_with("tasks/"))
     {
         let name = Path::new(&path[6..]);
-        if tasks
-            .read_bounded(name, usize::try_from(MAX_FILE_BYTES)?)?
-            .as_ref()
-            != Some(bytes)
-        {
-            write_bytes(&tasks, name, bytes)?;
+        let observed = tasks.read_bounded(name, usize::try_from(MAX_FILE_BYTES)?)?;
+        ensure!(
+            observed.as_ref() == expected.get(path),
+            task_mismatch(
+                TaskSyncRefusal::MemoryTaskExportComponentChanged,
+                path,
+                observed.as_ref()
+            )
+        );
+        if observed.as_ref() != Some(bytes) {
+            write_bytes(data, tasks, name, expected.get(path), bytes)?;
+            expected.insert(path.clone(), bytes.clone());
             #[cfg(test)]
             checkpoint("task_written")?;
         }
     }
-    for name in tasks.names(MAX_TASKS)? {
-        let relative = format!("tasks/{}", name.to_str().context("non-UTF8 task path")?);
-        if !desired.contains_key(&relative) {
-            tasks.dir().remove_file(&name)?;
-            #[cfg(test)]
-            checkpoint("task_removed")?;
-        }
-    }
-    let temporary = stage_envelope(root, &desired["project.json"])?;
-    root.dir().rename(&temporary, root.dir(), "project.json")?;
-    #[cfg(test)]
-    checkpoint("project_published")?;
     Ok(())
 }
 
@@ -411,15 +642,25 @@ pub fn publish_memory_export(
             true,
             request.tree,
             request.profile,
-        )?;
+        )
+        .map_err(memory_validation)?;
         revalidate(data)?;
+        require_index(data)?;
         return Ok(result);
     }
     let Some(committed) = committed else {
         return publish_initial(data, request, publication);
     };
     admit_refresh(data, request, &root, &committed, &current, &desired)?;
-    publish_refresh(data, request, publication, &root, &committed, &desired)?;
+    publish_refresh(
+        data,
+        request,
+        publication,
+        &root,
+        &committed,
+        &current,
+        &desired,
+    )?;
     Ok(result)
 }
 
@@ -437,13 +678,13 @@ fn admit_refresh(
     let old = &committed.documents;
     let old_folder = super::folder_from_documents_profile(old.clone(), false, true)?;
     ensure!(
-        old_folder.profile == *request.profile,
+        old_folder.profile.include_notes == request.profile.include_notes,
         refusal(
             TaskSyncRefusal::MemoryTaskExportComponentChanged,
             "task_profile",
             format_args!(
-                "committed={:?}; requested={:?}",
-                old_folder.profile, request.profile
+                "committed_include_notes={}; requested_include_notes={}",
+                old_folder.profile.include_notes, request.profile.include_notes
             )
         )
     );
@@ -455,7 +696,10 @@ fn admit_refresh(
             refusal(
                 TaskSyncRefusal::MemoryTaskExportRecoveryMismatch,
                 "retained_tasks_match_head",
-                format_args!("head={:?}; matches=false", data.head)
+                format_args!(
+                    "head={}; matches=false",
+                    data.head.as_deref().unwrap_or("unborn")
+                )
             )
         );
         validate_recovery(
@@ -483,7 +727,8 @@ fn admit_refresh(
         request.recovery_basis.is_some(),
         request.tree,
         request.profile,
-    )?;
+    )
+    .map_err(memory_validation)?;
     Ok(())
 }
 
@@ -493,25 +738,33 @@ fn publish_refresh(
     held: &memory::PublicationLock,
     root: &PrivateDirectory,
     committed: &git::TaskPublicationBasis,
+    admitted: &BTreeMap<String, Vec<u8>>,
     desired: &BTreeMap<String, Vec<u8>>,
 ) -> Result<()> {
     let path = data.select_folder(&data.checkout.join(".engram"))?;
     revalidate(data)?;
-    stage_envelope(root, &desired["project.json"])?;
+    recheck_inventory(data, admitted, desired)?;
+    if !pending(root, &desired["project.json"])?
+        .iter()
+        .any(|(_, full)| *full)
+    {
+        stage_envelope(root, &desired["project.json"])?;
+    }
     #[cfg(test)]
     checkpoint("fence_synced")?;
-    write_tasks(root, desired)?;
+    write_tasks(data, root, admitted, desired)?;
     memory::write_locked(
         data,
         request.basis,
         request.selected,
         request.recovery_basis.is_some(),
         held,
-    )?;
+    )
+    .map_err(memory_validation)?;
     #[cfg(test)]
     checkpoint("memories_published")?;
     ensure!(
-        &raw_tasks(&path, &desired["project.json"])? == desired
+        &raw_tasks_with_limits(&path, &desired["project.json"], final_limits())? == desired
             && memory::publication_matches(root, request.selected)?,
         refusal(
             TaskSyncRefusal::MemoryTaskExportRecoveryMismatch,
@@ -521,8 +774,37 @@ fn publish_refresh(
     );
     require_auxiliary(data, root, &committed.auxiliary)?;
     revalidate(data)?;
+    require_index(data)?;
+    root.child(Path::new("tasks"))?.sync()?;
+    sync_memories(root)?;
+    root.sync()?;
+    #[cfg(test)]
+    checkpoint("components_synced")?;
     for (name, _) in pending(root, &desired["project.json"])? {
         root.dir().remove_file(name)?;
+    }
+    root.sync()?;
+    #[cfg(test)]
+    checkpoint("fence_removal_synced")?;
+    Ok(())
+}
+
+fn sync_memories(root: &PrivateDirectory) -> Result<()> {
+    match root.child(Path::new("memories")) {
+        Ok(memories) => {
+            for name in memories.names(MAX_TASKS)? {
+                memories.child(Path::new(&name))?.sync()?;
+            }
+            memories.sync()?;
+        }
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            ()
+        }
+        Err(error) => return Err(error),
     }
     Ok(())
 }
@@ -539,7 +821,8 @@ fn publish_initial(
         request.recovery_basis.is_some(),
         request.tree,
         request.profile,
-    )?;
+    )
+    .map_err(memory_validation)?;
     let written = match super::matching_memory_task_export(
         data,
         request.tree,
@@ -559,12 +842,29 @@ fn publish_initial(
         request.selected,
         request.recovery_basis.is_some(),
         held,
-    )?;
+    )
+    .map_err(memory_validation)?;
     Ok(written)
 }
 
 #[cfg(test)]
 pub(in crate::task_sync) fn checkpoint(stage: &str) -> Result<()> {
+    EVENTS.with(|events| {
+        if let Some(events) = events.borrow_mut().as_mut() {
+            events.push(stage.to_owned());
+        }
+    });
+    let action = INTERVENTION.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.as_ref().is_some_and(|(name, _)| name == stage) {
+            slot.take().map(|(_, action)| action)
+        } else {
+            None
+        }
+    });
+    if let Some(action) = action {
+        action();
+    }
     if FAILURE.with(|failure| failure.borrow().as_deref() == Some(stage)) {
         anyhow::bail!("injected combined publication interruption");
     }
@@ -573,6 +873,15 @@ pub(in crate::task_sync) fn checkpoint(stage: &str) -> Result<()> {
 
 #[cfg(test)]
 thread_local! { static FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) }; }
+
+#[cfg(test)]
+type Intervention = (String, Box<dyn FnOnce()>);
+#[cfg(test)]
+thread_local! {
+    static TEST_LIMITS: std::cell::Cell<Option<super::Limits>> = const { std::cell::Cell::new(None) };
+    static INTERVENTION: std::cell::RefCell<Option<Intervention>> = const { std::cell::RefCell::new(None) };
+    static EVENTS: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
 
 #[cfg(test)]
 mod tests;

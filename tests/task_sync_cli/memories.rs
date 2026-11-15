@@ -558,6 +558,195 @@ fn assert_refreshed_peer(
     assert_eq!(&files(folder), published);
 }
 
+fn publish_noted_author(author_home: &Path, marker: &Path, folder: &Path) -> String {
+    work(author_home, marker, &["add", "shared task"]);
+    work(
+        author_home,
+        marker,
+        &["remember", "shared rule", "--key", "rule"],
+    );
+    let author_flags = [
+        "--include-memories",
+        "--include-notes",
+        "--origin-machine",
+        "host-a",
+        "--json",
+    ];
+    success(sync_output(
+        author_home,
+        marker,
+        "export",
+        folder,
+        &author_flags,
+    ));
+    let identifier = fs::read_dir(folder.join("tasks"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    work(author_home, marker, &["claim", &identifier]);
+    work(author_home, marker, &["note", "shared author note"]);
+    // Commit the first export before refreshing its newly recorded note.
+    let data = folder.parent().unwrap();
+    git(data, &["add", ".engram"]);
+    git(data, &["commit", "-m", "Publish first alias"]);
+    success(sync_output(
+        author_home,
+        marker,
+        "export",
+        folder,
+        &author_flags,
+    ));
+    git(data, &["add", ".engram"]);
+    git(data, &["commit", "-m", "Publish author note"]);
+    identifier
+}
+
+#[test]
+fn memory_sync_cli_refresh_with_notes_accepts_different_host_aliases() {
+    let (owned, marker, author_home) = setup();
+    let peer_home = owned.path().join("alias-peer");
+    task_sync_opt_in::enable(&peer_home, "memory-cli-fixture");
+    success(command(&peer_home, &marker).arg("init").output().unwrap());
+    let folder = data_worktree::folder(&marker);
+    let data = folder.parent().unwrap();
+    let identifier = publish_noted_author(&author_home, &marker, &folder);
+    let author_basis = owned.path().join("author-alias-project.json");
+    fs::copy(folder.join("project.json"), &author_basis).unwrap();
+    success(sync_output(
+        &peer_home,
+        &marker,
+        "import",
+        &folder,
+        &["--include-memories", "--empty-basis", "--json"],
+    ));
+    work(
+        &peer_home,
+        &marker,
+        &["update", &identifier, "--title", "peer changed task"],
+    );
+    let peer_flags = [
+        "--include-memories",
+        "--include-notes",
+        "--origin-machine",
+        "host-b",
+        "--json",
+    ];
+    success(sync_output(
+        &peer_home,
+        &marker,
+        "export",
+        &folder,
+        &peer_flags,
+    ));
+    let refreshed: Value =
+        serde_json::from_slice(&fs::read(folder.join("project.json")).unwrap()).unwrap();
+    assert_eq!(refreshed["profile"]["origin_machine"], "host-b");
+    assert_eq!(refreshed["profile"]["include_notes"], true);
+    git(data, &["add", ".engram"]);
+    git(data, &["commit", "-m", "Publish second alias refresh"]);
+    success(sync_output(
+        &author_home,
+        &marker,
+        "import",
+        &folder,
+        &[
+            "--include-memories",
+            "--basis",
+            author_basis.to_str().unwrap(),
+            "--json",
+        ],
+    ));
+    let observed = engram::task_sync::data_worktree::DataWorktree::observe(
+        marker.parent().unwrap(),
+        data,
+        "engram-data",
+    )
+    .unwrap();
+    let documents = directory::read_resolved_data_folder_with_memories(&observed).unwrap();
+    assert_eq!(documents.tree.tasks[0].title, "peer changed task");
+    assert_eq!(documents.tree.tasks[0].notes.len(), 1);
+}
+
+#[test]
+fn memory_sync_cli_refresh_stale_intent_restore_keeps_new_store_change() {
+    let (owned, marker, home) = setup();
+    work(&home, &marker, &["add", "initial task"]);
+    let folder = data_worktree::folder(&marker);
+    let data = folder.parent().unwrap();
+    let flags = ["--include-memories", "--json"];
+    success(sync_output(&home, &marker, "export", &folder, &flags));
+    git(data, &["add", ".engram"]);
+    git(
+        data,
+        &["commit", "-m", "Publish initial empty memory component"],
+    );
+    let retained = owned.path().join("retained-refresh");
+    copy_tree(&folder, &retained);
+    let task = fs::read_dir(folder.join("tasks"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let identifier = task.file_stem().unwrap().to_str().unwrap();
+    work(
+        &home,
+        &marker,
+        &["update", identifier, "--title", "interrupted intent"],
+    );
+    success(sync_output(&home, &marker, "export", &folder, &flags));
+    // Model a stopped process immediately before it removes the full fence.
+    let fence = folder.join(format!("project-{}.pending", uuid::Uuid::new_v4()));
+    fs::copy(folder.join("project.json"), &fence).unwrap();
+    work(
+        &home,
+        &marker,
+        &["update", identifier, "--title", "new store change"],
+    );
+    let before = files(&folder);
+    let ordinary = sync_output(&home, &marker, "export", &folder, &flags);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&ordinary.stderr).unwrap()["error"]["code"],
+        "memory_task_export_recovery_required"
+    );
+    let recovery = sync_output(
+        &home,
+        &marker,
+        "export",
+        &folder,
+        &[
+            "--include-memories",
+            "--memory-recovery-basis",
+            retained.to_str().unwrap(),
+            "--json",
+        ],
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&recovery.stderr).unwrap()["error"]["code"],
+        "memory_task_export_recovery_mismatch"
+    );
+    assert!(
+        String::from_utf8_lossy(&recovery.stderr)
+            .contains("git restore --source=HEAD --worktree -- .engram")
+    );
+    assert_eq!(files(&folder), before);
+    git(
+        data,
+        &["restore", "--source=HEAD", "--worktree", "--", ".engram"],
+    );
+    fs::remove_file(fence).unwrap();
+    success(sync_output(&home, &marker, "export", &folder, &flags));
+    let published: Value = serde_json::from_slice(&fs::read(task).unwrap()).unwrap();
+    assert_eq!(published["title"], "new store change");
+}
+
 #[test]
 fn memory_sync_cli_refusal_leaves_tasks_and_capability_untouched() {
     let (_owned, marker, home) = setup();

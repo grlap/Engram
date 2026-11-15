@@ -658,6 +658,7 @@ pub fn write_locked(
                 directory.dir().remove_file(&pending)?;
             }
         }
+        directory.sync()?;
         let head = serde_json::to_vec_pretty(&HeadDocument {
             format: FORMAT.into(),
             project_id: history.project_id.clone(),
@@ -674,6 +675,7 @@ pub fn write_locked(
         directory
             .dir()
             .rename(&temporary, directory.dir(), "head.json")?;
+        directory.sync()?;
         #[cfg(test)]
         crate::task_sync::directory::memory_refresh::checkpoint("memory_head_published")?;
         // Only old, validated selected revision files are removed. Their Git
@@ -691,7 +693,12 @@ pub fn write_locked(
                 }
             }
         }
+        directory.sync()?;
     }
+    memories.sync()?;
+    root.sync()?;
+    #[cfg(test)]
+    crate::task_sync::directory::memory_refresh::checkpoint("memory_entries_synced")?;
     ensure!(
         read_root(&root)? == *selected,
         "memory publication did not match selected content"
