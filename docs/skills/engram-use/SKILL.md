@@ -161,14 +161,15 @@ operator states.
 - Not exchanged by this folder route: live claims, runs, sessions, grants,
   delivery state, evidence and verification records (gates, host checks,
   evaluations, observations) and private scratch.
-- Not exchanged yet: project memories. Do not report memories as synced.
+- Exchanged under the opt-in memory profile (`--include-memories`): eligible
+  project-memory histories, source attribution and forget tombstones.
 - Not filtered for secrets: task text is exported as stored. Native notes
   pass only a path and locator filter, and notes imported from another host
   are exported as stored. No filter detects secrets. A key, password or
   personal detail written into a task or an included note travels with it;
   the [disclosure check](#disclosure-check) is the safeguard.
 
-An import creates planning only. An imported completion is a reported
+A task import creates planning only. An imported completion is a reported
 outcome: it grants no local seal, acceptance pass or host-verification credit.
 
 ### Use planning-only exports
@@ -196,6 +197,39 @@ example a fresh planning-only baseline on the receiving host.
 Every export keeps the note selection of the store's last exchange baseline;
 an export under another selection refuses. Changing the selection is a
 deliberate re-baselining, not a routine step.
+
+### Exchange project memories
+
+The [memory profile](../../features/git-task-sync.md#project-memory-text-exchange)
+is an additional opt-in under the host's enabled task sync. Only wholly
+`Internal` histories travel; `Restricted`, `SecretRef` and mixed histories are
+withheld as whole keys.
+
+1. Add `--include-memories` to every export and import in this exchange.
+   Export with `engram task-sync export .engram-data/.engram --include-memories`
+   and keep this host's own exported `project.json` as its basis. Once the
+   committed data HEAD advertises the memory profile, task-only export refuses.
+2. After fetching and merging by the ordinary procedure, preview with
+   `engram task-sync import .engram-data/.engram --basis PATH/project.json --include-memories --dry-run`.
+   Read the receipt, then repeat without `--dry-run` to apply. A new empty host
+   uses `--empty-basis` instead of `--basis`, as in the join procedure below.
+3. Check the export's `memories.withheld`; those keys were not updated in the
+   shared selection. Import reports each key as `applied` or `refused`.
+   `memory_concurrent_retirement` leaves an already forgotten key retired and
+   lists unseen incoming revisions. Inspect them and preserve their prior
+   shared commit. To choose their retirement explicitly, export with
+   `engram task-sync export .engram-data/.engram --include-memories --retire-unseen KEY`
+   and retain the receipt. Ordinary divergent histories need an explicit
+   compared-input merge, as the memory profile describes.
+4. Retire a key with `engram work forget KEY`, then export and exchange its
+   tombstone. Forget is permanent; it does not sanitize past exports or Git
+   history. Memory bodies and attribution are published with the data branch:
+   run the [disclosure check](#disclosure-check) before every push, including
+   historical revisions and removed text.
+
+Preserve the committed memory component during refresh. The planning-only
+folder-removal steps below must not remove it; follow the linked memory-profile
+contract for component checks and interrupted-export recovery.
 
 ### Disclosure check
 
