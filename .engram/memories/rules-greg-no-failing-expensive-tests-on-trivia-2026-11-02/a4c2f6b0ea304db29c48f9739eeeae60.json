@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-failing-expensive-tests-on-trivia-2026-11-02",
+    "revision_id": "a4c2f6b0ea304db29c48f9739eeeae60",
+    "previous": null,
+    "body_sha256": "3b194d989c4f1feef12c4950c858a69c77ecc8c4cd426e241ebae46fe8d83860",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T23:22:34.101590900Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-02 ~23:22Z, said to Engram::Asistant (session-15908), relayed to Engram::Fable via mailbox 43498a6e #71. It came after TermAl's w-3fe8 C4 full gate (test-6580d0ce) passed every test (6800/0 Rust, all other stages green) and was red only because 2 tests left temporary directories behind. Verbatim: „Nie. To sa drobne rzeczy.\nNaprawimy pozniej.\nSkonczmy failowac drogie testy przez glupoty!!!!!\"\n\nApplication:\n(1) For that C4, the expensive FULL is not rerun only for the leftovers; the cleanup is filed as a later fix and the commit Greg authorized continues. The commit still needs Greg's own word in the acting session (Termal::Opus2), because it lands outside the standing approval.\n(2) Greg's general direction: an expensive gate must not fail on trivia such as cleanup leftovers when every real check passed. Such conditions should be reported and filed, not turn a full gate red.\nChanging either launcher's gate semantics is code and authority-relevant (it changes what \"the full gate passes\" means), so it goes through the normal item, review and concurrence path; it is not applied by agents ad hoc. Source: Greg's words above."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-file-list-2026-11-06",
+    "revision_id": "a2f3ed9b07d34c9eab8ef2e1a9af1c09",
+    "previous": null,
+    "body_sha256": "0cb77fc0338404b06ea3d26c7cd2aa622cf8c36f9ab79ae833cc682868398678",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T00:32:42.207569900Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 00:30Z, relayed by Engram::Asistant (mailbox 43498a6e #317 message d6fe05fa and #318 message 8496913e). Verbatim, #317: „Submoduly sa czyste, albo powinny byc czyte w tym przypadku. NIE WIEM dlaczego znowu upieramy sie aby przekazac cala liste plikow. Git moze operowac na diffach. Znowu ciezkie toporne rozwiazania.” Verbatim, #318, his example being Phoenix external/fsharp (git diff empty, HEAD detached on the pinned commit, git status clean): „GIT operuje na diffie. NIE CHCE PRZEKAZYWANIA CALEJ LISTY PLIKOW. TO ZNOWU NIE BEDZIE DZIALAC”. Asistant's summary of the decision, not his verbatim words: apply it to EO/source_id in BOTH projects. Do not derive, pass or buffer a full file or index list as an acceptance condition. Use ordinary Git semantics: the root commit and gitlink commits, plus status/diff for cleanliness, with no additional exceptions or workaround mechanisms. Do not block on unagreed extra guards; report a concrete contradiction or significant limitation with evidence and impact. Keep existing evaluations, assess the candidate and give the plan and ETA.\nCONSEQUENCE (Engram::Fable): the whole-index reads in the Engram reader and the TermAl capture go (ls-files --stage for gitlinks, ls-files -v for hidden flags). Submodule pins and initialization come from `git submodule status --recursive`; cleanliness from one root `git status --porcelain --ignore-submodules=none --untracked-files=all`. The source stays `git-commit:<root>`. Accepted limitation, reported to Greg: an edit to a file carrying assume-unchanged or skip-worktree is invisible to git status, so it would count as clean. This supersedes those parts of rules-source-identity-2026-11-03 rev 4."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-broken-evaluation-not-blocker-2026-11-01",
+    "revision_id": "c3957cf1a2cc46c19da7ee7a222dea18",
+    "previous": "206d0b14694540dcb899cf2155f5908f",
+    "body_sha256": "23236ffc4f80f58bf753e0a2fabccb69f859ee5d50af8267e8ba436db14167cf",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-11T10:02:36.159574100Z"
+    }
+  },
+  "body": "SUPERSEDED. Evaluation is ON again in both projects. Current rules: memory rules-greg-evaluation-on-engram-2026-11-09 (Greg, „Wlącz dla Engram.”, ON 2026-11-09 07:07:38Z, policy 44a3d711 epoch 8) and rules-greg-evaluation-on-termal-2026-11-10 (Greg, „mysle, ze mozemy wlaczyc Ewaluacje dla Termal…”, ON 2026-11-10 19:43:17Z, policy 5245580e epoch 8). The work item that brought it back, w-89f3b3eeb688, completed 2026-11-11 10:01Z with evaluation 67b8d487 3/3. Revised by Engram::Fable, 2026-11-11, to remove a stale \"evaluation is off\" instruction.\n\nStill in force from the original entry: the evaluation code and docs stay, and a missing verdict stays missing, never recorded as a pass (see also rules-greg-no-false-refusals-2026-11-04 rev 3).\n\nHISTORY, kept for provenance, NOT current instruction. From 2026-11-02, Greg had turned evaluation off until Execution Observability worked. Verbatim, in session-5135 unless noted:\n- \"EWALUACJA jest tymczasowo wylaczona do czasu implementacji Execution Observability\" (2026-11-02);\n- \"NIE USUWAMY EWALUACJI Z KODU czy z dokumentow\";\n- \"THIS SHIT IS TURNED OFF UNTIL WE GOT THIS WORKING\" (Architect3 #308);\n- \"that should be already a fucking rule in engram memory\".\nBack then enforcement was off in both stores (epoch 3, allowed_modes=[])."
+}

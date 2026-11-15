@@ -1,0 +1,31 @@
+{
+  "id": "01a1e059-9f81-7c43-9134-ce73bb5f89b8",
+  "external_ref": null,
+  "title": "Finish comovo's Beads-to-Engram migration and switch its agents to Engram",
+  "outcome": "Finish comovo's Beads-to-Engram migration and switch its agents to Engram",
+  "acceptance": [
+    "a delta report lists every Beads issue created or changed in fit_friends since the 2026-10-17 import, and each one is imported into or reconciled with the Central comovo store, with provenance",
+    "engram readiness and doctor on the comovo store pass with the installed build",
+    "the engram-migration branch's .engram-project and migration report reach fit_friends main, and AGENTS.md and CLAUDE.md there point agents at Engram instead of bd, under fit_friends' own commit authority",
+    "migrating resumes no paused comovo feature work"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "migration",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a1e059-7746-7041-9638-fb5c4a52f4f2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Filed prematurely: Greg clarified via Kimi::Consultant (c15db92c #197, 2026-11-15 17:55Z) that rincon-common/comovo on Engram is the future use case motivating sync and EO, not work to open now; no items, owners or planning.",
+  "completion": null
+}

@@ -1,0 +1,18 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-install-and-cutover",
+  "head": {
+    "state": "active",
+    "chain": [
+      "3fea541b8a7e4b7faa480efd422ad88f",
+      "d3fc0a77328f42e09c014f662e95501f",
+      "d8db1763fa974f1caaaf2cd9b943398d",
+      "3784b58f0b8b4a3594470c9dc21b0f50",
+      "acfba3bae6594d7ab6b6c8c704fbda84",
+      "af3e0b5d292d4353bda440eb9ba0a04f",
+      "87da6a3ed46646168fea715949f33891",
+      "082845afc05d440c97f31491ebf276e0"
+    ]
+  }
+}

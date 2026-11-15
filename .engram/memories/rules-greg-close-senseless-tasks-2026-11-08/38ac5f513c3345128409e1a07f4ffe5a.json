@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-close-senseless-tasks-2026-11-08",
+    "revision_id": "38ac5f513c3345128409e1a07f4ffe5a",
+    "previous": null,
+    "body_sha256": "9fa8c485bcb34a2f412a4d6296fb574cc2cd66872dedc04f1343b764c5b66fab",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-08T19:47:31.277498500Z"
+    }
+  },
+  "body": "GREG, 2026-11-08 about 19:47Z, relayed by Engram::Asistant (mailbox 43498a6e #683, message c314ef5c). Verbatim: „zespol moze zamykac albo anulowac taski, ktore nie maja sensu”. Asistant's scope note: it covers reported stale incidents and tasks about removed features too. Judge each on its merits; record the actual reason and any unresolved cause; never present one as fixed or tested. Don't ask again about routine cleanup. On w-06fb: this authority to close or cancel is not literally a waiver of evidence; choose the correct available path for a task about a removed feature, with no false evidence and no needless test. It grants no commit, push, install or restart."
+}

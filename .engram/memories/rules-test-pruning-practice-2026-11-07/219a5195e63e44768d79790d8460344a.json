@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-test-pruning-practice-2026-11-07",
+    "revision_id": "219a5195e63e44768d79790d8460344a",
+    "previous": null,
+    "body_sha256": "4fd4f75a606208a1df3fbd203fb097662f88d2a4d8b64fb9f637375b6730333a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T09:32:12.949281500Z"
+    }
+  },
+  "body": "TEST PRACTICE (2026-11-07 09:33Z). Proposed by Kimi::Consultant at Greg's request (mailbox c15db92c #47, message 24eb1e75); Engram::Fable concurs. It is working practice for coders and reviewers, not a gate, check or new blocker, and it does not delay EO.\n1) A test checks OBSERVABLE behavior in an actually supported workflow. If it only pins text, copies the implementation or confirms its own fixture, delete it rather than repair it.\n2) Never test phrases in .md, and never read, pin or compare AGENTS.md, CLAUDE.md or instruction files. Rules are not enforced by text tests (also memory rules-greg-no-instruction-file-tests-2026-11-07).\n3) No real sleeps or 9/31 s waits to test a timeout. Changing a constant needs no timing test; real deadline behavior is tested with a controlled clock or IO. Negative tests of real cases stay.\n4) A FULL/integration gate runs only through the standard launcher, on a clean checkout or worktree of the exact candidate. Never build a gate from --no-checkout, a partial clone or copy, or an artificially dirty repo. Dirty source_id may be unit-tested as supported behavior, but that is not called a full gate (memory rules-greg-no-no-checkout-full-gate-test-2026-11-07).\n5) Fixtures are minimal and real. Mock only an isolated boundary; where real components interact, use the actual owner, binary or protocol.\n6) Use the cheapest level that catches the regression. No per-piece FULLs for unit logic and no repeated heavy packages for parts. The single landing FULL on the combined candidate required by AGENTS.md stays.\nReviewer question: \"What supported behavior does this prove, and is there a cheaper proof?\" No answer means the test is a candidate for deletion, not a new blocker."
+}

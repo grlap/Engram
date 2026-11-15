@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-one-source-id-2026-11-05",
+    "revision_id": "054df40fd328491f95c0fdb756030d6d",
+    "previous": null,
+    "body_sha256": "fb73a52433aeb4fa5ee4acb3bff23235bf432c6f2ed77c7db95f8edd50c5515a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-05T15:52:26.970911200Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-05 about 15:51Z, relayed by Engram::Asistant (mailbox 43498a6e #290, message ee6b03c3): „No to znowu mamy kilka rozwiązań zamiast jedno działające.” Asistant's brief, not his words: treat source_id as ONE joint TermAl+Engram result, not independent patches: root commit plus clean, initialized submodules at their pins, per the agreed contract (rules-source-identity-2026-11-03); no .codenav exception; no change to historical evaluations. Agree owners of both parts, shared criteria, execution and verification on real Questly and Phoenix; do not announce readiness on reporting alone. Greg earlier urgently needed the runners: run this in parallel with the final EO verification where capacity allows, without blocking it. Send a concrete plan, status and ETA to Asistant. Items: TermAl w-c07c410dac75 (capture, Sol-03d4 asked by Fable2), Engram w-7828ac63767b (reader)."
+}

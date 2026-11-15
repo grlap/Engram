@@ -1,0 +1,29 @@
+{
+  "id": "01a1dd13-22d7-7e73-96ea-ade19f434e20",
+  "external_ref": null,
+  "title": "Give task-sync export a supported way to keep sensitive text in completed items off a public data branch",
+  "outcome": "Give task-sync export a supported way to keep sensitive text in completed items off a public data branch",
+  "acceptance": [
+    "When an export would publish secret, credential or private personal text that sits in a completed item, an operator has a supported remedy short of not publishing: an export-time redaction or exclusion for named items or fields, or a sanctioned redaction-only amendment of completed text",
+    "The remedy applies consistently on export and import, so that hosts exchanging a redacted item don't diverge or keep re-exporting the original text, and the redaction is recorded and attributed",
+    "The development no-op redactor notice states what the remedy is, and docs/features/task-planning-text.md describes it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "privacy",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

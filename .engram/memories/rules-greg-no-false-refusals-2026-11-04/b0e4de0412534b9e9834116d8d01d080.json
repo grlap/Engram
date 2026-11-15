@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-false-refusals-2026-11-04",
+    "revision_id": "b0e4de0412534b9e9834116d8d01d080",
+    "previous": null,
+    "body_sha256": "74201eda591ecc8643f5a4fda52499a55ef0b3790f6e3c52a71866d10e135e52",
+    "retiring_target": {
+      "kind": "local",
+      "work_id": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+      "work_ref": "w-89f3b3eeb688"
+    },
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-04T16:05:17.742991Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-04 about 16:05Z, after both evaluation windows were refused, relayed verbatim by Engram::Asistant (mailbox 43498a6e #235, message b1f8d665): „To nie moze tak byc. Znowu bedziemy odrzucac poprawne testy.” Asistant's brief, not his words: this is the priority; with TermAl establish the actual source of both refusals and fix the automatic distinction between correct evidence and a real source change, requiring no silence, no empty turns and no weakening of protection; prepare positive and negative regression cases and a simple end-to-end path with normal work; leave existing evaluations untouched; work autonomously; give a plan and real status."
+}

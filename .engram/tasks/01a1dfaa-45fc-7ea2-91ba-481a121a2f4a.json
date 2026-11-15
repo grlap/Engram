@@ -1,0 +1,29 @@
+{
+  "id": "01a1dfaa-45fc-7ea2-91ba-481a121a2f4a",
+  "external_ref": null,
+  "title": "Reject one task activity identity listed under multiple machine aliases",
+  "outcome": "Refuse an incoming task document before one native activity episode can be admitted under several origin aliases and block later shared updates.",
+  "acceptance": [
+    "A task document listing the same activity id under more than one origin-machine alias refuses with an actionable shared-identity reason before writes.",
+    "Folder and strict-delta tests cover the duplicate-alias input and show that normal same-alias round trips still advance."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

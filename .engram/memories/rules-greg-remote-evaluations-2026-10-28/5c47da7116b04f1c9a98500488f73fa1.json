@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remote-evaluations-2026-10-28",
+    "revision_id": "5c47da7116b04f1c9a98500488f73fa1",
+    "previous": "66211423c0ee4cca9349beb85f6ec0ef",
+    "body_sha256": "4779219efbfdcd6d4d561d5db6d212184f2795cef5d0018ab5878aa0ffd72bb9",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-11T10:02:40.351695500Z"
+    }
+  },
+  "body": "SUPERSEDED. Acceptance-evaluation enforcement is ON again: Engram since 2026-11-09 07:07:38Z and TermAl since 2026-11-10 19:43:17Z, by Greg's explicit decisions (memory rules-greg-evaluation-on-engram-2026-11-09 and rules-greg-evaluation-on-termal-2026-11-10). w-89f3b3eeb688 closed on 2026-11-11 with evaluation 67b8d487 3/3. Evaluated completion now needs a fresh independent evaluation that passes. A missing verdict stays missing, and an unavailable evaluator is never a pass. Revised by Engram::Fable, 2026-11-11, to remove the stale \"enforcement OFF\" instruction.\n\nHISTORY, kept for provenance, NOT current instruction. Greg direct to Engram::Architect3, 2026-11-02: \"Engram::Fable sie zatkal czekajac ma moj input / TO NIE JEST ACEPTOWALNE / independent acceptance evaluation first, / THIS SHIT IS TURNED OFF / UNTIL WE GOT THIS WORKING\". From then until the re-activations above, both projects used audited self-asserted completion (allowed_modes empty), with no evaluator pass invented. The earlier remote hybrid is in revision 2 as history. Details are on w-ed6addd812bd."
+}

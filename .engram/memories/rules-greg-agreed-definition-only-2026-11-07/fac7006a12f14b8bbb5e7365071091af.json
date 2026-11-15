@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-agreed-definition-only-2026-11-07",
+    "revision_id": "fac7006a12f14b8bbb5e7365071091af",
+    "previous": null,
+    "body_sha256": "c90eb5fad8045ffe69422ecb2cf79c22c9933eaba3c7b5613c6245c022fb1b76",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T07:39:25.928480200Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 07:39Z, relayed by Kimi::Consultant (mailbox c15db92c #43, message a9a1c613). His words, verbatim: „mysle, ze to jest ogolna zasada, nie tylko zaliczania / te regula bedzie sprawdzac sie wszedzie”. It generalises his 07:37Z rule (Kimi #42): „Wszystko, czego nie ma w uzgodnionej definicji credit, nie może blokować credit. Może zostać zapisane jako diagnostyka.”\nGENERAL RULE (Kimi's statement of Greg's scope): requirements come from the AGREED DEFINITION of the given task or result (its acceptance criteria, the agreed design or rule). NOTHING outside it may block a result or the workflow. Extra observations are DIAGNOSTICS or a SEPARATE FOLLOW-UP item, never an added condition. This applies to implementation, tests, review, integration and landing. Widening the requirements needs Greg's decision.\nIn practice:\n- Reviewers: a finding that the change breaks its agreed definition or has a real defect in that scope still blocks. A finding that asks for something NOT in the agreed definition becomes a follow-up item or a diagnostic note, not a blocker.\n- Gates and checks: no new gate or check is added to a lane without Greg's word.\n- Coordinators: don't add conditions to briefs (see rules-fable-no-unasked-conditions-2026-11-06).\nSupersedes the narrower credit-only application in rules-greg-no-credit-blocking-rules-2026-11-07 rev 2, which stays as the EO credit instance."
+}

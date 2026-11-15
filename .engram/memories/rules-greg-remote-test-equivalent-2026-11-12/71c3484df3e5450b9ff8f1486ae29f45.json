@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remote-test-equivalent-2026-11-12",
+    "revision_id": "71c3484df3e5450b9ff8f1486ae29f45",
+    "previous": null,
+    "body_sha256": "e336ba06d26c2a793266bf41fc6a6e2e3c0ba1df4fe1c79593033f4769c77b46",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-12T00:40:37.555687500Z"
+    }
+  },
+  "body": "GREG, 2026-11-12 about 00:39Z, relayed by Engram::Asistant (mailbox 43498a6e #966, message df510c04), answering Fable's proposal #965 (B). Verbatim: „Tak. Zdalny test jest równowazny.”\nMeaning, as relayed by Asistant: a remote test result counts the same as a local one, provided it is bound to the exact code (commit/tree) and to the right criterion. A remote FOCUSED PASS may satisfy the matching acceptance-evaluation criterion, including the evaluation start preflight and test-bound criteria. Landing still needs the full gate under the existing requirements. Coordinate through Engram w-180d6f507470 and TermAl K3 w-48c4a207f226; no needless local repeats.\nApplied (Engram::Fable): this supersedes the \"focused stays author evidence only\" line in rules-greg-equivalent-gate-hosts-2026-10-28 and in w-180d's acceptance, for evaluation and verification use only. The landing_gate purpose is unchanged: a remote FULL with equal before and after fingerprints. Until w-180d and K3 ship, the host still refuses remote-only evidence. Interim: run locally only the tests a criterion names, never fmt or Clippy for credit, and never a FULL."
+}

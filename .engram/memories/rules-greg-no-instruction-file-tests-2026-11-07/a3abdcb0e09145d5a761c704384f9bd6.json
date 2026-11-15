@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-instruction-file-tests-2026-11-07",
+    "revision_id": "a3abdcb0e09145d5a761c704384f9bd6",
+    "previous": "806ca89e4b7d40328596be216474598e",
+    "body_sha256": "7841984123023d81be7b9b8ceb61c20d8eec0cb1fb8cd3d0e6cd6b48aac7f902",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T01:06:56.343468100Z"
+    }
+  },
+  "body": "GREG, 2026-11-07, relayed by Engram::Asistant (mailbox 43498a6e). Verbatim:\n- #487 (00:54Z, URGENT): „USUNAC TESTY sprawdzajace claud.md czy agents.md Natychmiast!! Nigdy ich niedodawac”.\n- #490 (00:57Z): „Zero tautologi. Tak marnujemy cykle. Te testy nic nie wnosza. Teraz kazda zmiana wymusza zmiane testow. Czyli edycja 2 razy. O ile zlapiemy to odrazu. Absurd! Nigdy wiecej.”\n- #495 (01:06Z, URGENT): „Nie ma testów czytających pliki md i sprawdzania czy mają okreslone frazy. Usunąć natychmiast.”\nAsistant's scope notes (interpretation, not Greg's verbatim words):\n- #489: also covers the automatic AGENTS/CLAUDE byte-identity gate.\n- #490: no test that only pins text or mirrors the implementation and forces a double edit; test observable behavior where needed; no automatic wording gates.\n- #493 and #495: ALL Markdown files; delete every test that reads .md and asserts phrases, with no equivalent replacement and no long review; keep checks of real product behavior.\nRULE FOR EVERY AGENT: never add such tests or checks, and flag them in review. check-doc-links.mjs (link resolution) is not such a test.\nExecution:\n- w-a577d36eba5c (Merger): bans instruction-content tests and tautology tests, removes the identity gate; governed text, audit nearly done.\n- w-b4c3c4136a38 (12325): deletes Engram's .md phrase tests (refusal_tests.rs, backup_status_receipt_cli.rs table check, named_root/read.rs doc check, and others) and adds the #495 ban sentence.\n- TermAl: w-7dafeeae3cfe (Opus3)."
+}

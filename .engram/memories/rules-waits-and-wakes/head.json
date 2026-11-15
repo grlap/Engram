@@ -1,0 +1,26 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-waits-and-wakes",
+  "head": {
+    "state": "active",
+    "chain": [
+      "2909fb99060846cda8dd88536043e8c9",
+      "7c89dd9b8fb348968d8c204b8d31ce3d",
+      "78470a1cefbf4f1aaa3bf8004a074928",
+      "8ee9d00bfd2a47c8a36be189fa328045",
+      "589fb9beba5a4b1dbe317fcdaea04a86",
+      "370f7e4fb2864e9ab88120b7e48ab1fd",
+      "b36e6a7969c148b88ccb4006f6fed251",
+      "f730eb546578415e916d9423036bf992",
+      "6a9d2572dd024f96b71b8837b8d2720f",
+      "eb73d9ea77954564834c41c73ae2ea89",
+      "acb4b6af9c7e4efba2db8dfb046d117f",
+      "bd9d9ad3afd34015b89fa5e6026ab6d2",
+      "3c30d405f0f84b719ebe3b1ae9ac9131",
+      "5f9e4cc80c2440089bd1d05cd2eb81a7",
+      "b7cb04c09d934409b5d30eadd95bd62e",
+      "b62d23d622304ec6bba4cbd769b01f20"
+    ]
+  }
+}

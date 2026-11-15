@@ -1,0 +1,16 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-throughput",
+  "head": {
+    "state": "active",
+    "chain": [
+      "4077516abcc1420b9e504f83594b010a",
+      "12cbe854f28649799f797fba61041eca",
+      "edb15760c53447b489e2f5910ac7e581",
+      "a9cd85307d4e45798651f77e31498a33",
+      "a8382b0238e04735af11b6303ebc8a54",
+      "f323a4af15e3469d9fa85f074d19ac98"
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1dffa-359c-7aa1-aa00-5b992fcf99f6",
+  "external_ref": null,
+  "title": "Explain invalid task-only envelopes without memory-repair guidance",
+  "outcome": "Make task-only export's treatment of an invalid committed envelope with no memories consistent with its code, recovery guidance and documented behavior.",
+  "acceptance": [
+    "On a committed data HEAD with no memories and a malformed, incomplete, unsupported or nonordinary project envelope, task-only export has an explicitly chosen and documented repair/refusal behavior, reports an applicable reason and next step, and a behavioral test covers it without losing shared data."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "refusals",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,26 @@
+{
+  "id": "01a1df6d-bcee-7b93-91ee-aeaac2813aab",
+  "external_ref": null,
+  "title": "Bound a task-sync folder's peak size during publication when its envelope shrinks while task files grow",
+  "outcome": "Bound a task-sync folder's peak size during publication when its envelope shrinks while task files grow",
+  "acceptance": [
+    "an export whose envelope shrinks while its task files grow, ending within the folder limit, never leaves the folder over the limit between writes, or refuses before writing when it would, with a boundary test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

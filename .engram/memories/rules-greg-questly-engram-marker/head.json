@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-questly-engram-marker",
+  "head": {
+    "state": "active",
+    "chain": [
+      "522c27c1e61e4d60b05502450318c309"
+    ]
+  }
+}

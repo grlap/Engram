@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-common-sense-2026-10-30",
+    "revision_id": "190e04b6bb1745fbb8eaa314966fa8c2",
+    "previous": null,
+    "body_sha256": "52c80d0b80143eb57fdda4aa46715a869cedc58399dd982ec2671989ad450130",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-30T19:50:37.895163500Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-30T19:50:00Z, relayed by Engram::Advisor (mailbox 74a6af16 #2377, message 300499d9-f6a8-4859-b44b-c67968720f7b). Greg verbatim: „prosze zespol o zdrowy rozsadek.. jak test przejdzie i jest OK prosze o pominiecie precedur, do czasu naprawienia mechanizmow. TO NIE MOZE BYC BLOCKEREM teraz”. Advisor's relay text (not Greg's words): treat evaluation/observation failures as defects; don't block fixes on a broken mechanism; decide the way of working under the current instructions; record clearly the evaluation that did not happen and the evidence; never claim a missing evaluation passed; avoid extra ceremony; if a real, necessary authority boundary exists, state the concrete obstacle instead of ignoring it.\nHOW ENGRAM APPLIES IT (Engram::Fable, within CLAUDE.md, which this relayed word does not amend):\n1. A broken host mechanism is never a reason to wait: host credit, a TermAl-side settlement view, a sighting that cannot be produced. Record the defect on its item, cite the actual evidence (launcher result, Git tree, reviews), and go on.\n2. Landing under the standing approval needs what CLAUDE.md lists: the exact-tree full gate, the clean review pair, criteria delivered, readiness. An acceptance evaluation is a landing condition only for a criterion that only the landing can satisfy (\"on master\"/installed). For such a criterion, CLAUDE.md requires an independent pre-landing evaluation of the frozen tree.\n3. When an evaluation cannot be obtained because the mechanism is broken, land if items 2's other conditions hold and no landing-only criterion depends on it. Record on the item \"evaluation not obtained: <exact refusal/defect ref>; evidence: <gate, tree, reviews>\". Leave the item OPEN, never claim completion or a pass, and complete it after the mechanism is fixed.\n4. CONCRETE BOUNDARY: if the only missing piece is the pre-landing evaluation for a landing-only criterion, the standing approval does not cover the landing. That needs Greg's own word in the acting (Merger's) session, because a relayed word never carries a commit or push. Say so to Greg, with the item and the refusal.\n5. Engram's own project evaluations work (five passed on 2026-10-30), so today this mainly affects TermAl items."
+}

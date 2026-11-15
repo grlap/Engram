@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-sync-data-off-code-branch-2026-11-08",
+    "revision_id": "264a93e044d843eabdb8598c5812d75c",
+    "previous": null,
+    "body_sha256": "ad6fd2b3bdb6a8ad374df100a5e7cb3eb737371783c10d8245f81ef40c17994f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-08T02:45:18.905135800Z"
+    }
+  },
+  "body": "GREG, 2026-11-08 about 02:44Z, relayed by Engram::Asistant (mailbox 43498a6e #655, message f827a7ee). Verbatim: „wazne aby nie laczyc taskow/evidence z kodem, bo to stanowi duzy problem”.\nAsistant's relay of the rest (a paraphrase, not verbatim):\n- Greg proposes a separate branch for task data, and considering separate MONTHLY evidence branches to allow retention later. The retention policy can come later.\n- He asks Kimi and the Engram team to analyse this together and adapt the design before implementation: simple exchange of task text and full results through Git, without TermAl.\n- To consider: independence of month histories; real limits of Git deletion and clones; concurrent changes; impact on the sync work already started.\n- The monthly split is a proposal to evaluate, not an imposed detail.\n- He wants a joint concrete conclusion and its consequences for the work, with no extra approval gate.\nThis changes the current design in docs/features/git-task-sync.md and AGENTS (task text on the ordinary code branch, gated with the code changeset). Any instruction change that grants agents a new push (for example to a data branch) still follows the AGENTS rule for authority text (both coordinators, Greg sent the exact wording, final-diff audit; a widening needs Greg's recorded word on that widening)."
+}

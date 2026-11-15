@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-control",
+    "revision_id": "1f8d29a9987c431b845fe9b00e727e41",
+    "previous": null,
+    "body_sha256": "c425442de310990f3eb1098cf20856fb77e33768ecef69536e09a4e327455e1d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-23T00:44:44.312120200Z"
+    }
+  },
+  "body": "CANONICAL: Greg's direction on gated control (Engram::Fable, 2026-10-23). These are Greg's words with their sources; they grant no restart, deploy, commit or install by themselves.\n\n1. GATED CONTROL STOPPED UNTIL REPAIRED (Greg direct, relayed by Engram::Advisor mailbox 74a6af16 #1952, message bf6d77f2-c405-48f3-981a-2381b93fc5ed, 2026-10-23T00:43:40Z), verbatim: \"gated control jest aktualnie nie do uzycia, KONIEC kropka; oba projekty maja byc wlaczone z gated control NATYCHIMAST po poprawianiu, rozwazymy powrot.\"\nEFFECT: the current gated-control route is STOPPED and UNUSABLE, with no further enable, verification or content attempts on it until the repair. After the repair, gated control is enabled IMMEDIATELY in BOTH projects (Engram and TermAl); only then is a return to normal work considered, on Greg's word. The controlling Engram item is w-ed6addd812bd (P0), and TermAl's counterpart is w-1fcaa9 plus the P0s w-06fb930cac38 (landed as 8cfc5739) and w-de6021f4b32f, and the P1 w-260d2528bc15.\nEarlier context: on 2026-10-22 at about 17:56Z Greg disabled gated control on Engram after the idle-host outage (\"wylaczylem kontrole Engrama na tym projekcie bo NIE DZIALA\"). Containment since then: the Engram project is enabled with turnGatedControl:false.\n\n2. CODER-TO-MERGER WORKFLOW (Greg direct, quoted on Engram w-6038364a19fa): \"Kazalem aby Tylko Sol albo Opus kodowal zmiany w kodzie.\" Only Codex Sol or Claude Opus author source and tests; the coder runs focused tests, freezes and gets the pair; Merger takes the claim, carries, runs the one final gate plus the acceptance evaluation, and lands. The governing text is not yet landed: its final-diff audit failed at b6e19342, and the minimized set is being corrected."
+}

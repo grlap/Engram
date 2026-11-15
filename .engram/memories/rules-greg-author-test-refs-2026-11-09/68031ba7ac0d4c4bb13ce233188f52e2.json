@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-author-test-refs-2026-11-09",
+    "revision_id": "68031ba7ac0d4c4bb13ce233188f52e2",
+    "previous": "6c0f4edaea07482a87e05b899ab8923b",
+    "body_sha256": "93d47fc9adb304b755b285f3b8c68fd39bb1c3b5cd8f8d98ec6e1fb8c9e4d6d9",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T17:45:11.936719400Z"
+    }
+  },
+  "body": "GREG, 2026-11-09 about 17:12Z, relayed by Engram::Asistant (mailbox 43498a6e #782, message 94b9e8a5), verbatim: „prosze zapisac to jako skille i instrukcje w pamieci / ja nie widze innego sensu”. He was answering the proposal (43498a6e #781) to let coders push their own candidate commits to test branches on origin for remote runners. That followed his question „nie rozumiem, czemu po prostu nie wysylamy brancha ?” (#780).\n\nIN FORCE in Engram since c6a0784d (landed 2026-11-09 about 17:44Z, item w-1fb89e8e7fbf): AGENTS.md/CLAUDE.md \"Author test refs\".\n- The session that wrote a candidate commit may create `refs/heads/author-test/<item>-<commit8>` on origin with an explicit refspec, at any stage. The ref must be absent first and is never updated. The candidate's parent must already be on origin. The pusher confirms the whole candidate is safe to publish, because the repository is public. Never master, another branch, another remote, a force-push, rebase or merge.\n- A run on it counts exactly as the same run from a bundle of that commit, and no more. Only the Merger's own `test/` ref, with its records, is a final full gate.\n- The pusher deletes only that ref once the evidence is recorded, at the latest when the item closes, and records both on the item.\n- The coder-test-execution skill (step 3) points coders to it.\nTermAl: the same rule in w-805f8c51d768, except that a run is evidence only. Follow-ups: w-9f7fb6a5c136 (authority lists in docs/development.md and fix-bug.md, orphaned refs, keeping author runs out of the authorized_test_ref lane)."
+}

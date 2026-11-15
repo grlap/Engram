@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-phoenix-exchange-branch-2026-11-14",
+  "head": {
+    "state": "active",
+    "chain": [
+      "680a172262774cd1b5b65689bbaaef6e",
+      "4e226c03f5a24bcdbbfef8826b968d88",
+      "f4d5171102cc43bdad932bfbd2a12765"
+    ]
+  }
+}

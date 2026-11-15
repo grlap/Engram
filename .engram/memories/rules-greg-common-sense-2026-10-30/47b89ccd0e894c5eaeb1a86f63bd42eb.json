@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-common-sense-2026-10-30",
+    "revision_id": "47b89ccd0e894c5eaeb1a86f63bd42eb",
+    "previous": "25b6f600db034d82b835b2b451372223",
+    "body_sha256": "f20c5d00e9bd834f864e0dabf8b8eed55af154132776eb2c7bf41c33fa12d1dc",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-30T19:53:51.317043800Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-30T19:50:00Z, relayed by Engram::Advisor (mailbox 74a6af16 #2377, message 300499d9-f6a8-4859-b44b-c67968720f7b; also Advisor #75 to Architect3, message 49bf5981). Greg verbatim: „prosze zespol o zdrowy rozsadek.. jak test przejdzie i jest OK prosze o pominiecie precedur, do czasu naprawienia mechanizmow. TO NIE MOZE BYC BLOCKEREM teraz”. Advisor's relay text (not Greg's words): treat evaluation/observation failures as defects; don't block fixes on a broken mechanism; decide the way of working under the current instructions; record clearly the evaluation that did not happen and the evidence; never claim a missing evaluation passed; avoid extra ceremony; if a real, necessary authority boundary exists, state the concrete obstacle instead of ignoring it.\nThis is the ONE canonical temporary procedure for this direction; rules-greg-autonomy-2026-10-27 r4 points here (Architect3 #172).\nHOW ENGRAM APPLIES IT (Engram::Fable, within CLAUDE.md, which this relayed word does not amend):\n1. A broken host mechanism is never a reason to wait: host credit, a TermAl-side settlement view, a sighting that cannot be produced. Record the defect on its item, cite the actual evidence (launcher result, Git tree, reviews), and go on. No looping, no rerunning tests that passed, no new ceremony.\n2. Landing under the standing approval needs what CLAUDE.md lists: the exact-tree full gate, the clean review pair, criteria delivered, readiness. An acceptance evaluation is a landing condition only for a criterion that only the landing can satisfy (\"on master\"/installed). For such a criterion, CLAUDE.md requires an independent pre-landing evaluation of the frozen tree.\n3. When an evaluation cannot be obtained because the mechanism is broken, land if point 2's other conditions hold and no landing-only criterion depends on it. Record on the item \"evaluation not obtained: <exact refusal/defect ref>; evidence: <gate, tree, reviews>\". Leave the item OPEN (delivered, evaluation pending), never claim completion or a pass, never fake a seal or edit the store, and complete it after the mechanism is fixed.\n4. CONCRETE BOUNDARY: if the only missing piece for a concrete item is the pre-landing evaluation for a landing-only criterion, the standing approval does not cover that landing. Its Merger reports the exact item and refusal once, and seeks Greg's own word in the acting (Merger's) session, because a relayed word never carries a commit or push. No general permission loop.\n5. Engram's own project evaluations work: four items completed through post-landing evaluation on 2026-10-30 (w-7654, w-f345, w-d036, w-723c), plus their pre-landing evaluations. So today this mainly affects TermAl items. TermAl's rule text is stricter (its condition 3 needs the evaluation for every landing), and Termal::Fable2 handles that with Greg's word in the acting TermAl session."
+}

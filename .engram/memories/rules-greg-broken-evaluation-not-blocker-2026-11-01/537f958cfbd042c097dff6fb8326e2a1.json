@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-broken-evaluation-not-blocker-2026-11-01",
+    "revision_id": "537f958cfbd042c097dff6fb8326e2a1",
+    "previous": "86bcfe0620254827910bb0930a7e8e35",
+    "body_sha256": "47a9bd9599a3486e91e9d9cb6acbba6693630e2b0d4cc8a26fd6f925080fa58e",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:09:04.688866400Z"
+    }
+  },
+  "body": "GREG DIRECT — independent acceptance evaluation is OFF as a blocker until the mechanism works.\n\nSOURCES:\n(1) Greg, in Engram::Fable's session (5135), 2026-11-02 ~00:05Z. Fable had asked whether to land w-cc7f71b81ea8 without its pre-landing evaluation. Greg: \"that should be already a fucking rule in engram memory\".\n(2) Greg, in Architect3's acting chat, relayed by Architect3 #308 (message 622da5c3, 00:06:05Z), verbatim: \"Engram::Fable sie zatkal czekajac ma moj input TO NIE JEST ACEPTOWALNE independent acceptance evaluation first, THIS SHIT IS TURNED OFF UNTIL WE GOT THIS WORKING\".\n(3) Earlier, relayed by Advisor #2377 on 2026-10-30: „jak test przejdzie i jest OK prosze o pominiecie precedur, do czasu naprawienia mechanizmow. TO NIE MOZE BYC BLOCKEREM teraz”.\n\nACTION TAKEN (Architect3 #309, read back):\n- Evaluator enforcement is disabled in BOTH live project stores through the supported `control-policy set-acceptance-evaluation`: allowed_modes=[], mechanical_basis=asserted, require_source_freshness=false, epoch 3.\n- Engram: policy 8433b3e2…, activated 00:07:37Z.\n- TermAl: policy e83a04e5…, activated 00:07:54Z.\n- Basis: note 2016df8c… Do not re-enable it on any install or restart.\n\nCURRENT RULE:\n- Neither landing nor completion waits for an independent acceptance evaluation, or for Greg's input about one.\n- Still required: the required full gate on the exact commit, a clean review pair, actual criterion evidence, schema/cutover rules, and Greg-only TermAl restarts.\n- An absent evaluation stays ABSENT; it is never recorded as a pass.\n- Never ask Greg through a blocking dialog (rules-greg-no-blocking-questions-2026-11-01).\n- The CLAUDE.md standing-approval clause that requires an evaluation for landing-only criteria is overridden by Greg's direct word until the mechanism works."
+}

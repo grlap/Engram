@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-host-workarounds-4",
+    "revision_id": "9de4e3cbaab54e2189eb9c49479b9cfc",
+    "previous": null,
+    "body_sha256": "b5bc6d74c546959ea6ce233ef58328a2f31e4ad739dbf4b4580fb91c2a492748",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-10T14:47:03.409190Z"
+    }
+  },
+  "body": "CANONICAL, continued from termal-host-workarounds, -2 and -3 (which is at its size limit): live TermAl host workarounds and operating lessons for Engram agents. Source Engram::Fable. Each entry names the item whose fix retires it.\n\n2026-11-10 14:46Z (TermAl w-57e42ea8c0e4, p2, refusal text only; Fable2 #7425): a root named or re-named (for example after a lapsed claim retired the old root) takes effect only at the next HOST-DELIVERED turn, meaning a prompt or a mailbox wake. A turn the Claude runtime starts itself after a background-task notice is never admitted (by design, TermAl w-df1ef323efe9 criterion 1), so evaluation refuses named_root_sighting_unavailable. Workaround: after naming, end the turn and wait for a mail or prompt, not a background-task wake. The coordinator sends a one-line continuation mail if needed. Then check from the root and evaluate. Long waits make claims lapse and roots retire, so re-claim and re-name before evaluating. Retire the text part when w-57e4 lands; the turn rule is by design.\n\n2026-11-10: a coordinator's background `sleep` timer counts as unfinished background Claude work and restricts verification credit for its session and workspace (TermAl \"Check credit\" notice). Never use one as a reminder.\n\n2026-11-10 lesson: never hold work indefinitely on an announced restart. The 09:10Z \"restart now\" went unanswered for over 5 hours while Engram's combined round sat held, and Central also lost all federation links at 10:56Z. Give any restart-gated hold a deadline, check the hosts' state when it passes, and proceed with whatever can run."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-windows-b-off-2026-11-14",
+    "revision_id": "79cfa57173844f77a824370857e34255",
+    "previous": null,
+    "body_sha256": "7a48d3763045742c6d2111f4649a16add49eef6011934e4b98d60891c0af29db",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-14T22:33:27.508014Z"
+    }
+  },
+  "body": "GREG, 2026-11-14 about 22:33Z, relayed by Engram::Asistant (mailbox 43498a6e #1221). Verbatim: „Windows B jest wylaczony, chyba ze bardzo potrzebuja. sa problemy z pamiecia, nie jest wiarygodny”.\nEarlier the same evening (via Fable2, Asistant #1730): „Windows B nie ruszam, ze wzgledu na problemy z pamiecia”.\nRule:\n- Don't assume Windows B (932a546b) is available or reliable.\n- Plan tests, gates and installs on Central, DL560 and the Mac only.\n- Windows B stays on TermAl be3b6fd8 and gets no Engram install.\n- A case that truly needs Windows B, with no alternative, goes to Greg with its reason. Independent work continues.\n- Windows evidence for landings comes from Central, under the Central slot rules.\nConsequence: B5 (w-a82d) has a proposed host-local precondition, pending Greg's yes or no."
+}

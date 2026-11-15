@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-channel-asistant-2026-11-12",
+  "head": {
+    "state": "active",
+    "chain": [
+      "5883a3082b7f41f9abb3d4415a2eebec"
+    ]
+  }
+}

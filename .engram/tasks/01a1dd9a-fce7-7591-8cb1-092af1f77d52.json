@@ -1,0 +1,28 @@
+{
+  "id": "01a1dd9a-fce7-7591-8cb1-092af1f77d52",
+  "external_ref": null,
+  "title": "Memory export refuses a selection over the reader's key-count limit before writing anything",
+  "outcome": "Memory export refuses a selection over the reader's key-count limit before writing anything",
+  "acceptance": [
+    "A memory export whose selection exceeds the reader's key-count limit is refused in preflight, before any task, capability or memories component is written, and a behavioural test covers the refusal and the unchanged folder"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "project-memory",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

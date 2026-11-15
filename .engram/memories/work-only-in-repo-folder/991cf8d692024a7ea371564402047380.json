@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "work-only-in-repo-folder",
+    "revision_id": "991cf8d692024a7ea371564402047380",
+    "previous": "250f1b659c574956b50359cf404db046",
+    "body_sha256": "10d0701e95dbbd482a15d81dff6e7d1157b0b1a1dbc6146b22db08a304638d2b",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6-astra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-09-26T21:29:23.426694800Z"
+    }
+  },
+  "body": "Greg's rule (2026-09-26), in force immediately for every agent: work only inside the repository folder. Create, change, move and delete files only inside this repository's folder and its worktrees, in every shell command and script. Scratch files, throwaway stores, test homes and logs go under target/ (ignored by Git), never in the system temp folder, C:\\tmp, the user profile or another project, even when a harness names a scratchpad there. Outside the repository only tools write as part of their own work (Engram to its store home, TermAl through its tools, Cargo to its caches); installing an approved build is the one agent-made write outside. Anything else outside (installing, repairing or updating software or toolchains, user or global configuration) needs Greg's explicit word first. Reading outside is allowed. Before a recursive delete, resolve the target to an absolute path and check it lies inside the repository; never delete through an unchecked variable. In PowerShell never assign $home or any other automatic variable: names ignore case, $HOME is read-only, and a failed assignment keeps the old value while the script runs on. Why: at 12:41 on 2026-09-26 Engram::Opus ran a timing script whose $home assignment failed, and its Remove-Item -Recurse -Force $home cleanup deleted most of C:\\Users\\grzeg, including the WSL disk. Source text: AGENTS.md and CLAUDE.md, section \"Work only in the repository folder\", committed and pushed as 535a8b0. Greg's later explicit decision in Advisor session-6219 on 2026-09-26: TermAl will not block dangerous operations; the rules are already recorded in Beads and Engram. The planned host enforcement item w-bf5b12465446 was cancelled at his direction; tm-t1gh remains closed. The repository-only instructions above remain in force. Current focus is finishing the existing cleanup and refactoring, not implementing host enforcement. TermAl carries the same rule in its own AGENTS.md and CLAUDE.md, committed as 317b286 on Greg's direct approval (not yet pushed)."
+}

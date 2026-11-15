@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "orca_inspired_improvement",
+    "revision_id": "a0ea8aa0038842e38ab0e2bee9293774",
+    "previous": null,
+    "body_sha256": "5a96fb8949be09194b00714cb770c304e92e04f3b64963116352018d156e03c8",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent",
+      "actor_context": "agent=kimi;model=kimi-code/k3.1-pro",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T04:32:24.091122800Z"
+    }
+  },
+  "body": "DEFERRED — revisit after the current sync/EO work closes; no action now and no new gates. Source: independent read-only Fable::Consultant (session-18147), 2026-11-15, based on Orca docs (orchestration, agents/sessions, mobile). Orca is UI-first and weaker on evidence/completion authority; our WorkRun/fences, submissionAttempt/resultId, fan-in and READY manifest are already stronger. Worth revisiting, in priority order: (1) host-computed cross-host 'Needs Greg' from actual approvals, held delegations, provider limits, unaccepted handoffs and open Greg decisions, surfaced through existing Telegram; this is a view, not watcher/gate, and Telegram authority for commit/push needs a ruling before reliance; (2) operator-reserved decisions as required-child items with question/options and Greg's verbatim answer/source at done, plus explicit wake; (3) route follow-ups by run/delegation id so the host resolves the current owner, preventing stale-session cleanup/misrouting; (4) parent-to-child messages at next turn boundary instead of cancel+respawn, related to TermAl w-b556; reviewers/evaluators stay non-interactive; (5) one explicit finished-worker release with retained result, path-checked worktree cleanup and pending/unknown receipt states; (6) optional typed READY/GO/END/SLOT-FREE plus request→reply links so the host can list unanswered requests. Do NOT copy self-reported completion authority, heartbeats, idle=done, worktree-only sandboxing, runtime reset-all, group wake storms, nested workers or Design Mode as evidence. Native phone app is not the first step. These are mostly TermAl host improvements and must not displace current priorities."
+}

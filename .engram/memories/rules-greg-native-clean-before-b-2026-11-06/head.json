@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-native-clean-before-b-2026-11-06",
+  "head": {
+    "state": "active",
+    "chain": [
+      "1e3bffcfcb394539840e892cea179b12",
+      "b1992504a2b74517b0f41bf38ccda53f",
+      "15cce912aa40412cadd6fa52d5f4bfd6"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-few-local-changes-before-tests-2026-11-07",
+    "revision_id": "6357cbf1e780479ea28e8db76df85051",
+    "previous": null,
+    "body_sha256": "f93be8249a433047a995a927ca5dc6282f5973653108424048c35120b8fe7027",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T09:21:11.093226600Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 09:21Z, relayed by Engram::Asistant (mailbox 43498a6e #576, message 602e4107). Verbatim: „Regula jest taka, ze nie powinno byc zmienionych duzo lokalnie plikow przed puszczeniem testów.” Asistant's scope note: take it into the EO analysis as a PRACTICAL rule. Do not add an invented numeric threshold or a new credit blocker. Fable's reading: this is working practice for agents. Commit or tidy local work so that a test run starts from a source with few uncommitted local changes. It is not a check in code: source_id credit stays as agreed (full source_id before == after, dirty allowed; memory rules-greg-agreed-definition-only-2026-11-07). Never turn this into a refusal, a gate or a threshold."
+}

@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-full-sync-is-full-exchange-2026-11-07",
+  "head": {
+    "state": "active",
+    "chain": [
+      "ece931c8bdd349f8a608370c984d044c",
+      "0408f300f38c466f8baded604e204b72"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-sync-data-off-code-branch-2026-11-08",
+  "head": {
+    "state": "active",
+    "chain": [
+      "264a93e044d843eabdb8598c5812d75c",
+      "3ebd31b354e74b918f88859b48a84263",
+      "e95464f3489448b6a94791087bc2ff45",
+      "b127a8e8207b4aadb5b2d1c060d12bc8"
+    ]
+  }
+}

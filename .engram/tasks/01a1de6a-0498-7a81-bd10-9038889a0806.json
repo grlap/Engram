@@ -1,0 +1,58 @@
+{
+  "id": "01a1de6a-0498-7a81-bd10-9038889a0806",
+  "external_ref": null,
+  "title": "First public publication of Engram project memories on engram-data, after a full-history content review",
+  "outcome": "First public publication of Engram project memories on engram-data, after a full-history content review",
+  "acceptance": [
+    "Every published memory revision, current and historical, has been content-reviewed for secrets, credentials and private personal data, and the review's verdicts are recorded",
+    "Content that cannot be published safely is withheld or redacted without carrying the original text forward (a revision does not erase earlier bodies, so a key needing redaction is re-created under a new key and the old key forgotten), with references updated",
+    "Central exports with --include-memories onto engram-data, the commit is pushed fast-forward-only after the pre-push privacy check, and DL560 imports it with no key refused, or each refusal is recorded with its reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "project-memory",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "1e4ce4dffa664007941bde6e920d9d80": {
+        "activity_id": "1e4ce4dffa664007941bde6e920d9d80",
+        "task_id": "01a1de6a-0498-7a81-bd10-9038889a0806",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1e4ce4dffa664007941bde6e920d9d80"
+      },
+      "2d013850776b4162a1a75f9fcabd439a": {
+        "activity_id": "2d013850776b4162a1a75f9fcabd439a",
+        "task_id": "01a1de6a-0498-7a81-bd10-9038889a0806",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2d013850776b4162a1a75f9fcabd439a"
+      }
+    }
+  }
+}

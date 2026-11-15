@@ -1,0 +1,26 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-central-slot",
+  "head": {
+    "state": "active",
+    "chain": [
+      "28ccadca1ef74a46bb4828af190a9873",
+      "79a176c2d11a4349a27d5bab64b44b1d",
+      "ea2280679f914674add0e591b76ed0c9",
+      "33e9bea8a9ff4b3fba49c1480f2894a9",
+      "c453d24b9bba4701945792ef6fabc26e",
+      "2ded2d0d2e3544519ced54d47fffcd50",
+      "439632edcb714d2ebb4380cea91703d0",
+      "48604cb3fc2b48bc994373e08630d1bd",
+      "4daab6dbad0a4369acaba0c0ce0a06df",
+      "e64c245864da4a82850937aa46423fbb",
+      "3f73e6c77f3f41568b37f6403f67e391",
+      "7346b29c35e041daa4ef1ceff66dc718",
+      "890b6e39b3a14f1981ba8a589e9579e8",
+      "ac27c2941f4d4d1780d4391014aaba87",
+      "1faef3e6520c441fa13aa0a6b0a466e3",
+      "b15c2d117b1f437f83f1bfa325670423"
+    ]
+  }
+}

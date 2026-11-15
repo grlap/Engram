@@ -1,0 +1,26 @@
+{
+  "id": "01a1def2-410a-7f71-b31e-416ee7eb1a3f",
+  "external_ref": null,
+  "title": "Make the memory component writer's revision links and head renames durable with directory syncs before reporting publication",
+  "outcome": "Make the memory component writer's revision links and head renames durable with directory syncs before reporting publication",
+  "acceptance": [
+    "the memory writer syncs each memory key directory after linking revision files, renaming head.json and removing replaced revisions, and syncs the memories directory after creating a key directory, before it reports the publication complete"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

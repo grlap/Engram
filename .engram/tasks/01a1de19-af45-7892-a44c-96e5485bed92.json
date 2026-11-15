@@ -1,0 +1,29 @@
+{
+  "id": "01a1de19-af45-7892-a44c-96e5485bed92",
+  "external_ref": null,
+  "title": "Report a transient managed custody journal state as busy rather than as a recovery instruction",
+  "outcome": "Report a transient managed custody journal state as busy rather than as a recovery instruction",
+  "acceptance": [
+    "A reader of the managed custody journal that runs between a managed re-audit's head acknowledgement and journal activation receives a retryable busy error, not 'run a custody audit' or 'journal is missing'",
+    "When the caller already holds the audit reservation, journal::observe reports the real pending-journal error (noncanonical, divergent or I/O) instead of 'busy; retry'",
+    "Regression tests cover both cases"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

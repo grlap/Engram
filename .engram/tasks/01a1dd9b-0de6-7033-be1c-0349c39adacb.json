@@ -1,0 +1,56 @@
+{
+  "id": "01a1dd9b-0de6-7033-be1c-0349c39adacb",
+  "external_ref": null,
+  "title": "Memory export refuses an empty basis when the committed data head has a memories tree but its envelope is missing or invalid",
+  "outcome": "Memory export refuses an empty basis when the committed data head has a memories tree but its envelope is missing or invalid",
+  "acceptance": [
+    "When the committed data head holds a memories tree and project.json is absent or invalid, export --include-memories refuses with a named code instead of treating the basis as empty, and a behavioural test shows that the other shared keys are not dropped"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "project-memory",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "6b770c3c33ea491e8d52fb190ad7fd5d": {
+        "activity_id": "6b770c3c33ea491e8d52fb190ad7fd5d",
+        "task_id": "01a1dd9b-0de6-7033-be1c-0349c39adacb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e290d5439e454e4699720fbcfd7f21cf"
+      },
+      "e290d5439e454e4699720fbcfd7f21cf": {
+        "activity_id": "e290d5439e454e4699720fbcfd7f21cf",
+        "task_id": "01a1dd9b-0de6-7033-be1c-0349c39adacb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e290d5439e454e4699720fbcfd7f21cf"
+      }
+    }
+  }
+}

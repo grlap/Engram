@@ -1,0 +1,28 @@
+{
+  "id": "01a1dd18-8bb4-7873-946c-9fa63376af09",
+  "external_ref": null,
+  "title": "Name the task-sync data-branch grant in the other authority summaries (engram-repo skill, development guide, fix-bug and review-changes commands)",
+  "outcome": "Name the task-sync data-branch grant in the other authority summaries (engram-repo skill, development guide, fix-bug and review-changes commands)",
+  "acceptance": [
+    "The authority summaries in .agents/skills/engram-repo/SKILL.md (about lines 339-342), docs/development.md (about 1351-1357), .claude/commands/fix-bug.md (about 33-37) and .claude/commands/review-changes.md (about 20-23) either name the task-sync data-branch exception or refer to the complete Authority and Git rules, so that a session following them doesn't stop a routine engram-data commit or push or seek fresh approval",
+    "The change lands under the authority-change rule, with both coordinators' concurrence, Greg sent the wording, and the final-diff audit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Folded into w-42eaa5a96b72 candidate 22bfe632, which names the data-branch bullet in all four authority summaries after the Claude review rated this Medium.",
+  "completion": null
+}

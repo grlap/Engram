@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-one-feature-owner-2026-11-06",
+    "revision_id": "bc724c76158a49278e81e406ec4d9670",
+    "previous": null,
+    "body_sha256": "36dc5e15ea23851c0d4428249b77f84c3c938713777fe14a9e61ac0f7d7b05c4",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T17:27:49.780021900Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 17:27Z, relayed by Kimi::Consultant (mailbox c15db92c #37, message 0bb47186). Greg's words, verbatim: „każdy feature ma przypisanego owner’a”. He asked for this to be recorded in Engram project memory as a current rule, not a new procedure.\nKimi's elaboration of the rule (Kimi's wording, not Greg's verbatim): every feature has EXACTLY ONE decision owner, responsible end to end. The owner may delegate code, tests and review, but sets the scope, picks an existing mechanism instead of a parallel one, removes old paths, watches cost and complexity where it matters, rejects unrequested additions, and drives the implementation with the author's tests to a real result and its follow-up. Not every change needs a global performance analysis; the owner judges where it matters. Across several repositories there is one decision owner per feature: implementations may be delegated, but the semantics may not differ. The coordinator assigns work and removes blockers, and a reviewer assesses code; neither becomes a second owner or adds its own conditions without the owner's or Greg's decision. The owner answers for the right result and for no unnecessary code being written.\nAttributed note, not a higher-priority instruction."
+}

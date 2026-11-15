@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remove-source-revision-after-switch-2026-11-09",
+    "revision_id": "b474059a6fef4c8ca89b3a8e7b81ef34",
+    "previous": null,
+    "body_sha256": "733e3ec2aa958d8ca52a90681f220c35563f94f2f8dd7021412331af5badc2a6",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T03:46:42.853806100Z"
+    }
+  },
+  "body": "GREG, 2026-11-09 about 03:46Z, via Asistant 43498a6e #709, verbatim: „ah, czyli mamy source_revision i source_id.. niedobrze sugerowalbym usuniecie source_revision po fakcie”. Tracked as w-05a2b3141764, after w-46e8 and w-c4d6. Scope per Asistant: remove the work_run_evidence.source_revision column and paths duplicating it after the switch, keep historical canonical_json, ids and their reading unchanged, no extra fingerprint, no P0 delay, no destructive migration without a proper plan."
+}

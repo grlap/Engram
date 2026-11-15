@@ -1,0 +1,23 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-equivalent-gate-hosts-2026-10-28",
+  "head": {
+    "state": "active",
+    "chain": [
+      "b9548bdddf6b4d618fcee45d6bf1c301",
+      "5c11bee4c338432e8f71cc7b2c22976f",
+      "bcc52d6da6c942f69948481ab5ec258d",
+      "8da191ce4d7041a88a6d3c1ea595b125",
+      "36585fa1babd475dbcac9e498ef67967",
+      "fea9f68d4f7b43739b48587db9e96ddf",
+      "b6486ed8f0d34964a33eb0909bac1741",
+      "323d5cd82ffc4017bc3ed7411cad665e",
+      "06ed0aa5141a48b3bf1b862f0d633dd7",
+      "6cca6cc24d094c239b30657d72ebd48d",
+      "3d580d667cf64caf89080713bdef21ca",
+      "054c5d30d044401387867c5c97f8cc14",
+      "d8a6684c7fbc488d835d45baad54ae88"
+    ]
+  }
+}

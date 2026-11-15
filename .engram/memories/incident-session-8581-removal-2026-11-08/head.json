@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "incident-session-8581-removal-2026-11-08",
+  "head": {
+    "state": "active",
+    "chain": [
+      "22c2ed2ccfd3465b9edad7996260979b",
+      "9133f85795424677a36dd1f7b76935a1",
+      "1de2981017b24447b7788505024ef627"
+    ]
+  }
+}

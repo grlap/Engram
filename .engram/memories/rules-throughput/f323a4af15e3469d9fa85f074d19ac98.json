@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-throughput",
+    "revision_id": "f323a4af15e3469d9fa85f074d19ac98",
+    "previous": "a8382b0238e04735af11b6303ebc8a54",
+    "body_sha256": "8594596579d95f7db97b4d86458513bd68399367da20d2f79abb60c8c49d554a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T06:05:39.649670200Z"
+    }
+  },
+  "body": "Current throughput and coding-model guidance; repository instructions and actual resource grants govern. Superseded queue, stopped-session assignments and old landing exceptions are not current authority.\n\nGreg via Advisor#1319,2026-10-13T02:44Z, verbatim: \"Greg confirms Codex gpt-6.1-sol is the preferred implementation model. Apply it by default to every new coder assignment. Use a different model only when Sol is unavailable or moving already-started work would cost more than continuing it; record that exception. Do not interrupt Merger's current w-b411 design review merely to swap its model.\"\nGreg via Advisor#1739,2026-10-18T21:14Z, verbatim: \"keep agents continuously coding on ready, independent slices; use capacity for implementation, not repeated status/design turns. TermAl owns test runs; workers consume pass/fail metadata and bounded failure excerpts only, never routine full logs. Use architects exceptionally: only a real architecture-boundary change, durable-format question, or unresolved design conflict. Otherwise coordinator/implementer decides and proceeds. Apply to Engram lanes and report active coding count at boundaries.\"\n\nThe Coder prepares code and author tests; integration validates the final combined input under current rules. Independent coding is not capped by serial gate scheduling. Resource/quiet windows follow current rules-central-slot and rules-remote-test-runs, not historic numeric budgets.\n\nKimi fallback source, Greg's exact words via Advisor#1430 (2026-10-15): \"claude will soon run of tokens / we need to use Kimi as replacement / and focus on simple cleanup / we have enormous backlog\". The adopted Codex-or-Claude stand-in clause landed d10f724; current AGENTS/CLAUDE govern one stand-in, never both reviewers. This gives no standing model-capacity assumption or permission to bypass a required review."
+}

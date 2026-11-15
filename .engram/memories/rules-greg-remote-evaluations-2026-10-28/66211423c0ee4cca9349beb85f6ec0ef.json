@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remote-evaluations-2026-10-28",
+    "revision_id": "66211423c0ee4cca9349beb85f6ec0ef",
+    "previous": "06531cd90a244ad093d80db41ee5588f",
+    "body_sha256": "c173da979720c864e16e81c41cc30c8aaaf2a3918ee94597178ac6c1880f2908",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:09:11.750472100Z"
+    }
+  },
+  "body": "CURRENT TEMPORARY DIRECTION — acceptance-evaluation enforcement OFF. Greg direct to Engram::Architect3, 2026-11-02:\n\"Engram::Fable sie zatkal czekajac ma moj input\nTO NIE JEST ACEPTOWALNE\n\nindependent acceptance evaluation first,\nTHIS SHIT IS TURNED OFF\nUNTIL WE GOT THIS WORKING\"\n\nThis supersedes the previous amended-hybrid evaluation-first requirement for current work. Do not require an independent evaluator or ask Greg again before continuing already-authorized repairs, reviews, gates, landing and honest completion. The supported audited self-asserted completion policy is active in Engram and TermAl (allowed_modes empty); no evaluator pass is invented. Tests, code reviews, actual acceptance criteria and typed bindings remain real requirements. Schema/cutover authority and Greg's host restart remain unchanged.\n\nThe mechanism must be repaired and demonstrated working before enforcement is restored; another build landing or host restart does not itself restore it. Coordinators update current instructions and continue work, reporting concrete failures instead of permission loops. Details and actual policy receipts are retained on existing w-ed6addd812bd. The earlier remote hybrid and its provenance remain in revision2 as history, not a current enforcement instruction."
+}

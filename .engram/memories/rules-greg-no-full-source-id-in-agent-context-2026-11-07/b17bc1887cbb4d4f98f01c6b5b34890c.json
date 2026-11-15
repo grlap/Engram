@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-full-source-id-in-agent-context-2026-11-07",
+    "revision_id": "b17bc1887cbb4d4f98f01c6b5b34890c",
+    "previous": null,
+    "body_sha256": "8adc5532f9d7fbab064fdf874a75fe8ae337ae1c359a3ca74b62766a3bb86db0",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T16:54:56.481702900Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 16:54Z, relayed by Engram::Asistant (mailbox 43498a6e #615, message 26f64e32). Verbatim: „Bardzo prosze sie upewnic aby tak sie nie dzialo”. It answered whether the execution_observe message / full source_id is loaded into an agent's context.\nRequirement (Asistant's scope): the complete execution_observe payload and a complete source_id must NOT be put AUTOMATICALLY into an agent's context: prompts, tool output, hooks, notifications, transcripts or compaction. Short summaries stay allowed. An explicit agent command (e.g. `engram source`, `show --observations`) is a separate case. Ensure it in the current content-v1 cleanup on both sides (Engram w-d9dbcd311958, TermAl w-6f42c416b0c7) and check existing paths in review. No new heavy gates and no tautological tests.\nState at 16:55Z, verified from code: TermAl sends it host→Engram only (worker engram_unadmitted_worker.rs:192–293; reports kept in internal state, engram_host_adapter.rs:2003–2006). Engram returns ids+uncredited only. next, the work-context hook and feeds carry no observations. Explicit `show --observations` renders only SourceIdSummary \"source_id commit X; tree Y; N changes; M submodules\" (src/source.rs:49–63 in candidate 1b5394bb). Open gap: TermAl host stderr not exhaustively audited for payload dumps.\nHow it's checked: an acceptance criterion on both cleanup items, and an explicit item in both reviewers' briefs for every change touching observation, display or host-adapter paths. Behavior tests only where they already exist (bounded display)."
+}

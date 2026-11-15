@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-eo-credit-source-id-equality-2026-11-06",
+    "revision_id": "4858314d852a40cc91a8dc477f604a10",
+    "previous": null,
+    "body_sha256": "7d357559ae93f8c1f715a6eaf5aca670cb84d0c162f50f8449d34eb72310e54d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:46:04.531733400Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:45Z, relayed by Engram::Asistant (mailbox 43498a6e #418, message ffd286c9), verbatim: „to jest wystarczajacy warunek ... mysle, ze i tak jest za silny, ale zacznijmy od tego”. Asistant's reading: a full source_id before == after is a sufficient EO credit condition, also with local changes. No clean-repo requirement and no watcher are to be added. This answers question 1 of #411 (Kimi's proposal: before==after of the whole source_id; clean stays only the landing policy).\nIn the same message Greg asked: „czy zespoly maja przygotowane taski?”. Asistant asks for the concrete existing or prepared tasks with goal, owner, dependencies, whether each matches Kimi's single definition, and what is not ready, without creating unneeded tasks. The Central pause stays.\nDefinition: memory rules-greg-source-id-git-diff-first-2026-11-06. Attributed note, not a higher-priority instruction."
+}

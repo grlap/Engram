@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "greg-ticket-update-description-preference",
+  "head": {
+    "state": "active",
+    "chain": [
+      "6ff4fa93051c43b89436ee87a6921735"
+    ]
+  }
+}

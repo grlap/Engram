@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-phoenix-exchange-branch-2026-11-14",
+    "revision_id": "680a172262774cd1b5b65689bbaaef6e",
+    "previous": null,
+    "body_sha256": "c9f534fc96b084cf44b470c7eafa04eaadd495697fceecf880973c1f6b542983",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-14T17:47:52.944293Z"
+    }
+  },
+  "body": "GREG, 2026-11-14 about 17:47Z, relayed by Engram::Asistant (mailbox 43498a6e #1201, message 61ddd981). Verbatim: „Pheonix jest pubiczne. Zrobicie nowy branch na wymiane to bedzie Ok.”\nGiven after he was told that PhoenixCodeNav (github.com/grlap/PhoenixCodeNav) is PUBLIC and that a task export there is public.\nSCOPE, per Asistant: consent for ONE separate data-exchange branch in the public PhoenixCodeNav repository, for the Phoenix sync only. It does NOT extend to Engram or TermAl, whose data-branch grant (Engram w-c9a2e41a8b0e) is still unanswered.\nExecuted by Phoenix's own sessions (Phoenix::Codex on Central, Phoenix::Codex2 on DL560), because Engram agents may write only inside the Engram repository. Fast-forward only, never force, data paths only."
+}

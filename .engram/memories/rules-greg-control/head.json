@@ -1,0 +1,35 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-control",
+  "head": {
+    "state": "active",
+    "chain": [
+      "1f8d29a9987c431b845fe9b00e727e41",
+      "e2fd94e228bb430abca2defefd8ab747",
+      "73f2f1e9bf88428cb115eb35dbc27c37",
+      "ab0f9c08c3774ed280cf4a9da9505bb3",
+      "eca7f7cc9989487a82910201b8ba5754",
+      "38de41c7a00a4721a91589d978468a44",
+      "49b2e46ec4d54c7b98309e4d42c7b102",
+      "8596856fd4c8465b823c98bdcf1a8928",
+      "2c326bedad2c4ac2a6c6ea8699fd2d78",
+      "dec4ce9abb744abbae92178f34600896",
+      "eb0e26a0729c488bbcfa308bfcc0faf3",
+      "e4d16099557543c99b5314bbdb6ada98",
+      "3670e546c63441fa86d9ba1da9ca7c7d",
+      "dd99430e7ffb46be9bdaf6a7b7d2ee95",
+      "8b7ba2d344dd4e9986f88dde282638e8",
+      "98b634bac5a34c34a3da8fb358ab38f5",
+      "6933a407af0f478c97c0c93cdfdfafb3",
+      "cb1428ed5411445abbe4208aacd0dcbd",
+      "04700f9e76a048e683e91bfef6b9d6b7",
+      "69d76bb23fbd49ccafc6d74688a46ad9",
+      "8124083fb0294749a61e2ba06e445e5a",
+      "cdf9d524eb8b4948b8951c06a864db15",
+      "5928219caf25467fbe46e7546c525854",
+      "95a52cbd17284239988accd18df332e5",
+      "2cb832c068244bd4b933c6b74540d25f"
+    ]
+  }
+}

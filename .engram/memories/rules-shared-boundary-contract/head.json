@@ -1,0 +1,22 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-shared-boundary-contract",
+  "head": {
+    "state": "active",
+    "chain": [
+      "278c09c924d64c549ea7b101ba9a17f5",
+      "d17199c8f8f54b099776aa7901615108",
+      "ace94215cf424e9fbb32fd4f8947cdc7",
+      "0c88b94ac67f42eca9bbcc2b7ed5fcc0",
+      "368c0c6b0d98468f9eb46e16461adb84",
+      "8b5a5b4a9e4c40939709b8ab8f8b277f",
+      "61d6b9e3c38e49a18de8d494bd4081e5",
+      "2ee3e5ac532241558c5868be343b9d4c",
+      "55cd3db4dc8d42939c923a288499b0b4",
+      "2b67f0cbecc545d9b74414c882c18f50",
+      "a31351bfdaa145f9ac28480acd011750",
+      "3738912dd8a64185a2aee7c9beb303ab"
+    ]
+  }
+}

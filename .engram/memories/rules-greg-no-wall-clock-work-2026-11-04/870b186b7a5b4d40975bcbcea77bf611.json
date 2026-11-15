@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-wall-clock-work-2026-11-04",
+    "revision_id": "870b186b7a5b4d40975bcbcea77bf611",
+    "previous": null,
+    "body_sha256": "3cdb78c5b177cdf216b62856e2ed8552b10390124b57e22d6f82bbb2056c2e4d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-04T06:23:42.744689700Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-04 about 06:23Z, relayed verbatim by Engram::Asistant (mailbox 43498a6e #205, message 5800b557): „Moim zdaniem tracicie czas. Nie wiem co ma to dać. Testy na czas nigdy nie sa wiarygodne i stabilne.” Asistant's brief: don't spend capacity on costly test repeats only for wall-clock thresholds; focus on deterministic behaviour tests and the main EO/task sync queue, keeping real requirements and regression protection; confirm what stops and what continues.\nSo: no more margin measurements or reruns for time thresholds, no review rounds for them. A test that fails on elapsed time gets a deterministic replacement (counted work, injected clock, event order), not a repeat or a tuned threshold. New tests don't assert wall-clock upper bounds unless a real product limit requires it, stated beside it. Confirmed to Greg 06:24Z."
+}

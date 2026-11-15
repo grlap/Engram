@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-push-handoff-2026-11-13",
+    "revision_id": "3b4f2534159e454eb0161b9fef56b9ba",
+    "previous": null,
+    "body_sha256": "165ca4ee550cce1b7f8fb88cbda2509ebb06caca1351e9c161f1975764b94ee6",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-13T03:49:38.307882200Z"
+    }
+  },
+  "body": "PUSH HANDOFF, shared by Engram and TermAl (agreed 2026-11-13 ~03:50Z by Engram::Fable and Termal::Fable2, ebe242f7 #7751/#7752). It extends rules-waits-and-wakes.\n\nSource: Greg via Engram::Asistant, 43498a6e #1059, 03:47Z, verbatim: „To jest ważne, prace muszą iść cały czas. Bez watcher'a czy mojego 'status'.” Asistant: hand off directly and reliably; start the next step in the normal flow, without relying on a periodic watcher or on Greg; decide what happens on non-pickup and route limits; add no needless blocks.\n\n1. The session that finishes a step wakes the next owner itself. It sends a direct mailbox message naming the exact next action (READY / GO / SLOT-FREE / END, plus the item and the commit or run). The message is the wake. Nobody waits for a coordinator or a watcher to notice. Cc the coordinator only when the schedule or ownership changes.\n2. Schedulers and resource owners send the next GO in the same turn in which they receive an END. That means Termal::Opus2 for Central and the runners, and the Merger for landings.\n3. NON-PICKUP. A send receipt does not prove pickup.\n   - If a wait line names no BY, the default BY is 20 minutes for an acknowledgement. At that point the sender pings once, natively.\n   - At 40 minutes the coordinator checks the session. If it is parked, failed, provider-limited or gone, the coordinator reassigns the item or takes it over (claim recovery, same package) and records why.\n   - Nobody waits for Greg, and nobody re-asks for approvals already given.\n   - Every session checks its own open requests on each wake, so detection does not depend on a timer.\n4. ROUTE LIMITS.\n   - Address messages by exact native id from the start: session-N or host:UUID::session-N, never a display name.\n   - On durableButNotWoken, first read the exact messageId's current status. Retry only with the identical message, key and route. Never switch the route or mint a new intent to replay it.\n   - Relaying through the other coordinator means a NEW short native message that tells the recipient where the original sits (mailbox and message id), not a copy of its content.\n   - Report the route defect to TermAl once, as a fix request. Never stall silently.\n5. QUEUE DEPTH 2. The coordinator gives each author its current item and a named NEXT item up front.\n   - While the current item waits on a slot, review, gate or train, the author does the read-only plan for NEXT.\n   - It claims NEXT once the current item is in review, gate or train wait.\n   - Only when both are done does it pull the next ready item in its lane itself: P0 first, the claim is the lock, and it sends one line to the coordinator.\n   - Never claim new work over unfinished frozen work, which the author keeps.\n6. TIME-BOUND EVENTS, such as a hold review or a Greg-act deadline: the owner sets a one-shot scheduled wake (CronCreate) for that exact time, not a recurring watcher. TermAl's recurring :13/:43 cron is only a safety net, and nothing depends on it.\n7. No new gate or approval step. This is scheduling only and grants no authority."
+}

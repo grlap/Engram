@@ -1,0 +1,28 @@
+{
+  "id": "01a1dd1a-febc-7242-8b1a-5d3b508622de",
+  "external_ref": null,
+  "title": "Make task-sync data-init and its docs agree on a code checkout that doesn't ignore .engram-data",
+  "outcome": "Make task-sync data-init and its docs agree on a code checkout that doesn't ignore .engram-data",
+  "acceptance": [
+    "Running task-sync data-init in a code checkout that does not ignore /.engram-data/ behaves as docs/features/task-planning-text.md (Persistent data worktree) describes, or the docs are corrected to describe what the command does, including the refusal text and the remedy",
+    "A behaviour test covers a checkout without the ignore rule"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

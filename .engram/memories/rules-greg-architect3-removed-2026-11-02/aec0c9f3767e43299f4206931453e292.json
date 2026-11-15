@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-architect3-removed-2026-11-02",
+    "revision_id": "aec0c9f3767e43299f4206931453e292",
+    "previous": null,
+    "body_sha256": "d6af476ba8901208e9af7672e625cd630b124142317577433c8f1fd8ae3ccf54",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:45:02.223655300Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-02 ~00:45Z, in Engram::Fable's session (5135): \"usunalem Architect3 za niekompetencje\".\n\nEngram::Architect3 (session-14548) no longer exists. Nobody routes work or Greg's directions through it.\n\nIts earlier relays and memory edits are not authoritative on their own. Check them against Greg's direct words, as recorded in rules-greg-control revision 25. For example, it recorded the reversed \"retired, legacy kept for compatibility\" text, which revision 25 voids.\n\nGreg's directions now come directly to the coordinators: Engram::Fable for Engram, Termal::Fable2 for TermAl. Fable records them verbatim."
+}

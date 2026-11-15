@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-act-holds-2026-11-12",
+  "head": {
+    "state": "active",
+    "chain": [
+      "2f63604eefa34a05be9fa5608fd9ac69",
+      "fa33dbd1fab64a90bf9fb44506a42e78",
+      "82e49f9d806344e8a17f1b6baad5800e"
+    ]
+  }
+}

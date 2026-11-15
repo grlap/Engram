@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-blocking-questions-2026-11-01",
+    "revision_id": "cce7aec40f3a4fcca8b669f84728e4aa",
+    "previous": null,
+    "body_sha256": "94ef63545a4f7383d229ace5ba38187b4ae671483a687ff203adad6b52daa465",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:02:02.090026900Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-01 ~20:00Z, typed in Engram::Fable's session (5135) after Fable opened a blocking AskUserQuestion dialog about landing w-cc7f71b81ea8. Verbatim: \"NIGDY SIE MNIE NIE PYTAJ W TEN SPOSOB / ZABLOKOWALES CALA SESJE!!! / WTF\".\n\nRULE for every agent: never ask Greg through a blocking question dialog (AskUserQuestion or any modal prompt). It freezes the whole session. When a decision really needs Greg, put one plain-text line in the normal reply and keep working on everything else.\n\nThis grants no new authority. Commit and push still need Greg's own word, or the standing approval."
+}

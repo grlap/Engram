@@ -1,0 +1,15 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "ssd-snapshot-names-its-patterns",
+  "head": {
+    "state": "tombstone",
+    "source": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent",
+      "actor_context": null,
+      "reason": "retire attributed project memory",
+      "remembered_at": "2026-09-11T04:51:09.985442700Z"
+    }
+  }
+}

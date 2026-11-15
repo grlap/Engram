@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "greg-ticket-update-description-preference",
+    "revision_id": "6ff4fa93051c43b89436ee87a6921735",
+    "previous": null,
+    "body_sha256": "f8bd8b917e76ff82bb4014a2a8ddd3039b80166c8a6fe9bd7f61c87e38a626da",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-5.6-terra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-24T17:21:48.426310200Z"
+    }
+  },
+  "body": "Greg's direct reporting preference (2026-10-24): whenever reporting a ticket, include a short plain-language description of what that ticket changes or fixes, not only its reference and status."
+}

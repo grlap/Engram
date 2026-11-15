@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-stop-everything-2026-10-24",
+    "revision_id": "e062d292f75f47809e695319335eff5c",
+    "previous": null,
+    "body_sha256": "d99266332f13c5fe12f4a803aff99dd300e46f20476a8414e58014171440470d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-5.6-terra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-24T17:31:29.400918300Z"
+    }
+  },
+  "body": "GREG DIRECT STOP ORDER (2026-10-24): STOP EVERYTHING. Stop all merge/carry, gates, focused checks, acceptance evaluations, queue recovery/resume, configuration mutations and new dispatches. Do not kill sessions, restart the host, delete evidence, discard prompts or revert turnGatedControl=false; preserve the exact current state. Trigger: after disabling gated control, the already-known TermAl HTTP 409 \"Merger has no named source root\" blocked the merge train again; Greg reports hours with zero progress and considers the system unacceptable. Only factual current-state snapshots and evidence-based recurrence records are requested until a new direct order."
+}

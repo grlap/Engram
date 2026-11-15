@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-eo-first-2026-11-04",
+    "revision_id": "66361841764748a0bd8bb0d8b4dfb2b7",
+    "previous": null,
+    "body_sha256": "803a1a10e38fa2cb787c3ba0606edec7e6a36d2bb6ca9fe99818c12bbe665f8a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-04T06:25:36.594711900Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-04 about 06:24Z, relayed verbatim by Engram::Asistant (mailbox 43498a6e #207, message 5a90ee3b): „Robcie execution observability. Poźniej refactoring i split testów.” Asistant's brief: adjust queue and assignments; close EO now, including remote results and working evaluation; defer refactoring and test splits unless a concrete element is a real necessary dependency of EO; agree with TermAl, continue without needless interruptions; record what's deferred and give the current plan. Plan and deferred list sent to Greg 06:26Z (43498a6e). Task sync keeps running with one coder per his earlier word; told him he can stop it if he prefers."
+}

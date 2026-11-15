@@ -1,0 +1,29 @@
+{
+  "id": "01a1dd8f-4527-7520-8aee-1e169e1a195d",
+  "external_ref": null,
+  "title": "Engram usage skill: the exchange guard's rerun-import recovery should resume the exchange at the removal check, so the imported commit gets recorded",
+  "outcome": "Engram usage skill: the exchange guard's rerun-import recovery should resume the exchange at the removal check, so the imported commit gets recorded",
+  "acceptance": [
+    "The exchange guard's recovery for a transient refusal tells the agent to resume the exchange at the removal-check step for the resulting HEAD, so that the removal check, the dry run and the imported-commit record all run before any push",
+    "Optional clarity: the merge-commit sentences apply only while a merge is in progress (a fast-forward needs no commit), and the publish step's check for an existing remote data branch names `git -C .engram-data ls-remote origin engram-data`"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

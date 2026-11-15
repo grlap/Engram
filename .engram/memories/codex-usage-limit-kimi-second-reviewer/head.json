@@ -1,0 +1,15 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "codex-usage-limit-kimi-second-reviewer",
+  "head": {
+    "state": "tombstone",
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=default;reasoning=xhigh",
+      "reason": "retire attributed project memory",
+      "remembered_at": "2026-09-29T14:55:00.649310200Z"
+    }
+  }
+}

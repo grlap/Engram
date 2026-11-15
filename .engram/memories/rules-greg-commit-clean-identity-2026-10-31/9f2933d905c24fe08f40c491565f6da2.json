@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-commit-clean-identity-2026-10-31",
+    "revision_id": "9f2933d905c24fe08f40c491565f6da2",
+    "previous": "fbf2c936d56447b399d4ae335c8342a4",
+    "body_sha256": "94fda77c1827d6c95572a2c62e30c5ef4bd219d97f73f4222c6924cb815b7330",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-31T01:49:16.426026600Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-31, two words relayed by Engram::Advisor (mailbox 74a6af16), verbatim:\n- #2397 (message fbd70c9c-4008-4fd0-adfc-939736f6c96b, 01:42:13Z): „z tego co nas interesuje to tylko to aby commit sie zgadzal i niebylo zmian”.\n- #2400 (message 33b1d272-55af-4aec-8200-93193811223a, 01:43:15Z): „powaznie, nikt nie robi dodatkowych czekow z test-runami. czysty branch z danym commitem i tyle... nic wiecej nie jest potrzebne”. Advisor's relay text (not Greg's words): a clean checkout of the given commit is a sufficient test input, with no extra test-run checks, separate measurements, hashes or procedures; don't expand the requirement; fix the mechanisms so the ordinary flow works; agree jointly. The same words reached TermAl as TermAl Advisor #2826/#2827.\nAPPLIED (Engram::Fable, 01:46Z):\n- The sighting and capture path is not pursued. TermAl paused w-779e. Engram w-8fdd1634eed3 (measured_unchanged) was dropped from Merger3's batch before its gate and is PARKED, not landed. w-7b194f1d1cd9 and w-00e2f3694fea are parked.\n- Target flow: a clean checkout of a commit is the test input; the run records that commit; evidence counts when the evaluated or landed commit is the same commit. Identity is the COMMIT (tree kept as provenance, Architect3 #187), not a whole-content hash. A dirty worktree is the explicit exception.\n- The exact Engram change (what replaces the named-root-sighting requirement in acceptance-evaluation admission and consumption, and how OFF test credit is produced, since today VerificationEvidenceInput only arrives on a granted turn_checkpoint) is designed by Engram::Architect3 with Termal::Architect2 under w-d7826c4f78ec / TermAl w-a08b0320448f and w-decd61d62831. Then one coder implements it. No new checks or procedures.\n- Unchanged: the launcher's own before/after freeze fingerprint for landing gates (rules-greg-git-identity-2026-10-29). Existing content-v1 records are read as stored, never relabelled as commit identity.\n\nADDED RULE, Greg DIRECT in Termal::Fable2's session, recorded verbatim on TermAl w-decd61d62831 and relayed by Fable2 #5515 (2026-10-31T01:48:51Z): „przed test-runem jakis \"brud\" => fail / po testach czysty => OK / po testak brudno => agent makes a call, poniewaz to moge byc jakies drobne smieci, szkoda by odrzucac caly gate”. Meaning: dirty before the run (gitignore-respecting git status) fails the run; clean after is OK; dirty after is the agent's recorded call, since it may be small debris and rejecting a whole gate would be a waste. Folded into the shared contract text by Termal::Architect2 and Engram::Architect3 (DRAFT v3 on w-d7826c4f78ec). Open point: the Engram landing condition in CLAUDE.md (\"its input fingerprint checks at completion\") is unchanged by a relayed word; how after-run debris interacts with the launcher's own before/after fingerprint is for the architects to state in the contract."
+}

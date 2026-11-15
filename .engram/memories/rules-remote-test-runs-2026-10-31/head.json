@@ -1,0 +1,28 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-remote-test-runs-2026-10-31",
+  "head": {
+    "state": "active",
+    "chain": [
+      "12c190b6ac4a496b859d817a6ed016ee",
+      "5d6c56f5369c49bca7efd8f363062120",
+      "63d8875b3cce4158ad97ecc53640f4d3",
+      "7a588117051f4142b2a2dc44e9046d71",
+      "e758a73ddfad44debf3cfcfba9b93d5d",
+      "df9b9af830114e5fa67481168ac7c6a6",
+      "7f8e2ef006774aa88628a60aee1c6a6a",
+      "d809cc7b406c4f3d96627a4615fa920d",
+      "0653d6e9ca94461281e9cf2837869790",
+      "f6bea5b6781f4f0d9eb1e760d2fd4a2b",
+      "ddc9417de69b47c68506f22d90270fe2",
+      "b211c13fdaf448919ca0771371ace52b",
+      "9defbd0a1d92416b83119b98452197c2",
+      "1040700c6a9b4cd6b97b0dde792a0bfa",
+      "5dbcb7c8d1b34a1d9a4a816a7603c274",
+      "c4e952df4365460588f7ede1c02bb1ab",
+      "a691b9ca7f07453ca18a96e51089c846",
+      "6cd5a68f4ddf4645a63da8863622397b"
+    ]
+  }
+}

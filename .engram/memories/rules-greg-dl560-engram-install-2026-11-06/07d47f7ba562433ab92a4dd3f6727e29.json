@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-dl560-engram-install-2026-11-06",
+    "revision_id": "07d47f7ba562433ab92a4dd3f6727e29",
+    "previous": "ffdf53446da4445bb75ea988ad948448",
+    "body_sha256": "00ae2210554f3214c8b0b6a1c1b41300dd8ac1df9e1153ab512b88f2c93d324c",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T02:56:43.809250600Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 05:42Z, relayed by Engram::Asistant (mailbox 43498a6e #359, message a70092dc), answering the DL560 question. Verbatim: „Tak. Engram repo juz jest. Questly juz tez jest.” Asistant reads „Tak” as consent to the earlier ask: INSTALL Engram on DL560, and create the local Engram store and connection for Questly there. Asistant's further summary: both repos already exist on DL560 (Questly under ~/github/questly); use the existing checkouts, no re-cloning, and don't disturb ongoing work. Installing Flutter from a local archive was approved earlier. Use a supported local project session, check facts and versions, never use SSH to run tests, and report the result.\nScope (Engram::Fable): this covers installing the Engram binary on DL560 and creating the Questly project's local store and connection there. It is the Linux leg of the local-route EO proof (memory rules-greg-remote-tests-via-project-sessions-2026-11-06). It grants nothing else outside the repositories.\nREV 2 (2026-11-07): Asistant #484 (54a5250a) and #510 (E3(b)) both state that this word ALREADY covers the Engram binary installs on DL560 that Unified EO needs. Don't ask Greg again for each such install. Each install still needs: a release build of the exact landed commit, a backup of the current binary, Questly readiness before and after, no init, migrate, repair, config change or restart, the DL560 runner session-4 used via Fable2's one-time exception, and Opus2's slot GO. Asistant #510 verbatim: „Nie pytajmy ponownie o tę samą instalację w ramach zleconego Unified EO.”"
+}

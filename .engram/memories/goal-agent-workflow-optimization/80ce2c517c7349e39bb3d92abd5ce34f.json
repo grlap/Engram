@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "goal-agent-workflow-optimization",
+    "revision_id": "80ce2c517c7349e39bb3d92abd5ce34f",
+    "previous": null,
+    "body_sha256": "28a2504eb200baf2996cb98f5766e469faf6b7de7fcbd43516d658ee26ba9f0f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6-astra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-07T05:30:26.022779Z"
+    }
+  },
+  "body": "Greg's confirmed goal, 2026-10-06 (America/Los_Angeles), direct conversation with Engram::Architect1/session-9550: agents should optimize their tools and flow while continuing backlog work. Desired result: simple-to-use tools and working procedures. Approved formulation: deliver correct, accepted outcomes with less human intervention, fewer tokens, and less elapsed time. Correctness and explicit authority remain constraints. Use real backlog work to identify recurring costs, improve the responsible tool or procedure, observe subsequent work, and keep, revise or remove the change. Judge completed outcomes and total cost, not activity, record volume or ticket counts; avoid extra machinery without demonstrated value. Earlier focus was fluency, recovery and removing interruptions; compact recovery is the first delivered token-efficiency step. Engram supports single-agent use (Phoenix); TermAl supplies cross-harness mailboxes, fresh sessions and multi-agent coordination. Do not attribute all integration overhead to Engram or require a coordinator for standalone use. This note records direction, not measured savings, new authority, or permission to bypass quality gates. Source: Greg: 'yes make a note for this. that is our goal.'"
+}

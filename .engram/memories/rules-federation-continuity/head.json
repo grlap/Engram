@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-federation-continuity",
+  "head": {
+    "state": "active",
+    "chain": [
+      "c2c9989845e44271a6e83c41b55a901b",
+      "659d353bb4604aecad9a782f136d1101"
+    ]
+  }
+}

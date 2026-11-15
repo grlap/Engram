@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-source-id-git-diff-first-2026-11-06",
+  "head": {
+    "state": "active",
+    "chain": [
+      "d81627e7a5574e7ca46752303c713077",
+      "f3a567e5c67c4d82ab0c5e898f178c4e"
+    ]
+  }
+}

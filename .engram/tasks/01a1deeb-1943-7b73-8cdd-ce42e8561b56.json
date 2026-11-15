@@ -1,0 +1,28 @@
+{
+  "id": "01a1deeb-1943-7b73-8cdd-ce42e8561b56",
+  "external_ref": null,
+  "title": "Bound each side of a task-sync commit delta separately and report its limit by name on the export paths",
+  "outcome": "Bound each side of a task-sync commit delta separately and report its limit by name on the export paths",
+  "acceptance": [
+    "A valid delta whose old and new sides each stay within the folder limit is read, even when together they exceed 128 MiB",
+    "On the export paths a delta limit refusal is reported as the limit, not as a task difference"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

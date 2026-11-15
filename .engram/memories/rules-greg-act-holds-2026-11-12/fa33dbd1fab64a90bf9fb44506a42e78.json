@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-act-holds-2026-11-12",
+    "revision_id": "fa33dbd1fab64a90bf9fb44506a42e78",
+    "previous": "2f63604eefa34a05be9fa5608fd9ac69",
+    "body_sha256": "7ac8a1dd5975c2c06945a7ed210c49241b73b7ac5148679511fdf81e0f7c074d",
+    "retiring_target": {
+      "kind": "local",
+      "work_id": "01a1d134-0092-7331-a385-761908cf1e2a",
+      "work_ref": "w-761908cf1e2a"
+    },
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-12T19:23:23.846924300Z"
+    }
+  },
+  "body": "GREG-ACT HOLDS, shared by Engram and TermAl. This is an addition to item 8 of rules-waits-and-wakes, which is at its size limit.\nAgreed: 2026-11-12, both coordinators concurred (Termal::Fable2 ebe242f7 #7690; Engram::Fable #7691). Tracked as Engram w-761908cf1e2a and TermAl w-bebbae70639c.\nWhy: all lanes sat idle on 2026-11-12 from 17:35Z to 19:15Z. Asistant had told Greg: „To nadal zapowiedź — na razie niczego nie zatrzymuj. Zespół prześle polecenia i sygnał ‘restart now’ po sprawdzeniu paczki oraz wyciszeniu hostów.” Greg waited for that signal as told. The signal and the instructions went only to Advisor and never reached his conversation with Asistant (Asistant #1006). That was OUR communication failure, not Greg's. Nobody checked at the deadline. Greg (Asistant #1003): „nie ma bledow, znaczy ze agenci sie sa utknieci na bledach / jest blad komunikacji, nikt nie podjal pracy”.\nTEXT, verbatim: No drain or hold for a Greg act (restart or cutover) starts until Greg himself has replied that he is ready, through Engram::Asistant; sending the request starts no hold. Any drain or hold that waits on a Greg act then has an absolute deadline: the agreed start plus 15 minutes. Each coordinator sets a real scheduled wake for that deadline in its own session (Claude CronCreate one-shot or the Codex equivalent). If the session restarts, it sets the wake again on recovery. On waking, it checks the actual host state: process start times, installed binary hash, backup and log directories. If the act has not started, it lifts the hold, tells every waiting session to resume, and tells Greg through Asistant. Every request for a Greg act goes through Engram::Asistant (his direct channel) as well as Advisor, says in plain words that Greg must perform it and when, and asks him to reply „zaczynam” when he starts."
+}

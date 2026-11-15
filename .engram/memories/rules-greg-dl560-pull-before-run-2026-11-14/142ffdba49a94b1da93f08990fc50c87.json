@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-dl560-pull-before-run-2026-11-14",
+    "revision_id": "142ffdba49a94b1da93f08990fc50c87",
+    "previous": null,
+    "body_sha256": "405c11916b162afd11bae06e8037116cc26683c9e991a5dbac50a23229a4d795",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-14T06:19:17.203255800Z"
+    }
+  },
+  "body": "GREG, 2026-11-14 about 06:17Z, relayed by Engram::Asistant (mailbox 43498a6e #1155, message 64c7a7b9). Verbatim: „Dl560 powien miec zrobione git pull przed cargo run --release.”\nRule: whoever starts the TermAl host on DL560 first runs `git pull` in that checkout, then `cargo run --release`. The host must not be restarted only to apply this rule.\nObservation at the time: origin/master of TermAl was 491dd015, and Fable2 (#7883) attested DL560 running 491dd015 after the 06:10Z restart, so that start matched current master.\nOwner of the DL560 host start procedure: TermAl (Termal::Fable2). It was forwarded there."
+}

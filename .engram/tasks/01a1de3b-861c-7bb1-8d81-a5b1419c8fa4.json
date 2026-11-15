@@ -1,0 +1,46 @@
+{
+  "id": "01a1de3b-861c-7bb1-8d81-a5b1419c8fa4",
+  "external_ref": null,
+  "title": "Work navigation refusals name the deciding check, its observed values and the remedy (catalog, next and notes-window cursors)",
+  "outcome": "Catalog continuations survive unrelated project events, or their refusal names a stable way to finish the read",
+  "acceptance": [
+    "The compact `next` and catalog continuation refusals name which check decided (clock reversal, project head X→Y, valid_until vs now, membership change) with observed values, and the `next` refusal names the remedy of starting `engram work ls` with the same filters, covered by behavioural tests",
+    "The notes/gates window refusal separates clock reversal from a change to the item's own selected records and reports the item, window kind and expected vs observed count or boundary, covered by behavioural tests",
+    "A behavioural test pages a multi-page `show --notes --gates` window and an explicit `ls` listing while another session keeps writing unrelated notes, gates and claim renewals, and both complete ordered and duplicate-free"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "area-work-lifecycle",
+    "refusal-explains"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "b29983f37973499db9abfb56621b4000": {
+        "activity_id": "b29983f37973499db9abfb56621b4000",
+        "task_id": "01a1de3b-861c-7bb1-8d81-a5b1419c8fa4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b29983f37973499db9abfb56621b4000"
+      }
+    }
+  }
+}

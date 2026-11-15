@@ -1,0 +1,31 @@
+{
+  "id": "01a1e059-9fdd-7c63-8672-50690ae999ce",
+  "external_ref": null,
+  "title": "Migrate rincon-common's Beads/Dolt tracker into a new Engram project",
+  "outcome": "Migrate rincon-common's Beads/Dolt tracker into a new Engram project",
+  "acceptance": [
+    "a read-only import preview reports how many open Beads issues map to Engram items, with zero writes, before any apply",
+    "rincon-common gets a stable .engram-project and a Central store holding every open Beads issue with provenance, by the same import route as comovo; closed issues stay in Beads as the archive",
+    "the cutover happens at a moment with no in-flight bd writes, and AGENTS.md and CLAUDE.md then point agents at Engram, under rincon-common's own commit authority",
+    "uncommitted code edits in the rincon-common checkout are not turned into tasks and are left to their owners"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "migration",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a1e059-7746-7041-9638-fb5c4a52f4f2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Filed prematurely: Greg clarified via Kimi::Consultant (c15db92c #197, 2026-11-15 17:55Z) that rincon-common/comovo on Engram is the future use case motivating sync and EO, not work to open now; no items, owners or planning.",
+  "completion": null
+}

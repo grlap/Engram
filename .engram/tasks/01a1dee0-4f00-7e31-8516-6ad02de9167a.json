@@ -1,0 +1,29 @@
+{
+  "id": "01a1dee0-4f00-7e31-8516-6ad02de9167a",
+  "external_ref": null,
+  "title": "Preserve typed task-sync shared-conflict reasons in partial-import receipts",
+  "outcome": "Report the actual shared-conflict reason and preserve non-shared refusals without classifying peer-supplied prose.",
+  "acceptance": [
+    "Per-task receipts derive shared conflict reasons from typed data rather than substring searches over messages or origin-machine aliases.",
+    "An incoming alias containing a different reason token cannot misclassify an activity conflict, and a publication basis failure retains its actual refusal and remedy.",
+    "Existing task-level atomicity and partial-folder behavior remain intact."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

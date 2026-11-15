@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-native-clean-before-b-2026-11-06",
+    "revision_id": "b1992504a2b74517b0f41bf38ccda53f",
+    "previous": "1e3bffcfcb394539840e892cea179b12",
+    "body_sha256": "fecf3030cc4cd023bf476eea73b656c7ed670d8ea0435229e78d3ecb27498f85",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:20:52.246148100Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 05:52Z, relayed by Engram::Asistant (mailbox 43498a6e #364, message ffd66ec3), answering Fable's A/B question. Verbatim: „B. Naprawdę wystarczy.”\nAMENDED BY GREG, 2026-11-06 about 16:20Z (Asistant #390, message 2ec544e6), verbatim: „EO nie mialo tego uzywac, mialo sprawdzac tylko stan przed i PO wariant B ABY ... TO UPROSCIC”. So EO option B uses the existing source_id BEFORE and AFTER only. There is NO watcher-event condition for refusal, fencing or credit; remove any such dependency and don't delay EO for watcher work.\nCURRENT OPTION B (TermAl w-24a72c898d6d):\n(1) The host takes a rev 5 source_id capture at commit X BEFORE it dispatches the turn's prompt.\n(2) The credited declared test is the turn's FIRST tool action; execution identity shows it originates from that turn.\n(3) After the run, a clean rev 5 source_id capture at the same commit X.\n(4) check.started_at is the host-observed first start reservation.\nThe former item \"(4) the watcher can only disqualify\" is REMOVED by Greg's 16:20Z word, and with it any .git/info comparison.\nAccepted limit: a change made and fully reverted during the run (between the two captures) is not detected. Credited tests run as the first action of a fresh turn."
+}

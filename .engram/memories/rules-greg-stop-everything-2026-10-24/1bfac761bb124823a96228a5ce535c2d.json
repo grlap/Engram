@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-stop-everything-2026-10-24",
+    "revision_id": "1bfac761bb124823a96228a5ce535c2d",
+    "previous": "43e88152e85343c09a3cd40c99d284b9",
+    "body_sha256": "bca50bf78ab82c468601295fc2b6b435e7a1d7cecc14c54ffc98df0e040ce041",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:38:46.583329100Z"
+    }
+  },
+  "body": "CURRENT SCOPE — Greg resumed the two physical-deletion P0s after the global STOP.\nSource: Greg direct to Engram::Fable/session-5135, relayed in Architect3 mailbox #318/message e43703cb-b49f-4eec-8e17-fa32be3de7da at2026-11-02T00:27:53Z, verbatim:\n\"TermAl w-3fe8 wznow, mozemy to przyspieszyc ? Engram w-5b17 tak samo tez tez / WZNOW PRACE, poinformuj Engram::Architect3\"\nGreg subsequently asked Architect3 directly: \"Czemu termal nie znowił pracy?\"\n\nExecution of TermAl w-3fe8 and Engram w-5b17, including necessary documentation/migration and applicable checks, is resumed. Do not use the earlier STOP to block these named duties. Physical deletion of gated-control code, ZERO LEGACY; Execution Observability remains independent with project ON/OFF and all-harness coverage. Acceptance evaluation is temporarily OFF, not deleted from code/docs.\n\nA runtime queue pause left by Stop must be released through supported queue/resume by the responsible actor once this actual resume direction applies. A forwarded message alone is not proof a paused worker resumed. Confirm actual queuePaused=false and an executable owner action, without asking Greg to repeat his instruction. Architect3 recovered TermAl Sol-03d4/session-12327 through that route; returned active/queuePaused=false.\n\nDo not infer resumption of canceled unrelated profiling, generic workflows or other stopped work from this named exception alone; follow their actual latest user direction. Existing review, exact-input gate, source/schema/migration and external-action authority still apply. Earlier STOP and narrower exceptions are history in prior revisions."
+}

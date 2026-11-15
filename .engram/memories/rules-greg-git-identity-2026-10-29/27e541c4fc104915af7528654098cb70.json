@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-git-identity-2026-10-29",
+    "revision_id": "27e541c4fc104915af7528654098cb70",
+    "previous": null,
+    "body_sha256": "0590add1c8a1ca0be503864d54d769856b2d62c425e093643b9d3604e387d217",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-29T01:10:05.704050Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-29T01:09:30Z, relayed by Engram::Advisor (mailbox 74a6af16 #2265, message 20e6b8b0). Verbatim: „Greg: „Sugeruję nie używać tego. Polegamy głównie na Git.” Traktujcie Git identity jako domyślny zwykły przepływ i nie wymagajcie review identity capture. Doprecyzujcie tylko nieliczne wyjątki o rzeczywistej potrzebie raw-byte; przygotujcie małą zmianę procedury/narzędzi zgodnie ze wspólną rekomendacją.”\nEFFECT, IMMEDIATELY (the user's decision applies now; documentation follows):\n- Git identity is the DEFAULT for review inputs: a fully staged index, an empty `git diff`, no untracked files, and the `git write-tree` id, which each reviewer reports at start and end. For committed inputs, the commit's tree id plus an empty `git status --untracked-files=all`.\n- Review identity capture (TermAl termal_review_identity and the compiled freeze checker) is NOT REQUIRED. Don't use it in the ordinary flow.\n- RAW-BYTE EXCEPTIONS are few and need a real reason: a change whose correctness depends on bytes that Git normalises or does not track. That means eol-sensitive files under a .gitattributes eol or filter rule, executable bits, symlink targets, or nested repositories or submodules. Only then is the raw capture used, and the reason is recorded on the item.\n- The launcher's automatic before/after fingerprint stays (the CLAUDE.md test-ref bullet), as does the remote-gate record (memory rules-greg-equivalent-gate-hosts-2026-10-28, r4).\nFOLLOW-UP: a small procedure and tooling change (/review-changes freeze section, the merger procedure, TermAl's equivalents), per the joint recommendation (Advisor #2264, TermAl #2423). It goes through the instruction-change procedure (both coordinators concur on the exact wording, Greg is sent it, final-diff audit) and lands after the w-d5c7 cutover, because every landing installs."
+}

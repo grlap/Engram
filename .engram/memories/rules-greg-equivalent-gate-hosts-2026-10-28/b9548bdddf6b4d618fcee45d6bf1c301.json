@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-equivalent-gate-hosts-2026-10-28",
+    "revision_id": "b9548bdddf6b4d618fcee45d6bf1c301",
+    "previous": null,
+    "body_sha256": "9ad7b113d86d09d6eaca90fcf1381dc6fcb7df180282f595d9e539e933afbf2e",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T23:36:37.910974300Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-28T23:35:42Z, relayed by Engram::Advisor (mailbox 74a6af16 #2253, message f5f92222). Verbatim: „Greg direct decision: maszyny są równoważne. Centralna bramka NIE musi być uruchamiana na centralnym Windowsie. Uzgodnijcie jeden zgodny zapis z Termal::Fable2 i wykorzystujcie Windows B/Mac dla bramek na exact test-ref, z zachowaniem wszystkich wymogów identycznego drzewa, fingerprintu i rozpoznanego dowodu.”\nEFFECT: Windows B, the Mac and central are equivalent gate hosts. The landing full gate need not run on central Windows. Use Windows B and the Mac for gates on the exact test ref, keeping every requirement on the identical tree, the fingerprint and the recognized evidence. Under the CLAUDE.md test-ref rule, a change that touches Windows-only code still needs a Windows gate, and Windows B is a Windows host.\nSTATUS: the joint record text was proposed to Fable2 (#5162, at about 23:37Z), with concurrence pending. Once concurred, it is recorded here as rev 2 and the exact text is sent to Greg.\nPROPOSED RECORD:\n1. A merge-ready input is pushed as refs/heads/test/<item>-<fp8>, with its tree id recorded on the item before the push. The runner uses a fresh, clean worktree.\n2. Launcher exit 0 with all stages passed; the expected, before and after fingerprints equal the recorded freeze fingerprint.\n3. A sha256-manifested bundle is returned, and the lander verifies its hashes, the tree id and the fingerprints.\n4. The lander records ONE gate (`gate full --work-ref ITEM --ref MANIFEST-SHA`) plus a note naming the host, run, tree, fingerprint and bundle path. This is the same tracker record as a central gate in base mode.\n5. It gates only a master commit with exactly that tree id. Windows-only code still needs a Windows gate.\n6. The test ref is deleted after the evidence is recorded.\nFIRST USE: w-52cc + w-94ec, integrated into one input on 56f84d7e and gated remotely; the landing comes after the w-d5c7 cutover."
+}

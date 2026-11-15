@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-content-v1-removal-follow-up-2026-11-07",
+    "revision_id": "e2708597e46a466683dd60b51833e07f",
+    "previous": "7593c3ebe2ac45df946b77251ea4f0cd",
+    "body_sha256": "f89ffb2aa9d2b4954f5be2becc77b81fa1150303dd2e3c870d7abb80cd29b8f2",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-10T19:45:14.092797300Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 02:25Z, relayed by Engram::Asistant (mailbox 43498a6e #508, message a119ae7c), verbatim: „Usuniecie content-v1 to follow up a nie warunek konieczny.” Asistant: write it down and apply it; removing content-v1 does not block delivery of Unified EO and is done as a follow-up.\nApplied (Fable): Unified EO is delivered when E3(b) is installed, TermAl's M1, w-24a7 and w-8f4c run after the joint restart, E2 increment 1 has landed and the w-e072 live proof has passed. E3(c) legacy and content-v1/watcher retirement, TermAl's w-6f42 content-v1 deletion step and E2 increment 2 are follow-ups that don't gate EO; they become independent items rather than required children of the EO parents.\n\nUPDATE, GREG 2026-11-10 about 19:44Z, via Asistant 43498a6e #870 (message 7cd6106e), verbatim: „Chciałym posprzątać po content-v1. Bardzo nie chce utrzymywac legacy kodu.” Asistant: prioritise the rest of the legacy source-identity removal and do it. Remove the unneeded production code and old inputs, and coordinate Engram w-9fcb, TermAl's remaining ContentV1 classifier/counter and the later source_revision column w-05a2. Keep stored historical values as Greg decided earlier, and prepare a proper migration for durable schema changes. Verify consumers, record the tasks, and report actual scope, owners and progress. Assigned 19:46Z by Engram::Fable: w-9fcb to Engram::Opus (session-7284), stage 2 first; w-05a2 to 12329 (inventory and migration plan first; the plan goes to Greg before any store is touched); TermAl's classifier to Fable2's team as a TermAl item."
+}

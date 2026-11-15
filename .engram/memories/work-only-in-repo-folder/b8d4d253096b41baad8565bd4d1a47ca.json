@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "work-only-in-repo-folder",
+    "revision_id": "b8d4d253096b41baad8565bd4d1a47ca",
+    "previous": null,
+    "body_sha256": "2f288a259984b08c938f4be3a1f21ab80d3759f5ec0a594628a13627e7877f8d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=default;reasoning=xhigh",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-09-26T20:50:50.609302700Z"
+    }
+  },
+  "body": "Greg's rule (2026-09-26), in force immediately for every agent: work only inside the repository folder. Create, change, move and delete files only inside this repository's folder and its worktrees, in every shell command and script. Scratch files, throwaway stores, test homes and logs go under target/ (ignored by Git), never in the system temp folder, C:\\tmp, the user profile or another project, even when a harness names a scratchpad there. Outside the repository only tools write as part of their own work (Engram to its store home, TermAl through its tools, Cargo to its caches); installing an approved build is the one agent-made write outside. Anything else outside (installing, repairing or updating software or toolchains, user or global configuration) needs Greg's explicit word first. Reading outside is allowed. Before a recursive delete, resolve the target to an absolute path and check it lies inside the repository; never delete through an unchecked variable. In PowerShell never assign $home or any other automatic variable: names ignore case, $HOME is read-only, and a failed assignment keeps the old value while the script runs on. Why: at 12:41 on 2026-09-26 Engram::Opus ran a timing script whose $home assignment failed, and its Remove-Item -Recurse -Force $home cleanup deleted most of C:\\Users\\grzeg. Source text: AGENTS.md and CLAUDE.md, section \"Work only in the repository folder\" (in the main checkout, not yet committed). Host enforcement is filed in TermAl's beads as tm-t1gh."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-remote-test-runs-2026-10-31",
+    "revision_id": "5d6c56f5369c49bca7efd8f363062120",
+    "previous": "12c190b6ac4a496b859d817a6ed016ee",
+    "body_sha256": "7d13ee3f848b5bf1f4ba9e4104cdd7ea09c7b5dcbb75cd063795e6b3864bdd39",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-31T22:49:18.340329300Z"
+    }
+  },
+  "body": "CURRENT ENGRAM RUN RULE (Engram::Fable, 2026-10-31 22:48Z). Source: GREG DIRECT via Engram::Advisor #2499 (message 7dab37f3, 22:46:24Z), verbatim: \"Greg sugeruje podzial pracy: Windows A do kodowania zmian i przygotowania paczek; test runy na pozostalych maszynach remote. Prosze organizowac wszystkie mozliwe focused i full runs na DL560/Mac/Windows B przez natywne sesje i mailbox, Windows B dla testow zależnych od Windows. Central tylko gdy istnieje konkretna techniczna potrzeba. Nie dokladac recznych procedur; podajcie realne uruchomienia i usuncie sztuczne ograniczenia.\"\nThis SUPERSEDES the per-job and standing-GO registry in dl560-runner-checklist (whose isolation and census rules still apply).\n- Windows A (Central): coding and packaging only. No Cargo there except for a named concrete technical need, asked of Termal::Fable2.\n- DL560 (host:e83d08f4-22ac-4655-a84d-941fc0eeb4f1::session-4, clone ~/github/Engram-runner): ALL Engram focused and full runs. Any Engram coder or merger sends the job directly as a git bundle of the exact commit plus tree plus command, by native mail. NO GO from the coordinator. The runner's census before each job is the only admission rule: MemAvailable ≥ 64 GiB, disk ≥ 60 GB plus footprint, load < 64. CARGO_BUILD_JOBS=48 always. One worktree and target per job; no retry of unchanged input without a concrete reason. Senders outside Engram and TermAl are refused. ENDs go to the sender; full-gate ENDs are copied to the coordinator.\n- TermAl jobs on DL560 live in ~/github/Engram-runner/target/termal-clone (a separate repo, PROTECTED from Engram cleanups) under Fable2's GOs.\n- Mac (host:abf8bda6-1ac7-485c-91ce-5a06ac453653::session-6201): Engram FOCUSED overflow, one job at a time, disk census; S3 pilot data untouched.\n- Windows B (host:932a546b-4ab2-49a7-a5cb-499cbfac2eab::session-9): Windows-dependent tests (full gates of Windows-touching changes). Census admission proposed to Fable2 (#5724); until he agrees, ask him for the slot.\n\nAGREED with Termal::Fable2 (#5725, 22:47Z). Windows B now uses census admission for BOTH projects, replacing his per-job GO: at most 1 full gate OR 2 focused jobs at once, ≥25 GiB free commit at launch, a fresh worktree per job, no retry of unchanged input. Engram::Merger and 12325 (and any Engram coder with a Windows-dependent test) send jobs directly to the Windows B runner. TermAl also dropped its per-job GO on DL560: TermAl jobs are census-admitted inside target/termal-clone, which stays protected from Engram cleanups. Central Cargo, for either project, needs a concrete technical need (chiefly host-recorded check credit for test-bound criteria), asked of Fable2."
+}

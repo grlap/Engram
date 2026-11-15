@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remote-tests-via-project-sessions-2026-11-06",
+    "revision_id": "9aebe795f55b43bd8383da73c3d462af",
+    "previous": null,
+    "body_sha256": "6ec14e7a6b16d97274772419b43916a2d2c5439dde16779251755cae9e9b1a79",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T05:31:19.427280700Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 05:30Z, relayed by Engram::Asistant (mailbox 43498a6e #356, message e1f5c4b4). Verbatim: „po to mamy remote sesje aby z nich korzystac nie chce odpalania jakys testow na dziko, jak robil to zespol przez SSH”. Earlier, #352: „Mozemt utworzyc remote sesje questiki czy phoenixa. Nie chce aby agent odpalal cos cross z innego repo.” Asistant's summary of the requirement: tests on a remote host are run by a properly registered TermAl session of THAT project on the right host, in its own worktree, by the supported route, with real registration and result. No ad-hoc test runs over SSH, no cross-project runs, no workarounds. Work out the local store on the remote host versus K3 transport for the purpose at hand; don't assume full K3 is needed if the ordinary local session path suffices. Create project sessions on DL560 the supported way if they don't exist. Concrete runs and ids, not just plans. EO/source_id stays the priority.\nApplies to both projects. Fable's reading: the Linux proof goes through a Questly session on DL560 using DL560's local route (Fable2 #6673 discussion), not through SSH and not through cross-repo launcher invocations."
+}

@@ -1,0 +1,14 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-autonomy-2026-10-27",
+  "head": {
+    "state": "active",
+    "chain": [
+      "3e89958ec6564eccb50320f4b0780130",
+      "318d53eb61394cbc8799b8ca910598b4",
+      "03f9cd33e99f4a748d94efa1f7b69788",
+      "0aa47d34722a4c4fbf331f0eb3e2e27e"
+    ]
+  }
+}

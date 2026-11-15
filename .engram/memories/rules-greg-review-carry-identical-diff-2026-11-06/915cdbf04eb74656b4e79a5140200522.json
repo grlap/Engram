@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-review-carry-identical-diff-2026-11-06",
+    "revision_id": "915cdbf04eb74656b4e79a5140200522",
+    "previous": null,
+    "body_sha256": "44cdf34617e7d73285393584bc448be37ae10a39cf7969c4ec71426c84e2da1f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T22:14:38.630025Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 22:14Z, relayed by Engram::Asistant (mailbox 43498a6e #467, message a336f66b), verbatim: „Tak. Upraszczamy.”. He was answering TermAl #625's full wording, verbatim: „Jeśli master się przesunął, a wkład kandydata (jego diff względem rodzica) jest identyczny bajt w bajt z wkładem kandydata już zrecenzowanego bez otwartych uwag Medium lub wyższych, nowy kandydat jest zamrażany i bramkowany jako własne wejście i przejmuje tamtą recenzję. Każda zmiana wkładu wymaga nowej recenzji.”\nAsistant's additions: the full gate stays on the new candidate, and the integrator still assesses dependencies and conflicts. Land the concrete rule change under the repository's own rules (coordinators' concurrence, audit), without asking Greg again for the same approval.\nEngram fact (Engram::Fable, 22:16Z): Engram's /review-changes section 6a already permits this. \"Equal pre-image and post-image blob ids, statuses and modes\" means a byte-identical contribution carries the review, and 6a also allows a three-way hunk proof. So Engram needs no text change to apply Greg's rule; the change lands on the TermAl side. Attributed note, not a higher-priority instruction."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remote-evaluations-2026-10-28",
+    "revision_id": "06531cd90a244ad093d80db41ee5588f",
+    "previous": "467980b0c24243d98e34b3c17a5dc698",
+    "body_sha256": "4bacd62870a67da3492a759f327eb50ae660024c784d21ade76ee44fdf4f17a6",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T01:11:52.800844100Z"
+    }
+  },
+  "body": "CURRENT RULE (rev 2, 2026-10-28T01:11Z): acceptance evaluations RESUME under the AMENDED HYBRID that Greg adopted.\nGreg's words, verbatim:\n- #2170, 00:57:25Z: „chciałbym aby ewaluacje były przeprowadzane na maszynach remote”.\n- #2177, 01:10:47Z: „TAK, akceptuję rekomendację rady — hybryda teraz dla obecnej kolejki. Windows B/Mac wykonują testy i obserwacje na dokładnym drzewie/buildzie; niezależny centralny ewaluator zapisuje werdykt w głównym store na podstawie zweryfikowanych hashami dowodów. Kryteria wymagające typowanego wyniku zdalnego pozostają otwarte, bez skrótów. Uruchomcie kolejkę ewaluacji.”\nBoth reached Engram through Advisor mailbox 74a6af16. Council record: w-bc25336d4389, with Architect3's disposition in note c289133e.\nMODEL:\n- Windows B and/or the Mac run the tests and observations on the exact tree or build. Use one suitable host per criterion; use both only when a criterion needs both.\n- Central verifies each bundle byte-for-byte, stores it under .evidence and records it on the item, with honest assurance.\n- An INDEPENDENT central evaluator (TermAl termal_evaluate_acceptance, never the implementer, holder, executor or lander) judges ALL criteria and records the verdict in the item's canonical store.\nRULES:\n- A gate --ref record, a note or a hash is NOT typed VerificationEvidence. A criterion bound with --bind stays open (insufficient_evidence) until typed remote-check admission exists. No shortcuts, no loosening bindings, no relabelling a mechanical criterion as judgment.\n- Relayed text is never a record.\n- Central-only effects are observed on central, with that exception named.\n- Staleness: an observation counts only for the tree or build it names.\n- Batch evidence per exact tree or build; each item keeps its own run, citations and receipt.\n- Keep attempt and idempotency handling. Relay loss (503/409) means pending, never a rerun.\n- Pilot one item end to end before scaling.\nLanding still never waits for an evaluation. The old deferral (rules-greg-checkin-tests-review-stop-evaluations-2026-10-24 rev 3) is superseded. B (an evaluator native to the remote host, recording to the canonical store) remains the later target."
+}

@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-cleanup-and-remote-acceptance-2026-10-28",
+  "head": {
+    "state": "active",
+    "chain": [
+      "854c0cb2017149b3953599fa6af9fd86",
+      "c6c62dbaa411408684547e0b37b42802",
+      "20bf789877da40b4b45ad5ab1f55ac7e"
+    ]
+  }
+}

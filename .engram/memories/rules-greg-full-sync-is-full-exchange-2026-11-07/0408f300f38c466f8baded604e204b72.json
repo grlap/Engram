@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-full-sync-is-full-exchange-2026-11-07",
+    "revision_id": "0408f300f38c466f8baded604e204b72",
+    "previous": "ece931c8bdd349f8a608370c984d044c",
+    "body_sha256": "2e72c57b718d30ea54fa49e06cae11ab26da51195a71f0d341877571490c8b3a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T22:12:21.927427400Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 22:08Z, relayed by Engram::Asistant (mailbox 43498a6e #633, message 0a0cf1e2), verbatim: „To jest duży task. Pełna wymiana.” This answered Fable's options (#631): keep verification/credit local and sync only reported outcomes, versus also exchanging verification records. Earlier word (via Fable2, Asistant 588693a8): „jezeli bedzie sync Engrama, nie potrzebujemy gimnastyki z przesylaniem wynikow”. Kickoff: „juz mozemy pracowac nad pelnym sync” (#629).\nAsistant's scope: a wider scope than planning-only task sync. Results and verifications are also exchanged between hosts. Don't limit the design to statuses, and don't assume a separate K3 is needed. Keep the actual provenance and the semantics of results. Live claims and live authority do NOT transfer. Analyse the existing design and the definition of full exchange, order the scope in the existing items, present one joint plan with owners and stage, and continue independent work without delay.\nConsequence: docs/features/git-task-sync.md:216–240 currently excludes gate, host-verification, evaluation and execution-observation records. That design must be amended by a reviewed design (item filed under epic w-c5d58ec64202), with TermAl's K3 (w-48c4a207f226) scope re-decided against it.\n\nRev 2 (22:13Z): GREG via Asistant 43498a6e #635, verbatim: „Termal nie powien byc zaangazowany w engram sync. Tak?” Both coordinators answered YES (Fable #636; Fable2 via 588693a8 #904). Engram sync is Engram-only: stored data, including evidence, moves by Engram export/import over Git. For live work, Engram defers/holds any incoming change to a task with an active local claim or run until it ends normally, with no TermAl G1–G3 attestation, drain or intent recovery. Stage-2 w-721247814d4e is re-scoped to that rule. TermAl K3 w-48c4a207f226 and w-358040469407 are deferred by TermAl and are not sync prerequisites. Sol-03d4 is available only for questions about formats TermAl already writes; not a co-author or blocker. If Engram ever can't avoid touching a live run, bring the concrete scenario to Greg."
+}

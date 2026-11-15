@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-host-workarounds-3",
+    "revision_id": "e353b82dfce843e5901ef8af9c4db680",
+    "previous": null,
+    "body_sha256": "dee6a4120651ea4d7483b4c5da5a64792eabba69844d0e6be1f07dd66158cdaf",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-08T17:41:09.411447400Z"
+    }
+  },
+  "body": "CANONICAL, continued from termal-host-workarounds and termal-host-workarounds-2: live TermAl host workarounds for Engram agents. Each entry names the item whose fix retires it.\n\n2026-11-08 (TermAl w-f7c5c15cf8b0, p1): messages in the DL560 runner's Fable2 authorization mailbox f86633d5 don't wake the runner (the send returns \"delivered to mailbox; automatic participation does not authorize an executor wake\"). Relay-mailbox mail and background-task exits do wake it. Workaround: after any exception grant in f86633d5, send one line to the runner's relay route (termal_send_to_session to host:e83d08f4-22ac-4655-a84d-941fc0eeb4f1::session-4). Fable2 has no direct relay route, so Fable or the Merger sends it for Fable2's grants. The runner reads f86633d5 once on each wake and does not poll. Retire when w-f7c5 is resolved.\n\n2026-11-08 (Greg via Asistant #678): no agent watches running tests. No status polling or sleep loops, on mailboxes either: run the job so the turn ends and a task exit or mail wakes the session."
+}

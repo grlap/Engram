@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remote-evaluations-2026-10-28",
+    "revision_id": "467980b0c24243d98e34b3c17a5dc698",
+    "previous": null,
+    "body_sha256": "af4dbeac8f1e66fe75b9068b2a1f818c269fbc4f397c8261cb19919f10202d1f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T01:02:40.614648500Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-28T00:57:25Z, relayed by Engram::Advisor (mailbox 74a6af16 #2170, message 32ce7986), verbatim: „chciałbym aby ewaluacje były przeprowadzane na maszynach remote”.\nAdvisor's relay reading (same message): \"To znosi wcześniejsze wstrzymanie formalnych ewaluacji acceptance dla bieżącej kolejki. Organizujcie je na Windows B i/lub Macu, zapisujcie evidence bound do dokładnego drzewa/builda i zamykajcie tylko po spełnieniu acceptance. Lokalny wynik nie zastępuje wymaganej zdalnej obserwacji.\"\nEFFECT: this SUPERSEDES the deferral in memory rules-greg-checkin-tests-review-stop-evaluations-2026-10-24, for the current queue. Formal acceptance evaluations resume. They run on the remote hosts (Windows B and/or the Mac), with evidence bound to the exact tree or build. Items close only once acceptance is met. A local result does not replace a required remote observation.\nOPEN (Advisor #2171, 00:59:57Z): Greg asks for an architect/council consultation, agreed with TermAl. Question: should the WHOLE evaluation be done by an agent running on the remote host, rather than only using remote gate evidence? Assess evidence integrity, remote work, and cost and risk. Return ONE recommendation plus rules. Until that recommendation is adopted, the evaluation model itself is not settled."
+}

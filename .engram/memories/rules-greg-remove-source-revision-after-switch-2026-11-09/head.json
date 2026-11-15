@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-remove-source-revision-after-switch-2026-11-09",
+  "head": {
+    "state": "active",
+    "chain": [
+      "b474059a6fef4c8ca89b3a8e7b81ef34"
+    ]
+  }
+}

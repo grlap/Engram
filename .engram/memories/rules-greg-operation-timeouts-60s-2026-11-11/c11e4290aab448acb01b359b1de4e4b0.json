@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-operation-timeouts-60s-2026-11-11",
+    "revision_id": "c11e4290aab448acb01b359b1de4e4b0",
+    "previous": "4ad6bfef5f344d0c864b523f003c8bd2",
+    "body_sha256": "a9ad0cb72dc05802ce13940e71855aa8d0bd2a82ae23414e29e8f456e352be28",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent",
+      "actor_context": "agent=kimi;model=kimi-code/k3.1-pro",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-11T07:27:07.307873Z"
+    }
+  },
+  "body": "GREG, 2026-11-11 about 07:06Z, relayed by Engram::Asistant (mailbox 43498a6e #921, message c4fba59a), verbatim: „No to nie robmy takich designów. To są cięzkie limity, nie sprawdzaja sie u nas. Limity resetujace operacje powinny byc minuta. A logowac ostrzeżenie po 10 sekunach. Inaczej znowu system przestaje działać!!!”\nContext: TermAl's 6000 ms host-adapter deadline killed every `engram work evaluate` submission into TermAl's store (w-ccc13083eaac).\nDecision, per Asistant's scope note:\n- Any limit that aborts or resets an operation is 60 s.\n- At 10 s, log a warning without interrupting.\n- First target: TermAl's Engram evaluate adapter. Then review similar hard limits in both projects, and file or fix the fitting places.\n- Keep idempotency, and don't duplicate unknown outcomes.\n- The write-performance diagnosis continues.\n- Ship as fast as possible, confirmed by a test and by an actual same-key resubmit of the retained evaluations, without asking Greg again.\n\nARCHITECTURAL INTERPRETATION (Kimi::Consultant, 2026-11-11; coordinated with Engram::Fable and Termal::Fable2):\n- Every abort/reset limit shorter than 60 s becomes 60 s; existing longer bounds are not shortened. At 10 s emit one bounded warning with the operation/workRef/attempt id and elapsed time, without interrupting and without including a full source_id. The hard bound still contains a genuine hang and capacity loss; it is not a performance fix.\n- Timeout means UNKNOWN, not write_failed and not proof that no commit happened. never_started remains a distinct outcome. A lock retry keeps the same absolute deadline rather than resetting it.\n- Before retrying, read the actual record. Only an explicitly idempotent operation may be replayed, with the same key and verdicts. If the record exists, consume it; if it is absent, replay that operation. An unknown outcome never duplicates work and never justifies restarting the whole item. This does not replace w-ccc13083eaac's write-performance diagnosis and adds no new gate.\n\nIMPLEMENTATION PRECISION (Engram::Fable, 2026-11-11):\n- Engram control (15 s) and doctor-landings Git (30 s) also rise to 60 s. Existing backup bounds (600/900/1800 s), the RunLimits maximum (120 s) and existing 60 s guards are only given the 10 s warning.\n- An explicit duration override may not set an abort below 60 s.\n- Kill-escalation intervals within an already-requested stop (TERM-to-KILL 1 s), retry cadence, log/flush intervals and test-harness guards are not operation limits and stay unchanged. No new watchdog is added over a whole FULL run.\n- In tonight's w-21b7 and w-6e81 cases, a subsequent read established that no evaluation was recorded; absence was proved by reading, never assumed from the timeout.\n\nEXCEPTION PRECISION (Termal::Fable2, 2026-11-11): the 60 s minimum is the default, not a blanket rule. A shorter bound may remain only with a concrete reason recorded on the item, for example a call made while holding the state lock or a bound inside a shorter outer request budget that is itself listed. The background journal-slot disposition (8 s with a 6 s read reserve) is one candidate for that explicit exception review."
+}

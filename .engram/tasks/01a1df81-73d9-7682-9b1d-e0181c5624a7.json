@@ -1,0 +1,27 @@
+{
+  "id": "01a1df81-73d9-7682-9b1d-e0181c5624a7",
+  "external_ref": null,
+  "title": "Give every task-sync exchange driver a production route to finish a committed step whose origin witness was left pending",
+  "outcome": "Give every task-sync exchange driver a production route to finish a committed step whose origin witness was left pending",
+  "acceptance": [
+    "after a committed exchange step returns an error with its private origin witness still pending (post-commit check or witness write failing), retrying the same public operation (delta publish and publish retry, incoming delta apply, planning-successor apply) finishes that witness without a second dispatch and then proceeds, with driver-level tests for each",
+    "the 'previous origin exchange step committed; retry that exact step' refusal names the pending request or operation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

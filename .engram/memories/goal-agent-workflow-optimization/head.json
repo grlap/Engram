@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "goal-agent-workflow-optimization",
+  "head": {
+    "state": "active",
+    "chain": [
+      "80ce2c517c7349e39bb3d92abd5ce34f",
+      "d394185076244c6cbac44ee581ce6cb2"
+    ]
+  }
+}

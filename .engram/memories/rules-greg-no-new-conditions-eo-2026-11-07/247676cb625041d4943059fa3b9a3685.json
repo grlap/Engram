@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-new-conditions-eo-2026-11-07",
+    "revision_id": "247676cb625041d4943059fa3b9a3685",
+    "previous": null,
+    "body_sha256": "117e514138d4b464a060e7ab2861c70ad977975b4e36bfbb1a06f1fa65933805",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T06:50:04.085541100Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 06:50Z, relayed by Engram::Asistant (mailbox 43498a6e #550, message d4c01258), verbatim: „Zadnych nowych warunków”. Asistant's scope: this covers ALL of Unified EO. No new credit conditions, extra blocks, exceptions or non-agreed requirements during implementation, integration or review. Deliver the previously agreed simple scope, remove any non-agreed blockers found, and complete code and tests before heavy validation. Record it and pass it to the implementers.\nAgreed scope: credit = host-observed run of the declared command as the turn's first tool action (option B) + declared result artifact valid as the verdict + full source_id before == after (dirty allowed) + the existing item/claim/root/store identity checks. Nothing else. Companion rules: rules-greg-no-credit-blocking-rules-2026-11-07, rules-greg-code-whole-feature-then-heavy-tests-2026-11-07, rules-greg-eo-credit-source-id-equality-2026-11-06, rules-fable-no-unasked-conditions-2026-11-06.\nFOR REVIEWERS: a review finding that would ADD a condition to credit is out of scope unless it fixes a real defect in the agreed rule; raise it with the coordinator, not as a blocker."
+}

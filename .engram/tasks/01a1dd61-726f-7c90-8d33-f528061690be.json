@@ -1,0 +1,71 @@
+{
+  "id": "01a1dd61-726f-7c90-8d33-f528061690be",
+  "external_ref": null,
+  "title": "Let task-sync import accept updated activity notices and notes on existing tasks, so routine two-way exchange doesn't stall",
+  "outcome": "Let task-sync import accept updated activity notices and notes on existing tasks, so routine two-way exchange doesn't stall",
+  "acceptance": [
+    "After two hosts exchange a task that carries activity (exported with --origin-machine) or shared notes, a later claim, release, completion or new note on one host, exported and merged, imports on the other host as an attributed update of the retained notices or notes, instead of being held as unsupported_fields, and the exchange baseline can advance",
+    "Removing or rolling back a retained entry, and conflicting identities, still refuse as today",
+    "A host that switches between an aliased export and a planning-only export gets a documented, non-silent outcome",
+    "Behaviour tests cover update, unchanged, removal and conflict on a two-host round trip"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "3018bf81586f49cf9cab5308fb94de37": {
+        "activity_id": "3018bf81586f49cf9cab5308fb94de37",
+        "task_id": "01a1dd61-726f-7c90-8d33-f528061690be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3018bf81586f49cf9cab5308fb94de37"
+      },
+      "4a80bce354524b19800faa6c6c577e9a": {
+        "activity_id": "4a80bce354524b19800faa6c6c577e9a",
+        "task_id": "01a1dd61-726f-7c90-8d33-f528061690be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "9531f80e3a95404ab8e778fe4e33b487"
+      },
+      "9531f80e3a95404ab8e778fe4e33b487": {
+        "activity_id": "9531f80e3a95404ab8e778fe4e33b487",
+        "task_id": "01a1dd61-726f-7c90-8d33-f528061690be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9531f80e3a95404ab8e778fe4e33b487"
+      }
+    }
+  }
+}

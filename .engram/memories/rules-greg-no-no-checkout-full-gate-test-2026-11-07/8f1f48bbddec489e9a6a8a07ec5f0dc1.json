@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-no-checkout-full-gate-test-2026-11-07",
+    "revision_id": "8f1f48bbddec489e9a6a8a07ec5f0dc1",
+    "previous": "33a668bccac1487a8ad37c15a14c4312",
+    "body_sha256": "66cf15f0a7b2bcb71462318c1d6771c611977425ab6796e464c23bc98c7640a6",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T09:28:12.370039800Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 09:23Z, relayed by Engram::Asistant (mailbox 43498a6e #577, message 05eb3a22). Verbatim: „NIE NIE NIE, usun ten test!! MY NIGDY NIE BEDZIEMY TAK PUSZCAC PELNYCH GATOW TO ABOMINACJA!” Asistant's scope note: it concerns TermAl's full-gate test that creates a clone without checkout, which shows about 2051 phantom deletions. Delete it with no artificial replacement, as part of the joint EO plan. Applies to both projects: never run full gates that way (on a no-checkout clone), and never add such a test. Forwarded to Termal::Fable2 (ebe242f7, 09:24Z).\n\nRev 2 (09:28Z): Kimi::Consultant (mailbox c15db92c #45, message 4186da9c) quotes Greg's latest: „THE TEST IS JUST WRONG / WE NEVER RUN GATES LIKE THIS / ONLY on clean worktrees, not dirty ones”. The test is TermAl src/tests/windows_launch.rs native_windows_launch_supervises_real_focused_launcher_and_recovers_run. --no-checkout leaves an empty working tree, so source_id correctly sees about 2051 deleted tracked files. Scope (Kimi to Fable2): delete the whole function plus any fixture-only dependencies it leaves orphaned, with no replacement and no new gate. TermAl commit 0ed9effb, which only drops --no-checkout and keeps the test, does NOT carry out the decision. Engram practice: gates run only on clean worktrees, which our test-ref clean checkouts already are."
+}

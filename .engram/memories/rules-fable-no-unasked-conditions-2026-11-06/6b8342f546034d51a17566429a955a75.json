@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-fable-no-unasked-conditions-2026-11-06",
+    "revision_id": "6b8342f546034d51a17566429a955a75",
+    "previous": null,
+    "body_sha256": "c8cf14639bebb5ddd3cd2b624a00046ea1c98c73fea0dfc07ab3a95c9ba7c3ce",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:22:47.528518700Z"
+    }
+  },
+  "body": "SELF-COMMITMENT by Engram::Fable, 2026-11-06 16:23Z, after Greg's question (Asistant #393): „czemu zespol ciagle dodaje niepotrzebne, ciezkie checki, sporo uzgodnilismy wariant ZNOWU tworzymy rozwiazanie ktore nie bedzie sie skalowac”.\nRoot cause: in the 05:50Z option-B text for Greg I included TermAl's design condition \"the watcher can only disqualify\" without marking it as an addition beyond Greg's before/after. Greg's „B” then covered it. TermAl implemented per-scope watcher classification and .git/info comparisons, and that led to the v2 scopes request. All of it was removed at 16:20–16:22Z.\nRule for myself (no new gates or procedures):\n- When presenting options to Greg, state only what he asked for. Mark any extra condition explicitly as „DODATEK — czy chcesz?”; without his „tak” it does not go in.\n- Don't let conditions that aren't in Greg's decision into designs, contracts or code. Check proposals from workers and TermAl against his literal words before concurring."
+}

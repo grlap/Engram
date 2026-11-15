@@ -1,0 +1,28 @@
+{
+  "id": "01a1e01a-0759-7f52-848f-941c55cc8964",
+  "external_ref": null,
+  "title": "Let a complete task-sync import take another host's removal of a task this host published since its last import",
+  "outcome": "Let a complete task-sync import take another host's removal of a task this host published since its last import",
+  "acceptance": [
+    "A complete import (rewritten head after a rebuild, explicit --basis or --rebuild) treats a local task missing from the folder as published, and so as another host's removal, exactly when a commit since the last import held its file, including merges decided against either parent, a merge not yet committed, a head recorded without a source, and incremental exports since that import; a task no commit ever held stays this host's own and owed to the next export",
+    "A removal it cannot read with certainty, such as one behind a shallow boundary, refuses by name with the fetch that restores the history instead of republishing the task",
+    "A refused (execution_history) removal joins the baseline with the local document and stays held; an admitted one retires; tests cover each case above"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

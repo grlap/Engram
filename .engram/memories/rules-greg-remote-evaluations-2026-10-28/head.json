@@ -1,0 +1,14 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-remote-evaluations-2026-10-28",
+  "head": {
+    "state": "active",
+    "chain": [
+      "467980b0c24243d98e34b3c17a5dc698",
+      "06531cd90a244ad093d80db41ee5588f",
+      "66211423c0ee4cca9349beb85f6ec0ef",
+      "5c47da7116b04f1c9a98500488f73fa1"
+    ]
+  }
+}

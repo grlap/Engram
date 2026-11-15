@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-engram-termal-data-exchange-2026-11-15",
+  "head": {
+    "state": "active",
+    "chain": [
+      "5d41688cd7aa4035aa7565be012431cb",
+      "c357f652bcf442b595dec9c5e90853e3"
+    ]
+  }
+}

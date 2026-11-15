@@ -1,0 +1,27 @@
+{
+  "id": "01a1de19-c04c-7043-82c9-af7b7eca0b17",
+  "external_ref": null,
+  "title": "Refuse task-sync folder staging that cannot rename into the data folder before the folder head is recorded",
+  "outcome": "Refuse task-sync folder staging that cannot rename into the data folder before the folder head is recorded",
+  "acceptance": [
+    "When the data worktree's Git administration directory is on a different volume from the data checkout, an export refuses by name before recording its folder head, or stages on the checkout's volume, and never leaves a recorded head whose publication cannot finish"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

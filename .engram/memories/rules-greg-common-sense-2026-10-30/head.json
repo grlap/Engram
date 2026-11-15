@@ -1,0 +1,18 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-common-sense-2026-10-30",
+  "head": {
+    "state": "active",
+    "chain": [
+      "190e04b6bb1745fbb8eaa314966fa8c2",
+      "25b6f600db034d82b835b2b451372223",
+      "47b89ccd0e894c5eaeb1a86f63bd42eb",
+      "dd9c27a983f34adba82161ad3e83003e",
+      "d646e77fc0544cb88a09f847eef7fbdc",
+      "494bd3c6fe9744e9990ff52c2412784e",
+      "771b3312577c46ad867305c1c0afd3fa",
+      "c91ddc20ca1a44e0b76ba54e63c8c9a0"
+    ]
+  }
+}

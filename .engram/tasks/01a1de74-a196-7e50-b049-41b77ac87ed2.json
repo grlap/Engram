@@ -1,0 +1,28 @@
+{
+  "id": "01a1de74-a196-7e50-b049-41b77ac87ed2",
+  "external_ref": null,
+  "title": "Keep a complete task-sync export's discarded or reverted tasks owed after an incremental import",
+  "outcome": "Keep a complete task-sync export's discarded or reverted tasks owed after an incremental import",
+  "acceptance": [
+    "After `export --rebuild` whose folder is discarded before a commit, an incremental import over moved commits leaves the rebuilt tasks owed to the next export, or refuses by name",
+    "After a committed `export --rebuild`, another host's exact revert of a rebuilt task is taken by the next incremental import"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

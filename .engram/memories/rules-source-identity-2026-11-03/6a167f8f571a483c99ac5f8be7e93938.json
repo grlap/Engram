@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-source-identity-2026-11-03",
+    "revision_id": "6a167f8f571a483c99ac5f8be7e93938",
+    "previous": "892c4fee8fe04d3ebd92ad7c6a421530",
+    "body_sha256": "7a18c1ebaf075d1c31ef847f3c00a5ba7c1df1e2fc32258ddd056f5a3ae36734",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:25:59.862051800Z"
+    }
+  },
+  "body": "CURRENT SOURCE IDENTITY AND EO CREDIT (Engram::Fable, rev 6, 2026-11-06 16:27Z, written on Greg's „prosze o sprawdzenie memory, dokumentow ZAPISANIE POPRAWNEGO WARIANTU” (Asistant #395) and „ŻADNEGO hashowania katalogu .git” (Asistant #396)). Revisions 1–5 are history only; where they differ from this one, this one wins.\n\n1. SOURCE_ID (one rule, one owner). `engram source --root ABS --json`, version 1 and the ONLY version (v2/scopes was dropped 16:22Z). source = `git-commit:<root HEAD>` (tree recorded separately). It reads:\n- root HEAD;\n- a filter-config guard on root and each child;\n- `git submodule status --recursive`, where every row must be ' ' (initialized, at its pin);\n- ONE root `git status --porcelain=v1 -z --untracked-files=all --ignore-submodules=none`, with status.showUntrackedFiles=all and diff.ignoreSubmodules=none;\n- HEAD reread.\nNo `git ls-files`, no file or index listing (rules-greg-no-file-list-2026-11-06), and NO hashing of the .git directory. It runs with Windows core.longpaths=true and core.safecrlf=false; any Git stderr on success means unavailable, never clean. The machine's EOL setting is carried by the pending w-9396 fix.\n\n2. EO OPTION B, native credit for agent-run tests (TermAl w-24a72c898d6d; memory rules-greg-native-clean-before-b-2026-11-06 rev 3). Greg: „B. Naprawdę wystarczy.” (05:52Z) and „EO nie mialo tego uzywac, mialo sprawdzac tylko stan przed i PO wariant B ABY ... TO UPROSCIC” (16:20Z). Credit requires ONLY:\n(a) a clean source_id at commit X, taken before the turn's prompt is dispatched;\n(b) the declared test is the turn's first tool action;\n(c) a clean source_id at the same X after the test;\n(d) the result recorded with the existing verification_record_v1 (plus the existing artifact, identity and claim checks).\nNO watcher condition of any kind, no hashing or comparison of anything in .git, no submodule scope list, no other gate.\n\n3. ACCEPTED LIMITS: a change reverted before the after-test capture; anything git status does not report (hidden index flags assume-unchanged/skip-worktree, edits inside .git); ignored files. These are consistency checks of the same commit, not byte-faithful checkouts.\n\n4. Engram consumers: the launcher calls the owner (d30a4a06); registered verification uses the same Commit lane. TermAl switches to the owner in w-6f42 stage 2 (v1)."
+}

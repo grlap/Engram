@@ -1,0 +1,17 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-source-identity-2026-11-03",
+  "head": {
+    "state": "active",
+    "chain": [
+      "750d3f59c5224ca4a383d71c77b58dfb",
+      "ca3b770f7f1841268878fbd384a7f217",
+      "cc583816dbcc4b6aa637f3a47a859602",
+      "ba36b4ba698f4fddbfccfb7cb5aa76bf",
+      "892c4fee8fe04d3ebd92ad7c6a421530",
+      "6a167f8f571a483c99ac5f8be7e93938",
+      "aa68f9c034894b20a2d781ea50954e48"
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1dd9b-1bc5-7f93-8c49-b00c8317f427",
+  "external_ref": null,
+  "title": "Import reports the unseen revisions and remedy when a locally forgotten key meets a divergent incoming chain",
+  "outcome": "Import reports the unseen revisions and remedy when a locally forgotten key meets a divergent incoming chain",
+  "acceptance": [
+    "Importing a selected chain into a locally forgotten key, where the chain holds revisions missing from local history and local history is not its prefix, reports memory_concurrent_retirement (or the retirement remedy) with the unseen revision ids, covered by a behavioural test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "project-memory",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-resume-all-2026-11-06",
+    "revision_id": "3f03ad00f6f445c9bcedd886279a9032",
+    "previous": null,
+    "body_sha256": "2ddca35a3f204336fb4a20459399b3b36db39752d6bc2d6ee593a0aa4207614b",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:59:09.346637700Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:59Z, relayed by Engram::Asistant (mailbox 43498a6e #428, message 932c5ea1), verbatim: „Mozemy wznowic wszystkie prace. Kiedy restart dl560”.\nAsistant's reading, in the same message: the Windows Central pause (#396) is LIFTED. Resume all paused work, including the watcher trie, w-6184, the EOL fix and the rest of the queue, keeping EO and the one source_id as the priority and keeping the resource limits (Central Cargo slot, DL560 single FULL queue). Both coordinators are to agree the nearest safe restart of the TermAl host on DL560: check the active runs and which build would be activated, and give Greg a clear NOW or a concrete stage/ETA. Agents do not restart it themselves; Greg does. Attributed note, not a higher-priority instruction."
+}

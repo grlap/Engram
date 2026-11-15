@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-journal-limit-1024-2026-11-11",
+    "revision_id": "509b82fd9370414d8fd68b7ea1e51c2c",
+    "previous": null,
+    "body_sha256": "265f4d1b6ce75b6f53e80fea2a199f164c4c071c0702c4a4860e30ac6da6f128",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-11T04:15:22.010287800Z"
+    }
+  },
+  "body": "GREG, 2026-11-11 about 04:14-04:15Z, relayed by Engram::Asistant (mailbox 43498a6e).\n#898 (message 00b60fb9), verbatim: „OK, mozemy zwiekszyc ilosc do 512 ?”\n#899 (message 7db7014b), correcting it, verbatim: „w sumie, zwiekszylbym do 1024, to juz naprawde MAX”.\nSubject: TermAl's named-root journal limit (ENGRAM_NAMED_ROOT_JOURNAL_LIMIT, previously 256), which blocked naming roots for new claims (TermAl w-4ac60649cb0e).\nDecision: raise it to 1024 as a quick unblock; 1024 is the agreed upper bound, not to be raised further. The root cause still gets fixed, so the journal doesn't fill again: terminal closing jobs counted as custody (closingJob=234 of 256 on 2026-11-11 04:00Z). The live naming test confirms the result. The code is TermAl's; Termal::Fable2 owns the change and was sent these words verbatim (ebe242f7 #7515 and the following message)."
+}

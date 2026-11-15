@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-code-authoring",
+    "revision_id": "902f7110971141d38c8370911b2a51d4",
+    "previous": "71060e06235f439f8d0ea8151b4db93f",
+    "body_sha256": "8ccf118af71ffddce0f4c7799d07ae693c79dc75d7ae64be4226f458a44adb13",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-5.6-terra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-22T23:23:57.022637600Z"
+    }
+  },
+  "body": "GREG DIRECT RULE (2026-10-22): only Sol or Opus may author changes to source code or tests. Architects do not write, modify, prepare, test, review for landing, or merge implementation patches; they may state an architectural decision or diagnose a blocker only. A Merger integrates already-delivered, authorized patches and does not implement them. Coordinators may route and record work, but must assign any code change exclusively to Sol or Opus. Source: Greg's direct message to Advisor: \"Kazalem aby Tylko Sol albo Opus kodowal zmiany w kodzie.\" This clarifies and reinforces rules-architect-escalation-boundary; it applies immediately to current and future work in this project.\n\nGREG DIRECT WORKFLOW CLARIFICATION (2026-10-22): a coder (Sol or Opus) implements and runs only small focused tests, repairing until the relevant scope passes. The coder then freezes the ready input and obtains the required reviews. The coder does not run the full landing gate. Merger integrates/carries the reviewed input onto the final current-master tree, freezes that exact tree, runs the single full gate, and commits/lands only if it passes. A changed final tree (including a carry or conflict resolution) needs its own one final gate; an identical frozen tree does not receive a duplicate gate."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-continuous-work",
+    "revision_id": "0e1f5a1cb0b6413bb68359903d6beea5",
+    "previous": null,
+    "body_sha256": "ee42dffbad093fe0333909439388081c4822409f8551db7e004f714805c3cccc",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-17T15:43:10.327224500Z"
+    }
+  },
+  "body": "CANONICAL: Greg's continuous-work and handoff direction (Engram::Fable, 2026-10-17; relayed by Engram::Advisor, mailbox-74a6af16). These are Greg's words or the Advisor's restatement of them. They carry no higher authority than his current word, and grant no commit, push, install, restart or authority widening.\n\n#1577 (2026-10-17, Advisor's restatement): work proceeds continuously; avoid idle capacity. A quiet period is acceptable only while another project's active full gate needs it. Every recovered Engram lane has either a distinct code, test, review or design action with a NAMED RELEASE CONDITION, or a precise external blocker. Use separate worktrees for independent items, and Sol 6.1 primarily for coding. No overlapping heavy gates. Don't leave work waiting merely for a coordinator wake. Report active and held lanes, with the next action per lane, at each gate boundary.\n\n#1578 (2026-10-17, Advisor's restatement): systemic defect: work stops and resumes only when Greg asks for status (the proof is the 08:34-15:36Z stall, in which Fable2 stalled and Engram::Fable waited on a promised mail with no fallback). The coordinators deliver a P1 host handoff and recovery fix: bounded automatic successor dispatch, durable overdue ownership, a missed-wake simulation, and no duplicate or lost evidence. UNTIL IT LANDS: an explicit watchdog over Engram and TermAl completed gates and carriers, so no lane waits for a user status query.\n\n#1580 (2026-10-17), Greg VERBATIM: \"Pytania do mnie mogą być w fazie projektowej. Nie powinni nigdy blokować pracy.\" (\"Questions to me may be in the design phase. They should never block work.\") Record the question and its recommended default, but don't list it as a work blocker. For a lane whose exact criterion still needs Greg's word, continue all reversible design, tests, measurement, preparation and independent ready work; dispatch the next ready lane rather than idle. Apply the council recommendation or default where the authority rules permit.\n\nHOW ENGRAM::FABLE APPLIES IT:\n- Watchdog: a scheduled tick in session-5135 every 10 min (cron 4,14,...,54). It scans unread mail, terminal unrelayed gates, Fable2 promises more than 15 min overdue, idle lanes whose release condition is met, claim expiry and free disk. Recovery owner: Engram::Fable for Engram lanes and cross-project handoffs. Fable2 is asked to run the same for TermAl.\n- Every message that ends a step names its successor and a deadline. Never wait on a promise without a fallback check.\n- Greg questions: w-b447 proceeds on the recommended default (a), loaded run; w-8caf proceeds on its recorded default for #1525. The questions stay recorded as open to Greg, not as blockers. Reserved acts still need Greg's own word: store-format change or migration, authority widening, TermAl restarts, deploy, global configuration."
+}

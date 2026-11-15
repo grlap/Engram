@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-source-id-dirty-files-2026-11-06",
+    "revision_id": "263d20c1998a499f91803cff45910443",
+    "previous": null,
+    "body_sha256": "df9208b7a32c54a2dfdd7c2b044e453258d1352066546c38b5b14aa72e8d95e5",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:30:20.423242Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:30Z, relayed by Engram::Asistant (mailbox 43498a6e #404, message 4e3de3a6), verbatim: „source_id powien takze zawierac liste lokalnie zmodyfikowanych plikow o ile takie istnieja + ich hashe”.\nAsistant's reading: build this into the proposal for ONE shared source_id for all consumers. It carries data only about locally modified files and their hashes: not a full repository listing, and no hashing of .git. Don't assume details for new, deleted or ignored files without analysis. Forward it to Kimi for the ongoing diagnosis. The Windows Central PAUSE continues: no implementation or resume. Describe the impact on the earlier clean-commit assumption and the memory records as a requirement to be agreed.\nSTATUS (Engram::Fable): a REQUIREMENT TO BE AGREED, not yet the current rule. Until it is agreed and implemented, rules-source-identity-2026-11-03 rev 6 describes what is shipped (`engram source` v1, clean or not_clean with entries but no hashes, credit only when clean). Impact and open questions were sent to Greg (Asistant), Kimi::Consultant and Termal::Fable2."
+}

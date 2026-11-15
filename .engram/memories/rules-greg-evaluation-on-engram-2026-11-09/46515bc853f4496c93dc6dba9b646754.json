@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-evaluation-on-engram-2026-11-09",
+    "revision_id": "46515bc853f4496c93dc6dba9b646754",
+    "previous": null,
+    "body_sha256": "89f6a7018d6bfd029ea95ce92a9bf5f399eb43e899b1783953db03ab93f958c3",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T07:08:16.058721200Z"
+    }
+  },
+  "body": "GREG, 2026-11-09 about 07:06Z, via Asistant 43498a6e #748, verbatim: „Wlącz dla Engram.” Scope per Asistant: Engram only, independent evaluator, other projects unchanged. Applied by Engram::Fable at 07:07:38Z on the Central store, project github.com/grlap/Engram: allowed_modes [independent_session], mechanical_basis asserted, require_source_freshness false, epoch 8, policy 44a3d711. Engram has no store on any other host. So on Engram `done` needs an independent evaluation, and where this differs, it replaces \"evaluation is off\" in rules-greg-control section 3, rules-greg-broken-evaluation-not-blocker-2026-11-01 and rules-authority-and-landing for this project only. Other projects stay off until his word. Basis: proof w-46e8594c7e7e, one run each way on a test-bound criterion."
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1e00d-9c7f-78b3-ac33-ef58960993ec",
+  "external_ref": null,
+  "title": "Keep a task-sync push start's dispatch when the process stops after its acknowledgement and before the push",
+  "outcome": "Keep a task-sync push start's dispatch when the process stops after its acknowledgement and before the push",
+  "acceptance": [
+    "A PushStarted whose committing process stops after the private witness acknowledged it but before its caller pushed is still pushed exactly once by a later exact retry or step, proven by a test that kills or fails the process in that window on the original and the resolved-retry paths",
+    "A second push is never sent for a start whose push already landed, including after a power loss that rolls the private witness back on Windows, or the case is documented as an accepted limitation with its consequence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-task-sync",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

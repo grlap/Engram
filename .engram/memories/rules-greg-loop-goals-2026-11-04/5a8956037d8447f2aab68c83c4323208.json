@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-loop-goals-2026-11-04",
+    "revision_id": "5a8956037d8447f2aab68c83c4323208",
+    "previous": null,
+    "body_sha256": "8887f66e7494aff7633c439a55dd0cd3af5ee1ecba3bf5573609d25e8d19cab4",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-04T21:34:04.959254Z"
+    }
+  },
+  "body": "Greg's direction as relayed by Kimi::Consultant (mailbox c15db92c #14, message 37e5e362, 2026-11-04 21:33Z), Kimi's paraphrase, not his verbatim words, and not a commit, push or restart authority. Principle: coordinating four machines and agents is hard; don't assume a human designs optimal rules up front; first a complete, however rough, working loop, then a measurable goal and the system optimizes itself.\nDirection: (1) finish simple EO w-633b5cacc42a and ordinary test, evaluate, done on Windows and Linux before re-enabling; (2) remove replaced mechanisms, no more d6 or handshakes: Git is the source, a registered run is execution and result, the evaluator judges the criterion, Engram keeps evidence current, TermAl does execution and federation; (3) measure the cost of a landed change: tokens, time, Greg's interventions, false refusals, duplicate runs, messages, queue age; (4) small Sol and Opus delegations, one worker plus parent, review on a freeze, the coordinator only for exceptions; (5) federation as simple exact-commit, bundle, mailbox and result transport, no new bureaucracy.\nGoals: 5 ordinary changes end to end on 2 systems with no workaround or false refusal, negatives still refused; replaced procedures removed and fewer states; a baseline and then about 30% less cost without weakening tests or review; Greg receives a result, a blocker or a decision, not ACKs.\nReporting: don't assume Greg watches agent sessions; updates for him go to Engram::Asistant, which aggregates. Technical status notes and peer mailboxes stay."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-windows-b-off-2026-11-14",
+    "revision_id": "f2612181b5324aef8a5df7dfacd9589b",
+    "previous": "79cfa57173844f77a824370857e34255",
+    "body_sha256": "1a1d7d4eee7bf9318f767906639cffd4957fc390073c6cd57f4b720f8d127854",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T00:10:00.552539500Z"
+    }
+  },
+  "body": "GREG, 2026-11-14, relayed by Engram::Asistant (mailbox 43498a6e).\n- About 22:33Z, #1221, verbatim: „Windows B jest wylaczony, chyba ze bardzo potrzebuja. sa problemy z pamiecia, nie jest wiarygodny”.\n- Earlier, via Fable2: „Windows B nie ruszam, ze wzgledu na problemy z pamiecia”.\n- Later, #1222: „moge zaktualizowac WIndows B i zobaczyc co sie dzieje”.\n- Then #1225: „WindosB ma najnowszy termal”.\n\nRule:\n- Don't assume Windows B (932a546b) is available or reliable.\n- Plan tests, gates and installs on Central, DL560 and the Mac only.\n- Windows B gets no Engram install.\n- Greg updated Windows B's TermAl to the latest build himself. Fable2 and Opus2 attest which build it runs. If it is the one-way b9186b44 build, the agreement is to accept it and watch, with no traffic to it and stop-only as the fallback.\n- A case that truly needs Windows B, with no alternative, goes to Greg with its reason. Independent work continues.\n- Windows evidence for landings comes from Central, under the Central slot rules.\n\nConsequence: B5 (w-a82d) takes the precondition as written, with Windows B out of the fleet. It follows w-9fcb."
+}

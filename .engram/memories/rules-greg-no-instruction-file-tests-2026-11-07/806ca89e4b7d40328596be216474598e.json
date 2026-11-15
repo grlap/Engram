@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-instruction-file-tests-2026-11-07",
+    "revision_id": "806ca89e4b7d40328596be216474598e",
+    "previous": "55de3bf80ca0461caa8a310d62754e7d",
+    "body_sha256": "0729893ec738d5d33a0d5d993db10d4677b6be4ada15623616101b77c0909994",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T00:58:33.169134800Z"
+    }
+  },
+  "body": "GREG, 2026-11-07, relayed by Engram::Asistant (mailbox 43498a6e). Verbatim:\n- #487 (00:54Z, URGENT): „USUNAC TESTY sprawdzajace claud.md czy agents.md Natychmiast!! Nigdy ich niedodawac”.\n- #490 (00:57Z): „Zero tautologi. Tak marnujemy cykle. Te testy nic nie wnosza. Teraz kazda zmiana wymusza zmiane testow. Czyli edycja 2 razy. O ile zlapiemy to odrazu. Absurd! Nigdy wiecej.”\nAsistant's scope notes (interpretation, not Greg's verbatim words):\n- #487: covers tests that check or pin AGENTS.md/CLAUDE.md content in all of the team's projects; keep the files.\n- #489: also covers the automatic AGENTS/CLAUDE byte-identity gate; remove it and its gate requirement.\n- #490: applies more widely; don't write tests that only pin text or mirror the implementation and force a double edit without verifying behavior; write meaningful tests of observable effects where needed; add no new automatic wording gates.\nRULE FOR EVERY AGENT: never add such tests or checks; when reviewing, flag them.\nExecution: Engram had no instruction-file tests. w-a577d36eba5c (Merger) removes the identity gate from the standing approval, Required Quality Gates, review-changes.md, the engram-repo SKILL.md and docs/development.md, and adds the ban; exact wording in target/w-a577/wording.md rev 2. Governed text: needs Fable2's concurrence, wording sent to Greg (#491), and Fable's final-diff audit. TermAl: w-7dafeeae3cfe (Opus3) deletes 7 pins."
+}

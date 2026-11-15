@@ -1,0 +1,14 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-stop-everything-2026-10-24",
+  "head": {
+    "state": "active",
+    "chain": [
+      "e062d292f75f47809e695319335eff5c",
+      "f5ac04f2092144c8ac82b28115289053",
+      "43e88152e85343c09a3cd40c99d284b9",
+      "1bfac761bb124823a96228a5ce535c2d"
+    ]
+  }
+}

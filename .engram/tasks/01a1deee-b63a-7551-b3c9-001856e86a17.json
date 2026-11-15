@@ -1,0 +1,26 @@
+{
+  "id": "01a1deee-b63a-7551-b3c9-001856e86a17",
+  "external_ref": null,
+  "title": "Capture the memory and task components of a CLI task-sync export on one store snapshot, or refuse when the store moved between them",
+  "outcome": "Capture the memory and task components of a CLI task-sync export on one store snapshot, or refuse when the store moved between them",
+  "acceptance": [
+    "engram task-sync export --include-memories publishes a memory component and a task component that describe the same store state, or refuses naming a store change between their captures, with a test of a store write between the two captures"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

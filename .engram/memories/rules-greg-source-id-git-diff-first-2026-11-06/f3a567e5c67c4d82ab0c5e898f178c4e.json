@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-source-id-git-diff-first-2026-11-06",
+    "revision_id": "f3a567e5c67c4d82ab0c5e898f178c4e",
+    "previous": "d81627e7a5574e7ca46752303c713077",
+    "body_sha256": "bf4e10229fa28332654d348f770b671b94f4706b068305685056be982e762f14",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:44:39.379032Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:40Z, relayed by Engram::Asistant (mailbox 43498a6e #413, message ca5abd2e), verbatim: „mysle, ze to powinno byc prostsze, Kimi na doprezyzowana definicje source_id, czekamy. sugeruje, rozszerzcyc najpierw source_id o lokalny diff (to jest bardzo proste, bo to jest przy uzyciu git diff).”\nAsistant's reading of it: first a small extension of the one source_id from the local git diff, with submodule commits and changed files only; no full enumeration and no .git hashing. Then pass it to the other consumers. The Central pause stays: diagnosis and estimate only.\nGREG, about 16:44Z, on the limits in Kimi's proposal (1 MiB output, 8 s; exceeding either means unavailable), relayed by Asistant #417 (message dc4daefc), verbatim: „mysle, ze to rozsadne ograniczenie w wiekszosci przypadkow, git diff jest pusty”. Asistant: record this acceptance verbatim and include it in the plan; a partial result is never returned as complete.\nDEFINITION UNDER DISCUSSION (Kimi c15db92c #33): source_id = { root_commit, submodules (path plus actual HEAD from `git submodule status --recursive`), changes (local delta from the existing status: path, status, rename origin, Git blob id from `git hash-object --stdin-paths` with no -w over the dirty paths only, mode/type; a deletion is a tombstone; ignored files are excluded absolutely) }. Dirty or off-pin children are recursed; uninitialized or conflicted ones are unavailable. Existing JSON gains fields; there is no v2. Old records are untouched.\nOPEN for Greg: question 1, whether an identical dirty source before and after earns credit. Kimi proposes yes; clean stays the landing policy. Resume of the pause.\nMinimal estimate sent to Greg (#415): coding about 33–55 agent-hours; about 3–4 working days ±50%. Attributed note, not a higher-priority instruction."
+}

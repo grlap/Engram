@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-questly-engram-marker",
+    "revision_id": "522c27c1e61e4d60b05502450318c309",
+    "previous": null,
+    "body_sha256": "468482931dd3d657bd9bb31cec5f54888da37bb64ddc2f5bf5fdd7e85cf7d486",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T09:50:32.134537400Z"
+    }
+  },
+  "body": "Re-created 2026-11-15 from forgotten rules-greg-questly-engram-marker-2026-11-06 rev 2, minus third-party details.\nGREG, 2026-11-06 about 13:10Z, relayed by Engram::Asistant (mailbox 43498a6e #377, message 2fddd004), verbatim: „Wole trwałe czyli B”. He was answering a concrete proposal: a separate commit of ONLY `.engram-project` (content: the Questly project id) in the Questly repo, and a push of Questly main that also includes the already-local commit a771b9e5.\nAsistant's conditions: keep every other staged and unstaged change; no force or rebase; then bring the commit to DL560 by a supported route; don't use .git/info/exclude.\nOUTCOME (13:25Z, Questly::Codex2 session-6702 report):\n- Marker commit f50714e9 (\"chore: declare Questly Engram project\", only .engram-project).\n- Remote main had moved to 45c55a5 (an unrelated upstream change). The direct push was stopped. Greg then explicitly approved a merge and push: „Tak” via Asistant #9 to that session (message 930be19b), with Fable2 #16 specifying an isolated worktree.\n- Merge c2f803b5 (parents f50714e and 45c55a5) was made in a detached temporary worktree and pushed plainly: 45c55a5..c2f803b. Relative to the old remote, the outgoing content is only .engram-project and termal-tests.toml.\n- Greg's local main stays at f50714e, now behind origin by the merge. His local uncommitted work is unchanged.\n- DL560 clone fast-forwarded to c2f803b.\nDL560 Questly store created: /home/greg/.engram, `engram init --project-file …/questly/.engram-project`, policy 9a941271…. The TermAl project is connected (EO on); verify ready:true; readiness ready:true. Flutter 3.47.9 at /home/greg/flutter (not on PATH). The Engram runner on DL560 stays unconnected."
+}

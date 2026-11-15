@@ -1,0 +1,65 @@
+{
+  "id": "01a1dd11-db8b-7d83-a649-42eaa5a96b72",
+  "external_ref": null,
+  "title": "Add the routine data-branch sync rule to Engram's instructions and move Greg's quotes out of them",
+  "outcome": "Add the routine data-branch sync rule to Engram's instructions and move Greg's quotes out of them",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md stay identical and carry the task-sync data-branch paragraph agreed with TermAl, worded for Engram, in the Authority and Git section",
+    "Greg's verbatim statements and the conversation history are removed from both files; each affected rule reads as a concise standalone rule with unchanged meaning, and the removed provenance is kept verbatim in a note on this item",
+    "The landing follows the authority-change rule: both coordinators' concurrence on the exact wording, Greg sent the wording and its consequence, the final-diff audit recorded, the link check passing through the focused launcher, and two independent reviews"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "authority-text",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the agreed task-sync instruction changes to master at 22bfe6322fb32125fa755ecbd309473f85b7a170 and installed build 2cd6d139c93b48893595a25a622dc57d3f1cd9f62fb8c72346c269ff0a2ac4a1 after all six live stores reported ready. Post-landing independent acceptance evaluation f39a241a3e8e491aa8c26e899fdd09bb passed all 3 criteria on the exact landed commit/tree; no findings.",
+    "completed_at": "2026-11-15T03:56:41.546831600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "66fe6c153051406b9c1f1d53153e39d8": {
+        "activity_id": "66fe6c153051406b9c1f1d53153e39d8",
+        "task_id": "01a1dd11-db8b-7d83-a649-42eaa5a96b72",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4483d21b73fb4f7f85d2c94ab553c9ca"
+      },
+      "a27686edc16e48c7b1ac6037537ccfb4": {
+        "activity_id": "a27686edc16e48c7b1ac6037537ccfb4",
+        "task_id": "01a1dd11-db8b-7d83-a649-42eaa5a96b72",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "66fe6c153051406b9c1f1d53153e39d8"
+      }
+    }
+  }
+}

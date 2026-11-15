@@ -20,16 +20,47 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
+  "completion": {
+    "summary": "Engram's own task data is published on the public orphan branch engram-data (bb683f0c, a root commit of 2027 task files plus project.json, pushed fast-forward-only at 02:36:10Z after a recorded privacy scan). DL560 was bootstrapped from it by a dry run and an empty-basis import: 2027 applied, none held or refused, readiness ready. Limits are recorded: notes off; memories, claims, runs and evidence are not transferred; routine re-export is paused until activity and notes sync lands. Independent evaluation 324d0b3c passed 5/5.",
+    "completed_at": "2026-11-15T08:16:42.874498300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
   "activity": {
     "central": {
+      "52d3f99468a542e9b28e4885b43e748b": {
+        "activity_id": "52d3f99468a542e9b28e4885b43e748b",
+        "task_id": "01a1dd0e-b7a8-7d61-b7f6-41dd7ec41b37",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1aeeaf1a68d141ae9e760704fe6c8456"
+      },
+      "929795a4722d4104bceaa6aae0c04687": {
+        "activity_id": "929795a4722d4104bceaa6aae0c04687",
+        "task_id": "01a1dd0e-b7a8-7d61-b7f6-41dd7ec41b37",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "929795a4722d4104bceaa6aae0c04687"
+      },
       "e080dfbc27884692bf2ced74c00e13cf": {
         "activity_id": "e080dfbc27884692bf2ced74c00e13cf",
         "task_id": "01a1dd0e-b7a8-7d61-b7f6-41dd7ec41b37",

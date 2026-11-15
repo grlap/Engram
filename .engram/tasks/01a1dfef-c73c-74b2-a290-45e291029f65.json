@@ -1,0 +1,57 @@
+{
+  "id": "01a1dfef-c73c-74b2-a290-45e291029f65",
+  "external_ref": null,
+  "title": "Remove two stale docs passages: evaluation \"temporarily off\" and the not-yet-granted data-branch exception",
+  "outcome": "Remove two stale docs passages: evaluation \"temporarily off\" and the not-yet-granted data-branch exception",
+  "acceptance": [
+    "docs/features/acceptance-evaluation.md no longer carries the dated 'Temporarily off' banner (lines 11-16 at 037e45c2); it states that evaluation is on per the project policy and points to AGENTS.md for when it blocks landing",
+    "docs/features/git-task-sync.md lines 1505-1514 (at 037e45c2) no longer say an unattended data-only exception still needs approval; they point to the AGENTS.md/CLAUDE.md 'Task-sync data branch' rule that now grants routine fast-forward data-branch commits and pushes with the privacy check",
+    "Markdown-only; link check passes; no authority text in AGENTS.md or CLAUDE.md changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "1a5872db425240cdb0d098859225b842": {
+        "activity_id": "1a5872db425240cdb0d098859225b842",
+        "task_id": "01a1dfef-c73c-74b2-a290-45e291029f65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1a5872db425240cdb0d098859225b842"
+      },
+      "bf2b12d272ef41e68d9f4d1eb013ef96": {
+        "activity_id": "bf2b12d272ef41e68d9f4d1eb013ef96",
+        "task_id": "01a1dfef-c73c-74b2-a290-45e291029f65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1a5872db425240cdb0d098859225b842"
+      }
+    }
+  }
+}

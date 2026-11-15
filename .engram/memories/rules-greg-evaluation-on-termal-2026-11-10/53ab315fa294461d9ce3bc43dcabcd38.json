@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-evaluation-on-termal-2026-11-10",
+    "revision_id": "53ab315fa294461d9ce3bc43dcabcd38",
+    "previous": null,
+    "body_sha256": "4ae9c03b7bcbba7a0938308d4bc098686b4d99e6db46eae43fd5f9e36790ab83",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-10T19:43:29.772959500Z"
+    }
+  },
+  "body": "GREG, 2026-11-10 about 19:42Z, via Asistant 43498a6e #868 (message eaf73641), verbatim: „mysle, ze mozemy wlaczyc Ewaluacje dla Termal, to nasz nastepny etap testow”. Asistant's scope: coordinate turning evaluation on in TermAl's policy, check it in practice on real tasks, and report the confirmation, the result and any defects. Take into account Engram w-89f3's both-stores criterion, and don't treat other EO evidence as automatically closed.\nApplied by Engram::Fable at 19:43:17Z on the Central store (ENGRAM_HOME C:\\Users\\grzeg\\.engram), project github.com/grlap/TermAl: allowed_modes [independent_session], mechanical_basis asserted, require_source_freshness false. Policy 67d6efa9 → 5245580e, epoch 7 → 8, authority 4e523517, idempotency key termal-evaluation-on-greg-asistant-868. Same settings as Engram's (rules-greg-evaluation-on-engram-2026-11-09).\nSo on TermAl too, `done` now needs an independent evaluation. This replaces \"evaluation is off\" for the TermAl project in rules-greg-control section 3, rules-greg-broken-evaluation-not-blocker-2026-11-01 and rules-authority-and-landing. Other projects (Questly, PhoenixCodeNav, CV, fit_friends and others) stay off until his word.\nw-89f3 criterion 3 (on in both stores) closes only after a real TermAl task completes through an independent evaluation on the installed builds, with its result recorded."
+}

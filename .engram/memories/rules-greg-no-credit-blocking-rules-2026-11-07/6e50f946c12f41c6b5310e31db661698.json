@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-credit-blocking-rules-2026-11-07",
+    "revision_id": "6e50f946c12f41c6b5310e31db661698",
+    "previous": null,
+    "body_sha256": "be67fa8ffd8d317a4950d424d477c7ff5338dbf6e29415a4e7352c980a555975",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T06:35:17.316371500Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 06:35Z, relayed by Engram::Asistant (mailbox 43498a6e #539, message b47f128d), URGENT, verbatim: „NIE, PO CHUJ MAMY JAKIES REGULY KTORE BLOKUJA ZALICZENIE TESTU!!! WTF!” He compared it to gated control. Asistant's scope: don't narrow it to foreground/background, and don't ask for another decision about removing an artificial condition. Review the credit path and remove non-agreed rules that block credit for a test that was actually run. Apply the agreed rule: credit = the host-observed result plus source_id before == after (memory rules-greg-eo-credit-source-id-equality-2026-11-06). Check whether the already-run Questly Linux 1820/0 can be credited from existing data without a rerun. Report facts and the owner.\nTrigger: TermAl's native observer withheld credit for Questly Linux (foreground, success, flutter.json 1820/0/0, S0 == after) only because Claude Code cut the 1.5 MB console output (output_cut → interrupted=true, nativeEligible=false). An earlier draft also blocked background runs.\nRULE FOR EVERY AGENT: no credit-blocking condition beyond the agreed host-observed outcome and source_id equality without Greg's word. When a run was observed and its result artifact plus source_id equality hold, it earns credit."
+}

@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-no-checkout-full-gate-test-2026-11-07",
+  "head": {
+    "state": "active",
+    "chain": [
+      "33a668bccac1487a8ad37c15a14c4312",
+      "8f1f48bbddec489e9a6a8a07ec5f0dc1"
+    ]
+  }
+}

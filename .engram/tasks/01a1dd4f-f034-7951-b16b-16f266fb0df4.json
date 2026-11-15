@@ -1,0 +1,29 @@
+{
+  "id": "01a1dd4f-f034-7951-b16b-16f266fb0df4",
+  "external_ref": null,
+  "title": "Bound ordinary task-sync recovery inventories to pending work",
+  "outcome": "Ordinary sync recovery avoids repeated unbounded scans of accounted fetch/commit retention and captures only the selected changed planning.",
+  "acceptance": [
+    "Accounted fetch and command-commit retention is keyed or safely retired so ordinary receive/recovery does not enumerate the entire historical inventory and cannot reach a permanent 100000-entry refusal solely from accounted history.",
+    "Ordinary sync reuses selected state/captures rather than repeatedly loading the full exchange ledger and native planning for each receive phase; tests demonstrate behavior across accumulated accounted history while preserving uncertain/pending replay."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

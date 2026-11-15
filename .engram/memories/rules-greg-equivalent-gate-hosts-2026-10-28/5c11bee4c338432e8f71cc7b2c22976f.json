@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-equivalent-gate-hosts-2026-10-28",
+    "revision_id": "5c11bee4c338432e8f71cc7b2c22976f",
+    "previous": "b9548bdddf6b4d618fcee45d6bf1c301",
+    "body_sha256": "1a2ee45fa6aae68d9a11374f65fa2fc7665b62a32168b5959f4221ec3ebe3523",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T23:37:02.280413400Z"
+    }
+  },
+  "body": "CURRENT RULE (rev 2, 2026-10-28T23:38Z): the JOINT RECORD, concurred by Engram::Fable and Termal::Fable2 (Fable2 #5164, message a4437f34, which supersedes its crossed #5163 and its #2412 \"evidence-only\" framing).\nGREG DIRECT, 2026-10-28T23:35:42Z (Advisor 74a6af16 #2253, message f5f92222; TermAl copy Advisor #2411), verbatim: „Greg direct decision: maszyny są równoważne. Centralna bramka NIE musi być uruchamiana na centralnym Windowsie. Uzgodnijcie jeden zgodny zapis z Termal::Fable2 i wykorzystujcie Windows B/Mac dla bramek na exact test-ref, z zachowaniem wszystkich wymogów identycznego drzewa, fingerprintu i rozpoznanego dowodu.”\nREMOTE LANDING GATE (joint text): Windows B, the Mac and central are EQUIVALENT gate hosts. A full gate run by the standard launcher on Windows B or the Mac counts as the landing gate, with the same weight as central, when ALL of these hold:\n1. INPUT: a merge-ready input. The reviews are complete with no outstanding Medium or higher, and focused checks passed on the exact input. It is pushed as refs/heads/test/<item>-<fp8>, whose complete tree id was recorded on the item before the push. The runner uses a fresh worktree equal to that commit, with no untracked files, and records that state.\n2. RESULT: launcher exit 0 with every stage passed, and the expected, before and after fingerprints all equal to the recorded review-freeze fingerprint.\n3. TRANSPORT: the runner returns a bundle with per-file sha256 (windows-b-tree-bound-evidence-v1 or equivalent): results.json, all stage logs, request and input, and the before and after state. The lander verifies every hash, that the commit's tree id equals the recorded tree id, and the fingerprints.\n4. RECOGNIZED RECORD: the lander records ONE gate on the item, `gate full --work-ref <item> --ref <bundle-manifest-sha256>`, plus a note naming the host, run id, tree id, fingerprint and the retained bundle path under .evidence. That is the same tracker gate record a central gate gets in base mode. Neither earns typed host credit until w-af3c and gated control.\n5. SCOPE: it gates only a landing whose master commit has exactly that tree id. A change touching Windows-only code still needs a Windows gate, and Windows B counts as one.\n6. The test ref is deleted after the evidence is recorded; the push and the deletion are recorded on the item.\n7. QUIET HOST: while a TermAl full gate runs on the remote host, that host runs no other Cargo, test or gate (the gate carries a real-time writer deadline). The runner records a process census at launch and at END in the bundle. An Engram gate follows Engram's own slot rule on that host.\nTyped verification CREDIT for test-bound criteria still follows the host rules; this record does not create it.\nFIRST USE: w-52cc + w-94ec, integrated by Merger3 into ONE input on 56f84d7e and pushed as one test ref. The Mac full gate on it is the landing gate for both, landing after the w-d5c7 cutover."
+}

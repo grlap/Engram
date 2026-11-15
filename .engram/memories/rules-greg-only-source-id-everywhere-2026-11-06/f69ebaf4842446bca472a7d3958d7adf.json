@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-only-source-id-everywhere-2026-11-06",
+    "revision_id": "f69ebaf4842446bca472a7d3958d7adf",
+    "previous": "8f29a21f6cf04bd886dc5dea1bebd0b2",
+    "body_sha256": "5943d69905643d47716a4a0acae44a6913d892817e0571fb84acc4b749a48ad1",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:29:51.971893200Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:27Z, relayed by Engram::Asistant (mailbox 43498a6e #402, message e99bac4b), verbatim: „NIE ... PO TO MAMY SOURCE_ID ktory rozwiazuje te problemy wszyscy maja uzywac tylko source_id”.\nAsistant's reading: every consumer judging source identity or state uses ONE shared source_id. No parallel fingerprints, no watcher-event dependencies, no .git hashing. This covers option B AND the launchers, gates and the general EO model.\nAt the time: the Windows Central PAUSE (Asistant #396) was in force; inventories only, no implementation.\nJOINT INVENTORY (Engram #403 to Greg; TermAl via Asistant #578 plus addendum; agreed in Fable/Fable2 #6754–#6757):\n- Engram (1): the launcher input fingerprint, new-untracked-only and the .git/info checks (scripts/review-freeze-fingerprint.mjs, test-launcher.mjs), referenced in AGENTS.md/CLAUDE.md (the gate clause and test-ref names).\n- Engram (2): the EO model stores TermAl turn observations whose source_revision may be content-v1.\n- Engram (3): evaluations and `--source-fingerprint` compare source strings (evaluations OFF).\n- Engram (4): review freeze by Git tree id; proposal: commits only.\n- Engram watcher_only kind (docs/features/execution-observability.md). TermAl's source has no \"watcher_only\"; whether any sighting comes from watcher events is unknown.\n- Engram (5): eo-cutover.mjs, unknown role.\n- TermAl: (1) content-v1 is the default basis (ORDINARY_COMMIT_INPUT_DEFAULT false); (2) the host's own predicate copy; (3) the launcher's JS predicate copy; (4) its review-freeze fingerprint copy; (5) watcher fences on registered launcher runs; (6) the EO v12 watcher (being removed); (7) review-identity hashing; (8) EO turn observations carry content-v1 source_change (src/engram_source_observation_protocol.rs:126).\nAGREED ORDER (for when Greg decides):\n(a) TermAl 1+2+3+8 together with Engram 2: one source_id everywhere in turn observations and host checks.\n(b) TermAl 5 together with Engram's watcher_only.\n(c) TermAl 4+7 together with Engram 1 and 4, plus the instruction-text change in both repos (governance procedure).\nEngram 3 at evaluation re-enable."
+}

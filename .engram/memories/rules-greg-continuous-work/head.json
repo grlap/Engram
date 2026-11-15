@@ -1,0 +1,20 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-continuous-work",
+  "head": {
+    "state": "active",
+    "chain": [
+      "0e1f5a1cb0b6413bb68359903d6beea5",
+      "8e739af371ff457e91b7788c33363a8b",
+      "0525054dd1ed487d80805d9250096af0",
+      "16695a5e23e54cae83e03e444e826a27",
+      "5113762829c540a4b30fde4077bba72b",
+      "416e81711222400a939d10db2560b3e8",
+      "4739f74a8e4546f397956b2de39129c5",
+      "a7a4f7b2e875490f8fc2e6f17fc8f048",
+      "4379b05fe9774298a9ebd8445d405a56",
+      "53b3187a447e45c0ba05ea495e27779b"
+    ]
+  }
+}

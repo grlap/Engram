@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-remote-test-equivalent-2026-11-12",
+  "head": {
+    "state": "active",
+    "chain": [
+      "71c3484df3e5450b9ff8f1486ae29f45",
+      "872e04eed7b64c1e96008dc54615ffe0"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-replace-acceptance-evaluation-2026-11-02",
+  "head": {
+    "state": "tombstone",
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "retire attributed project memory",
+      "remembered_at": "2026-11-02T00:19:21.086365700Z"
+    }
+  }
+}

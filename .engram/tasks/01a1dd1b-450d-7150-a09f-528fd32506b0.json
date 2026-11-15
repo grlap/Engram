@@ -1,0 +1,27 @@
+{
+  "id": "01a1dd1b-450d-7150-a09f-528fd32506b0",
+  "external_ref": null,
+  "title": "Decide whether the task-sync data-branch rule should also name evidence-pack exports",
+  "outcome": "Decide whether the task-sync data-branch rule should also name evidence-pack exports",
+  "acceptance": [
+    "The Engram and TermAl coordinators decide whether the \"Task-sync data branch\" bullet in AGENTS.md and CLAUDE.md, which names task and memory exports, should also name evidence packs, which Architecture Boundaries and Required Quality Gates say travel on the same data branch; any wording change lands under the authority-change rule in both projects, or the decision to leave it is recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority-text",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

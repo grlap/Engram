@@ -1,0 +1,16 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-authority-and-landing",
+  "head": {
+    "state": "active",
+    "chain": [
+      "eba57b3ced874793a0761ea513a8f0f7",
+      "15c397090c0b486680d208b2de3d26a9",
+      "ad991bd53aa946eeaf4bab2f6d4a99c8",
+      "0e7ad94eb05d45249a848a354228940d",
+      "cd889399b4e040a5a25d05af8489a9b6",
+      "15a8469d584b4fe8a109195c41987c3a"
+    ]
+  }
+}

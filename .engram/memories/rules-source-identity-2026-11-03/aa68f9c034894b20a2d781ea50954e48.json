@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-source-identity-2026-11-03",
+    "revision_id": "aa68f9c034894b20a2d781ea50954e48",
+    "previous": "6a167f8f571a483c99ac5f8be7e93938",
+    "body_sha256": "7bb996b14e4f81203ec43900a412fba0dc308f149a0dd520f2abd1f8b9fe272a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T06:08:55.401688300Z"
+    }
+  },
+  "body": "Current agreed source identity and EO credit. Use the one Engram-owned source_id contract; delivery/build status belongs on its work items, not in this memory. Git root/submodule commits and the hashes of locally changed files describe one source state; local changes are not a separate mode. Use existing Git status/diff, not a whole-repository file/index list, watcher events or hashing/comparing the .git directory. Ignored paths stay excluded. Unavailable or partial capture never becomes a complete identity. Keep the accepted Git visibility limits, including reverted changes between captures and changes Git does not report.\n\nGreg via Asistant#406 (2026-11-06), verbatim: „NIE, source_id opisuje stan zrodel, czyli commity git + hashe lokalnie zmienionych plikow mamy jeden mechanizm na wszystko TAK ? to jest moja propozycja ktora probuje wymusic od paru dni”. Asistant#396: „ŻADNEGO hashowania katalogu .git”. Asistant#402: „NIE ... PO TO MAMY SOURCE_ID ktory rozwiazuje te problemy wszyscy maja uzywac tylko source_id”.\n\nAgreed native credit: a host-observed declared command as the turn's first tool action; its valid declared result artifact supplies the verdict; full source_id before == after, dirty allowed; existing project/store/item/claim/root/run identity and completion-obligation guards. No watcher or other non-agreed credit condition. Greg via Asistant#418: „to jest wystarczajacy warunek ... mysle, ze i tak jest za silny, ale zacznijmy od tego”. Detailed binding and verdict semantics remain with the existing owner and agreed definition (rules-greg-no-credit-blocking-rules-2026-11-07). This is the agreed target, not an independently verified claim about every installed consumer. Preserve existing evaluations and seals; content-v1 retirement and evaluation re-enable follow their own current decisions."
+}

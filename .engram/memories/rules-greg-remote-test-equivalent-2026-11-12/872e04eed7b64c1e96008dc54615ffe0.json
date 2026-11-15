@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-remote-test-equivalent-2026-11-12",
+    "revision_id": "872e04eed7b64c1e96008dc54615ffe0",
+    "previous": "71c3484df3e5450b9ff8f1486ae29f45",
+    "body_sha256": "7d667228dc7fd7963eb462fb874211688389c80f60bfba181bfedcaa8e723653",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-13T16:13:10.719477300Z"
+    }
+  },
+  "body": "GREG, 2026-11-12 about 00:39Z, relayed by Engram::Asistant (mailbox 43498a6e #966, message df510c04), answering Fable's proposal #965 (B). Verbatim: „Tak. Zdalny test jest równowazny.”\nMeaning, as relayed by Asistant: a remote test result counts the same as a local one, provided it is bound to the exact code (commit/tree) and to the right criterion. A remote FOCUSED PASS may satisfy the matching acceptance-evaluation criterion, including the evaluation start preflight and test-bound criteria. Landing still needs the full gate under the existing requirements. Coordinate through Engram w-180d6f507470 and TermAl K3 w-48c4a207f226; no needless local repeats.\nApplied (Engram::Fable): this supersedes the \"focused stays author evidence only\" line in rules-greg-equivalent-gate-hosts-2026-10-28 and in w-180d's acceptance, for evaluation and verification use only. The landing_gate purpose is unchanged: a remote FULL with equal before and after fingerprints. Until w-180d and K3 ship, the host still refuses remote-only evidence. Interim: run locally only the tests a criterion names, never fmt or Clippy for credit, and never a FULL.\n\nREV 2. GREG, 2026-11-13 about 16:12Z, via Engram::Asistant (43498a6e #1098), on the plan to re-run full gates for three parked TermAl items (e105, aa7b, w-70ed), verbatim: „absurdalny wymog, powinimy miec jeden run i tyle, nic nam nie daje, ze mamy 2 osobne rany na 2 maszynach tyle ze tracimy wiecej czasu”.\n\nAsistant's reading: this clarifies „Zdalny test jest równowazny”. Use qualifying remote runs that have ALREADY been executed as evidence on the right code. Do not plan an extra FULL just because K3 doesn't exist yet. Check the retained original evidence and the legitimate ways to record it, and never fabricate a result.\n\nApplied by Fable: when a test-bound criterion's only qualifying run was remote and no host route can mint the record yet (before w-180d and K3), the holder may drop that criterion's test binding. This is Greg's explicit word, which answers Kimi's earlier waiver objection. The holder first quotes the run's retained original facts exactly: run id, host, commit, tree, before and after source_id, counts and eligibility. An independent evaluator then judges the criterion on that evidence, naming any earlier failing evaluation in `supersedes`. Once w-180d and K3 run, the host record replaces this route."
+}

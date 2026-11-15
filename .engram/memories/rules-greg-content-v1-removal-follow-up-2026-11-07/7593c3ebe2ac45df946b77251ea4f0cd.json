@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-content-v1-removal-follow-up-2026-11-07",
+    "revision_id": "7593c3ebe2ac45df946b77251ea4f0cd",
+    "previous": null,
+    "body_sha256": "f9117982208253bc5d4840323ad173561a8600d20852bfbbf81d821f1123a3a0",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T02:25:14.738782100Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 02:25Z, relayed by Engram::Asistant (mailbox 43498a6e #508, message a119ae7c), verbatim: „Usuniecie content-v1 to follow up a nie warunek konieczny.” Asistant: write it down and apply it; removing content-v1 does not block delivery of Unified EO and is done as a follow-up.\nApplied (Fable): Unified EO is delivered when E3(b) is installed, TermAl's M1, w-24a7 and w-8f4c run after the joint restart, E2 increment 1 has landed and the w-e072 live proof has passed. E3(c) legacy and content-v1/watcher retirement, TermAl's w-6f42 content-v1 deletion step and E2 increment 2 are follow-ups that don't gate EO; they become independent items rather than required children of the EO parents."
+}

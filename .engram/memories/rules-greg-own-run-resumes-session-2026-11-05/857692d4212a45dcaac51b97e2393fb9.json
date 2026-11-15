@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-own-run-resumes-session-2026-11-05",
+    "revision_id": "857692d4212a45dcaac51b97e2393fb9",
+    "previous": null,
+    "body_sha256": "b6ac0c15fb5b625a37a9b0180a4287e5216d92cb31bf92a780b570897e718668",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-05T20:37:24.897904500Z"
+    }
+  },
+  "body": "GREG, 2026-11-05 about 20:26-20:36Z, via Engram::Asistant, relayed verbatim by Termal::Fable2 (mailbox 8cc535cf #1): «sesja nie wysyla bezposrednio do siebie maila, to jest zabronione i OK sesja tworzy test-run, ktory po skonczemu powien ja wznowic» and «+ update skills». Meaning: a session never mails itself (that ban stays); it starts a test run and the host resumes it when the run ends. He doesn't want the Merger relaying through another session or polling. Implementation: TermAl w-1073209690fb (host wait and launcher, P1) and Engram w-baaa7e91749a (Engram launcher registers the host wait for its own run, plus skills). Sequence: after source_id lands, not ahead of EO."
+}

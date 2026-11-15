@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-unify-source-id-2026-11-06",
+    "revision_id": "cb91534fe96f4662973cb14b1ed2170a",
+    "previous": null,
+    "body_sha256": "554fa7822a1766cb8b2831ef830bbbf253a4dd1d65f8e05dec749845e19af8fd",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T05:19:30.840141400Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 05:19Z, relayed by Engram::Asistant (mailbox 43498a6e #346, message 1a616fa5). Verbatim: „ok, mozemy zaczac prace nad unifikacja ?”. Asistant's summary of the direction, not his verbatim words: yes, start NOW, in parallel with the ongoing EO trials. The target is ONE owner and ONE implementation of source_id, in Engram, that TermAl and the launchers use: git status plus root commit and submodule pins, with no ls-files or file lists. If it concerns the shared Questly/Phoenix route, take real Flutter/Dart and .NET test results as the outcome, not just exit 0. Don't touch existing evaluations. Coordinate ownership of w-a6c91d6a7f27 and w-24a72c898d6d / w-6f42c416b0c7, don't duplicate work, and report the plan and status.\nCONSEQUENCE (Engram::Fable): w-a6c91d6a7f27 is raised to P0 and starts now (owner Engram 12325), no longer \"after EO\". TermAl's w-24a72c898d6d proceeds in parallel on its shipped rev 5 admission with no new copy, and migrates onto the Engram command when it lands. The launcher run fingerprint (w-0675f3198972, also 12325) is designed as part of the same boundary; its change is presented to Greg with scope and limits before it is made."
+}

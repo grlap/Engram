@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-host-workarounds-2",
+    "revision_id": "f5a3d7d73d174798950cc3499479d339",
+    "previous": "6b71bc1f9118412bbde78725a5cf2fbd",
+    "body_sha256": "9ece3c37ec73eb4a91e88bb3c50b9c5437cae82830ffa3afcda0fbe7cd3eb833",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-03T07:58:56.220174800Z"
+    }
+  },
+  "body": "CANONICAL, continued: live TermAl host workarounds for Engram agents (Engram::Fable; rev 2, 2026-11-03 08:12Z). termal-host-workarounds is at its size limit (rev 97); read both. Each line names the item whose fix retires it.\n\n!! NEVER RERUN ON \"UNKNOWN\" (P1 TermAl w-96480bbbe221, inverse of w-881c69c0ccdb): TermAl can close a check as Unknown at turn end while its launcher run is STILL RUNNING, and can show a finished check as running. Its notice may even say \"run it again\".\n- Read the launcher's results.json in .git/worktrees/<root>/review-runs/<run-id>/.\n- A live executor pid with a fresh heartbeat means running; a terminal state is the result.\n- Never rerun, or ask for a new slot, on a TermAl status alone. Never rerun only for TermAl credit.\n\n- TermAl HOST CREDIT IS NOT A LANDING CONDITION. A remote run of the standard launcher on a bundle of the exact candidate commit gates the landing through the integration owner's record on the item: run id, host, commit, tree, before and after fingerprints (TermAl w-5e2f3fba987a, sibling w-b142376c70c3). A run in a shared root that covers two items credits only one (w-db79607d5b15).\n- STALE WORK REVISION (TermAl w-c43760ef6a60): TermAl's run registration carries the CLAIM-TIME work_revision. A revise after claiming makes Engram refuse the verification record: verification_record_refused, field work_revision. TermAl drops the reason (w-c6ad7b63270d). Avoid revising a held item before its credited run.\n- SOURCE ROOT \"UNCONFIRMED\" recurs after a re-name (TermAl w-426dcbda4467; joint fix design 07:01Z). It never blocks actions. A session waiting for \"next turn\" needs a continuation message.\n- REMOTE RUNNERS AFTER A QUARANTINE OR RESTART:\n  - ENDs may be delayed by 409 or 503, then re-delivered with the same key (w-c03ce2f854e8); don't rerun.\n  - A runner may ADMIT requests queued before the quarantine (w-4226eb67e0f9), so withdraw stale requests explicitly.\n  - Relay mail to runners often shows durableButNotWoken.\n- LAUNCHER STOP is Windows-only until Engram w-efec5adad667 lands. A superseded but healthy run is left to finish, then only that run is cleaned up. A HUNG run with no supported stop is ended only with the coordinator's authorization: evidence first (process tree with pid, ppid, pgid, command and executable; lsof; sample; results and logs), then SIGTERM, then SIGKILL, on individual pids that descend from that run's own executor and run from that job's own worktree, target or temp home. Never killpg a group you didn't create; never the installed engram, a live engram mcp or control process, TermAl, or another job. (First use: Mac 6201, run test-a468bc75, 08:12Z.)\n- STALE STOP AT A RUNNER: if a runner cites a stale Greg STOP, the coordinator answers directly with Greg's later words and their sources (DL560 session-4, relay #70/#71).\n- A git bundle of the exact commit, mailed to a runner, needs no test ref (rules-remote-test-runs-2026-10-31 §2). Use Windows B for Windows-only proofs: it's back since 07:32Z, after w-4f6e closed."
+}

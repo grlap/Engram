@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-no-checkout-full-gate-test-2026-11-07",
+    "revision_id": "33a668bccac1487a8ad37c15a14c4312",
+    "previous": null,
+    "body_sha256": "ba40b2d6ff731c06f80b960f365fc1abd05e9b5a9cff1872f2a48bc16b7c606b",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T09:23:33.042467400Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 09:23Z, relayed by Engram::Asistant (mailbox 43498a6e #577, message 05eb3a22). Verbatim: „NIE NIE NIE, usun ten test!! MY NIGDY NIE BEDZIEMY TAK PUSZCAC PELNYCH GATOW TO ABOMINACJA!” Asistant's scope note: it concerns TermAl's full-gate test that creates a clone without checkout, which shows about 2051 phantom deletions. Delete it with no artificial replacement, as part of the joint EO plan. Applies to both projects: never run full gates that way (on a no-checkout clone), and never add such a test. Forwarded to Termal::Fable2 (ebe242f7, 09:24Z)."
+}

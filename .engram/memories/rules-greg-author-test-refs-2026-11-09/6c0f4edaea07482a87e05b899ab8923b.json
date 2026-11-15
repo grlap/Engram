@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-author-test-refs-2026-11-09",
+    "revision_id": "6c0f4edaea07482a87e05b899ab8923b",
+    "previous": null,
+    "body_sha256": "2ab9031d82993400899b7fea0e83da47ea2715563f800f726a364022bf6d5622",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T17:13:55.331591Z"
+    }
+  },
+  "body": "GREG, 2026-11-09 about 17:12Z, relayed by Engram::Asistant (mailbox 43498a6e #782, message 94b9e8a5), verbatim: „prosze zapisac to jako skille i instrukcje w pamieci / ja nie widze innego sensu”. He was answering the proposal (Fable, 43498a6e #781; Fable2 the same via Asistant #1183) to let coders push their own candidate commits to test branches on origin so remote runners test the exact commit, instead of multi-part mailbox bundles. It followed his question „nie rozumiem, czemu po prostu nie wysylamy brancha ?” (#780). Asistant's reading: approve that route for Engram and TermAl; record it as instructions, skills and memory under the authority-change procedure; the runner fetches the exact commit, landing unchanged, no force-push.\nStatus: this is his recorded word on an authority widening. It takes effect when the AGENTS.md/CLAUDE.md change lands under (a) both coordinators' concurrence, (b) the exact wording sent to Greg, (c) the final-diff audit. Until then, author batches keep using bundles."
+}

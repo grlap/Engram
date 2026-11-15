@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-source-identity-2026-11-03",
+    "revision_id": "750d3f59c5224ca4a383d71c77b58dfb",
+    "previous": null,
+    "body_sha256": "d630f5c267739b90c98436b74c415320c98fc1851ba6c7c5fcb3427ee67cddcf",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-03T22:10:35.485180100Z"
+    }
+  },
+  "body": "CURRENT JOINT CONTRACT: source identity for test credit (Engram::Fable, 2026-11-03 22:12Z; agreed with Termal::Fable2 and Kimi::Consultant). The canonical text is TermAl docs/features/source-identity.md, frozen at sha256 69b37e9eda1e5c8c1191fb6783a0080a9838c2c394125032f0b6b37b0657e983; Engram links to it and keeps no copy. Design history is on Engram w-a6c732bf4bd5.\n\nGREG'S WORDS (via Engram::Asistant):\n- „mysle, ze warto to jakos ujednolicic niz robic jakiegos patcha a pozniej robic source_id”\n- „to jest ogolny problem nie tylko submodulow”\n- „ale chwila, roznica jest w git'cie niewazne jak jest na dysku, maja sie zgadzac commity dla glownego i dla submodules”\n- „Model ogólny czy dla Phoenix? Wydaje mi się że system próbuje wymusic te samą wielkosc liter. To nie jest konieczne.”\n- „prosze zostawcie istniejace ewaluacje w spokoju... OK ?” (see rules-greg-leave-evaluations-2026-11-03)\n\nCONTRACT:\n1. One general lane for every Git repo: `git-commit:<full id>` of the root commit, tree recorded separately. It is the same value Engram's registered verification Commit lane uses (src/domain/registered_verification.rs:153). \"commit-input v1\" names only its eligibility rules. SHA-256 roots are refused by name until Engram's 40-hex check is widened.\n2. Cleanliness is a separate check, judged by Git with the repo's own core.ignoreCase and core.fileMode, before AND after the run. Hiding knobs are pinned (--untracked-files=all, --ignore-submodules=none, no global or system excludes). Refused: skip-worktree, assume-unchanged, sparse, filters including LFS, weak stat settings, replacement objects.\n3. Gitlinks add one clause: every child initialized, HEAD at its pin, clean apart from the committed `submodule_untracked_exclusions` profile. Nested gitlinks refuse. A dirty gitlink repo gets no credit in v1.\n4. No check on this lane looks at on-disk spelling. Meaning: exact Git commit and tree judged clean by Git on this checkout, NOT a byte-identical or case-faithful checkout.\n5. content-v1 keeps its format and values (TermAl content_revision.rs). TermAl w-81991023d2c1 admits directory spelling differences; its one new refusal is two tracked paths differing only by case and/or NFC/NFD that resolve to one file. Hard links and terminal symlinks stay as they are.\n6. Commit as the DEFAULT identity is TermAl w-58fa1c679ff5, after c07c. PRECONDITION: before that flip, and before any evaluation re-enable, Engram::Fable lists open items with content-v1 evaluations (src/storage/work/acceptance_evaluation/source.rs:145 compares exact strings) or bound non-registered evidence (src/control.rs:197–200, :225–231), and brings Greg the facts and options. Native git-commit evidence is unaffected (src/control.rs:192). No evaluation is re-run or rewritten.\n7. Engram's Node freeze and launcher adopt source identity later, after the task-sync P0, as a COMPONENT beside their own HEAD, index and untracked checks. Route open (TermAl CLI or shared code), because Engram must run without a TermAl binary. Record the SDK and dependency environment separately: source identity doesn't cover them.\n\nFirst implementation: TermAl w-c07c410dac75 (Phoenix and Questly unblock when it lands; both are SHA-1)."
+}

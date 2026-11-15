@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "incident-session-8581-removal-2026-11-08",
+    "revision_id": "1de2981017b24447b7788505024ef627",
+    "previous": "9133f85795424677a36dd1f7b76935a1",
+    "body_sha256": "09ed1d052f827e4c50d5d020a3804cfdb7bd1c22e14fce587a9220dd200e6abb",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-08T23:21:12.218314800Z"
+    }
+  },
+  "body": "CLOSED, not an incident. GREG, 2026-11-08 about 23:21Z, via Asistant 43498a6e #698, verbatim: „Jak usuwam sesje to razem z delegacjami. Nie chce jakiejs historii.” Removing session-8581 with its delegation tree (2026-11-08 23:12:31Z) matched what he expected. Asistant's scope: no copying the live store for recovery, no recovering sessions or transcripts, no further analysis of history or backups for this case; the existing confirmation is enough, with no extra UI, counts, blocks or requirements. Earlier: #695 „A. Usuwamy i tyle”; #697 „Juz pytamy o potwiedzenie. Nie potrzebujemy info o delegacjach.” Engram's read-only finding before that: no live Engram work affected."
+}

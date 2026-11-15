@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-commit-messages",
+  "head": {
+    "state": "active",
+    "chain": [
+      "75e7fed6ea5046158a1d27e5038d0581"
+    ]
+  }
+}

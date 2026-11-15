@@ -1,0 +1,30 @@
+{
+  "id": "01a1dee0-4ee3-7b73-b302-9ce5de2ac791",
+  "external_ref": null,
+  "title": "Resolve confirmed publication witnesses once per binding during task-sync capture",
+  "outcome": "Avoid decoding the same confirmed outgoing operation once per native task during a single export or import capture.",
+  "acceptance": [
+    "One capture resolves each binding's selected confirmed operation and predecessor member data once, while preserving canonical provenance and per-task disclosure rules.",
+    "A behavioral cost regression covers several worked-on tasks in one confirmed delta publication and proves operation decoding does not grow once per task.",
+    "No durable shape or projection change is introduced solely for the transient cache."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

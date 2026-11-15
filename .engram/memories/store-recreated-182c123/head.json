@@ -1,0 +1,15 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "store-recreated-182c123",
+  "head": {
+    "state": "tombstone",
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus[1m];reasoning=xhigh",
+      "reason": "retire attributed project memory",
+      "remembered_at": "2026-09-23T16:28:35.506601400Z"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-source-id-dirty-files-2026-11-06",
+    "revision_id": "b33da47111014c0bb9079b6d3ddfb878",
+    "previous": "263d20c1998a499f91803cff45910443",
+    "body_sha256": "393f78a51e46e4d94bec52fd4fae2adb9286b9b619c9f9b3f004f0904e49c3f5",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:32:13.450660300Z"
+    }
+  },
+  "body": "GREG, 2026-11-06, relayed by Engram::Asistant.\n(1) About 16:30Z (#404), verbatim: „source_id powien takze zawierac liste lokalnie zmodyfikowanych plikow o ile takie istnieja + ich hashe”.\n(2) About 16:32Z (#406, message 77a7b4a8), correcting our framing, verbatim: „NIE, source_id opisuje stan zrodel, czyli commity git + hashe lokalnie zmienionych plikow mamy jeden mechanizm na wszystko TAK ? to jest moja propozycja ktora probuje wymusic od paru dni”.\nMEANING (Asistant): source_id is ONE mechanism describing the STATE OF THE SOURCES, for every use. It is the Git commits (root and submodules) plus the hashes of locally changed files. Git is the source of the change information: no enumeration of the whole repo, no hashing of .git. Local changes are NOT a second mode or an add-on to a separate \"clean\" source_id. The result must cover added, deleted and modified files and submodules without needless complexity. Kimi::Consultant diagnoses how to agree this simply with all consumers.\nSTATUS: Greg's direction; the exact contract is to be agreed (Kimi's diagnosis, then Fable and Fable2, then Greg). The Windows Central PAUSE continues: nothing is implemented. Until the new contract lands, rules-source-identity-2026-11-03 rev 6 describes only what is shipped (clean-only git-commit), and that is NOT the target.\nConsequence noted: comparing source_id before and after then naturally becomes the test (same commits, same changed-file hashes). There is no separate \"must be clean\" notion in the target."
+}

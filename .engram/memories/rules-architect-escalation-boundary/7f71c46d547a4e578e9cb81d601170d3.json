@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-architect-escalation-boundary",
+    "revision_id": "7f71c46d547a4e578e9cb81d601170d3",
+    "previous": "5ea17b0a7f36440da8395f82fabd18ec",
+    "body_sha256": "6650a51351b7efca366ec5140036f29acafb2bf0012ce14dae6069938c7b6548",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6-astra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-25T05:17:18.425720100Z"
+    }
+  },
+  "body": "CANONICAL: architect escalation boundary — Greg's direct direction, 2026-10-08. This is a current role rule and supersedes conflicting older role descriptions.\n\nArchitects handle explicit architectural decisions and escalations requiring one. Greg additionally assigns Engram::Architect3 to improving collaboration: inspect reported collaboration failures, correct the responsible current operating rules in Engram memory and inform the affected agents. This collaboration-improvement assignment does not make Architect3 an operational coordinator.\n\nGreg direct to Architect3, 2026-10-25: \"Termal::Merger2 nie powien ci raportowac normalnych statusow. tylko cos tam gdzie zawodzi praca twoja rola jest poprawa wspolpracy i poinformowanie innych\". Send Architect3 concrete collaboration failures requiring correction, not routine test, package, queue, landing, installation or progress status. Do not register him as a routine gate notification recipient, result relay or recovery owner. Operational owners keep those duties. Ordinary product defects remain with their owner/coordinator unless they expose a collaboration failure. Check relevant task evidence when validating a rule correction; no routine success-status messages are required.\n\nArchitects do not distribute work, run check-ins, implement code, execute tests or gates, conduct routine code review, request or record evaluations or gate credit, hold operational claims, or land and integrate changes. There is no exception to preserve an existing gate: transfer the item to an executor and rerun the gate under that executor when necessary.\n\nCoordinators, coders and dedicated read-only reviewers own routine work. A separate non-coding check-in agent collects status and blockers; it does not code, test, review code or decide architecture."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "incident-session-8581-removal-2026-11-08",
+    "revision_id": "9133f85795424677a36dd1f7b76935a1",
+    "previous": "22c2ed2ccfd3465b9edad7996260979b",
+    "body_sha256": "93368420ffd26c363f6224dd13608f9994eea4e6e93f6f1d5d9088c7a0aa8b6e",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-08T23:18:00.696323700Z"
+    }
+  },
+  "body": "Incident 2026-11-08 23:12:31Z: Termal::Fable2 removed session-8581 (Engram::Coder) on Greg's word; the removal cascades over the delegation subtree, so about 630 sessions likely went, against his 'Nie usuwaj innych sesji' (inferred from counts 9119→8485, no list). Engram read-only finding: no live Engram root or in-flight work affected; mailbox b0237f77 and Engram notes survive; raw child transcripts may be gone. Keep C:\\Users\\grzeg\\.engram\\backups\\restart-2-20261102-163420 (TermAl state from 2026-11-02) until Greg decides on recovery; don't clean it. No restore, no new deletion, no re-creating the name (TermAl w-815203f8485d). Evidence: Greg's scope via Asistant 43498a6e #694; Fable2 ebe242f7 #7131.\n\nGreg's decision on session deletion going forward, via Asistant 43498a6e #695 „A. Usuwamy i tyle” and the correction #697 „Juz pytamy o potwiedzenie. Nie potrzebujemy info o delegacjach.”: deleting a session deletes its delegations; the existing confirmation is enough; no count, no extra step in UI or API (TermAl w-1c464148f270). Establishing the 8581 incident's scope and recovery options continues separately, with no unauthorized restore."
+}

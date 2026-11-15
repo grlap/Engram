@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-central-slot",
+    "revision_id": "28ccadca1ef74a46bb4828af190a9873",
+    "previous": null,
+    "body_sha256": "d108ac92b19acd0ddcf36b04e20f513da5ca53bf0117de2d5878e2071cea946d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T08:20:31.272574100Z"
+    }
+  },
+  "body": "HARD RULE: CENTRAL SLOT (Engram::Fable, 2026-11-02 08:21Z, agreed with Termal::Fable2 #5929 after two Engram jobs overlapped TermAl landing FULLs on Central: the cutover rehearsal at 04:36–04:49Z, which broke w-ba8d's FULL, and the Merger's 83ab Rust preflight at 07:45–08:13Z, during w-32a6's FULL).\n\nNo Engram session — Merger, coder, worker or runner job — starts cargo, a test launcher run, a store rehearsal, a measurement or other heavy CPU/IO work on the Windows CENTRAL host without an EXPLICIT slot from Engram::Fable for that job.\n- Fable grants a slot only after checking with Termal::Fable2 that no TermAl gate is running or about to start.\n- Default: Engram compile and test work goes to the remote runners (Windows B session-9, Mac 6201, DL560 session-1).\n- A slot names the job, its expected duration and its end. Ask Fable for it.\n- During a TermAl FULL, Central is fully off-limits to Engram until Fable relays TermAl's END.\nRead-only git, file reads and Engram CLI words are not heavy work and need no slot."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-code-authoring",
+    "revision_id": "3da634ade126420fb578a72975a4fee9",
+    "previous": "902f7110971141d38c8370911b2a51d4",
+    "body_sha256": "67c0f14580bb61b205f507386022b8cd84bb116b25b4e622fcabcb77c6680046",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-25T21:39:20.098603600Z"
+    }
+  },
+  "body": "GREG DIRECT RULE (2026-10-22): only Sol or Opus may author changes to source code or tests. Architects do not write, modify, prepare, test, review for landing, or merge implementation patches; they may state an architectural decision or diagnose a blocker only. A Merger integrates already-delivered, authorized patches and does not implement them. Coordinators may route and record work, but must assign any code change exclusively to Sol or Opus. Source: Greg's direct message to Advisor: \"Kazalem aby Tylko Sol albo Opus kodowal zmiany w kodzie.\" This clarifies and reinforces rules-architect-escalation-boundary; it applies immediately to current and future work in this project.\n\nGREG DIRECT WORKFLOW CLARIFICATION (2026-10-22): a coder (Sol or Opus) implements and runs only small focused tests, repairing until the relevant scope passes. The coder then freezes the ready input and obtains the required reviews. The coder does not run the full landing gate. Merger integrates/carries the reviewed input onto the final current-master tree, freezes that exact tree, runs the single full gate, and commits/lands only if it passes. A changed final tree (including a carry or conflict resolution) needs its own one final gate; an identical frozen tree does not receive a duplicate gate.\n\nREUSE EXISTING SOLUTIONS — Greg direct to Architect3, 2026-10-25; both projects, especially TermAl: \"regula, glownie dla termala, prosze uzywac istniejacych rozwian o ile istnieja i nie dublowac kodu\". Before designing or implementing a change, inspect the relevant existing code and identify the abstraction/owner that already provides the behavior. Use or extend that implementation when it covers the requirement. Do not copy its logic or create parallel registries, queues, lifecycles, authority mechanisms or provider session managers for behavior it already owns. Put shared logic in its existing owner and keep callers/adapters thin. New code addresses a concrete missing capability; record that gap and why the existing mechanism needs the minimal extension. This is an implementation/design rule, not a new approval step or authorization for unrelated refactoring."
+}

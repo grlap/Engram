@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-commit-clean-identity-2026-10-31",
+    "revision_id": "f1da89e739ae4a73ab860f08070564fd",
+    "previous": "9f2933d905c24fe08f40c491565f6da2",
+    "body_sha256": "a713e07510943749c55a4c982dae4434040074532f0f4c856be9200bc4da3ba5",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-31T01:52:07.809277700Z"
+    }
+  },
+  "body": "CURRENT OPERATING RULE (rev 4, 2026-10-31 01:52Z): one Git-input flow for test evidence. Earlier drafts (git-tree-only, the seven-point sighting design, v2, v3) are history in revisions 1-3 and the task notes.\nGREG DIRECT, verbatim, with sources:\n- Engram Advisor #2397 (message fbd70c9c, 01:42:13Z): „z tego co nas interesuje to tylko to aby commit sie zgadzal i niebylo zmian”.\n- Engram Advisor #2400 (message 33b1d272, 01:43:15Z): „powaznie, nikt nie robi dodatkowych czekow z test-runami. czysty branch z danym commitem i tyle... nic wiecej nie jest potrzebne”.\n- In Termal::Fable2's session, recorded verbatim on TermAl w-decd61d62831, relayed by Fable2 #5515 (01:48:51Z): „przed test-runem jakis \"brud\" => fail / po testach czysty => OK / po testak brudno => agent makes a call, poniewaz to moge byc jakies drobne smieci, szkoda by odrzucac caly gate”.\nDESIGN: FINAL v4A by Engram::Architect3 with Termal::Architect2, recorded on Engram w-d7826c4f78ec, note 1ab57d78d9344e0a9827f05feaf8ee1c; Engram::Fable concurs. In short:\n1. An ordinary run records the clean input's full commit and gitignore-respecting status at existing launcher points. Dirty before → don't start. Clean after → OK. Dirty after → the agent records one disposition. No sighting, capture, whole-content scan, manifest or agent check.\n2. The staged review/gate lane keeps the exact staged tree as the tested input (base HEAD is provenance). The landing must contain that exact tree. No preliminary commit; different commits are never interchangeable just because their trees match.\n3. The registered launcher run's terminal result is the producer of typed evidence, ON and OFF, through a new grant-free seam in the existing host transport.\n4. Evaluation and completion match the Git input, replacing the named-root-sighting prerequisite. Old records are read as stored.\n5. For LANDING gates, after-run debris counts only after item (C) changes the launcher and the standing-approval wording through the authority-text process. Until then CLAUDE.md's fingerprint condition governs unchanged (today's fingerprint includes untracked files).\nITEMS: (A) w-a51e2263fec3 grant-free result producer (p0); (B) w-da8c79e5d5ab Git-input matching (p0, after A); (C) w-e68590888978 debris outcome plus authority wording (p1). (A) and (B) are assigned to Coder 11334. STOPPED or PARKED: TermAl w-779e (capture); Engram w-8fdd1634eed3, w-7b194f1d1cd9 and w-00e2f3694fea are superseded in purpose by (B). Unchanged: rules-greg-git-identity-2026-10-29 for review and freeze identity."
+}

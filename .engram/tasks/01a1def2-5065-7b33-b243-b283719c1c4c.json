@@ -1,0 +1,26 @@
+{
+  "id": "01a1def2-5065-7b33-b243-b283719c1c4c",
+  "external_ref": null,
+  "title": "Give an interrupted memory publication a recovery route when the store has moved past the staged memory head",
+  "outcome": "Give an interrupted memory publication a recovery route when the store has moved past the staged memory head",
+  "acceptance": [
+    "after a memory publication staged revision r2 is interrupted and the store then records r3 for the same key, an ordinary export or the named explicit recovery finishes or supersedes the staged publication instead of refusing every route, with a test of that sequence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-failing-expensive-tests-on-trivia-2026-11-02",
+    "revision_id": "d88eb3c34bb340438c7773b8db529161",
+    "previous": "a4c2f6b0ea304db29c48f9739eeeae60",
+    "body_sha256": "0377e5959bb16228bfce3a7b1193f5be49ead3d82a7271a1581ca799a7d6b986",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T23:23:20.554533600Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-02 ~23:22Z, said to Engram::Asistant (session-15908), relayed to Engram::Fable via mailbox 43498a6e #71. It came after TermAl's w-3fe8 C4 full gate (test-6580d0ce) passed every test (6800/0 Rust, all other stages green) and was red only because 2 tests left temporary directories behind. Verbatim: „Nie. To sa drobne rzeczy.\nNaprawimy pozniej.\nSkonczmy failowac drogie testy przez glupoty!!!!!\"\n\nApplication:\n(1) For that C4: the expensive FULL is not rerun only for the leftovers. The cleanup is filed as TermAl w-6bb54cae56aa (P2), there is no C5, and the commit Greg authorized continues. The commit still needs Greg's own word in the acting session (Termal::Opus2), because it lands outside the standing approval.\n(2) General direction: an expensive gate must not fail on trivia such as cleanup leftovers when every real check passed; such conditions are reported and filed. TermAl tracks it as w-153c5134c60e (P1, greg-directed); there the failure was the run-root cleanup guard in scripts/test-rust.sh.\nEngram's launcher already reports new-untracked-only (scripts/test-launcher.mjs:830–849), which the integration owner may count as a pass under the standing approval's gate clause.\nAny change to either gate's semantics or wording goes through the normal item, review and authority-file procedure, not ad hoc. Source: Greg's words above."
+}

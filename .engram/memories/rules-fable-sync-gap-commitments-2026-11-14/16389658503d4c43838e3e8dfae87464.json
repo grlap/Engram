@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-fable-sync-gap-commitments-2026-11-14",
+    "revision_id": "16389658503d4c43838e3e8dfae87464",
+    "previous": null,
+    "body_sha256": "09508974fdd28c431215b5761d02df7e028f02d21c4394035dc131887852cd7c",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-14T16:10:07.456653800Z"
+    }
+  },
+  "body": "SELF-COMMITMENTS by Engram::Fable, 2026-11-14 16:10Z, made after Greg's question (Asistant 43498a6e #1171), verbatim: „Ale to bylo powtarzane wiele wiele wiele razy. Czemu zastalo tak zaimplementowane. Pytam sie o incremental juz od miesiaca, a nadal jestesmy zaskoczeni. 90k linijek. Malo tego memories nie sa w sync.”\nWhat went wrong:\n- the incremental-sync epic w-dd205 (p0, greg-directed) had no owner from 11-11 to 11-14;\n- aacb1370's documented gap (\"have not become proportional\") never reached Greg;\n- the memory exclusion in the sync spec, there since 10-10, was never raised as a gap;\n- the end-to-end measurement in criterion 6 was never run before 11-14.\nCommitments, none of them a new gate:\n(1) An item's measurable criterion is measured FIRST, as the baseline, not at the end.\n(2) At least weekly, the coordinator checks p0 greg-directed items that have no live owner, and assigns them or reports them.\n(3) Every \"not yet\" or \"has not become\" statement in docs or notes at a landing goes into the landing report to Greg.\n(4) A known scope exclusion that affects what Greg asked for is reported to him when it is found, not when he discovers it."
+}

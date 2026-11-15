@@ -1,0 +1,29 @@
+{
+  "id": "01a1e05a-4b99-7901-b793-7f38d12f78f3",
+  "external_ref": null,
+  "title": "Make the ready-listing remedy regression exercise multiple pages",
+  "outcome": "The compact-next refusal remedy test reads several ready-order pages and performs its unrelated write between pages.",
+  "acceptance": [
+    "The ready-listing remedy test uses a small limit, asserts more than one page, performs an unrelated write between pages, and verifies complete ordered duplicate-free results.",
+    "The focused customer_workflow::listing tests pass without changing navigation behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

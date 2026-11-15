@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-operation-timeouts-60s-2026-11-11",
+    "revision_id": "8eaec50b34774f6b8251a744b43a232e",
+    "previous": null,
+    "body_sha256": "480953567aac331cbad8139a1bbfcb8322705ae0a84ea0d71d389fbc1aed0dc9",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-11T07:07:28.241870500Z"
+    }
+  },
+  "body": "GREG, 2026-11-11 about 07:06Z, relayed by Engram::Asistant (mailbox 43498a6e #921, message c4fba59a), verbatim: „No to nie robmy takich designów. To są cięzkie limity, nie sprawdzaja sie u nas. Limity resetujace operacje powinny byc minuta. A logowac ostrzeżenie po 10 sekunach. Inaczej znowu system przestaje działać!!!”\nContext: TermAl's 6000 ms host-adapter deadline killed every `engram work evaluate` submission into TermAl's store (w-ccc13083eaac).\nDecision, per Asistant's scope note:\n- Any limit that aborts or resets an operation is 60 s.\n- At 10 s, log a warning without interrupting.\n- First target: TermAl's Engram evaluate adapter. Then review similar hard limits in both projects, and file or fix the fitting places.\n- Keep idempotency, and don't duplicate unknown outcomes.\n- The write-performance diagnosis continues.\n- Ship as fast as possible, confirmed by a test and by an actual same-key resubmit of the retained evaluations, without asking Greg again."
+}

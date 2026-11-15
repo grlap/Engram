@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-broken-evaluation-not-blocker-2026-11-01",
+    "revision_id": "206d0b14694540dcb899cf2155f5908f",
+    "previous": "537f958cfbd042c097dff6fb8326e2a1",
+    "body_sha256": "a6091cf6b9384c55ac77f21f4b61c838560c30d09084e886d7d261c9c27565de",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:26:14.390660500Z"
+    }
+  },
+  "body": "EVALUATION IS TEMPORARILY OFF UNTIL EXECUTION OBSERVABILITY IS IMPLEMENTED. The full rule is in rules-greg-control (revision 25, section 3).\n\nGreg, verbatim, all in session-5135 unless noted:\n- \"EWALUACJA jest tymczasowo wylaczona do czasu implementacji Execution Observability\" (2026-11-02);\n- \"NIE USUWAMY EWALUACJI Z KODU czy z dokumentow\";\n- \"THIS SHIT IS TURNED OFF UNTIL WE GOT THIS WORKING\" (Architect3 #308);\n- \"that should be already a fucking rule in engram memory\".\n\nIn practice:\n- No landing, completion or other work waits for an independent acceptance evaluation, and nobody asks Greg about one.\n- Enforcement is off in the policy of both stores (epoch 3, allowed_modes=[]). Don't turn it back on until Execution Observability works.\n- The evaluation code and docs stay.\n- A missing verdict stays missing and is never recorded as a pass.\n- Still required: full gate, clean review pair, criterion evidence, migration rules, and Greg-only TermAl restarts."
+}

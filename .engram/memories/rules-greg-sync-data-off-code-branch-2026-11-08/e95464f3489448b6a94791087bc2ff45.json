@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-sync-data-off-code-branch-2026-11-08",
+    "revision_id": "e95464f3489448b6a94791087bc2ff45",
+    "previous": "3ebd31b354e74b918f88859b48a84263",
+    "body_sha256": "0f559e982c84e52628e5a388f50108b8bccfcbeaae148de7dc5d8c08f62e30fc",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T06:05:42.749257700Z"
+    }
+  },
+  "body": "GREG, 2026-11-08, relayed by Engram::Asistant (mailbox 43498a6e). DECIDED: Engram sync keeps code and metadata on separate branches.\n#655 (about 02:44Z, message f827a7ee), verbatim: „wazne aby nie laczyc taskow/evidence z kodem, bo to stanowi duzy problem”. Asistant's paraphrase of the rest: a separate task-data branch; monthly evidence branches to be evaluated; Kimi and the Engram team to agree one joint conclusion; no extra approval gate.\n#657 (about 02:50Z, message b53b1dd9), verbatim: „Byle odseparowac branch z kodem od brancha z metadata. Czy zgadzamy się tutaj?”; „stare zmiany mozna squashowac, to też mechanizm retencji”; „Zgadza się później. Super. Robimy?”.\nAsistant's relay of the mandate (paraphrase): implement full Engram sync with code separate and tasks plus evidence on a separate data branch, as agreed with Kimi. Retention/squash is a follow-up and doesn't block implementation. Update the existing design and tasks, coordinate 12325 and 12329, continue without unnecessary questions, report owners and real status. If automatic data-push needs a permission change, prepare the concrete text and consequences so Greg decides on a ready solution; don't block independent implementation.\nJOINT CONCLUSION (Kimi #57/#59, 12329 note 95451aac on w-09c, Fable):\n- One long-lived ORPHAN data branch per project (tasks + evidence packs) and a dedicated data worktree inside the repository folder.\n- Code commits carry no task data. Code source_id and gates never include exports. Records cite code by complete source_id. A data commit is never tested code.\n- fetch → agent merge → fast-forward; never force.\n- No monthly branches. Retention later (squash or epoch rollover to a new orphan branch seeded with a complete baseline); that follow-up needs its own history-rewrite word.\n- A data-branch push is a new Git grant: AGENTS text prepared for Greg. Until granted, data commits stay local.\n\nThe deliberate duplication is host-local canonical SQLite/private execution plus shared Git task/evidence text; no SQLite replication or authority transfer. Reconciliation uses the recorded common/last-applied base and resolved/local diff; absence from a final folder alone is not deletion, and host-local work absent from the shared base is retained. This records the durable intent of Greg's pilot directions #1664/#1713; the current data-branch design governs its exact application and supersedes old pilot-only implementation boundaries."
+}

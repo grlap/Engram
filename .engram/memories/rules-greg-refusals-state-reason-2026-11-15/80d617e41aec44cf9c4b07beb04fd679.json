@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-refusals-state-reason-2026-11-15",
+    "revision_id": "80d617e41aec44cf9c4b07beb04fd679",
+    "previous": null,
+    "body_sha256": "2418a54ee2144836f22a158fc52a125bee909ecabf0c310279dc9e3c744c8ea5",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T06:47:18.056162200Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 06:47Z, relayed by Engram::Asistant (mailbox 43498a6e #1263, message d9d2596b), a design rule for BOTH projects, verbatim: „jak cos odrzucamy podajemy powód aby agent mogl skorygowac akcje. Nie robimy nikomu przysługi projektując systemy zagadaki.”\nAsistant's brief, not Greg's words: Kimi proposes a concise rule, agreed with both teams and applied to the current observer/credit situation. No new gates, and no pause to sync or EO.\nWorking reading until the agreed wording replaces it:\n- Every refusal names its concrete reason and, where one exists, an executable next step for the agent.\n- A refusal (rejected), a wait (not yet arrived) and an unknown outcome stay distinct; none is invented or presented as another.\n- Silence with no association, no record and no refusal (for example a remote result that never reaches Central) is a defect to report, not an answer.\nRelated standing rule: rules-greg-no-false-refusals-2026-11-04."
+}

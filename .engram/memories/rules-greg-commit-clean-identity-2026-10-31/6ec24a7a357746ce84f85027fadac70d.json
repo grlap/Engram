@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-commit-clean-identity-2026-10-31",
+    "revision_id": "6ec24a7a357746ce84f85027fadac70d",
+    "previous": null,
+    "body_sha256": "711b6eb0013d6547fac81999a7cfff262ed79cd05c066e1ccc8fa6eec91ae8dd",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-31T01:42:29.365150400Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-31T01:42:13Z, relayed by Engram::Advisor (mailbox 74a6af16 #2397, message fbd70c9c-4008-4fd0-adfc-939736f6c96b). Greg verbatim: „z tego co nas interesuje to tylko to aby commit sie zgadzal i niebylo zmian”. Advisor's relay text (not Greg's words): base observation and test crediting on the matching commit and a clean worktree in the normal flow; explain only real exceptions; do not keep an extra whole-content measurement just because current formats need it; agree one common simple contract with TermAl.\nCONTEXT: Greg's question #2395 (\"testy puszczamy z czystego brancha… co oni chca mierzyc\"). TermAl's content-v1 source revision (TermAl src/content_revision.rs) reads and hashes every tracked and untracked file, up to 512 MB.\nDIRECTION (Engram::Fable, to be agreed with Termal::Fable2 and Architect2; implemented under the shared id contract, Engram w-d7826c4f78ec / TermAl w-a08b0320448f): in the normal flow the source identity a host reports (turn sightings, test-run source fingerprints, the w-779e capture) is the commit and its tree on a CLEAN worktree (`git status --porcelain=v1 --untracked-files=all` empty), for example \"git-tree:<HEAD^{tree}>\". A dirty worktree is the exception, handled explicitly (reported as not clean; the evaluation waits for a commit) rather than by hashing all content. Engram stores source_revision as an opaque string compared for equality, so Engram needs no change to accept it; all producers switch together. Existing recorded values stay valid as stored. This does not change the launcher's own before/after freeze fingerprint for landing gates (rules-greg-git-identity-2026-10-29)."
+}

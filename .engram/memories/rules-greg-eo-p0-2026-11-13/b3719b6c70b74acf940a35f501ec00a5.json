@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-eo-p0-2026-11-13",
+    "revision_id": "b3719b6c70b74acf940a35f501ec00a5",
+    "previous": "08f0a5186fe647908baa619115ed41fd",
+    "body_sha256": "c944a4e47771f7f3858450087be0326283ce83afeb4ce7917a5029f7e649850e",
+    "retiring_target": {
+      "kind": "local",
+      "work_id": "01a1d5a8-54e4-7371-b870-06f2c1b2b856",
+      "work_ref": "w-06f2c1b2b856"
+    },
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-13T16:05:47.989032600Z"
+    }
+  },
+  "body": "GREG, 2026-11-13 about 16:05Z, relayed by Engram::Asistant (mailbox 43498a6e #1093), verbatim: „to jest nasze P0”. He was answering Fable's report (#1092) that unified Execution Observability is NOT fully done.\n\nAsistant's scope: closing unified EO is the current P0. Identify the remaining necessary work and the missing verification of the six harnesses, assign owners, drive the dependencies, report a concrete status and plan (an ETA only where it is justified), leave no work unassigned, and keep both projects in sync. Any needed restart goes to Greg through Asistant with a clear RESET NOW.\n\nTracking item: the Engram epic \"Close unified Execution Observability end to end\".\n\nTracking item: w-06f2c1b2b856. This revision corrects the retirement target, which was mistakenly set to w-32eb in revision 1."
+}

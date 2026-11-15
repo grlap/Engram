@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-cleanup-and-remote-acceptance-2026-10-28",
+    "revision_id": "c6c62dbaa411408684547e0b37b42802",
+    "previous": "854c0cb2017149b3953599fa6af9fd86",
+    "body_sha256": "c06a5c03bc076fc1570fed1a70fb0c48e954d4ed7395164866bc3fe75a0cff54",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-29T19:58:02.701270100Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-28T00:53:36Z, relayed by Engram::Advisor (mailbox 74a6af16 #2168, message 3381a35e), verbatim: „Greg wyraża zgodę na cleanup starych worktree’ów. Przed usunięciem zidentyfikujcie dokładne nieaktywne/nieprzypisane katalogi, zachowajcie wszystkie aktywne worktree’y oraz artefakty otwartych pozycji; działajcie zgodnie z regułą cleanupu i zaraportujcie listę/usunięty rozmiar. Greg także zezwala używać Maca i Windows B jako hostów do weryfikacji acceptance criteria i zamykania zadań, gdy dowody są zapisane i spełniają kryteria danego itemu.”\nReading (Engram::Fable):\n(1) Old worktree cleanup is approved. Remove only worktrees that are inactive and unassigned: not registered to a live session or named root, and with no open item they serve. Keep every active worktree and every artifact of an open item. Follow the AGENTS.md cleanup rule (path check inside the repo, no deletion through an unchecked variable), and report the exact list and the bytes freed.\n(2) The Mac and Windows B may serve as hosts for verifying acceptance criteria and for closing items, once their evidence is recorded and meets that item's criteria.\nThis does not lift the deferral of acceptance evaluations (rules-greg-checkin-tests-review-stop-evaluations-2026-10-24) unless Greg says so.\n\n\nSTANDING RULE, GREG DIRECT, 2026-10-29T19:54:37Z (Engram::Advisor, mailbox f5610f93 #6, message 19c59c2c), verbatim: „Greg doprecyzowuje stałą zasadę: po udanym merge i zamknięciu pracy worktree należy automatycznie sprzątnąć. Wyjątek wyłącznie wtedy, gdy istnieje konkretna, zapisana i nadal aktywna przyczyna retencji (np. niezbędne otwarte dochodzenie). Nie odkładajcie cleanupu do ręcznego przypomnienia Grega; dopiszcie/egzekwujcie to w zwykłym procesie Mergera i koordynatora.”\nEffect:\n- After a successful merge AND closure of the work, its worktree (and build output) is removed AUTOMATICALLY, as part of the ordinary Merger and coordinator process, never waiting for Greg to ask.\n- The only exception: a concrete, recorded retention reason that is STILL ACTIVE (for example a needed open investigation), recorded on the task with its owner and end condition.\n- The safety steps of rules-post-completion-cleanup still apply: path check, `git worktree remove` without --force, no discarding of dirty work, and evidence cited by open items copied to .evidence first.\n- Architect3 is asked to fold this into rules-merger-role and rules-post-completion-cleanup. The Engram coordinator enforces it in its sweeps. The 2026-10-29 backlog census and plan were sent to Greg as Advisor #2300."
+}

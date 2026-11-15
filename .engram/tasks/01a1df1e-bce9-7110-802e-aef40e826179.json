@@ -1,0 +1,26 @@
+{
+  "id": "01a1df1e-bce9-7110-802e-aef40e826179",
+  "external_ref": null,
+  "title": "Carry this host's own alias into the folder head when a first complete import uses this host's own export as its basis",
+  "outcome": "Carry this host's own alias into the folder head when a first complete import uses this host's own export as its basis",
+  "acceptance": [
+    "after enrolling with `task-sync import --basis OWN_EXPORT/project.json` whose envelope names alias X, an incremental export under another alias Y refuses and names --origin-machine X or --rebuild, with a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

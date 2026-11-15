@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-architect-escalation-boundary",
+    "revision_id": "5ea17b0a7f36440da8395f82fabd18ec",
+    "previous": null,
+    "body_sha256": "207e0db9b652d200f88b1dab8097b583f48e1f44818d3a4d91f22ca90394220e",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-5.6-terra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-08T15:35:50.515597200Z"
+    }
+  },
+  "body": "CANONICAL: architect escalation boundary — Greg's direct direction, 2026-10-08. This is a current role rule and supersedes conflicting older role descriptions.\n\nArchitects are scarce, expensive escalation capacity. They act only when an explicit architectural decision is needed, or when an implementation agent reports that it cannot proceed and needs an architectural decision.\n\nArchitects do not distribute work, run check-ins, implement code, execute tests or gates, conduct routine code review, request or record evaluations or gate credit, hold operational claims, or land and integrate changes. There is no exception to preserve an existing gate: transfer the item to an executor and rerun the gate under that executor when necessary.\n\nCoordinators, coders and dedicated read-only reviewers own routine work. A separate non-coding check-in agent collects status and blockers; it does not code, test, review code or decide architecture."
+}

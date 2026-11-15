@@ -1,0 +1,83 @@
+{
+  "id": "01a1dd12-3098-7ee2-a2f0-92ed424acffa",
+  "external_ref": null,
+  "title": "Document task synchronization in the Engram usage skill",
+  "outcome": "Document task synchronization in the Engram usage skill",
+  "acceptance": [
+    "The Engram usage skill explains the task-sync workflow and disclosure boundaries without granting Git authority or claiming unsupported memory sync."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented the task-sync workflow and disclosure boundaries in the Engram usage skill. Landed and installed commit c5c4d2729ebd56e7c3a393f16ac66b3b3c202b16; all six live stores passed readiness with build fingerprint 737947bf96672727d7d8b0cb1fc62028dfcf47708ad3253bda8e86ef87812be5. Existing MCP/control processes retain their prior loaded build pending their normal recreation.",
+    "completed_at": "2026-11-15T06:24:20.290392Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4310accacf3d47c5937b40bf8e00008d": {
+        "activity_id": "4310accacf3d47c5937b40bf8e00008d",
+        "task_id": "01a1dd12-3098-7ee2-a2f0-92ed424acffa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "11051cec1b7147109e433c35fa15dacc"
+      },
+      "6619be77909149eb9580bd7a0bbf6c6f": {
+        "activity_id": "6619be77909149eb9580bd7a0bbf6c6f",
+        "task_id": "01a1dd12-3098-7ee2-a2f0-92ed424acffa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e18ff0cfc6c547499567de9dc9e65dbb"
+      },
+      "d35ca2a1926149e98bcdcdc65602c372": {
+        "activity_id": "d35ca2a1926149e98bcdcdc65602c372",
+        "task_id": "01a1dd12-3098-7ee2-a2f0-92ed424acffa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4310accacf3d47c5937b40bf8e00008d"
+      },
+      "ee75aec2fdde418ca39e63586bb8471c": {
+        "activity_id": "ee75aec2fdde418ca39e63586bb8471c",
+        "task_id": "01a1dd12-3098-7ee2-a2f0-92ed424acffa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ee75aec2fdde418ca39e63586bb8471c"
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "id": "01a1dde1-888c-76a2-b0a6-be40465abab0",
+  "external_ref": null,
+  "title": "Update the Engram usage skill's sync section for project memory exchange once memory sync lands",
+  "outcome": "Update the Engram usage skill's sync section for project memory exchange once memory sync lands",
+  "acceptance": [
+    "After project memory exchange lands, docs/skills/engram-use/SKILL.md no longer says that memories don't sync. It describes the --include-memories export and import, the retirement statuses and the --retire-unseen remedy, consistent with docs/features/git-task-sync.md, without granting Git authority"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "project-memory",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+    "01a1dea0-71bd-7512-9c79-443806ecaf50"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "50c9f06642f5461eb4de8b528bd48578": {
+        "activity_id": "50c9f06642f5461eb4de8b528bd48578",
+        "task_id": "01a1dde1-888c-76a2-b0a6-be40465abab0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "50c9f06642f5461eb4de8b528bd48578"
+      }
+    }
+  }
+}

@@ -64,6 +64,18 @@
         "state": "started",
         "state_revision": 1,
         "event_id": "666ea9160e0c43cfbb48bd6f80def256"
+      },
+      "b222f2ef2d984650954283a458c1250d": {
+        "activity_id": "b222f2ef2d984650954283a458c1250d",
+        "task_id": "01a1d212-f0c2-7100-aaa2-6ea6f92ccffc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b222f2ef2d984650954283a458c1250d"
       }
     }
   }

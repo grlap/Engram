@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-escalation-2026-10-29",
+    "revision_id": "f28d01a3c7b24800b0194b6fdfa9cdaa",
+    "previous": null,
+    "body_sha256": "e212a8b0493b07106718df26c4637dad9482dda0f387896356724cd31380acbf",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-29T08:35:13.885930600Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-29T08:32:12Z, relayed via the TermAl Advisor (b9d13887 #2459; quoted to Engram by Fable2 #5214), verbatim: „Greg: Merger2 nie powinien byl zatrzymywac B16 na dodatkowym pytaniu. Direktywa: zespoly maja pracowac autonomicznie; nie eskalujcie do Grega krokow mozliwych do wykonania autonomicznie. Zglosilem ten blad Architect3 do korekty regul dla obu projektow.”\nEFFECT: teams work autonomously. Do NOT escalate to Greg any step that agents may perform autonomously under the existing rules: landings under the standing approval, gates, reviews, carries, evaluations, scope bookkeeping. Architect3 is correcting the rules for both projects; the condition-3 conflict is under analysis (Architect3 #72).\nNOT CHANGED: acts that are Greg's own stay his. The TermAl restart moment (Greg #2244: no \"restart now\" before his next confirmation), the gated-control enable, and any authority widening. Coordinators read 08:32Z as NOT a restart confirmation (Fable and Fable2, #5213 and #5214)."
+}

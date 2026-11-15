@@ -1,0 +1,26 @@
+{
+  "id": "01a1df71-2e50-7163-bc64-c597217f588f",
+  "external_ref": null,
+  "title": "Keep task-sync recorded task sizes and Git delta sizes in one byte domain when the checkout converts line endings",
+  "outcome": "Keep task-sync recorded task sizes and Git delta sizes in one byte domain when the checkout converts line endings",
+  "acceptance": [
+    "a complete enrolment from a CRLF checkout followed by an incremental import that deletes or edits tasks leaves the recorded task_bytes equal to what the complete reader measures (no phantom bytes at task_count 0), or refuses the CRLF checkout by name, with a regression test under core.autocrlf=true"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

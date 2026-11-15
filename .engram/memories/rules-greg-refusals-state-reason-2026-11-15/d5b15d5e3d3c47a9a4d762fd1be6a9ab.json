@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-refusals-state-reason-2026-11-15",
+    "revision_id": "d5b15d5e3d3c47a9a4d762fd1be6a9ab",
+    "previous": "80d617e41aec44cf9c4b07beb04fd679",
+    "body_sha256": "729d1ee59758fc67f6637ff66dcdbc1c621767daf0aeffa2a32565937e119bd7",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T06:48:14.554128800Z"
+    }
+  },
+  "body": "DESIGN RULE for BOTH projects, agreed wording. Termal::Fable2 drafted it (TermAl memory design-rule-refusals-explain-themselves-2026-11-15, ebe242f7 #8035); Engram::Fable concurred unchanged on 2026-11-15.\nSource: GREG, 2026-11-15 about 06:47Z, relayed by Engram::Asistant (mailbox 43498a6e #1263, message d9d2596b), verbatim: „jak cos odrzucamy podajemy powód aby agent mogl skorygowac akcje. Nie robimy nikomu przysługi projektując systemy zagadaki.” Asistant's brief: no new gates; no pause to sync or EO.\n\nAGREED WORDING:\n\"REFUSALS EXPLAIN THEMSELVES. Whenever the product refuses, rejects, skips, ignores or holds an action, input or result, it reports (1) which check decided, (2) the concrete reason with the observed values, and (3) when one exists, the action that would make it succeed. Three outcomes stay distinct: REFUSED (final; reason and next step), PENDING (will retry; names what it waits on and what ends the wait), and UNKNOWN (not observed; says what is missing and where it could be read). No outcome is invented to fill a gap. Silent skips, waits that can never end without saying so, error messages computed and then discarded, and parse failures that turn into 'not recognized' with no trace are defects. When a refusal happens on a remote host, its reason travels back to the requester. The rule adds no gates; it applies to new code and to every fix touching a refusal path.\"\n\nEngram instances on 2026-11-15:\n- The evaluator admission for a Markdown-only item said \"not a recognized test runner\" with no next step (w-92ed landing).\n- Good pattern: memory sync's memory_concurrent_retirement names the unseen revisions and the remedy --retire-unseen KEY.\nNext: add the wording to both repos' docs as an ordinary docs landing; it is not authority text.\nRelated: rules-greg-no-false-refusals-2026-11-04."
+}

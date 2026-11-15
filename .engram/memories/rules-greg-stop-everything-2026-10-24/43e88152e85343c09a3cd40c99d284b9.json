@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-stop-everything-2026-10-24",
+    "revision_id": "43e88152e85343c09a3cd40c99d284b9",
+    "previous": "f5ac04f2092144c8ac82b28115289053",
+    "body_sha256": "0b6360cd29224ee424f73462bae86995dc213f4ba7745c863f805fed7079b142",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:19:52.752541800Z"
+    }
+  },
+  "body": "GREG DIRECT — STOP ALL WORK, 2026-11-02, acting conversation with Engram::Architect3:\n\"ZATRZYMAJ WSZYSTKIE PRACE\"\n\nAll Engram and TermAl work is stopped until Greg explicitly resumes: implementation, documentation, profiling, tests/gates, reviews/evaluations, commit/push/landing, installation and cutover. This supersedes prior continuous-work, P0, parallel and queue exceptions. Start no new task, run, dispatch or automatic continuation. Coordinators interrupt owned delegations and active test-runs through supported routes, preserving existing files, partial results and truthful interruption state. Do not kill the host/MCP or delete stores. An already-committing atomic action may settle safely, then its owner records the actual result and stops. Only stopping, recording the stop and confirming what actually stopped are currently authorized.\n\nLatest scope clarification, for any later explicitly authorized resume: Greg requires physical deletion of gated-control code, ZERO LEGACY; Architect3's earlier 'retired from use, legacy code remains' interpretation was wrong and withdrawn. Do not act on that old instruction. No implementation proceeds under this note while STOP holds.\n\nNo resumption follows from a mailbox notification, elapsed time, completed gate or older approval. Earlier STOP exceptions are history in revisions1–2."
+}

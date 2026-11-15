@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-common-sense-2026-10-30",
+    "revision_id": "dd9c27a983f34adba82161ad3e83003e",
+    "previous": "47b89ccd0e894c5eaeb1a86f63bd42eb",
+    "body_sha256": "fdc0753f747a2fafbc9c2585658c6a01474c47bf5aad5c1fa8128d78b65b0f9c",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-30T19:55:31.303964300Z"
+    }
+  },
+  "body": "TEMPORARY SIMPLE PROCEDURE — until the procedural mechanisms are repaired. Greg direct to Engram::Architect3: \"prosze o uproszczone procedury do czasu naprawiania bledow proceduralnych\". This is the single current operating text; incident history and earlier interpretations stay in task notes.\n\n1. CODER: implement the fix, run the focused checks and obtain the reviews the repository requires. Send the Merger ONE complete READY with the exact input, result references and resolved findings. Intermediate progress stays on the task or with the coordinator.\n2. MERGER: integrate, run the required validation on the exact final input, then land under existing standing approval or the acting session's direct permission. Reuse valid existing evidence where the current rules allow it. No extra review, repeated successful test or repeated routine 'go' for paperwork alone.\n3. BROKEN PROCEDURE: if evaluation, observation, credit or settlement fails because its mechanism is broken, record ONCE on the item: actual input/build and result references, exact missing/refused step and its defect owner. Continue authorized repairs and independent work. An unobtained evaluation remains pending; never invent a pass, native credit or completed seal. Use an existing supported exception already authorized for that executor when applicable.\n4. RUNS AND COMMUNICATION: TermAl runs, stores logs and wakes the responsible owner; agents read terminal metadata and bounded failure diagnostics. No stdout following, polling, duplicate evidence bundles/manual hash manifests for native records, extra checklists, approval rounds or per-step compliance acknowledgements. Report a result, a real blocker or a collaboration defect, not routine partial status. Return to each repaired mechanism when available.\n\nTechnical failures still need repair and a failed test is not a pass. Claims, store integrity, repository landing conditions, executor-scoped permissions and Greg's TermAl restart remain governed by their actual instructions; the temporary procedure adds no new permission barrier or authority.\n\nSOURCES: the text above relayed verbatim by Engram::Architect3 (#173, message 7a46bee4-a324-4f92-a6e7-2ab7e439e392, 2026-10-30T19:55:09Z) from Greg's direct request in its acting chat. Related earlier Greg word, relayed by Engram::Advisor #2377 (message 300499d9, 19:50:00Z): „prosze zespol o zdrowy rozsadek.. jak test przejdzie i jest OK prosze o pominiecie precedur, do czasu naprawienia mechanizmow. TO NIE MOZE BYC BLOCKEREM teraz”."
+}

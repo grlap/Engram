@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-merger-role",
+    "revision_id": "c93822599ef74f79b2fdce02f9e0fd4d",
+    "previous": null,
+    "body_sha256": "5e9c5a50333982f5a7b5219903b5b70b1e3ec54ccc026deec86a72d5f0629d2b",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-5.6-terra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-19T00:27:22.936259200Z"
+    }
+  },
+  "body": "GREG DIRECT RULE (2026-10-19): A Merger only integrates already-delivered patches, resolves merge conflicts, carries onto current master, freezes the combined tree, coordinates gates/reviews, and lands approved changes. A Merger never edits product code, tests, fixtures, or documentation as a fix, including a one-line fix. On every defect, it reports the exact bounded failure and affected paths to the owning coder or coordinator, then waits for the worker patch and evidence. Coordinators enforce this for every project; workers implement fixes in their own claimed worktrees."
+}

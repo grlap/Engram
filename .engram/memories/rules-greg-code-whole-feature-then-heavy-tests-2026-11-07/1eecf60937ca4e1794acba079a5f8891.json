@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-code-whole-feature-then-heavy-tests-2026-11-07",
+    "revision_id": "1eecf60937ca4e1794acba079a5f8891",
+    "previous": null,
+    "body_sha256": "3b1da0b231ec26aade195933e7f3ff137bac987714512e715d591f9e5962accb",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T06:47:41.765008600Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 06:47Z, relayed by Engram::Asistant (mailbox 43498a6e #547, message 7f928a89), verbatim: „NIE, testy Questiki na koniec zrobmy to calosc, pozniej zacznijmy testowac, chce miec wstepnie zakodowany feature i wtedy go odpalac na ciezkich testach A NIE troche kodu, ciezkie testy, troche kodu ,ciezkie testy i wtopa BO KAZDA TURA TO OPCJA DLA AGENTOW ABY SPIERDOLILI REGULY”. Asistant's scope: agree the order with TermAl. First, complete coding of ALL agreed EO parts with author tests. Then prepare a joint package. Then one heavy integration validation. Questly at the very end. Avoid further full gates between EO pieces.\nApplied (Fable, 06:48Z): Engram's remaining EO code (E2 increment 1 by 12325, w-a43b 30 s by 12329), plus the ready non-EO w-b4c3, becomes ONE Merger integration candidate with ONE FULL (§6a: several COMPLETE READY packages may be integrated together). No separate FULL per piece. TermAl does the same for w-8f4c, w-37d9 and w-7ebf. Then one restart. Live Questly and Phoenix proofs come LAST.\nRULE: don't run heavy gates on partial EO pieces; finish the feature's coding with author focused tests, integrate once, validate once."
+}

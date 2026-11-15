@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-full-source-id-in-agent-context-2026-11-07",
+  "head": {
+    "state": "active",
+    "chain": [
+      "b17bc1887cbb4d4f98f01c6b5b34890c",
+      "210bb3abd6824190bf2ac49b15c37bcf"
+    ]
+  }
+}

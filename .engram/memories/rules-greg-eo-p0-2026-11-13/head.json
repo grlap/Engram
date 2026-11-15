@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-eo-p0-2026-11-13",
+  "head": {
+    "state": "active",
+    "chain": [
+      "08f0a5186fe647908baa619115ed41fd",
+      "b3719b6c70b74acf940a35f501ec00a5"
+    ]
+  }
+}

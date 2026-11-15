@@ -1,0 +1,15 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "codex-read-only-children-have-full-access-on-windows",
+  "head": {
+    "state": "tombstone",
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "retire attributed project memory",
+      "remembered_at": "2026-09-30T23:36:46.857741600Z"
+    }
+  }
+}

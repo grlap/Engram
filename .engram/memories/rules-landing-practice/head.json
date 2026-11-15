@@ -1,0 +1,22 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-landing-practice",
+  "head": {
+    "state": "active",
+    "chain": [
+      "91945ea10c204562976b6fbe2c7f8151",
+      "d96fe16729814901aa274cd713082e4a",
+      "0cb0b3837602472fb440f45674f53cfd",
+      "2ebabe4144274dd8ab9192fd535a4b17",
+      "a2016ea208b04fe78c07810783bf0da1",
+      "a811a9ffb00045518be8316fc8c8fc00",
+      "327e7907e94c4070b45a4aee81d773bc",
+      "e4e85c79ff3c405eb6730420ac3a0e3f",
+      "88d8f64756a745a59afc2c9786f5f06e",
+      "c12dae682c9841babd8710075343cd17",
+      "cc3fa46f32df498ca12f6c1ce5e2663f",
+      "20116e8bf4d2477a8ece45ae6c8b4ab9"
+    ]
+  }
+}

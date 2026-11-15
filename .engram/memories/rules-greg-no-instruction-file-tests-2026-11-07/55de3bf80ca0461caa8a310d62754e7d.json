@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-instruction-file-tests-2026-11-07",
+    "revision_id": "55de3bf80ca0461caa8a310d62754e7d",
+    "previous": null,
+    "body_sha256": "6d5688cf673b4b68bdb13f24e716e9aa56452805089e694a30f9625d756d3e39",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T00:55:48.534892300Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 00:54Z, relayed by Engram::Asistant (mailbox 43498a6e #487, message 36e2aad8), URGENT, verbatim: „USUNAC TESTY sprawdzajace claud.md czy agents.md Natychmiast!! Nigdy ich niedodawac”. Asistant's scope note: it covers tests that check or pin the content of AGENTS.md / CLAUDE.md, including pinned literal wording and similar assertions, in all of the team's projects. Remove them, write a permanent ban on adding such tests into both projects' instructions, keep the instruction files themselves, coordinate owners and landing under the existing rules without waiting for Unified EO or asking again, and report paths, owners and confirmation.\nEngram state at 00:58Z (Fable, git grep over tracked non-.md files): Engram has NO test that reads or pins AGENTS.md/CLAUDE.md or .claude/commands content, so there is nothing to delete; only the ban is owed. Out of scope: tests pinning docs/ (src/task_sync/refusal_tests.rs, tests/backup_status_receipt_cli.rs) aren't instruction files; rincon-common's test_navigator.py uses CLAUDE.md only as a path-traversal filename. Open question for Greg: the AGENTS/CLAUDE byte-identity check in Required Quality Gates (a gate command, not a test; it's named in the standing approval). Not removed without his word.\nTermAl owns its pinning tests (src/tests/agent_commands.rs and others; Fable2's decision on which ones pin content). The w-52ef fix becomes deleting the pins rather than updating them."
+}

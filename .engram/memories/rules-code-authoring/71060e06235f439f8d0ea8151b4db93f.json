@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-code-authoring",
+    "revision_id": "71060e06235f439f8d0ea8151b4db93f",
+    "previous": null,
+    "body_sha256": "96248b8220e19d602c9fc24f0c3d85c2bb55d624e464c7ab0c4f60c8085625d5",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-5.6-terra;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-22T22:50:26.611812800Z"
+    }
+  },
+  "body": "GREG DIRECT RULE (2026-10-22): only Sol or Opus may author changes to source code or tests. Architects do not write, modify, prepare, test, review for landing, or merge implementation patches; they may state an architectural decision or diagnose a blocker only. A Merger integrates already-delivered, authorized patches and does not implement them. Coordinators may route and record work, but must assign any code change exclusively to Sol or Opus. Source: Greg's direct message to Advisor: \"Kazalem aby Tylko Sol albo Opus kodowal zmiany w kodzie.\" This clarifies and reinforces rules-architect-escalation-boundary; it applies immediately to current and future work in this project."
+}

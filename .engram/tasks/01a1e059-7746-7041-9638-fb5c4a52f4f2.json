@@ -1,0 +1,29 @@
+{
+  "id": "01a1e059-7746-7041-9638-fb5c4a52f4f2",
+  "external_ref": null,
+  "title": "Move rincon-common and comovo from Beads onto Engram and sync both to the Mac",
+  "outcome": "Move rincon-common and comovo from Beads onto Engram and sync both to the Mac",
+  "acceptance": [
+    "rincon-common and comovo both track their work in Engram, their agent instructions point at Engram, and Beads is a read-only archive",
+    "after Greg's publication grant for each private repository, a Mac Engram store imports each project's tasks from its engram-data branch and the imported counts match the Central export"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "migration",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Filed prematurely: Greg clarified via Kimi::Consultant (c15db92c #197, 2026-11-15 17:55Z) that rincon-common/comovo on Engram is the future use case motivating sync and EO, not work to open now; no items, owners or planning.",
+  "completion": null
+}

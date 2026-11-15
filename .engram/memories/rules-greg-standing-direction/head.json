@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-standing-direction",
+  "head": {
+    "state": "active",
+    "chain": [
+      "7453bf2ec559458799348edf0b429b3c"
+    ]
+  }
+}

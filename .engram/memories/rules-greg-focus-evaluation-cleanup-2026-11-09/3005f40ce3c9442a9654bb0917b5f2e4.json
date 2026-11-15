@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-focus-evaluation-cleanup-2026-11-09",
+    "revision_id": "3005f40ce3c9442a9654bb0917b5f2e4",
+    "previous": "10e32002e3de499b8385f79cf023eeb1",
+    "body_sha256": "8ca925a271a48301081857c4dd1f2f66d53cbd68cbf995073797af2ad47cf380",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T21:37:07.271987800Z"
+    }
+  },
+  "body": "GREG, 2026-11-09 about 17:03Z, relayed by Engram::Asistant (mailbox 43498a6e #776, message 61d0beaf), verbatim: „mysle, ze na tym trzeba sie skupic / skonczyc evaluation / posprzatac, / naprawiac bledy ktore znajdujemy i przeszkadzaja w pracy / optymalizowac procedury pracy, komunikacji, testow, review, acceptance criteria / przekaz do zespolow i KIMI”. Asistant's brief, not his words: current direction for Engram and TermAl; agree priorities between the teams and keep executing; Kimi asked to assess and help simplify; remove real obstacles, no new unneeded conditions or gates; report what is running and the concrete next steps.\nEngram::Fable's reading: these four are the focus. Sync continues with its current owners, since he didn't stop it, but new capacity goes to the four first. He can redirect with one word.\n\nRev 2, GREG 2026-11-09 about 21:36Z via Asistant 43498a6e #803, answering Kimi's recommendations (#108-109), verbatim: „Robimy tak.” The order Asistant recorded: finish evaluation; the permanent fmt rule and C6; remove bugs that get in the way and unneeded tasks; make authors' focused tests, package composition and review smoother. Sync continues in parallel as before. All within existing authority and the current situation, with no new gates."
+}

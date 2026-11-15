@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-instruction-file-tests-2026-11-07",
+  "head": {
+    "state": "active",
+    "chain": [
+      "55de3bf80ca0461caa8a310d62754e7d",
+      "806ca89e4b7d40328596be216474598e",
+      "a3abdcb0e09145d5a761c704384f9bd6"
+    ]
+  }
+}

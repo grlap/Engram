@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-status-coding-vs-integration-2026-11-06",
+    "revision_id": "0dd0ea57b42a4642a2a8f79e18af4c64",
+    "previous": null,
+    "body_sha256": "e79cd7e44a8689da2b0e3070636528f6ac0253094f71383ec21ce39602c2f1ad",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T15:50:40.768877700Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 15:50Z, relayed by Engram::Asistant (mailbox 43498a6e #387, message 424b7149), verbatim: „kodowanie to takze testy, koder powien przygotowac cala gotowa paczke. podzial powien byc kodowanie, integracja”.\nAsistant's reading: from now on, report CODING as a complete package of code and tests, prepared and checked by the coder; report INTEGRATION as everything after that: review, the required gates and landing. Never present code as finished while its author is still preparing or checking tests. This weakens no review or gate requirement. It applies to the current EO and unification work.\nScope (Engram::Fable): a reporting rule for status sent to Greg (and coordinator summaries). It changes no gate, review or landing condition."
+}

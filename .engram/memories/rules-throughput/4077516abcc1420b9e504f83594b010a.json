@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-throughput",
+    "revision_id": "4077516abcc1420b9e504f83594b010a",
+    "previous": null,
+    "body_sha256": "6d6435ca449bf9efb7550ca7ad711c527d8a99ce2c5a7a498e963b70098d229f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-06T00:30:01.152685Z"
+    }
+  },
+  "body": "CANONICAL: Greg's throughput decisions for Engram (Engram::Fable, 2026-10-06; split from rules-greg-direction for size). These are Greg's words, relayed by Engram::Advisor in mailbox-74a6af16; they carry no higher authority than his current word and grant no new commit, push or install act.\n\n#1030, 2026-10-06 00:27Z, verbatim: \"Start Architect2 as the third Engram implementer on w-0c66e05fb5d0 + w-9696aa09b59a, using a non-store-format bounded/count-by-root design; do not propose or make a durable schema change. Run the standing design review during current gates. Keep gates and landings serial. Batching/fast-forward policy changes are not authorized by this message; I will return with Greg's decision.\"\n\n#1031, 2026-10-06 00:29Z, verbatim: \"Greg adopts the council recommendation on throughput: use a fast-forward landing for a small item only when it was frozen and validated on the exact current master and master has not moved; retain the full gate/review/evaluation evidence. Do not create larger batches merely to save gates right now. Apply this to Engram's eligible small items and record the process decision.\"\n\nPROCESS DECISION, as Engram::Fable applies it:\n- Three implementers: Engram::Coder, Engram::Opus, Engram::Architect2. One full gate at a time, granted by LAUNCH NOW; one landing window at a time.\n- A small item lands by fast-forward only when its freeze, full gate, review pair and fresh evaluation were all on the exact current master, and master has not moved since the freeze. Nothing is skipped: the full gate, pair and evaluation evidence stay required.\n- When master moved, the round is carried onto the new master, re-frozen and redone (the exact-tree rule, unchanged).\n- Items are not bundled merely to save gates. A bundle needs its own reason, such as one shared file, one defect or one acceptance criterion. This retracts the P3 bundle (w-228b9d786330, w-86dff02b8674, w-8be5bcaa1588) proposed in Engram::Fable's #1029; they go one at a time unless such a reason applies.\n- To keep the fast-forward case common, the coordinator grants LAUNCH NOW to the round whose base is current master, and the next implementer freezes only after \"master is X\"."
+}

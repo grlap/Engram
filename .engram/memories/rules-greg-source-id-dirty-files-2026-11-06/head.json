@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-source-id-dirty-files-2026-11-06",
+  "head": {
+    "state": "active",
+    "chain": [
+      "263d20c1998a499f91803cff45910443",
+      "b33da47111014c0bb9079b6d3ddfb878",
+      "e2834ba4b91d4ed4bcacb6dff831b7f0"
+    ]
+  }
+}

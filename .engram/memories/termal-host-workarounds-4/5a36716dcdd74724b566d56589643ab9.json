@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-host-workarounds-4",
+    "revision_id": "5a36716dcdd74724b566d56589643ab9",
+    "previous": "163f3d9a468247218efe9855dfd8fd60",
+    "body_sha256": "4097889236a2af26c293033feb964c4cf118c0224e0d063fec0a89e9d0569ef2",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-14T09:20:52.060618600Z"
+    }
+  },
+  "body": "placeholder"
+}

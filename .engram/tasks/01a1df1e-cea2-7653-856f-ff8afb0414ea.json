@@ -1,0 +1,26 @@
+{
+  "id": "01a1df1e-cea2-7653-856f-ff8afb0414ea",
+  "external_ref": null,
+  "title": "Check each changed task's old file against the bytes the incremental export proved before using it as the preimage",
+  "outcome": "Check each changed task's old file against the bytes the incremental export proved before using it as the preimage",
+  "acceptance": [
+    "an uncommitted edit to a changed task's file made after verify_disk and before incremental() reads it is refused, not overwritten, and the recorded inventory root stays the proved folder's, with a test using a hook between the two"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

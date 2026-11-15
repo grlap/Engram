@@ -1,0 +1,17 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-push-handoff-2026-11-13",
+  "head": {
+    "state": "active",
+    "chain": [
+      "3b4f2534159e454eb0161b9fef56b9ba",
+      "2b8ce7e4ba474452860a8a7c61971a84",
+      "b4784516e79a4fd79d22c968a0a0158f",
+      "f0d7eb34e1e7490b813512689f2a1089",
+      "d69186e033c547acb7582e0b917df7fd",
+      "5a947e464ceb403e8c00f6ee226e3907",
+      "9baa1f4b29f64140986260067a83aa95"
+    ]
+  }
+}

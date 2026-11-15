@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-engram-termal-data-exchange-2026-11-15",
+    "revision_id": "5d41688cd7aa4035aa7565be012431cb",
+    "previous": null,
+    "body_sha256": "c3309acf5db8a35a6425b2a2e6778e95ff8547cbfd9bdb469b3b5ca5b58dffae",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T02:34:41.790373100Z"
+    }
+  },
+  "body": "GREG, 2026-11-15 about 02:33Z, relayed by Engram::Asistant (mailbox 43498a6e #1240, message 6c33fd1e). Asistant had explained that the Engram and TermAl repositories are public, so an export to their branches is public.\nGreg, verbatim: „Engram i Termal tak samo. Czy jest prywatne czy publiczne to status repozytorium, tak?”\nAsistant's scope: this authorizes routine task-data exchange for Engram and TermAl on a separate data branch, the same as Phoenix (rules-greg-phoenix-exchange-branch-2026-11-14). Don't re-ask. Asistant asked to prepare and run the sync and the DL560 bootstrap, check the export's content and the existing data, continue independent work, and report results and limits.\nRule:\n- Data only, on the dedicated orphan data branch (`engram-data`, from `task-sync data-init`).\n- Fast-forward pushes only. Never master or a code branch; never a force-push, rebase or history rewrite.\n- Before each push, check the export for secrets and private personal data, above all the user's email address, which stays private.\n- Notes stay OFF unless they are reviewed separately.\n- The TermAl repository's exchange is run by the TermAl coordinator (Fable2); Engram's by Engram::Fable or its delegate."
+}

@@ -1,0 +1,26 @@
+{
+  "id": "01a1df6b-abaa-7952-ab63-7cdd17ca84ee",
+  "external_ref": null,
+  "title": "Give an interrupted managed custody journal publication (partial managed.pending) a supported recovery route and an accurate refusal",
+  "outcome": "Give an interrupted managed custody journal publication (partial managed.pending) a supported recovery route and an accurate refusal",
+  "acceptance": [
+    "after a writer dies between creating managed.pending and completing it, a named recovery step under the held repository reservation discards the unparseable pending file and records that it did, so exports, imports and managed_audit proceed; a well-formed divergent pending is still refused; the refusal text names that step; with a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

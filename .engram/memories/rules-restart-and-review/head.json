@@ -1,0 +1,16 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-restart-and-review",
+  "head": {
+    "state": "active",
+    "chain": [
+      "27b965f20c874ae6bbd48e6dcb99f808",
+      "d6b83ad48b0c435cb3bc1ca192ed9e12",
+      "c8591fa475b34eb784249d918667b2f0",
+      "3a9d792feeae4767b9862d2d47bedbc6",
+      "1470e7234c1643419d4dbdb15d80a2c1",
+      "26e24e999a5f4f4ea0d2ccf7380cfdeb"
+    ]
+  }
+}

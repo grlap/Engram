@@ -19,16 +19,35 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null,
+  "completion": {
+    "summary": "Implemented and landed project-memory exchange on the task-sync data branch. Exact candidate 037e45c2be216a45fa6ad2428fdf77c5f3e2c5af (tree e1758587a42fc9319fe9544a2340e39f8524d410) is on origin/master; installed build fingerprint 9d134f9ff15627be508ea5728c690037a4d7b223764e531f546b78d33bba8155 is ready on all six live stores. Independent acceptance evaluation cf94c2dc61c14b599b0ce1663120cbb2 passed 3/3 on this exact source, with no later checks or waivers.",
+    "completed_at": "2026-11-15T08:40:58.148143200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
   "activity": {
     "central": {
+      "0181638ade3448e3b52824c690d7abfa": {
+        "activity_id": "0181638ade3448e3b52824c690d7abfa",
+        "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b4277913651546cc98e1da660248a1c5"
+      },
       "1497d126f2324ae8be26cbd060d8e0b7": {
         "activity_id": "1497d126f2324ae8be26cbd060d8e0b7",
         "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
@@ -65,6 +84,18 @@
         "state_revision": 1,
         "event_id": "258627cabc094fde80ee0748dc008961"
       },
+      "5581c6acbfb445c3b3706b1477c03aac": {
+        "activity_id": "5581c6acbfb445c3b3706b1477c03aac",
+        "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "88ebb25caa2a4154870327f0585464cd"
+      },
       "7ed724daa971401aa54bb8fff7dfbbba": {
         "activity_id": "7ed724daa971401aa54bb8fff7dfbbba",
         "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
@@ -76,6 +107,18 @@
         "state": "started",
         "state_revision": 1,
         "event_id": "7ed724daa971401aa54bb8fff7dfbbba"
+      },
+      "b4277913651546cc98e1da660248a1c5": {
+        "activity_id": "b4277913651546cc98e1da660248a1c5",
+        "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b4277913651546cc98e1da660248a1c5"
       }
     }
   }

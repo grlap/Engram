@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-evaluation-source-id-before-c6-2026-11-08",
+    "revision_id": "e2f20d4f7fb04049aac6a8241d24e270",
+    "previous": null,
+    "body_sha256": "068cd6fc3c83a3bf40c119993b5d296a4f70a08f34783ce6480d6727bf964f79",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-08T17:01:12.328894400Z"
+    }
+  },
+  "body": "GREG, 2026-11-08 about 16:55Z, relayed by Engram::Asistant (mailbox 43498a6e #674, message 14a412c6). Verbatim: „sugerowalbym najpierw zrobienie ewaluacji w nowym rozmiarze, potwierdzenie, usuniecie starego”.\nAsistant's relay (a paraphrase): this means evaluation in the new format, on the existing source_id. Order: staff and code the acceptance/evaluation scope agreed with Kimi (Engram w-89f3b3eeb688, TermAl w-13be1dfe03f9); confirm it works; then remove the old content-v1 (TermAl C6). That is option A, the full cleanup after evaluation. Independent work continues in parallel. No new conditions and no new mechanism. Evaluation stays OPERATIONALLY OFF until a separate decision to switch it on; preparation and verification happen now.\nThe agreed Engram scope (7 seams) is recorded on w-89f3 (Fable note ab0b8e6d)."
+}

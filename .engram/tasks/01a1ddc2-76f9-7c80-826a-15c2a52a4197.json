@@ -1,0 +1,28 @@
+{
+  "id": "01a1ddc2-76f9-7c80-826a-15c2a52a4197",
+  "external_ref": null,
+  "title": "Keep a bare claim or release from counting as a local planning change in an incremental task-sync import",
+  "outcome": "Keep a bare claim or release from counting as a local planning change in an incremental task-sync import",
+  "acceptance": [
+    "After an incremental import, a claim on task X, then another host's commit that edits X, the next incremental import holds X (exit 3) instead of refusing as task_sync_divergent_planning",
+    "A claim or release alone never puts a task in the import's local-change set; real planning edits still do"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

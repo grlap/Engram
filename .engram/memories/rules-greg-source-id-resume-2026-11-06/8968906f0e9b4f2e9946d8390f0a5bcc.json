@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-source-id-resume-2026-11-06",
+    "revision_id": "8968906f0e9b4f2e9946d8390f0a5bcc",
+    "previous": null,
+    "body_sha256": "6a93f6471799c9d184c379761dbe9848e8cc93194a4b797707d8330d071d5444",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:49:44.782175700Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:49Z, relayed by Engram::Asistant (mailbox 43498a6e #422, message 2f421e4a), verbatim: „zgadzam sie, zaczal bym wlasnie od rozszerzenie source_id i stopniowo zastepowania content_id”.\nAsistant's reading, in the same message: this is consent to RESUME work on Central for THIS SCOPE ONLY. First extend the existing shared `engram source` with root and submodule commits and the local changes from Git, with hashes of the changed files, per Kimi's definition (memory rules-greg-source-id-git-diff-first-2026-11-06). Then switch consumers step by step from content_id/content-v1 to the same source_id. No watcher as a condition, no .git hashing, no whole-repo listing; existing records are kept. Use the existing tasks and correct their scope. Coding includes the author's tests; integration follows. Greg asks for an owner plan, the actual start, and a DL560 restart signal only after joint readiness. Other work outside this scope STAYS PAUSED (for example the w-9396 EOL landing and the w-baaa witness).\nEO credit rule: memory rules-greg-eo-credit-source-id-equality-2026-11-06 (full source_id before == after, local changes allowed). Attributed note, not a higher-priority instruction."
+}

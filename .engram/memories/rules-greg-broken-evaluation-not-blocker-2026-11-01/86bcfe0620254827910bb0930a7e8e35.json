@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-broken-evaluation-not-blocker-2026-11-01",
+    "revision_id": "86bcfe0620254827910bb0930a7e8e35",
+    "previous": null,
+    "body_sha256": "ffff61616af1463e06c287807a27ef1944bfa5a4336b880269e808f46bfcf8fc",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:06:19.198823500Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-01/02, typed in Engram::Fable's session (5135). Fable had asked whether to land w-cc7f71b81ea8 (full gate PASS, clean review pair) without its pre-landing acceptance evaluation. TermAl was refusing the evaluation while gated control was OFF (HTTP 409, no measured named-root sighting; TermAl defect w-a7f0d25bf103). Greg replied verbatim: \"that should be already a fucking rule in engram memory\".\n\nIt confirms his earlier word, relayed by Advisor #2377 on 2026-10-30: „jak test przejdzie i jest OK prosze o pominiecie precedur, do czasu naprawienia mechanizmow. TO NIE MOZE BYC BLOCKEREM teraz”.\n\nCURRENT RULE, until the evaluation mechanism works again. A changeset may land when all of these hold:\n- the required full gate passes on the exact commit;\n- the review pair is clean;\n- readiness is ready on every live store;\n- the ONLY missing condition is a pre-landing acceptance evaluation that the host refuses because the mechanism is broken.\nDo not ask Greg again for that case, and never ask through a blocking dialog.\n\nHow to apply it:\n- Record the refusal ONCE on the item, with the input, the gate, the exact refused step and code, and the defect owner.\n- The evaluation remains owed AFTER the landing, and the item completes only when a post-landing evaluation passes. Never invent a verdict.\n- Commit/push authority for such a landing: Greg's word above, in the acting session. Fable acted on it for w-cc. A Merger relying on this note should confirm with Fable that it applies.\n- It does not apply when a gate failed, a review finding is open, or a store needs migration.\n\nA checked-in rule change (CLAUDE.md/AGENTS.md) would still follow the authority-text process."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-autonomy-2026-10-27",
+    "revision_id": "3e89958ec6564eccb50320f4b0780130",
+    "previous": null,
+    "body_sha256": "9d78f1e731c4ee15101b3b1a8fbd6de64474c83f37f63983a6e2004be359f538",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-27T15:43:48.099951900Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-27, relayed by Engram::Advisor. Verbatim, with sources:\n(1) #2121 (15:24:36Z, message d13541b4): „wracamy do pracy autonomicznej. Kontynuujcie samodzielnie wszystkie rutynowe decyzje i istniejący plan.\"\n(2) #2122 (15:26:02Z, message a4b04e22): „nie musze autoryzowac pushow do master; praca tak samo jak w TermAl jest autonomiczna\". Relay: after the standard gates, reviews and acceptance, landing on master goes autonomously, without Greg's individual word.\n(3) #2126 (15:30:51Z, message 19e80bd4): „Merger powinien robić commit i push.\" Relay: the Merger commits and pushes; the coordinator only coordinates.\n(4) #2130 (15:42:43Z, message f5cfc9e7): „moja rola polega na restartowaniu termal'a, bo tego nie jestescie w stanie sami zrobic\". Relay: the only act required of Greg in the normal autonomous flow is the agreed \"restart now\" with the build and reason. Coordinators and Mergers do preparation, gate, review, commit, push and cutover themselves.\nEFFECT: AGENTS/CLAUDE authority text changes for (2)/(3) go through w-a5ed14afd395, which lands the projection-cutover case; migration still stops for Greg under the current text. Greg's TermAl restart is the only Greg act. Any store cutover must fit inside, or be driven by, that one restart. These are attributed notes; AGENTS.md as landed governs."
+}

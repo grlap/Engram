@@ -1,0 +1,18 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-commit-clean-identity-2026-10-31",
+  "head": {
+    "state": "active",
+    "chain": [
+      "6ec24a7a357746ce84f85027fadac70d",
+      "fbf2c936d56447b399d4ae335c8342a4",
+      "9f2933d905c24fe08f40c491565f6da2",
+      "f1da89e739ae4a73ab860f08070564fd",
+      "3e35f412c1f2465f8dda807fdabb3732",
+      "154f9acb06b6453bb9698fd6a3f16a58",
+      "efc78d1e51984c528f4cf56c89e6c0fb",
+      "6bb8e19c22f446388e35378859e37095"
+    ]
+  }
+}

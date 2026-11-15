@@ -1,0 +1,26 @@
+{
+  "id": "01a1def7-0af0-72b1-9df6-e2da3c5c040d",
+  "external_ref": null,
+  "title": "Compare the memory ignore policy and memory revision files with their committed bytes under Git's line-ending normalization, so a CRLF checkout is not refused",
+  "outcome": "Compare the memory ignore policy and memory revision files with their committed bytes under Git's line-ending normalization, so a CRLF checkout is not refused",
+  "acceptance": [
+    "with core.autocrlf=true, a clean checkout of a committed memory-capable data folder exports and imports with --include-memories without memory_ignore_policy_uncommitted or a revision-bytes refusal, with a test under that Git configuration"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

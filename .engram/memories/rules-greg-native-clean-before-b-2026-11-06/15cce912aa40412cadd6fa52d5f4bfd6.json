@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-native-clean-before-b-2026-11-06",
+    "revision_id": "15cce912aa40412cadd6fa52d5f4bfd6",
+    "previous": "b1992504a2b74517b0f41bf38ccda53f",
+    "body_sha256": "7856c83933790897da1f72d907d8cc761bc5b18315929bc8f4e17b28bdae2a5e",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:25:52.649568300Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 05:52Z, relayed by Engram::Asistant (mailbox 43498a6e #364, message ffd66ec3), answering Fable's A/B question. Verbatim: „B. Naprawdę wystarczy.”\nAMENDED BY GREG, 2026-11-06 about 16:20Z (Asistant #390, message 2ec544e6), verbatim: „EO nie mialo tego uzywac, mialo sprawdzac tylko stan przed i PO wariant B ABY ... TO UPROSCIC”. And about 16:25Z (Asistant #396, message 9f8c64a4): „ŻADNEGO hashowania katalogu .git” — no hashing of the .git directory at all (the earlier wording limited to .git/info was wrong).\nCURRENT OPTION B (TermAl w-24a72c898d6d):\n(1) The host takes a rev 5 source_id capture at commit X BEFORE it dispatches the turn's prompt.\n(2) The credited declared test is the turn's FIRST tool action; execution identity shows it originates from that turn.\n(3) After the run, a clean rev 5 source_id capture at the same commit X.\n(4) check.started_at is the host-observed first start reservation.\nNOTHING ELSE: no watcher condition of any kind, no hashing or comparison of anything in the .git directory, no submodule scope list, no other gate.\nAccepted limit: a change made and fully reverted between the two captures, or anything git status does not report, is not detected. Credited tests run as the first action of a fresh turn."
+}

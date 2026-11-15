@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-channel-asistant-2026-11-12",
+    "revision_id": "5883a3082b7f41f9abb3d4415a2eebec",
+    "previous": null,
+    "body_sha256": "d187dfa579bb9d3aae33af0bc47289ffc66614bf2f52160105a0717ff3dbfe44",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-12T19:25:07.015857Z"
+    }
+  },
+  "body": "GREG, 2026-11-12 about 19:24Z, relayed by Engram::Asistant (mailbox 43498a6e #1008, message 65594bf2), verbatim: „nie jestem w stanie monitorowac wszystkich sesji, generalnie komunikacja z agentami jest przez twoja sesje”.\nAs relayed by Asistant: treat Engram::Asistant (session-15908) as THE main channel to Greg. Send there every status that needs his attention, every question, signal and command for him. Never assume he sees other sessions or Advisor. To check that a message reached him and was handled, use a real confirmation (his reply), not the send receipt. Keep working without unnecessary questions.\nApplied (Engram::Fable): this supersedes \"RESTART NOW via Advisor\" in rules-install-and-cutover item 5 and in rules-waits-and-wakes item 8 for anything Greg must see or do. Those go to Asistant, and Advisor at most gets a copy. See rules-greg-act-holds-2026-11-12. Told to Termal::Fable2."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-native-clean-before-b-2026-11-06",
+    "revision_id": "1e3bffcfcb394539840e892cea179b12",
+    "previous": null,
+    "body_sha256": "7e2958f1ad2f822b5cb0c1d573a8d5047f2f5cf23cf6382109dd7ce685d8a294",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T05:52:12.575043600Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 05:52Z, relayed by Engram::Asistant (mailbox 43498a6e #364, message ffd66ec3), answering Fable's A/B question (Asistant #362 and the refinement #363). Verbatim: „B. Naprawdę wystarczy.” Asistant's summary: record it and proceed with B, adding neither option A nor further requirements; existing evaluations stay untouched; report real limits and progress.\nOPTION B (the native-command clean_before rule for credited agent test runs, TermAl w-24a72c898d6d):\n(1) The host completes a rev 5 source capture at commit X (plus the declaration hash and artifact pre-image) BEFORE it dispatches the turn's prompt to the agent runtime.\n(2) The credited declared test must be the turn's FIRST tool action; an earlier tool call in that turn means no credit. Execution identity must show the command originates from that turn.\n(3) After the run, a clean rev 5 capture at the same commit X.\n(4) The file watcher can only DISQUALIFY (any reported change, root/child Git admin included) and never proves continuity. No new watcher machinery.\n(5) check.started_at is the host-observed first start reservation, not the OS spawn time.\nAccepted limit: a change made and fully reverted during the run by something other than the agent's tools, and not reported by the watcher, is not detected. UX cost: credited tests run as the first action of a fresh turn."
+}

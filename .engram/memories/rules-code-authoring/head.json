@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-code-authoring",
+  "head": {
+    "state": "active",
+    "chain": [
+      "71060e06235f439f8d0ea8151b4db93f",
+      "902f7110971141d38c8370911b2a51d4",
+      "3da634ade126420fb578a72975a4fee9"
+    ]
+  }
+}

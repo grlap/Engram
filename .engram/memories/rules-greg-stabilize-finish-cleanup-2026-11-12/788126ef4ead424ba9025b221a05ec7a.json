@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-stabilize-finish-cleanup-2026-11-12",
+    "revision_id": "788126ef4ead424ba9025b221a05ec7a",
+    "previous": null,
+    "body_sha256": "e25774c6d1474e4f180efdc48547ac5a02d5f639c489015bf0772c06788caf8f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-12T04:23:54.920023900Z"
+    }
+  },
+  "body": "GREG, 2026-11-12 about 04:23Z, relayed by Engram::Asistant (mailbox 43498a6e #981). Verbatim: „Chciałbym ustabilizować i skończyć features i posprzątac kod po legacy rzeczach których już nie używamy.”\nAs relayed, the direction for both projects:\n- finish the features already started (sync, evaluation, remote results);\n- remove code and old interfaces that are actually unused;\n- fix obstacles to daily work;\n- simplify the process;\n- keep the work already assigned going.\nHistorical data values Greg keeps are NOT a data-deletion order. No elaborate new process.\nApplied order (Engram::Fable): (1) sync landing and cutover; (2) the post-sync landing train; (3) finish the remote-results chain; (4) legacy removal w-9fcb; (5) daily-friction fixes; (6) only then new features."
+}

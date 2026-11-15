@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-control",
+    "revision_id": "8596856fd4c8465b823c98bdcf1a8928",
+    "previous": "49b2e46ec4d54c7b98309e4d42c7b102",
+    "body_sha256": "52815cddc4d6dbceab82801315f81f9be214051cc1218621049997447ddae62d",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T04:22:58.161799300Z"
+    }
+  },
+  "body": "CANONICAL: Greg's direction on gated control (Engram::Fable; rev 8 on 2026-10-28 compacts revs 1-7 to the current rules; the older wording and full chronology are in rev 7). These are Greg's words with their sources; they grant no restart, deploy, commit or install by themselves.\n\nCURRENT RULE (supersedes the earlier ON/OFF sequence):\n9. ENABLE AUTHORIZED, WITH A STRICT CANARY (Greg via Engram::Advisor, mailbox 74a6af16 #2208, message 99830d62, 2026-10-28T04:22:24Z), verbatim: „Greg: TAK B. Autoryzuje włączenie gated control po B16 oraz gotowych w-5c90 i w-faa1, bez czekania na w-5139, w-ccfc i w-c6ce. Obowiązuje ścisły canary i STOP: pierwszy grant_expired albo kolejka wstrzymana ponad 2 min oznacza wyłączenie zgodnie z runbookiem. Restart pozostaje osobnym momentem na komunikat restart now.”\nEFFECT:\n- Gated control may be enabled once TermAl B16 (w-1e85, the rollback guarantee), w-5c90 and w-faa1 are landed and installed. It does not wait for w-5139, w-ccfc or w-c6ce.\n- The canary starts on the Engram project: N = 20 consecutive gated turns, at least 5 during a full gate. PASS needs zero grant_expired, scope_mismatch and 503, every begin within 20 s of its grant, and no store_busy over 5 s.\n- STOP on the first grant_expired or a queue paused over 2 min, then disable per TermAl runbook w-af11752b48a1.\n- Then widen to TermAl, with the 30-minute observation.\n- The restart stays a separate moment: the team sends \"restart now\" with the build hash; Greg performs it.\n- Engram agents never flip turnGatedControl themselves. The supported actor and route for the PATCH and read-back are agreed with Fable2.\n- Controlling items: Engram w-ed6addd812bd (P0), TermAl epic w-0d2e12f303a8.\nPRECEDING CONTEXT:\n- #2198 (2026-10-28): gated-control repair raised to priority, not yet consent.\n- #2207 (via Kimi): \"enable gated control after its fixes … primary goal is faster evaluations by running tests on other machines\".\n- Earlier states: 2026-10-23 STOP („gated control jest aktualnie nie do uzycia”); 2026-10-24 ON/OFF/ON flips (Advisor #1976, #1980, #1992); 2026-10-24 17:06Z turnGatedControl=false (memory rules-greg-turn-gated-control-off-2026-10-24). Item 9 supersedes these for the re-enable.\nSTANDING (unchanged from rev 7):\n- Only Sol or Opus author code; the coder runs focused tests, freezes and gets the pair; the Merger carries, runs the final gate and lands.\n- No build synchronization against gates: only ONE full gate host-wide, plus avoiding same-source-root conflicts.\n- Report admission or latency regressions with lane, time and metric."
+}

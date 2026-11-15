@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-full-source-id-in-agent-context-2026-11-07",
+    "revision_id": "210bb3abd6824190bf2ac49b15c37bcf",
+    "previous": "b17bc1887cbb4d4f98f01c6b5b34890c",
+    "body_sha256": "ee0b20a9d1ac8701bebe8b914de7f55b4a84cd9cfe9a49dc714350a2aa32605f",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T16:55:56.465946800Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 16:54Z, relayed by Engram::Asistant (mailbox 43498a6e #615, message 26f64e32). Verbatim: „Bardzo prosze sie upewnic aby tak sie nie dzialo”. It answered whether the execution_observe message / full source_id is loaded into an agent's context.\nRequirement (Asistant's scope): the complete execution_observe payload and a complete source_id must NOT be put AUTOMATICALLY into an agent's context: prompts, tool output, hooks, notifications, transcripts or compaction. Short summaries stay allowed. An explicit agent command (e.g. `engram source`, `show --observations`) is a separate case. Ensure it in the current content-v1 cleanup on both sides (Engram w-d9dbcd311958, TermAl w-6f42c416b0c7) and check existing paths in review. No new heavy gates and no tautological tests.\nState at 16:55Z, verified from code: TermAl sends it host→Engram only (worker engram_unadmitted_worker.rs:192–293; reports kept in internal state, engram_host_adapter.rs:2003–2006). Engram returns ids+uncredited only. next, the work-context hook and feeds carry no observations. Explicit `show --observations` renders only SourceIdSummary \"source_id commit X; tree Y; N changes; M submodules\" (src/source.rs:49–63 in candidate 1b5394bb). Open gap: TermAl host stderr not exhaustively audited for payload dumps.\nHow it's checked: an acceptance criterion on both cleanup items, and an explicit item in both reviewers' briefs for every change touching observation, display or host-adapter paths. Behavior tests only where they already exist (bounded display).\n\nRev 2 (16:56Z): the TermAl stderr gap is CLOSED by Fable2's read-only audit at e50332e6 (ebe242f7 #7025). Every eprintln! in the observation/source paths prints ids, paths, reasons or error messages, never a request body or source_id, and host stderr goes to the host terminal, not to agents. The one residual path: Engram error strings returned to TermAl and printed via `{error:#}`. So Engram errors must never echo request bodies or source_id. The oversized-frame operation echo (Codex Medium on c5fa5d05) was fixed with a fixed label in 1b5394bb. Engram reviewer briefs check this as part of the criterion. TermAl memory: greg-no-observation-payload-in-agent-context; criterion on TermAl w-6f42."
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1dfaa-a9d4-74d3-b336-4d97dada33c3",
+  "external_ref": null,
+  "title": "Align task-sync prepared export alias bindings with publication capture",
+  "outcome": "Make prepared-but-unconfirmed outgoing shared members use one consistent alias-binding rule in export capture and echo admission.",
+  "acceptance": [
+    "Preparing an outgoing export under alias A without confirmation cannot later permit an alias B export whose returned echo is permanently refused only because of the prepared-only alias witness.",
+    "Tests cover an unconfirmed outgoing preparation followed by another alias and returned shared note/activity, with actionable refusal or successful consistent admission.",
+    "Confirmed and admitted identity ownership remains immutable, with no execution authority gained through import."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

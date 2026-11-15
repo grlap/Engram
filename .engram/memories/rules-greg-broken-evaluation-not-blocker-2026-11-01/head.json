@@ -1,0 +1,14 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-broken-evaluation-not-blocker-2026-11-01",
+  "head": {
+    "state": "active",
+    "chain": [
+      "86bcfe0620254827910bb0930a7e8e35",
+      "537f958cfbd042c097dff6fb8326e2a1",
+      "206d0b14694540dcb899cf2155f5908f",
+      "c3957cf1a2cc46c19da7ee7a222dea18"
+    ]
+  }
+}

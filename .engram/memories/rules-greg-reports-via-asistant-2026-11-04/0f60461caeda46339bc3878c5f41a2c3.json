@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-reports-via-asistant-2026-11-04",
+    "revision_id": "0f60461caeda46339bc3878c5f41a2c3",
+    "previous": null,
+    "body_sha256": "e6e956922e36cc770bccdcb3ac89946bbf189594072b0b3450b59501230c9c9a",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-04T21:35:51.195569900Z"
+    }
+  },
+  "body": "GREG, 2026-11-04 about 21:35Z, relayed verbatim by Kimi::Consultant (mailbox c15db92c #15, message 4c0c7a02): „tak, przekaz im to, niech zapisze sobie w pamieci Engram / uzywam sesji Engram::Asistant”. Meaning, as Kimi states it: Greg uses the session Engram::Asistant as his reporting channel. Agents send updates for Greg (results, blockers, decisions) there, rather than assuming he reads their sessions. Technical status notes and peer mailboxes stay for recovery and team work. Applies to both projects. It adds no commit, push, install or restart authority; words relayed by Asistant are governed by the Authority and Git section."
+}

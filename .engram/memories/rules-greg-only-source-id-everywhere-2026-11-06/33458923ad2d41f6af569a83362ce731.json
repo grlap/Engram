@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-only-source-id-everywhere-2026-11-06",
+    "revision_id": "33458923ad2d41f6af569a83362ce731",
+    "previous": "f69ebaf4842446bca472a7d3958d7adf",
+    "body_sha256": "1267eda843df27ed69825d82327b8ded2b3eaa85205f32a56641703cc8e633ab",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-15T15:58:43.243469200Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:27Z, relayed by Engram::Asistant (mailbox 43498a6e #402, message e99bac4b), verbatim: „NIE ... PO TO MAMY SOURCE_ID ktory rozwiazuje te problemy wszyscy maja uzywac tylko source_id”.\nGREG, 2026-11-15 about 15:58Z, relayed by Engram::Asistant (43498a6e #1268), confirming that source_id replaces the old launcher fingerprint in the test-ref landing-gate wording, verbatim: „Tak miało być. Uzgodnione juz 100 razy + Kimi.” Asistant's brief: continue without re-running tests or re-asking about the same decision; write the rule down clearly. Kimi is asked to find why the agreed rule keeps resurfacing as an ambiguity, and to help remove that process cause without new gates.\nSETTLED RULE (do not re-ask): source identity is ONE whole-object source_id, everywhere: gates, launchers, landing records, the EO model and evaluations. A full gate counts when its admitted, before and after source_id are equal. Any wording that still names a launcher \"fingerprint\" for this is stale and gets corrected as a clarification, under the authority-text procedure, without asking Greg again.\nAsistant's 2026-11-06 reading: every consumer judging source identity or state uses ONE shared source_id. No parallel fingerprints, no watcher-event dependencies, no .git hashing.\nHistory: the joint inventory and the agreed order (a)–(c) from 2026-11-06 are in revision 2 of this key."
+}

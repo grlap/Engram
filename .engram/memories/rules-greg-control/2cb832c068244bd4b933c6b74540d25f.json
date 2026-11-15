@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-control",
+    "revision_id": "2cb832c068244bd4b933c6b74540d25f",
+    "previous": "95a52cbd17284239988accd18df332e5",
+    "body_sha256": "51a3e4979bd6f3051a932ce475985ea4a493ed14f09ab4d10d3bb1e667742ae5",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T00:26:10.460012200Z"
+    }
+  },
+  "body": "CURRENT GREG DIRECTION ON GATED CONTROL, EXECUTION OBSERVABILITY AND EVALUATION (rev 25, Engram::Fable, 2026-11-02, from Greg's direct words in session-5135). Revision 24's top paragraph \"ACCURACY CORRECTION\" (legacy code kept \"for compatibility\", docs say \"retired, not deleted\") was an agent's sentence that Greg REJECTED. It is void. Earlier wording is in revisions 1–24.\n\n1. GATED CONTROL IS REPLACED BY EXECUTION OBSERVABILITY. Greg: \"GATED CONTROL MIAL BYC ZASTOPIONY PRZEZ Execution Observability\".\n- The gated-control code is deleted, physically, in Engram and TermAl. That covers the Evaluate/Begin turn grants, control-session turn admission, settlement/rebind/recovery, their CLI/MCP/host operations, their tests, and every setting that could turn it back on.\n- Execution Observability takes its place: work sessions, claims, and nonblocking host observations of execution, sources and tests. Name it exactly \"Execution Observability\" (Greg: \"moze po prostu Execution Observability ?\", then \"usper, przekaz\"), with project-level ON/OFF.\n- The docs say gated control was removed, with one history note, and describe Execution Observability (Greg: \"ok, wazne takze aby dokumentacje poprawic i usunac wszedzie zmianki o gated control\").\n- Every supported harness is covered (Greg: \"No musimy wspierac wszystkie harnessy\").\n\n2. NO LEGACY, EVER. Greg: \"NIE MA LEGACY, nigdy nie trzymamy legacy\"; also \"NIE NIE NIE KAZALEM TO USUNAC!!! MAMY POLITYKE ZERO LEGACY\" and \"FUCK NO / I TOLD TO REMOVE THIS UNUSABLE SHIT\".\n- No code is kept \"for compatibility\". There is no fallback route and no switch that could restore the old behavior.\n- Stored historical records stay as data, converted by the store migration where needed (retire or map, by name with counts). They are never a reason to keep executable code.\n\n3. EVALUATION IS TEMPORARILY OFF UNTIL EXECUTION OBSERVABILITY IS IMPLEMENTED. Greg: \"EWALUACJA jest tymczasowo wylaczona do czasu implementacji Execution Observability\"; earlier \"THIS SHIT IS TURNED OFF UNTIL WE GOT THIS WORKING\".\n- Independent acceptance evaluation blocks nothing: no landing, no completion and no other work waits for it. Its enforcement is switched off in the policy of both stores (epoch 3).\n- Evaluation is NOT deleted from code or docs (Greg: \"NIE USUWAMY EWALUACJI Z KODU czy z dokumentow\"). It comes back once Execution Observability delivers the evidence it needs.\n- A missing evaluation verdict stays missing and is never recorded as a pass.\n\n4. MINIMAL OFF FIX FIRST. OFF must really turn gated control off: in send, queue, Resume, wake, final handoff and startup (TermAl w-ba8d28acb0fd). It lands first, before the removal.\n\n5. UNCHANGED: full gate on the exact commit, a clean review pair, store migration rules, and Greg-only TermAl restarts. Coordinators send \"restart now\" with the build hash. Never ask Greg through a blocking dialog. Only Sol or Opus write code."
+}

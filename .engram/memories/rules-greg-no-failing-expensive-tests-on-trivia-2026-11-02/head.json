@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-no-failing-expensive-tests-on-trivia-2026-11-02",
+  "head": {
+    "state": "active",
+    "chain": [
+      "a4c2f6b0ea304db29c48f9739eeeae60",
+      "d88eb3c34bb340438c7773b8db529161"
+    ]
+  }
+}

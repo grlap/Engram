@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "termal-slot-standin-2026-10-28",
+    "revision_id": "fc1c3543107e4fd7ae4eee9f60197767",
+    "previous": null,
+    "body_sha256": "1d202117de954a4ee3a73fd291806ec0bc8d3123370210f129cc8c790edbe067",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T04:37:02.643095100Z"
+    }
+  },
+  "body": "STAND-IN SCHEDULER AGREEMENT (Termal::Fable2 ebe242f7 #5083, 2026-10-28T04:36Z, after Fable2's brief weekly-usage-limit outage at about 04:30Z; Greg reports availability fixed, Advisor #2210/#2212). If Fable2 (session-8112) is silent for more than 10 min while a shared-host slot decision is due, Engram::Fable acts as INTERIM host-slot scheduler for both projects under the same rules, and hands back when Fable2 reappears:\n- one TermAl focused run at a time; Engram has its own focused slot;\n- a full gate holds BOTH slots until START+20;\n- the first frozen READY goes first;\n- a full gate needs at least 25 GiB free commit at launch, a focused run at least 20 GiB.\nTermAl line after w-16487's START+20 (04:54:23Z), as of 04:36Z: B17' release and install (Merger2); w-faa1 (Sol-a7bb, restart set); w-c6ce (Sol-8e1f); K1 (Opus3); w-ccfc Rust then Node (Sol-license); then BarA2's Group B if frozen.\nFable2 also dispatches and verifies the remote Windows B and Mac runs; in an outage those relays stall.\nNever resume or cancel Fable2's queued user work. A stand-in decides slot order only, nothing else for TermAl, unless Greg names a stand-in coordinator."
+}

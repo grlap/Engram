@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-only-source-id-everywhere-2026-11-06",
+    "revision_id": "8f29a21f6cf04bd886dc5dea1bebd0b2",
+    "previous": null,
+    "body_sha256": "7034b1658a3ffae0bce77a39694922e6de72571089cccf958cc6476703408ba3",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:28:15.917603500Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:27Z, relayed by Engram::Asistant (mailbox 43498a6e #402, message e99bac4b), verbatim: „NIE ... PO TO MAMY SOURCE_ID ktory rozwiazuje te problemy wszyscy maja uzywac tylko source_id”.\nAsistant's reading: every consumer judging source identity or state uses ONE shared source_id. No parallel fingerprints, no watcher-event dependencies, no .git hashing. This covers option B AND the launcher, gates and the general EO model.\nAt the time: the Windows Central PAUSE (Asistant #396, 16:25Z) was in force; inventory only, no implementation.\nEngram's inventory sent to Greg (Asistant #403, 16:28Z):\n(1) the launcher's own input fingerprint (scripts/review-freeze-fingerprint.mjs, test-launcher.mjs; docs/development.md ~800–831) with new-untracked-only and the .git/info checks, which is also referenced in the AGENTS.md/CLAUDE.md landing rule and test-ref names (w-0675 territory);\n(2) Engram's general EO model accepting TermAl turn observations whose source_revision may be TermAl content-v1, plus watcher_only changes that stale checks;\n(3) acceptance evaluation and `done --source-fingerprint` comparing source strings (evaluations OFF; existing ones untouched);\n(4) review freeze by Git tree id for uncommitted input; proposal: commits only;\n(5) scripts/eo-cutover.mjs fingerprint use, role unknown.\nProposed order: 1, then 2 with TermAl, then 3 at evaluation re-enable. Nothing changes without Greg's word. TermAl's inventory was requested from Fable2 (#6753)."
+}

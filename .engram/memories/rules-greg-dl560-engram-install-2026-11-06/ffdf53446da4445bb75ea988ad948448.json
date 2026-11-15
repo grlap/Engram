@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-dl560-engram-install-2026-11-06",
+    "revision_id": "ffdf53446da4445bb75ea988ad948448",
+    "previous": null,
+    "body_sha256": "89fd1ff7e8b44b93ebc71091c66fbad6203c1d9df6db0240e9fa0df7b264c4e4",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T05:43:15.967137200Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 05:42Z, relayed by Engram::Asistant (mailbox 43498a6e #359, message a70092dc), answering the DL560 question. Verbatim: „Tak. Engram repo juz jest. Questly juz tez jest.” Asistant reads „Tak” as consent to the earlier ask: INSTALL Engram on DL560, and create the local Engram store and connection for Questly there. Asistant's further summary: both repos already exist on DL560 (Questly under ~/github/questly); use the existing checkouts, no re-cloning, and don't disturb ongoing work. Installing Flutter from a local archive was approved earlier. Use a supported local project session, check facts and versions, never use SSH to run tests, and report the result.\nScope (Engram::Fable): this covers installing the Engram binary on DL560 and creating the Questly project's local store and connection there. It is the Linux leg of the local-route EO proof (memory rules-greg-remote-tests-via-project-sessions-2026-11-06). It grants nothing else outside the repositories."
+}

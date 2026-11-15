@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-minimal-checks-2026-10-26",
+    "revision_id": "f9eadf85b9ee415e8c485600362b7215",
+    "previous": null,
+    "body_sha256": "3f63bf19c4765e2a7912668bb3c7a0f2b106d07437259adb6b5e6659185560e9",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-26T18:25:59.905069500Z"
+    }
+  },
+  "body": "GREG DIRECT (2026-10-26, Engram::Advisor #2092, message 21d08301, 18:25:42Z), verbatim: \"jestem zmeczony dodawaniem tych dodatkowych czekow, ktore doslownie betonuja jakikolwiek postep. zmiana builda nie plywa na security, dodany host jest rownoznaczny z local. juz 3 dzien poprawiamy jakies dodatkowe checki.\"\nRelay text: treat an enrolled, trusted remote host as equivalent to local for ordinary routing. A routine build, version or process restart is NOT a security event, and must not create a verification, qualification or acceptance gate, an extra proof run, or a new check that blocks work. Stop expanding scope with check-driven ceremonies. Preserve only real security boundaries: enrollment and re-enrollment, a pinned key or credential change, explicit revocation or quarantine, and an actual identity or authority failure. Use the existing transport and process proof; do not invent a new layer. Apply this to the requalification P0 design and to review and gate planning: close the concrete defect with the minimal change and test it once; do not grow a third-day sequence of auxiliary checks.\nEFFECT FOR ENGRAM (Engram::Fable): coordinators stop adding auxiliary verification steps beyond what AGENTS.md requires (the required gate and the review pair). A fix is tested once with its focused tests plus the one required gate. A coordinator's own extra conditions, such as calibration headroom targets or extra measurements, are not imposed unless they guard a real defect. This grants no commit, restart or authority beyond AGENTS.md."
+}

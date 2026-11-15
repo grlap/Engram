@@ -1,0 +1,12 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-dl560-engram-install-2026-11-06",
+  "head": {
+    "state": "active",
+    "chain": [
+      "ffdf53446da4445bb75ea988ad948448",
+      "07d47f7ba562433ab92a4dd3f6727e29"
+    ]
+  }
+}

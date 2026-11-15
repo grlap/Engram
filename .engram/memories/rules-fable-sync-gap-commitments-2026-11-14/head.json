@@ -1,0 +1,13 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-fable-sync-gap-commitments-2026-11-14",
+  "head": {
+    "state": "active",
+    "chain": [
+      "16389658503d4c43838e3e8dfae87464",
+      "fdb9f899cd6341508079e5392a80ff04",
+      "35a20bd56926470499f5822118f6bd90"
+    ]
+  }
+}

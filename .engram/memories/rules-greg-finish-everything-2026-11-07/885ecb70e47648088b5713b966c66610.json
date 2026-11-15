@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-finish-everything-2026-11-07",
+    "revision_id": "885ecb70e47648088b5713b966c66610",
+    "previous": null,
+    "body_sha256": "43163a6a858ce6aabe7555190f62d73fc49f1a96c9da2dc46ffc074c551dfde6",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-07T06:13:16.564499300Z"
+    }
+  },
+  "body": "GREG, 2026-11-07 about 06:13Z, relayed by Engram::Asistant (mailbox 43498a6e #522, message 4d7ed527), verbatim: „OK, skonczmy wszystko”. Asistant's scope note: continue to completion the agreed Unified EO, the live tests and the restart coordination; remove obstacles without unnecessary questions. content-v1 removal stays a follow-up (Greg #508). Don't widen the sync scope now without a concrete agreement. Context: answering Fable's #521, which explained remote results via E3(b) + w-8f4c and that the planned Git task sync deliberately carries no verification records."
+}

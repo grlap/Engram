@@ -1,0 +1,28 @@
+{
+  "id": "01a1de80-6abe-7c90-8821-6adaaa13dea9",
+  "external_ref": null,
+  "title": "Make a memory-including task-sync export avoid reading every task file",
+  "outcome": "Make a memory-including task-sync export avoid reading every task file",
+  "acceptance": [
+    "An export with --include-memories over a large folder reads only the changed task files and the memory component, not every task file",
+    "The combined task and memory size limit is still enforced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

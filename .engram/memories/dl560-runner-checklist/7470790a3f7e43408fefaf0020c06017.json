@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "dl560-runner-checklist",
+    "revision_id": "7470790a3f7e43408fefaf0020c06017",
+    "previous": null,
+    "body_sha256": "0ff3354f2532960364bc4b4ff04abc15a1ccfabbbed5b47fe718ad1f5bd2f027",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T18:01:14.617097900Z"
+    }
+  },
+  "body": "Linux DL560 runner (144 cores, 256 GiB), offered by Greg on 2026-10-28 (Advisor #2232, #2234). Greg, verbatim (#2234, 18:00:37Z): „Greg: DL560 może włączyć za kilka godzin; udział jest opcjonalny. Nie blokujcie B16 ani bieżących gateów. Przygotujcie tylko minimalną checklistę etapów 0–2 i konkretną wersję narzędzi, aby decyzja o setupie mogła zapaść później.”\nSTATUS: checklist sent (Advisor #2235). The setup decision is pending with Greg. Nothing is started.\nROLE: a test runner only. It fetches an exact commit, runs the standard launcher, and returns evidence through the TermAl runner channel. No store, claims, evaluation authority or Git push. TermAl owns the runner software.\nSTAGE 0, SETUP (on Greg's word):\n- Linux x86_64, for example Ubuntu 24.04. A non-root user. SSH with strict host keys.\n- rustup toolchain 1.99.1 with clippy and rustfmt; Node 24.14.0; git; build-essential; pkg-config; NTP.\n- At least 150 GB of disk per clone; nofile at least 16384.\n- Outbound network to github, crates.io and npm.\nSTAGE 1, QUALIFICATION (measurement only):\n- Clean detached master 56f84d7e; run `node scripts/test-launcher.mjs full`, with the default 8 test threads.\n- Return results.json, the logs, rustc -V, node -v, uname -a and nproc.\n- Pass bar: all stages pass and the fingerprint matches before and after. A Linux-only failure becomes its own item.\nSTAGE 2, HEAVY AND STRESS JOBS (measurement only):\n- The Nmax matrix, 7 fixtures in parallel from separate clones.\n- Repeat-stress: 20–50 parallel copies of named filters, each in its own clone and target.\nSTAGE 3, LATER: a landing-gate host. This needs a rule change concurred by both coordinators, with the wording sent to Greg.\nSIDE FINDING: .nvmrc pins Node 22, but the central gate host runs Node 24.14.0. To be reconciled."
+}

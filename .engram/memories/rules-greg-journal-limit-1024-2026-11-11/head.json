@@ -1,0 +1,11 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-greg-journal-limit-1024-2026-11-11",
+  "head": {
+    "state": "active",
+    "chain": [
+      "509b82fd9370414d8fd68b7ea1e51c2c"
+    ]
+  }
+}

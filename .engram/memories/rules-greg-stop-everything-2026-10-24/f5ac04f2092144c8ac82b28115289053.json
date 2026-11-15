@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-stop-everything-2026-10-24",
+    "revision_id": "f5ac04f2092144c8ac82b28115289053",
+    "previous": "e062d292f75f47809e695319335eff5c",
+    "body_sha256": "f235fd03cbe107f49f95abde8660603b8615531b566754e6d0aafbc2e083a2d2",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent",
+      "actor_context": "agent=codex;model=gpt-6.1-sol;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-25T06:45:59.453417200Z"
+    }
+  },
+  "body": "CURRENT SCOPE: Greg has lifted the Engram STOP only for its existing reviewed merge queue. The selected new execution session is the live root chosen by Greg; discover and verify its actual Engram project binding before handing off. The latest direct target to Architect3 is display name Termal::Merger3, resolved at onboarding as session-14575 with workdir C:/github/Personal/Engram. Session names/ids are locators to recheck, not permanent authority or proof of project identity.\n\nNo new fixes, acceptance evaluations or unrelated work are resumed by this exception. Keep current policy unchanged and technically landed items open as DOSTARCZONO — EWALUACJA PENDING where native closure requires deferred evaluation. Existing Git, review, exact-input gate, supported claim/handoff and installation conditions still apply; no new rebase, force-push, restart or configuration authority is granted. Architect3's explicit assignment here is to get the new merger the existing queue handoff; ongoing operations belong to the Merger and coordinator. Routine status/test notifications do not go to Architect3.\n\nSources: Greg's direction relayed by Advisor mailbox-message-dca0a811-59fd-4455-9463-b9d5b2fcf30a at2026-10-25T06:41:19.572174400Z: start Engram merger through the newly created merger and lift STOP only for the existing reviewed queue; Greg's subsequent direct correction in Architect3's session: \"Termal::Merger3\". The earlier2026-10-24 STOP barred merge/carry, gates, focused checks, evaluations, queue recovery/resume, configuration mutations and dispatches pending a new direct instruction. Its unchanged restrictions continue outside the stated queue exception. Incident chronology and discarded session locators belong to task notes."
+}

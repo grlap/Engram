@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-author-test-refs-2026-11-09",
+    "revision_id": "a458161979624a71ba988bca23a3666e",
+    "previous": "68031ba7ac0d4c4bb13ce233188f52e2",
+    "body_sha256": "bc4a7862e5ee15a2df63f5878cc51a0d1f8b7d7d9cd510e6d83b3a01c32c4fb9",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-09T23:48:10.423420300Z"
+    }
+  },
+  "body": "GREG, 2026-11-09 about 17:12Z, relayed by Engram::Asistant (mailbox 43498a6e #782, message 94b9e8a5), verbatim: „prosze zapisac to jako skille i instrukcje w pamieci / ja nie widze innego sensu”. He was answering the proposal (43498a6e #781) to let coders push their own candidate commits to test branches on origin for remote runners. That followed his question „nie rozumiem, czemu po prostu nie wysylamy brancha ?” (#780).\n\nIN FORCE in Engram since c6a0784d (landed 2026-11-09 about 17:44Z, item w-1fb89e8e7fbf), and clarified by ea5252a1 (landed 23:43Z, item w-9f7fb6a5c136): AGENTS.md/CLAUDE.md \"Author test refs\".\n- The session that wrote a candidate commit may create `refs/heads/author-test/<item>-<commit8>` on origin with an explicit refspec, at any stage. The ref must be absent first and is never updated. The candidate's parent must already be on origin. The pusher confirms the whole candidate is safe to publish, because the repository is public. Never master, another branch, another remote, a force-push, rebase or merge.\n- A run on it counts exactly as the same run from a bundle of that commit, and no more. Only the Merger's own `test/` ref, with its records, is a final full gate. Since ea5252a1 the code enforces this: a new authorized_test_ref must lie under refs/heads/test/, so an author-test ref is refused in that lane.\n- The pusher deletes only that ref once the evidence of every run requested on it is recorded, and at the latest when the item closes, and records both on the item. An orphaned author-test ref whose pusher is gone gets no special rule; Greg's existing word route covers deleting it.\n- The coder-test-execution skill (step 3) points coders to it; step 2 says to run the formatter before freezing a candidate.\n- docs/development.md \"Git policy\" and .claude/commands/fix-bug.md step 9 also name \"for a test ref only, its test-ref bullets\".\nTermAl: the same rule in w-805f8c51d768, except that a run there is evidence only. Fable2 will make the same \"every run requested\" narrowing in TermAl's text in a later change."
+}

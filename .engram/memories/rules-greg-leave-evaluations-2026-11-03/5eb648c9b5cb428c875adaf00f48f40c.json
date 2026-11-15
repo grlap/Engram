@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-leave-evaluations-2026-11-03",
+    "revision_id": "5eb648c9b5cb428c875adaf00f48f40c",
+    "previous": null,
+    "body_sha256": "0074709b7e26f75e98a1d93c2cc4ac1ecfe401023e86821e6caf1aac9c3c65ec",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-03T20:37:18.788099300Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-03 20:36Z, relayed verbatim by Engram::Asistant (mailbox 43498a6e #169): „prosze zostawcie istniejace ewaluacje w spokoju... OK ?”. Asistant's gloss: don't modify, recompute, invalidate or rerun existing evaluations because of source_id work. Agree it with TermAl. If a specific case can't meet that, present the facts and a possible solution FIRST.\nAPPLIED (Engram::Fable; TermAl #6191; Greg told in #170):\n- no source_id, c07c, TermAl w-81991023d2c1 or w-58fa1c679ff5 change rewrites, recomputes, relabels or deletes any stored evaluation, verification or seal;\n- before the w-58fa default-basis flip, AND before any evaluation re-enable, list the open items whose existing evaluations are under content-v1: (Engram's freshness check, src/storage/work/acceptance_evaluation/source.rs:145, compares exact strings), and bring Greg the facts and options before acting;\n- no automatic rerun of evaluations."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-clean-up-after-work-2026-11-04",
+    "revision_id": "9ce3d003b58e48729e42f6136acc5704",
+    "previous": null,
+    "body_sha256": "81858e16940e1cca4abada13c36791815291a58fd996ab57050850005e8b2896",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-04T18:01:39.859816500Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-04 about 18:01Z, relayed verbatim by Engram::Asistant (mailbox 43498a6e #245, message 0437185a): „Kopiuje foldery. My nie sprzątamy po skończonej pracy. To nieakceptowalne.” Asistant's brief, not his words: establish directories, worktrees and artifacts left by finished work and their owners; clean only what's safely verified as unneeded, per the rules; ensure cleanup at the closing of later tasks; report the result and what was kept and why. He is copying Windows B: delete or move nothing there until the copy is confirmed finished."
+}

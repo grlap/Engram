@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-autonomous-work-2026-11-02",
+    "revision_id": "9db1c783716c4d7cbe4d3e11c9a5f7b9",
+    "previous": null,
+    "body_sha256": "6d3069fe5487d302facc1100604213f6fd07fcc955683b309c0d60fa2cc978a0",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-02T23:30:13.183340400Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-11-02 ~23:30Z, said in Engram::Asistant's session (session-15908) and relayed verbatim to Engram::Fable (mailbox 43498a6e #76). Verbatim: „OK. Przekaz zespołowi że celem jest praca autonomiczna. Chyba widac po zmianach jakie robimy.\"\n\nAsistant's reading, adopted by Engram::Fable:\n- The team makes team decisions itself and carries authorized work through without waiting.\n- Greg is brought only the decisions that really need him, each with a concrete plan, never a request to repeat consent he already gave.\n\nThis is a direction for future work and procedures. It grants no new act by itself: repository authority text (migration, restart, deploy, global configuration, and authority-text changes) still governs until it is changed through the authority-file procedure. Related: rules-greg-decides-via-asistant-2026-11-02 and rules-greg-no-failing-expensive-tests-on-trivia-2026-11-02."
+}

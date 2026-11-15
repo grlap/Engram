@@ -1,0 +1,24 @@
+{
+  "format": "engram-project-memories-v1",
+  "project_id": "github.com/grlap/Engram",
+  "key": "rules-roles-and-council",
+  "head": {
+    "state": "active",
+    "chain": [
+      "65a734f7701a4d3bbbbf2b2058265bad",
+      "547d691061104bfd8bd86ba85dae5e3d",
+      "7f211cffaa4f41b8bef4bc43d7387a4f",
+      "d09436345a0e4c37a3ff24b5b7b32f8b",
+      "de01e995480f4ff0b59d29baffe74605",
+      "74bb83ab54e54ccf81f8704eeb4342d2",
+      "f0893dcf6e924ae6b123197c824684de",
+      "63a71a19dd70476396c2b1abcff53140",
+      "c8bda718bf4646c7808b563cce25f061",
+      "a6e2ff8a291a4318a469be1094490c2f",
+      "7eb695ff9d7440a495be250c86fe4981",
+      "5e4357806c0147b08799100d8fd44aff",
+      "2c3a5e65d7c74424a2c520000843bf1d",
+      "02a9a7d30e7a4af2ae808d9176c2dc4b"
+    ]
+  }
+}

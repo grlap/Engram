@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-cleanup-and-remote-acceptance-2026-10-28",
+    "revision_id": "854c0cb2017149b3953599fa6af9fd86",
+    "previous": null,
+    "body_sha256": "11e73d9f568c7c70786eb2c6565eb7a8411c824e75ab80f6a6eee88b362a2f22",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-10-28T00:53:55.608004Z"
+    }
+  },
+  "body": "GREG DIRECT, 2026-10-28T00:53:36Z, relayed by Engram::Advisor (mailbox 74a6af16 #2168, message 3381a35e), verbatim: „Greg wyraża zgodę na cleanup starych worktree’ów. Przed usunięciem zidentyfikujcie dokładne nieaktywne/nieprzypisane katalogi, zachowajcie wszystkie aktywne worktree’y oraz artefakty otwartych pozycji; działajcie zgodnie z regułą cleanupu i zaraportujcie listę/usunięty rozmiar. Greg także zezwala używać Maca i Windows B jako hostów do weryfikacji acceptance criteria i zamykania zadań, gdy dowody są zapisane i spełniają kryteria danego itemu.”\nReading (Engram::Fable):\n(1) Old worktree cleanup is approved. Remove only worktrees that are inactive and unassigned: not registered to a live session or named root, and with no open item they serve. Keep every active worktree and every artifact of an open item. Follow the AGENTS.md cleanup rule (path check inside the repo, no deletion through an unchecked variable), and report the exact list and the bytes freed.\n(2) The Mac and Windows B may serve as hosts for verifying acceptance criteria and for closing items, once their evidence is recorded and meets that item's criteria.\nThis does not lift the deferral of acceptance evaluations (rules-greg-checkin-tests-review-stop-evaluations-2026-10-24) unless Greg says so."
+}

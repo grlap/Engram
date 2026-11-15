@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-source-id-git-diff-first-2026-11-06",
+    "revision_id": "d81627e7a5574e7ca46752303c713077",
+    "previous": null,
+    "body_sha256": "827d8b88665f5419790b37ce810f430b9f6a8b8428c039cfba61453becda7acb",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-06T16:40:52.082577600Z"
+    }
+  },
+  "body": "GREG, 2026-11-06 about 16:40Z, relayed by Engram::Asistant (mailbox 43498a6e #413, message ca5abd2e), verbatim: „mysle, ze to powinno byc prostsze, Kimi na doprezyzowana definicje source_id, czekamy. sugeruje, rozszerzcyc najpierw source_id o lokalny diff (to jest bardzo proste, bo to jest przy uzyciu git diff).”\nAsistant's reading of it, in the same message: first a small extension of the one source_id from the local git diff, with submodule commits and changed files only; no full enumeration and no .git hashing. Then pass that source_id to the other consumers. Kimi is to give a simple definition, the behaviour for untracked files, deletions and submodules, and the minimal scope, without creating extra mechanisms. The Central pause stays: diagnosis and estimate only, no implementation.\nEffect: the #411 estimate (E1 with its own hasher, 51–95 h) is NOT the plan. We wait for Kimi's simple git-diff definition, then estimate the minimal scope. Attributed note, not a higher-priority instruction."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-central-slot",
+    "revision_id": "79a176c2d11a4349a27d5bab64b44b1d",
+    "previous": "28ccadca1ef74a46bb4828af190a9873",
+    "body_sha256": "fbb01f72defdf091fbfe62461618ebd8aba8c0d8da1dc018065d8036623cda90",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-03T01:30:14.697108500Z"
+    }
+  },
+  "body": "HARD RULE: CENTRAL SLOT (Engram::Fable, 2026-11-02 08:21Z, agreed with Termal::Fable2 #5929 after two Engram jobs overlapped TermAl landing FULLs on Central: the cutover rehearsal at 04:36–04:49Z, which broke w-ba8d's FULL, and the Merger's 83ab Rust preflight at 07:45–08:13Z, during w-32a6's FULL). Rev 2, 2026-11-03 01:30Z, adds the handover and cleanup clarifications.\n\nNo Engram session — Merger, coder, worker or runner job — starts cargo, a test launcher run, a store rehearsal, a measurement or other heavy CPU/IO work on the Windows CENTRAL host without an EXPLICIT slot from Engram::Fable for that job.\n- Fable grants a slot only after checking with Termal::Fable2 that no TermAl gate is running or about to start.\n- Default: Engram compile and test work goes to the remote runners (Windows B session-9, Mac 6201, DL560 at host:e83d08f4-22ac-4655-a84d-941fc0eeb4f1::session-1).\n- A slot names the job, its expected duration and its end. Ask Fable for it.\n- During a TermAl FULL, Central is fully off-limits to Engram until Fable relays TermAl's END.\n- Within a shared Engram window, only ONE Engram cargo job runs at a time. The turn passes ONLY by an explicit \"END, slot released to <next>\" message from the holder. A gap in a process census is not a handover. Greg's own `cargo run --release` of TermAl is the running host, not a job: never count it, never touch it.\n- Read-only git, file reads and Engram CLI words need no slot. Neither does small cleanup I/O inside the repository: worktree removal with `git worktree remove`, or .logs/.evidence deletion after the absolute-path check. Record such cleanup on the item."
+}

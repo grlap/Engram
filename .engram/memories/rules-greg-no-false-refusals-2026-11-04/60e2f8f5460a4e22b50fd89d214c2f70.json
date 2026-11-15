@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-no-false-refusals-2026-11-04",
+    "revision_id": "60e2f8f5460a4e22b50fd89d214c2f70",
+    "previous": "c50a953a607d42688e60f9089c1d2dd4",
+    "body_sha256": "71ef96b0e126041678d1369a5e83935d8dc46b83267603a3d7077f8cb7fa737b",
+    "retiring_target": null,
+    "source_clear": true,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-11T09:52:33.655312100Z"
+    }
+  },
+  "body": "LASTING GREG RULES on evidence refusals and simple procedures. Kept live as standing rules, so they no longer retire with w-89f3b3eeb688; consolidated on 2026-11-11 by Engram::Fable after 11334's retirement check (mailbox 5674b8de #2306).\n\nGREG DIRECT, 2026-11-04 about 07:50Z, relayed verbatim by Engram::Asistant (mailbox 43498a6e #219, message 621ea76f), after the source_moved_after_check result: „Hmm. Trzymajmy procedury jak prosto jak się da.” Asistant's relayed brief, not his verbatim words: agree with TermAl a simple automatic fix of the cause; no manual empty turns as a standing procedure; no weakening of evidence credibility; avoid needless steps in rolling out Execution Observability. (This was the full content of rules-greg-simple-procedures-2026-11-04, preserved here.)\n\nGREG DIRECT, 2026-11-04 about 16:05Z, after both evaluation windows were refused, relayed verbatim by Engram::Asistant (mailbox 43498a6e #235, message b1f8d665): „To nie moze tak byc. Znowu bedziemy odrzucac poprawne testy.” Asistant's brief, not his words: with TermAl, establish the actual source of the refusals and fix the automatic distinction between correct evidence and a real source change. No silence, no empty turns, no weakening of protection. Prepare positive and negative regression cases and a simple end-to-end path with normal work, leave existing evaluations untouched, and work autonomously.\n\nGREG DIRECT, about 16:06Z, verbatim via Asistant (43498a6e #238, message be5771e9): „Bez workaround i skomplikowanych procedur.” Asistant's brief: remove the cause in the product so the normal work cycle runs automatically. No temporary workarounds, empty turns, manual ordering or new agent procedures; keep protection against a real source change.\n\nStanding reading: correct evidence must not be falsely rejected. The product, not agent procedure, must distinguish correct evidence from a real source change. Prefer the simplest automatic fix and keep evidence credible."
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "format": "engram-project-memories-v1",
+    "project_id": "github.com/grlap/Engram",
+    "key": "rules-greg-loop-goals-2026-11-04",
+    "revision_id": "e805bf30b2994b9cab68f662bb7c4002",
+    "previous": "5a8956037d8447f2aab68c83c4323208",
+    "body_sha256": "fb76e4e2d39ec63b7cfbb960e36740be5cd152a7070c727b20b0d47f9cf55ec1",
+    "retiring_target": null,
+    "source_clear": false,
+    "source": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent",
+      "actor_context": "agent=claude;model=opus;reasoning=high",
+      "reason": "record attributed project memory",
+      "remembered_at": "2026-11-04T21:39:13.163539900Z"
+    }
+  },
+  "body": "Greg's direction as relayed by Kimi::Consultant (mailbox c15db92c #14, message 37e5e362, 2026-11-04 21:33Z), Kimi's paraphrase, not his verbatim words, and not a commit, push or restart authority. Principle: coordinating four machines and agents is hard; don't assume a human designs optimal rules up front; first a complete, however rough, working loop, then a measurable goal and the system optimizes itself.\nDirection: (1) finish simple EO w-633b5cacc42a and ordinary test, evaluate, done on Windows and Linux before re-enabling; (2) remove replaced mechanisms, no more d6 or handshakes: Git is the source, a registered run is execution and result, the evaluator judges the criterion, Engram keeps evidence current, TermAl does execution and federation; (3) measure the cost of a landed change: tokens, time, Greg's interventions, false refusals, duplicate runs, messages, queue age; (4) small Sol and Opus delegations, one worker plus parent, review on a freeze, the coordinator only for exceptions; (5) federation as simple exact-commit, bundle, mailbox and result transport, no new bureaucracy.\nGoals: 5 ordinary changes end to end on 2 systems with no workaround or false refusal, negatives still refused; replaced procedures removed and fewer states; a baseline and then about 30% less cost without weakening tests or review; Greg receives a result, a blocker or a decision, not ACKs.\nReporting: don't assume Greg watches agent sessions; updates for him go to Engram::Asistant, which aggregates. Technical status notes and peer mailboxes stay.\n\nGreg, via Kimi::Consultant verbatim (c15db92c #16, 2026-11-04 21:39Z): „wazne sa tez skile i jakies reguly, ktore mozna pozniej replikowac na inne projekty / bo mam ich duzo”. Kimi's recommendation, not his words: universal rules (exact source and test evidence, no false refusals, required review, human authorization, results through Asistant); small reusable skills (isolated worker, remote run, freeze and review, evaluate and done, recovery, reporting), each stating input, result, errors and proof, with no local ids or machine names; project-local config (paths, commands, store, runners, gates). No new registry or package manager: use .agents/skills and Git. Abstract only after the end-to-end works in Engram and TermAl, then pilot on a third project. Goal: a new project adopts the set without forking rules, changing mainly config."
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a1ddf6-dcfc-7f72-981d-c85ae376c244",
+  "external_ref": null,
+  "title": "Document the \"refusals explain themselves\" design rule in Engram's docs",
+  "outcome": "Document the \"refusals explain themselves\" design rule in Engram's docs",
+  "acceptance": [
+    "Engram's docs (docs/agent-pair-workflow.md or the architecture or contributing guidance; not AGENTS.md or CLAUDE.md) state the agreed rule: a refusal reports the deciding check, the concrete reason with observed values, and the corrective action when one exists; REFUSED, PENDING and UNKNOWN stay distinct; silent skips and discarded errors are defects; remote refusals travel back to the requester. No new gate is added"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
