@@ -883,23 +883,63 @@ fn write_data_folder_profile(
     Ok(written)
 }
 
+pub(crate) fn invalid_memory_export_basis(
+    head: &str,
+    problem: impl std::fmt::Display,
+) -> crate::storage::StoreError {
+    TaskSyncRefusal::MemoryExportBasisInvalid.invalid(format!(
+        "committed memory basis {head} at .engram/project.json: {problem}; restore, fetch or merge a valid matching project envelope and memory capability from data history, commit the repair, then retry"
+    ))
+}
+
+pub(crate) fn committed_memory_envelope(bytes: &[u8], head: &str) -> Result<(FolderBasis, bool)> {
+    let basis =
+        folder_basis_from_bytes(bytes).map_err(|error| invalid_memory_export_basis(head, error))?;
+    let envelope: FolderProjectDocument =
+        serde_json::from_slice(bytes).map_err(|error| invalid_memory_export_basis(head, error))?;
+    Ok((basis, envelope.memory_profile.is_some()))
+}
+
 fn require_task_only_head(data: &super::data_worktree::DataWorktree) -> Result<()> {
     let Some(head) = &data.head else {
         return Ok(());
     };
-    let entry = super::git::query(
+    let entries = super::git::query(
         &data.checkout,
-        &["ls-tree", "-z", head, "--", ".engram/project.json"],
+        &[
+            "ls-tree",
+            "-z",
+            head,
+            "--",
+            ".engram/project.json",
+            ".engram/memories",
+        ],
         false,
         None,
         super::data_worktree::QUERY_BOUND,
     )?;
-    if entry.is_empty() {
+    let has_memories = entries
+        .split(|byte| *byte == 0)
+        .any(|entry| entry.ends_with(b"\t.engram/memories"));
+    let project = entries
+        .split(|byte| *byte == 0)
+        .find(|entry| entry.ends_with(b"\t.engram/project.json"));
+    let Some(project) = project else {
+        anyhow::ensure!(
+            !has_memories,
+            invalid_memory_export_basis(head, "project envelope is absent while memories exist")
+        );
         return Ok(());
-    }
+    };
     anyhow::ensure!(
-        entry.starts_with(b"100644 blob "),
-        "committed project envelope must be an ordinary file"
+        project.starts_with(b"100644 blob "),
+        invalid_memory_export_basis(
+            head,
+            format!(
+                "expected an ordinary 100644 blob, observed {}",
+                String::from_utf8_lossy(project)
+            )
+        )
     );
     let bytes = super::git::query(
         &data.checkout,
@@ -908,10 +948,20 @@ fn require_task_only_head(data: &super::data_worktree::DataWorktree) -> Result<(
         None,
         super::data_worktree::QUERY_BOUND,
     )?;
-    if let Ok(envelope) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-        anyhow::ensure!(envelope.get("memory_profile").is_none(),
-            TaskSyncRefusal::MemoryProfileRequiresOptIn.invalid("committed data HEAD advertises project memories; export requires --include-memories"));
-    }
+    let (_, capable) = committed_memory_envelope(&bytes, head)?;
+    anyhow::ensure!(
+        !has_memories || capable,
+        invalid_memory_export_basis(
+            head,
+            "memories exist but memory_profile capability is absent or null"
+        )
+    );
+    anyhow::ensure!(
+        !capable,
+        TaskSyncRefusal::MemoryProfileRequiresOptIn.invalid(
+            "committed data HEAD advertises project memories; export requires --include-memories"
+        )
+    );
     Ok(())
 }
 

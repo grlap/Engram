@@ -505,6 +505,8 @@ pub enum TaskSyncRefusal {
     MemoryIgnorePolicyUncommitted,
     /// Explicit recovery evidence differs from the selected committed basis.
     MemoryExportBasisChanged,
+    /// Committed memories have no valid project envelope and capability.
+    MemoryExportBasisInvalid,
     /// A prepared setup intent uses an obsolete policy proposal.
     SetupIntentPolicyObsolete,
     /// A memory-capable folder requires explicit memory import/export selection.
@@ -560,6 +562,7 @@ task_sync_refusal_codes! {
     MemoryIgnorePolicyExcludesTree => "memory_ignore_policy_excludes_tree",
     MemoryIgnorePolicyUncommitted => "memory_ignore_policy_uncommitted",
     MemoryExportBasisChanged => "memory_export_basis_changed",
+    MemoryExportBasisInvalid => "memory_export_basis_invalid",
     SetupIntentPolicyObsolete => "setup_intent_policy_obsolete",
     MemoryProfileRequiresOptIn => "memory_profile_requires_opt_in",
 }

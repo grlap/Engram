@@ -1037,8 +1037,12 @@ Missing or modified memory components
 refuse with `memory_export_component_missing` or
 `memory_export_component_changed`; restore or commit the intended component
 before retrying. Recreating the folder never turns an existing committed history
-into an empty bootstrap. A HEAD with no memory component or no valid task project
-envelope has an empty memory basis. Task-only export does not read memory HEAD.
+into an empty bootstrap. Only a HEAD with no memory component has an empty memory
+basis. When committed memories exist but their project envelope or capability is
+missing or invalid, export refuses with `memory_export_basis_invalid`. Restore,
+fetch or merge the valid matching envelope and capability from data history,
+commit the repair, then retry. Task-only export checks the committed envelope
+and refuses a memory-capable HEAD; it does not decode the memory histories.
 Ignore-policy, size, immutable-content and basis checks run before any task or
 capability write. An uncommitted memory tree refuses; explicit interrupted-export
 recovery separately validates its retained and intended states before cleanup.

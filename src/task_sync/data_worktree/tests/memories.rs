@@ -231,28 +231,15 @@ fn memory_sync_export_refuses_committed_ignore_exclusion_until_explicit_update()
 fn memory_sync_empty_head_basis_does_not_block_fresh_task_only_export() {
     let (fixture, data) = fixture();
     let original = task_sync::directory::read_resolved_data_folder_with_memories(&data).unwrap();
+    let project_path = data.checkout.join(".engram/project.json");
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&fs::read(&project_path).unwrap()).unwrap();
+    envelope.as_object_mut().unwrap().remove("memory_profile");
+    fs::write(&project_path, serde_json::to_vec(&envelope).unwrap()).unwrap();
     run(&fixture.data, &["add", ".engram"]);
     run(
         &fixture.data,
         &["commit", "-m", "Record task-only component"],
-    );
-    let data = DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
-    assert!(
-        memories::directory::committed(&data, &original.tree.project.project_id)
-            .unwrap()
-            .is_empty()
-    );
-    fs::write(
-        data.checkout.join(".engram/project.json"),
-        "invalid old envelope",
-    )
-    .unwrap();
-    fs::create_dir_all(data.checkout.join(".engram/memories/rule")).unwrap();
-    fs::write(data.checkout.join(".engram/memories/rule/head.json"), "{}").unwrap();
-    run(&fixture.data, &["add", ".engram"]);
-    run(
-        &fixture.data,
-        &["commit", "-m", "Record incomplete old task envelope"],
     );
     let data = DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
     assert!(
@@ -272,6 +259,105 @@ fn memory_sync_empty_head_basis_does_not_block_fresh_task_only_export() {
             .tree,
         original.tree
     );
+}
+
+#[test]
+fn memory_sync_committed_memories_refuse_invalid_envelopes_without_losing_peer_keys() {
+    for problem in [
+        "absent",
+        "malformed",
+        "incomplete",
+        "mode",
+        "missing capability",
+        "null capability",
+        "unsupported capability",
+        "foreign",
+    ] {
+        let (fixture, data) = fixture();
+        let original =
+            task_sync::directory::read_resolved_data_folder_with_memories(&data).unwrap();
+        let selected = BTreeMap::from([("rule".into(), history("peer history", None))]);
+        memories::directory::write(&data, &BTreeMap::new(), &selected).unwrap();
+        let project_path = data.checkout.join(".engram/project.json");
+        let valid = fs::read(&project_path).unwrap();
+        match problem {
+            "absent" => fs::remove_file(&project_path).unwrap(),
+            "malformed" => fs::write(&project_path, "invalid envelope").unwrap(),
+            _ => {
+                let mut envelope: serde_json::Value = serde_json::from_slice(&valid).unwrap();
+                match problem {
+                    "incomplete" => envelope["folder_exchange"]["complete"] = false.into(),
+                    "missing capability" => {
+                        envelope.as_object_mut().unwrap().remove("memory_profile");
+                    }
+                    "null capability" => envelope["memory_profile"] = serde_json::Value::Null,
+                    "unsupported capability" => envelope["memory_profile"] = "unknown".into(),
+                    "foreign" => envelope["project"]["project_id"] = "another/project".into(),
+                    "mode" => {}
+                    _ => unreachable!(),
+                }
+                fs::write(&project_path, serde_json::to_vec(&envelope).unwrap()).unwrap();
+            }
+        }
+        run(&fixture.data, &["add", ".engram"]);
+        if problem == "mode" {
+            run(
+                &fixture.data,
+                &["update-index", "--chmod=+x", ".engram/project.json"],
+            );
+        }
+        run(
+            &fixture.data,
+            &["commit", "-m", "Record invalid committed envelope"],
+        );
+        let data = DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
+        let saved = fixture.home.path().join("saved-component");
+        fs::rename(data.checkout.join(".engram"), &saved).unwrap();
+        let error =
+            memories::directory::committed(&data, &original.tree.project.project_id).unwrap_err();
+        let code = if problem == "foreign" {
+            "task_sync_origin_mismatch"
+        } else {
+            "memory_export_basis_invalid"
+        };
+        assert_eq!(
+            crate::store_error_value(error.downcast_ref::<crate::storage::StoreError>().unwrap())["error"]
+                ["code"],
+            code,
+            "{problem}: {error:#}"
+        );
+        assert!(!data.checkout.join(".engram").exists());
+        if problem != "foreign" {
+            let error =
+                task_sync::directory::write_data_folder(&data, &original.tree, &original.profile)
+                    .unwrap_err();
+            assert_eq!(
+                crate::store_error_value(
+                    error.downcast_ref::<crate::storage::StoreError>().unwrap()
+                )["error"]["code"],
+                "memory_export_basis_invalid",
+                "{problem}: {error:#}"
+            );
+            assert!(!data.checkout.join(".engram").exists());
+        }
+        fs::rename(&saved, data.checkout.join(".engram")).unwrap();
+        fs::write(&project_path, &valid).unwrap();
+        run(&fixture.data, &["add", ".engram"]);
+        run(
+            &fixture.data,
+            &["update-index", "--chmod=-x", ".engram/project.json"],
+        );
+        run(
+            &fixture.data,
+            &["commit", "-m", "Repair committed envelope"],
+        );
+        let data = DataWorktree::observe(&fixture.code, &fixture.data, "engram-data").unwrap();
+        assert_eq!(
+            memories::directory::committed(&data, &original.tree.project.project_id).unwrap(),
+            selected,
+            "{problem}"
+        );
+    }
 }
 
 #[test]

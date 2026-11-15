@@ -244,6 +244,89 @@ fn memory_sync_cli_explicit_retirement_reports_unseen_suffix_and_counterpart_ret
 }
 
 #[test]
+fn memory_sync_cli_invalid_committed_envelope_refuses_before_export_writes() {
+    for missing in [true, false] {
+        let (owned, marker, home) = setup();
+        let peer_home = owned.path().join("peer-home");
+        task_sync_opt_in::enable(&peer_home, "memory-cli-fixture");
+        success(command(&peer_home, &marker).arg("init").output().unwrap());
+        work(
+            &peer_home,
+            &marker,
+            &["remember", "peer-only history", "--key", "peer"],
+        );
+        let folder = data_worktree::folder(&marker);
+        let data = folder.parent().unwrap();
+        success(sync_output(
+            &peer_home,
+            &marker,
+            "export",
+            &folder,
+            &["--include-memories", "--json"],
+        ));
+        let valid = fs::read(folder.join("project.json")).unwrap();
+        let peer_files = files(&folder.join("memories"));
+        git(data, &["add", ".engram"]);
+        git(data, &["commit", "-m", "Record peer-only memory"]);
+        work(
+            &home,
+            &marker,
+            &["remember", "local-only history", "--key", "local"],
+        );
+        if missing {
+            fs::remove_file(folder.join("project.json")).unwrap();
+        } else {
+            fs::write(folder.join("project.json"), "malformed envelope").unwrap();
+        }
+        git(data, &["add", ".engram"]);
+        git(data, &["commit", "-m", "Record invalid project envelope"]);
+        let before = files(&folder);
+        let saved = owned.path().join("saved-component");
+        fs::rename(&folder, &saved).unwrap();
+        for args in [vec!["--include-memories", "--json"], vec!["--json"]] {
+            let refused = sync_output(&home, &marker, "export", &folder, &args);
+            assert_eq!(
+                refused.status.code(),
+                Some(1),
+                "{}",
+                String::from_utf8_lossy(&refused.stderr)
+            );
+            let error: Value = serde_json::from_slice(&refused.stderr).unwrap();
+            assert_eq!(error["error"]["code"], "memory_export_basis_invalid");
+            assert!(
+                !folder.exists(),
+                "refusal must not recreate any shared export file"
+            );
+            assert_eq!(files(&saved), before);
+        }
+        fs::rename(&saved, &folder).unwrap();
+        fs::write(folder.join("project.json"), &valid).unwrap();
+        git(data, &["add", ".engram"]);
+        git(
+            data,
+            &["commit", "-m", "Restore matching committed envelope"],
+        );
+        success(sync_output(
+            &home,
+            &marker,
+            "export",
+            &folder,
+            &["--include-memories", "--json"],
+        ));
+        let after = files(&folder.join("memories"));
+        for (path, bytes) in peer_files {
+            assert_eq!(
+                after.get(&path),
+                Some(&bytes),
+                "peer revision {path:?} must survive"
+            );
+        }
+        assert!(folder.join("memories/local/head.json").is_file());
+        assert!(folder.join("memories/peer/head.json").is_file());
+    }
+}
+
+#[test]
 fn memory_sync_cli_task_only_export_preserves_committed_memories() {
     let (_owned, marker, home) = setup();
     work(&home, &marker, &["remember", "retained", "--key", "rule"]);

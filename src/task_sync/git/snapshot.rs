@@ -104,19 +104,50 @@ pub fn read_memory_snapshot(
     if !children.iter().any(|entry| entry.name == "memories") {
         return Ok(BTreeMap::default());
     }
-    let Some(project_file) = children.iter().find(|entry| {
-        entry.name == "project.json" && entry.mode == "100644" && entry.kind == "blob"
-    }) else {
-        return Ok(BTreeMap::default());
-    };
+    let project_file = children
+        .iter()
+        .find(|entry| entry.name == "project.json")
+        .ok_or_else(|| {
+            crate::task_sync::directory::invalid_memory_export_basis(
+                &commit.oid,
+                "project envelope is absent while memories exist",
+            )
+        })?;
+    anyhow::ensure!(
+        project_file.mode == "100644" && project_file.kind == "blob",
+        crate::task_sync::directory::invalid_memory_export_basis(
+            &commit.oid,
+            format!(
+                "expected an ordinary 100644 blob, observed {} {}",
+                project_file.mode, project_file.kind
+            )
+        )
+    );
     let bytes = reader.evidence_blob(&project_file.oid, 1024 * 1024)?;
-    if crate::task_sync::directory::folder_basis_from_bytes(&bytes).is_err() {
-        return Ok(BTreeMap::default());
+    let (basis, capable) =
+        crate::task_sync::directory::committed_memory_envelope(&bytes, &commit.oid)?;
+    anyhow::ensure!(
+        basis.project_id == *project,
+        TaskSyncRefusal::OriginMismatch
+            .invalid("task commit project differs from selected project")
+    );
+    if children
+        .iter()
+        .any(|entry| entry.name == "tasks" && (entry.mode != "040000" || entry.kind != "tree"))
+    {
+        return Err(TaskSyncRefusal::DestinationNotDirectory
+            .invalid("task commit tasks entry must be a tree")
+            .into());
     }
-    let (_, _, capable) = reader.metadata_with_size(&commit.tree, project)?;
     for entry in children {
         if entry.name == "memories" {
-            anyhow::ensure!(capable, "committed memories require their capability");
+            anyhow::ensure!(
+                capable,
+                crate::task_sync::directory::invalid_memory_export_basis(
+                    &commit.oid,
+                    "memories exist but memory_profile capability is absent or null"
+                )
+            );
             return Ok(memories::read(&reader, &entry, project)?.0);
         }
     }
