@@ -1502,16 +1502,14 @@ that directory refuses exchange. The data worktree has its own Git index and
 HEAD. Recheck its branch and head immediately before committing/pushing.
 Export does not stage code, move a code branch or change a code source freeze.
 
-Generated data exchange should have a project-approved validation path distinct
-from source-code delivery: schema/graph validation and reviewed sync tooling,
-not a fresh Rust build and code-review pair per 1,000-task export. This is a
-policy integration prerequisite, not an exemption granted by this document.
-The current Engram authority rules still govern; an unattended data-only
-exception requires their separate exact-wording approval route before enabling
-it. Without that exception, obey the existing gates/authority or retain the
-prepared output for a separately authorized operation. Mixed source/data commits
-are refused. No commit/push, force-push or test waiver is authorized
-merely by the presence of a sync configuration or this specification.
+Routine task and memory export commits in `MAIN/.engram-data/` to `engram-data`,
+and fast-forward pushes of that branch to origin, are granted by the
+**Task-sync data branch** rule in
+[AGENTS.md](../../AGENTS.md#authority-and-git) and
+[CLAUDE.md](../../CLAUDE.md#authority-and-git). Before every push, confirm that
+the export carries no secret, credential or private personal data. Mixed
+source/data commits are refused. A sync configuration or this specification
+alone authorizes no commit, push, force-push or test waiver.
 
 ## Host binding and validation identity
 

@@ -8,12 +8,9 @@
 > [Lifecycle ownership](acceptance-evaluation-lifecycle.md) (rule owners,
 > admission and completion horizons, consolidation proposals).
 
-> **Temporarily off.** Acceptance evaluation is switched off in the project
-> policy until [Execution Observability](execution-observability.md) delivers
-> the host evidence it needs. While it is off, no landing, completion or other
-> work waits for an evaluation. A missing verdict stays missing and is never
-> recorded as a pass. The contract below is kept unchanged for when
-> evaluation is switched back on.
+> Acceptance evaluation is on under the project policy. See
+> [AGENTS.md, Authority and Git](../../AGENTS.md#authority-and-git) for when
+> evaluation blocks landing.
 
 This brief is the contract for evidence-based acceptance evaluation before
 completion. It describes the agreed design, not a claim that every row is
