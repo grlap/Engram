@@ -75,7 +75,8 @@ under the established sparse-checkout contract.
 
 Claims/fences, grants, sessions, retained prompts, delivery positions, private scratch,
 credentials, local paths, native evaluations/verification/seals and runtime tables never
-import as local authority. Project memories remain outside the initial profile.
+import as local authority. Project memories travel through a separate opt-in
+[memory profile](git-task-sync.md#project-memory-text-exchange).
 
 Task IDs identify tasks, not revisions. Local change coverage uses captured project-feed
 position PLUS the typed inventory where the current capture needs it; current shipped

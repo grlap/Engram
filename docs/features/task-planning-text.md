@@ -34,7 +34,8 @@ publishes a new Git folder containing `project.json` and
 `tasks/<full-uuid>.json`. An existing equivalent folder is left byte-for-byte
 unchanged, including ordinary `.gitignore` and `.gitattributes` policy files;
 a different folder is refused. Export does not replace a resolved merge or advance
-a branch. Publication prepares a sibling staging
+a branch. The optional memory export preserves this task contract and writes
+only its own component and capability. Publication prepares a sibling staging
 directory, reads it back, and moves it without replacing an existing
 destination. An operating system that cannot perform that directory move
 without replacement refuses publication.
