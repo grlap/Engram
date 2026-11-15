@@ -161,9 +161,7 @@ fn derive_in_snapshot(
             &mut omissions,
             &mut activity_omissions,
         )?;
-        if current.notes != document.notes || current.activity != document.activity {
-            return Err(unsupported("note or activity changes"));
-        }
+        super::super::super::task_sync::shared::validate_update(connection, &item, document)?;
         let reopen = document.lifecycle == WorkLifecycle::Open
             && (item.lifecycle == WorkLifecycle::Completed
                 || super::super::super::completion::is_import_retired_on(connection, &item)?);

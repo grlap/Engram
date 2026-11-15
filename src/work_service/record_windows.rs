@@ -234,8 +234,8 @@ impl LocalWorkService {
         let (prefix, member) = locator
             .split_once(':')
             .map_or((locator, None), |(prefix, member)| (prefix, Some(member)));
-        // An inherited member is a note (INDEX), an event (event-INDEX) or
-        // the completion; indexes are one-based immutable member positions.
+        // Immutable members include inherited notes/events/completion and
+        // admitted shared notes; indexes are one-based member positions.
         let positive = |index: &str| {
             !index.is_empty()
                 && index.bytes().all(|byte| byte.is_ascii_digit())
@@ -246,10 +246,14 @@ impl LocalWorkService {
         });
         if !(8..=64).contains(&prefix.len())
             || !prefix.bytes().all(|byte| byte.is_ascii_hexdigit())
-            || member.is_some_and(|member| !history_member && !positive(member))
+            || member.is_some_and(|member| {
+                !history_member
+                    && !positive(member)
+                    && !member.strip_prefix("shared-note-").is_some_and(positive)
+            })
         {
             return Err(reference_invalid(
-                "use at least eight hex digits and, for inherited members, :INDEX for a note, :event-INDEX for an event, or :completion",
+                "use at least eight hex digits; members use :INDEX for an inherited note, :shared-note-INDEX for an admitted shared note, :event-INDEX for an event, or :completion",
                 Vec::new(),
             ));
         }

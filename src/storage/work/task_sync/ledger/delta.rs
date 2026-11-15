@@ -292,6 +292,11 @@ fn apply_on(
     input: &InspectedDelta,
     now: DateTime<Utc>,
 ) -> Result<CompletedExchange, StoreError> {
+    // Reserve historical member ownership before either applying or retaining
+    // a deferred candidate. A refused addition must not acquire a witness.
+    for task in input.payload.documents.values().flatten() {
+        super::super::shared::validate_identities(transaction, task, &input.binding.project)?;
+    }
     // Preserve the legacy field's full BEFORE-export meaning. Removing this
     // complete capture is a separate remaining cost obligation, not a guessed
     // substitution of the payload or modular membership fingerprint.

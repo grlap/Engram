@@ -1019,7 +1019,19 @@ fn notes_for_item_on(
         };
         notes.push((hash, note));
     }
-    order_snapshot_notes_on(connection, project_id, notes)
+    let mut notes = order_snapshot_notes_on(connection, project_id, notes)?;
+    let item = super::work::load_work_item(connection, work_id)?;
+    let mut shared = super::work::task_sync::shared::additional_notes(connection, &item)?;
+    shared.sort_by_key(|member| (member.position, member.index));
+    notes.extend(shared.into_iter().map(|member| WorkGraphSnapshotNote {
+        evidence_kind: WorkEvidenceKind::Generic,
+        summary: member.note.body,
+        refs: Vec::new(),
+        gate: None,
+        actor: member.note.author.reported(),
+        recorded_at: member.note.recorded_at,
+    }));
+    Ok(notes)
 }
 
 fn order_snapshot_notes_on(

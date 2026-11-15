@@ -94,15 +94,10 @@ fn task_sync_export_activity_conflict_producer_preserves_the_retained_origin() {
         if changed {
             let error = result.unwrap_err();
             assert_eq!(refusal_code(&error), "task_sync_divergent_planning");
-            assert!(
-                error
-                    .to_string()
-                    .contains("native activity conflicts with retained origin entry")
-            );
         } else {
             assert_eq!(result.unwrap(), original.tasks[0].activity);
         }
-        let separate = target
+        let renamed = target
             .work_read_snapshot(|store| {
                 with_origin_scope(&store.connection, || {
                     super::super::activity::capture(
@@ -115,9 +110,8 @@ fn task_sync_export_activity_conflict_producer_preserves_the_retained_origin() {
                     )
                 })
             })
-            .unwrap();
-        assert_eq!(separate["machine-A"], tree.tasks[0].activity["machine-A"]);
-        assert_eq!(separate["machine-B"].len(), 1);
+            .unwrap_err();
+        assert_eq!(refusal_code(&renamed), "task_sync_divergent_planning");
         assert_eq!(state(&target), before);
     }
 }

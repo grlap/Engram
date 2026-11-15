@@ -73,6 +73,8 @@ pub struct TaskChange {
     pub relations: RelationChange,
     /// An incoming completed outcome, with no local seal or evidence credit.
     pub reported_completion: bool,
+    /// Additive notes or monotonic informational activity, never runtime state.
+    pub shared: bool,
     /// The other changed fields, in document order.
     pub unsupported: Vec<TaskField>,
 }
@@ -439,8 +441,6 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         superseded_by => SupersededBy,
         disposal_reason => DisposalReason,
         completion => Completion,
-        notes => Notes,
-        activity => Activity,
     ]
     .into_iter()
     .filter_map(|(field, changed)| {
@@ -462,7 +462,13 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         assigned_to: (*assigned_to != incoming.assigned_to).then(|| incoming.assigned_to.clone()),
     };
     let relations = compare_relations(held, incoming);
-    if unsupported.is_empty() && scalar.is_empty() && relations.is_empty() && !reported_completion {
+    let shared = *notes != incoming.notes || *activity != incoming.activity;
+    if unsupported.is_empty()
+        && scalar.is_empty()
+        && relations.is_empty()
+        && !reported_completion
+        && !shared
+    {
         return Ok(TaskDelta::Unchanged);
     }
     let scalar = (!scalar.is_empty()).then_some(scalar);
@@ -477,6 +483,7 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         scalar,
         relations,
         reported_completion,
+        shared,
         unsupported,
     })))
 }

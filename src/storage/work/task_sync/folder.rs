@@ -409,25 +409,12 @@ fn apply_planned_changes(
         request.now,
     )?;
     let plan = &application.plan;
-    let mut expected = request
+    let expected = request
         .tree
         .tasks
         .iter()
         .map(|task| (task.id, task.clone()))
         .collect::<BTreeMap<_, _>>();
-    for task in &plan.tasks {
-        if matches!(&task.delta, folder_plan::TaskDelta::Changed(change) if change.reported_completion)
-        {
-            let document = expected
-                .get_mut(&task.id)
-                .ok_or_else(|| invalid("reported task is absent from the incoming folder"))?;
-            super::activity::after_reported_completion(
-                transaction,
-                document,
-                request.profile.origin_machine.as_deref(),
-            )?;
-        }
-    }
     let changed = plan
         .changed_ids()
         .chain(plan.additions())
@@ -548,7 +535,20 @@ fn apply_planned_changes(
             .collect::<std::collections::HashMap<_, _>>();
         let resolved = expected.values().filter(|task| changed.contains(&task.id));
         for task in resolved {
-            if applied.get(&task.id).copied() != Some(task) {
+            // The baseline is the exact admitted input. Native facts that
+            // existed before admission survive it, and an actual reported
+            // completion may additionally close this host's own episode.
+            let mut outgoing = task.clone();
+            if let Some(before) = current.tasks.iter().find(|before| before.id == task.id) {
+                super::shared::merge_notes(&mut outgoing.notes, before.notes.clone())?;
+                super::shared::merge_activity(&mut outgoing.activity, before.activity.clone())?;
+            }
+            if plan.tasks.iter().any(|change| change.id == task.id && matches!(&change.delta, folder_plan::TaskDelta::Changed(change) if change.reported_completion)) {
+                for alias in outgoing.activity.keys().cloned().collect::<Vec<_>>() {
+                    super::activity::after_reported_completion(transaction, &mut outgoing, Some(&alias))?;
+                }
+            }
+            if applied.get(&task.id).copied() != Some(&outgoing) {
                 return Err(StoreError::InvalidWorkProjection(
                     "a folder change does not export as the folder carries it".into(),
                 ));

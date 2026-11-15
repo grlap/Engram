@@ -39,6 +39,7 @@ pub mod reconciliation;
 pub mod retention;
 pub mod settings;
 pub mod setup;
+pub(crate) mod shared;
 
 /// The supported planning-only profile; other profiles require explicit admission.
 pub const FORMAT: &str = "engram-task-planning-v1";

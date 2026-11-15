@@ -50,6 +50,12 @@ fn records(
                 SqliteStore::get_typed_object_on(connection, &id, "work_event")?.ok_or_else(
                     || super::super::super::invalid("delta local work event missing"),
                 )?;
+            if old
+                .get(work)
+                .is_some_and(|basis| event.revision <= basis.revision)
+            {
+                continue;
+            }
             require(
                 event.project_id == binding.project
                     && event.actor == intent.actor

@@ -19,17 +19,39 @@ pub(super) fn capture(
     comparison: bool,
     omissions: &mut NoteOmissions,
 ) -> Result<ActivityMap, StoreError> {
-    let mut activity = origin::for_item(connection, item)?
-        .map_or_else(ActivityMap::new, |origin| origin.task.activity);
+    let mut activity = super::shared::retained_for_capture(connection, item)?
+        .map_or_else(ActivityMap::new, |task| task.activity);
     if !comparison {
-        if let Some(machine) = machine {
-            for (id, notice) in native(item, records, machine)? {
-                let entries = activity.entry(machine.into()).or_default();
-                if let Some(retained) = entries.get(&id)
-                    && retained != &notice
+        // Previously retained native episodes keep their original aliases even
+        // in a planning-only export. An unwitnessed episode stays private.
+        let mut aliases = activity
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        aliases.extend(machine.map(str::to_owned));
+        for alias in aliases {
+            for (id, notice) in native(item, records, &alias)? {
+                let published_alias = activity.iter().find_map(|(alias, entries)| {
+                    entries.contains_key(&id).then_some(alias.clone())
+                });
+                if let Some(previous) = &published_alias
+                    && machine.is_some_and(|requested| requested != previous)
                 {
-                    return Err(TaskSyncRefusal::DivergentPlanning
-                        .invalid("native activity conflicts with retained origin entry"));
+                    return Err(TaskSyncRefusal::DivergentPlanning.invalid("shared_identity: a retained native episode cannot change its origin-machine alias"));
+                }
+                if published_alias
+                    .as_ref()
+                    .is_some_and(|previous| previous != &alias)
+                {
+                    continue;
+                }
+                if published_alias.is_none() && machine != Some(alias.as_str()) {
+                    continue;
+                }
+                let entries = activity.entry(alias.clone()).or_default();
+                if let Some(retained) = entries.get(&id) {
+                    crate::task_sync::shared::advance(retained, &notice)
+                        .map_err(super::shared::refusal)?;
                 }
                 entries.insert(id, notice);
             }
@@ -49,7 +71,7 @@ pub(super) fn capture(
     Ok(activity)
 }
 
-fn native(
+pub(super) fn native(
     item: &WorkItem,
     records: &[(ObjectId, WorkEvent)],
     machine: &str,

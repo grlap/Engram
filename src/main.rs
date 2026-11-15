@@ -517,7 +517,7 @@ enum WorkCommand {
         /// Item-bound continuation from the same note, history, evaluations, observations or criterion-links window, or of a verification record's assessment with --note.
         #[arg(long)]
         after: Option<String>,
-        /// Complete note body: record-id prefix (8+ hex), or `RECORD_ID:INDEX`; an inherited event or completion: `RECORD_ID:event-INDEX` or `RECORD_ID:completion`.
+        /// Complete note body: record-id prefix (8+ hex), `RECORD_ID:INDEX` for an inherited note, or `RECORD_ID:shared-note-INDEX` for an admitted shared note; an inherited event or completion: `RECORD_ID:event-INDEX` or `RECORD_ID:completion`.
         #[arg(long)]
         note: Option<String>,
         /// Complete stored title, outcome, and acceptance; reading changes neither focus nor claims.

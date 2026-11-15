@@ -19,8 +19,8 @@ pub(super) fn capture(
     let origin = origin::for_item(connection, item)?;
     let included = origin.as_ref().is_some_and(|origin| origin.notes_included);
     let mut notes = Vec::new();
-    if let Some(origin) = &origin {
-        for note in &origin.task.notes {
+    if let Some(shared) = super::shared::retained_for_capture(connection, item)? {
+        for note in &shared.notes {
             if !comparison && restricted(&item.labels) {
                 omissions.omit("restricted task");
             } else {
@@ -93,11 +93,21 @@ pub(super) fn capture(
             omissions.omit(reason);
             continue;
         }
-        let machine = machine.ok_or_else(|| {
-            TaskSyncRefusal::DivergentPlanning
-                .invalid("task import refuses divergent shared notes from local native notes")
-        })?;
-        notes.push(SharedNote {
+        let retained = notes.iter().find(|note| note.id == id);
+        if let Some(retained) = retained
+            && machine.is_some_and(|machine| machine != retained.origin_machine)
+        {
+            return Err(TaskSyncRefusal::DivergentPlanning.invalid(
+                "shared_identity: a retained native note cannot change its origin-machine alias",
+            ));
+        }
+        let Some(machine) = retained
+            .map(|note| note.origin_machine.as_str())
+            .or(machine)
+        else {
+            continue;
+        };
+        let native = SharedNote {
             id,
             kind: if crate::domain::status_note_role(&note.actor).is_some() {
                 SharedNoteKind::Status
@@ -108,7 +118,14 @@ pub(super) fn capture(
             author: SharedActor::from_actor(&note.actor),
             recorded_at: note.recorded_at,
             origin_machine: machine.into(),
-        });
+        };
+        if let Some(retained) = notes.iter().find(|note| note.id == native.id) {
+            if retained != &native {
+                return Err(TaskSyncRefusal::DivergentPlanning.invalid("shared_identity: a retained native note differs or changes its origin-machine alias"));
+            }
+        } else {
+            notes.push(native);
+        }
     }
     // These stored families belong to execution history, never note candidates.
     // These entries deliberately have no feed-row work_id; their run binds
@@ -138,6 +155,143 @@ pub(super) fn capture(
     }
     notes.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
     Ok((notes, included))
+}
+
+pub(super) fn validate_native_echo(
+    connection: &Connection,
+    item: &WorkItem,
+    incoming: &SharedNote,
+) -> Result<(), StoreError> {
+    if super::shared::foreign_original(connection, item, &incoming.id)? {
+        let kind: String = connection.query_row(
+            "SELECT object_kind FROM objects WHERE object_id=?1",
+            [incoming.id.as_str()],
+            |row| row.get(0),
+        )?;
+        let (work, body, author, recorded_at, excluded) = match kind.as_str() {
+            "work_observation" => {
+                let note: crate::domain::WorkObservation = super::evidence::shared_original_on(
+                    connection,
+                    &item.project_id,
+                    &incoming.id,
+                    &kind,
+                )?
+                .decode()?;
+                (
+                    note.work_id,
+                    note.summary,
+                    note.actor,
+                    note.created_at,
+                    !note.refs.is_empty() || note.project_id != item.project_id,
+                )
+            }
+            "work_evidence" => {
+                let note: crate::WorkEvidence = super::evidence::shared_original_on(
+                    connection,
+                    &item.project_id,
+                    &incoming.id,
+                    &kind,
+                )?
+                .decode()?;
+                (
+                    note.work_id,
+                    note.summary,
+                    note.actor,
+                    note.created_at,
+                    !note.refs.is_empty() || note.gate.is_some(),
+                )
+            }
+            "work_restored_evidence" => {
+                let note: crate::RestoredWorkEvidence = super::evidence::shared_original_on(
+                    connection,
+                    &item.project_id,
+                    &incoming.id,
+                    &kind,
+                )?
+                .decode()?;
+                (
+                    note.work_id,
+                    note.summary,
+                    note.actor,
+                    note.created_at,
+                    !note.refs.is_empty() || note.gate.is_some(),
+                )
+            }
+            _ => {
+                return Err(TaskSyncRefusal::IdCollision
+                    .invalid("shared note id names a foreign original outside shared prose"));
+            }
+        };
+        let expected = SharedNote {
+            id: incoming.id.clone(),
+            kind: if crate::domain::status_note_role(&author).is_some() {
+                SharedNoteKind::Status
+            } else {
+                SharedNoteKind::Generic
+            },
+            body,
+            author: SharedActor::from_actor(&author),
+            recorded_at,
+            origin_machine: incoming.origin_machine.clone(),
+        };
+        if work != item.work_id || excluded || expected != *incoming {
+            return Err(TaskSyncRefusal::DivergentPlanning
+                .invalid("shared_identity: note differs from its foreign canonical original"));
+        }
+        return Ok(());
+    }
+    let held: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id=?1)",
+        [incoming.id.as_str()],
+        |row| row.get(0),
+    )?;
+    if !held {
+        return Ok(());
+    }
+    let row = connection.prepare(&format!(
+        "SELECT notes.family, object.object_kind FROM ({}) notes JOIN objects object ON object.object_id=notes.hash WHERE notes.hash=?2", super::super::notes::NOTE_OBJECTS
+    ))?.query_map(rusqlite::params![item.work_id.0.to_string(), incoming.id.as_str()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?.collect::<Result<Vec<_>, _>>()?;
+    let Some((family, kind)) = row.first() else {
+        return Err(
+            TaskSyncRefusal::IdCollision.invalid("shared note id names a different native object")
+        );
+    };
+    let note = super::super::notes::load_note(
+        connection,
+        item.work_id,
+        &incoming.id,
+        family,
+        kind,
+        false,
+    )?;
+    if note.gate.is_some()
+        || note.verification.is_some()
+        || !note.refs.is_empty()
+        || !matches!(
+            kind.as_str(),
+            "work_evidence" | "work_restored_evidence" | "work_observation"
+        )
+    {
+        return Err(TaskSyncRefusal::IdCollision
+            .invalid("shared note id names a native object excluded from shared prose"));
+    }
+    let expected = SharedNote {
+        id: incoming.id.clone(),
+        kind: if crate::domain::status_note_role(&note.actor).is_some() {
+            SharedNoteKind::Status
+        } else {
+            SharedNoteKind::Generic
+        },
+        body: note.summary,
+        author: SharedActor::from_actor(&note.actor),
+        recorded_at: note.recorded_at,
+        origin_machine: incoming.origin_machine.clone(),
+    };
+    if expected != *incoming {
+        return Err(TaskSyncRefusal::DivergentPlanning
+            .invalid("shared_identity: incoming note differs from native canonical note"));
+    }
+    Ok(())
 }
 
 /// Audit-time comparison is store-wide; ordinary reads never enumerate origins.

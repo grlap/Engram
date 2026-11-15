@@ -4,6 +4,7 @@ use super::*;
 
 mod any_host;
 mod failure_modes;
+mod shared_updates;
 use crate::{
     ClaimWorkRequest, ReleaseWorkRequest, SessionId, WorkClaim,
     domain::{WorkPlanningAuthority, WorkTransition},

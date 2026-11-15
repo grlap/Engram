@@ -188,16 +188,27 @@ fn task_sync_notes_repeat_after_local_peer_or_late_note_respects_candidate_profi
                     dry,
                     at(30),
                 );
-                if included {
-                    let error = result.unwrap_err();
-                    assert!(error.to_string().contains("divergent shared notes"));
-                    assert_eq!(refusal_code(&error), "task_sync_divergent_planning");
-                } else {
-                    let result = result.unwrap();
-                    assert!(!result.changed);
-                    assert_eq!(result.dry_run, dry);
-                }
+                let result = result.unwrap();
+                assert!(!result.changed);
+                assert_eq!(result.dry_run, dry);
                 assert_eq!(state(&store), before);
+            }
+            if included {
+                let exported = store
+                    .export_task_tree_with_notes(&tree.project.project_id, "local-host")
+                    .unwrap();
+                let task = exported
+                    .tree
+                    .tasks
+                    .iter()
+                    .find(|task| task.id == item.work_id)
+                    .unwrap();
+                assert!(task.notes.iter().any(|note| note.body
+                    == if late {
+                        "Local late finding"
+                    } else {
+                        "Local peer progress"
+                    }));
             }
             // Disabling notes must still refuse removal of imported shared notes.
             if included {

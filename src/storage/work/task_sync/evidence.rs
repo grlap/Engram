@@ -194,3 +194,39 @@ pub(in crate::storage) fn require_native(
     }
     Ok(())
 }
+
+/// Read an admitted foreign original for inert shared-member comparison only.
+/// This does not associate it with native execution or change its partition.
+pub(super) fn shared_original_on(
+    connection: &Connection,
+    project: &ProjectId,
+    id: &ObjectId,
+    object_kind: &str,
+) -> std::result::Result<CanonicalObject, StoreError> {
+    if !is_imported_only(connection, id)? {
+        return Err(StoreError::InvalidWorkProjection(
+            "shared foreign comparison requires an admitted original".into(),
+        ));
+    }
+    let held_project: String = connection.query_row(
+        "SELECT pack.project_id FROM work_task_sync_evidence_imported original
+         JOIN work_task_sync_evidence_packs pack ON pack.admission_id=original.admission_id
+         WHERE original.object_id=?1",
+        [id.as_str()],
+        |row| row.get(0),
+    )?;
+    if held_project != project.0 {
+        return Err(crate::task_sync::TaskSyncRefusal::IdCollision
+            .invalid("shared identity names a foreign original from another project"));
+    }
+    let (stored_kind, bytes) = object_on(connection, id)?
+        .ok_or_else(|| StoreError::InvalidWorkProjection("foreign original is missing".into()))?;
+    if stored_kind != object_kind {
+        return Err(StoreError::ObjectKindMismatch {
+            hash: id.clone(),
+            stored: stored_kind,
+            requested: object_kind.into(),
+        });
+    }
+    CanonicalObject::stored(id, bytes)
+}

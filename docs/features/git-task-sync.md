@@ -1579,8 +1579,10 @@ import cannot clear or rewrite them or claim they were delivered. No automatic
 host Stop is authorized. The checked successor writer applies retained native
 reopen, revision, prerequisite and blocker transitions in one transaction after
 affected execution ends normally. Task creation/removal, parent or required-child
-changes, and note/activity changes remain explicit refusals on this successor
-path; other planning import paths retain their own contracts.
+changes remain explicit refusals on this successor path. Additive immutable
+notes and monotonic activity updates apply with an eligible planning successor,
+without granting execution authority; removal, rollback and conflicting
+identities refuse. Other planning import paths retain their own contracts.
 Reopening a restored completed child can initialize its first local execution
 aggregate even when its restored root has never executed. The retained recipe
 reserves that aggregate's identity under the actual root, once for all selected

@@ -65,6 +65,7 @@ pub(super) struct ShowArgs {
     /// With note, continues a verification record's obligation assessment.
     pub(super) after: Option<String>,
     /// Complete note body beyond the window ceiling: record id or `RECORD_ID:INDEX`.
+    /// An admitted shared note uses `RECORD_ID:shared-note-INDEX`.
     /// An inherited event or completion: `RECORD_ID:event-INDEX` or `RECORD_ID:completion`,
     /// returning the complete member. A verification record also shows its
     /// reconstructed obligation assessment.

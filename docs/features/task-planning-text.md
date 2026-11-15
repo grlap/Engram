@@ -170,13 +170,14 @@ produce a per-task refusal with their field names. A note selection that
 differs from the baseline's refuses earlier as `task_sync_divergent_planning`,
 or `task_sync_invalid_graph` when the folder and requested selection disagree.
 
-Edits and returned completions currently require the task's shared notes and
-activity notices to match the destination's retained values. New or changed
-notes or activity on an existing task are reported as unsupported fields,
-including when the same document reports completion. A planning-only exchange
-omits native notes and activity; importing a new task can restore both under
-their selected disclosure profile. Reporting completion never copies notes
-already retained by the destination into a second inherited history.
+Edits and returned completions may carry additive immutable shared notes and
+new or advancing activity notices. Retained entries cannot be removed, rolled
+back or assigned conflicting identities. Shared-only changes are informational;
+mixing them with planning or completion keeps the task's admission atomic.
+A planning-only export omits unwitnessed native entries; retained or confirmed
+published entries keep their original aliases. Reporting completion never
+copies retained notes into a second inherited history. See the shared-note and
+[activity contract](#informational-machine-activity) for profile recovery.
 
 Creation host does not control editability. Native and restored Open or
 Proposed tasks accept shared planning when they have no engaged local
@@ -272,8 +273,8 @@ including retained local tasks, before materializing removals or additions;
 the [relation contract](task-folder-relations.md) also checks durable retired
 edges separately from the immutable origin union.
 
-Existing tasks' notes and activity are compared exactly, so an unchanged note
-never blocks an addition. Admission judges the requested task changes together,
+Existing tasks retain immutable notes and accept monotonic activity updates;
+an unchanged note never blocks an addition. Admission judges the requested task changes together,
 with one reason per task in task-id order. The receipt's `tasks` list gives
 `applied`, `held` or `refused` for every changed task, plus `reason` and `detail`
 for each unapplied task. Unsupported fields and a task's own eligibility come
@@ -694,12 +695,29 @@ A changed body, author, kind, time, machine alias, owning task or project
 for a known note id refuses before writes. A changed id or omitted note also
 makes an existing candidate divergent. Disabling notes never deletes retained
 notes. An initial unknown id/body is an operator assertion, not authenticity
-proof; incremental note merging is deferred.
+proof. These empty-target/exact-repeat restrictions describe plain candidate
+import; complete-folder and strict-delta exchange admit the shared updates below.
 
-A planning-only exact repeat ignores local native notes, while still refusing
-to discard retained shared notes. When notes are included, eligible native
-notes added on the target make the repeat divergent; import does not assign
-them a new origin-machine alias.
+An exact repeat preserves local native notes added since the incoming candidate,
+while still refusing to discard retained shared notes. Import does not assign
+those local additions a new origin-machine alias; a later aliased export can
+include them under the ordinary disclosure rules.
+
+Complete-folder and strict-delta exchange accept additional immutable notes on
+existing native or restored tasks. Agents merge by original note id: retain all
+previous notes, union independent additions, and preserve each note's body,
+author, kind, time and original machine alias. Two different ids with identical
+bodies remain two notes. Removing a retained note reports `note_removal`;
+rewriting its immutable content or ownership reports `shared_identity`.
+
+Accepted late notes are composed into ordinary note windows and detail as
+reported generic prose, with stable `RECORD:shared-note-N` locators anchored at
+their first admitted baseline document. They carry no status-owner, gate,
+verification or completion authority. Existing initial imported note locators
+remain valid. Graph snapshots include each known original note once, retaining
+the graph format's existing loss of original note ids on re-import. Full-store
+migration retains the immutable original and baseline records. This adds no
+persisted note/search projection; shared note text is not added to FTS.
 
 Shared note bodies have the native write boundary's 64 KiB UTF-8 limit;
 oversized shared bodies refuse on import and export. Notes are inline in each
@@ -724,9 +742,20 @@ migration retains origin objects and original note metadata unchanged.
 
 Supplying `--origin-machine ALIAS` includes native activity even without
 `--include-notes`. The alias has the same asserted, unauthenticated meaning and
-validation as the note alias. Without an alias, export captures no native
-activity; retained imported activity still travels under its original aliases.
+validation as the note alias. Without an alias, export discloses no new native
+activity. Retained imported entries, admitted native echoes, and native entries
+with confirmed publication witnesses retain their original aliases; existing
+native episodes can advance under those witnessed aliases without a new opt-in.
 An empty activity map is absent from the task document.
+
+Ordinary note/history windows, detail, evaluation, completion links and graph
+snapshots use SQLite-retained history without reading Git. Explicit exchange
+capture may read a confirmed legacy complete-folder publication when it has no
+canonical keyed membership. That read shares one snapshot per binding/commit,
+uses keyed task lookup and the exchange's bounded deadline. An unavailable
+repository or retained commit refuses the exchange with
+`task_sync_incremental_basis_unavailable`, naming the commit and repository to
+restore while preserving the incoming edits.
 
 Each task's optional `activity` map is keyed first by origin alias, then by the
 original canonical start-event id. Each entry repeats that `activity_id`, its
@@ -752,7 +781,42 @@ remain separate. Candidate admission requires `started` at revision 1 with the
 start event id, or a closed state at revision 2 or later with a different event
 id. The complete empty-target/exact-repeat boundary applies:
 changed or removed entries, rollback and conflicting known identities refuse
-before writes. Updating notices in an existing graph awaits reconciliation.
+before writes for plain candidate import.
+
+Complete-folder and strict-delta exchange accept new episodes and strictly
+higher revisions of existing episodes. Original episode id, owning task/project,
+origin alias and starting actor stay fixed. Equal-revision repeats are no-ops;
+different payloads at an equal revision report `activity_conflict`, older
+revisions report `activity_rollback`, and missing retained episodes report
+`activity_removal`. A handoff may legitimately use the same event id to close
+one episode and start its successor. Echoes of local native notes or activity
+must agree with the corresponding local canonical facts.
+
+Shared-only updates remain informational and may apply while local execution
+is active or the task is terminal. Reconciliation holds still apply. A task's
+mixed planning/completion and shared edits are atomic: an execution hold on its
+governing edits holds its shared edits too. Independent folder tasks can apply;
+a strict delta candidate defers as a whole. A later local claim alone does not
+hold a shared-only strict delta, and unexported local facts survive for the next
+outgoing capture. The receipt claims only actual native effects of that import.
+
+An imported baseline and its membership fingerprint retain the exact incoming
+documents. A local reported completion may also abandon this host's expired
+episode through its actual canonical completion event. That local fact overlays
+the baseline on the next export; it never rewrites the prepared input or its
+receipt's imported head. Incoming shared assertions create no native activity
+events themselves.
+
+A planning-only export always succeeds for an active project when otherwise
+valid and omits native identities without retained/admitted or confirmed
+publication witnesses. Preparing an export alone is not such a witness. Raw
+folder export is read-only and records no publication. Consequently, a raw
+aliased export followed by a planning-only export can omit an episode the other
+host already retained: that receiver visibly refuses `activity_removal` rather
+than silently deleting it. Recover by re-exporting with the original alias from
+the retained common Git commit, merging all shared entries, and importing the
+resolved return. Do not reset the baseline or invent a replacement alias.
+Changing `include_notes` still uses the existing explicit profile refusal.
 
 Restricted task labels and path/locator-shaped actor fields exclude complete
 entries on export, with separate `activity_omissions` counts in the local JSON

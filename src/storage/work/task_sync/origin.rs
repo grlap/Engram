@@ -54,6 +54,20 @@ struct OriginScope {
     connection: usize,
     changes: u64,
     origins: HashMap<ObjectId, ImportOrigin>,
+    planning: HashMap<ObjectId, std::rc::Rc<PlanningRecord>>,
+    publications: HashMap<crate::WorkId, Vec<crate::task_sync::TaskDocument>>,
+    publication_snapshots: HashMap<(ObjectId, String), std::rc::Rc<PublicationSnapshot>>,
+    publication_started: std::time::Instant,
+}
+
+pub(super) struct PlanningRecord {
+    pub record: super::baseline::TaskSyncImportPlanning,
+    pub notes: HashMap<(crate::WorkId, ObjectId), usize>,
+}
+
+struct PublicationSnapshot {
+    commit: crate::task_sync::git::CommitObject,
+    documents: BTreeMap<crate::WorkId, crate::task_sync::TaskDocument>,
 }
 
 #[derive(Debug)]
@@ -85,6 +99,10 @@ thread_local! {
     pub(super) static ENUMERATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     #[cfg(test)]
     pub(super) static DECODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    #[cfg(test)]
+    pub(super) static PLANNING_DECODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    #[cfg(test)]
+    pub(super) static PUBLICATION_SNAPSHOT_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// A transient decoded-object cache lives within one transaction's read call.
@@ -120,6 +138,10 @@ pub(in crate::storage) fn enter_origin_scope(
             connection: key,
             changes: connection.total_changes(),
             origins: HashMap::new(),
+            planning: HashMap::new(),
+            publications: HashMap::new(),
+            publication_snapshots: HashMap::new(),
+            publication_started: std::time::Instant::now(),
         });
     });
     Ok(OriginScopeGuard { owner: Some(owner) })
@@ -137,6 +159,8 @@ fn lookup(connection: &Connection, id: &ObjectId) -> Result<ImportOrigin, StoreE
         let changes = connection.total_changes();
         if scope.changes != changes {
             scope.origins.clear();
+            scope.planning.clear();
+            scope.publications.clear();
             scope.changes = changes;
         }
         if let Some(origin) = scope.origins.get(id) {
@@ -146,6 +170,149 @@ fn lookup(connection: &Connection, id: &ObjectId) -> Result<ImportOrigin, StoreE
         scope.origins.insert(id.clone(), origin.clone());
         Ok(origin)
     })
+}
+
+/// Shared history borrows one verified immutable record per read snapshot.
+pub(super) fn planning_record(
+    connection: &Connection,
+    id: &ObjectId,
+    project: &crate::ProjectId,
+) -> Result<std::rc::Rc<PlanningRecord>, StoreError> {
+    ORIGIN_SCOPES.with(|scopes| {
+        let mut scopes = scopes.borrow_mut();
+        let scope = scopes
+            .last_mut()
+            .ok_or_else(|| invalid("planning read outside snapshot scope"))?;
+        if scope.connection != std::ptr::from_ref(connection) as usize {
+            return Err(invalid("planning read on a different connection"));
+        }
+        if scope.changes != connection.total_changes() {
+            scope.origins.clear();
+            scope.planning.clear();
+            scope.publications.clear();
+            scope.changes = connection.total_changes();
+        }
+        if let Some(cached) = scope.planning.get(id) {
+            if cached.record.project_id != *project {
+                return Err(invalid("shared planning belongs to another project"));
+            }
+            return Ok(std::rc::Rc::clone(cached));
+        }
+        #[cfg(test)]
+        PLANNING_DECODES.with(|count| count.set(count.get() + 1));
+        let record = super::folder::retained_planning_on(connection, id, project)?;
+        let notes = record
+            .changes
+            .iter()
+            .filter_map(|(work, task)| task.as_ref().map(|task| (work, task)))
+            .flat_map(|(work, task)| {
+                task.notes
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, note)| ((*work, note.id.clone()), index))
+            })
+            .collect();
+        let record = std::rc::Rc::new(PlanningRecord { record, notes });
+        scope
+            .planning
+            .insert(id.clone(), std::rc::Rc::clone(&record));
+        Ok(record)
+    })
+}
+
+pub(super) fn published_members(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<Vec<crate::task_sync::TaskDocument>, StoreError> {
+    let cached = ORIGIN_SCOPES.with(|scopes| {
+        let mut scopes = scopes.borrow_mut();
+        let scope = scopes
+            .last_mut()
+            .ok_or_else(|| invalid("publication read outside snapshot scope"))?;
+        if scope.connection != std::ptr::from_ref(connection) as usize {
+            return Err(invalid("publication read on a different connection"));
+        }
+        if scope.changes != connection.total_changes() {
+            scope.origins.clear();
+            scope.planning.clear();
+            scope.publications.clear();
+            scope.changes = connection.total_changes();
+        }
+        Ok(scope.publications.get(&item.work_id).cloned())
+    })?;
+    if let Some(cached) = cached {
+        return Ok(cached);
+    }
+    let documents = super::ledger::publication_members_on(connection, item)?;
+    ORIGIN_SCOPES.with(|scopes| {
+        if let Some(scope) = scopes.borrow_mut().last_mut() {
+            scope.publications.insert(item.work_id, documents.clone());
+        }
+    });
+    Ok(documents)
+}
+
+/// One exact complete-folder publication is read at most once per exchange
+/// capture. Its immutable Git bytes survive local SQL writes in this scope;
+/// bindings and confirmed outcomes are still checked afresh by their owner.
+pub(super) fn published_snapshot_member(
+    connection: &Connection,
+    binding_id: &ObjectId,
+    binding: &crate::task_sync::ledger::Binding,
+    expected: &crate::task_sync::ledger::RetainedCommit,
+    work: crate::WorkId,
+) -> Result<Option<crate::task_sync::TaskDocument>, StoreError> {
+    let key = (binding_id.clone(), expected.oid.clone());
+    let (cached, remaining) = ORIGIN_SCOPES.with(|scopes| {
+        let scopes = scopes.borrow();
+        let scope = scopes
+            .last()
+            .ok_or_else(|| invalid("publication read outside snapshot scope"))?;
+        if scope.connection != std::ptr::from_ref(connection) as usize {
+            return Err(invalid("publication read on a different connection"));
+        }
+        Ok((
+            scope.publication_snapshots.get(&key).cloned(),
+            crate::operation_time::MINIMUM.saturating_sub(scope.publication_started.elapsed()),
+        ))
+    })?;
+    let snapshot = if let Some(cached) = cached {
+        cached
+    } else {
+        #[cfg(test)]
+        PUBLICATION_SNAPSHOT_READS.with(|count| count.set(count.get() + 1));
+        let snapshot = crate::task_sync::git::read_task_snapshot_bounded(
+            &binding.repository.git_directory, &binding.project, &expected.oid, remaining,
+        ).map_err(|error| TaskSyncRefusal::IncrementalBasisUnavailable.invalid(format!(
+            "confirmed publication {} in {} cannot be read within the exchange deadline: {error}; restore this repository and retained commit before retrying, preserving the incoming edits",
+            expected.oid, binding.repository.git_directory.display(),
+        )))?;
+        let snapshot = std::rc::Rc::new(PublicationSnapshot {
+            commit: snapshot.commit,
+            documents: snapshot
+                .tree
+                .tasks
+                .into_iter()
+                .map(|task| (task.id, task))
+                .collect(),
+        });
+        ORIGIN_SCOPES.with(|scopes| {
+            if let Some(scope) = scopes.borrow_mut().last_mut() {
+                scope
+                    .publication_snapshots
+                    .insert(key, std::rc::Rc::clone(&snapshot));
+            }
+        });
+        snapshot
+    };
+    if snapshot.commit.tree != expected.tree
+        || snapshot.commit.raw_bytes_fingerprint != expected.raw_bytes_fingerprint
+    {
+        return Err(invalid(
+            "confirmed publication commit differs from retained bytes",
+        ));
+    }
+    Ok(snapshot.documents.get(&work).cloned())
 }
 
 pub(super) fn for_item(

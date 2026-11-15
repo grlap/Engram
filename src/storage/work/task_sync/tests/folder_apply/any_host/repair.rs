@@ -215,7 +215,7 @@ fn reported_completion_closes_local_activity_without_rolling_back_independent_ed
     let baseline = super::super::super::super::baseline::load(&store.connection, &project())
         .unwrap()
         .unwrap();
-    assert_eq!(baseline.tree, after.tree);
+    assert_eq!(baseline.tree, incoming);
     let retry = store
         .apply_task_sync_folder(
             TaskSyncFolderApply {

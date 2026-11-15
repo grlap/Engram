@@ -7,6 +7,7 @@ use crate::storage::work::{
 use crate::task_sync::ledger::PublicationObservation;
 
 mod reconciliation;
+mod shared_publication;
 
 #[test]
 fn negative_tip_observations_remain_unresolved_across_restart_and_block_supersession() {

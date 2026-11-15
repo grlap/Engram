@@ -78,9 +78,8 @@ pub(super) fn input_with_cut(
         crate::canonical::canonical_bytes(&commit).unwrap(),
     )
     .unwrap();
-    let before = store.export_task_tree(&binding.project).unwrap();
-    let before = crate::task_sync::progress::documents_fingerprint(&before.documents().unwrap())
-        .parse()
+    let before = store
+        .work_read_snapshot(|snapshot| basis(&snapshot.connection, binding, Direction::Incoming))
         .unwrap();
     InspectedExchange {
         binding_id: binding_id.clone(),

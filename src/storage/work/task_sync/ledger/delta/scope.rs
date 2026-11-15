@@ -154,13 +154,7 @@ pub(super) fn apply(
         transaction,
         &input.binding.project,
         &input.intent.local_cut,
-        durable
-            .documents
-            .keys()
-            .chain(&durable.missing)
-            .chain(local.before.documents.keys())
-            .chain(&local.before.missing)
-            .copied(),
+        super::deferred::governing_scope_on(transaction, input)?,
     )?;
     let origins = component::capture(
         transaction,

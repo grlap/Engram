@@ -15,9 +15,20 @@ use std::collections::BTreeSet;
 
 /// The existing local work an incoming request's planning would reach: its
 /// changed tasks and the targets of their document edges.
-fn seeds_on(connection: &Connection, input: &InspectedDelta) -> Result<Vec<WorkId>, StoreError> {
-    let mut seeds = input.intent.candidate.changed.clone();
-    for task in input.payload.documents.values().flatten() {
+fn seeds_on(
+    connection: &Connection,
+    input: &InspectedDelta,
+    governing_only: bool,
+) -> Result<Vec<WorkId>, StoreError> {
+    let mut seeds = BTreeSet::new();
+    for id in &input.intent.candidate.changed {
+        if governing_only && shared_only_on(connection, input, *id)? {
+            continue;
+        }
+        seeds.insert(*id);
+        let Some(task) = input.payload.documents.get(id).and_then(Option::as_ref) else {
+            continue;
+        };
         seeds.extend(
             super::super::super::closure::graph::document_edges(task)
                 .into_iter()
@@ -35,6 +46,86 @@ fn seeds_on(connection: &Connection, input: &InspectedDelta) -> Result<Vec<WorkI
         .collect()
 }
 
+fn shared_only_on(
+    connection: &Connection,
+    input: &InspectedDelta,
+    id: WorkId,
+) -> Result<bool, StoreError> {
+    let Some(next) = input.payload.documents.get(&id).and_then(Option::as_ref) else {
+        return Ok(false);
+    };
+    let item = match query::load_work_item(connection, id) {
+        Ok(item) => item,
+        Err(StoreError::WorkNotFound(_)) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let (current, _) = super::super::super::capture::capture_document_on(
+        connection,
+        item,
+        input.binding.profile.include_notes,
+        input.binding.profile.origin_machine.as_deref(),
+        false,
+        &mut crate::task_sync::notes::NoteOmissions::default(),
+        &mut crate::task_sync::notes::NoteOmissions::default(),
+    )?;
+    Ok(crate::task_sync::shared::governing_equal(&current, next))
+}
+
+pub(super) fn governing_scope_on(
+    connection: &Connection,
+    input: &InspectedDelta,
+) -> Result<Vec<WorkId>, StoreError> {
+    let mut seeds = BTreeSet::new();
+    for id in &input.intent.candidate.changed {
+        if shared_only_on(connection, input, *id)? {
+            continue;
+        }
+        let next = input
+            .payload
+            .documents
+            .get(id)
+            .ok_or_else(|| invalid("governing delta member is missing"))?;
+        seeds.insert(*id);
+        if let Some(task) = next {
+            seeds.extend(
+                super::super::super::closure::graph::document_edges(task)
+                    .into_iter()
+                    .map(|(_, target)| target),
+            );
+        }
+    }
+    if seeds.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Preserve the original native/baseline component readset. Reconciliation
+    // roots select claim owners for deferral, not a larger native-cut guard.
+    let durable = super::super::super::closure::native::capture_on(
+        connection,
+        &input.binding.project,
+        &input.binding.profile,
+        seeds.clone(),
+    )?;
+    // Select the retained membership only. Applying this filtered subset as an
+    // overlay could omit a native-equal edit needed by the complete candidate.
+    // The admission owner validates that complete overlay separately.
+    let local = super::super::super::closure::component::capture(
+        connection,
+        &input.binding.project,
+        crate::task_sync::TaskSyncGraphView::Baseline,
+        seeds,
+    )?;
+    Ok(durable
+        .documents
+        .keys()
+        .chain(&durable.missing)
+        .chain(local.documents.keys())
+        .chain(&local.missing)
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
+}
+
 /// Refuse a request whose planning scope overlaps an active reconciliation
 /// hold. Such a request can neither apply nor defer until that hold resolves,
 /// and retaining it first would leave its bytes in the way of the hold's own
@@ -43,7 +134,7 @@ pub(super) fn refuse_held_scope_on(
     connection: &Connection,
     input: &InspectedDelta,
 ) -> Result<(), StoreError> {
-    let seeds = seeds_on(connection, input)?;
+    let seeds = seeds_on(connection, input, false)?;
     if seeds.is_empty() {
         return Ok(());
     }
@@ -60,7 +151,7 @@ pub(super) fn try_defer_on(
     prepared: &CanonicalObject,
     now: DateTime<Utc>,
 ) -> Result<Option<CompletedExchange>, StoreError> {
-    let seeds = seeds_on(transaction, input)?;
+    let seeds = seeds_on(transaction, input, true)?;
     if seeds.is_empty() {
         return Ok(None);
     }
@@ -114,6 +205,12 @@ pub(super) fn try_defer_on(
         )?;
         return Ok(None);
     }
+    // Governing changes decide whether to defer. Once deferred, the complete
+    // atomic candidate needs held bases, including independent shared members,
+    // so its successor can account for every selected task in its receipt.
+    let seeds = seeds_on(transaction, input, false)?;
+    let affected =
+        reconciliation::capture_affected_on(transaction, &input.binding.project, &seeds)?;
     let hold = ReconciliationHold {
         schema_version: 1,
         project_id: input.binding.project.clone(),

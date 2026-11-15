@@ -52,6 +52,7 @@ pub(crate) enum RestoredMember {
     Note(usize),
     Event(usize),
     Completion,
+    SharedNote(usize),
 }
 
 /// Existing object identity, optionally selecting a member of an immutable
@@ -74,6 +75,7 @@ impl WorkRecordAddress {
             Some(RestoredMember::Note(index)) => format!("{prefix}:{index}"),
             Some(RestoredMember::Event(index)) => format!("{prefix}:event-{index}"),
             Some(RestoredMember::Completion) => format!("{prefix}:completion"),
+            Some(RestoredMember::SharedNote(index)) => format!("{prefix}:shared-note-{index}"),
         }
     }
 }
@@ -121,6 +123,14 @@ pub(crate) struct WorkRecordIndex {
     // Shared verified immutable bytes decoded by this snapshot's index read.
     // Member reads borrow this record, never reload its whole history.
     restored: Option<Arc<RestoredRecord>>,
+    shared: Option<SharedNoteRecord>,
+}
+
+struct SharedNoteRecord {
+    project: ProjectId,
+    work: WorkId,
+    address: WorkRecordAddress,
+    note: crate::task_sync::notes::SharedNote,
 }
 
 pub(crate) enum WorkRecordContent {
@@ -202,6 +212,9 @@ impl WorkRecordReader<'_> {
                         let note = &record.history.notes[index - 1];
                         inherited_note_family(note)
                     }
+                    RestoredMember::SharedNote(_) => {
+                        return Err(invalid("shared member in inherited record"));
+                    }
                     RestoredMember::Event(_) | RestoredMember::Completion => {
                         WorkRecordFamily::History
                     }
@@ -222,6 +235,7 @@ impl WorkRecordReader<'_> {
                     family: "inherited".into(),
                     object_kind: "work_restored_record".into(),
                     restored: Some(Arc::clone(&record)),
+                    shared: None,
                 });
             }
         }
@@ -275,6 +289,7 @@ impl WorkRecordReader<'_> {
                 family: row.get(1)?,
                 object_kind: row.get(3)?,
                 restored: None,
+                shared: None,
             });
         }
         for entry in &mut indexed {
@@ -312,6 +327,34 @@ impl WorkRecordReader<'_> {
         index: &WorkRecordIndex,
         verification_facts: bool,
     ) -> Result<WorkRecordContent, StoreError> {
+        if let Some(shared) = &index.shared {
+            if shared.project != *project
+                || shared.work != work_id
+                || shared.address != index.address
+            {
+                return Err(invalid(&format!(
+                    "shared note index binds project {} task {} member {}, requested project {} task {} member {}; read a fresh note index for the requested task",
+                    shared.project.0,
+                    shared.work.0,
+                    shared.address.locator(64),
+                    project.0,
+                    work_id.0,
+                    index.address.locator(64),
+                )));
+            }
+            // The index already verified these immutable admitted bytes in its
+            // read snapshot. Historical members remain valid after later writes.
+            let note = &shared.note;
+            return Ok(WorkRecordContent::Note(WorkNoteRecord {
+                kind: crate::WorkEvidenceKind::Generic,
+                summary: note.body.clone(),
+                verification: None,
+                refs: Vec::new(),
+                gate: None,
+                actor: note.author.reported(),
+                recorded_at: note.recorded_at,
+            }));
+        }
         if let Some(member) = &index.address.member {
             let record = index
                 .restored
@@ -354,7 +397,47 @@ impl SqliteStore {
         work_id: WorkId,
         kind: WorkRecordKind,
     ) -> Result<Vec<WorkRecordIndex>, StoreError> {
-        WorkRecordReader::new(&self.connection).work_record_index(project, work_id, kind)
+        let mut indexed =
+            WorkRecordReader::new(&self.connection).work_record_index(project, work_id, kind)?;
+        let item = load_work_item(&self.connection, work_id)?;
+        for member in super::task_sync::shared::additional_notes(&self.connection, &item)? {
+            let address = WorkRecordAddress {
+                hash: member.record,
+                member: Some(RestoredMember::SharedNote(member.index)),
+            };
+            indexed.push(WorkRecordIndex {
+                locator: address.locator(64),
+                address: address.clone(),
+                order: WorkRecordOrder {
+                    layer: 1,
+                    generation: 0,
+                    position: member.position,
+                },
+                record_family: WorkRecordFamily::Notes,
+                family: "reported".into(),
+                object_kind: super::task_sync::folder::IMPORT_PLANNING_KIND.into(),
+                restored: None,
+                shared: Some(SharedNoteRecord {
+                    project: project.clone(),
+                    work: work_id,
+                    address,
+                    note: member.note,
+                }),
+            });
+        }
+        indexed.sort_by(|left, right| {
+            left.order
+                .cmp(&right.order)
+                .then_with(|| match (&left.address.member, &right.address.member) {
+                    (
+                        Some(RestoredMember::SharedNote(left)),
+                        Some(RestoredMember::SharedNote(right)),
+                    ) => left.cmp(right),
+                    _ => std::cmp::Ordering::Equal,
+                })
+                .then_with(|| left.locator.cmp(&right.locator))
+        });
+        Ok(indexed)
     }
 
     pub(crate) fn work_record_content(
@@ -382,6 +465,9 @@ fn inherited_content(
     member: &RestoredMember,
 ) -> Result<WorkRecordContent, StoreError> {
     Ok(match *member {
+        RestoredMember::SharedNote(_) => {
+            return Err(invalid("shared member is not a restored-record member"));
+        }
         RestoredMember::Note(index) => {
             let note = record
                 .history

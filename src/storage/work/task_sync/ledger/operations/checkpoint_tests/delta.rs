@@ -10,6 +10,7 @@ mod deferred;
 mod historical;
 mod recovery;
 mod settled;
+mod shared_updates;
 
 /// Fields drop in declaration order: the store closes its database before the
 /// temporary home is removed, so Windows never meets an open file on cleanup.
@@ -79,6 +80,10 @@ impl Fixture {
     ) -> Self {
         let (home, mut store, mut binding, enrollment) =
             super::super::origin_tests::unenrolled_fixture();
+        binding.profile.include_notes = tree.project.notes_included;
+        if binding.profile.include_notes && binding.profile.origin_machine.is_none() {
+            binding.profile.origin_machine = Some("fixture-host".into());
+        }
         let empty = store
             .export_task_sync_folder(&binding.project, &binding.profile)
             .unwrap();

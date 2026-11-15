@@ -332,7 +332,10 @@ fn a_claim_after_the_retained_cut_defers_and_unowned_drift_still_refuses() {
     assert!(f.store.verify_all().unwrap().is_healthy());
 }
 
-fn successor_request(f: &Fixture, original: &CompletedExchange) -> PlanningSuccessorRequest {
+pub(super) fn successor_request(
+    f: &Fixture,
+    original: &CompletedExchange,
+) -> PlanningSuccessorRequest {
     let Transition::PlanningDeferred { hold, .. } = &original.event.transition else {
         panic!("deferred planning expected")
     };

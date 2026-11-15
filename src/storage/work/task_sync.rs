@@ -31,6 +31,7 @@ mod origin;
 pub(crate) mod producing_origin;
 pub(in crate::storage) mod reconciliation;
 pub(in crate::storage) mod reported;
+pub(in crate::storage) mod shared;
 pub(in crate::storage) use ledger::verify_exchange;
 pub(crate) use origin::OriginScopeGuard;
 pub(in crate::storage) use origin::enter_origin_scope;
@@ -273,6 +274,9 @@ fn import_task_tree_on_with_optional_plan(
     admit_origins(transaction)?;
     notes::refuse_known_changes(transaction, tree)?;
     activity::refuse_known_changes(transaction, tree)?;
+    for task in &tree.tasks {
+        shared::validate_identities(transaction, task, project)?;
+    }
     let current = with_origin_scope(transaction, || {
         export_on_snapshot(
             transaction,
@@ -518,11 +522,12 @@ fn export_on_snapshot(
         .query_map([&project.0], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     let mut tasks = Vec::new();
-    // A comparison reports only the retained disclosure profile.  In
+    // A comparison starts with the retained disclosure profile. In
     // particular, an empty legacy destination has no note-bearing task from
     // which to recover that profile; do not synthesize a zero-task
     // notes-enabled legacy tree here.  Folder envelopes use their distinct
-    // folder-only validation path for that representation.
+    // folder-only validation path for that representation. Native notes
+    // selected by the caller must also declare their inclusion.
     let mut notes_included = include_notes && !comparison;
     for id in ids {
         let id = WorkId(uuid::Uuid::parse_str(&id).map_err(|error| invalid(error.to_string()))?);
@@ -538,7 +543,7 @@ fn export_on_snapshot(
             omissions,
             activity_omissions,
         )?;
-        notes_included |= stored_inclusion;
+        notes_included |= stored_inclusion || !document.notes.is_empty();
         tasks.push(document);
     }
     let tree = TaskTree {

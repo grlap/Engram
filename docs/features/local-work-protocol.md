@@ -572,7 +572,9 @@ evidence links and acceptance evaluation ids. Native notes use a unique
 prefix of the record's id (at least eight hex digits, from an id of 32 or 64);
 inherited notes use
 `RECORD_ID:INDEX`, with a one-based immutable member index rather than a display
-ordinal; inherited events use `RECORD_ID:event-INDEX` and an inherited
+ordinal; admitted shared notes use `RECORD_ID:shared-note-INDEX` with the
+original admitted document's immutable member position. Inherited events use
+`RECORD_ID:event-INDEX` and an inherited
 completion `RECORD_ID:completion`, whose detail returns the complete member
 framed as data with its byte size. No id is derived from content to build a
 locator.

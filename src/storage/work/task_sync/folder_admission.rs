@@ -393,6 +393,46 @@ pub(super) fn apply_on(
                 continue;
             }
         }
+        let shared_validation = match &task.delta {
+            TaskDelta::Changed(change) if change.shared => {
+                let item = query::load_work_item(transaction, task.id)?;
+                Some(super::shared::validate_update(
+                    transaction,
+                    &item,
+                    prospective.resolved_task(task.id)?,
+                ))
+            }
+            _ => None,
+        };
+        if let Some(Err(error)) = shared_validation {
+            let StoreError::TaskSyncRefused { refusal, inner } = error else {
+                return Err(error);
+            };
+            let detail = inner.to_string();
+            let reason = if refusal == TaskSyncRefusal::IdCollision {
+                "id_collision"
+            } else {
+                [
+                    "note_removal",
+                    "activity_removal",
+                    "activity_rollback",
+                    "activity_conflict",
+                    "shared_identity",
+                ]
+                .into_iter()
+                .find(|reason| detail.contains(reason))
+                .unwrap_or("shared_identity")
+            };
+            conflicts.insert(
+                task.id.0,
+                Conflict {
+                    id: task.id,
+                    reason,
+                    detail,
+                },
+            );
+            continue;
+        }
         let conflict = match &task.delta {
             TaskDelta::Deleted => removal_eligibility(transaction, &mut reads, task.id)?,
             TaskDelta::Changed(change) if !change.is_applicable() => {
@@ -1245,6 +1285,18 @@ fn admit_addition(
         )? {
             return collision(format!("activity {}/{} is already held", key.0, key.1));
         }
+    }
+    // Keep the existing canonical/origin refusal order, then reserve members
+    // admitted by later shared updates before this addition can write anything.
+    if let Err(error) = super::shared::validate_identities(transaction, task, prospective.project) {
+        let StoreError::TaskSyncRefused {
+            refusal: TaskSyncRefusal::IdCollision,
+            inner,
+        } = error
+        else {
+            return Err(error);
+        };
+        return collision(inner.to_string());
     }
     if let Err(error) =
         super::super::planning::refuse_record_id_pins_on(transaction, &task.acceptance_bindings)

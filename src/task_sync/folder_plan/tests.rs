@@ -526,7 +526,7 @@ fn disposal_names_changed_fields_and_completion_is_a_reported_outcome() {
 }
 
 #[test]
-fn a_note_change_is_unsupported() {
+fn a_note_change_is_a_shared_change() {
     let a = task("a");
     let mut current = tree(std::slice::from_ref(&a));
     current.project.notes_included = true;
@@ -543,7 +543,13 @@ fn a_note_change_is_unsupported() {
     resolved.project.notes_included = true;
     let plan = deltas(plan(&current, &resolved, &members(&[&a])));
     assert_eq!(plan.project, Vec::new());
-    assert_eq!(delta(&plan, a.id), &fields(vec![TaskField::Notes]));
+    assert_eq!(
+        delta(&plan, a.id),
+        &TaskDelta::Changed(Box::new(TaskChange {
+            shared: true,
+            ..Default::default()
+        }))
+    );
 }
 
 #[test]

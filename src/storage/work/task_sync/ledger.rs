@@ -56,6 +56,8 @@ pub(super) fn check_local_store_on(
 }
 mod evidence;
 mod operations;
+mod publication_members;
+pub(super) use publication_members::read_on as publication_members_on;
 pub(in crate::storage::work) mod recovery;
 mod reduce;
 pub(in crate::storage::work) use recovery::{

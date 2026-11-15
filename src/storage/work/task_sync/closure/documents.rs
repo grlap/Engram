@@ -81,14 +81,16 @@ fn pointer(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
 }
 
-pub(super) struct DocumentIdentity {
+pub(in crate::storage::work::task_sync) struct DocumentIdentity {
     pub family: &'static str,
     pub machine: String,
     pub value: String,
     pub path: String,
 }
 
-pub(super) fn document_identities(document: &TaskDocument) -> Vec<DocumentIdentity> {
+pub(in crate::storage::work::task_sync) fn document_identities(
+    document: &TaskDocument,
+) -> Vec<DocumentIdentity> {
     document
         .notes
         .iter()

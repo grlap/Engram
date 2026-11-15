@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod commit;
 mod confirmed;
 mod recovery;
+mod shared_publication;
 
 /// Fields drop in declaration order: the store closes its database before the
 /// temporary home is removed, so Windows never meets an open file on cleanup.
@@ -21,7 +22,12 @@ struct ExportFixture {
 
 impl ExportFixture {
     fn new(count: usize) -> Self {
-        let (home, mut store, binding, _) = initial_fixture();
+        Self::with_alias(count, None)
+    }
+
+    fn with_alias(count: usize, alias: Option<&str>) -> Self {
+        let (home, mut store, mut binding, _) = initial_fixture();
+        binding.profile.origin_machine = alias.map(str::to_owned);
         let id = store.activate_task_sync_binding(&binding).unwrap();
         Self::from_store(home, store, binding, id, count)
     }
@@ -494,6 +500,10 @@ impl ExportFixture {
             intent: Box::new(self.intent.clone()),
             payload: Box::new(self.payload.clone()),
         });
+        self.confirm_prepared(prepared)
+    }
+
+    fn confirm_prepared(&mut self, prepared: ObjectId) -> ConfirmedExportBasis {
         let commit = crate::task_sync::ledger::RetainedCommit {
             oid: CanonicalObject::freeze(&"historical outgoing commit")
                 .unwrap()

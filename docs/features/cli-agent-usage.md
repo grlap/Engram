@@ -369,7 +369,7 @@ engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
 engram work ls --all --verbose --json --limit 200 --page-bytes 1048576  # a program's larger JSON pages
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
-engram work show REF --note ID[:INDEX | :event-INDEX | :completion]  # complete immutable note or inherited member detail
+engram work show REF --note ID[:INDEX | :shared-note-INDEX | :event-INDEX | :completion]  # complete immutable note or member detail
 engram work show REF --evaluations [--after CURSOR]  # the run's evaluation records, oldest to newest
 engram work show REF --evaluation RECORD_ID  # one evaluation record complete
 engram work show REF --observations [--after CURSOR]  # the run's source observations, oldest to newest
@@ -973,7 +973,8 @@ Rules that matter:
   prefix of the record's id, at least eight hex digits of an id of 32 or 64;
   inherited notes use `RECORD_ID:INDEX`, where INDEX is the one-based immutable
   member position,
-  not a display ordinal. An inherited event row uses `RECORD_ID:event-INDEX`
+  not a display ordinal. An admitted shared note uses `RECORD_ID:shared-note-INDEX`.
+  An inherited event row uses `RECORD_ID:event-INDEX`
   and an inherited completion `RECORD_ID:completion`. A history window row
   whose summary was shortened keeps the original `body_bytes`, sets
   `summary_truncated` and offers that locator's `detail` command. That detail

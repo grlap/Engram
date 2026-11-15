@@ -344,9 +344,15 @@ fn apply_on(
         selected.keys().copied().collect(),
     )?;
     require(
-        selected
-            .iter()
-            .all(|(work, document)| actual.documents.get(work) == document.as_ref()),
+        selected.iter().all(|(work, document)| {
+            match (actual.documents.get(work), document.as_ref()) {
+                (Some(actual), Some(expected)) => {
+                    crate::task_sync::shared::governing_equal(actual, expected)
+                }
+                (None, None) => true,
+                _ => false,
+            }
+        }),
         "successor native effects differ from resolved planning",
     )?;
     let DeltaBasis::Incoming {
