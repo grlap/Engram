@@ -3,6 +3,34 @@
 //! subcommands.
 
 #[test]
+fn remember_cli_accepts_explicit_import_provenance_only_with_a_key() {
+    let parsed = Cli::try_parse_from([
+        "engram",
+        "work",
+        "remember",
+        "body",
+        "--key",
+        "rule",
+        "--import-provenance",
+        "marked-source",
+    ])
+    .unwrap();
+    assert!(matches!(parsed.command, Command::Work { operation, .. }
+        if matches!(*operation, WorkCommand::Remember { import_provenance: Some(ref value), .. } if value == "marked-source")));
+    assert!(
+        Cli::try_parse_from([
+            "engram",
+            "work",
+            "remember",
+            "body",
+            "--import-provenance",
+            "marked-source",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
 fn note_search_index_build_is_an_explicit_exclusive_doctor_mode() {
     use clap::Parser;
     let parsed =

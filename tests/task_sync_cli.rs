@@ -13,6 +13,9 @@ mod steps;
 #[path = "task_sync_cli/any_host.rs"]
 mod any_host;
 
+#[path = "task_sync_cli/memories.rs"]
+mod memories;
+
 use std::{
     fs,
     path::Path,
