@@ -31,9 +31,10 @@ The terms used throughout:
   launcher's completion facts and a stated destination, through
   `remote_verification_record`.
 - **acceptance evaluation**: the evidence-based judgement of an item's
-  criteria before completion. It is **temporarily off** until Execution
-  Observability is implemented; see
-  [acceptance evaluation](acceptance-evaluation.md).
+  criteria before completion. It is on under the project policy; see
+  [acceptance evaluation](acceptance-evaluation.md) and
+  [AGENTS.md, Authority and Git](../../AGENTS.md#authority-and-git) for when
+  evaluation blocks landing.
 
 ## Project ON/OFF
 

@@ -1506,10 +1506,11 @@ Routine task and memory export commits in `MAIN/.engram-data/` to `engram-data`,
 and fast-forward pushes of that branch to origin, are granted by the
 **Task-sync data branch** rule in
 [AGENTS.md](../../AGENTS.md#authority-and-git) and
-[CLAUDE.md](../../CLAUDE.md#authority-and-git). Before every push, confirm that
-the export carries no secret, credential or private personal data. Mixed
-source/data commits are refused. A sync configuration or this specification
-alone authorizes no commit, push, force-push or test waiver.
+[CLAUDE.md](../../CLAUDE.md#authority-and-git), within that rule's limits. This
+routine grant covers task and memory exports only, not evidence packs. Before
+every push, confirm that the export carries no secret, credential or private
+personal data. Mixed source/data commits are refused. A sync configuration or
+this specification alone authorizes no commit, push, force-push or test waiver.
 
 ## Host binding and validation identity
 

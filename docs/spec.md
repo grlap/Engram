@@ -393,8 +393,10 @@ The host's **work session** (`engram control --work-session`) carries:
 
 **Assignment** is future intent on a work item; a fenced **claim** schedules
 live execution of one run. Neither grants file or external authority.
-**Acceptance evaluation** is temporarily off until Execution Observability is
-implemented (see [acceptance evaluation](features/acceptance-evaluation.md)).
+**Acceptance evaluation** is on under the project policy (see
+[acceptance evaluation](features/acceptance-evaluation.md)).
+[AGENTS.md, Authority and Git](../AGENTS.md#authority-and-git) defines when
+evaluation blocks landing.
 
 The project `ControlPolicy` selects the obligation rule set and the
 acceptance-evaluation policy. Initialization installs and selects a versioned
