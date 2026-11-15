@@ -4,6 +4,7 @@
 > Related: [local work](local-work-system.md), [SQLite](sqlite-store.md),
 > [work-graph snapshots](work-graph-snapshot.md), and
 > [off-host backup](off-host-backup.md).
+> Agent procedure: [usage skill](../skills/engram-use/SKILL.md#synchronize-project-tasks-between-hosts).
 
 Design selected on 2026-10-09. The [explicit directory profile](task-planning-text.md)
 implements planning text, opt-in shared notes and informational machine activity.
