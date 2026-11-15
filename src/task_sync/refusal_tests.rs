@@ -8,7 +8,10 @@ fn every_task_sync_refusal_code_is_unique() {
     for refusal in TaskSyncRefusal::ALL {
         let code = refusal.code();
         assert!(
-            codes.insert(code) && code.starts_with("task_sync_"),
+            codes.insert(code)
+                && (code.starts_with("task_sync_")
+                    || code.starts_with("memory_")
+                    || code.starts_with("setup_intent_")),
             "invalid or repeated code: {code}"
         );
     }

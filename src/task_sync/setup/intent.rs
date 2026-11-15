@@ -132,8 +132,8 @@ pub(super) fn read(bound: &Directory, operation: uuid::Uuid) -> Result<Intent> {
     );
     for edit in &intent.basis.edits {
         ensure!(
-            super::policy::propose(&edit.path, edit.before.clone())? == *edit,
-            "prepared setup edit differs from its recorded input"
+            super::policy::validate_recorded(edit)?,
+            crate::task_sync::TaskSyncRefusal::SetupIntentPolicyObsolete.invalid("prepared policy differs from the current proposal; re-prepare setup with the current build")
         );
     }
     Ok(intent)

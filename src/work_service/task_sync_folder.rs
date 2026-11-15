@@ -15,6 +15,28 @@ use crate::{
 };
 
 impl LocalWorkService {
+    /// Captures both explicit folder components on the same read snapshot.
+    ///
+    /// # Errors
+    /// Refuses missing opt-in, invalid profile or inconsistent stored planning.
+    pub fn export_task_sync_folder_with_memories(
+        &self,
+        profile: &ExportProfile,
+        selected: &std::collections::BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        resolutions: &std::collections::BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+        now: DateTime<Utc>,
+    ) -> Result<
+        (
+            TaskSyncFolderExport,
+            crate::task_sync::memories::ExportOutcome,
+        ),
+        StoreError,
+    > {
+        self.require_task_sync_enabled()?;
+        self.read_store_at(now)?
+            .export_task_sync_folder_with_memories(&self.project_id, profile, selected, resolutions)
+    }
+
     /// Exports shared planning for a Git folder from one read snapshot,
     /// together with the basis this host keeps for its next import.
     ///
@@ -51,6 +73,33 @@ impl LocalWorkService {
         dry_run: bool,
         now: DateTime<Utc>,
     ) -> Result<TaskSyncImportResult, StoreError> {
+        Ok(self
+            .import_task_sync_folder_with_memories(
+                folder,
+                basis,
+                &Default::default(),
+                &Default::default(),
+                dry_run,
+                now,
+            )?
+            .tasks)
+    }
+
+    /// Imports task targets and the explicitly selected memory component on
+    /// the same connection/transaction, including a single final dry-run rollback.
+    ///
+    /// # Errors
+    /// Refuses the same admission/basis failures as task-only import and an
+    /// invalid memory manifest; individual key refusals remain visible.
+    pub fn import_task_sync_folder_with_memories(
+        &self,
+        folder: &FolderExchange,
+        basis: &DestinationBasis,
+        memories: &std::collections::BTreeMap<String, crate::task_sync::memories::KeyHistory>,
+        options: &std::collections::BTreeMap<String, crate::task_sync::memories::ImportOptions>,
+        dry_run: bool,
+        now: DateTime<Utc>,
+    ) -> Result<crate::task_sync::memories::FolderImportOutcome, StoreError> {
         self.require_task_sync_writer()?;
         self.require_task_sync_enabled()?;
         let (export_basis, profile) = match basis {
@@ -88,11 +137,7 @@ impl LocalWorkService {
             CanonicalObject::freeze(&request)?.key().as_str()
         );
         let mut store = self.lock_store_at(now)?;
-        if dry_run {
-            store.dry_run_task_sync_folder(request, &key)
-        } else {
-            store.apply_task_sync_folder(request, &key)
-        }
+        store.apply_task_sync_folder_with_memories(request, &key, memories, options, dry_run)
     }
 }
 

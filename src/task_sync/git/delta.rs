@@ -52,8 +52,13 @@ pub fn read_task_delta(
     let reader = Reader::new(repository, project)?;
     let prior_tree = reader.commit_tree(prior, "prior")?;
     let incoming_tree = reader.commit_tree(incoming, "incoming")?;
-    let old = reader.metadata(&prior_tree, project)?;
-    let new = reader.metadata(&incoming_tree, project)?;
+    let (old, _, old_memories) = reader.metadata_with_size(&prior_tree, project)?;
+    let (new, _, new_memories) = reader.metadata_with_size(&incoming_tree, project)?;
+    if old_memories || new_memories {
+        return Err(TaskSyncRefusal::MemoryProfileRequiresOptIn
+            .invalid("memory-capable commit delta requires explicit folder import --include-memories; delta import cannot consume memories")
+            .into());
+    }
     if old.profile.include_notes != new.profile.include_notes {
         return Err(TaskSyncRefusal::DivergentPlanning
             .invalid(
@@ -109,6 +114,7 @@ pub(super) fn read_documents(
         if change.path == ".engram/project.json"
             || policy_path(&change.path)
             || evidence_path(&change.path)
+            || memory_path(&change.path, false)
         {
             continue;
         }
@@ -254,15 +260,11 @@ impl<'a> Reader<'a> {
         parse_entries(&self.query(&args)?)
     }
 
-    fn metadata(&self, tree: &str, expected: &ProjectId) -> Result<FolderBasis> {
-        Ok(self.metadata_with_size(tree, expected)?.0)
-    }
-
     pub(super) fn metadata_with_size(
         &self,
         tree: &str,
         expected: &ProjectId,
-    ) -> Result<(FolderBasis, usize)> {
+    ) -> Result<(FolderBasis, usize, bool)> {
         let root = self.entries(tree, &[".engram"])?;
         let root = root
             .first()
@@ -301,7 +303,11 @@ impl<'a> Reader<'a> {
                 .invalid("task commit project differs from selected project")
                 .into());
         }
-        Ok((basis, bytes.len()))
+        let memory_profile = serde_json::from_slice::<serde_json::Value>(&bytes)?
+            .get("memory_profile")
+            .and_then(serde_json::Value::as_str)
+            == Some(crate::task_sync::memories::FORMAT);
+        Ok((basis, bytes.len(), memory_profile))
     }
 
     fn blob(&self, oid: &str, path: &str) -> Result<Vec<u8>> {
@@ -419,6 +425,7 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
         if path != ".engram/project.json"
             && !policy_path(path)
             && !evidence_path(path)
+            && !memory_path(path, false)
             && !directory_path(path)
         {
             task_path(path)?;
@@ -483,8 +490,36 @@ fn evidence_path(path: &str) -> bool {
 
 fn directory_path(path: &str) -> bool {
     matches!(path, ".engram" | ".engram/tasks")
+        || memory_path(path, true)
         || crate::task_sync::evidence::path::kind(path)
             == Some(crate::task_sync::evidence::path::Kind::Directory)
+}
+
+fn memory_path(path: &str, directory: bool) -> bool {
+    if path == ".engram/memories" {
+        return directory;
+    }
+    let Some(rest) = path.strip_prefix(".engram/memories/") else {
+        return false;
+    };
+    let mut parts = rest.split('/');
+    let Some(key) = parts.next() else {
+        return false;
+    };
+    if crate::task_sync::memories::validate_key(key).is_err() {
+        return false;
+    }
+    match (parts.next(), parts.next()) {
+        (None, None) => directory,
+        (Some("head.json"), None) => !directory,
+        (Some(file), None) => {
+            !directory
+                && file
+                    .strip_suffix(".json")
+                    .is_some_and(|id| crate::ObjectId::from_stored(id.to_owned()).is_some())
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn task_path(path: &str) -> Result<WorkId> {
