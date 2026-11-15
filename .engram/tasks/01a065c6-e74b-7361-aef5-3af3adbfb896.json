@@ -1,0 +1,45 @@
+{
+  "id": "01a065c6-e74b-7361-aef5-3af3adbfb896",
+  "external_ref": null,
+  "title": "Bound compact ls total output under the agent response ceiling",
+  "outcome": "Compact ls cannot exceed the documented agent-facing response budget even at a caller-supplied high limit.",
+  "acceptance": [
+    "A max-width compact ls fixture proves both structured JSON and rendered text remain below the documented response ceiling.",
+    "Oversized listings expose a bounded continuation or omission signal, or the accepted input limit is proven safe."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a06499-36e4-7e13-bd8b-671b1bb1ff31",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "review follow-up filed under the reviewed item became a required child by default; re-filed under the root so the shipped slice can close",
+  "completion": null,
+  "activity": {
+    "central": {
+      "1eafddb150e5851b2c184a422317cbdbcd3a19608538b217e1411c9d37803c0b": {
+        "activity_id": "1eafddb150e5851b2c184a422317cbdbcd3a19608538b217e1411c9d37803c0b",
+        "task_id": "01a065c6-e74b-7361-aef5-3af3adbfb896",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "4f2ca199db65766b511c5fab50c509dab7ab230410e486ce211cb79468c3d605"
+      }
+    }
+  }
+}

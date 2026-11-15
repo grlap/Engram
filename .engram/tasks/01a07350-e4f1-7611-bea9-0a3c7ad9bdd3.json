@@ -1,0 +1,50 @@
+{
+  "id": "01a07350-e4f1-7611-bea9-0a3c7ad9bdd3",
+  "external_ref": null,
+  "title": "Bound criterion prefix fitting render work",
+  "outcome": "Bound criterion prefix fitting render work",
+  "acceptance": [
+    "show_large_acceptance_uses_bounded_prefix_probes passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a070b3-9c16-7663-be40-cb3fbfe0dff4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bound whole-criterion prefix fitting without timing thresholds",
+    "completed_at": "2026-09-05T21:09:59.865098300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "48b2406bd932121371b8bc3dc5e0bced7994b64b0be13835eff36250a3dea477": {
+        "activity_id": "48b2406bd932121371b8bc3dc5e0bced7994b64b0be13835eff36250a3dea477",
+        "task_id": "01a07350-e4f1-7611-bea9-0a3c7ad9bdd3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "00accae675a98aa350496f40de70879e455eb3660c3ecd28336757f12e808fca"
+      }
+    }
+  }
+}

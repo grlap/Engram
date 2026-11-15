@@ -1,0 +1,52 @@
+{
+  "id": "01a0ab18-bdc3-77c3-925c-4b48bd407936",
+  "external_ref": null,
+  "title": "Reconcile and organize the Engram backlog",
+  "outcome": "Reconcile and organize the Engram backlog",
+  "acceptance": [
+    "Group remaining open work with consistent area labels; distinguish deferred work, human decisions, and external verification from actionable implementation without deleting history.",
+    "Inspect the 93-item baseline; complete only items supported by existing acceptance evidence and preserve unresolved requirements.",
+    "Read back changed lifecycle and planning state, report before/after counts, and leave repository source and Git unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "backlog",
+    "coordination"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Backlog reconciled: 21 existing items completed with evidence, 72 remaining grouped, 11 waiting conditions explicit, classifications and priorities cleaned; unresolved acceptance preserved.",
+    "completed_at": "2026-09-16T16:51:53.113443600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e401721cfe5e8de691216e27b0d786750741183efdb99852f5cf02dd5208c460": {
+        "activity_id": "e401721cfe5e8de691216e27b0d786750741183efdb99852f5cf02dd5208c460",
+        "task_id": "01a0ab18-bdc3-77c3-925c-4b48bd407936",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6e14f2fe7875ee6f0c148a337ea1ffd75161f435f9be0bd13e43253833463add"
+      }
+    }
+  }
+}

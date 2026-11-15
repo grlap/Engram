@@ -1,0 +1,31 @@
+{
+  "id": "01a15cad-aeb1-76f2-86d4-4f9b4e1793f1",
+  "external_ref": null,
+  "title": "Section 6a: a failed gate on any carried tree ends adoption of that round for every later carry",
+  "outcome": "Section 6a: a failed gate on any carried tree ends adoption of that round for every later carry",
+  "acceptance": [
+    "/review-changes section 6a says that a failed gate or check on a carried tree ends adoption of that review round for that carry and every later one, so only a new round can be carried further",
+    "The change is recorded as a narrowing under the authority-text procedure (a), (b) and (c), and TermAl's twin rule, if it exists by then, gets the same narrowing or a recorded reason why not"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "authority",
+    "review-low",
+    "throughput",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a15c1c-8b6c-7013-8092-c2c47f9f8965",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,46 @@
+{
+  "id": "01a19b88-1022-7b51-babf-acd2d901b29c",
+  "external_ref": null,
+  "title": "Remove the unused source-basis refusal error and wire mappings",
+  "outcome": "Delete the producer-less SourceBasisTextRefused error and its host/verb mappings after removal of the only turn-checkpoint producer.",
+  "acceptance": [
+    "SourceBasisTextRefused and source_basis_text_refused have no declaration or wire/rendering mappings left in active source.",
+    "Ordinary source-text refusal codes for execution observations, named-root binding and registered verification remain unchanged.",
+    "Relevant compile, lint and error-contract checks pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "cleanup",
+    "host",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "5cb004b9e55a47268d19651a90831f8a": {
+        "activity_id": "5cb004b9e55a47268d19651a90831f8a",
+        "task_id": "01a19b88-1022-7b51-babf-acd2d901b29c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5cb004b9e55a47268d19651a90831f8a"
+      }
+    }
+  }
+}

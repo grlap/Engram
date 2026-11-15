@@ -1,0 +1,50 @@
+{
+  "id": "01a072bc-4093-71a0-9d8b-b97896cb3a59",
+  "external_ref": null,
+  "title": "Increase contrast of handwritten website captions",
+  "outcome": "Increase contrast of handwritten website captions",
+  "acceptance": [
+    "Axe color-contrast check passes for the handwritten demo caption on desktop and mobile"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a072a3-ddb7-7432-aa60-3e0735dd37b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Handwritten caption contrast passes on desktop and mobile while retaining sepia ink.",
+    "completed_at": "2026-09-05T18:03:11.536922400Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0a332704846c0abc78423ed992403c1a65337469bf37771fff9f19b1145150ae": {
+        "activity_id": "0a332704846c0abc78423ed992403c1a65337469bf37771fff9f19b1145150ae",
+        "task_id": "01a072bc-4093-71a0-9d8b-b97896cb3a59",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8f36d6ffbdc553078c9cc7f833d6dc37b4be994731476d83d48937077d5331d3"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a13608-a488-7b11-9596-a94fc5c15e58",
+  "external_ref": null,
+  "title": "Name the real push result when a backup copy's five-second lock wait runs out",
+  "outcome": "Name the real push result when a backup copy's five-second lock wait runs out",
+  "acceptance": [
+    "The Deadlines section of docs/features/cli-and-mcp.md states that a copy lock wait cut off by its five-second cap fails the push with outcome `failed`, code `storage_error` and SQLite's \"database is locked\" message, not as the separate `busy` push outcome, and this matches the code"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered: the Deadlines section of docs/features/cli-and-mcp.md now says a copy lock wait cut off by its five-second cap fails the push with outcome `failed`, code `storage_error` and SQLite's \"database is locked\" message, not with the `busy` outcome (which means another push holds the lock). This matches the code: backup.rs classified → BackupError::Store (transparent) → host::store_error_code storage_error → push.rs:477 failed; Busy only at push.rs:345.\n- Wording concurred by Engram::Fable (#2551).\n- Markdown-only validation on freeze b775739f: link check and identity through the focused launcher, both PASS with the input matched.\n- Pair: Codex clean; Claude three optional Notes, nothing Low or higher.\n- Evaluation 20074188 PASS.\nChangeset judgment: docs only; no durable row, schema, projection or TermAl strict-reader change. readiness was ready on all 4 stores with the new build and with the installed binary.\nLanded e0072ba on origin/master, a fast-forward from a0c67f7. Installed build 8f9e3f6a5d96 (exe sha256 3b040c06…7693); backup engram-20261013T174138Z-aa9bba4e98b0.exe (sha256 5fb133cc…3bc5).\nRunning sessions do not need the new build: docs only.",
+    "completed_at": "2026-10-13T17:41:56.609132400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "afd14df4c6bf4cfda7aac5326d254719": {
+        "activity_id": "afd14df4c6bf4cfda7aac5326d254719",
+        "task_id": "01a13608-a488-7b11-9596-a94fc5c15e58",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9b784b14fab1447aba1b1eaa6deeac59"
+      }
+    }
+  }
+}

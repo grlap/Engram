@@ -1,0 +1,62 @@
+{
+  "id": "01a07f70-4360-7072-a599-2a4748f426a0",
+  "external_ref": null,
+  "title": "Preserve terminal recovery provenance after source refresh",
+  "outcome": "Preserve terminal recovery provenance after source refresh",
+  "acceptance": [
+    "import_terminal_refresh_survives_recovery passes for cancelled and superseded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Cancelled and superseded restored work can refresh sources and survive subsequent graph save/load with terminal provenance preserved. Final gates passed; accepted freeze539037a9. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:59:06.722869100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "41823f93ea7f22b39acc6c144ecd0bd3c5cd5a0e30012f486f5ff924be322748": {
+        "activity_id": "41823f93ea7f22b39acc6c144ecd0bd3c5cd5a0e30012f486f5ff924be322748",
+        "task_id": "01a07f70-4360-7072-a599-2a4748f426a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "be04f3a6d564743c81ba9da9fcbfe2b846395813b4523c00d01b291db3f346f7"
+      },
+      "cd6097aae39255e88d8c4e8057958d61e8cfe1b85e313e33d6a4c7bec48e662a": {
+        "activity_id": "cd6097aae39255e88d8c4e8057958d61e8cfe1b85e313e33d6a4c7bec48e662a",
+        "task_id": "01a07f70-4360-7072-a599-2a4748f426a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cd6097aae39255e88d8c4e8057958d61e8cfe1b85e313e33d6a4c7bec48e662a"
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "01a14bbb-9b50-7c41-b794-a3a3fe574945",
+  "external_ref": null,
+  "title": "Per-platform Engram binary and automated Git exchange verified on host onboarding (Windows, macOS, Linux)",
+  "outcome": "Per-platform Engram binary and automated Git exchange verified on host onboarding (Windows, macOS, Linux)",
+  "acceptance": [
+    "Automated task-sync Git exchange (transport and subprocess admission) runs on macOS and Linux as well as Windows, without pretending the current Windows HTTPS runner covers other platforms",
+    "Host onboarding verifies the platform's Engram binary (exact recorded sha256 and version) and a real exchange round-trip before the host is used, with the result recorded per host",
+    "Explicitly authorized manual Git remains the documented interim until a platform's automated exchange is verified"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "onboarding",
+    "platform",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

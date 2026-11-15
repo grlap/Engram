@@ -1,0 +1,55 @@
+{
+  "id": "01a0632e-f3ab-7293-b904-6b9cdc67a831",
+  "external_ref": null,
+  "title": "auto-retake inside holder mutations (deferred): reviewers' blocker analysis - inspect pending attempts by caller key/pre-retake basis before any retake and resume committed substeps without...",
+  "outcome": "auto-retake inside holder mutations (deferred): reviewers' blocker analysis - inspect pending attempts by caller key/pre-retake basis before any retake and resume committed substeps without...",
+  "acceptance": [
+    "auto-retake inside holder mutations (deferred): reviewers' blocker analysis - inspect pending attempts by caller key/pre-retake basis before any retake and resume committed substeps without..."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "parked",
+    "stream-recovery-continuity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-1f16-7822-95ef-616dbf989429",
+      "kind": "manual",
+      "detail": "Deferred auto-retake: awaiting the recorded caller-key/pre-retake recovery design review and an explicit decision to resume implementation.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:04.139990600Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": "Decision NO (2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous): automatic claim retake inside holder mutations stays out; explicit claim recovery keeps fence and retry attribution, and TermAl reads the held list at bind and next admission, which a retake inside a mutation would change under the host.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "b86faf4b1d44a1bab9f9ab1019d1133792d552905162358003769af1f193e255": {
+        "activity_id": "b86faf4b1d44a1bab9f9ab1019d1133792d552905162358003769af1f193e255",
+        "task_id": "01a0632e-f3ab-7293-b904-6b9cdc67a831",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "fb44509d07f3be899c6a7945a9942dda4e19b5559ebba8c8100e2e11cd364f36"
+      }
+    }
+  }
+}

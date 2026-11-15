@@ -1,0 +1,59 @@
+{
+  "id": "01a1bd8c-50b3-79e3-96e0-15182dcd15f8",
+  "external_ref": null,
+  "title": "Evidence persistence: inert immutable pack storage, witnesses and keyed views for full-evidence exchange",
+  "outcome": "Evidence persistence: inert immutable pack storage, witnesses and keyed views for full-evidence exchange",
+  "acceptance": [
+    "Immutable evidence packs and their records are retained transactionally in a new storage/work/task_sync/evidence subtree, inert: retained records grant no destination credit and change no live claim, session or run. Exact replay is a no-op; same id with different kind or bytes refuses atomically; a failure rolls back with no partial retention.",
+    "Origin-qualified feed segment/cut and governing-snapshot witnesses are retained outside destination native feeds per the accepted design (w-09c87a312e95 notes 7a94378a and 31a28eee), with behavior tests for gap, beyond-cut and changed-membership refusal.",
+    "Keyed evidence views and bounded resumable batches read changed objects without scanning or reloading history on normal deltas or replay, and enforce the accepted limits with typed oversize outcomes; no record is truncated.",
+    "Shared ledger, reducer, view, data-worktree and service wiring stay on w-7413b4728667 and w-4eabb205c7b2; this item's part of them is an agreed seam only."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "execution-evidence",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "644be83eb3c149738fd8f381b2c7ff71": {
+        "activity_id": "644be83eb3c149738fd8f381b2c7ff71",
+        "task_id": "01a1bd8c-50b3-79e3-96e0-15182dcd15f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "644be83eb3c149738fd8f381b2c7ff71"
+      },
+      "c84e37d9aaca45b599dc69b0f15b18ba": {
+        "activity_id": "c84e37d9aaca45b599dc69b0f15b18ba",
+        "task_id": "01a1bd8c-50b3-79e3-96e0-15182dcd15f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c84e37d9aaca45b599dc69b0f15b18ba"
+      }
+    }
+  }
+}

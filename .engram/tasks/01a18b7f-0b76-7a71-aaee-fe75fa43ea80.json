@@ -1,0 +1,29 @@
+{
+  "id": "01a18b7f-0b76-7a71-aaee-fe75fa43ea80",
+  "external_ref": null,
+  "title": "Persist session-bind events so doctor can report when the control plane last bound a session",
+  "outcome": "Each control session bind leaves a durable record, so doctor's real-use report can state the last bind time exactly rather than the last session activity time.",
+  "acceptance": [
+    "A session bind persists one durable record (for example a control_operation_results row with operation session_bind and its time), and doctor prints the latest bind time, or \"not recorded before this build\"",
+    "The extra write's latency is measured on the bind path and stays within the existing budgets; import, integrity checks and older-build behaviour are judged under the full-store migration rule and presented to Greg if a migration is needed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "deferred",
+    "diagnostics"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

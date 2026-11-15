@@ -1,0 +1,50 @@
+{
+  "id": "01a06811-cff7-71d3-905d-de45b366d9f9",
+  "external_ref": null,
+  "title": "Budget terse show after its safe projection",
+  "outcome": "Terse show retains the newest bounded history and navigable relations that fit its own response even when the host-rich focus view contains large omitted fields.",
+  "acceptance": [
+    "An oversized rich-focus fixture proves terse show is fitted after projection and does not prematurely omit retained fields."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "architecture",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Satisfied by earlier implementation; verified in current triage against the rich-focus regressions and projection-before-fitting code. Closing verified existing work, not claiming authorship of earlier code or a new test run.",
+    "completed_at": "2026-09-11T02:42:32.649406800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7963b3bcfadfaafea54470627199fd3a1bfde9fb76cd952f20476f1c0dc2df47": {
+        "activity_id": "7963b3bcfadfaafea54470627199fd3a1bfde9fb76cd952f20476f1c0dc2df47",
+        "task_id": "01a06811-cff7-71d3-905d-de45b366d9f9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2ba49bbfd80d71d6a8a1d3e449ba1a73e9b5d45dab077bc8faf0fee8e9cbeaa1"
+      }
+    }
+  }
+}

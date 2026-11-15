@@ -1,0 +1,28 @@
+{
+  "id": "01a1c297-0094-7212-b8d1-a617bb7db8f3",
+  "external_ref": null,
+  "title": "Count only native same-project origins toward enrollment capacity",
+  "outcome": "Count only native same-project origins toward enrollment capacity",
+  "acceptance": [
+    "Enrollment and recovery lineage limits count native enrollments for the selected project, excluding retained foreign originals and other-project lineages, while retaining explicit native capacity refusal.",
+    "A behavior regression retains many foreign producing-origin objects and proves unchanged local capacity accounting, doctor and rebuild behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

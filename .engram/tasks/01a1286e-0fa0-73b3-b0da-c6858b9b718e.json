@@ -1,0 +1,62 @@
+{
+  "id": "01a1286e-0fa0-73b3-b0da-c6858b9b718e",
+  "external_ref": null,
+  "title": "Diagnose and fix the backup capture deadline overrun against a locked store",
+  "outcome": "Diagnose and fix the backup capture deadline overrun against a locked store",
+  "acceptance": [
+    "backup::tests::capture_deadline_bounds_a_wait_for_a_locked_store stays under its bound on repeated runs, including under concurrent build load, and the overrunning phase is identified and fixed; the assertion is not loosened"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "backup",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The overrunning phase was the build-identity latch. capture_store started its deadline clock and then hashed the running executable inside a process-wide OnceLock, with no bound. It is fixed by build_identity::current_by(deadline): a reading thread plus a Condvar-bounded wait. A bounded call never reads on its own thread. capture_store fails with CaptureDeadline{Space} before any stage exists when the deadline passes first. current() is unchanged.\n\nTests:\n- The locked-store test keeps its 5 s bound unchanged. It now reads identity before its clock, asserts the Copy phase, and prints step start times on failure.\n- New identity-deadline capture test, plus two latch unit tests.\n- Docs: the capture-deadline contract in cli-and-mcp.md.\n\nVerification:\n- Full gate test-edc56826 passed on freeze dfd4fa0c.\n- Round-2 Codex+Claude review: no finding at Medium or higher. Codex's Low is filed as w-bcbd1f08730a.\n- Load runs held the bound, including 36 s at 6.2x contention during TermAl's rust-tests stage.\n- Independent evaluation passed (record 267bcede).\n\nLanded e8429752 (fast-forward from fa5bae42). Installed build 90b49dd025b5; readiness ready on all 4 live stores.",
+    "completed_at": "2026-10-11T04:45:46.825212Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0ff73a6bb2894c6c9e7ce21f99567db7": {
+        "activity_id": "0ff73a6bb2894c6c9e7ce21f99567db7",
+        "task_id": "01a1286e-0fa0-73b3-b0da-c6858b9b718e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0ff73a6bb2894c6c9e7ce21f99567db7"
+      },
+      "7c8dd80e5f6e4e2da030d6d4ba3bdcfd": {
+        "activity_id": "7c8dd80e5f6e4e2da030d6d4ba3bdcfd",
+        "task_id": "01a1286e-0fa0-73b3-b0da-c6858b9b718e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "19cd95f619094d2993bd17f271929011"
+      }
+    }
+  }
+}

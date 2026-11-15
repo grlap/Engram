@@ -1,0 +1,51 @@
+{
+  "id": "01a087e5-91c7-7c41-941e-a02ba05da858",
+  "external_ref": null,
+  "title": "The pre-commit plan receipt budget check is unreachable and untested at the current constants",
+  "outcome": "The pre-commit worst-case receipt check passes the response-budget constant literally while the in-transaction and replay checks use the injected budget parameter, so no test can drive the pre-commit path and by the byte arithmetic no valid input can trigger it. That is the correct outcome today, but the check becomes live and unexercised the moment the task cap or the mapping shape grows.",
+  "acceptance": [
+    "either the pre-commit check takes the injected budget and a test shrinks the envelope to exercise its refusal, or a comment states that the literal constant is deliberate so the seam reaches the in-transaction check"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "stream-planning-safety",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Comment alternative chosen by the council (Fable #552). src/work_service/propose/plan.rs states, at the worst-case plan-response preflight, that it deliberately passes the production 64 KiB constant, not the injected budget, so a smaller injected budget reaches the in-transaction and replay checks the tests exercise. It also states that no valid input fails it at the current task cap and mapping shape, and that raising either makes it live against the same constant the exact receipt is held to. The rollback, max-response and replay tests are unchanged and pass. Landed with w-ac0c56d1a4c5 and w-41c66f1ee59f as 396235d after the full gate (test-2c701ef4), a clean pair (Claude confirmed the comment accurate), this item's own focused test, an independent Codex evaluation (1/1) and readiness on all four stores. Installed build e11fd465f0b6b4ae5787bcc399867d6de1cc61f9f12706592c0a0b40452f3255.",
+    "completed_at": "2026-10-03T18:31:09.222805600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bb8ef5b4f5c446ed875c04cbf81389a9": {
+        "activity_id": "bb8ef5b4f5c446ed875c04cbf81389a9",
+        "task_id": "01a087e5-91c7-7c41-941e-a02ba05da858",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "596c4f15d4b64503bb60a802df91f835"
+      }
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "id": "01a1696a-2167-79b0-9751-938caf265e2f",
+  "external_ref": null,
+  "title": "Record slow successful control-surface calls in the diagnostics log, as MCP slow calls already are",
+  "outcome": "Record slow successful control-surface calls in the diagnostics log, as MCP slow calls already are",
+  "acceptance": [
+    "A control-surface frame (for example turn_evaluate or turn_begin) that succeeds after more than the slow-call threshold writes one diagnostics record with its operation, total and handler time, frame sequence, and the time spent waiting for and holding the store write transaction",
+    "A control frame under the threshold writes no record, and fault records are unchanged",
+    "Tests cover a slow successful control frame, a fast one, and a slow refused one"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "control-plane",
+    "delivered",
+    "diagnostics",
+    "evaluation-pending"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Slow successful control-surface frames now write one diagnostics record with operation, total/handler time, frame sequence and write-transaction wait/hold; fast frames stay silent and fault records are unchanged. Landed at 5160c093 (ancestor of e7426a6) and verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed all 3 criteria (record 24d85af34b354d7291af0861d612b37b).",
+    "completed_at": "2026-10-28T01:38:34.445651700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "38456e43dc164981b08d49ca3a3585a2": {
+        "activity_id": "38456e43dc164981b08d49ca3a3585a2",
+        "task_id": "01a1696a-2167-79b0-9751-938caf265e2f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ae62664d4d8f42ac90fa359de30ea26b"
+      },
+      "75e3314eb1c34dc79ac69bf3c8b43e9b": {
+        "activity_id": "75e3314eb1c34dc79ac69bf3c8b43e9b",
+        "task_id": "01a1696a-2167-79b0-9751-938caf265e2f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b5d3674344784b0099ea954d07fb6606"
+      },
+      "ae62664d4d8f42ac90fa359de30ea26b": {
+        "activity_id": "ae62664d4d8f42ac90fa359de30ea26b",
+        "task_id": "01a1696a-2167-79b0-9751-938caf265e2f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ae62664d4d8f42ac90fa359de30ea26b"
+      },
+      "ffa37551f6fa4606949f900741da0d80": {
+        "activity_id": "ffa37551f6fa4606949f900741da0d80",
+        "task_id": "01a1696a-2167-79b0-9751-938caf265e2f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "49963e0a6e694a39b359ceb319bbeec7"
+      }
+    }
+  }
+}

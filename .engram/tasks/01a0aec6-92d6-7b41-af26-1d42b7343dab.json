@@ -1,0 +1,54 @@
+{
+  "id": "01a0aec6-92d6-7b41-af26-1d42b7343dab",
+  "external_ref": null,
+  "title": "Core admission details: evaluator model bounds, legacy policy normalization, exact preflight key, run- and item-scoped attempt keys",
+  "outcome": "Core admission details: evaluator model bounds, legacy policy normalization, exact preflight key, run- and item-scoped attempt keys",
+  "acceptance": [
+    "a direct store write with an evaluator model segment over 128 bytes, empty, or containing a control character is refused with no feed effect",
+    "a policy with an empty mode list normalizes mechanical_basis and require_source_freshness to their defaults and a test proves requested, stored, and read policies agree",
+    "the content-derived attempt key includes the active run id and explicit keys are scoped to the work item; a test drives the supported reopen transition and shows a fresh record rather than a replay",
+    "the preflight projection carries the exact final attempt key (explicit and content-derived forms) and a test asserts equality with the recorded key"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Evaluator model bounds enforced at the core write boundary (EvaluatorModel::validate, shared with the word parser); an empty mode list normalizes to the legacy default so requested, stored (bytes omit the field), and read policies agree; the service preflight projects the exact recorded attempt key; explicit keys are scoped explicit:<work_id>:<key> (same key on another item is a new attempt, exact same-item resend replays, contradicting same-item payload refuses) and the content key includes the run id. Per #2586 the post-commit budget failure premise is labeled unproven with no RED claimed, and the new-run reachability claim is narrowed to cover the restored first execution. RED logs/08, GREEN logs/11 and 12; docs R8/R9, B24/B38/B39.",
+    "completed_at": "2026-09-17T10:44:57.150256700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "29113d85a211c3fc550de5ed42869a6bb4acb36c9b5d1886050396a024315fbc": {
+        "activity_id": "29113d85a211c3fc550de5ed42869a6bb4acb36c9b5d1886050396a024315fbc",
+        "task_id": "01a0aec6-92d6-7b41-af26-1d42b7343dab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ec64f5eb8d070da6aee07db3694b9fe557f455ec1b8710487744092d6dbae5d8"
+      }
+    }
+  }
+}

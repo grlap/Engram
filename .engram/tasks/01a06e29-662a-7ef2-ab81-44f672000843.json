@@ -1,0 +1,50 @@
+{
+  "id": "01a06e29-662a-7ef2-ab81-44f672000843",
+  "external_ref": null,
+  "title": "Load-slice integrity verification rejects existing native stores: repair refuses with 239 invalid work records and ordinary open is refused",
+  "outcome": "Load-slice integrity verification rejects existing native stores: repair refuses with 239 invalid work records and ordinary open is refused",
+  "acceptance": [
+    "on a copy of the pre-load-slice live store, engram doctor --repair-projections on master succeeds and reports healthy with zero invalid work records; ordinary open then succeeds; a storage test seeds a native-only store, runs the restored-projection verification, and asserts zero findings"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "gate",
+    "snapshot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed native-store repair false positives by comparing verified canonical JSON; retained typed validation and added invalid-label diagnostics, native-only repair and drift/rollback regressions.",
+    "completed_at": "2026-09-04T21:01:08.314821200Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8bf862699c76be0d135cb821831ab046e3f6b9e5ae90498413c64b72467ca32a": {
+        "activity_id": "8bf862699c76be0d135cb821831ab046e3f6b9e5ae90498413c64b72467ca32a",
+        "task_id": "01a06e29-662a-7ef2-ab81-44f672000843",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "df28b22d83869153a63bc06107585488a6c22d4717e9979acb5313a2195ec0df"
+      }
+    }
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "id": "01a0b5b4-14a8-7840-8eeb-108a13d58018",
+  "external_ref": null,
+  "title": "TermAl mediates turns but reports nothing about them to Engram",
+  "outcome": "A turn TermAl mediates leaves host-observed facts in the store: the session is bound to the work it executes, and the checkpoint carries the turn's execution observations and, where the host ran a check, verification and environment evidence.",
+  "acceptance": [
+    "a TermAl-mediated turn on claimed work records at least one execution observation on that run, with source_changed set when the turn changed source",
+    "a check the host ran is recorded as typed verification evidence with its environment, so the builtin source-change rule and a bound acceptance criterion can be satisfied under TermAl",
+    "the control session TermAl binds for an agent that holds a claim carries that claim's exact work binding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": "independent_session",
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "TermAl (build acd7740) reports mediated turns to Engram: turn observations with a content-v1 source revision, a host-observed test recorded as passed verification with environment evidence, and the control session carrying the held claim's binding; shown live on 2026-09-27 with `cargo test --test source_file_size` under this claim. Known gaps tracked by TermAl, outside these criteria: turns started by a background-task notice are not mediated (tm-w5td), an indeterminate check gives no reason (tm-xtyb), the watcher's false source_changed (tm-97wp, fixed in 0d54fd1, not yet running), and the measured tree is the session's workdir until phase 2.",
+    "completed_at": "2026-09-27T06:11:21.274624600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "19ba672dd13143179ae847a9d4e2c34f": {
+        "activity_id": "19ba672dd13143179ae847a9d4e2c34f",
+        "task_id": "01a0b5b4-14a8-7840-8eeb-108a13d58018",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "19ba672dd13143179ae847a9d4e2c34f"
+      },
+      "3fbc46b20f29446ea6743ce81da058fb": {
+        "activity_id": "3fbc46b20f29446ea6743ce81da058fb",
+        "task_id": "01a0b5b4-14a8-7840-8eeb-108a13d58018",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0820b19afe4640ff9f8eab4b7541bad7"
+      },
+      "7bf40e29570544bc8b7fa4e7be810c52": {
+        "activity_id": "7bf40e29570544bc8b7fa4e7be810c52",
+        "task_id": "01a0b5b4-14a8-7840-8eeb-108a13d58018",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7bf40e29570544bc8b7fa4e7be810c52"
+      },
+      "808904a52a854e4d81cb9e29bfa363a2": {
+        "activity_id": "808904a52a854e4d81cb9e29bfa363a2",
+        "task_id": "01a0b5b4-14a8-7840-8eeb-108a13d58018",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "808904a52a854e4d81cb9e29bfa363a2"
+      },
+      "8e1f3e4fc4ea4601b86e8741b9bc53ba": {
+        "activity_id": "8e1f3e4fc4ea4601b86e8741b9bc53ba",
+        "task_id": "01a0b5b4-14a8-7840-8eeb-108a13d58018",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8e1f3e4fc4ea4601b86e8741b9bc53ba"
+      }
+    }
+  }
+}

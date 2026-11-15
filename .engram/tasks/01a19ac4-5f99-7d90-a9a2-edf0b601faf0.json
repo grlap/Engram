@@ -1,0 +1,27 @@
+{
+  "id": "01a19ac4-5f99-7d90-a9a2-edf0b601faf0",
+  "external_ref": null,
+  "title": "Test exact named-root receipt replay after workspace text rules change",
+  "outcome": "Test exact named-root receipt replay after workspace text rules change",
+  "acceptance": [
+    "A regression stores a named_root_bind receipt with workspace text that a fresh request now refuses, then proves the same retained key and intent replay the original receipt without new durable effects; current fresh-invalid-text refusal remains covered"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "control-plane",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a0708c-0d14-76e0-bd87-62f54104391a",
+  "external_ref": null,
+  "title": "Make readiness proof refusal test reach completion validation",
+  "outcome": "Make readiness proof refusal test reach completion validation",
+  "acceptance": [
+    "advisory_child_readiness_does_not_replace_completion_proof_validation runs without an outer transaction, asserts concrete proof errors, and succeeds after restoring proofs"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06fde-f44f-70a3-aeb2-b8e424eefcb1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completion proof regression now reaches typed proof checks, proves full rollback, and succeeds for the identical request after exact restoration; accepted by both reviewers and landed.",
+    "completed_at": "2026-09-05T08:26:22.374513900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a556ea5b1ce58aca3e09d16331521ace81f6f670916581f7161adde9a5732c74": {
+        "activity_id": "a556ea5b1ce58aca3e09d16331521ace81f6f670916581f7161adde9a5732c74",
+        "task_id": "01a0708c-0d14-76e0-bd87-62f54104391a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2f9c3505c03d1d343e0aaa10acd517f4c921b5286553f2328be9455af4486b01"
+      }
+    }
+  }
+}

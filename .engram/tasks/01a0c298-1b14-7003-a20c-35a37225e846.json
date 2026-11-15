@@ -1,0 +1,29 @@
+{
+  "id": "01a0c298-1b14-7003-a20c-35a37225e846",
+  "external_ref": null,
+  "title": "Show actionable readiness instead of exposing control recovery machinery",
+  "outcome": "TermAl tells the operator whether a session is ready, recovering, or needs an action, with technical control/evaluation details available on demand.",
+  "acceptance": [
+    "Default session/settings UI shows understandable readiness and a concrete action on failure; raw recovery flags, evidence bases and evaluator internals move to optional diagnostics rather than blocking comprehension.",
+    "Tests distinguish idle lazy recovery, in-progress recovery, successful binding and failed recovery; clearing pending alone never displays successful admission, and blocked control never enables provider dispatch."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "simplification",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

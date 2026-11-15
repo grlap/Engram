@@ -1,0 +1,74 @@
+{
+  "id": "01a0cc65-5e9a-7370-8460-efa17d27eb51",
+  "external_ref": null,
+  "title": "Remove the leftover Beads/Dolt rules from Engram's .gitignore",
+  "outcome": "Engram's .gitignore no longer carries the Beads/Dolt block that an old bd init added, since this repository tracks its work in Engram and has no .beads directory.",
+  "acceptance": [
+    "The '# Beads / Dolt files (added by bd init)' block and its .dolt/, .beads-credential-key and .beads/proxieddb/ rules are removed from .gitignore",
+    "git status shows no newly untracked files as a result"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "cleanup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": ".gitignore no longer carries the Beads/Dolt block (.dolt/, .beads-credential-key, .beads/proxieddb/); *.db stays under its own comment, so no SQLite store becomes visible; no file became untracked in the worktree or the main checkout. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T13:15:51.388627100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1207954bc52e4212b5f13e9ad60f67c7": {
+        "activity_id": "1207954bc52e4212b5f13e9ad60f67c7",
+        "task_id": "01a0cc65-5e9a-7370-8460-efa17d27eb51",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bc94acd1f9a94fb4baa587147200f456"
+      },
+      "974de65449f14deead2d0ce7a60263f8": {
+        "activity_id": "974de65449f14deead2d0ce7a60263f8",
+        "task_id": "01a0cc65-5e9a-7370-8460-efa17d27eb51",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "974de65449f14deead2d0ce7a60263f8"
+      },
+      "986690c36f1549c7a4e5b556c851d7d5": {
+        "activity_id": "986690c36f1549c7a4e5b556c851d7d5",
+        "task_id": "01a0cc65-5e9a-7370-8460-efa17d27eb51",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "bba19617c75e4a9bafbec9b19f98c52f"
+      }
+    }
+  }
+}

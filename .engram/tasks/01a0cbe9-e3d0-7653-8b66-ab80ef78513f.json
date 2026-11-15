@@ -1,0 +1,56 @@
+{
+  "id": "01a0cbe9-e3d0-7653-8b66-ab80ef78513f",
+  "external_ref": null,
+  "title": "A host re-bind replays a session's whole turn history, so any session past 128 turns is locked out",
+  "outcome": "Re-binding a session to the task it already has never makes it re-read its own history, so a long-running session keeps taking ordinary turns after its host re-binds it.",
+  "acceptance": [
+    "A first bind, and a bind to a different task, deliver that task's feed as they do today",
+    "A regression test binds a session, records more than MAX_CONTROL_DELIVERY_EVENTS turns, re-binds it under a new bind key, and gets an ordinary grant; on the current code it is refused with recovery_required",
+    "After the fix is installed, Engram::Codex (session-5132) takes ordinary turns again once TermAl re-binds it, verified live",
+    "Re-binding a session to the task it is already bound to keeps its confirmed position and moves past only the run of its own events that directly follows it, so its next ordinary turn is granted whatever the length of its own history, while an event another writer appended is still delivered",
+    "The full quality gates pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "coordination",
+    "recovery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A same-task re-bind keeps the session's confirmed position and moves past only the run of its own events that directly follows it; another writer's event is still delivered. This removes the lockout that hit any session past 128 turns when TermAl re-bound it, and it frees sessions the old build had reset to 0. Committed as ef659c2 with a mutation-checked regression test and doc updates, reviewed in two Codex and Claude rounds, pushed, and installed as build 13e4811da6f3. Verified live: Engram::Codex takes ordinary turns again. Accepted by an independent Codex evaluator through TermAl.",
+    "completed_at": "2026-09-23T03:04:54.708301500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "15ae5935f6ac490d9501e0dbc1462a0a": {
+        "activity_id": "15ae5935f6ac490d9501e0dbc1462a0a",
+        "task_id": "01a0cbe9-e3d0-7653-8b66-ab80ef78513f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e3b9244b5a1b4f86979027e1beecf3a6"
+      }
+    }
+  }
+}

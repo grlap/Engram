@@ -1,0 +1,53 @@
+{
+  "id": "01a0e909-34af-71e0-89d8-95699c91bbb1",
+  "external_ref": null,
+  "title": "The host transport reports the claim's named-root binding state at session bind and turn begin, so TermAl learns from Engram when a release has unbound a root it still measures",
+  "outcome": "The host transport reports the claim's named-root binding state at session bind and turn begin, so TermAl learns from Engram when a release has unbound a root it still measures",
+  "acceptance": [
+    "A release followed by a re-claim of the same claim_id reports unbound_by_release until a new bound event with a fresh generation is recorded; a holder change without a release (handoff accept, recovery by another holder) reports the binding unchanged; tests cover each",
+    "The SessionBind and TurnBegin results of the host-private transport carry the bound claim's named-root state as Engram derives it at that cut: none, bound {workspace_id, generation, named_at}, or unbound_by_release {last generation, released at position}; the value is derived from recorded named_root_bind events and the claim's own lifecycle transitions, never from path text or fence inequality",
+    "docs/features/behavioral-control-plane.md section 5a documents the field as the authoritative read a host uses to decide when to name again, and TermAl's PI-28 is told the shape"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The host transport reports the claim's named-root state (none, bound, unbound_by_release) in session_bind, session_status and turn_begin results, derived from named_root_bind events and the claim's lifecycle; section 5a documents it as the authoritative read; landed as cdb252f and PI-28 told the shape.",
+    "completed_at": "2026-09-29T04:19:02.202419400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "579ba4ff085745a986e45aeab19c6cf7": {
+        "activity_id": "579ba4ff085745a986e45aeab19c6cf7",
+        "task_id": "01a0e909-34af-71e0-89d8-95699c91bbb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a090b8110f4b42838af5293fa8e3e67a"
+      }
+    }
+  }
+}

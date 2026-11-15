@@ -1,0 +1,113 @@
+{
+  "id": "01a14d53-0b84-7fc1-a905-43ead265e684",
+  "external_ref": null,
+  "title": "Correct the FTS refresh cost wording for trigram posting-list work",
+  "outcome": "Make the FTS refresh documentation and code comment accurately describe index-assisted trigram lookup costs.",
+  "acceptance": [
+    "The cost explanation in docs/features/sqlite-store.md and src/storage/work/planning/catalog_fts.rs states that lookup depends on trigram posting lists and mentioning candidates, with worst-case O(N), and does not promise O(H) in complete-ref matches alone or claim an unmeasured universal speed factor."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "delivered",
+    "documentation",
+    "evaluation-pending",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The FTS refresh cost wording for trigram posting-list work is corrected and landed (in the ancestry of e7426a6); verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed criterion 1 (record 0dc7a635a17f46cd90695aff2f31e94e).",
+    "completed_at": "2026-10-28T01:28:15.654160Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "01e2392434e14a1a9eadce0b1ed19bc4": {
+        "activity_id": "01e2392434e14a1a9eadce0b1ed19bc4",
+        "task_id": "01a14d53-0b84-7fc1-a905-43ead265e684",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8d6145a596734898b51aecc77374e729"
+      },
+      "0abb4699f90a45e0bdef359ae07bac67": {
+        "activity_id": "0abb4699f90a45e0bdef359ae07bac67",
+        "task_id": "01a14d53-0b84-7fc1-a905-43ead265e684",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0abb4699f90a45e0bdef359ae07bac67"
+      },
+      "3083152a06e1436e856de7a8b81070aa": {
+        "activity_id": "3083152a06e1436e856de7a8b81070aa",
+        "task_id": "01a14d53-0b84-7fc1-a905-43ead265e684",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b1a1eb686b3340eba477a4002ebbcbdd"
+      },
+      "d3939ef760be4ea790cad4b37d01f579": {
+        "activity_id": "d3939ef760be4ea790cad4b37d01f579",
+        "task_id": "01a14d53-0b84-7fc1-a905-43ead265e684",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d3939ef760be4ea790cad4b37d01f579"
+      },
+      "e8d5c7703faf4257920586c2e6553dda": {
+        "activity_id": "e8d5c7703faf4257920586c2e6553dda",
+        "task_id": "01a14d53-0b84-7fc1-a905-43ead265e684",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e8d5c7703faf4257920586c2e6553dda"
+      },
+      "f385081b04f94d579b93b1f82a3da737": {
+        "activity_id": "f385081b04f94d579b93b1f82a3da737",
+        "task_id": "01a14d53-0b84-7fc1-a905-43ead265e684",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f385081b04f94d579b93b1f82a3da737"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a11028-16fe-7400-b024-16934f379365",
+  "external_ref": null,
+  "title": "Agent instructions don't say that credited tests need the item's own detached worktree, never the shared main checkout",
+  "outcome": "Agent instructions don't say that credited tests need the item's own detached worktree, never the shared main checkout",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (identical) or the engram-repo skill state that an item needing credited tests, no-code items included, is rooted at its own detached worktree, because any other writable session whose workdir is the main checkout voids credit there",
+    "The doc link check and the AGENTS/CLAUDE identity check pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The engram-repo skill (.agents/skills/engram-repo/SKILL.md, \"Repository work constraints\", with a pointer at the head of \"Verification\") now states that an item whose checks must earn host credit, a no-code item included, is rooted at its own detached worktree under .worktrees, never the shared main checkout, because the host voids credit for a check whenever another writable session's working directory is the checkout it ran in, which the main checkout always is to every other session; it gives the steps (claim first; create the worktree detached at the current master; name it as the source root through the host, and again after a re-claim; run each credited check from it in a call of its own, by pushd from a Bash tool or a direct working-directory command in a Codex session, launcher runs included) and the cleanup (archive still-needed launcher runs as launcher usage describes, then remove the clean worktree without --force). AGENTS.md and CLAUDE.md untouched and identical. Landed as 06fbddc73c7bc06291f01dedd1c8e95cd0ddd727 on origin master (fast-forward from 240e4c7, pushed 2026-10-06T08:26:01Z); Markdown-only: link check and AGENTS/CLAUDE identity check passed through the focused launcher on the exact tree (fingerprint b0b9cea1…); round 1's Medium (evidence deleted with the worktree) fixed in round 2; round 2 pair clean of Medium or higher (Codex no findings; one Claude Low on the removal preconditions left for its own docs item); evaluation a59ba2bc16e44bf4addacfc072a0a46e passed both criteria; readiness ready on all four live stores with the installed build d47a2a41ad5a (no build or install for this change). The item's own worktree practised the rule; its run directories are archived under target/tmp/landings before its removal.",
+    "completed_at": "2026-10-06T08:26:16.963215700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "412f8a27fe4145edbcd6a477b1d9017f": {
+        "activity_id": "412f8a27fe4145edbcd6a477b1d9017f",
+        "task_id": "01a11028-16fe-7400-b024-16934f379365",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5f672641019145178340159660746404"
+      }
+    }
+  }
+}

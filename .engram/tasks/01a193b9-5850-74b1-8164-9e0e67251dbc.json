@@ -1,0 +1,28 @@
+{
+  "id": "01a193b9-5850-74b1-8164-9e0e67251dbc",
+  "external_ref": null,
+  "title": "Refuse reuse of an exchange operation id across bindings of one Git directory",
+  "outcome": "Refuse reuse of an exchange operation id across bindings of one Git directory",
+  "acceptance": [
+    "prepare refuses, before any write, an operation id already Prepared under any binding whose Git directory is the same directory (same_directory)",
+    "A test prepares an outgoing operation under a binding, supersedes it, re-prepares the same operation under the successor and asserts the refusal with no new event or artifact"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

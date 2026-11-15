@@ -1,0 +1,50 @@
+{
+  "id": "01a06522-0649-74c2-9e85-1ce77797c040",
+  "external_ref": null,
+  "title": "Rotate completion capture identity with claim basis",
+  "outcome": "Retrying an explicit-key completion after claim fence or work revision movement does not dead-end on an internal evidence idempotency conflict.",
+  "acceptance": [
+    "A capture-backed explicit-key completion can recover after claim or revision movement with typed protocol behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bound completion evidence capture idempotency to work revision and claim identity.",
+    "completed_at": "2026-09-03T03:16:19.176912100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "60242fbc13c7e8434d40b8f27e48fee3f2eaef36e4a83f35b69d6093d88e7b9f": {
+        "activity_id": "60242fbc13c7e8434d40b8f27e48fee3f2eaef36e4a83f35b69d6093d88e7b9f",
+        "task_id": "01a06522-0649-74c2-9e85-1ce77797c040",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2ea065031292c3704eb2a2264971b20ac3b95639c9ddb9aa672f4bc6a6f4f760"
+      }
+    }
+  }
+}

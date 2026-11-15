@@ -1,0 +1,48 @@
+{
+  "id": "01a18b37-5dc0-76b2-b500-4667757c885f",
+  "external_ref": null,
+  "title": "Keep Engram landings possible when the review parent is unavailable: a deputy obtains authentic review results",
+  "outcome": "Engram's review and landing rules (rules-merger-role clause 2, /review-changes) and its tooling no longer depend on one live session. When the session that commissioned a review is unavailable, an authorized deputy obtains the reviewers' authentic results through a supported read-only route, without retrying the parent or commissioning a duplicate pair, and the landing proceeds.",
+  "acceptance": [
+    "The Engram rule text (rules-merger-role clause 2 and .claude/commands/review-changes.md, with AGENTS.md/CLAUDE.md only if needed) names which deputies may obtain review results when the commissioning parent is unavailable (the project coordinator or interim coordinator, the integration owner) and which record proves a result authentic, without accepting a parent's summary or prose in place of a reviewer's own result",
+    "The deputy route is read-only: it never mutates the unavailable parent's session, delegation or wait records, and it uses a supported TermAl read path agreed with TermAl (TermAl w-fb35d7e76d72) or an Engram-side durable copy of each reviewer's own result",
+    "No single session is the only possible reader of a required review result; the record states what happens when the parent, the deputy or the Merger is unavailable",
+    "The rule change lands under the authority-text procedure (a), (b) and (c), and its first real use (or a reproduction of the 2026-10-30 Engram::Fable case) is recorded on this item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "authority-text",
+    "greg-directed",
+    "resilience",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "9ab9a628dd23403c8d15d392112a105a": {
+        "activity_id": "9ab9a628dd23403c8d15d392112a105a",
+        "task_id": "01a18b37-5dc0-76b2-b500-4667757c885f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "2c2121b6d2db4f1f9f031a91f475cd69"
+      }
+    }
+  }
+}

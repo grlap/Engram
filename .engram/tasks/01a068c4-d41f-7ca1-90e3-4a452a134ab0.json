@@ -1,0 +1,50 @@
+{
+  "id": "01a068c4-d41f-7ca1-90e3-4a452a134ab0",
+  "external_ref": null,
+  "title": "Claim renewal on holder mutations never shortens the requested TTL",
+  "outcome": "Claim renewal on holder mutations never shortens the requested TTL",
+  "acceptance": [
+    "A default-TTL claim still renews on holder mutations exactly as today",
+    "After claim --ttl 14400 followed by a note, show reports the claim expiring no earlier than the expiry the claim receipt returned"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Holder mutations no longer shorten an explicitly longer live claim, with one end-to-end regression and updated claim-renewal documentation.",
+    "completed_at": "2026-09-03T23:22:32.382460Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "26a4a79f66e78e4c6125bb709bef62aef3a4e2775060117d6f530cc723ac798f": {
+        "activity_id": "26a4a79f66e78e4c6125bb709bef62aef3a4e2775060117d6f530cc723ac798f",
+        "task_id": "01a068c4-d41f-7ca1-90e3-4a452a134ab0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5a24c225b1990b1a388dbc83b879d54e70acf0a2caf7623010e4f597457b8b96"
+      }
+    }
+  }
+}

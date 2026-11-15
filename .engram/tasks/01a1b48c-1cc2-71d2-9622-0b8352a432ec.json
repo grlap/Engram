@@ -1,0 +1,29 @@
+{
+  "id": "01a1b48c-1cc2-71d2-9622-0b8352a432ec",
+  "external_ref": null,
+  "title": "Keep terminal launcher results unchanged when admitting a large plan",
+  "outcome": "An already-terminal run remains byte-identical when executeRun is called, including near the artifact cap.",
+  "acceptance": [
+    "executeRun returns an already-terminal saved result before plan expansion or any result rewrite",
+    "A behavioral regression proves that a near-cap input-not-clean terminal record remains byte-identical after executeRun"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "launcher",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

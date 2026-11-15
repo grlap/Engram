@@ -1,0 +1,61 @@
+{
+  "id": "01a077e7-41ac-7200-b5b8-1b1e133c16c3",
+  "external_ref": null,
+  "title": "update REF --clear-external removes an external reference through the audited field revision",
+  "outcome": "update REF --clear-external removes an external reference through the audited field revision",
+  "acceptance": [
+    "update REF --clear-external (MCP revise with clear_external: true) removes the item's external_ref as an audited revision; revise with a blank --external still refuses; next/ls/show stop printing it and ls --search no longer finds it; snapshot round trip keeps the absence; a test covers set, clear, and search"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Audited CLI/MCP clear-external preserves snapshot absence, removes reader and search linkage, refuses blank/conflicting inputs, and pins clear-on-absent revisions. Required correction sealed; all gates and pair closure accepted; landed fba7824.",
+    "completed_at": "2026-09-07T04:28:58.267041Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1102016937a9d3f402ec1006274495f09d7e35213d309622cc20272a74f0278b": {
+        "activity_id": "1102016937a9d3f402ec1006274495f09d7e35213d309622cc20272a74f0278b",
+        "task_id": "01a077e7-41ac-7200-b5b8-1b1e133c16c3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1102016937a9d3f402ec1006274495f09d7e35213d309622cc20272a74f0278b"
+      },
+      "5b6b9a24095105afabb9f888a7da00eacc7495ba4ae4b317057c32f8e49f362f": {
+        "activity_id": "5b6b9a24095105afabb9f888a7da00eacc7495ba4ae4b317057c32f8e49f362f",
+        "task_id": "01a077e7-41ac-7200-b5b8-1b1e133c16c3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "855579d04ade44947a10c724b7da08facf8cb3865d50dba9ec4ab2b9ef7e04c0"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a1d7ef-df40-75c3-9916-170e65bd4457",
+  "external_ref": null,
+  "title": "Report folder revision size refusals per task before writing",
+  "outcome": "Folder admission classifies ordinary scalar-writer readability and revision refusals per task so independent admitted edits still apply.",
+  "acceptance": [
+    "A resolved folder with one scalar revision rejected by the native writer's search-readability limit reports that task refused while applying an independent valid task.",
+    "Admission and writer keep the same native revision limits, with meaningful mixed-outcome coverage."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

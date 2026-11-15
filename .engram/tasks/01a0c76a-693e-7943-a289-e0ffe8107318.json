@@ -1,0 +1,28 @@
+{
+  "id": "01a0c76a-693e-7943-a289-e0ffe8107318",
+  "external_ref": null,
+  "title": "Provide a satisfiable recovery for context-only delivery overflow",
+  "outcome": "Provide a satisfiable recovery for context-only delivery overflow",
+  "acceptance": [
+    "A context packet that fits prose budgets but exceeds the serialized delivery limit has a reachable recovery or bounded degradation path.",
+    "A regression test proves refusal recovery through a subsequent admitted turn or proves deterministic omission without a permanent session wedge."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete: context-packet assembly and grant delivery were removed in 9eeb3cf (docs/shipped.md:70), so the context-only delivery overflow wedge cannot occur. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null
+}

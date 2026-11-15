@@ -1,0 +1,43 @@
+{
+  "id": "01a10d4c-3cd7-7473-a71d-3123ce57e780",
+  "external_ref": null,
+  "title": "Safety net: a holder whose live claim stops making progress is reported as stalled, so the host can wake it",
+  "outcome": "Engram reports, through a deterministic read, every live claim whose holder has stopped making recorded progress, with a stable deduplication key. A host such as TermAl polls that read on its own timer, combines it with its turn state, and emits a durable wake to the holder and the coordinator, so that a silent holder no longer depends on a coordinator noticing.",
+  "acceptance": [
+    "TRIGGER. A read-only stalled-holder read, on the CLI and MCP and to the host, lists in one project snapshot every unexpired claim on open work whose run has had no holder progress record for at least a bound S. Progress records are a note, status, gate, checkpoint, source observation, evaluation, handoff event or completion attempt. Claim renewal alone is not progress. Each row carries: work ref, claim id and fence, holder session and actor, the last progress record's locator, kind and time, the stall age, and its class. A second class lists claims that lapsed on still-open work and have not been recovered. S is an explicit input with a default agreed with TermAl and quoted on this item. The read creates no scheduler, mutates no claim or delivery state, calls no model, and grants no authority.",
+    "DEDUPLICATION. Each row carries a stall key derived from (claim id, fence, last progress record). The same unchanged stall yields the same key across reads, processes and restarts. New holder progress, a new fence or a handoff yields a new key. The key is designed to be passed unchanged as the host's mailbox idempotency key, so a repeated poll emits at most one wake per stall. The documented escalation step, a second, longer bound, carries its own derived key.",
+    "HOST PORTION, linked. A TermAl item, with its ref quoted on this item, owns the timer, the turn-state filter, and the durable mailbox wake to the holder with a copy to the coordinator. The filter suppresses the wake while the holder is mid-turn or has a registered delegation or test-run wait with a live child. Both coordinators' concurrence on the split and on S is recorded on this item.",
+    "PROOF. Repository tests with a fixed clock cover each class, the bound edge, every listed progress kind resetting the stall, renewal not resetting it, key stability across reopen, and key change on new progress, fence or handoff. After both halves land, an attributed end-to-end note reproduces the 2026-10-05 incident shape: a holder with a live claim, last progress at 15:59Z, and no wake until a manual nudge at 18:16Z. The note shows the host emitting exactly one durable wake within the bound, without a manual nudge, and quotes the timestamps. A wake alone is never counted as progress, test or completion."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-workflow",
+    "area-host-integration",
+    "reliability",
+    "stall"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a10d51-29b3-7c43-a2ac-76617defd461",
+      "kind": "manual",
+      "detail": "PARKED by Greg's scope correction (Advisor mailbox-74a6af16 #1009, 18:25:21Z): \"do NOT implement a watchdog now, including the timer-based P2 ... Produce and dogfood the minimal procedure ... Do not start automated enforcement beyond what is necessary to document/observe the procedure.\" Unblock only on Greg's word, after the procedure (memory rules-waits-and-wakes) is dogfooded.",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-05T18:26:25.319109400Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

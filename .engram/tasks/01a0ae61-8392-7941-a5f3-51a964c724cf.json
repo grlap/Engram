@@ -1,0 +1,52 @@
+{
+  "id": "01a0ae61-8392-7941-a5f3-51a964c724cf",
+  "external_ref": null,
+  "title": "Carry a pinned evaluation mode through graph snapshot save and load",
+  "outcome": "Carry a pinned evaluation mode through graph snapshot save and load",
+  "acceptance": [
+    "graph save exports evaluation_mode for items that pin one and graph load restores it",
+    "the snapshot format fingerprint and its documentation move with the field"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Graph snapshots carry a pinned acceptance-evaluation mode: WorkGraphSnapshotItem.evaluation_mode (omitted when unset) is exported from the item, restored verbatim on load, and part of the restored-item basis match; the format fingerprint moves with it because it derives from the compiled schema. Storage test snapshot_carries_the_pinned_evaluation_mode (pinned and unpinned roots round-trip into an empty store, verify healthy) and the six graph_snapshot_cli integration tests pass; work-graph-snapshot.md lists the carried field. Gates for this increment are recorded on the sibling follow-up item (same changeset); parent validation on the final input is pending.",
+    "completed_at": "2026-09-17T08:32:10.990164400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b61069742bc39cd52d433fbfba41d596f65f56effe5d5eecef047e0fde822435": {
+        "activity_id": "b61069742bc39cd52d433fbfba41d596f65f56effe5d5eecef047e0fde822435",
+        "task_id": "01a0ae61-8392-7941-a5f3-51a964c724cf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0fea930caa5e58e6192e9501e5487c47d8464f4eeff0ed91ab7eed98c8d0a2e6"
+      }
+    }
+  }
+}

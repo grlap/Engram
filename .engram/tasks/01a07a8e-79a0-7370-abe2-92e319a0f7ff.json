@@ -1,0 +1,51 @@
+{
+  "id": "01a07a8e-79a0-7370-abe2-92e319a0f7ff",
+  "external_ref": null,
+  "title": "Reading another item must not steer a bare note",
+  "outcome": "Reading another item must not steer a bare note",
+  "acceptance": [
+    "read_contention_reading_another_item_does_not_steer_a_bare_note passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07a21-e397-7ed1-b935-a7a498504052",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed: explicit reads preserve the existing write target; five-mode Rust matrix and CLI/MCP process tests prove B reads do not redirect a bare note from held A, while explicit B mutation retains normal authority.",
+    "completed_at": "2026-09-07T08:11:58.188255800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ca5dbcc306ef0d22a95935b8c774168f46bbaa631e0275ff348d8239754908a4": {
+        "activity_id": "ca5dbcc306ef0d22a95935b8c774168f46bbaa631e0275ff348d8239754908a4",
+        "task_id": "01a07a8e-79a0-7370-abe2-92e319a0f7ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7d034d8e17489547f265688e6dead66bca2eff55d96d275921bd74fd31f2cf58"
+      }
+    }
+  }
+}

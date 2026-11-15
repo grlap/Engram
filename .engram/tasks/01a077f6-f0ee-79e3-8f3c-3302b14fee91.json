@@ -1,0 +1,61 @@
+{
+  "id": "01a077f6-f0ee-79e3-8f3c-3302b14fee91",
+  "external_ref": null,
+  "title": "verbose next measures its exact undelivered-changes page on the same JSON basis as every other agent word",
+  "outcome": "verbose next measures its exact undelivered-changes page on the same JSON basis as every other agent word",
+  "acceptance": [
+    "Verbose next emitted compact application-receipt JSON (CLI --json and MCP payload) and rendered terminal text each stay below 12288 UTF-8 bytes with a large undelivered backlog; a fixture with at least 20 KiB of changes proves complete dense traversal with no lost or duplicated entries and preserves the exact staged page, delivery cursor and token. Non-advancing peek remains non-advancing."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Verbose next stays under 12288 on compact JSON and terminal text, pages 20 KiB of changes densely without losing or duplicating entries, and peek does not advance.",
+    "completed_at": "2026-09-14T03:06:41.628825700Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b10247fc160597971387725b95001f521c4a6c3c637bb9d7704eadd400a5ff89": {
+        "activity_id": "b10247fc160597971387725b95001f521c4a6c3c637bb9d7704eadd400a5ff89",
+        "task_id": "01a077f6-f0ee-79e3-8f3c-3302b14fee91",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "74ba60edfb0bb52669228639417c102273dda12161948313959a917c49137633"
+      },
+      "b3982fa53d2f240cc6406fbccda395351eaacc712e61f925c565c86504f9e70a": {
+        "activity_id": "b3982fa53d2f240cc6406fbccda395351eaacc712e61f925c565c86504f9e70a",
+        "task_id": "01a077f6-f0ee-79e3-8f3c-3302b14fee91",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b3982fa53d2f240cc6406fbccda395351eaacc712e61f925c565c86504f9e70a"
+      }
+    }
+  }
+}

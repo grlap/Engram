@@ -1,0 +1,51 @@
+{
+  "id": "01a0ff0b-163b-7631-9132-06009c591bbb",
+  "external_ref": null,
+  "title": "Instructions say agents choose when to restart TermAl, per Greg's word of 2026-10-02",
+  "outcome": "Instructions say agents choose when to restart TermAl, per Greg's word of 2026-10-02",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (Authority and Git) carry the final agreed wording recorded on this item: the standing approval grants no TermAl restart, deploy or global-configuration authority; the moment of a TermAl restart is the agents' decision and Greg performs it on a 'restart now' sent through Engram::Advisor; Engram agents may restart Engram's own processes only by the supported routes named there; Greg's two 2026-10-02 quotes appear verbatim; the two files stay byte-identical",
+    "The item's notes record Engram::Fable's and Termal::Fable2's concurrence on the exact wording, the exact wording and its consequence as sent to Greg through Engram::Advisor before landing, and the passed final-diff audit that /review-changes requires"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "coordination"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Recorded Greg's agreed TermAl restart timing and supported Engram refresh routes in byte-identical AGENTS.md and CLAUDE.md. Exact Markdown checks and whole-input Codex/Claude round2 passed with no Medium+; Low MCP wording w-85aa8c29bcea and checklist drift w-ffd6e7ec6e0c filed separately. Both coordinators exact concurrence, corrected Greg notice883 and required other-coordinator scripted final-diff audit passed. Independent evaluation875c7896 all2criteria pass beforelanding. All4live storesready, installedcleancommittedbuild, oldbinarybackup engram-20261003T003300Z-d36a3976d08d.exe. Mainfastforwarded, preexistingclippy_wsl untouched. No runtime/schema/projectionchange, no running sessions requirebinaryrestart for thisdocs-onlychange; no process restarted.",
+    "completed_at": "2026-10-03T00:34:28.978292800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3a970e78aaea4c0d963529c4a6790316": {
+        "activity_id": "3a970e78aaea4c0d963529c4a6790316",
+        "task_id": "01a0ff0b-163b-7631-9132-06009c591bbb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "29dc1421a2d748288f3dd89b87b228ab"
+      }
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "id": "01a18a37-54d7-7bb0-af92-180d6f507470",
+  "external_ref": null,
+  "title": "Admit a remote test-run result, delivered as the launcher's small completion metadata over the native mailbox, as commit-bound verification evidence",
+  "outcome": "A test run on another host, launched by that host's native TermAl root, counts in Engram from the small completion metadata its launcher already produces, carried over the existing native mailbox (Greg, Advisor #2438). Engram records it as remote-origin test verification evidence bound to the exact commit identity and qualifies it through the same Git-input eligibility decision as local runs. There is no SSH, no log or bundle import, no extra hashing and no agent step; a non-qualifying result stays visible with a named reason.",
+  "acceptance": [
+    "Engram accepts a remote result through the host-private remote_verification_record operation (capability remote_verification_record_v1) in exactly the shared payload agreed with TermAl K3 (w-48c4a207f226). The completion holds the launcher's existing facts: origin host and native runner session, run id, mode (full or focused), and the native result (verdict, terminal flag, exit and reason). It also holds the tested commit and tree, the launcher's actual before and after fingerprints, and the finish time. The completion reaches Engram after the host owner (TermAl K3, w-48c4a207f226) has correlated it with its retained native run and the original request; that correlation is K3's to implement and test. A separate destination association names the existing work binding and verification root, and an explicit use: committed_input with expected_commit and purpose verification or landing_gate, or authorized_test_ref with ref_name, expected_tree and purpose landing_gate. Mailbox text saying PASS or exit 0 is never evidence. Missing facts stay missing and are never guessed; malformed supplied values are invalid_request. No log, results bundle, file hash, source remeasurement, extra capture or agent import step is required. Stage counts, toolchain, platform and target are optional provenance, never qualification inputs. The stored record and `show` keep the remote origin and execution facts and times distinct from the local association time.",
+    "One qualifier evaluates the stated use, through the existing settlement, evidence and matcher owners within the actual target project, work, run and claim scope. For use committed_input with purpose verification, a terminal native PASS (the launcher's verdict; the exit code is provenance only), in full OR focused mode, on the exact tested commit and meeting the existing gitignore-aware clean-input and disposition contract, is credited; no fingerprint is required for a Legacy input; for a SourceId input the source_id pair must be present and equal for either purpose. For purpose landing_gate, only a terminal full-mode native PASS (the launcher's verdict; the exit code is provenance only) with before and after fingerprints (the source_id pair for a SourceId input) present and equal is credited; a focused result there is not_full_mode. Credit never grants landing authority, and the existing review, acceptance, readiness and platform-coverage requirements are unchanged. For landing_gate the exact tested commit is required for committed_input, or the exact authorized tree for authorized_test_ref. For committed_input, a same-tree result from a different commit is commit_mismatch; authorized_test_ref uses the exact tested tree under its existing authorization. Platform coverage stays the integration owner's judgment, not an automatic check. A result never goes through a synthesized local producer, grant, turn, sighting or execution_observe credit. ObservedCheck and the agent `gate` word stay uncredited, and neither an agent gate nor a mailbox disposition turns a native FAIL into credited verification.",
+    "The native launcher reason is kept unchanged. A new-untracked-only outcome is recorded visibly and uncredited as untracked_debris_pending_disposition. It counts toward landing only through the integration owner's existing disposition note and run-referenced gate record. A delivery timeout, a missing result or a running or unknown snapshot never fixes the immutable native terminal, and a later authoritative terminal of the same run settles without conflict. The immutable origin host and run and the destination association are deduplicated through the existing idempotent settlement. An exact retry returns the same receipt, and a result is reusable across items as distinct associations of one origin. Two different authoritative terminals for one origin run are result_conflict. Late, reordered or unknown delivery never starts a second run. A non-qualifying result stays visible, grants no credit, and carries exactly one of these reasons: commit_mismatch, tree_mismatch, source_id_missing_or_changed (a missing or changed before/after input identity: the source_id pair of a SourceId input for either purpose, or the Legacy fingerprints for landing_gate use), not_full_mode (landing_gate use only), result_not_pass, result_conflict, producer_unsupported, association_stale, untracked_debris_pending_disposition or invalid_request. Precise missing data goes in the reason's detail, and there are no aliases for older names.",
+    "Tests cover:\n- a credited full-mode pass in the committed_input verification, committed_input landing_gate and authorized_test_ref landing_gate uses;\n- a credited focused-mode pass for committed_input verification, and the same focused pass refused not_full_mode for each landing_gate use;\n- an ordinary verification pass without fingerprints that is refused for landing_gate use;\n- failed and debris results staying uncredited in either mode;\n- an unknown delivery followed by the real terminal;\n- each named non-qualifying and conflict case;\n- retry idempotence, cross-item reuse and moved-scope refusals;\n- B's downstream time, mutation and cut guards;\n- local registered and legacy checks behaving as before;\n- the agent `gate` word and ObservedCheck staying uncredited.\nThe change adds no new table or column. Any durable or derived-projection change is named, with its import, readiness or repair consequence, before code is written."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "host-integration",
+    "verification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a18fa7-a252-7653-9bd8-da8c79e5d5ab"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A remote FOCUSED native PASS now verifies committed_input, and landing_gate stays full-mode only (Greg 2026-11-12: „Tak. Zdalny test jest równowazny.”).\n- Candidate: cc1aa93afa55cc0ea7202eb6b66490ff44a4953a, tree cba4f135, parent master 0bd70a30, freeze 8c6ac503c8e44fcd2f464353273a3dbb9e69a6681ca7f222908cf74f436023a6. Not yet landed; it is a READY package for the Merger.\n- control.rs: not_full_mode applies to landing_gate only, after result_not_pass and before every input check. The legacy fingerprint branch now gives source_id_missing_or_changed. The FingerprintMissingOrChanged variant was removed with no alias.\n- Docs and shipped.md updated.\n- Tests: tests.rs, shared_input.rs, downstream.rs.\n- Review: round 3 clean (Codex 17590, Claude 17591). DL560 passes on cc1aa93a: clippy test-b0755c8a; remote_verification test-9b03be17 54/54, with source_id equal.\n- Evaluation: rev-11 independent evaluation, all 4 criteria pass. C1 was clarified with Fable and Fable2 (#7619): correlation is K3's.\n- Landing condition: the Merger re-counts remote_verification_association rows on every live store before installing. Today there are 0.",
+    "completed_at": "2026-11-12T01:45:54.897591400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3d97df51c41942e38803583b5b10230d": {
+        "activity_id": "3d97df51c41942e38803583b5b10230d",
+        "task_id": "01a18a37-54d7-7bb0-af92-180d6f507470",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "17af38be1ec44d9481185bc2b9b9e602"
+      },
+      "e2e1f3566f644f86a451b27b938d445b": {
+        "activity_id": "e2e1f3566f644f86a451b27b938d445b",
+        "task_id": "01a18a37-54d7-7bb0-af92-180d6f507470",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e2e1f3566f644f86a451b27b938d445b"
+      }
+    }
+  }
+}

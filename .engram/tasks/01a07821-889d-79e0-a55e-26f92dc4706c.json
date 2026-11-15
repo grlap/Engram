@@ -1,0 +1,24 @@
+{
+  "id": "01a07821-889d-79e0-a55e-26f92dc4706c",
+  "external_ref": "SMOKE-EXT-1788721858",
+  "title": "Smoke external reference child 1788721858",
+  "outcome": "Smoke external reference child 1788721858",
+  "acceptance": [
+    "Smoke external reference child 1788721858 is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke item, cancelled after verification",
+  "completion": null
+}

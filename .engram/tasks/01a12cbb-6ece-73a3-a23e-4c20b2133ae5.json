@@ -1,0 +1,75 @@
+{
+  "id": "01a12cbb-6ece-73a3-a23e-4c20b2133ae5",
+  "external_ref": null,
+  "title": "Focused launcher completion lacks the per-stage 'focused: passed' line TermAl needs to credit focused cargo runs",
+  "outcome": "Focused launcher completion lacks the per-stage 'focused: passed' line TermAl needs to credit focused cargo runs",
+  "acceptance": [
+    "A foreground focused launcher run's completion summary prints, within its first 32 lines after the PASS/FAIL line, one fixed-grammar stage line '<stage>: <state> exit=<code>' per stage (e.g. 'focused: passed exit=0'), built from metadata only (no text copied from logs or results), while keeping the 'PASS <runId> exit=0' first line and the 'results: <absolute path>' line unchanged; launcher tests assert the line for passed, failed and full runs",
+    "One real foreground focused 'cargo test' launcher run in TermAl is recorded with a passed host Test verification (not refused or absent), and a holder note quotes its record id"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Restored metadata-only per-stage launcher completion lines after the unchanged verdict and results lines. Passed full validation and both independent reviews; acceptance evaluated 2/2 pass. Landed, pushed and installed the clean committed build.",
+    "completed_at": "2026-10-12T17:05:18.490408Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4c6f74bc48a644eebedbcc47df725863": {
+        "activity_id": "4c6f74bc48a644eebedbcc47df725863",
+        "task_id": "01a12cbb-6ece-73a3-a23e-4c20b2133ae5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4c6f74bc48a644eebedbcc47df725863"
+      },
+      "705bf6ac38024dacad45dfd50aef1e16": {
+        "activity_id": "705bf6ac38024dacad45dfd50aef1e16",
+        "task_id": "01a12cbb-6ece-73a3-a23e-4c20b2133ae5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "705bf6ac38024dacad45dfd50aef1e16"
+      },
+      "b944ebaba0424916b33c3df22553ab22": {
+        "activity_id": "b944ebaba0424916b33c3df22553ab22",
+        "task_id": "01a12cbb-6ece-73a3-a23e-4c20b2133ae5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a63e7b7c4ffb4b3499126db6bbcefa1d"
+      }
+    }
+  }
+}

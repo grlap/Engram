@@ -1,0 +1,27 @@
+{
+  "id": "01a1018b-3e1b-7211-8b97-108367065afd",
+  "external_ref": null,
+  "title": "A bare core claim_next_ready renewal is refused while the worker holds the child and the focus stays on the parent",
+  "outcome": "A bare core claim_next_ready renewal is refused while the worker holds the child and the focus stays on the parent",
+  "acceptance": [
+    "A bare work core update claim_next_ready that renews a child this session already holds under the focused, unheld parent either succeeds as the documented renewal or is refused with guidance documented in cli-and-mcp.md; a test covers the worker state"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-surface",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,65 @@
+{
+  "id": "01a1b882-1266-70e0-8e4b-0e1d60a1d83e",
+  "external_ref": null,
+  "title": "Admit shared source identities in the EO observation consumer",
+  "outcome": "Admit shared source identities in the EO observation consumer",
+  "acceptance": [
+    "Observation admission accepts complete shared source_id measurements using the existing owner, whole-object equality and bounded host transport, with optional per-check scope metadata carrying no source_id",
+    "Historical observations and exact committed retries preserve canonical records and receipts; additive support leaves legacy producer admission available until the separately coordinated cutoff",
+    "Automatic agent output and observation reads show bounded summaries rather than complete source objects, parse errors expose no caller values, and the frozen contribution has its applicable passing gate and clean vendor review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and pushed exact reviewed/gated candidate 0c012df9ca99afdd3f47e3bb67b15f0bfd19c649 (tree 79a7436358ca1516f577c9fe7aca1fd7074eb37b) as master; installed the matching GO #256 release artifact on Central and verified readiness=true, mutation_enabled=false on all six live Central stores with build_fingerprint e78da63982c757d0c4ff2c1f217b19f9c07ad4a299b9b79e56542bb29edd8631. No TermAl restart. DL560 install awaits Fable2 exception #8 and Opus2 slot.",
+    "completed_at": "2026-11-08T01:24:42.973282400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "61177d0061154f0bbada9e305f4a178d": {
+        "activity_id": "61177d0061154f0bbada9e305f4a178d",
+        "task_id": "01a1b882-1266-70e0-8e4b-0e1d60a1d83e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9c1674aa9e5742019fbf2c15fe95eb8e"
+      },
+      "c1cd68610185494f99d2c0e3cba9de33": {
+        "activity_id": "c1cd68610185494f99d2c0e3cba9de33",
+        "task_id": "01a1b882-1266-70e0-8e4b-0e1d60a1d83e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c1cd68610185494f99d2c0e3cba9de33"
+      }
+    }
+  }
+}

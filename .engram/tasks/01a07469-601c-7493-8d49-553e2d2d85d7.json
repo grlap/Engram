@@ -1,0 +1,52 @@
+{
+  "id": "01a07469-601c-7493-8d49-553e2d2d85d7",
+  "external_ref": null,
+  "title": "Inherited event and completion summaries in the history window have a detail route: compacted non-note history rows carry a locator that returns the complete inherited record member, the same way notes do",
+  "outcome": "Inherited event and completion summaries in the history window have a detail route: compacted non-note history rows carry a locator that returns the complete inherited record member, the same way notes do",
+  "acceptance": [
+    "a compacted inherited event or completion summary in show --history prints its RECORD_HASH:INDEX locator and show REF --note LOCATOR (or an equivalent --event detail) returns the complete member framed as data with its byte size; the window shape and totals are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "dogfood",
+    "review",
+    "stream-agent-receipts"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Inherited event and completion rows in show --history keep their original size, flag a shortened summary and offer a detail command. show REF --note RECORD:event-N or RECORD:completion returns the whole summary and the complete member framed as data, with member_bytes. Every stored field is included, the actor is shown as its display label, and next returns to --history. Malformed and foreign locators are refused. Help and docs are updated. Landed as 4ab86e9 in bundle 7 group A: gate test-5aae4182 PASS, pair clean, independent evaluation pass, readiness ready on all 4 stores. Installed build c4c244b7…f4c0.",
+    "completed_at": "2026-10-03T21:00:46.407278800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a72b4549f333458ba57f589ae0e4cdb3": {
+        "activity_id": "a72b4549f333458ba57f589ae0e4cdb3",
+        "task_id": "01a07469-601c-7493-8d49-553e2d2d85d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "06b48f474892452b926874f8e0c42903"
+      }
+    }
+  }
+}

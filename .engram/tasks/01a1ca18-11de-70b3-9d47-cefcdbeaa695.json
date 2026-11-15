@@ -1,0 +1,27 @@
+{
+  "id": "01a1ca18-11de-70b3-9d47-cefcdbeaa695",
+  "external_ref": null,
+  "title": "Raise the source budget maximum above 60 s (for example 300000 ms) while keeping the 60 s default",
+  "outcome": "Raise the source budget maximum above 60 s (for example 300000 ms) while keeping the 60 s default",
+  "acceptance": [
+    "`engram source --timeout-ms` accepts values up to a raised maximum (for example 300000 ms); the default stays 60000 and values below 60000 are still raised to 60000",
+    "A behavioural test shows a request above 60000 and within the new maximum is honoured as one absolute budget, and a value above the maximum still refuses"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

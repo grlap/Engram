@@ -1,0 +1,51 @@
+{
+  "id": "01a06e18-9c14-7922-baee-b0340dbca0df",
+  "external_ref": null,
+  "title": "Close graph-load review set A: safe prose, restricted placeholders, redactor and audit invariants",
+  "outcome": "Close graph-load review set A: safe prose, restricted placeholders, redactor and audit invariants",
+  "acceptance": [
+    "Multiline title, note, completion summary and memory round-trip; restricted plaintext never enters restored storage; rejecting redactor leaves all load state absent; load audit widening reason and restored UUID shape are validated"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review",
+    "snapshot",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented load review set A: multiline prose preserved, Restricted plaintext becomes audited placeholders, raw load strings pass Redactor, widening reason is bound, restored memory IDs are UUIDv8, and fallible head selection/facade cleanup are complete.",
+    "completed_at": "2026-09-04T20:36:10.899644200Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a46c3471f670f9a5dd0ed97bb67e789ca7b89cd884dff52f1c25ea1b9e9dacce": {
+        "activity_id": "a46c3471f670f9a5dd0ed97bb67e789ca7b89cd884dff52f1c25ea1b9e9dacce",
+        "task_id": "01a06e18-9c14-7922-baee-b0340dbca0df",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c9e227d737ba9f8a2d45cf62c45c0d4124fbd6625d911b1eecc8e7a6e7827058"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a1073f-b640-7710-9282-7792e6d5cf46",
+  "external_ref": null,
+  "title": "Keep newest native history under receipt byte pressure",
+  "outcome": "Keep newest native history under receipt byte pressure",
+  "acceptance": [
+    "Native core focus and terse show drop the oldest history rows first under byte pressure, retaining the newest events and reporting exact omission counts."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Next's focus shedding (trim_focus_once) and terse show (shed_show_context_once) now drop the oldest native history row first, keeping the newest events and counting each shed row; test newest_history pins retained positions and counts for both. Display only; no stored rows change. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T15:36:44.308130400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fce93e010e92482ebc22d5f593ceeacd": {
+        "activity_id": "fce93e010e92482ebc22d5f593ceeacd",
+        "task_id": "01a1073f-b640-7710-9282-7792e6d5cf46",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bf4c4f2f328f4062b5bad848bc4dee10"
+      }
+    }
+  }
+}

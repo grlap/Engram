@@ -1,0 +1,28 @@
+{
+  "id": "01a1c684-26d2-7ad0-b47d-4bcc1604568d",
+  "external_ref": null,
+  "title": "Say in the MCP `done` word's description that explicit links are refused under an evaluated acceptance policy",
+  "outcome": "Say in the MCP `done` word's description that explicit links are refused under an evaluated acceptance policy",
+  "acceptance": [
+    "The MCP `done` tool description (and the CLI `done --help`) states that under an evaluated acceptance policy `links` are not accepted and the evaluation's citations link the criteria, matching what `show` already prints (\"evaluated: done takes no --link\")",
+    "The refusal for links under an evaluated policy names that rule and says to retry without links"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-surface",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

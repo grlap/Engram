@@ -1,0 +1,53 @@
+{
+  "id": "01a0eb60-409b-7013-aa37-879c75f6e604",
+  "external_ref": null,
+  "title": "Amend the standing approval's reviewer condition in AGENTS.md and CLAUDE.md: a stand-in second reviewer of another vendor when Codex or Claude is unavailable, on Greg's word of 2026-09-29",
+  "outcome": "Amend the standing approval's reviewer condition in AGENTS.md and CLAUDE.md: a stand-in second reviewer of another vendor when Codex or Claude is unavailable, on Greg's word of 2026-09-29",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (byte-identical) carry, in Authority and Git, the amended standing-approval condition and its clarifications exactly as concurred on this item by Engram::Fable and Termal::Fable2 and sent to Greg before the landing; the approval clause reads: \"the latest review round from two independent read-only reviewers of different vendors, Codex and Claude, on a verified freeze of that same tree, is clean (no outstanding in-scope findings), and every in-scope finding from earlier rounds, Low and Note included, was fixed and reviewed again; while one of the two is unavailable (a usage limit or outage, recorded on the item with the refusal text), Kimi stands in for the unavailable vendor under Greg's word of 2026-09-29 ('if clean you have a go', 'you should just check-in, that should be the rule'), and every other condition is unchanged; any out-of-scope finding was filed as an independent root with provenance. An in-scope finding left unfixed, even one rejected on evidence, goes to Greg;\"",
+    "Docs-only gate (link check and AGENTS/CLAUDE identity through the focused launcher) and both review legs (Claude and the stand-in) clean on the exact tree; landing note quotes Greg's words with their time and session",
+    "Memory codex-usage-limit-kimi-second-reviewer is revised to point at the landed text"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The standing approval's reviewer condition now lets Kimi stand in for an unavailable review vendor (usage limit or outage met in the round, refusal recorded), on Greg's word of 2026-09-29, with the review workflow, commands and docs aligned; landed as fc3c3aa (docs only) with both coordinators' concurrence and the wording disclosed to Greg; memory codex-usage-limit-kimi-second-reviewer points at it.",
+    "completed_at": "2026-09-29T05:26:43.738991800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "35d308b1996c4e36b40991067bcee1ef": {
+        "activity_id": "35d308b1996c4e36b40991067bcee1ef",
+        "task_id": "01a0eb60-409b-7013-aa37-879c75f6e604",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0919d170e78d4e8d92a7e3974790feb9"
+      }
+    }
+  }
+}

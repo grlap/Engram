@@ -1,0 +1,27 @@
+{
+  "id": "01a18548-c4dc-7e53-a746-e7cab4687899",
+  "external_ref": null,
+  "title": "Clarify the Markdown validation command block introduction in review-changes",
+  "outcome": "Clarify the Markdown validation command block introduction in review-changes",
+  "acceptance": [
+    "The Markdown-only launcher command block is introduced as validation, and the separate Git review identity sentence ends independently rather than introducing that block."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "agent-instructions",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

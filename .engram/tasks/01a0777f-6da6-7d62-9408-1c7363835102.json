@@ -1,0 +1,24 @@
+{
+  "id": "01a0777f-6da6-7d62-9408-1c7363835102",
+  "external_ref": null,
+  "title": "Smoke replay: identical keyless child intent 1788711234",
+  "outcome": "Smoke replay: identical keyless child intent 1788711234",
+  "acceptance": [
+    "Smoke replay: identical keyless child intent 1788711234 is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke item, cancelled after verification",
+  "completion": null
+}

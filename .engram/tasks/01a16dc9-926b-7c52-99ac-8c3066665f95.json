@@ -1,0 +1,29 @@
+{
+  "id": "01a16dc9-926b-7c52-99ac-8c3066665f95",
+  "external_ref": null,
+  "title": "Reclaim MCP trace slots for ordinarily cancelled calls that rmcp drops without dispatch",
+  "outcome": "Reclaim MCP trace slots for ordinarily cancelled calls that rmcp drops without dispatch",
+  "acceptance": [
+    "Determine whether 256 ordinary client cancellations of distinct IDs, which permanently disable trace association, happen in real long-lived TermAl sessions, using trace evidence",
+    "If they do, propose a safe way to observe rmcp dropping a cancelled response, so its slot can be retired without the cross-generation hazard; otherwise record why the limit is acceptable"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "mcp",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

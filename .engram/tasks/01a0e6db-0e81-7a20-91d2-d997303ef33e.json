@@ -1,0 +1,49 @@
+{
+  "id": "01a0e6db-0e81-7a20-91d2-d997303ef33e",
+  "external_ref": null,
+  "title": "Live proof: a bound pass citing a check older than the judged source is refused (case D)",
+  "outcome": "A fixture for the installed build's case-D proof. It is cancelled once the proof is recorded on the item it serves.",
+  "acceptance": [
+    "A test run in the named source root passes on the source revision the evaluation judged."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 1,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "live-proof"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "live-proof fixture, purpose served",
+  "completion": null,
+  "activity": {
+    "central": {
+      "a6b49e9c1c4b46d891379791493f9d0e": {
+        "activity_id": "a6b49e9c1c4b46d891379791493f9d0e",
+        "task_id": "01a0e6db-0e81-7a20-91d2-d997303ef33e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "360fc7f34daf4834b5a2d7f6b254cd29"
+      }
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "id": "01a0e952-5c7f-7630-8c86-9e457cb544ca",
+  "external_ref": null,
+  "title": "A word that moves the session's focus says so in its receipt, including that host-observed checks now bind to the new focus's named source root",
+  "outcome": "A word that moves the session's focus says so in its receipt, including that host-observed checks now bind to the new focus's named source root",
+  "acceptance": [
+    "Successful claim, note, gate, evaluate and done calls that actually change this session's focus disclose a top-level transient focus_change with nullable from/to work refs. The old/new navigation and the new target's available live claim/fence and named workspace/generation are captured in the focus transaction. CLI text and MCP/JSON disclose the same change; unchanged calls omit it.",
+    "Regression tests cover initial focus, claim moving focus, a holder note/gate/evaluate targeting another held item, unchanged and non-holder calls, exact retry/replay, and completion of a target whose claim ends. A replay reports only navigation this invocation actually performed, never a retained earlier focus delta; an ended or unbindable claim gets no next-turn binding promise. Receipt size fitting preserves the change or a whole explicit bounded disclosure without a post-commit failure. scripts/mcp-dogfood.test.mjs specifically asserts the receipt change for a non-focused held-item note and a claim that moves focus.",
+    "docs/features/cli-and-mcp.md explains that the claiming turn keeps its admitted binding and that a live named target is a candidate for the next admission. The Engram receipt never claims that TermAl has already rebound. The item's holder note records the agreed TermAl fields and its separately owned next-admission proof contract (no current-turn notice, no notice for unchanged or absent live binding); this criterion concerns that agreed contract, with actual host execution owned by the separate TermAl item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "area-host-integration",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Claim, claim --under, note, gate, evaluate and done now disclose a transient top-level focus_change when they actually move this session's focus: from/to work refs, plus claim_id and claim_fence for a live claim of this session that session bind would accept, and workspace_id/generation for its bound named root (a name too long for JSON or shell text is given as workspace_id_omitted_bytes, its UTF-8 length).\n- Capture: storage records the move in the focus transaction, the claim's binding in the claim transaction and an ended claim at completion, each after commit, into a thread-local per-word journal. Nothing is stored, so a retry reports only its own move. Round trips and unchanged calls say nothing, and done names no binding.\n- Refusals: a word that moved focus and then refused carries the same change beside error (CLI JSON/MCP), with its own line on CLI text.\n- Text and fitting: one shell line that never says the host has rebound. Holder-map deviation, accepted by Engram::Fable (#1198): the receipt-text policy forbids a fence in shell text, so the fence appears only in JSON focus_change.claim_fence. evaluate/done fit to MAX-640.\n- Docs: docs/features/cli-and-mcp.md.\n- Landed as c568941 on master after: full gate test-5e5fb7c3 passed with before/after equal to freeze 7b6be136…1f01; round 1 Medium and Lows fixed; round 2 pair with no Medium or higher; independent Codex evaluation 3/3 (6d87272e3f574638b8c6a34f7ace55e5); readiness ready on Engram, PhoenixCodeNav, TermAl and CV.\n- Install: build ef86e39705cef4aed5d09948aaa7e952f61558bdef56e8f2786a4d271381867b, exe sha256 a45dc4eb1ed02d22aae3acb106210823a79e6333329ae54e0938999a5ba0ca84; previous binary backed up to C:\\Users\\grzeg\\.engram\\backups\\engram-20261003T173803Z-299298abf52d.exe.\n- The two round-2 Lows are filed as their own items after this completion.",
+    "completed_at": "2026-10-03T17:38:21.483550800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5565b9784a62446bbc5cc99b73f45ab7": {
+        "activity_id": "5565b9784a62446bbc5cc99b73f45ab7",
+        "task_id": "01a0e952-5c7f-7630-8c86-9e457cb544ca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "362ebd9cec414a15ade9c59f63fef1d6"
+      },
+      "ab9bebffe8794f0393942bf0eb3fa26e": {
+        "activity_id": "ab9bebffe8794f0393942bf0eb3fa26e",
+        "task_id": "01a0e952-5c7f-7630-8c86-9e457cb544ca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "9e1f1ed20de3485ab361f10cc718cd00"
+      },
+      "fee4f3983d8346dd9f8c9ee5e74d81fd": {
+        "activity_id": "fee4f3983d8346dd9f8c9ee5e74d81fd",
+        "task_id": "01a0e952-5c7f-7630-8c86-9e457cb544ca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1f1f89e7be89431f9451979bde8ee80d"
+      }
+    }
+  }
+}

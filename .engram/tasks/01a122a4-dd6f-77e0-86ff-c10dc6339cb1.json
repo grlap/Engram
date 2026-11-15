@@ -1,0 +1,27 @@
+{
+  "id": "01a122a4-dd6f-77e0-86ff-c10dc6339cb1",
+  "external_ref": null,
+  "title": "The priority refusal text differs between the verbs layer and the service/storage layer",
+  "outcome": "The priority refusal text differs between the verbs layer and the service/storage layer",
+  "acceptance": [
+    "An out-of-range priority is refused with the same text whichever layer catches it (verbs validate_priority and storage/shape validate_priority), with a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

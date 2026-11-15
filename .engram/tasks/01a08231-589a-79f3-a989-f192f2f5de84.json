@@ -1,0 +1,42 @@
+{
+  "id": "01a08231-589a-79f3-a989-f192f2f5de84",
+  "external_ref": null,
+  "title": "Evaluate a root-state commitment that permits exhaustive nonquadratic replay verification",
+  "outcome": "Evaluate a root-state commitment that permits exhaustive nonquadratic replay verification",
+  "acceptance": [
+    "Document the integrity contract change and derive node, byte, decode and memory bounds before implementation",
+    "Review deterministic add/remove, missing/extra members, generation and canonical-address invariants independently before authorizing a new commitment"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "architecture",
+    "area-performance",
+    "parked",
+    "performance",
+    "stream-performance-evidence"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-20f2-7a41-b730-3bf85a82768c",
+      "kind": "manual",
+      "detail": "Parked root-commitment research: awaiting explicit reactivation of the deferred checksum-contract investigation. Cleanup does not authorize its implementation or optional old-build experiment.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:04.646463700Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": "Decision NO (2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous): no exhaustive historical-head validation beyond the final-state audit; root_state.rs replays chain and member invariants and audits final state, and no demonstrated requirement justifies a commitment design.",
+  "completion": null
+}

@@ -1,0 +1,63 @@
+{
+  "id": "01a0de8b-e0fc-7e81-8b08-f5a03d78df72",
+  "external_ref": null,
+  "title": "An observation that claims no change but shows another revision does not stale an evaluation",
+  "outcome": "An observation that claims no change but shows another revision does not stale an evaluation",
+  "acceptance": [
+    "A test covers a check that sees the content at another revision after the basis, with no reported change, and the evaluation it makes stale",
+    "When the newest execution observation recorded after an evaluation's basis that carries a revision shows the source at a revision other than the one the evaluation judged, the basis has moved even if that observation claims no change. The judged revision is the one the evaluation declared, or else the revision the run was last seen at when the basis was cut (that of the newest execution observation at or before it that carries one)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 547b7bc on master and installed as build 9fcc9e5a5816.\n- An execution observation that claims no change but shows the source at a revision the evaluation did not judge now voids the evaluation at recording and makes it stale at completion.\n- The newest execution observation after the cut that carries a revision decides. A later sighting of the judged revision clears the move, and a reported change to the declared revision re-anchors the source.\n- Verification and environment records are never compared.\n- The judged revision is the declared one, or else the revision the run was last seen at when the cut was taken.\n- Tests in basis_moves.rs cover every branch and cite B20/B31. The docs (R-section, F3, B20, B31, shipped row) match the code.\n- Round-8 full gate passed on the committed tree, and round 8 was clean from both Codex and Claude after eight review rounds.\n- Readiness: the Engram store is ready and the schema is unchanged.\n- Independent Codex evaluation: 2/2 criteria pass.",
+    "completed_at": "2026-09-26T21:41:28.394823100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "133dae2daf084f999296d336b6e87662": {
+        "activity_id": "133dae2daf084f999296d336b6e87662",
+        "task_id": "01a0de8b-e0fc-7e81-8b08-f5a03d78df72",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "eda25245ed1c407ea95cfb5ab4966c9d"
+      },
+      "ef5ae146c3f74098909d00063eab913a": {
+        "activity_id": "ef5ae146c3f74098909d00063eab913a",
+        "task_id": "01a0de8b-e0fc-7e81-8b08-f5a03d78df72",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ef5ae146c3f74098909d00063eab913a"
+      }
+    }
+  }
+}

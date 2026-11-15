@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-5bb5-7d81-be2a-7c9a4004c72c",
+  "external_ref": null,
+  "title": "Test both source intake input size refusals",
+  "outcome": "Test both source intake input size refusals",
+  "acceptance": [
+    "Over-one-MiB reader and parser inputs are refused without persistence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Over-one-MiB inputs are refused by the shared parser and actual CLI reader with no persistence; Rust and Node regressions pass. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:50.515259Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0376e334623beefae0138b8b7cf3c6b7c54109d2fcf8f6ef5f1efd7be3dd3499": {
+        "activity_id": "0376e334623beefae0138b8b7cf3c6b7c54109d2fcf8f6ef5f1efd7be3dd3499",
+        "task_id": "01a07fb9-5bb5-7d81-be2a-7c9a4004c72c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "58d8e337a567cb1a0b3506ec26f20e6d31ce23badb789351c3c0f1cbe9a6d513"
+      }
+    }
+  }
+}

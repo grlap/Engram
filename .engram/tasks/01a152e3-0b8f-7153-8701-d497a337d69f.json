@@ -1,0 +1,29 @@
+{
+  "id": "01a152e3-0b8f-7153-8701-d497a337d69f",
+  "external_ref": null,
+  "title": "Folder import refreshes the work catalog per task through the unindexed FTS delete, so large imports scale quadratically",
+  "outcome": "Folder import refreshes the work catalog per task through the unindexed FTS delete, so large imports scale quadratically",
+  "acceptance": [
+    "Task-tree/folder import writes catalog search rows for newly imported tasks without a per-task full scan of work_catalog_fts (for example a one-pass empty-slot preflight plus restore-style catalog initialization, as graph loading does), and the comment beside the import's catalog write describes what it actually does",
+    "A test counts catalog FTS delete statements (or equivalent) during a multi-task folder import and shows they do not grow with the number of imported tasks"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

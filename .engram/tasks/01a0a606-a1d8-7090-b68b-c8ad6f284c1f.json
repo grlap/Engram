@@ -1,0 +1,62 @@
+{
+  "id": "01a0a606-a1d8-7090-b68b-c8ad6f284c1f",
+  "external_ref": null,
+  "title": "Status must refuse RollingBack and Activating file contradictions",
+  "outcome": "Status must refuse RollingBack and Activating file contradictions",
+  "acceptance": [
+    "Independent status cases refuse without inventory change for RollingBack missing original, corrupt retained, alias/no-follow, Activating missing-main dual and live-only SHM, and duplicate original."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a382-0b72-7803-8346-15c884db56ba",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against accepted evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:45:16.497912100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "adf3e896980ef964ee8930c5e8ff332cabf4c9c683c716a8e99a8c8e46f855ac": {
+        "activity_id": "adf3e896980ef964ee8930c5e8ff332cabf4c9c683c716a8e99a8c8e46f855ac",
+        "task_id": "01a0a606-a1d8-7090-b68b-c8ad6f284c1f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "363b93cb4be6f48ecaf4488c6392b8833a35d299117b770a99ec11f624054249"
+      },
+      "df3c372e934620f94f8aa5cc42be36271fcbc3c1269d510f3dfea4553bc8a2b3": {
+        "activity_id": "df3c372e934620f94f8aa5cc42be36271fcbc3c1269d510f3dfea4553bc8a2b3",
+        "task_id": "01a0a606-a1d8-7090-b68b-c8ad6f284c1f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "df3c372e934620f94f8aa5cc42be36271fcbc3c1269d510f3dfea4553bc8a2b3"
+      }
+    }
+  }
+}

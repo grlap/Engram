@@ -1,0 +1,29 @@
+{
+  "id": "01a07ad5-673f-7ba1-9a12-c233edfb1710",
+  "external_ref": null,
+  "title": "Reviewer lenses ask what a path does when it cannot get what it needs",
+  "outcome": "Reviewer lenses ask what a path does when it cannot get what it needs",
+  "acceptance": [
+    "The question names the four instances that produced it as concrete examples, so a reviewer recognizes the shape rather than reciting the rule",
+    "The reviewer lens files carry the two-pole question, so every delegated review asks whether a path that cannot obtain the strong notion it needs fails honestly, substitutes a weaker proxy while reporting success, or discards the work while reporting nothing wrong"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "review",
+    "stream-review-docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "NOT PLANNED, backlog hygiene sweep (Greg via Advisor #1072 and #1074; Engram::Fable, 2026-10-09 ~00:10Z). Its acceptance requires the four originating examples, which were never recorded (read-only check of 10-07, note 551ef6d9), and they cannot be reconstructed honestly now. Inventing them would misstate provenance. The reviewer lenses have since been reworked, so the value is obsolete as scoped. A future lens change can be filed fresh with real examples.",
+  "completion": null
+}

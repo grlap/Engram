@@ -1,0 +1,57 @@
+{
+  "id": "01a1c96f-0a7e-7cb0-aa22-8f127d78e960",
+  "external_ref": null,
+  "title": "Apply Greg's 60 s abort / 10 s warning rule to Engram's own operation time limits",
+  "outcome": "Apply Greg's 60 s abort / 10 s warning rule to Engram's own operation time limits",
+  "acceptance": [
+    "Every Engram limit that aborts, kills or resets an operation (for example SQLite busy or lock waits, subprocess and Git exchange deadlines, MCP or control call deadlines, launcher stage limits) is listed with its location and current value, and each is set to 60 s or justified on the item as not an operation-aborting limit",
+    "An operation still running after 10 s logs one warning naming the operation, without interrupting it",
+    "Changed limits keep their idempotency and exact-retry semantics: an operation aborted at 60 s leaves no partial durable write, and its retry neither duplicates nor misreports the outcome, shown by tests that observe behaviour"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "24e17e93d7404ebba9685c08e567b4f2": {
+        "activity_id": "24e17e93d7404ebba9685c08e567b4f2",
+        "task_id": "01a1c96f-0a7e-7cb0-aa22-8f127d78e960",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "24e17e93d7404ebba9685c08e567b4f2"
+      },
+      "9faf8015ac824ff3bc044d1881509c36": {
+        "activity_id": "9faf8015ac824ff3bc044d1881509c36",
+        "task_id": "01a1c96f-0a7e-7cb0-aa22-8f127d78e960",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9faf8015ac824ff3bc044d1881509c36"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a0a1db-ae40-7fb1-a62d-7d282824baac",
+  "external_ref": null,
+  "title": "Import complete current stores and preserve prior migration provenance",
+  "outcome": "The migration importer selects an explicit supported profile and round-trips current stores, including previously migrated stores, without losing durable rows or historical replay bindings.",
+  "acceptance": [
+    "Current-profile full archive imports to an absent destination with exact durable rows, canonical bytes, migration provenance, sequences and operational state preserved; rebuilt FTS is checked logically.",
+    "Existing aggregate-root conversion remains validated; profile selection and every table disposition are explicit, with unknown or partially supported profiles refusing before publication.",
+    "Populated tests cover current import twice, previous aggregate conversion provenance, pending deliveries and replay, and corruption or existing destination leaves no partial publication."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a1db-4dc0-70d2-abe1-0bb2120a6fc1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Current-profile import preserves durable rows and prior provenance; aggregate conversion and exhaustive dispositions remain; populated tests cover current twice, prior provenance, replay, and refuse-before-publication.",
+    "completed_at": "2026-09-15T00:01:31.335417Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "150fb014b8f3a25929acef49400a6b8fedaad442f142e870ecc864acf403a213": {
+        "activity_id": "150fb014b8f3a25929acef49400a6b8fedaad442f142e870ecc864acf403a213",
+        "task_id": "01a0a1db-ae40-7fb1-a62d-7d282824baac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "10d44685f8b6b369bf79b260d2e8c5823f9196163fa074026fd619672f5a54e7"
+      }
+    }
+  }
+}

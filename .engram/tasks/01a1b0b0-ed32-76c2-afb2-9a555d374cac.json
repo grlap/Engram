@@ -1,0 +1,29 @@
+{
+  "id": "01a1b0b0-ed32-76c2-afb2-9a555d374cac",
+  "external_ref": null,
+  "title": "Keep a bounded cause for unconfirmed own-run wait failures",
+  "outcome": "An uncertain host-wait result retains an enumerated non-sensitive cause so operators can distinguish transport, timeout, response and acknowledgement failures.",
+  "acceptance": [
+    "results.hostWait retains a bounded enumerated cause for timeout, transport failure, invalid response/status and invalid wait acknowledgement while preserving the public test-run-wait-unconfirmed outcome.",
+    "Summary/receipt prints only the enumerated cause and existing sanitized diagnostics; no raw exception or host body is exposed, and one-shot/no-retry behavior remains verified."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "launcher",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

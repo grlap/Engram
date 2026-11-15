@@ -1,0 +1,63 @@
+{
+  "id": "01a10455-ce7b-7a81-bd9c-9afb14c9f1d5",
+  "external_ref": null,
+  "title": "A replacement session's next shows no participated items for work its actor's earlier session took part in",
+  "outcome": "A replacement session's next shows no participated items for work its actor's earlier session took part in",
+  "acceptance": [
+    "A decision recorded on the item says whether next's participated section for a new session includes items its asserted (non-defaulted) actor took part in from another session, without implying authority or held claims; the code and a test follow it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "stream-recovery-continuity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A replacement session's next now lists, after its own participated rows and within the same five, open work its asserted, non-defaulted agent actor took part in from another session, labelled as same-actor continuity (never \"you\", no other session id), navigation only with no inherited claim or authority. Landed in fa1ef5b (bundle 10 changeset 2).",
+    "completed_at": "2026-10-05T01:05:50.924146100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "05b79e4413414173853b080316ea7d5b": {
+        "activity_id": "05b79e4413414173853b080316ea7d5b",
+        "task_id": "01a10455-ce7b-7a81-bd9c-9afb14c9f1d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "05b79e4413414173853b080316ea7d5b"
+      },
+      "a539d7fd12cc490fac0a64280ed2fe9d": {
+        "activity_id": "a539d7fd12cc490fac0a64280ed2fe9d",
+        "task_id": "01a10455-ce7b-7a81-bd9c-9afb14c9f1d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6ac6c732088a45c0a085e8d4999d74e9"
+      }
+    }
+  }
+}

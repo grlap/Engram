@@ -1,0 +1,30 @@
+{
+  "id": "01a1bcf3-e341-7802-aa9c-1dffbc40c3c5",
+  "external_ref": null,
+  "title": "Cover shared reroll, same-turn exemptions and observed source movement",
+  "outcome": "Cover shared reroll, same-turn exemptions and observed source movement",
+  "acceptance": [
+    "Behavioral tests show a shared changed report at the same identity does not enable a reroll, a different identity does, and an accounted unadmitted shared change remains qualifying evidence.",
+    "Behavioral tests show a passing same-source shared check after the cut is exempt through the same-turn rule while failed or other-source checks are not.",
+    "Behavioral tests for an observed shared check show a later different source moves it, a return to the original complete identity leaves it standing, and shared change records do not become an unrevised legacy change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "source-identity",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

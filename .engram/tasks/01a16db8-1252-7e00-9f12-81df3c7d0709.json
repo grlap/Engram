@@ -1,0 +1,90 @@
+{
+  "id": "01a16db8-1252-7e00-9f12-81df3c7d0709",
+  "external_ref": null,
+  "title": "Find what holds Engram's store write lock past the 10 s busy budget under multi-lane load",
+  "outcome": "Find what holds Engram's store write lock past the 10 s busy budget under multi-lane load",
+  "acceptance": [
+    "In a bounded seven-lane reproduction on a throwaway store under target/, concurrent with one already-authorized full-gate workload, ordinary verb writes retain their existing acquisition budgets; refusals can be correlated with observed contending transaction intervals where coverage permits, and missing or ambiguous holder evidence is explicitly unavailable. Operational-store observation is passive through supported Engram diagnostics only.",
+    "A regression test or measured reproduction is recorded with the before and after numbers"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "delivered",
+    "evaluation-pending",
+    "incident",
+    "throughput"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Writer-lock holders under multi-lane load are now identified by supported diagnostics while ordinary verb writes keep their acquisition budgets; a bounded seven-lane reproduction (224 calls, 0 refusals) and the known-holder two-process measurement are recorded, with their honest limits stated. Landed at 5160c093 (ancestor of e7426a6) and verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed both criteria (record bb3d9cda9fd342269f000f561b562eca).",
+    "completed_at": "2026-10-28T01:42:27.061334600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "477799da24d1466691d942c362134dda": {
+        "activity_id": "477799da24d1466691d942c362134dda",
+        "task_id": "01a16db8-1252-7e00-9f12-81df3c7d0709",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "82d41eb461114cfb9781fe9d623ad5b9"
+      },
+      "56dd35ea438241b2a38ca5988b07796d": {
+        "activity_id": "56dd35ea438241b2a38ca5988b07796d",
+        "task_id": "01a16db8-1252-7e00-9f12-81df3c7d0709",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "56dd35ea438241b2a38ca5988b07796d"
+      },
+      "82d41eb461114cfb9781fe9d623ad5b9": {
+        "activity_id": "82d41eb461114cfb9781fe9d623ad5b9",
+        "task_id": "01a16db8-1252-7e00-9f12-81df3c7d0709",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3a4cc7bf4eee4d48a09aaf0188988b74"
+      },
+      "e1c407bf58d943b8a461eeb684fc4bbb": {
+        "activity_id": "e1c407bf58d943b8a461eeb684fc4bbb",
+        "task_id": "01a16db8-1252-7e00-9f12-81df3c7d0709",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8c9752d955f74e6e93473dc08cae2b47"
+      }
+    }
+  }
+}

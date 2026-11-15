@@ -1,0 +1,50 @@
+{
+  "id": "01a07fe9-9979-7740-b2ec-938d861b461f",
+  "external_ref": null,
+  "title": "Pin defaulted attribution markers through the real service actor",
+  "outcome": "Pin defaulted attribution markers through the real service actor",
+  "acceptance": [
+    "renaming a defaulted marker fails a Rust gate using LocalWorkService actor"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Rust regression obtains attribution through real LocalWorkService.actor and pins default-marker retry normalization. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:53.837414500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "678cbe5d50deb8bef92e52dff29675bf9fcbf8d7a2ec66df82a1a8b1ffe761ca": {
+        "activity_id": "678cbe5d50deb8bef92e52dff29675bf9fcbf8d7a2ec66df82a1a8b1ffe761ca",
+        "task_id": "01a07fe9-9979-7740-b2ec-938d861b461f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "05afce94d0c48f946c538240f0c42cc6a113ea3b27b4fe3a13da66c83e95efd0"
+      }
+    }
+  }
+}

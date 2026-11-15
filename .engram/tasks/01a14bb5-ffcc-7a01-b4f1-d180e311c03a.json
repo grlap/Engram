@@ -1,0 +1,30 @@
+{
+  "id": "01a14bb5-ffcc-7a01-b4f1-d180e311c03a",
+  "external_ref": null,
+  "title": "Design (after foundations): capability- and capacity-aware work routing across a host cluster",
+  "outcome": "Design (after foundations): capability- and capacity-aware work routing across a host cluster",
+  "acceptance": [
+    "Started only after the foundations land: TermAl cross-host mailboxes, Engram decentralized Git task sync, and host onboarding",
+    "A design brief describes how work is organised and routed across hosts by declared capabilities and capacity while Engram stays decentralized and Git-merged, with no change to claims, runtime authority or authority gates",
+    "Both projects' architects concur and Greg accepts before any implementation is filed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "deferred",
+    "design",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

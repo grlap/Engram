@@ -1,0 +1,44 @@
+{
+  "id": "01a0dfca-8970-79a1-9345-825a397f088b",
+  "external_ref": null,
+  "title": "Unit tests in one process wait on SQLite's process-wide locks; decide how the bundled SQLite is compiled",
+  "outcome": "A measured decision on the bundled SQLite's compile flags, so that test threads beyond eight speed the gate up instead of slowing it down, without changing what the shipped binary guarantees.",
+  "acceptance": [
+    "A decision on compiling the bundled SQLite with SQLITE_DEFAULT_MEMSTATUS=0 is recorded with its measurements and with what the shipped binary loses (sqlite3_status memory counters, soft heap limit)",
+    "If flags change, the lib test binary's wall time at 24 threads is lower than at 8 threads on the same quiet host, and the default thread count is revisited",
+    "The second lock is identified by measurement (suspect: the shared page-cache group mutex that SQLITE_ENABLE_MEMORY_MANAGEMENT forces) and a decision on it is recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "test-infra"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "6d1614672bef415e90307180c06b3502": {
+        "activity_id": "6d1614672bef415e90307180c06b3502",
+        "task_id": "01a0dfca-8970-79a1-9345-825a397f088b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6d1614672bef415e90307180c06b3502"
+      }
+    }
+  }
+}

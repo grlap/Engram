@@ -1,0 +1,52 @@
+{
+  "id": "01a0790d-9303-7850-adea-ea899eac9833",
+  "external_ref": null,
+  "title": "Doctor verifies one read snapshot so a concurrent commit cannot produce false invalid findings",
+  "outcome": "Doctor verifies one read snapshot so a concurrent commit cannot produce false invalid findings",
+  "acceptance": [
+    "A test commits a completion between the object scan and the projection checks of a concurrent verification and the report stays healthy; the same commit before the verification also stays healthy",
+    "The doctor output names the snapshot it verified (object count and project feed position) so a later healthy run is comparable",
+    "verify_all and every integrity entry point run inside one read transaction (reusing an already active one), so a writer committing between the object scan and the projection checks changes nothing the verifier compares"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered one read snapshot across all integrity entry points and captured doctor snapshot disclosure, with deterministic completion interleaving and savepoint tests; landed e72f39c after nine gates and review closure.",
+    "completed_at": "2026-09-07T02:57:25.522406400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "05e60bc6de0d76227087e6aa7ef9a60a91d92069552a75c59acb82df1eaf753a": {
+        "activity_id": "05e60bc6de0d76227087e6aa7ef9a60a91d92069552a75c59acb82df1eaf753a",
+        "task_id": "01a0790d-9303-7850-adea-ea899eac9833",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a8801bba3fc77ccc48c78b810c21088dfb5ab3c47bd64038cd481cff99ce3792"
+      }
+    }
+  }
+}

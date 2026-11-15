@@ -1,0 +1,50 @@
+{
+  "id": "01a06811-d07a-73a0-91b7-84ea6b071c41",
+  "external_ref": null,
+  "title": "Preserve distinct peer attribution in terse show history",
+  "outcome": "Terse history lets an agent distinguish different peers consistently without exposing reusable raw actor or session identifiers.",
+  "acceptance": [
+    "Multi-peer history uses stable distinguishable labels that agree with sibling agent-word rendering."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered stable distinct project-scoped labels across peer history and sibling word rendering, with recorder-session evidence attribution and pairwise regressions. Fable independently verified five live notes across repeated reads plus mixed authorship: seven peer and five you, matching actual writers. All nine gates green and correction children complete. Installed build 6cd83bdf7600 from working tree, NOT committed to master; pre-swap MCP servers retain original build. Same-actor continuity signal remains an accepted cost and independent open follow-up.",
+    "completed_at": "2026-09-08T03:45:42.199358100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9b8e31ee3d3003223db725eebec9206b7a07700fb58d2f6bcc93d81c8ada1873": {
+        "activity_id": "9b8e31ee3d3003223db725eebec9206b7a07700fb58d2f6bcc93d81c8ada1873",
+        "task_id": "01a06811-d07a-73a0-91b7-84ea6b071c41",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e3cdfe50576e37c6bb448e473131a0c721d787cd0dc5ac8e33bc9215fd23c66d"
+      }
+    }
+  }
+}

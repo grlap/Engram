@@ -1,0 +1,30 @@
+{
+  "id": "01a0ae26-053f-7121-ae74-09f8e9323367",
+  "external_ref": null,
+  "title": "End-to-end: a port-PR task completes only after a real evaluator verdict and observed build evidence",
+  "outcome": "Strict end-to-end acceptance of the P0 outcome on a real port-PR task under an approved pilot policy, with retained evidence for every documented boundary; fixture coverage is not a substitute.",
+  "acceptance": [
+    "A real evaluator run shows pass, failed-build refusal, a non-build natural-language criterion, missing evidence, stale results and evaluator failure on a port-PR task, with evidence retained and the completion seal binding the passing evaluation",
+    "Documentation states which modes, hosts and policies were actually exercised"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "verification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

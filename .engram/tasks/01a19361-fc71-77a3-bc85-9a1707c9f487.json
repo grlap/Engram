@@ -1,0 +1,29 @@
+{
+  "id": "01a19361-fc71-77a3-bc85-9a1707c9f487",
+  "external_ref": null,
+  "title": "Build the producer that authorizes a successor session to read and retire a predecessor's operations during import reconciliation",
+  "outcome": "Build the producer that authorizes a successor session to read and retire a predecessor's operations during import reconciliation",
+  "acceptance": [
+    "A named, producer-owned record or host-channel receipt mints successor_authorization, and a verifier validates it under the same writer. It is defined jointly with TermAl: which side mints it, which side verifies it, and how its scope binds the predecessor's project, task, grant and owner.",
+    "A successor session can read and retire a predecessor's pending operations only through that validated authorization. Structural fields (predecessor_association, original_sessions, a non-empty ObjectId), the same actor label or a copied origin never grant it, with negative tests.",
+    "Any durable change is presented to Greg before landing, and ships inside the model-A durable release floor if old builds can't refuse it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

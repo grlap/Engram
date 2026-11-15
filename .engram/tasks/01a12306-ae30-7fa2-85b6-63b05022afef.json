@@ -1,0 +1,29 @@
+{
+  "id": "01a12306-ae30-7fa2-85b6-63b05022afef",
+  "external_ref": null,
+  "title": "Make the Windows abandonment relative-home fixture independent of root spelling",
+  "outcome": "Make the Windows abandonment relative-home fixture independent of root spelling",
+  "acceptance": [
+    "The relative-home abandonment regression constructs a supported relative home without assuming fixture_root.strip_prefix(current_dir) succeeds.",
+    "The fixture covers supported alternate Windows root spellings, including verbatim or case differences, without changing the process-wide current directory."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

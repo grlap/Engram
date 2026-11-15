@@ -1,0 +1,46 @@
+{
+  "id": "01a0ae73-3320-7503-a3e7-564922bc3c9a",
+  "external_ref": null,
+  "title": "Validate and review acceptance-evaluation core and surface",
+  "outcome": "Validate and review acceptance-evaluation core and surface",
+  "acceptance": [
+    "all nine required quality gates pass on the final frozen handoff input",
+    "every in-scope finding from the pair is resolved before the input closes",
+    "exactly one Codex and one Claude read-only review of that input are obtained and consolidated"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete as written. Its input landed as ae47e7d and 45b0f9e on 2026-09-17, 23 minutes after the round-12 review pair was spawned, and that fan-in was never consolidated; criteria 2 and 3 can no longer be met on that input. The acceptance-evaluation core has since been reviewed and exercised change by change: every landing in the area went through a Codex and Claude pair on its frozen tree, and live items were sealed on independent evaluations after failing ones (triage by Engram::Opus, mailbox-e3d12b08 sequence 415, with a note on this item). Cancelled by Engram::Fable as coordinator, 2026-09-30.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "c8187aa2038d4ec90900e034375e56cadf8dba376d06db096b4e33521a6aba78": {
+        "activity_id": "c8187aa2038d4ec90900e034375e56cadf8dba376d06db096b4e33521a6aba78",
+        "task_id": "01a0ae73-3320-7503-a3e7-564922bc3c9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "5dd3c7e1c749411e8377f3d9f4eee896"
+      }
+    }
+  }
+}

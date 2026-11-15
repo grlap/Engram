@@ -1,0 +1,82 @@
+{
+  "id": "01a0a272-a5e6-75e3-9485-f771ace3fc1a",
+  "external_ref": null,
+  "title": "Verify coordinated upgrade CLI and recovery boundaries",
+  "outcome": "Independent CLI tests exercise complete prepare/activate/finalize or rollback flows on isolated stores and reject contradictory recovery without touching originals.",
+  "acceptance": [
+    "CLI refuses missing offline acknowledgement and preserves an established source during prepare; committed WAL data survives the full flow.",
+    "Isolated end-to-end tests verify activated content, retained original and executable, repeat/recovery behavior, and rollback refusal after the durable resume boundary.",
+    "Required gates and exact Codex/Claude pair pass on the final input with process-crash versus power-loss limitations explicitly reported."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-review",
+    "area-storage",
+    "migration",
+    "stream-upgrade-closure"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0a1db-4dc0-70d2-abe1-0bb2120a6fc1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-2ce4-7f62-8f60-71b5ae8c6286",
+      "kind": "manual",
+      "detail": "Completion accounting awaits the required tests-first child's historical criterion-3 decision. V7 gates/review/rehearsal and Coder follow-up remain accepted with their recorded limits; no duplicate gate run is needed merely for cleanup.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:07.702163Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete: the coordinated prepare/activate/finalize/rollback CLI it verifies was removed in 54285f2; the current one-way export/import has its own coverage under the surviving parent scope. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "06324480629dca57b53b09e1a0a60e976cf0bccbd1c847cd21318569e9c681c2": {
+        "activity_id": "06324480629dca57b53b09e1a0a60e976cf0bccbd1c847cd21318569e9c681c2",
+        "task_id": "01a0a272-a5e6-75e3-9485-f771ace3fc1a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "06324480629dca57b53b09e1a0a60e976cf0bccbd1c847cd21318569e9c681c2"
+      },
+      "1974dfffbc94270f3a0b7b2c68551ff85528735d3db0a9ec299b163b491f5fdd": {
+        "activity_id": "1974dfffbc94270f3a0b7b2c68551ff85528735d3db0a9ec299b163b491f5fdd",
+        "task_id": "01a0a272-a5e6-75e3-9485-f771ace3fc1a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "cf55b5e7c350d58f7bc18820376b05b7bd2a14346adde8ec5b860385945987ed"
+      },
+      "a949335b8a08771ce0d5c35eb777ecb8d9807f65c8b06bb2d2df396695dc5bf1": {
+        "activity_id": "a949335b8a08771ce0d5c35eb777ecb8d9807f65c8b06bb2d2df396695dc5bf1",
+        "task_id": "01a0a272-a5e6-75e3-9485-f771ace3fc1a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a949335b8a08771ce0d5c35eb777ecb8d9807f65c8b06bb2d2df396695dc5bf1"
+      }
+    }
+  }
+}

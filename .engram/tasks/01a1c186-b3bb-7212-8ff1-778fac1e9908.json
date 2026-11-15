@@ -1,0 +1,54 @@
+{
+  "id": "01a1c186-b3bb-7212-8ff1-778fac1e9908",
+  "external_ref": null,
+  "title": "Preserve historical evidence IDs and reconcile shipped exchange contracts",
+  "outcome": "Preserve historical evidence IDs and reconcile shipped exchange contracts",
+  "acceptance": [
+    "Evidence envelopes export and import existing valid 32- or 64-character original record IDs unchanged, including a historical dependency in a selected native closure; new origin/pack identities retain their existing UUID requirements.",
+    "Focused behavior tests preserve the original historical ID and canonical bytes through pack roundtrip and the affected capture path, using runtime-derived fixtures rather than pinned hashes.",
+    "Host checklist and CLI/MCP reference describe sixteen ordinary MCP tools and six read-only tools, with explicit task-sync step/progress on the CLI/shared service and valid links.",
+    "Shipped, imported verification/acceptance, evidence persistence and Git sync docs consistently distinguish inert retention/qualification from explicit native consumption and completion, and describe commands and dedicated data-worktree output correctly."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved historical 32/64-character evidence IDs and canonical bytes throughout envelope and native dependency closure while retaining UUID requirements for new origins and packs. Added runtime-derived regression tests and corrected seven docs for inert retention versus explicit native consumption, dedicated data output and CLI-only exchange. Exact eleven-path e2fa contribution carried to parent. Fresh independent evaluation00925055a209434491d1b2454c0dee7f passed4/4 atcut215 on unchanged clean e2fa after root/revision recovery; full native packet/output recovered, source stale=null. Original hostless author envelope25/25, inventory4/4, nativecapture5/5, fmt/strictClippy/doclinks pass evidence retained. No new tests or source edits in recovery. Only owned repair completes; parent owns separate MCP narrowing, complete feature reviews/FULL/Windows/cutover. Three host-uncredited test obligations remain disclosed as untested. Retain source/root and original run artifacts until open parent's combined review need ends.",
+    "completed_at": "2026-11-09T19:11:37.004405700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "48ec4212800b463d9c75d93a1e1f568a": {
+        "activity_id": "48ec4212800b463d9c75d93a1e1f568a",
+        "task_id": "01a1c186-b3bb-7212-8ff1-778fac1e9908",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "60de0389b8914e8ebb22281c6ee8e59e"
+      }
+    }
+  }
+}

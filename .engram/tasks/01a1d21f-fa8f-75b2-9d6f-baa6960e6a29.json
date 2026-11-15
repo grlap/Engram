@@ -1,0 +1,225 @@
+{
+  "id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+  "external_ref": null,
+  "title": "Let any host edit, decompose and complete a synced task, not only the host that created it",
+  "outcome": "Let any host edit, decompose and complete a synced task, not only the host that created it",
+  "acceptance": [
+    "A planning edit (title, outcome, acceptance, priority, labels, assignment), a new child or prerequisite reference, and a completion made on host B to a task host A created import on A without an unsupported_origin refusal; the creator-host restriction and code that exists only to serve it are removed",
+    "One refused task never refuses the rest of the folder: changes that can apply do apply, and each held or refused task is reported visibly with its reason",
+    "Live claims and runs stay host-local and never transfer; an incoming change to a task with an active local run on the importing host follows the agreed hold rule visibly, and description sync is kept distinct from local execution state",
+    "Independent concurrent changes to the same task on different hosts are reported as explicit conflicts showing every side, never silently overwritten or dropped, including when the changes meet only after passing through other hosts",
+    "Behavior tests drive the full flow through the CLI over any host chain: a task created on A is imported on B, claimed, executed, changed and completed there (including work done while the hosts were disconnected), and after the return import A shows B's changes, completion and reported outcome; a three-host A→B→C→A chain carries changes made on each host back to A; plus the concurrent-change conflict case",
+    "A two-host demonstration of that A→B→A flow runs on real hosts (Windows and Mac) and its evidence is recorded on this item",
+    "docs/features/task-planning-text.md, docs/features/task-folder-relations.md and docs/shipped.md describe the new rule"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed after the fresh post-landing independent evaluation ab26b96e5d1a45e9ab49fe7ddf22f8b3 passed all 7 criteria on commit e67837ba59a9f4c6e0d54466f16324dcc0b64b21 (tree ea8cd612d619c8e31b523b17efdedf627e61ed26). The evaluation is newest and not stale. The evaluator's C6 access limitation is covered by the recorded Windows–Mac demonstration note db89b51780cd4174aefcf0e44a019008, which records the Mac edit/completion and Windows return import. The DL560 FULL landing gate passed on the exact tree; Central and DL560 installs/readiness were recorded with all checked live stores ready.",
+    "completed_at": "2026-11-15T02:19:28.919747300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "17e6df696ae147bc9f6e51358dffdd92": {
+        "activity_id": "17e6df696ae147bc9f6e51358dffdd92",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "873b3e050fec4a61969400a6c84d7540"
+      },
+      "183c349b2849430585ae416a04492fdd": {
+        "activity_id": "183c349b2849430585ae416a04492fdd",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "183c349b2849430585ae416a04492fdd"
+      },
+      "2bbc0ff35ec04fdea920d1f6d80d1159": {
+        "activity_id": "2bbc0ff35ec04fdea920d1f6d80d1159",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2bbc0ff35ec04fdea920d1f6d80d1159"
+      },
+      "460b832401c34f44b5e6304e32595b71": {
+        "activity_id": "460b832401c34f44b5e6304e32595b71",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d755eeec9fbf43d6a002d7efc6105dcd"
+      },
+      "588d291d8f8c4027aa5062a0ce0b7654": {
+        "activity_id": "588d291d8f8c4027aa5062a0ce0b7654",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f69e29335b1e4193b9b44e0dd9fc1b02"
+      },
+      "75bd30b0579043e68caf15895e47517e": {
+        "activity_id": "75bd30b0579043e68caf15895e47517e",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "75bd30b0579043e68caf15895e47517e"
+      },
+      "79ccae0b6e2b4c85a69efc95c61f0ad2": {
+        "activity_id": "79ccae0b6e2b4c85a69efc95c61f0ad2",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "79ccae0b6e2b4c85a69efc95c61f0ad2"
+      },
+      "7ff7a57cd05748efac8ad968cdeddabe": {
+        "activity_id": "7ff7a57cd05748efac8ad968cdeddabe",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7ff7a57cd05748efac8ad968cdeddabe"
+      },
+      "873b3e050fec4a61969400a6c84d7540": {
+        "activity_id": "873b3e050fec4a61969400a6c84d7540",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c7738732342c473d96d3f9fb346a3fa6"
+      },
+      "89234b64d6b24ff6b43beb70fd1b7855": {
+        "activity_id": "89234b64d6b24ff6b43beb70fd1b7855",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "17e6df696ae147bc9f6e51358dffdd92"
+      },
+      "9503e7e321dc48b19f41ef7c7522ff8a": {
+        "activity_id": "9503e7e321dc48b19f41ef7c7522ff8a",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "89234b64d6b24ff6b43beb70fd1b7855"
+      },
+      "b5015209ba8a4017bb82c2a7968407b5": {
+        "activity_id": "b5015209ba8a4017bb82c2a7968407b5",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b5015209ba8a4017bb82c2a7968407b5"
+      },
+      "c7738732342c473d96d3f9fb346a3fa6": {
+        "activity_id": "c7738732342c473d96d3f9fb346a3fa6",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b5015209ba8a4017bb82c2a7968407b5"
+      },
+      "f42c3fd0a4754257992e7b1ce49d2a6e": {
+        "activity_id": "f42c3fd0a4754257992e7b1ce49d2a6e",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f42c3fd0a4754257992e7b1ce49d2a6e"
+      },
+      "fd4cd502e9c24a1fb45b4826ce292d94": {
+        "activity_id": "fd4cd502e9c24a1fb45b4826ce292d94",
+        "task_id": "01a1d21f-fa8f-75b2-9d6f-baa6960e6a29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "460b832401c34f44b5e6304e32595b71"
+      }
+    }
+  }
+}

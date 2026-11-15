@@ -1,0 +1,28 @@
+{
+  "id": "01a1b463-30b8-7983-84d1-9077236a5859",
+  "external_ref": null,
+  "title": "Bound launcher metadata so oversized stage plans still leave readable terminal evidence",
+  "outcome": "Launcher metadata that exceeds the host artifact envelope is handled explicitly without oversized unreadable records or silently dropped stage facts.",
+  "acceptance": [
+    "Define and enforce an explicit byte-bounded contract for stage-plan and terminal metadata independent of source_id capacity, preserving actual stage outcomes and refusing unsupported metadata before execution where possible",
+    "Cover metadata-only overflow with both source endpoints absent, including a large stage plan, and verify a bounded readable refusal or documented unavailable outcome without silent fact truncation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "artifact-bounds",
+    "launcher-tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

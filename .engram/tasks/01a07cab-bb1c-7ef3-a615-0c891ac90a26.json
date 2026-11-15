@@ -1,0 +1,52 @@
+{
+  "id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+  "external_ref": null,
+  "title": "A store this build does not recognize is called corrupt and told to restore or re-initialize",
+  "outcome": "A store carrying schema this build does not own is described as what it is, so nobody destroys live work by following the refusal text; the refusal stays a refusal and still never opens or mutates such a store",
+  "acceptance": [
+    "Opening a store with schema objects this build does not own refuses with text that names running the build that owns the store, and never names re-initialization or restoring a backup as the remedy",
+    "Regression: a store carrying one extra index this build does not own reproduces both surfaces, and a genuinely corrupt store still reports corruption",
+    "doctor and projection repair on the same store do not assert that its durable state is invalid or classify it as a corrupt store; the machine-readable code distinguishes unrecognized schema from corruption"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered safe different-build refusals with neutral typed errors and preserved host/MCP codes; literal SQLite names, typed FTS namespaces, orphan-owner checks, missing metadata and empty repair classified without mutation. Six required fixes completed. All nine block8 gates PASS and round5 Codex/Claude clean; parent retained-value closing and coordinator2349 accepted. Criterion links cite the existing holder acceptance note; they are author-linked evidence, not independent verification. No commit, push or install.",
+    "completed_at": "2026-09-11T10:12:18.468627300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "affc80680210e58148d5914698cc3b40e9f90dbba4caa20b1833e4127699eeea": {
+        "activity_id": "affc80680210e58148d5914698cc3b40e9f90dbba4caa20b1833e4127699eeea",
+        "task_id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8845671fab219bd419e3ff99d4b91b702dd4100d87d41aeed088509f3f890d19"
+      }
+    }
+  }
+}

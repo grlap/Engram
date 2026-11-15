@@ -1,0 +1,50 @@
+{
+  "id": "01a1073f-b62f-79a0-97be-7b26c6af4b43",
+  "external_ref": null,
+  "title": "Share planning-field and cleared-blocker facts for history rendering",
+  "outcome": "Share planning-field and cleared-blocker facts for history rendering",
+  "acceptance": [
+    "Stored WorkChangeSummary and transient HistoryDisplay reuse one facts derivation with unchanged stored bytes, avoiding duplicate planning and blocker reads."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "HistoryDisplay::load is the single read of a history event's planning-field and cleared-blocker facts; stored_summary() builds the stored WorkChangeSummary from them with the unchanged builder, and fresh delivery, focus history and record windows each load once. Stored and delivered bytes unchanged. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T15:36:47.506496700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b7d556ffd82a4cb09c9277590118281a": {
+        "activity_id": "b7d556ffd82a4cb09c9277590118281a",
+        "task_id": "01a1073f-b62f-79a0-97be-7b26c6af4b43",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d8cc7582d9d34287a778b23e2e9113f8"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a13023-46de-70b1-ba6c-2bf911b13753",
+  "external_ref": null,
+  "title": "Retained imported shared notes export as stored without the author policy reapplied",
+  "outcome": "Retained imported shared notes export as stored without the author policy reapplied",
+  "acceptance": [
+    "A decision records whether retained (previously imported) shared notes whose author would now be refused by the author policy keep exporting as stored, are omitted with a counted reason, or need another treatment, consistent with how retained activity is already filtered on export",
+    "If filtering is chosen, a test shows a retained note with a path-shaped author omitted on export with no body or id in the shared bytes, and stored rows unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

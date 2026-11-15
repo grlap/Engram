@@ -1,0 +1,30 @@
+{
+  "id": "01a150f3-c5a4-7be3-8255-b3f51f69c13e",
+  "external_ref": null,
+  "title": "Provide host-backed POSIX process containment for stopping detached test gates",
+  "outcome": "Provide host-backed POSIX process containment for stopping detached test gates",
+  "acceptance": [
+    "Define and implement a supported containment capability for POSIX detached test gates, including descendants that create new sessions or process groups; unsupported hosts refuse stop without claiming cleanup.",
+    "Tests prove contained detached descendants have exited before interruption is saved or notified, including parent-exit and completion races, while unrelated processes remain alive.",
+    "Use the existing interrupted result and notification contract; document required host delegation and platform limits without requiring global changes implicitly."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "gate",
+    "platform"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

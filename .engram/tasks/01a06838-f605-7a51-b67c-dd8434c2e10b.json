@@ -1,0 +1,49 @@
+{
+  "id": "01a06838-f605-7a51-b67c-dd8434c2e10b",
+  "external_ref": null,
+  "title": "scratch: waiver word check",
+  "outcome": "scratch: waiver word check",
+  "acceptance": [
+    "scratch: waiver word check is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 4,
+  "labels": [
+    "scratch"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "scratch: parent completes after the waiver word",
+    "completed_at": "2026-09-03T17:02:49.693258400Z",
+    "actor": {
+      "actor_id": "fable",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e2ddcdccd02a09a469fc5f9280f7f683901d23e00e6615f332585b7811c96377": {
+        "activity_id": "e2ddcdccd02a09a469fc5f9280f7f683901d23e00e6615f332585b7811c96377",
+        "task_id": "01a06838-f605-7a51-b67c-dd8434c2e10b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c552d1170adfd0e72660aba21cae6645bd13d619e26b364a814113ed227bc544"
+      }
+    }
+  }
+}

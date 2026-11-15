@@ -1,0 +1,49 @@
+{
+  "id": "01a09de4-95cb-7a60-a5d7-aa717a69a0eb",
+  "external_ref": null,
+  "title": "Publish and install accepted response-budget V9",
+  "outcome": "Publish and install accepted response-budget V9",
+  "acceptance": [
+    "Commit exactly accepted V9, verify pushed master against live origin, install its release binary safely, and report doctor and smoke results with any stale MCP processes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "delivery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Committed and pushed accepted V9, verified live remote sync, installed release safely with backup, and passed candidate/installed doctors plus smoke and non-advancing live peek. No stale MCP observed; TermAl not stopped.",
+    "completed_at": "2026-09-14T03:18:29.322637800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "59e6378e378bd183b4ea4a92ae4a7e1184673df55bbce33f6f11a2b278358e19": {
+        "activity_id": "59e6378e378bd183b4ea4a92ae4a7e1184673df55bbce33f6f11a2b278358e19",
+        "task_id": "01a09de4-95cb-7a60-a5d7-aa717a69a0eb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "831592a20db8562c4139882428251eb8f3e37270c7f79c2f9f551efa6d40901b"
+      }
+    }
+  }
+}

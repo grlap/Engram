@@ -1,0 +1,28 @@
+{
+  "id": "01a0fc90-f813-7e00-8bed-7529226f1562",
+  "external_ref": null,
+  "title": "Landing instructions: build the installed Engram binary after the commit and check that it names the landed commit without +dirty",
+  "outcome": "Landing instructions: build the installed Engram binary after the commit and check that it names the landed commit without +dirty",
+  "acceptance": [
+    "The landing record checks that `engram readiness --json` run with the installed binary reports build.source_revision equal to the landed commit, with no +dirty marker",
+    "The landing steps in .claude/commands/review-changes.md (and AGENTS.md/CLAUDE.md where they describe the install) say to build the installed release binary after committing the gated tree, from the committed content"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "process",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

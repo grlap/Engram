@@ -1,0 +1,51 @@
+{
+  "id": "01a072c5-51a7-7663-9053-211a3b633fa4",
+  "external_ref": null,
+  "title": "Replace simplified website marginalia with detailed manuscript artwork",
+  "outcome": "Replace simplified website marginalia with detailed manuscript artwork",
+  "acceptance": [
+    "All three folios retain their page navigation, accessible controls, and responsive behavior",
+    "Margin illustrations match the fine penwork, dense manuscript notes, and crosshatching of the existing hero artwork",
+    "Required repository gates and focused browser checks pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered six detailed manuscript margin illustrations, integrated them into all three responsive folios, removed the simplified sketches and faux handwriting treatment, and documented their exact generation prompts. All nine required repository gates, browser navigation checks, accessibility scans, JavaScript syntax, and diff checks passed.",
+    "completed_at": "2026-09-05T18:30:09.783186Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "744734e3efca4db3f75fc5a08d8dabe14b2422e0f3837f088b6bd8fee33997a4": {
+        "activity_id": "744734e3efca4db3f75fc5a08d8dabe14b2422e0f3837f088b6bd8fee33997a4",
+        "task_id": "01a072c5-51a7-7663-9053-211a3b633fa4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c3309f7218f826ff7d5e79ae50c34ef894dab222494e5ed0724961f655392f46"
+      }
+    }
+  }
+}

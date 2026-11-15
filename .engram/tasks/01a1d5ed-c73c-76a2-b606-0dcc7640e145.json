@@ -1,0 +1,27 @@
+{
+  "id": "01a1d5ed-c73c-76a2-b606-0dcc7640e145",
+  "external_ref": null,
+  "title": "Refuse or refresh a stale project envelope when the explicit task-sync step admits a merged data commit, so a new host can join it",
+  "outcome": "Refuse or refresh a stale project envelope when the explicit task-sync step admits a merged data commit, so a new host can join it",
+  "acceptance": [
+    "The explicit `task-sync step` resolution request either refuses, by name, a merged data commit whose embedded .engram/project.json inventory is stale, or publishes it only with a checked derived refresh; a test shows that every commit the step path can publish is accepted by strict initial import on a fresh host"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

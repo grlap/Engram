@@ -1,0 +1,30 @@
+{
+  "id": "01a0fd1d-94ee-72e2-aa27-216d485cdfab",
+  "external_ref": null,
+  "title": "Freshness rule follow-ups: clock cases for every decisive time, Reason serialized as its code, `now` read after collect, and a target-set race in the collector",
+  "outcome": "Freshness rule follow-ups: clock cases for every decisive time, Reason serialized as its code, `now` read after collect, and a target-set race in the collector",
+  "acceptance": [
+    "A collector read that meets a configuration and a state of different identities, as during `target set`, reads the pair again once before it reports backup_record_unreadable, and a test covers it",
+    "A serialized freshness reason is its backup_* code, and a test pins the serialized form to Reason::code",
+    "The clock-invalid test puts the only future time in observed_equal_at, last_confirmation, the newest receipt's time and capture start, last_attempt.started_at and each configuration statement, and each reads backup_clock_invalid",
+    "The status and doctor readers take the clock after collecting the records, or collect returns the instant to use, and the freshness module documents the order"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

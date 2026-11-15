@@ -1,0 +1,27 @@
+{
+  "id": "01a17985-57a0-7950-a81e-d2e9aaedfb4e",
+  "external_ref": null,
+  "title": "Make worker phase merging track every Phase variant",
+  "outcome": "Make worker phase merging track every Phase variant",
+  "acceptance": [
+    "Adding a Phase variant cannot silently omit its blocking-worker timing during phase_trace::merge; current phase behavior remains unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "observability",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

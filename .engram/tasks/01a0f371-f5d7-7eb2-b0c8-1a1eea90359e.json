@@ -1,0 +1,50 @@
+{
+  "id": "01a0f371-f5d7-7eb2-b0c8-1a1eea90359e",
+  "external_ref": null,
+  "title": "The audit handoff should also send the message that carried each passage's wording to Greg",
+  "outcome": "The audit handoff should also send the message that carried each passage's wording to Greg",
+  "acceptance": [
+    "The audit handoff in .claude/commands/review-changes.md section 6 has the parent send the auditor, beside the frozen change, the fingerprint and the governing messages, the recorded message that carried each changed passage's final wording to Greg, with both projects' concurrence on the wording before it lands"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Audit handoff supplies the recorded message carrying each changed passage's final wording to Greg.",
+    "completed_at": "2026-10-10T04:58:08.506963600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ac254d2ee541438c93585d39b5195e44": {
+        "activity_id": "ac254d2ee541438c93585d39b5195e44",
+        "task_id": "01a0f371-f5d7-7eb2-b0c8-1a1eea90359e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3e3b60a263594389b6023ac816c0f53f"
+      }
+    }
+  }
+}

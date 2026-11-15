@@ -1,0 +1,64 @@
+{
+  "id": "01a1a7bb-675e-77e3-92c7-34e002899b9d",
+  "external_ref": null,
+  "title": "Have done name the worktree the claim used, so an agent is told to remove it when it closes",
+  "outcome": "Have done name the worktree the claim used, so an agent is told to remove it when it closes",
+  "acceptance": [
+    "When done completes an item whose claim has a named root, its receipt names that workspace in a reminder to remove it once it's served, and nothing is refused or removed by Engram",
+    "The reminder isn't repeated for an item whose named root is shared with another open claim of the same session, and a test shows both cases",
+    "Engram stays free of any filesystem deletion; CLI and MCP receipts match"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "greg-directed",
+    "housekeeping"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Candidate 9b9a25644baf85b220ffc2a86969bc9aee748136 (tree 1bbd4c4f, parent aacb1370): a successful done now reports the claim's named root bound at the seal's completion cut as named_root {workspace, shared_with_open_claim}, and adds one reminder to remove that worktree once nothing else needs it. The reminder is left out while another live claim of the same session names the same workspace. Engram deletes and inspects no file, and a failed read is disclosed as a reminder without affecting the completion. CLI and MCP render the same receipt; a test drives both, including the real MCP done tool. Evidence: review round 2 clean (Codex 17634, Claude 17635) on freeze 841db029; DL560 lib tests 718/0 (test-ac3abb1d); native named-root test test-e40b7ee9 (2/2, eligible); DL560 FULL test-192e986c PASS 12/12; independent evaluation 3/3 (Codex 17643).",
+    "completed_at": "2026-11-12T14:32:24.027975900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b85473f6ab16488e91a0ec0212a92095": {
+        "activity_id": "b85473f6ab16488e91a0ec0212a92095",
+        "task_id": "01a1a7bb-675e-77e3-92c7-34e002899b9d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "964570a8b39b47e2b25fef94147cb90b"
+      },
+      "e10e5078bc234db1ba9616b9d689ee16": {
+        "activity_id": "e10e5078bc234db1ba9616b9d689ee16",
+        "task_id": "01a1a7bb-675e-77e3-92c7-34e002899b9d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e10e5078bc234db1ba9616b9d689ee16"
+      }
+    }
+  }
+}

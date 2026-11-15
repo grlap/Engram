@@ -1,0 +1,30 @@
+{
+  "id": "01a1943a-2dbd-7ab1-bfbd-667e34a329c9",
+  "external_ref": null,
+  "title": "Isolate origin rewind and missing-witness regression refusal reasons",
+  "outcome": "Origin regression tests fail when their specific rewind or missing-witness check is removed, independently of retained-artifact refusal.",
+  "acceptance": [
+    "The same-origin database rewind test isolates or asserts the exchange-anchor divergence refusal, so leftover Git artifacts cannot satisfy it accidentally.",
+    "The export/import quarantine test asserts the missing-witness refusal specifically while preserving canonical IDs and bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "task-sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

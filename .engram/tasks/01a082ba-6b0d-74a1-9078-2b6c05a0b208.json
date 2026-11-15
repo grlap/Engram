@@ -1,0 +1,28 @@
+{
+  "id": "01a082ba-6b0d-74a1-9078-2b6c05a0b208",
+  "external_ref": null,
+  "title": "Two fault-injection tests now trip the member-key guard instead of the case they are named for",
+  "outcome": "Two fault-injection tests now trip the member-key guard instead of the case they are named for",
+  "acceptance": [
+    "Each test injects a canonically hashed member and asserts the exact refusal it is named for"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a082cb-313f-7ea2-8f8f-967a0a9db94d",
+  "disposal_reason": "Continue as independent work: an evidentiary gap in two fault-injection tests outlives the growth fix that revealed it",
+  "completion": null
+}

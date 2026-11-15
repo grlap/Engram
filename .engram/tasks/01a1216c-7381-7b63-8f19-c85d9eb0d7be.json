@@ -1,0 +1,51 @@
+{
+  "id": "01a1216c-7381-7b63-8f19-c85d9eb0d7be",
+  "external_ref": null,
+  "title": "Root-probe harness times out spawning pwsh to read a fixture ACL under host load",
+  "outcome": "Root-probe harness times out spawning pwsh to read a fixture ACL under host load",
+  "acceptance": [
+    "scripts/root-probe-harness.mjs no longer depends on spawning pwsh per fixture ACL read within a fixed timeout ('a create-denied root still resolves host identity, and agent/MCP succeed, without a WARNING' must not fail with spawnSync pwsh ETIMEDOUT): the ACL read avoids a per-read pwsh spawn, or its wait is bounded by a cause-specific limit with a distinct diagnostic. A deterministic test injects a slow or blocked ACL reader and shows the harness behaves correctly; no synthetic or concurrent full-gate load is used as evidence (Greg #1112)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "reliability",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Root probes reuse one bounded fixture-owned pwsh ACL reader with separate startup/read/close diagnostics, deterministic lifecycle tests and preserved ACL restoration/canaries.",
+    "completed_at": "2026-10-10T02:51:12.738455700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "712c195972cd4bedad2fbb9e62e3753c": {
+        "activity_id": "712c195972cd4bedad2fbb9e62e3753c",
+        "task_id": "01a1216c-7381-7b63-8f19-c85d9eb0d7be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bba1e96ceca946c984c2016189aefd19"
+      }
+    }
+  }
+}

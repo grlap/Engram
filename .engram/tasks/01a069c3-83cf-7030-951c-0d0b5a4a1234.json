@@ -1,0 +1,50 @@
+{
+  "id": "01a069c3-83cf-7030-951c-0d0b5a4a1234",
+  "external_ref": null,
+  "title": "Split src/storage.rs (19k lines) into src/storage/ submodules",
+  "outcome": "storage.rs becomes storage/mod.rs plus files per concern (open and schema guard, objects and canonical reads, task memory and notes, project memory, control tables, doctor and verify_all), tests beside their code",
+  "acceptance": [
+    "Mechanical moves only: git diff --color-moved shows moves; no signature, behavior, or public-path change",
+    "No file under src/storage/ exceeds 4000 lines; all nine gates pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f68e-7a02-a2a5-ff41bb615183",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Mechanically split src/storage.rs into storage/mod.rs and concern-owned modules with colocated tests, preserved public paths and effective visibility, updated ownership docs, and passed all nine gates plus clean Codex/Claude closure review.",
+    "completed_at": "2026-09-04T04:29:10.876519500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8620a651933adaf5f0f7d114eef4c0bc08dbac9d363ab43bf5c7e4c0e24accce": {
+        "activity_id": "8620a651933adaf5f0f7d114eef4c0bc08dbac9d363ab43bf5c7e4c0e24accce",
+        "task_id": "01a069c3-83cf-7030-951c-0d0b5a4a1234",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9a0d6ef9bb419f66e54c8cbe210b2fc0cdb06ce66e372e6590114dcdccaccfab"
+      }
+    }
+  }
+}

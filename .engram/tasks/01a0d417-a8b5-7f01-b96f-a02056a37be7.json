@@ -1,0 +1,53 @@
+{
+  "id": "01a0d417-a8b5-7f01-b96f-a02056a37be7",
+  "external_ref": null,
+  "title": "A work-item read outside a transaction can report false corruption during a concurrent commit",
+  "outcome": "A work-item read outside a transaction can report false corruption during a concurrent commit",
+  "acceptance": [
+    "The full quality gates pass and a Codex and a Claude review are clean",
+    "load_work_item and latest_canonical_work_event_for_item_optional read the item row, its latest-event binding and the project feed head from one consistent snapshot, even when their caller is in autocommit (as SqliteStore::get_work_item is), without changing any refusal a genuinely inconsistent store still produces",
+    "work_service::update::tests::concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded passes, and a deterministic regression test that commits a concurrent work event between load_work_item's reads (for example from a SQLite progress handler on the reading connection) fails before the fix and passes after it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "concurrency",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Reads that compare several statements now run on one commit state, so a concurrent commit can no longer look like corruption. In autocommit, load_work_item and the latest canonical event lookup each run through on_one_snapshot; inside a caller's transaction nothing changes. work_read_snapshot shares the same helper. work_completed_by_restored_record and required_child_successor also read on one snapshot. Two deterministic trace_v2 reproductions pin the fix, and each fails without its snapshot: an evidence commit before the feed-head read (\"latest-event binding differs from its indexed feed head\"), and a revision committed between the row and event reads (\"differs from its latest canonical event\"). Landed as 391169d; three review rounds, the final one with no Critical, High, Medium or Low findings; installed as build a4c0b90d94ef. Broader audit of other composite readers filed as w-f0ca1bb7ef80.",
+    "completed_at": "2026-09-25T04:42:12.893210400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fe52df05d35c41118ff1660a931d85a6": {
+        "activity_id": "fe52df05d35c41118ff1660a931d85a6",
+        "task_id": "01a0d417-a8b5-7f01-b96f-a02056a37be7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3c523a5ac59f4f5abbf79fbbbee16945"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a138e1-f52b-7983-9bf6-4ba3a40fab9b",
+  "external_ref": null,
+  "title": "Explain disabled preparation when an existing progress directory has no lock",
+  "outcome": "Explain disabled preparation when an existing progress directory has no lock",
+  "acceptance": [
+    "With task sync disabled and an existing empty progress directory, prepare refuses without creating or changing any state and explains that task sync is not enabled and no admitted pending preparation can recover.",
+    "The no-lock and no-generation paths give actionable opt-in or pending-recovery context while preserving the original I/O cause when applicable; a CLI regression covers the existing empty directory."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Disabled task preparation now explains opt-in and unavailable pending recovery while preserving native I/O causes; the six-case CLI regression verifies refusal without persistent state changes.",
+    "completed_at": "2026-10-14T18:48:22.588043400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cc5f411742874d5f8b1fdfe66e0a7886": {
+        "activity_id": "cc5f411742874d5f8b1fdfe66e0a7886",
+        "task_id": "01a138e1-f52b-7983-9bf6-4ba3a40fab9b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ffa4af0634ec497889566e19e3ac2038"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1319b-d2ff-7d83-b62b-6224586d6418",
+  "external_ref": null,
+  "title": "Validate the task-sync CLI host-path fixtures on macOS",
+  "outcome": "Validate the task-sync CLI host-path fixtures on macOS",
+  "acceptance": [
+    "On a macOS machine, at a master that contains the fixture fix and w-b411b3eb7443's setup fix, cargo test --test task_sync_activity_cli, --test task_sync_cli and --test task_sync_setup_cli pass, reported with the commit, the OS version and the counts (Greg's direction, Engram::Advisor 2026-10-12 #1291 and #1297)."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13212-d450-7341-a7f1-b411b3eb7443"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

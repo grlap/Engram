@@ -1,0 +1,56 @@
+{
+  "id": "01a10edb-96e2-7de0-966b-434bed0c58d2",
+  "external_ref": null,
+  "title": "An MCP next peek stayed pending for about two minutes while CLI reads answered promptly",
+  "outcome": "An MCP next peek stayed pending for about two minutes while CLI reads answered promptly",
+  "acceptance": [
+    "The next occurrence is captured with the opt-in MCP phase trace (or equivalent server-side per-call start, store-wait and finish times), and the cause is classified as Engram server or store wait, or as a delay before the request reached Engram, with that evidence",
+    "If the cause is inside Engram, it is fixed with a regression test; if it is outside, the timing evidence is sent to TermAl's coordinator and this item records the hand-off"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "dogfood",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a14da5-fd2d-75d1-bb93-f23254945062",
+      "kind": "manual",
+      "detail": "a recurrence captured with the new trace. Required child w-31e3e4594970 delivers instrumentation only under Fable3822 narrowing concurrence; original acceptance revision1 unchanged. No historical cause or completion claimed.",
+      "created_by": {
+        "actor_id": "greg/codex",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-18T06:14:46.298041500Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "f757f59a586f46aba3aee07c344870cf": {
+        "activity_id": "f757f59a586f46aba3aee07c344870cf",
+        "task_id": "01a10edb-96e2-7de0-966b-434bed0c58d2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f757f59a586f46aba3aee07c344870cf"
+      }
+    }
+  }
+}

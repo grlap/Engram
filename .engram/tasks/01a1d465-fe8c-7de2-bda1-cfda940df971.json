@@ -1,0 +1,28 @@
+{
+  "id": "01a1d465-fe8c-7de2-bda1-cfda940df971",
+  "external_ref": null,
+  "title": "Let launcher tests honor an explicit ENGRAM_SOURCE_BINARY instead of pinning target/debug",
+  "outcome": "Let launcher tests honor an explicit ENGRAM_SOURCE_BINARY instead of pinning target/debug",
+  "acceptance": [
+    "The launcher behaviour tests run in a cold worktree (no target/debug/engram.exe) when ENGRAM_SOURCE_BINARY names a built engram binary, and use that binary for source capture",
+    "Without ENGRAM_SOURCE_BINARY the tests keep their current default of <CARGO_TARGET_DIR or target>/debug/engram"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "gate",
+    "test-harness"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

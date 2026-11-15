@@ -1,0 +1,52 @@
+{
+  "id": "01a0af86-aabd-7510-a969-dd8762e9b218",
+  "external_ref": null,
+  "title": "A supplied blank evaluation mode is refused before effects; explicit clear and valid set stay",
+  "outcome": "A supplied blank evaluation mode is refused before effects; explicit clear and valid set stay",
+  "acceptance": [
+    "update REF --evaluation-mode with a blank or whitespace value refuses with InvalidWork before any effect: the pinned mode, the revision, and the run feed head stay unchanged; --clear-evaluation-mode (CLI) and the MCP evaluation_mode action with the mode omitted still clear as their documented explicit clear; a valid mode still sets; a word test covers all four and the docs say which form clears"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A supplied blank or whitespace evaluation mode refuses with InvalidWork before any effect; the explicit clear (CLI --clear-evaluation-mode, MCP omitted field) and a valid set are unchanged. Pinned by a_blank_evaluation_mode_is_refused_before_effects (RED logs/25, GREEN logs/26; final sequence logs/27 all pass).",
+    "completed_at": "2026-09-17T13:39:16.437039200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d22ff35ad24172f840ff7976c7ae6daf5c1b21d5e17686d1ae2c61d72f74a839": {
+        "activity_id": "d22ff35ad24172f840ff7976c7ae6daf5c1b21d5e17686d1ae2c61d72f74a839",
+        "task_id": "01a0af86-aabd-7510-a969-dd8762e9b218",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e0f0377dfba217788c163ebfa457e626b903953f0beaebba41d6d8f5ea6ffed5"
+      }
+    }
+  }
+}

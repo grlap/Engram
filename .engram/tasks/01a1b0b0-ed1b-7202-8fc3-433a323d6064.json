@@ -1,0 +1,29 @@
+{
+  "id": "01a1b0b0-ed1b-7202-8fc3-433a323d6064",
+  "external_ref": null,
+  "title": "Align native-wait status hints with the own-run completion route",
+  "outcome": "Registration receipts and summaries consistently distinguish registration eligibility from an installed host wait, and direct a root session to its supported own-run route.",
+  "acceptance": [
+    "Foreground and different-session registration status no longer recommends a self-send; registration-only wait eligibility is described consistently.",
+    "Unavailable and unconfirmed host-wait states render consistently in registration and host-wait lines, with focused assertions covering the wording."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "launcher",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

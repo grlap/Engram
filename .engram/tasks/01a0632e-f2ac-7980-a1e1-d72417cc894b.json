@@ -1,0 +1,78 @@
+{
+  "id": "01a0632e-f2ac-7980-a1e1-d72417cc894b",
+  "external_ref": null,
+  "title": "Greg decision pending: nightly publication scope; the other three decisions are recorded",
+  "outcome": "Greg decisions pending: close completed beads, status command, root-completion default authority, nightly publication scope",
+  "acceptance": [
+    "Agent status surface: the decision is recorded on this item — the three-layer split carried by the existing status surface, which is not a second tracker and not a mandatory summary generator",
+    "Beads remnants: their fate on this host and in this repository is confirmed and recorded, with anything still outstanding named rather than assumed absent",
+    "Nightly publication scope: either decided, or recorded as explicitly deferred with its reason, so that it is no longer carried as a pending decision",
+    "Root-completion default authority: the decision is recorded on this item — any project-bound session records reason-attributed waivers, and external publication remains a human decision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-docs-review",
+    "decision",
+    "stream-review-docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "All four decisions on this item are recorded. The agent status surface follows the three-layer split (Greg, 2026-09-08). Beads remnants are named: the bd CLI is kept because seven other projects on this host use Beads, and the leftover .gitignore block is tracked as a chore. Root-completion default authority is Greg's ruling of 2026-09-03. Nightly publication scope is explicitly deferred by Greg (2026-09-22, \"OK defer\") until publication is built. Accepted by an independent Codex evaluator through TermAl.",
+    "completed_at": "2026-09-23T03:55:47.039214100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "44d5ef3e4e19c622da72619dbcf3f37c8cdbed9b3fb1b65fcaf6c0c3403c2623": {
+        "activity_id": "44d5ef3e4e19c622da72619dbcf3f37c8cdbed9b3fb1b65fcaf6c0c3403c2623",
+        "task_id": "01a0632e-f2ac-7980-a1e1-d72417cc894b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "6254b7da7dd2f09af829abb18e3d822860d68d1195fa56171d2770e5fb611c0e"
+      },
+      "5897a2ee1a39338db200fb28b137bfc829c21c2d613cbf91c735c1fcfa91c0b2": {
+        "activity_id": "5897a2ee1a39338db200fb28b137bfc829c21c2d613cbf91c735c1fcfa91c0b2",
+        "task_id": "01a0632e-f2ac-7980-a1e1-d72417cc894b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8feae1dde6afc13177bfe47e0fd40c6a720ee8b9256134478bc9ee0e91d0f69e"
+      },
+      "872f368cff1547b99902ffcecd1258f8": {
+        "activity_id": "872f368cff1547b99902ffcecd1258f8",
+        "task_id": "01a0632e-f2ac-7980-a1e1-d72417cc894b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b0b39a519d4442709d70b1961f67aafc"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a06e4d-ce4c-7072-bebc-d4401f171d98",
+  "external_ref": null,
+  "title": "Projection verifier compares raw event bytes to a projection row the current build re-serialized: doctor flags a native item touched across builds and graph save refuses",
+  "outcome": "Projection verifier compares raw event bytes to a projection row the current build re-serialized: doctor flags a native item touched across builds and graph save refuses",
+  "acceptance": [
+    "projection equality decodes both the canonical event sub-document and the projection row into the typed value and compares structurally for items, runs, root executions, claims, handoffs, blockers, and seals; a store where an event was written without a defaulted field and the projection row was refreshed by the current build verifies healthy and saves; real drift in any field is still refused; the live Engram store's doctor reports healthy on the fixed build without repair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "gate",
+    "snapshot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Typed projection equality now allows omitted writer-materialized defaults while preserving present members and scalar encodings and rejecting duplicate known fields from original bytes. Canonical history and binding checks remain unchanged. Exact-label corruption regressions across seven families and all nine required gates pass; all required implementation children are sealed. Fable owns private-copy acceptance, landing, installation, and live verification.",
+    "completed_at": "2026-09-04T22:32:21.441494800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6cfbea1179e40592916fa1157ea7464d135728b31035fca6e3e1ac9de804f695": {
+        "activity_id": "6cfbea1179e40592916fa1157ea7464d135728b31035fca6e3e1ac9de804f695",
+        "task_id": "01a06e4d-ce4c-7072-bebc-d4401f171d98",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ca7e51f2a0065121f6fbb41642aeb603bb9feff7ec382b20fb938fc5274588df"
+      }
+    }
+  }
+}

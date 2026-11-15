@@ -1,0 +1,55 @@
+{
+  "id": "01a0c0c8-31bc-7260-8f02-c180bcec46eb",
+  "external_ref": null,
+  "title": "Finish record-id refusal and helper terminology cleanup",
+  "outcome": "Record-reference diagnostics and internal helper names describe ids rather than content digests, without changing accepted wire values or true fingerprint contracts.",
+  "acceptance": [
+    "Operator authority waive-obligation expected_definition parse failures say lowercase hex record id; regression coverage admits minted 32-hex and retained 64-hex ids and checks invalid-input guidance; removed host obligation_waive remains refused.",
+    "Record-id parse helpers and seal/observation/rule-set parameters use id terminology; genuinely compared fingerprint names and validation remain unchanged.",
+    "Required quality gates and paired review pass without serialized field/tag changes or altering graph format admission."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "identity",
+    "legacy",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Record-id refusal/help/helper terminology aligned with minted identities; preserved wire fields, CLI flags, compared fingerprints and graph admission. Round13 full gate and clean Codex/Claude reviews on exact input; independent evaluator passed all3 criteria. Fresh release55ef8b5313e7 readiness ready on Engram/Phoenix/TermAl, no durable/schema/projection derivation changes; install deferred under migration freeze.",
+    "completed_at": "2026-09-27T23:01:50.854941300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e5169d0b801f423ba84aa826dcef147d": {
+        "activity_id": "e5169d0b801f423ba84aa826dcef147d",
+        "task_id": "01a0c0c8-31bc-7260-8f02-c180bcec46eb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "71518f969b424ea68337ce2b9f53a675"
+      }
+    }
+  }
+}

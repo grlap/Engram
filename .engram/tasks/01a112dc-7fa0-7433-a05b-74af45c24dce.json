@@ -1,0 +1,50 @@
+{
+  "id": "01a112dc-7fa0-7433-a05b-74af45c24dce",
+  "external_ref": null,
+  "title": "Document incoming handoffs in compact recovery change retention",
+  "outcome": "Document incoming handoffs in compact recovery change retention",
+  "acceptance": [
+    "Both compact-peek change-retention contracts name shown incoming handoffs alongside focus, held and assigned subjects, matching the implemented relevance set."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented incoming handoffs in compact relevance selection before byte fitting and later independent row shedding.",
+    "completed_at": "2026-10-09T03:05:36.014928100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "147c4a40de2e461aa4a4254d06872e97": {
+        "activity_id": "147c4a40de2e461aa4a4254d06872e97",
+        "task_id": "01a112dc-7fa0-7433-a05b-74af45c24dce",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b995d0bdb64a46308b9121e58eb86829"
+      }
+    }
+  }
+}

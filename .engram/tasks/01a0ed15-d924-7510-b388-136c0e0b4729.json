@@ -1,0 +1,88 @@
+{
+  "id": "01a0ed15-d924-7510-b388-136c0e0b4729",
+  "external_ref": null,
+  "title": "Name the acceptance evaluation's record id as an id, not \"hash\", in show, show --full, next and the evaluate receipt",
+  "outcome": "Name the acceptance evaluation's record id as an id, not \"hash\", in show, show --full, next and the evaluate receipt",
+  "acceptance": [
+    "The minted acceptance evaluation id is named evaluation in current-evaluation show, compact next and normal/minimal evaluate JSON/MCP receipts, and in complete evaluation detail/window output. CLI text/docs call it an evaluation or record id. Those evaluation projections contain no hash label for that id after the final cut; genuine source/content fingerprints and stored records/links keep their meanings. show --full preserves its existing complete contract and evaluation/verdict/carried-failure data when present; its work.evaluation object participates in the same field transition.",
+    "Reader transition is recorded on this item's holder notes: Engram first adds evaluation beside hash where the old label exists; TermAl then prefers evaluation and falls back to hash only when evaluation is absent. Engram removes hash only after TermAl's owner confirms that reader is landed AND running after restart, quoting the running build fingerprint. The owner records a separate TermAl fallback-removal follow-up, ordered after Engram's removal. Interim additive output does not satisfy the final no-hash criterion.",
+    "Regression coverage checks equal ids during the additive phase, final omission of hash, normal/minimal and replayed receipts, show/detail/windows/next consistency, and references to superseded/carried evaluations. Record ids, historical canonical receipts and evaluation contents are unchanged, and response fitting stays within its existing budget."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered final evaluation-ID naming across show/full/detail/windows/next and normal/minimal/replayed CLI/MCP receipts, preserving complete metadata, stored record identity and budgets. Recorded the finite additive -> TermAl landed-and-running preferred reader -> final alias removal rollout and separate ordered fallback follow-up. Both required children are completed; independent parent acceptance 0a4079cce9d14e1c91fb52c052a52d2f freshly passed all 3 unchanged criteria on source854b526a. Historical obligations retain their automatic truthful displacement/baseline accounting. This parent closeout introduces no source change or new landing.",
+    "completed_at": "2026-10-08T14:56:22.824775800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d2d5dfa6295b4d6d90902e718036fd2a": {
+        "activity_id": "d2d5dfa6295b4d6d90902e718036fd2a",
+        "task_id": "01a0ed15-d924-7510-b388-136c0e0b4729",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d2d5dfa6295b4d6d90902e718036fd2a"
+      },
+      "d6be0f3cf2b344dcb3d5dac99c7d6a61": {
+        "activity_id": "d6be0f3cf2b344dcb3d5dac99c7d6a61",
+        "task_id": "01a0ed15-d924-7510-b388-136c0e0b4729",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "cd2be1b25e4b431f992f73f77704c036"
+      },
+      "e4d464f9646743f5aac2d09463fe4cec": {
+        "activity_id": "e4d464f9646743f5aac2d09463fe4cec",
+        "task_id": "01a0ed15-d924-7510-b388-136c0e0b4729",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "244cb856a44e44e4853c7f263d39437d"
+      },
+      "f3f7e102cbe542729d183521f91fbcf7": {
+        "activity_id": "f3f7e102cbe542729d183521f91fbcf7",
+        "task_id": "01a0ed15-d924-7510-b388-136c0e0b4729",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9c02e4cc59e34e6aaf30ec78805c2479"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a102d8-9a30-78c0-a0c7-c20b0df7f3e0",
+  "external_ref": null,
+  "title": "The focus-change text line states the host's next-turn binding as fact rather than as a candidate",
+  "outcome": "The focus-change text line states the host's next-turn binding as fact rather than as a candidate",
+  "acceptance": [
+    "The focus-change text line no longer states that the host will bind the target's claim; it presents the target's claim and named root as the host's candidate for its next admission, in wording agreed with Termal::Fable2, with the src/verbs/focus_change.rs line, docs/features/cli-and-mcp.md example and the tests in src/verbs/tests/focus_change.rs and scripts/mcp-dogfood.test.mjs updated to match"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

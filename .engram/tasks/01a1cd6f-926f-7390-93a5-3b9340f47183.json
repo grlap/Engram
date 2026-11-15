@@ -1,0 +1,115 @@
+{
+  "id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+  "external_ref": null,
+  "title": "Land the remote focused verification change (candidate cc1aa93a, w-180d6f507470) on master after the sync landing",
+  "outcome": "Land the remote focused verification change (candidate cc1aa93a, w-180d6f507470) on master after the sync landing",
+  "acceptance": [
+    "After the task-sync changeset (aacb1370) lands, the reviewed change of candidate cc1aa93a (w-180d6f507470) is carried onto the then-current master as a fresh candidate. That candidate passes the full gate on its exact commit. Before installing, remote_verification_association rows are re-counted on every live store and are 0 (any row is investigated first). The change is then fast-forwarded to master, pushed and installed under the standing approval."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "landing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "28cc45d515ac4122b4c65afb3e1bcdad": {
+        "activity_id": "28cc45d515ac4122b4c65afb3e1bcdad",
+        "task_id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "28cc45d515ac4122b4c65afb3e1bcdad"
+      },
+      "35a65aab87654af0a1d016a2bc6f6550": {
+        "activity_id": "35a65aab87654af0a1d016a2bc6f6550",
+        "task_id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "35a65aab87654af0a1d016a2bc6f6550"
+      },
+      "713f0f67589044f19d6d19a180488832": {
+        "activity_id": "713f0f67589044f19d6d19a180488832",
+        "task_id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "713f0f67589044f19d6d19a180488832"
+      },
+      "799d3ea7ed684956adf623ba672177e8": {
+        "activity_id": "799d3ea7ed684956adf623ba672177e8",
+        "task_id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "799d3ea7ed684956adf623ba672177e8"
+      },
+      "9767ff06a11e429daaf7a0cab71e6b1f": {
+        "activity_id": "9767ff06a11e429daaf7a0cab71e6b1f",
+        "task_id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9767ff06a11e429daaf7a0cab71e6b1f"
+      },
+      "b3a3a32568c341679debf38be78efbd0": {
+        "activity_id": "b3a3a32568c341679debf38be78efbd0",
+        "task_id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b3a3a32568c341679debf38be78efbd0"
+      },
+      "d69d8c540ff34ecc80e02286e5792b65": {
+        "activity_id": "d69d8c540ff34ecc80e02286e5792b65",
+        "task_id": "01a1cd6f-926f-7390-93a5-3b9340f47183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d69d8c540ff34ecc80e02286e5792b65"
+      }
+    }
+  }
+}

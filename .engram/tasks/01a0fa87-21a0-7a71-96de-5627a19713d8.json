@@ -1,0 +1,53 @@
+{
+  "id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "external_ref": null,
+  "title": "Off-host backup: full-store copy to a directory target, honest local_backed_up",
+  "outcome": "A project's store is copied whole to a configured directory target on the host's cadence, restored onto a clean home on demand, and reported as local_backed_up only under the rule in docs/features/off-host-backup.md, always with its off-host assurance.",
+  "acceptance": [
+    "`engram backup push` writes a verified full-store copy, gzip-compressed, to a configured directory target and records a receipt; the store-equality test in the repository passes: a copy pushed from a source, restored with `engram backup restore` into a second clean home, yields exported rows equal to the rows exported from the source before the push",
+    "`engram backup status` and `engram doctor` report `local_backed_up` only when the freshness rule in docs/features/off-host-backup.md holds, and print \"off-host asserted; not verified\" beside the mode for a directory target; a table test over the rule covers `local_backed_up` and every named reason",
+    "A failed push, a refused capture, a missing copy and a stale copy are each visible in `backup status`, in `doctor` and as one reminder line in `next`, and tests in the repository cover each case",
+    "docs/shipped.md has a row for each shipped backup word, and the accepted-risk sentence in docs/roadmap.md says what the shipped feature does and does not protect against"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Off-host backup epic delivered. The store copy at a directory target, with honest local_backed_up, push, status, doctor/next reporting, restore and docs, landed across ba2e919, c562a70, ad70ec6, bcf4f5a and ca0af27. The final changeset, the visibility tests (tests/backup_visibility_cli.rs), landed as 5da6a4e. Gate test-3353e20f passed on freeze 9ab69724; the review pair found nothing Medium or higher; the independent evaluation 4e633094 passed 4/4. Readiness was ready on all 4 stores; build 92d7b912734d installed.",
+    "completed_at": "2026-10-02T22:05:08.246969100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "105b39bb6d9b4876acd70cac77156664": {
+        "activity_id": "105b39bb6d9b4876acd70cac77156664",
+        "task_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e04df19ded7a447c8d4dc65611b934a2"
+      }
+    }
+  }
+}

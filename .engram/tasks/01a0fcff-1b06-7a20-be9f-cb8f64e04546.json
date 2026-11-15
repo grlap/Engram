@@ -1,0 +1,52 @@
+{
+  "id": "01a0fcff-1b06-7a20-be9f-cb8f64e04546",
+  "external_ref": null,
+  "title": "Backup evidence: the newest copy's last confirmation and missing finding, recorded by push",
+  "outcome": "Backup evidence: the newest copy's last confirmation and missing finding, recorded by push",
+  "acceptance": [
+    "The library's state record (`TargetState`) holds two required fields, present as null when empty: the last confirmation of the newest receipt's copy with its time, and a finding that the newest receipt's copy is missing with its time and reason, each naming the copy and target identity of the receipt it concerns; a state whose confirmation or missing finding names another copy than the newest receipt's is refused with `backup_record_unreadable`; a test covers both",
+    "When a push's confirmation finds the newest receipt's copy missing, the push records that finding with its time and reason before it prepares the replacement, so a replacement that then fails leaves the finding recorded and the earlier receipt still named as missing; a test shows this with a replacement put that fails",
+    "`engram backup push` records the confirmation time for the newest receipt and clears any missing finding after an upload, after a capture equal to the newest copy that the target confirmed, and after recovering a pending attempt that the target confirmed; a test covers each of the three"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-e4c5-7d10-bd31-8f5379e3c9c7",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Backup evidence:\n- TargetState holds the newest copy's last confirmation and its missing finding. Each names that copy, and a state whose evidence names another copy is refused.\n- push records the confirmation on upload, on an unchanged confirmed capture and on recovery.\n- When the copy is found missing, push records the finding before it prepares the replacement.\n\nLanded as 63f046d. The installed build is 81fc4af9940b and reports rev 63f046da568d.",
+    "completed_at": "2026-10-02T14:41:22.977056500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "86b76c87d6e84ffaa5f2ffb3a8078b1c": {
+        "activity_id": "86b76c87d6e84ffaa5f2ffb3a8078b1c",
+        "task_id": "01a0fcff-1b06-7a20-be9f-cb8f64e04546",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "991d4f60d5d54497af5bb08eb06a26f0"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a1c296-8b93-7890-990a-230e320e9b9c",
+  "external_ref": null,
+  "title": "Retain incoming delta candidates through the explicit exchange step",
+  "outcome": "Retain incoming delta candidates through the explicit exchange step",
+  "acceptance": [
+    "The CLI/shared-service exchange step surface provides an explicit attributed way to derive and retain an incoming delta candidate from the exact selected retained Git commits under the existing custody reservation, so apply_delta is reachable without private helpers.",
+    "The operation validates binding, direction, profile, source commits, actor, origin and exact retry identity without fetching, pushing or manufacturing native authority; retained payload and original IDs remain exact.",
+    "A real two-clone incoming workflow uses the public step instead of private retain_candidate, then successfully applies and replays the delta with expected native planning effects and refusal/state preservation on changed inputs."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit attributed incoming delta retention through the public CLI/shared-service exchange step. It derives the exact candidate from retained Git commits under custody, validates identity/profile/membership/source/actor/origin, and preserves payload and original IDs; ApplyDelta then works without a private helper. The real HTTPS two-clone Windows workflow passed public retain/apply, changed-input state preservation and offline replay on clean eca236706df2f7ec6a2933337b878f207d304fc7/tree d807fd806211065907431ff11684deb532b16d5c. Strict Windows Clippy and own binary build passed the same candidate. Independent Claude session-17219 evaluation d12862ff4a414ce89522a1cf50db9e6f passed all 3 criteria, judged on the frozen source and recorded tests; its complete paged output and full tracker verdicts were read. Final clean Git identity remains unchanged. Owned patch and integration seams are recorded in a5d8e89f435a4f6abe911de348a1f611. No landing or install; parent combined reviews, FULLs, authority audit, acceptance and cutover remain owed. Retain these worktrees and run artifacts for the open parent's recorded carry/review/validation use; remove after that need ends under repository cleanup rules.",
+    "completed_at": "2026-11-10T08:35:05.180053900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d792e91f8d91467580034c39bd199b55": {
+        "activity_id": "d792e91f8d91467580034c39bd199b55",
+        "task_id": "01a1c296-8b93-7890-990a-230e320e9b9c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2818a9cebff847a88067a8ea064b0b03"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a1337e-8e35-78c3-93b5-80abb561a2cf",
+  "external_ref": null,
+  "title": "Close both settings wire clients when one close fails",
+  "outcome": "Close both settings wire clients when one close fails",
+  "acceptance": [
+    "The task-sync instruction wire fixture attempts to close both MCP clients even if one close rejects, and retains both close diagnostics while fixture cleanup always runs.",
+    "A regression exercises writer-close rejection and proves the reader close is still attempted without leaving a live fixture process."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed both settings wire clients through the existing aggregate shutdown helper, with real-process regressions proving writer failure cannot skip reader cleanup and both diagnostics survive.",
+    "completed_at": "2026-10-14T23:53:16.684635900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7fe438da53d14035b82a9a61e5fae965": {
+        "activity_id": "7fe438da53d14035b82a9a61e5fae965",
+        "task_id": "01a1337e-8e35-78c3-93b5-80abb561a2cf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3523e0f90add471783c561f4543bd767"
+      }
+    }
+  }
+}

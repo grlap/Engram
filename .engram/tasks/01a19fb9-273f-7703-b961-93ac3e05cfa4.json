@@ -1,0 +1,65 @@
+{
+  "id": "01a19fb9-273f-7703-b961-93ac3e05cfa4",
+  "external_ref": null,
+  "title": "Split scripts/mcp-dogfood.test.mjs by responsibility so MCP dogfood scenarios are navigable and conflict less",
+  "outcome": "Split scripts/mcp-dogfood.test.mjs by responsibility so MCP dogfood scenarios are navigable and conflict less",
+  "acceptance": [
+    "The scenarios move into modules under scripts/mcp-dogfood/ (client and support, transport, rendering, lifecycle, discovery and memory, settings and import, evaluation), registered from the unchanged entry point with one shared support instance (timing wrapper and maps), and the launcher list stays unchanged",
+    "Every existing scenario runs exactly once with unchanged assertions, timing diagnostics, close-before-delete cleanup and outcome counts, shown by the test count before and after",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "file-split",
+    "greg-directed",
+    "test-tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split the MCP dogfood tests by responsibility with one shared support instance and unchanged launcher registration. The exact aggregate candidate passed the full gate and is landed on master, pushed, and installed.",
+    "completed_at": "2026-11-03T08:54:01.783586600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3c3671025b9f42238b5362f6d7353fd3": {
+        "activity_id": "3c3671025b9f42238b5362f6d7353fd3",
+        "task_id": "01a19fb9-273f-7703-b961-93ac3e05cfa4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3e170e80b8de448d9d46aa444a813ca1"
+      },
+      "3e170e80b8de448d9d46aa444a813ca1": {
+        "activity_id": "3e170e80b8de448d9d46aa444a813ca1",
+        "task_id": "01a19fb9-273f-7703-b961-93ac3e05cfa4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5a04e94899084c81bf96818b282626a5"
+      }
+    }
+  }
+}

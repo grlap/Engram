@@ -1,0 +1,31 @@
+{
+  "id": "01a17139-5cc7-75c0-920d-e82d37a57e37",
+  "external_ref": null,
+  "title": "Stop partial Coder progress messages to Merger; hand off only complete packages",
+  "outcome": "Stop partial Coder progress messages to Merger; hand off only complete packages",
+  "acceptance": [
+    "The Coder-to-Merger communication procedure permits a handoff only for a complete package ready for review, as Greg requested; routine test-progress and review-start notifications do not wake the Merger.",
+    "Intermediate Coder progress stays in the task record rather than being forwarded as a partial package to Merger.",
+    "The complete package identifies its scope, base and frozen input, evidence and actual review state without implying readiness that has not been achieved; this communication correction does not introduce a second Merger review.",
+    "The corrected rule is persisted in project memory and propagated to the operating procedure used by Coders and the Merger; a subsequent real handoff demonstrates that partial progress did not generate Merger notifications."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "communication",
+    "coordination",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

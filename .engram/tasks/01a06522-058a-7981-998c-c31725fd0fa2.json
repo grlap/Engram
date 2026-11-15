@@ -1,0 +1,50 @@
+{
+  "id": "01a06522-058a-7981-998c-c31725fd0fa2",
+  "external_ref": null,
+  "title": "Make completion checkpoint cut selection atomic",
+  "outcome": "A completion checkpoint is persisted only under the substep key derived from the exact feed cut it acknowledges.",
+  "acceptance": [
+    "An injected run-feed advance between selection and persistence cannot create a mismatched or duplicate completion checkpoint."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Made completion checkpoint cut selection, key derivation, replay validation, and persistence atomic.",
+    "completed_at": "2026-09-03T03:16:09.697957500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1ae8ae3dba80c260e52e8c78fd2b5e0adce3e0cef3b04bc3bc200485858cfc5b": {
+        "activity_id": "1ae8ae3dba80c260e52e8c78fd2b5e0adce3e0cef3b04bc3bc200485858cfc5b",
+        "task_id": "01a06522-058a-7981-998c-c31725fd0fa2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6a3e5a3cd0d342b2e6674cd8d60d844c3942b4e97b81aebe3b74a99733c2020f"
+      }
+    }
+  }
+}

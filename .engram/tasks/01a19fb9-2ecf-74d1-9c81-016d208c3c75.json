@@ -1,0 +1,65 @@
+{
+  "id": "01a19fb9-2ecf-74d1-9c81-016d208c3c75",
+  "external_ref": null,
+  "title": "Split the root-probe harness tests out of scripts/root-probe-harness.mjs by concern",
+  "outcome": "Split the root-probe harness tests out of scripts/root-probe-harness.mjs by concern",
+  "acceptance": [
+    "The harness tests move into scripts/root-probe/tests/ (journal, acl, cleanup, integration, and a support module for the fake dependencies), with the real harness implementation and registerRootProbeTests plus the existing exports unchanged",
+    "Both existing registrars (parity and the optional root-probe registrar) discover the same tests exactly once, preserving deadlines, ACL restoration and restore/close/delete ordering",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "file-split",
+    "greg-directed",
+    "test-tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split the root-probe harness tests into concern-based modules while preserving both registrars and cleanup ordering. Windows B's corrected build-then-Node run passed 37/37; the exact aggregate full gate passed and is landed on master, pushed, and installed.",
+    "completed_at": "2026-11-03T08:54:50.992371Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "db82d81367514a3984cf43fa29aa2f8a": {
+        "activity_id": "db82d81367514a3984cf43fa29aa2f8a",
+        "task_id": "01a19fb9-2ecf-74d1-9c81-016d208c3c75",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "eded4ebfe47b42ec96b77df1609ab609"
+      },
+      "eded4ebfe47b42ec96b77df1609ab609": {
+        "activity_id": "eded4ebfe47b42ec96b77df1609ab609",
+        "task_id": "01a19fb9-2ecf-74d1-9c81-016d208c3c75",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fcbdb6f8530441f2942110e687df5b9e"
+      }
+    }
+  }
+}

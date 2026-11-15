@@ -1,0 +1,27 @@
+{
+  "id": "01a1c297-0056-7a41-9ed2-cb87023f957e",
+  "external_ref": null,
+  "title": "Capture long native feeds through bounded incremental witness segments",
+  "outcome": "Capture long native feeds through bounded incremental witness segments",
+  "acceptance": [
+    "Native evidence capture can resume from retained witnessed cuts and represent feeds longer than one batch's 8192-object bound without dropping entries, changing IDs or weakening closure validation; documented bounds match behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,75 @@
+{
+  "id": "01a0fc3d-b11a-7633-ad6b-a560f4bc46c6",
+  "external_ref": null,
+  "title": "Backup target show/clear: a read racing a concurrent set refuses as unreadable and advises set",
+  "outcome": "Backup target show/clear: a read racing a concurrent set refuses as unreadable and advises set",
+  "acceptance": [
+    "show and clear do not report backup_record_unreadable with advice to run set for a state/configuration mismatch that a concurrent set holding the push lock is producing: they re-read under the lock or report backup_push_running; a test in the repository covers the mismatch seen while the lock is held"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Backup target show/clear now recheck identity mismatches under the push lock or return backup_push_running; landed and installed in Batch C. Independent evaluation 99a43a2b3f5e4f1188b9765e7b51b604 passes criterion 1 on the landed source.",
+    "completed_at": "2026-10-19T13:26:14.278262600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "90849729a0fe4210b2a97e881ac307ee": {
+        "activity_id": "90849729a0fe4210b2a97e881ac307ee",
+        "task_id": "01a0fc3d-b11a-7633-ad6b-a560f4bc46c6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "90849729a0fe4210b2a97e881ac307ee"
+      },
+      "98ea63821755465f89fd337f56ce7d77": {
+        "activity_id": "98ea63821755465f89fd337f56ce7d77",
+        "task_id": "01a0fc3d-b11a-7633-ad6b-a560f4bc46c6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dbf36e956f1944cd8fc1e651588f23bf"
+      },
+      "af2955d89eb943f3830fb1dcf6d5bbda": {
+        "activity_id": "af2955d89eb943f3830fb1dcf6d5bbda",
+        "task_id": "01a0fc3d-b11a-7633-ad6b-a560f4bc46c6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "af2955d89eb943f3830fb1dcf6d5bbda"
+      }
+    }
+  }
+}

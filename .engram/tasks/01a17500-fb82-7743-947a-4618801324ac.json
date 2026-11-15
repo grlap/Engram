@@ -1,0 +1,32 @@
+{
+  "id": "01a17500-fb82-7743-947a-4618801324ac",
+  "external_ref": null,
+  "title": "Unify ordinary TermAl session sending with federated mailbox routing",
+  "outcome": "Unify ordinary TermAl session sending with federated mailbox routing",
+  "acceptance": [
+    "Ordinary termal_send_to_session accepts an enrolled remote-proxy destination and routes it through the existing federated delivery path.",
+    "The local-root-only precondition no longer blocks a valid federated destination before routing.",
+    "One shared delivery/routing implementation serves local and federated sends; no parallel public or manually invoked send path remains.",
+    "Focused regression tests cover local delivery and a remote-proxy/federated destination."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "federation",
+    "greg-directed",
+    "mailboxes",
+    "termal"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Misfiled in the Engram tracker (Advisor #2065). This is TermAl code; it moved to TermAl P0 w-9b6940770927 (rev 2 carries all four of these criteria plus Greg's live Windows/Mac acceptance from #1890). Owner Termal::Sol-edfd, after w-d5e10300b0df. Fable2 ebe242f7 #4576.",
+  "completion": null
+}

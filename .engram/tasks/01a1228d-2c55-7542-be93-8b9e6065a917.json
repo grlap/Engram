@@ -1,0 +1,31 @@
+{
+  "id": "01a1228d-2c55-7542-be93-8b9e6065a917",
+  "external_ref": null,
+  "title": "Propose safe multi-machine Engram use for Greg's decision, with options and estimates",
+  "outcome": "Propose safe multi-machine Engram use for Greg's decision, with options and estimates",
+  "acceptance": [
+    "A written proposal covers the intended user workflow, the active-writer model, offline and conflict behaviour, the separation of transport from backup, migration implications for live stores, validation, and rollout",
+    "It presents at least two concrete options (including the V9 sequential portable handoff, and how a read-only view on a second machine replaces the removed Beads fallback, or why it is not offered), each with risks and an effort estimate in implementation items",
+    "Both architects record concurrence or a stated dissent on the options, and the proposal reaches Greg through Engram::Advisor for his decision; no implementation starts before that decision",
+    "Every option, its acceptance criteria and its rollout plan keep sync explicitly configurable and optional: with no remote configured the local-first store is fully functional with no background network activity; enabling sync, choosing the remote, and each push or pull are deliberate visible user actions; disabling sync leaves the local store usable"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "area-storage",
+    "design"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Overtaken. The options proposal (frozen revision 4.3 in an unlanded worktree) reached Greg, and he decided on 2026-10-09 (recorded on this item) that agents merge task text as they do code, then refined that to the data branch on 2026-11-08. No proposal document landed and no completion is claimed; the decision itself lives in memory rules-greg-sync-data-off-code-branch-2026-11-08 and w-c5d58ec64202. Cancelled under Greg's word, 43498a6e #683.",
+  "completion": null
+}

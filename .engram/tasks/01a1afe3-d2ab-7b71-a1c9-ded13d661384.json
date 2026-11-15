@@ -1,0 +1,30 @@
+{
+  "id": "01a1afe3-d2ab-7b71-a1c9-ded13d661384",
+  "external_ref": null,
+  "title": "Add a deterministic safecrlf warning regression for committed-input capture",
+  "outcome": "Guard the per-command safecrlf suppression against regression under the strict empty-stderr reader without changing the source predicate.",
+  "acceptance": [
+    "A deterministic real-Git fixture produces a conversion warning without the per-command core.safecrlf=false override, with a proven setup and Git output; the shared owner command succeeds clean with the override and fails the intended regression if it is removed.",
+    "Existing true CRLF checkout and size-changing dirty controls remain; an assertion on Engram process stderr is described only as process stderr and is not claimed to directly observe captured Git stderr.",
+    "Applicable focused checks and required project validation/review pass on the correction; no stored evaluation/history or agreed no-file-list predicate is changed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review-low",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

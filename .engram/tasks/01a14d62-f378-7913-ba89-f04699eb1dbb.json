@@ -1,0 +1,72 @@
+{
+  "id": "01a14d62-f378-7913-ba89-f04699eb1dbb",
+  "external_ref": null,
+  "title": "Measure and optimize Engram's FTS maintenance using the Phoenix source evidence",
+  "outcome": "Measure and optimize Engram's FTS maintenance using the Phoenix source evidence",
+  "acceptance": [
+    "The current Engram FTS path (catalog insert, refresh and search) is benchmarked on a disposable store under target/, with the method, hardware, sizes and results recorded.",
+    "Cold bulk population with one rebuild in the finalization transaction is designed and measured against incremental maintenance, preserving transaction and readiness rollback safety (a failed import or refresh leaves the store and its projections consistent).",
+    "An external-content FTS5 layout aligned by rowid, write batching and prepared-statement reuse are each assessed with measurements, and adopted only where the measurement supports it.",
+    "Query behaviour is assessed for filter-before-cap with candidate truncation reported (for example via a +1 sentinel), and the decision is recorded.",
+    "The record states why Phoenix's .NET/PCL-specific values (32-row and 2000-row batches, provider prepared-statement savings, ThreadPool details) are not carried over without Engram's own measurement."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "fts",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "a613797471d248a9a17db320fd8e921b": {
+        "activity_id": "a613797471d248a9a17db320fd8e921b",
+        "task_id": "01a14d62-f378-7913-ba89-f04699eb1dbb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a613797471d248a9a17db320fd8e921b"
+      },
+      "b624ef54bd8440bc8918aef98e9cb1a0": {
+        "activity_id": "b624ef54bd8440bc8918aef98e9cb1a0",
+        "task_id": "01a14d62-f378-7913-ba89-f04699eb1dbb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b624ef54bd8440bc8918aef98e9cb1a0"
+      },
+      "f72e7984b9754ac899b2a1ebf5907dc1": {
+        "activity_id": "f72e7984b9754ac899b2a1ebf5907dc1",
+        "task_id": "01a14d62-f378-7913-ba89-f04699eb1dbb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f72e7984b9754ac899b2a1ebf5907dc1"
+      }
+    }
+  }
+}

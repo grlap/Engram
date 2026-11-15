@@ -1,0 +1,28 @@
+{
+  "id": "01a1cc89-5ef9-7913-a421-c8a08184b0dd",
+  "external_ref": null,
+  "title": "Align task-sync design's remaining merge wording with its data-worktree contract",
+  "outcome": "Align task-sync design's remaining merge wording with its data-worktree contract",
+  "acceptance": [
+    "The code/task merge and main-checkout integration wording in docs/features/git-task-sync.md agrees with its dedicated orphan data-branch/worktree and separate source-landing contract, without broadening execution or Git authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review-follow-up",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Coordinator Fable #1965/message14ca8913-41f4-43ce-82a6-716b26f52f16 folds these canonical-brief corrections into held w-0c11fd1ac9ae and explicitly requests no separate follow-up. This root was created before that steering arrived; preserve its provenance on w-0c11, cancel duplicate planning only. No execution/source edits or acceptance claimed on this item.",
+  "completion": null
+}

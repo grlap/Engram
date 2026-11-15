@@ -1,0 +1,51 @@
+{
+  "id": "01a07759-243a-7710-8c38-12a9b11b65bb",
+  "external_ref": null,
+  "title": "Explain keyless decomposition retry conflicts without exposing server keys",
+  "outcome": "Explain keyless decomposition retry conflicts without exposing server keys",
+  "acceptance": [
+    "CLI and MCP conflict tests name parent state change and runnable inspection without a derived hash or inaccessible key remedy"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0703b-8465-7903-9d1b-907d206da5be",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Keyless basis and concurrent CAS refusals are bounded and hash-free with parent inspection/reuse guidance; focused and CLI/MCP regressions pass.",
+    "completed_at": "2026-09-06T16:18:44.511930600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1a31ff709b74c2bc08bd858f9ffd09fdba9c4ba1616fb4509dabe3044261fd92": {
+        "activity_id": "1a31ff709b74c2bc08bd858f9ffd09fdba9c4ba1616fb4509dabe3044261fd92",
+        "task_id": "01a07759-243a-7710-8c38-12a9b11b65bb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9b16d1ac37a1a601ff0e192c9d478ba06b0a91f6042ec0d36662d53c1a22d969"
+      }
+    }
+  }
+}

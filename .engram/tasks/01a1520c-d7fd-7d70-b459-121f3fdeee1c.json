@@ -1,0 +1,66 @@
+{
+  "id": "01a1520c-d7fd-7d70-b459-121f3fdeee1c",
+  "external_ref": null,
+  "title": "Authorize frozen non-landing test refs for remote Mac test runs in AGENTS.md and CLAUDE.md",
+  "outcome": "Authorize frozen non-landing test refs for remote Mac test runs in AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md carry the agreed test-ref bullet in Authority and Git, byte-identical to each other, with Engram's pusher as Greg confirms",
+    "Greg's recorded word (verbatim, with source) and his answers to the open points (pusher identity, disclosure) are on this item before landing",
+    "Both coordinators' concurrence (Engram::Fable and Termal::Fable2) on the exact wording is recorded on this item",
+    "The final-diff audit that /review-changes requires is recorded on this item as passed before landing, and the Markdown-only landing checks pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "authority",
+    "greg-directed",
+    "remote"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Authorized frozen non-landing remote test refs; committed and pushed as 31b7c2006f497d555f381fcd79fa5c98fb9f4e8b, installed the clean build, and verified all six live stores ready.",
+    "completed_at": "2026-10-19T09:36:48.200143900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "452edc3132c34694ba7d4b6dec4f2e39": {
+        "activity_id": "452edc3132c34694ba7d4b6dec4f2e39",
+        "task_id": "01a1520c-d7fd-7d70-b459-121f3fdeee1c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "249640458035486f87def36752b6fed3"
+      },
+      "d90950562dbb4570ae1d9109bab3ba79": {
+        "activity_id": "d90950562dbb4570ae1d9109bab3ba79",
+        "task_id": "01a1520c-d7fd-7d70-b459-121f3fdeee1c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d90950562dbb4570ae1d9109bab3ba79"
+      }
+    }
+  }
+}

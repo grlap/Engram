@@ -1,0 +1,50 @@
+{
+  "id": "01a06497-5b09-7ec2-9ba7-6d7330a77c7a",
+  "external_ref": null,
+  "title": "Shell words fail in a hosted session when ENGRAM_ACTOR_ID or ENGRAM_SESSION_ID is absent",
+  "outcome": "On a local host the words never refuse for missing attribution: ENGRAM_ACTOR_ID defaults to the OS user and ENGRAM_SESSION_ID to a stable per-process id, both marked as defaulted in the audit; a host that injects the real values gets exact attribution",
+  "acceptance": [
+    "a hosted session whose shell carries the injected values records them verbatim; parity covers CLI and MCP",
+    "engram work show and next succeed from a shell with only ENGRAM_HOME set and record the defaulted actor and session"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented default shell attribution for Engram work words: missing actor resolves from the OS-user environment with a distinct synthetic fallback, missing session resolves to a stable process-local identifier, both origins are audited, injected values remain verbatim, and the CLI advertises a reusable session id. Added CLI/MCP parity and provenance tests, updated shell-facing contracts, passed every required gate, and completed one Codex plus one Claude frozen review with no Critical/High/Medium findings.",
+    "completed_at": "2026-09-03T03:58:18.192396300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5f53542d1530923626d9cc047eae490c8bdb6216444a1743a76c2ef6af168add": {
+        "activity_id": "5f53542d1530923626d9cc047eae490c8bdb6216444a1743a76c2ef6af168add",
+        "task_id": "01a06497-5b09-7ec2-9ba7-6d7330a77c7a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5a634fadb3ddf3160f86ea532865ea56a79f9c3f588bc366efe3b662b78f0254"
+      }
+    }
+  }
+}

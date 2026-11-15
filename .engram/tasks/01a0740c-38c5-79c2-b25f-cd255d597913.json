@@ -1,0 +1,51 @@
+{
+  "id": "01a0740c-38c5-79c2-b25f-cd255d597913",
+  "external_ref": null,
+  "title": "Bind restored record generations as checked SQL integers",
+  "outcome": "Bind restored record generations as checked SQL integers",
+  "acceptance": [
+    "cargo check passes with the record-window reader"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a073d0-2723-7973-bbb3-30e41424cb68",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The new record reader binds a checked SQL integer; cargo check passes.",
+    "completed_at": "2026-09-06T00:10:05.694364800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b9e210ae474a97e7a7fa7095aa61df48d3cbf6387ec01a2d685e2ead17c17897": {
+        "activity_id": "b9e210ae474a97e7a7fa7095aa61df48d3cbf6387ec01a2d685e2ead17c17897",
+        "task_id": "01a0740c-38c5-79c2-b25f-cd255d597913",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "95ee7868561e5946ed193d1ce0006d2cd2e4efc0a3912566c923e8aa94714b51"
+      }
+    }
+  }
+}

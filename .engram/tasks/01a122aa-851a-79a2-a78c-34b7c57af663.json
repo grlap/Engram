@@ -1,0 +1,27 @@
+{
+  "id": "01a122aa-851a-79a2-a78c-34b7c57af663",
+  "external_ref": null,
+  "title": "Share the completion citation refusal between the service's two sites and correct its 'storage's text' comment",
+  "outcome": "Share the completion citation refusal between the service's two sites and correct its 'storage's text' comment",
+  "acceptance": [
+    "refuse_misaddressed_acceptance and prevalidate_completion_acceptance build the 'acceptance criterion … cites evidence … outside the requested completion basis' refusal from one shared definition, and the refuse_misaddressed_acceptance doc comment no longer claims storage's text for the citation case"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

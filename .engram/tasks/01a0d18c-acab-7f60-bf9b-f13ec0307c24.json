@@ -1,0 +1,55 @@
+{
+  "id": "01a0d18c-acab-7f60-bf9b-f13ec0307c24",
+  "external_ref": null,
+  "title": "Record an untested source change instead of blocking completion",
+  "outcome": "Record an untested source change instead of blocking completion",
+  "acceptance": [
+    "A criterion an author explicitly binds to a test with `--bind N=test` keeps its current behavior; only the built-in rule stops blocking",
+    "Tests cover completion after an untested change (completes and discloses) and after a tested change (completes with no disclosure); the full quality gates pass",
+    "The completion seal and `show` disclose the untested change (which change, its source revision, and that no matching passing test followed), so it stays visible after completion",
+    "When a claimed run records a source change and no later passing test matches it, `done` still completes the item: the built-in source-change rule no longer refuses completion",
+    "docs/features/behavioral-control-plane.md, docs/features/cli-and-mcp.md and docs/shipped.md describe the rule as recording and disclosing, not blocking"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "control-plane",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The stock source-change rule now records instead of blocking. At done, an obligation still open is waived in the completing actor's name inside the sealed cut, and the change is disclosed in done and show, on the obligation page and as a peer delta. Bindings and other rules still block. Committed cc3c1d0 and pushed. Gates test-b0aca016 9/9; four review rounds, with every finding fixed or filed as w-4d2049b256bd; independent evaluation 5/5. Install follows.",
+    "completed_at": "2026-09-24T07:19:13.484605300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f27e4846ccab40f9a96bab9baab80c4b": {
+        "activity_id": "f27e4846ccab40f9a96bab9baab80c4b",
+        "task_id": "01a0d18c-acab-7f60-bf9b-f13ec0307c24",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c8057b8712094629a9819a481f5650c2"
+      }
+    }
+  }
+}

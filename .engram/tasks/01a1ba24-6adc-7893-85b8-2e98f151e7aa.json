@@ -1,0 +1,60 @@
+{
+  "id": "01a1ba24-6adc-7893-85b8-2e98f151e7aa",
+  "external_ref": null,
+  "title": "Evidence-exchange core: typed record envelopes, bounded packs, witnesses and closure components",
+  "outcome": "Evidence-exchange core: typed record envelopes, bounded packs, witnesses and closure components",
+  "acceptance": [
+    "Typed record envelopes with a closed kind-dispatched decoder reproduce each original canonical record's exact RFC 8785 bytes, including the absent-versus-null distinction, and refuse an unknown kind by name.",
+    "Immutable evidence packs enforce the accepted bounds (record 8 MiB; pack 16 MiB and 4096 envelopes; component 64 MiB and 8192 objects; batch 64 MiB; staging 256 MiB) with typed oversize outcomes and never truncate.",
+    "Origin-feed segment/cut witnesses and governing-snapshot witnesses follow the accepted design (w-09c87a312e95 notes 7a94378a and 31a28eee) with collision, gap and continuity outcomes.",
+    "Dependency closure partitions records into atomic components (an indivisible SCC; acyclic predecessors importable first) with no half component exposed.",
+    "Behavior tests from the design's §10 cases cover the above. No transport, ledger wiring or destination credit is part of this item; those stay on w-7413b4728667."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "execution-evidence",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "5f5a55a7f9b944bda9a5e20d18bc2c92": {
+        "activity_id": "5f5a55a7f9b944bda9a5e20d18bc2c92",
+        "task_id": "01a1ba24-6adc-7893-85b8-2e98f151e7aa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5f5a55a7f9b944bda9a5e20d18bc2c92"
+      },
+      "5f97ed1a60f84e71bc750918b9d13c7a": {
+        "activity_id": "5f97ed1a60f84e71bc750918b9d13c7a",
+        "task_id": "01a1ba24-6adc-7893-85b8-2e98f151e7aa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5f97ed1a60f84e71bc750918b9d13c7a"
+      }
+    }
+  }
+}

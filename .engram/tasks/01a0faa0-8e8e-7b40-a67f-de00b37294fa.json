@@ -1,0 +1,33 @@
+{
+  "id": "01a0faa0-8e8e-7b40-a67f-de00b37294fa",
+  "external_ref": null,
+  "title": "Durable writer record and a guard inside every mutation",
+  "outcome": "Durable writer record and a guard inside every mutation",
+  "acceptance": [
+    "The store holds one durable writer record (mode, lineage, state, epoch, expected instance id, head id, validation with its count) and a `local` project's record says `local`; the changeset teaches `migration import` to add it to a store exported by the previous build, reports the conversion by name with its count, and a test imports such an export",
+    "Every transaction that changes the store reads the record first and refuses unless the project is `local`, or the state is `active`, the home holds the registration for the expected instance and the validation is usable; a test opens a connection, sets the state to `releasing` through a second connection, and shows the first connection's next write refused with `portable_released`",
+    "One test per write path shows the refusal on a frozen store: a work mutation, a note, a project memory, a `memories` listing that records a context generation, task memory, a control operation, an advancing `next`, a graph save audit, policy administration, projection repair, and import or restore into the store; the same test shows `show`, `ls`, a `memories` read, `next --peek`, `doctor` and a `store` backup push succeed",
+    "The private registration is durable outside all database paths being replaced and excluded from every store/portable backup. Prepared registration alone grants no authority; activation requires matching durable writer record and current remote ownership. Tests copy a store to another home, lose registration after publication and copy a staged/archived file: all remain frozen, and retry never mints a replacement instance. Full-store backup restore preserves the stored writer record in active/released/transitional states; it never resets to local or mints registration. Tests restore active/released copies in replacement homes and a pre-release copy on its original home after handoff: missing registration or stale fresh-remote validation refuses mutation, read-only inspection works, and missing private journals cannot be reconstructed through restore.",
+    "A test shows a `local` project's fourteen words and host control operations give the same results before and after the change, with no target configured",
+    "All ordinary opens, including raw, immutable, backup, diagnostic and migration helpers, obtain a shared lifetime guard before checking incomplete install journals and retain it through connection close. Installer exclusive acquisition refuses with live handles, takes locks in lifecycle-then-install order and performs no lock upgrade. Path alias tests and Windows separate-process tests prove reopening cannot race archive/install; old noncooperating binaries are an explicit cutover prerequisite."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0faa0-685a-7f31-83d2-2028017ca901",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Portable handoff was replaced before any of it shipped: docs/features/git-task-sync.md says the previous portable writer-epoch and release/acquire design is gone, AGENTS.md says the selected sync uses no global writer lock, writer epochs or release/acquire protocol, and master has no portable code or brief. Cancelled under Greg's word, 43498a6e #683. Nothing here was built or tested.",
+  "completion": null
+}

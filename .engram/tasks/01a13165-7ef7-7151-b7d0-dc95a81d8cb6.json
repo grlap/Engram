@@ -1,0 +1,28 @@
+{
+  "id": "01a13165-7ef7-7151-b7d0-dc95a81d8cb6",
+  "external_ref": null,
+  "title": "Disable task sync per project with an explicit user action",
+  "outcome": "Disable task sync per project with an explicit user action",
+  "acceptance": [
+    "An explicit per-project disable action turns task sync off; after it, no export, import or sync activity runs for that project until an explicit enable, and the host-consumable state read reports it disabled with its one-line effect description.",
+    "Disable changes no repository files, Git index, branch or remote, and leaves exported task text and SQLite work rows intact; re-enabling is an explicit user action and no path re-enables implicitly."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a12302-8b0e-7ba1-a0be-79022fc49394",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Superseded by Greg's decision (Engram::Advisor #1278, 2026-10-12 18:44Z): TermAl owns and writes the per-project task-sync opt-in setting, so disabling is TermAl's UI action (TermAl w-00d47e03640f). Engram's side, refusing all sync activity while the setting is not enabled, is B2 w-545ea9accbf0 criterion 4.",
+  "completion": null
+}

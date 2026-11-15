@@ -1,0 +1,29 @@
+{
+  "id": "01a07aa7-19cf-77d3-9f87-98b1c0c16ba8",
+  "external_ref": null,
+  "title": "Explain unexplained multi-second MCP dogfood stalls with call and WAL diagnostics",
+  "outcome": "Explain unexplained multi-second MCP dogfood stalls with call and WAL diagnostics",
+  "acceptance": [
+    "A subsequent stall has operation and whole-test elapsed times plus WAL-size diagnostics, and the repeated stall pattern is explained or closed on measured evidence without increasing the ten-second sanity limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-performance",
+    "dogfood",
+    "performance",
+    "stream-performance-evidence"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a0bb78-ddb8-7111-82af-20d2da678889",
+  "disposal_reason": "Merged into one MCP latency investigation (2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous): the surviving item keeps the original 12,281.5 ms replay failure and this item's stall-diagnostics acceptance (call and whole-test elapsed times, WAL size, already recorded by mcp-dogfood), without assuming one cause or loosening the 10 s limit.",
+  "completion": null
+}

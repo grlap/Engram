@@ -1,0 +1,29 @@
+{
+  "id": "01a11bde-c59d-74d2-9342-d26f13fa31cf",
+  "external_ref": null,
+  "title": "Document live acceptance-evaluator actor-session length admission",
+  "outcome": "Live actor-session admission documentation explicitly accounts for the acceptance-evaluation evaluator session.",
+  "acceptance": [
+    "The live length-admission documentation in cli-and-mcp, sqlite-store, local-work-system and shipped inventory either names the evaluator actor session or clearly explains that live callers include it, matching record_acceptance_evaluation.",
+    "Required documentation checks and independent reviews pass for the clarification."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a07d32-f5ee-7091-b7d3-0d621aea7727",
+  "external_ref": null,
+  "title": "Preserve completed replay when criterion evidence disclosure is unavailable",
+  "outcome": "Preserve completed replay when criterion evidence disclosure is unavailable",
+  "acceptance": [
+    "Committed completion replay retains success and explicit unavailable marker plus safe error class after seal diagnostic failure; intact show audit reads remain accessible under the same advisory failure, strict item and run validation remains, and canonical completion and attempt bytes stay unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07a43-2c1c-7ba0-99b2-94041c67bee6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered committed replay with canonical success unchanged when advisory seal disclosure fails, explicit unavailable marker and shared safe class. Read context remains available while item run and replay validation stay strict. Missing and corrupt seal fixtures preserve canonical attempt bytes and full store state; focused19 and final9 gates passed. Open acceptance was audibly corrected to the approved reversal before sealing.",
+    "completed_at": "2026-09-07T20:35:02.512685100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f684558ecb7e0342aa2bff6c6ed3dfd69dab47a14a375cb341f1b8743351b661": {
+        "activity_id": "f684558ecb7e0342aa2bff6c6ed3dfd69dab47a14a375cb341f1b8743351b661",
+        "task_id": "01a07d32-f5ee-7091-b7d3-0d621aea7727",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1f8f7dd58c6da32589c22ea0b696a2c7c347d9edf8e691be9bafff215ed983a0"
+      }
+    }
+  }
+}

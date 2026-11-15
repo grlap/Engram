@@ -1,0 +1,35 @@
+{
+  "id": "01a0fa88-986f-7131-90a2-121c35181dea",
+  "external_ref": null,
+  "title": "Off-host backup: graph copy kind and Git remote adapter",
+  "outcome": "A project can also push the unwidened work-graph document as a second copy kind, to a directory target or to a dedicated ref on a Git remote, and status reports it with its limited recovery surface.",
+  "acceptance": [
+    "`engram backup push --kind graph` puts the unwidened graph document at a configured target; an unchanged cut captures and uploads nothing and renews the confirmation; when the copy was deleted at the target under an unchanged cut a replacement is put; when `graph save` refuses the store the push exits 1, no receipt or time advances and status shows the failed attempt; tests cover each",
+    "A graph document larger than the limit `engram graph load` accepts is refused before it can become a copy: push exits 1 with `backup_graph_too_large` against a directory target and against a git-ref target, commits no disclosure audit, puts nothing, records the failed attempt and leaves the kind not qualifying on it; a document exactly at the limit is pushed, fetched and loaded; the bound is read from the same definition `graph load` uses, and the test lowers that limit instead of building a 128 MiB document",
+    "The graph-surface test passes: a pushed graph copy, fetched and loaded into a clean initialized home, yields a store whose graph save has the same items, blockers, sources and memories as the pushed file and carries its native history layer as an inherited one; a `restricted` body is a placeholder; the restored store holds no run, claim, seal, grant, session or scratch",
+    "A `git-ref` adapter pushes commits to `refs/engram/backup/<project digest>` without force and never to a branch or working tree; against a bare repository on the local disk a test covers put, confirm, a second put that adds one commit and a refusal when the remote ref moved; an attempt dropped as missing keeps its commit in the scratch repository, and a test shows that when its push lands later the next put is accepted and the late copy has no receipt",
+    "A remote reached through a path, a `file://` address or a loopback host requires `--off-host-asserted-by` and reads \"off-host asserted; not verified\"; only a network remote reads confirmed off-host; a test asserts that no local remote ever reads `remote_confirmed`",
+    "Wherever the mode is shown, a qualifying graph copy reads \"planning, history and keyed memories only\", and when both kinds qualify both are listed; docs/shipped.md has rows for the graph kind and the adapter"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fa15-1ea6-76f3-beb2-619afb1c38c0",
+    "01a0fa87-21a0-7a71-96de-5627a19713d8"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

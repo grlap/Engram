@@ -1,0 +1,51 @@
+{
+  "id": "01a11050-73e0-75e3-8c6a-db0eb9634507",
+  "external_ref": null,
+  "title": "The skill's worktree-removal step should name development.md's run-retention preconditions and point at that paragraph",
+  "outcome": "The skill's worktree-removal step should name development.md's run-retention preconditions and point at that paragraph",
+  "acceptance": [
+    ".agents/skills/engram-repo/SKILL.md's worktree-removal step names the run-retention preconditions from docs/development.md's retention paragraph (under \"Record for the host\"), all three together: a terminal result, its outcome recovered and recorded, and no notification or review use pending, and links that paragraph rather than #test-launcher",
+    "The doc link check and the AGENTS/CLAUDE identity check pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The engram-repo skill's worktree-removal step names docs/development.md's three run-retention preconditions together (a terminal result, its outcome recovered and recorded, and no notification or review use pending) and links the \"Record for the host\" section holding that paragraph instead of #test-launcher; still-needed run directories are preserved under the main checkout's target/, never the worktree's own; the re-claim sentence is narrowed to a release followed by a re-claim and the launcher clause says the run is started from the worktree. Three review rounds (57eb5cc4, f50b755e, e32fe205 on 06fbddc), round 3 clean from Codex and Claude; link and identity checks passed on e32fe205; evaluation fe4fa844389f4df4a8d5f6d933a51c3c passed 2/2; readiness x4 ready; landed as 767b293, Markdown only, nothing installed.",
+    "completed_at": "2026-10-06T08:49:42.706703400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7aa02e7cde2e48ac9f385a467030943d": {
+        "activity_id": "7aa02e7cde2e48ac9f385a467030943d",
+        "task_id": "01a11050-73e0-75e3-8c6a-db0eb9634507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e41a00bb2ef74b7eaa6726cb2f87f0a6"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0af86-ca3e-7412-8443-5928494b3b61",
+  "external_ref": null,
+  "title": "Round-6 note clarifications: explicit key uniqueness per run, sub-agent flags in the short command blocks, minimal receipt wording, which assurance a receipt names, lazy latest-run read",
+  "outcome": "Round-6 note clarifications: explicit key uniqueness per run, sub-agent flags in the short command blocks, minimal receipt wording, which assurance a receipt names, lazy latest-run read",
+  "acceptance": [
+    "the brief's R8 says explicit keys are shared per run across evaluators and a reused key from another evaluator conflicts safely; the skill's evaluate line and the AGENTS.md/CLAUDE.md block (identical) list --attempt, --model, and --execution-identity/--parent-session; the minimal-receipt comment says debug-measured and construction-bounded without adding a post-commit budget error; completion enforcement step 5 says the receipt's assurance is the completing actor's, asserted in V1; acceptance_evaluation_status reads the latest run lazily with or_else"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "R8 explicit-key sharing note, sub-agent flags in the skill evaluate line and the identical CLAUDE.md/AGENTS.md block, minimal-receipt comment (debug-measured, construction-bounded, no post-commit budget error), step-5 assurance sentence, lazy latest-run read in acceptance_evaluation_status. Docs and comments only; covered by the existing suites and the doc-link check (logs/27 all pass).",
+    "completed_at": "2026-09-17T13:39:20.569290700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "710e3f7f298f6795162c5d0133c24c15f0999b529a72803edc554475044396b4": {
+        "activity_id": "710e3f7f298f6795162c5d0133c24c15f0999b529a72803edc554475044396b4",
+        "task_id": "01a0af86-ca3e-7412-8443-5928494b3b61",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e19a28bad04ab3eeebca9cdc525eadf9fd04c202cd269dbf9b39d62406e8d766"
+      }
+    }
+  }
+}

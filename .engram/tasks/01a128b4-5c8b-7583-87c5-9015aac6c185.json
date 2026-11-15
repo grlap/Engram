@@ -1,0 +1,27 @@
+{
+  "id": "01a128b4-5c8b-7583-87c5-9015aac6c185",
+  "external_ref": null,
+  "title": "Validate an Engram home before creating operational diagnostic files",
+  "outcome": "Validate an Engram home before creating operational diagnostic files",
+  "acceptance": [
+    "Early MCP/control refusal for an invalid session or a non-Engram home does not create diagnostic files in an arbitrary existing directory; accepted selected-home diagnostics continue working, with the chosen rule documented and tested."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

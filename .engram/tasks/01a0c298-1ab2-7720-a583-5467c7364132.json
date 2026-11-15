@@ -1,0 +1,52 @@
+{
+  "id": "01a0c298-1ab2-7720-a583-5467c7364132",
+  "external_ref": null,
+  "title": "Make quality gates proportional to the changed surface",
+  "outcome": "Use a small explicit validation policy so prose-only edits do not rerun unrelated Rust and host suites, while runtime and storage changes retain appropriate coverage.",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md are identical, and skill/review-command guidance is consistent; examples distinguish Markdown code blocks or quoted commands from executable files, and focused correction checks never substitute for required landing validation.",
+    "Define the adopted file-based mapping: only .md prose/instructions/skills/commands use link and identity checks; executable tooling/examples, tests, runtime/CLI implementation and schemas require the full gate; mixed or uncertain changes use stronger applicable checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "simplification",
+    "testing",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered consistent file-based validation map in identical AGENTS/CLAUDE and aligned skill, review command and development documentation at497e81b. Independent Codex evaluation0dffd032636e4582858b6a3b61053199 passed both criteria, citing holder evidence4fa100a10e7042fba97ee5a04d90c69b; focused corrections never replace required landing checks.",
+    "completed_at": "2026-09-27T20:28:48.496132700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "de004725adda40c985e66f2b88c55972": {
+        "activity_id": "de004725adda40c985e66f2b88c55972",
+        "task_id": "01a0c298-1ab2-7720-a583-5467c7364132",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e4f8a91c486547498c575a9830890c1e"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a18b6d-599f-7011-9912-648b5b76716d",
+  "external_ref": null,
+  "title": "Measure whether raising the launcher's Rust test-thread cap shortens a full gate on many-core hosts",
+  "outcome": "We know whether the launcher's fixed 8 Rust test threads is what keeps a DL560 (144-core) full gate at the same speed as Central, and what thread setting, if any, to use per host.",
+  "acceptance": [
+    "On DL560, two measurement runs of the same clean master with the Rust test-thread setting at 8 (the default) and at a higher value (for example 32) report their rust stage times, total time and peak RAM, as author evidence only",
+    "Any failure that appears only at the higher setting is filed as its own item with its test name, never hidden by lowering the setting",
+    "The result and a recommendation (keep 8, or a per-host setting) are recorded on this item and reported to Greg"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "performance",
+    "remote-gates"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

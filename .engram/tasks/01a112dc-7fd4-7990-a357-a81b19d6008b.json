@@ -1,0 +1,27 @@
+{
+  "id": "01a112dc-7fd4-7990-a357-a81b19d6008b",
+  "external_ref": null,
+  "title": "Verify incoming handoff changes survive compact recovery filtering",
+  "outcome": "Verify incoming handoff changes survive compact recovery filtering",
+  "acceptance": [
+    "A recipient compact-peek fixture with an incoming offer and a later peer note on the offered item proves that relevant note is retained while an unrelated change is omitted."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

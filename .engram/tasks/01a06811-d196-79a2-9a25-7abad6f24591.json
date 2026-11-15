@@ -1,0 +1,64 @@
+{
+  "id": "01a06811-d196-79a2-9a25-7abad6f24591",
+  "external_ref": null,
+  "title": "Keep structured gate identity in terse show notes",
+  "outcome": "Terse show notes retain a minimal typed gate name and pass/fail status without restoring hashes, fences, or canonical ids.",
+  "acceptance": [
+    "Recorded gates are structurally identifiable from terse show without parsing summary prose."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "stream-agent-receipts",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered minimal typed gate name and pass/fail fields on terse notes, record windows and details, preserving ordinary note distinction.",
+    "completed_at": "2026-10-04T14:25:31.372576Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1c469bf7612a4cb9a3f73fdf3eeeefe8": {
+        "activity_id": "1c469bf7612a4cb9a3f73fdf3eeeefe8",
+        "task_id": "01a06811-d196-79a2-9a25-7abad6f24591",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "70dc17fcacbe4f529b9a23141f2cf69d"
+      },
+      "8ceb86ac1507453f9eeb4583efcaa68f": {
+        "activity_id": "8ceb86ac1507453f9eeb4583efcaa68f",
+        "task_id": "01a06811-d196-79a2-9a25-7abad6f24591",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8ceb86ac1507453f9eeb4583efcaa68f"
+      }
+    }
+  }
+}

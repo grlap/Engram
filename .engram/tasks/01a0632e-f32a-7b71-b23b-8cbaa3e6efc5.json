@@ -1,0 +1,59 @@
+{
+  "id": "01a0632e-f32a-7b71-b23b-8cbaa3e6efc5",
+  "external_ref": null,
+  "title": "Migrate one real project from Beads to Engram (Greg's pick): init store, mint grant, recreate open items only, bd becomes read-only archive",
+  "outcome": "Migrate one real project from Beads to Engram (Greg's pick): init store, mint grant, recreate open items only, bd becomes read-only archive",
+  "acceptance": [
+    "Migrate one real project from Beads to Engram (Greg's pick): init store, mint grant, recreate open items only, bd becomes read-only archive is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Phoenix migrated by hand with the ordinary words; Beads removed from both repositories; store recreated on 182c123 with 76 open items carried",
+    "completed_at": "2026-09-03T00:07:55.817900400Z",
+    "actor": {
+      "actor_id": "fable",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cc4d7fb9ca5f726113e9b9099ed1ac110626784b15b91ed44d06d264c47eb8f8": {
+        "activity_id": "cc4d7fb9ca5f726113e9b9099ed1ac110626784b15b91ed44d06d264c47eb8f8",
+        "task_id": "01a0632e-f32a-7b71-b23b-8cbaa3e6efc5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "9d949d8848d3221fd3bbdea1736242d2a5a306b97389c8a339b062975a43edac"
+      },
+      "d1ab654d0034dd6841f75c7cb595989984f69f1b731e71d3af30f073e71a32e8": {
+        "activity_id": "d1ab654d0034dd6841f75c7cb595989984f69f1b731e71d3af30f073e71a32e8",
+        "task_id": "01a0632e-f32a-7b71-b23b-8cbaa3e6efc5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7eecb26482608c283baa098c565f67ac86ba1d5ae7716ef1a71228c7c43184d7"
+      }
+    }
+  }
+}

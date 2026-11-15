@@ -1,0 +1,51 @@
+{
+  "id": "01a0ded4-e841-7a50-a25b-a92723a1315e",
+  "external_ref": null,
+  "title": "Write Greg's standing commit approval into the instruction files",
+  "outcome": "Write Greg's standing commit approval into the instruction files",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md state the standing approval in the Authority and Git section: once the full gate passes on the exact tree, the latest Codex and Claude review round is clean with every earlier finding fixed, and the items' acceptance criteria are met, the agent commits, pushes and installs without asking, then reports the landed commit",
+    "AGENTS.md and CLAUDE.md stay byte-identical, the session-end guidance no longer contradicts the standing approval, and the full gate passes",
+    "Both files name the cases that still need Greg: projection repair or migration, an unmeetable or disputed criterion, out-of-scope work, rebase, force-push or history rewrite, and an unavailable reviewer"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "agent-instructions"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Greg's standing commit approval is recorded in AGENTS.md and CLAUDE.md under Authority and Git.\n\nConditions for committing, pushing and installing without asking:\n- the full gate passes on the exact tree;\n- the latest clean Codex and Claude round is on a freeze of that same tree, with every earlier finding fixed;\n- the acceptance criteria are met;\n- readiness reports every live store ready before the commit.\n\nStill stop and ask Greg before committing for repair or migration, a disputed or unmeetable criterion, out-of-scope work, rebase, force-push or history rewrite (never covered), an unavailable reviewer, or an unfixed finding. Report each landed commit afterwards.\n\nThe session-end line, docs/development.md, review-changes.md, fix-bug.md and the engram-repo skill now point to the rule. Greg's private ~/.claude/CLAUDE.md has the matching exception, by his choice.\n\nDelivery:\n- Commit 0fc8efa, pushed; installed build c97f06e7cebb.\n- Two review rounds; round 2 was clean from both reviewers.\n- The independent Codex evaluation passed 3/3 criteria.",
+    "completed_at": "2026-09-26T18:26:31.266219200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "68301819078e47efa6d8f1a09d98c322": {
+        "activity_id": "68301819078e47efa6d8f1a09d98c322",
+        "task_id": "01a0ded4-e841-7a50-a25b-a92723a1315e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b3fc96293d1f443e9a0499330ca498c9"
+      }
+    }
+  }
+}

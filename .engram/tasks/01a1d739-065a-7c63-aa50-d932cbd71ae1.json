@@ -1,0 +1,29 @@
+{
+  "id": "01a1d739-065a-7c63-aa50-d932cbd71ae1",
+  "external_ref": null,
+  "title": "Choose task-sync retained-reference diagnostics in stable task order",
+  "outcome": "A partial import's retained-removal diagnostic names the same referrer for dry and real runs with the same input.",
+  "acceptance": [
+    "When two effective tasks retain one deletion target after late refusals, repeated dry and real results choose the same causal task and detail",
+    "Retained-reference refusal and independent-task progress remain intact"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

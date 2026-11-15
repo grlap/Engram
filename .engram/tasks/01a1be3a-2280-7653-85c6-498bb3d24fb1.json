@@ -1,0 +1,64 @@
+{
+  "id": "01a1be3a-2280-7653-85c6-498bb3d24fb1",
+  "external_ref": null,
+  "title": "Registered verification refuses a kept named root after its claim is recovered, against the documented contract",
+  "outcome": "Registered verification refuses a kept named root after its claim is recovered, against the documented contract",
+  "acceptance": [
+    "A registered verification on a claim that was recovered, renewed or handed over after its root was named, with the same root generation and no change since, is accepted whether the current holder is the naming session or another; a behavior test shows it through evaluation, completion and doctor.",
+    "A moved root, another workspace or generation, an ended binding, a root released and not re-named after a reclaim, a session that isn't the claim's current holder, and a root recorded after registration stay refused; a registration whose own claim fence moved stays refused by the existing claim check. Explicit clear stays with the naming session."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "execution-observability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented and landed kept named-root verification across recovered, renewed and handed-off claims. Full gate passed on 981a0466e1bcbb130ecab6a82d3a0fb3006eb787; the independent acceptance evaluation 2078cf9937a64bc28196ed44a6d31585 passed both criteria at cut 269. Installed on Central with build fingerprint 96f86b93811e6909f833cd5b086123279e48475ab7a43c70c2122745ec6e5256. No TermAl restart was performed.",
+    "completed_at": "2026-11-09T07:19:36.317051300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7519577791bb49ee8b95933e3cc7aa8f": {
+        "activity_id": "7519577791bb49ee8b95933e3cc7aa8f",
+        "task_id": "01a1be3a-2280-7653-85c6-498bb3d24fb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "93a46a5bf23441df95f53f8a09601f5a"
+      },
+      "93a46a5bf23441df95f53f8a09601f5a": {
+        "activity_id": "93a46a5bf23441df95f53f8a09601f5a",
+        "task_id": "01a1be3a-2280-7653-85c6-498bb3d24fb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7206ba0196764c8b9e87766fe77818b3"
+      }
+    }
+  }
+}

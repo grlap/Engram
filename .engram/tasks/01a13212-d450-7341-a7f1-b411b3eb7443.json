@@ -1,0 +1,64 @@
+{
+  "id": "01a13212-d450-7341-a7f1-b411b3eb7443",
+  "external_ref": null,
+  "title": "Integrate the remaining macOS fixes from origin/macos_fix",
+  "outcome": "Integrate the remaining macOS fixes from origin/macos_fix",
+  "acceptance": [
+    "The setup Git path query resolves relative git rev-parse output against the queried repository root, not the CLI process's working directory, as in Greg's commit bdc1c7b on origin/macos_fix; a test runs the separate-Git-directory setup case from a different working directory.",
+    "The task_sync_setup_cli fixtures isolate Git's global configuration through HOME and XDG_CONFIG_HOME as well as GIT_CONFIG_GLOBAL, and Git failures in the fixture report the arguments and exit status, as in bdc1c7b.",
+    "bdc1c7b's #[allow(clippy::unnecessary_wraps)] attributes and its open_unresolved test changes are not taken: master fixes those through w-154b5337dc2c (no #[allow], Greg #1281) and w-c53639903542 (fixtures derive the host default).",
+    "The full gate passes on Windows; macOS validation of the master commit that contains this change is owned by w-6224586d6418, which is ordered after this item and is not evidence this item must show; origin/macos_fix is a read-only reference and is never merged, reset or pushed (Greg, Engram::Advisor 2026-10-12 #1297)."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "macos"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Integrated the remaining macOS Git-path and fixture fixes. Git paths resolve against the queried repository; outside-directory regression and isolated Git config fixtures pass. Landed, installed, and pushed the validated two-file change; native macOS validation is owned by the subsequent item.",
+    "completed_at": "2026-10-13T09:04:45.622168300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0a917d732aa24e38b09d2164757446e7": {
+        "activity_id": "0a917d732aa24e38b09d2164757446e7",
+        "task_id": "01a13212-d450-7341-a7f1-b411b3eb7443",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "15acd49f1ffa4634929a07745acaa8bd"
+      },
+      "f7ad1c2690564cf7b3b39db20e8c588d": {
+        "activity_id": "f7ad1c2690564cf7b3b39db20e8c588d",
+        "task_id": "01a13212-d450-7341-a7f1-b411b3eb7443",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6d1027692ed74d15a85771749b1d398d"
+      }
+    }
+  }
+}

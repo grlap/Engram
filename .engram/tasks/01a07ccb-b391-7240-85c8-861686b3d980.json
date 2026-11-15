@@ -1,0 +1,52 @@
+{
+  "id": "01a07ccb-b391-7240-85c8-861686b3d980",
+  "external_ref": null,
+  "title": "The freeze checker measures the current directory, not the worktree its freeze describes",
+  "outcome": "A freeze check answers about the tree the freeze was taken from, or refuses; it never silently fingerprints a different tree and reports drift, because the review protocol treats that answer as authority to discard a completed review and restart from the gates",
+  "acceptance": [
+    "A check run from a different worktree or repository refuses with a message naming both roots, instead of comparing fingerprints across trees and reporting drift",
+    "Regression: a freeze captured in a linked worktree and checked from the main worktree refuses; checked from its own worktree it verifies clean",
+    "The written freeze records the repository root or worktree identity it was captured from"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Freeze checks bind the canonical Git worktree root, refuse foreign roots before content capture, and preserve whole-worktree scope from nested paths. Regressions and nine gates pass; Codex and Claude review accepted with the stream-observation recovery explicitly attributed.",
+    "completed_at": "2026-09-11T05:54:10.586593700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "97e8e7d65ef419c344d50c85c7be702a97029e4724bf01350e4932098dafe302": {
+        "activity_id": "97e8e7d65ef419c344d50c85c7be702a97029e4724bf01350e4932098dafe302",
+        "task_id": "01a07ccb-b391-7240-85c8-861686b3d980",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "64a73eaa996bdb101e17bf56b9764c7df8f2e2581358a85d617db97f7e9cf77e"
+      }
+    }
+  }
+}

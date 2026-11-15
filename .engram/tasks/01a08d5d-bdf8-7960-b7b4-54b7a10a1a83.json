@@ -1,0 +1,63 @@
+{
+  "id": "01a08d5d-bdf8-7960-b7b4-54b7a10a1a83",
+  "external_ref": null,
+  "title": "Combining the all filter with the ready filter silently makes the all filter inert",
+  "outcome": "Combining the all filter with the ready filter silently makes the all filter inert",
+  "acceptance": [
+    "either the combination is refused with a message naming the conflict, or the help text and the documented contract state that availability filters imply open work, with a test asserting whichever behavior is chosen"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "stream-agent-receipts"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The --all help (CLI and MCP), cli-and-mcp.md and the engram-use skill state that --ready selects open work only, so --all adds nothing to it, and that with --blocked, --all adds ended items that still carry an active blocker; a test asserts both. Landed in 99c249e (bundle 8C-1).",
+    "completed_at": "2026-10-04T17:02:59.767151800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0bfda4647a06489c9f877dc9a30197c8": {
+        "activity_id": "0bfda4647a06489c9f877dc9a30197c8",
+        "task_id": "01a08d5d-bdf8-7960-b7b4-54b7a10a1a83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0bfda4647a06489c9f877dc9a30197c8"
+      },
+      "c21788cdf9944f6ea330d13d67a3cc28": {
+        "activity_id": "c21788cdf9944f6ea330d13d67a3cc28",
+        "task_id": "01a08d5d-bdf8-7960-b7b4-54b7a10a1a83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2b0be7ca476f40ccb2c5cf12533e3522"
+      }
+    }
+  }
+}

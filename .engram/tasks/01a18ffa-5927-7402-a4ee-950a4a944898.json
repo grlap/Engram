@@ -1,0 +1,28 @@
+{
+  "id": "01a18ffa-5927-7402-a4ee-950a4a944898",
+  "external_ref": null,
+  "title": "Document how the integration owner moves master while the main checkout has master checked out, so the landing never appears there as a staged reversal",
+  "outcome": "Document how the integration owner moves master while the main checkout has master checked out, so the landing never appears there as a staged reversal",
+  "acceptance": [
+    "/review-changes names the supported way to land on master (staged-tree commit or candidate fast-forward) when the main checkout has master checked out, such that afterwards the main checkout's index and worktree equal the landed tree.",
+    "The wording goes through the authority-text process if it touches authority text."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-instructions",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a1bc6a-15f8-79c0-87ae-2da182136bad",
+  "external_ref": null,
+  "title": "State whether a Coder's review round needs a full gate on its own input",
+  "outcome": "State whether a Coder's review round needs a full gate on its own input",
+  "acceptance": [
+    "AGENTS.md, CLAUDE.md and /review-changes say plainly whether a Coder's review round before READY needs a full gate on its own input, matching Greg's recorded word on the coder and integration split"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

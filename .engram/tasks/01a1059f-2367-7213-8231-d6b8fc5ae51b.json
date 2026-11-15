@@ -1,0 +1,63 @@
+{
+  "id": "01a1059f-2367-7213-8231-d6b8fc5ae51b",
+  "external_ref": null,
+  "title": "Pin that host source-text refusal runs after replay, so an exact retry of an earlier admission still replays",
+  "outcome": "Pin that host source-text refusal runs after replay, so an exact retry of an earlier admission still replays",
+  "acceptance": [
+    "A test persists an admitted turn_checkpoint, named_root_bind and execution_observe operation whose host source text holds a refused character (through a direct fixture, as an operation admitted before the rule), then repeats the exact intent and receives the stored receipt rather than that endpoint's text refusal (source_basis_text_refused, named_root_binding_refused or execution_observation_invalid); moving the check above replay makes it fail"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 4,
+  "labels": [
+    "control-plane",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Tests pin that the host source-text check runs after replay at turn_checkpoint, named_root_bind and execution_observe: an operation stored as if admitted before the rule (its stored intent rewritten to the request with a refused character) replays its receipt on the exact retry, while a fresh key is refused with the endpoint's code. ExecutionObserveIntent::of became pub(super) for the test. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T13:15:58.287598300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6160841546a345699c3d49b7ddd4abc2": {
+        "activity_id": "6160841546a345699c3d49b7ddd4abc2",
+        "task_id": "01a1059f-2367-7213-8231-d6b8fc5ae51b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6160841546a345699c3d49b7ddd4abc2"
+      },
+      "7e584550144142a2b64d370bc99824c1": {
+        "activity_id": "7e584550144142a2b64d370bc99824c1",
+        "task_id": "01a1059f-2367-7213-8231-d6b8fc5ae51b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a708a5f06390427c9283709dec52d105"
+      }
+    }
+  }
+}

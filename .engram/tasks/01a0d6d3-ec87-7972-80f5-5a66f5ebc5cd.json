@@ -1,0 +1,63 @@
+{
+  "id": "01a0d6d3-ec87-7972-80f5-5a66f5ebc5cd",
+  "external_ref": null,
+  "title": "MCP guidance names CLI flags where the MCP caller passes fields",
+  "outcome": "MCP guidance names CLI flags where the MCP caller passes fields",
+  "acceptance": [
+    "A test per surface covers each changed string, and the full quality gates pass",
+    "On MCP, every reminder, remedy and refusal that tells the caller to pass an argument names the MCP field (under/optional, source_fingerprint, bindings, link_basis, evidence_basis and any others found), while the CLI keeps its flags"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "mcp",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "On MCP, every refusal, remedy and reminder that tells the caller to pass an argument names the MCP field (about 40 sentences, each twinned beside its site, plus texts built in the caller's spelling), while the CLI, the raw core envelope, runnable commands and the tool schemas are unchanged; a test-only sweep guards every MCP answer in the Rust and dogfood tests. Landed in 5eb929f (bundle 8C-2).",
+    "completed_at": "2026-10-04T18:30:31.951780Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "26905699ac1e4c3f8f8ffedbca9f900a": {
+        "activity_id": "26905699ac1e4c3f8f8ffedbca9f900a",
+        "task_id": "01a0d6d3-ec87-7972-80f5-5a66f5ebc5cd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "00451a7c1cd34927a0737601afb2fb69"
+      },
+      "72f24fda311843bb8b088d375e120fe2": {
+        "activity_id": "72f24fda311843bb8b088d375e120fe2",
+        "task_id": "01a0d6d3-ec87-7972-80f5-5a66f5ebc5cd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "68d2e8e2be0e4c13ae65145132c55f00"
+      }
+    }
+  }
+}

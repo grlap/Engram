@@ -1,0 +1,46 @@
+{
+  "id": "01a192f6-b689-71a2-825c-841e6980d4cf",
+  "external_ref": null,
+  "title": "Measure the whole task-sync cycle on a coherent copy of the live Engram store (1,631 tasks)",
+  "outcome": "Measure task-sync exchange lookup and decode costs on a coherent copy of the live store",
+  "acceptance": [
+    "An authorized coherent-copy measurement reports source/build and copy provenance, object counts, query plans, lookup and decode costs separately, including clearly labeled representative B fixtures. Measurements do not query or alter the live store beyond coherent capture, disclose task/private content, or claim a synthetic result proves production performance.",
+    "Whole-cycle wall times on that copy, each phase separately (export; git add, commit and push or fetch through a local bare repository; import dry run; real import; repeat-import no-op), for: (a) a first full exchange into an empty store; (b) an incremental exchange with 5 changed tasks into a replica; (c) the same incremental exchange in the reverse direction. Each phase has an exact command, build and host; runs are repeated 3 times, reporting median and max. The copy stays on its host under target/ and is deleted after the measurement; only numbers and command lines are recorded.",
+    "The two-active-store (model A) cycle is measured the same way once model A is integrated, and is reported as not yet measurable until then."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "measurement",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "65cab3a4e27f4c48a9443d4ca75106df": {
+        "activity_id": "65cab3a4e27f4c48a9443d4ca75106df",
+        "task_id": "01a192f6-b689-71a2-825c-841e6980d4cf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d842b3c3507d46bb9188897b54f894a0"
+      }
+    }
+  }
+}

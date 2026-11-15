@@ -1,0 +1,51 @@
+{
+  "id": "01a07827-56bf-7311-9e27-3eb6db3fec7d",
+  "external_ref": null,
+  "title": "Durable resume setup is actor assignment: docs, skill and an expiry regression for held-only versus assigned coordination items",
+  "outcome": "Durable resume setup is actor assignment: docs, skill and an expiry regression for held-only versus assigned coordination items",
+  "acceptance": [
+    "a regression records an owner status on a held-only unassigned item and on a held assigned item, lets both claims expire (and separately releases them), and asserts: the unassigned item has no current status afterwards and its next row shows no status line, the assigned item's status remains current for the same actor's fresh session and next assigned row, and no renewal is required",
+    "the cli-and-mcp, local-work-system and engram-repo skill paragraphs say that a wait expected to survive claim expiry or session replacement lives on an item assigned to the actor (update REF --assignee ACTOR, or add --assignee), that a held-only item keeps its status only while the claim is live, and that an expired holder's status stays in history and is never promoted to current"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed durable-assignment onboarding and release-expiry regression across replacement sessions; no status authority changes; full gates and review passed.",
+    "completed_at": "2026-09-06T20:32:05.060679500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "36d5b89a00f1759fb960e4c182fc584b620b382cf5f1e589117ac1df2c4ade4f": {
+        "activity_id": "36d5b89a00f1759fb960e4c182fc584b620b382cf5f1e589117ac1df2c4ade4f",
+        "task_id": "01a07827-56bf-7311-9e27-3eb6db3fec7d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "76e026118eeb750805a9b9a60d50ea4db811a03a037ab8dc63130ca0e77a862f"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a199d1-0347-79a1-ac18-bcef1ea1bc66",
+  "external_ref": null,
+  "title": "Clarify carried-failure behavior when import-retired work reopens",
+  "outcome": "Clarify carried-failure behavior when import-retired work reopens",
+  "acceptance": [
+    "The acceptance-evaluation carried-failure paragraph accurately names import retirement and reopening alongside completion, disposal and detachment, without claiming that only completed work reopens.",
+    "The documented carry behavior for import retirement followed by reopen matches the approved lifecycle contract and implementation; any intended additional enforcement is explicitly decided and covered by focused tests before its writer ships."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,49 @@
+{
+  "id": "01a07440-8ba3-7650-9533-bad02f7ec934",
+  "external_ref": null,
+  "title": "Adopt Apache-2.0 and preserve third-party licensing notices",
+  "outcome": "Adopt Apache-2.0 and preserve third-party licensing notices",
+  "acceptance": [
+    "Apache-2.0 is declared consistently in the repository and website, audited dependency notices are included, and relevant checks pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "licensing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Adopted Apache-2.0 across the repository and website, preserved audited dependency notices, and passed all required quality gates and focused licensing checks.",
+    "completed_at": "2026-09-06T01:16:08.759922700Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b9f1824947ccc2d32f8079d66e0c8057c597826dfd2838bd7e0393f593ca83b3": {
+        "activity_id": "b9f1824947ccc2d32f8079d66e0c8057c597826dfd2838bd7e0393f593ca83b3",
+        "task_id": "01a07440-8ba3-7650-9533-bad02f7ec934",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8c9256053401179f24f3847eada5642c2ef69564b5d9726101ca20b12487d584"
+      }
+    }
+  }
+}

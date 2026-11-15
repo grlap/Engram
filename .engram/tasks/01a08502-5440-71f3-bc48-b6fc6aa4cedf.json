@@ -1,0 +1,64 @@
+{
+  "id": "01a08502-5440-71f3-bc48-b6fc6aa4cedf",
+  "external_ref": null,
+  "title": "Validate durable atomic plan protocol attempts and recovery",
+  "outcome": "Validate durable atomic plan protocol attempts and recovery",
+  "acceptance": [
+    "atomic_plan_maximum_response_and_restart_replay_preserve_every_key passes",
+    "atomic_plan_recovers_map_when_core_committed_before_protocol_receipt passes",
+    "atomic_plan_response_budget_refusal_rolls_back_graph_but_retains_protocol_attempt passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8974-7260-978e-d85512ed108e",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered durable plan-attempt validation and tested maximum-map replay, core-commit recovery and response-budget rollback.",
+    "completed_at": "2026-09-09T08:52:06.176032300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "13d980b89d5f8d5b595ac339d1ccd1a9210502f2c2bb6f1c6053b7947280ec7b": {
+        "activity_id": "13d980b89d5f8d5b595ac339d1ccd1a9210502f2c2bb6f1c6053b7947280ec7b",
+        "task_id": "01a08502-5440-71f3-bc48-b6fc6aa4cedf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "13d980b89d5f8d5b595ac339d1ccd1a9210502f2c2bb6f1c6053b7947280ec7b"
+      },
+      "385026bcb4a5745d8126533df5145a6dca549c63cb47f525a7d043ca05cc494a": {
+        "activity_id": "385026bcb4a5745d8126533df5145a6dca549c63cb47f525a7d043ca05cc494a",
+        "task_id": "01a08502-5440-71f3-bc48-b6fc6aa4cedf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c083082a329b5db83974a158b862232a629b29d592c2e1646391aa7b1602eefd"
+      }
+    }
+  }
+}

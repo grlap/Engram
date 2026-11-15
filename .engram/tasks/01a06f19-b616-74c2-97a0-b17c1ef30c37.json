@@ -1,0 +1,51 @@
+{
+  "id": "01a06f19-b616-74c2-97a0-b17c1ef30c37",
+  "external_ref": null,
+  "title": "Bind observation sequence and native basis to dense parent feed order",
+  "outcome": "Bind observation sequence and native basis to dense parent feed order",
+  "acceptance": [
+    "phoenix_observation_integrity_rejects_coordinated_parent_feed_reordering passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-08ae-7670-a743-edae30510dd6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented Bind observation sequence and native basis to dense parent feed order. Targeted regression and all nine repository gates pass on the unchanged closure freeze; no commit or installation.",
+    "completed_at": "2026-09-05T01:16:45.629307800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0742f2c00b8b144deb42db2b8bffc5c0681b07fbebe61b8910b91e612ae62534": {
+        "activity_id": "0742f2c00b8b144deb42db2b8bffc5c0681b07fbebe61b8910b91e612ae62534",
+        "task_id": "01a06f19-b616-74c2-97a0-b17c1ef30c37",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "314f55f55e41fce26bda4ef9b3caa3e36aac9535b2d9021b0deb2634994632e0"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a079c5-c89d-7dd0-a4db-65bb974f38ef",
+  "external_ref": null,
+  "title": "Doctor labels its checked counts apart from the verified snapshot and the shipped inventory names snapshot-consistent verification",
+  "outcome": "Doctor labels its checked counts apart from the verified snapshot and the shipped inventory names snapshot-consistent verification",
+  "acceptance": [
+    "The healthy and repair summary lines label the aggregate as canonical object and projection checks, so only the verified snapshot line says immutable objects",
+    "docs/shipped.md carries one row for snapshot-consistent integrity verification and the verified_snapshot disclosure, linked to the sqlite-store brief"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "stream-snapshot-integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 4e1b0e1 (bundle 5A): doctor's healthy and repair summaries count \"canonical object and projection check(s)\"; only the verified snapshot line counts immutable objects. shipped.md gains the snapshot-consistent verification row linked to the sqlite-store brief.",
+    "completed_at": "2026-10-03T13:54:14.710165Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "78796ce935ec44d0960b2f52abc11fd3": {
+        "activity_id": "78796ce935ec44d0960b2f52abc11fd3",
+        "task_id": "01a079c5-c89d-7dd0-a4db-65bb974f38ef",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4b39a1c91cad49e5999537444ab38dad"
+      }
+    }
+  }
+}

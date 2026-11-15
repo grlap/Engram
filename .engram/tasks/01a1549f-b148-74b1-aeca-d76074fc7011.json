@@ -1,0 +1,27 @@
+{
+  "id": "01a1549f-b148-74b1-aeca-d76074fc7011",
+  "external_ref": null,
+  "title": "Map a no-replace publication AlreadyExists race to the typed destination refusals",
+  "outcome": "Map a no-replace publication AlreadyExists race to the typed destination refusals",
+  "acceptance": [
+    "When another writer creates the destination between the existence check and the no-replace move, task-sync directory publication returns task_sync_destination_appeared (write_with) or task_sync_destination_occupied (the other writers) instead of a raw AlreadyExists I/O error, still keeping the existing entry and removing the stage; a test injects the race"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "note",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

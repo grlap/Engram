@@ -1,0 +1,29 @@
+{
+  "id": "01a1c216-5cd4-7530-a1a9-7e76ff130c9d",
+  "external_ref": null,
+  "title": "Compact incoming replay checks deferred planning entries as strictly as the full reducer",
+  "outcome": "Compact incoming replay checks deferred planning entries as strictly as the full reducer",
+  "acceptance": [
+    "A malformed historical PlanningDeferred entry (empty, duplicate or unsorted claims, or a foreign or backward after_cut) is refused by compact incoming replay exactly when the full reducer and doctor refuse it, through one shared predicate.",
+    "A behavior test feeds the malformed fixtures to both paths and shows the same outcome."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

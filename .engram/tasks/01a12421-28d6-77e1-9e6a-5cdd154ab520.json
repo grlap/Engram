@@ -1,0 +1,31 @@
+{
+  "id": "01a12421-28d6-77e1-9e6a-5cdd154ab520",
+  "external_ref": null,
+  "title": "After slice 1 lands, instructions and repo skill distinguish the shipped explicit directory export/import from the planned Git exchange",
+  "outcome": "After slice 1 lands, instructions and repo skill distinguish the shipped explicit directory export/import from the planned Git exchange",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (identical) and .agents/skills/engram-repo/SKILL.md no longer say task sync as a whole is unshipped once the explicit directory export/import of slice 1 has landed: they state that the explicit directory candidate export/import is shipped (per docs/shipped.md) while main-checkout enablement and Git exchange remain planned, linking the brief",
+    "SKILL.md changes follow the authority-text route (both coordinators' concurrence on exact wording recorded here, the wording and consequence sent to Greg before landing, a passed final-diff audit); Markdown checks pass and the review pair has no outstanding Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "docs",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a122fa-ddd4-7643-b37a-28c5e4faadc7"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

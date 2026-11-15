@@ -1,0 +1,99 @@
+{
+  "id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
+  "external_ref": null,
+  "title": "Let a host report a measured, unchanged named root as a sighting without opening change obligations",
+  "outcome": "Let a host report a measured, unchanged named root as a sighting without opening change obligations",
+  "acceptance": [
+    "The host protocol's execution_observe source_change accepts a new additive detection for a measured, unchanged workspace. It carries the workspace, the host's retained earlier measurement, and the current measured sighting, with equal revisions. Every existing detection keeps its current meaning, validation and refusals, including content_comparison's refusal of an equal pair.",
+    "A record with the new detection, accounted under the current policy for the run's newest claim epoch, whose sighting matches the root basis (workspace, generation, named state), counts as a named-root sighting for acceptance-evaluation admission and consumption at its run-feed position.",
+    "The new detection is never read as a source change. It opens no obligations, discharges no existing obligation, clears no freshness, asserts nothing about edits between the two measurements, grants no admission, and credits no test or check.",
+    "A record whose sighting does not match the root basis is refused as other sightings are. An audit-only policy basis, a historical binding, a finished run or a moved root basis is accounted audit-only and is not a sighting.",
+    "Tests cover: the accepted sighting enabling an evaluation that was refused for no sighting; no obligation opened; the audit-only cases; validation refusing unequal revisions, mismatched workspaces, and a baseline observed after its sighting; and replay of the same idempotency key.",
+    "The host protocol documentation and docs/shipped.md describe the new detection and the cases a host should use it in, consistent with the existing detections.",
+    "When Engram already holds a measured sighting in that workspace at a revision other than the one reported as unchanged, the new detection is refused with a typed refusal that tells the host to report a content comparison from Engram's newest revision, and nothing is recorded; a test covers it. When Engram holds no measured sighting in the workspace, the host's own retained baseline stands.",
+    "The new detection is refused on the admitted turn-checkpoint path, which this item does not design; a test covers it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "control-plane",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a18fa4-fb6c-7cb0-8c27-b9a929642115",
+      "kind": "manual",
+      "detail": "PARKED: no producer. After Greg's direction (TermAl Advisor #2827, „czysty branch z danym commitem i tyle”), evaluations compare the tested commit with the evaluated or landed commit, with no sightings; TermAl paused w-779e, the only producer of measured_unchanged. Dropped from Merger3's batch before its gate (Fable #3599/#557). Not cancelled and not completed: the reviewed package (freeze 2e431ea9, tree 8312bfd6, worktree measured-unchanged-7284) waits for the architects' \"same commit\" design to decide whether it is cancelled or partly reused.",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-31T01:48:36.568035600Z"
+    }
+  ],
+  "superseded_by": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+  "disposal_reason": "Superseded by B (w-da8c79e5d5ab), landed as master 0e52e6fd on 2026-10-31. Test evidence is now bound to the exact Git commit through normal Git status (rules-greg-commit-clean-identity, rev 5 onwards), which replaces the named-root sighting emission this item proposed. Parked as superseded in purpose since 2026-10-31 01:53Z.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "252598865f7144848e04f968b2f20ac4": {
+        "activity_id": "252598865f7144848e04f968b2f20ac4",
+        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c29465f66c474bea8f5bbd545da9f01d"
+      },
+      "c29465f66c474bea8f5bbd545da9f01d": {
+        "activity_id": "c29465f66c474bea8f5bbd545da9f01d",
+        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c29465f66c474bea8f5bbd545da9f01d"
+      },
+      "efe9758ddd934da08c9d738f6853e7e4": {
+        "activity_id": "efe9758ddd934da08c9d738f6853e7e4",
+        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "272f4ff168c048a09c39ce208575d60c"
+      },
+      "fc69e968b38543f4a1894adac92143a5": {
+        "activity_id": "fc69e968b38543f4a1894adac92143a5",
+        "task_id": "01a18d8c-8ff7-70c0-9532-8fdd1634eed3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "efe9758ddd934da08c9d738f6853e7e4"
+      }
+    }
+  }
+}

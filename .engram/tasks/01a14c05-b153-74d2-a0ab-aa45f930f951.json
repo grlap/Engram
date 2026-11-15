@@ -1,0 +1,54 @@
+{
+  "id": "01a14c05-b153-74d2-a0ab-aa45f930f951",
+  "external_ref": null,
+  "title": "Local three-store Git-only sync rehearsal on one host (synthetic tasks, explicit git fetch, honest gap report)",
+  "outcome": "Local three-store Git-only sync rehearsal on one host (synthetic tasks, explicit git fetch, honest gap report)",
+  "acceptance": [
+    "Following the w-004c pilot plan's smallest rehearsal: three separate Engram homes and three main clones under target/, one local bare fixture remote, five synthetic tasks, using the installed engram binary and explicit git fetch/merge only (no automatic fetch, no network)",
+    "Records per step what works on current master (initial import, exact repeat, preserved merge text/activity) and what refuses or cannot converge yet (divergent/native import, retained ImportReceipt recovery), with exact commands and outputs retained under target/",
+    "No live store, user configuration or home outside target/ is touched; no store is reset to fake convergence; the result is reported as a single-host rehearsal, not OS/network/three-physical-host proof"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "integration",
+    "pilot",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14bbb-847c-7533-b81e-004cb3ab6090",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the authorized single-Windows-host three-store Git-only rehearsal with fresh A2/B2/C2 fixture stores/clones, five synthetic tasks, explicit local Git transport and 109 retained command records. Initial imports/exact repeats/shared reexports and manual conflict/offline rejoin text preservation succeeded; divergent/native/malformed imports refused with unchanged graph bodies. Report and verified archive disclose missing SQLite convergence, retained ImportReceipt/crash recovery and physical-host/platform/network proof. Independent evaluation 5e328d4792914ec5baac4f096ffdb242 passed 3/3 on judgment.",
+    "completed_at": "2026-10-17T22:52:25.737556500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "98c271bf3a514cbf87fab7bbea3caa0b": {
+        "activity_id": "98c271bf3a514cbf87fab7bbea3caa0b",
+        "task_id": "01a14c05-b153-74d2-a0ab-aa45f930f951",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f4eb3f31ad314cd1a8156391e50f14a5"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1a974-3628-72f1-9a8a-f023511392c6",
+  "external_ref": null,
+  "title": "Keep done offered when a live Git decision can account for an unlocated stock report",
+  "outcome": "Keep done offered when a live Git decision can account for an unlocated stock report",
+  "acceptance": [
+    "With evaluated acceptance, a fresh passing evaluation carrying a registered-input decision and a later unlocated stock report keeps done offered; guidance does not require a redundant Test or evaluation when done would succeed",
+    "Legacy, operator-selected and located foreign-source obligations retain their actual required actions; guidance reads stored facts without introducing a new Git read",
+    "Confirm whether TermAl gates evaluation requests on action_required_total; if it does, reproduce and classify the hard block, then correct the relevant producer/consumer path and test it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

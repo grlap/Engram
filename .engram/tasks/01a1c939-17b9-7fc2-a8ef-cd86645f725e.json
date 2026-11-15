@@ -1,0 +1,54 @@
+{
+  "id": "01a1c939-17b9-7fc2-a8ef-cd86645f725e",
+  "external_ref": null,
+  "title": "Run the remaining real-Git target and helper policy cases on macOS and Linux, and isolate the Unix real-Git status test from the host checkout and config",
+  "outcome": "Run the remaining real-Git target and helper policy cases on macOS and Linux, and isolate the Unix real-Git status test from the host checkout and config",
+  "acceptance": [
+    "The Windows-only real-Git policy cases run on macOS and Linux too, through one shared module as the service tests already do: all malformed URLs, the fabricated URL key-split check, the assert_config checks for credential.helper, http.sslVerify and http.followRedirects, the shell-helper-before-manager order, and the no-write snapshots",
+    "The Unix real-Git status test runs in its own initialised repository with isolated Git configuration, so the enclosing checkout and the host's global and system config cannot change its result",
+    "Those tests pass on macOS, Linux and Windows"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The Windows-only real-Git target and helper policy cases now run on macOS and Linux too. They live in one shared module, tests/policy_cases.rs, which both the Unix and Windows drivers call: all 14 malformed URLs, the fabricated key-split, the three assert_config checks, the shell-helper-before-manager refusal, and the no-write snapshots. The Unix real-Git status test runs in its own initialised repository with isolated Git config: an empty global config, its own HOME and XDG paths, system config disabled, and inherited GIT_* overrides removed. All of this ships in w-6bba candidate 2839f80e258035f0381979ab8b96edfe4a67e9f9 (tree 102fe67e). Test evidence on that commit:\n- macOS: test-bd75114f, 31 passed, 0 failed, 2 ignored.\n- Linux: test-1bf44e90, 31/0/2, and FULL test-f82e7072.\n- Windows: exclusive credited run test-36f61dce, 56/0. An earlier contended failure (test-5f2735f7) was classified as host contention; robustness item w-ab273bb530b4 tracks it.\nThe second independent evaluation (delegation c04b6c0a) passed 3/3. Not yet landed; the Merger lands the w-6bba package.",
+    "completed_at": "2026-11-13T02:35:22.867183800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "14eb804f58ac43e18f90f832e5210b71": {
+        "activity_id": "14eb804f58ac43e18f90f832e5210b71",
+        "task_id": "01a1c939-17b9-7fc2-a8ef-cd86645f725e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c38c06f31ebd43a78cd75a2112a57a43"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a15c1c-8b6c-7013-8092-c2c47f9f8965",
+  "external_ref": null,
+  "title": "Reuse acceptance evaluation and authority audit across a base-only carry with byte-identical changed paths",
+  "outcome": "A changeset carried onto a newer master without touching its own changed paths keeps its review, acceptance evaluation and authority-audit evidence when it can be shown to be the same delivery, instead of commissioning a fresh evaluator, re-audit and review pair for every base move.",
+  "acceptance": [
+    "A design, reviewed by Engram::Fable and a read-only Codex explorer, defines when a carry counts as base-only: the changed paths' blobs are byte-identical, the base delta is disjoint from them, and there is a stated rule for when the base delta could still change behaviour. It also defines what is reused (review round, acceptance evaluation, final-diff audit) and what is always rerun (the full gate on the exact committed tree, readiness)",
+    "The design names every governing text and core check it changes (acceptance-evaluation freshness, the review-changes audit rule, the standing approval's same-tree review condition) and says which of those changes widen agent authority; any widening goes to Greg with exact wording before coding",
+    "No evidence reuse is applied before Greg decides on the design"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "throughput",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a0fe4d-6217-7b21-a8e0-d5245036da8d",
+  "external_ref": null,
+  "title": "A begun turn whose session is gone has no end: no expiry closes it, and no other session can",
+  "outcome": "A begun turn whose session is gone has no end: no expiry closes it, and no other session can",
+  "acceptance": [
+    "Decided with the coordinator: a begun turn whose session will never return, such as one restored from a retired origin's store, gets a defined end. That end is either an attributed operator or recovering-session action that closes it with an audited record, or a stated policy that it stays open forever with its effects named. The behaviour is documented, and a test shows it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

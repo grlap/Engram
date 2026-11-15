@@ -1,0 +1,52 @@
+{
+  "id": "01a132b5-c536-7a52-afb7-20cceb03dce3",
+  "external_ref": null,
+  "title": "Update the remaining MCP inventory documents for task-sync settings",
+  "outcome": "Update the remaining MCP inventory documents for task-sync settings",
+  "acceptance": [
+    "docs/spec.md section8, docs/features/local-work-system.md and docs/host-checklist.md accurately describe fourteen work words plus search and the separate task_sync_settings tool, with sixteen ordinary MCP tools and read-only settings status.",
+    "The changes preserve the distinction between work operations and separate configuration, and required links/instruction identity checks and independent pair review pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected the remaining three MCP inventory documents: fifteen work/search tools plus separate task_sync_settings, sixteen ordinary tools and six read-only tools with status-only settings; kept work/configuration and SQLite boundaries explicit.",
+    "completed_at": "2026-10-14T06:20:00.222878100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "eb18310bfd8e4d3aa47786d227646ff3": {
+        "activity_id": "eb18310bfd8e4d3aa47786d227646ff3",
+        "task_id": "01a132b5-c536-7a52-afb7-20cceb03dce3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "44424543ce514d3b9f205b0f2b2db6b7"
+      }
+    }
+  }
+}

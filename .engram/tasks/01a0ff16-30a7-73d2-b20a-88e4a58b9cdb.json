@@ -1,0 +1,52 @@
+{
+  "id": "01a0ff16-30a7-73d2-b20a-88e4a58b9cdb",
+  "external_ref": null,
+  "title": "Consolidate project memory into a small set of canonical rule entries",
+  "outcome": "Consolidate project memory into a small set of canonical rule entries",
+  "acceptance": [
+    "A holder note records, for every project memory that existed at the start (84 keys), whether it was kept, merged into a named canonical entry, or forgotten as stale or superseded, with the reason",
+    "A holder note records a read-only audit by a second agent comparing each merged or forgotten memory's operative rules with the canonical entries, finding no authority, safety, review or restart rule weakened or dropped, and lists any rule it restored",
+    "A holder note quotes the final key list with each key's revision and the final count"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "coordination",
+    "memory"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Project memory consolidated from 84 notes to 9 canonical keys (8 written, 83 forgotten, 1 kept); second-agent audit applied before writing; mapping, audit and final list recorded in holder notes.",
+    "completed_at": "2026-10-03T00:17:04.025251200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c0f65b1756ad4c34b55c84c5972f7512": {
+        "activity_id": "c0f65b1756ad4c34b55c84c5972f7512",
+        "task_id": "01a0ff16-30a7-73d2-b20a-88e4a58b9cdb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "16120ffa26fa420083b3b96f2714e57b"
+      }
+    }
+  }
+}

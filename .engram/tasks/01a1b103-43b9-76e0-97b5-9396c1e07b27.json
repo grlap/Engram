@@ -1,0 +1,54 @@
+{
+  "id": "01a1b103-43b9-76e0-97b5-9396c1e07b27",
+  "external_ref": "termal#w-879a38767fb2",
+  "title": "Keep machine line-ending policy from making committed-input reads falsely dirty",
+  "outcome": "Resolve the committed-input owner's line-ending normalization contract once so ordinary CRLF checkouts are not silently judged dirty solely because the reader drops the Git configuration used for checkout.",
+  "acceptance": [
+    "A bounded regression establishes the reported system/global core.autocrlf or core.eol checkout/rehash mismatch and distinguishes it from the prior manually rewritten CRLF/stat fixture; a changed-content control still refuses clean credit.",
+    "The Engram owner documents and implements one agreed policy for effective line-ending normalization across root and children, with correct local-over-fallback precedence. Prefer matching ordinary effective Git line-ending semantics without admitting unrelated global configuration; if a configuration cannot be represented safely it returns an explicit bounded input_unavailable reason rather than silently conflating normalization mismatch with ordinary not_clean.",
+    "The existing shared JSON v1 shape and closed refusal-code set, one shared predicate, strict stderr/deadline/output bounds, no full file/index scan, no inspected-repository/global configuration writes and immutable historical records/evaluations are preserved.",
+    "The shared real-Git fixture library and relevant Windows tests exercise the agreed policy; TermAl adapters consume the owner result without adding their own EOL predicate. Required reviews/gates and any acceptance impacts are recorded before delivery."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "cross-project",
+    "source-identity",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed false dirty committed-input reads caused by machine Git line-ending policy. Landed, pushed and installed the exact reviewed and fully gated EOL candidate; all six live stores report ready. Actual checkout/rehash, local-over-fallback precedence, recursive mismatch, changed-content and hardening tests passed. Existing JSON, bounds and stored evaluations remain unchanged.",
+    "completed_at": "2026-11-06T17:23:51.754055400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e099c2a17eb7412e9b87164d70791acc": {
+        "activity_id": "e099c2a17eb7412e9b87164d70791acc",
+        "task_id": "01a1b103-43b9-76e0-97b5-9396c1e07b27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1e91dbeaaff8475b8f1d406dcb0d7580"
+      }
+    }
+  }
+}

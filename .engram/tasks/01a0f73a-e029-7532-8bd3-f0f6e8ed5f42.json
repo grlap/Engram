@@ -1,0 +1,52 @@
+{
+  "id": "01a0f73a-e029-7532-8bd3-f0f6e8ed5f42",
+  "external_ref": null,
+  "title": "A family run's link refusal is tested at the module file and holds for a dangling child-directory link",
+  "outcome": "A family run's link refusal is tested at the module file and holds for a dangling child-directory link",
+  "acceptance": [
+    "A family whose child directory is a dangling link is refused by its family run rather than read as having no child directory, matching the documented rule that a link at a family's module file or child directory fails the check",
+    "A source-size test fixture links a family's module file, and the family run refuses it as a link naming that file, so removing the module-file link check fails a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "file-size",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Refused dangling family child-directory links and added exact-path regressions for split/unsplit child links and module-file links; full Windows gate, Codex/Claude review pair, fresh 2/2 independent acceptance and all-store readiness passed. Committed, pushed and installed the clean build.",
+    "completed_at": "2026-10-03T16:24:20.536479700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b0b8c6ee1a7e46a1a1fbe1989ea48ab2": {
+        "activity_id": "b0b8c6ee1a7e46a1a1fbe1989ea48ab2",
+        "task_id": "01a0f73a-e029-7532-8bd3-f0f6e8ed5f42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "69b8f405bc544aabbfe94ae737e94ec1"
+      }
+    }
+  }
+}

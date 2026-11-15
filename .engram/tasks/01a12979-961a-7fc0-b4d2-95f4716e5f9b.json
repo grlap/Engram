@@ -1,0 +1,63 @@
+{
+  "id": "01a12979-961a-7fc0-b4d2-95f4716e5f9b",
+  "external_ref": null,
+  "title": "A live handoff offer refuses the holder's note and claim renewal while allowed_next still lists note",
+  "outcome": "A live handoff offer refuses the holder's note and claim renewal while allowed_next still lists note",
+  "acceptance": [
+    "With a live handoff offer open on the holder's current run, the holder's note and claim renewal are either admitted, or refused while allowed_next and the receipt's next commands omit them; a test covers both operations"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "dogfood",
+    "handoff"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected live-handoff guidance and typed pending-offer refusals while preserving mutation admission, successful retries and wire codes. Holder note/status and claim renewal remain refused and are omitted from allowed_next and receipt next commands; admitted cancellation, recipient acceptance, peer observations and child waivers remain available.",
+    "completed_at": "2026-10-13T22:48:14.712659700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a2cee48f85434c28a3b42ad48738a2d9": {
+        "activity_id": "a2cee48f85434c28a3b42ad48738a2d9",
+        "task_id": "01a12979-961a-7fc0-b4d2-95f4716e5f9b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b49dd69fe31e4ba499e7d27e52218fc1"
+      },
+      "decda908bdb2497d99e06ab25c4d0500": {
+        "activity_id": "decda908bdb2497d99e06ab25c4d0500",
+        "task_id": "01a12979-961a-7fc0-b4d2-95f4716e5f9b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "decda908bdb2497d99e06ab25c4d0500"
+      }
+    }
+  }
+}

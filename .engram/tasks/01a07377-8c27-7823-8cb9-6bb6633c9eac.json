@@ -1,0 +1,50 @@
+{
+  "id": "01a07377-8c27-7823-8cb9-6bb6633c9eac",
+  "external_ref": null,
+  "title": "Complete listing continuation compile integration",
+  "outcome": "Complete listing continuation compile integration",
+  "acceptance": [
+    "cargo check passes with the listing read cut, catalog scope fields, and typed refusal mapping"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a065cc-43af-7613-8414-1c9649237fca",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected FeedId tuple construction, initialized unchanged core catalog scope fields, and added typed host refusal mapping; cargo check now passes without warnings. The initial failure was current-slice compilation wiring, not a baseline test or environmental failure.",
+    "completed_at": "2026-09-05T21:27:21.693294200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e5b6496b3cd5f335d94a96692336f22eadb91aaee9229b932c4156488be006a7": {
+        "activity_id": "e5b6496b3cd5f335d94a96692336f22eadb91aaee9229b932c4156488be006a7",
+        "task_id": "01a07377-8c27-7823-8cb9-6bb6633c9eac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3bd7c4f8b30a85fb0ea3c98693bbdb88d8dd15ec506f166071c93f21f7a6e57e"
+      }
+    }
+  }
+}

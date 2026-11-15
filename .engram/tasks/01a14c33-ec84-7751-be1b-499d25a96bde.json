@@ -1,0 +1,47 @@
+{
+  "id": "01a14c33-ec84-7751-be1b-499d25a96bde",
+  "external_ref": null,
+  "title": "Apply a human-resolved planning merge to execution-free imported tasks (narrow cross-host pilot)",
+  "outcome": "Apply a human-resolved planning merge to execution-free imported tasks (narrow cross-host pilot)",
+  "acceptance": [
+    "An explicit preview/apply mode applies a selected, human-resolved task-tree candidate to an existing imported planning graph, changing only title, outcome and plain acceptance strings of Open or Proposed items, through existing canonical Revised events in one transaction; ImportOrigin and RestoredRecord rows, ids and creation attribution stay byte-identical, and ordinary import behaviour does not broaden",
+    "Admission is positive and conservative: every project item is a validated task-sync restore with no work run, root execution, claim, handoff offer, completion seal, run evidence, obligation or restored evidence, and local history is only run-free project Revised events; any other item, field, lifecycle, edge, note, activity, binding or profile difference, or a moved local basis, refuses the whole batch with zero writes and a structured visible reason",
+    "Repeat apply of the same candidate returns already-current with no new events; a lost reply is recovered by re-applying the same candidate; no new durable kind, table, column, index, receipt shape or projection derivation is added (a required format change stops the slice and switches to the agreed fallback)",
+    "Focused fail-first regressions cover repeated merges into the same populated store, every refusal class above, mid-batch rollback, stale basis, re-export equality and verify_all health; then the full gate and the review pair pass on the frozen input"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "pilot",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "GREG STOP (via Advisor #1649, 2026-10-17 23:31Z): \"STOP w-499d and every special apply human-resolved planning merge command/slice. Do not code, gate, review, claim, or estimate that mechanism.\" The pilot is ordinary explicit git fetch, a designated Merger agent's guided Git merge, and the existing import. Zero code effects (per 9860 via Advisor #1651): only a claim, a clean detached worktree and a note read; claim and root released and worktree removed without force.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "745d7f5d5d57408ba55d0914b6bfd319": {
+        "activity_id": "745d7f5d5d57408ba55d0914b6bfd319",
+        "task_id": "01a14c33-ec84-7751-be1b-499d25a96bde",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c7955ca6fc5849be8e7ab6aab53ceb34"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a128b4-58f1-7b80-9899-5072f46ff294",
+  "external_ref": null,
+  "title": "Clarify read-only MCP CLI help about operational diagnostic writes",
+  "outcome": "Clarify read-only MCP CLI help about operational diagnostic writes",
+  "acceptance": [
+    "The --read-only CLI help describes a restriction on store mutation and explicitly discloses bounded operational diagnostics outside SQLite."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a0eac7-67d6-7d10-979c-985c4feb9176",
+  "external_ref": null,
+  "title": "Refresh the stale Status section in the acceptance-evaluation brief",
+  "outcome": "Refresh the stale Status section in the acceptance-evaluation brief",
+  "acceptance": [
+    "docs/features/acceptance-evaluation.md Status section states what TermAl has delivered (mode selection, read-only evaluator spawn recording verdicts under its own identity, source fingerprints) and what remains open end-to-end, checked against TermAl's source and the acceptance-evaluation P0 items"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "OBSOLETE (backlog triage, Architect1 note 7310abfb on w-c073eed553ad; spot-checked by Engram::Fable 2026-10-05 ~17:55Z). The stale Status assertions this item targeted are gone. Engram commit fb061c1 (2026-09-29, \"Refresh acceptance evaluation status\") removed the \"Not delivered: the host integration ... the host item has no owner yet\" paragraph. It now points at docs/shipped.md and says \"TermAl is the host that evaluates Engram acceptance\". This is cancelled as obsolete, not completed: the specific TermAl-delivery inventory the criterion asked for was not written. Real-host evidence stays on the acceptance-evaluation P0 items, and a new inventory, if wanted, is a fresh item.",
+  "completion": null
+}

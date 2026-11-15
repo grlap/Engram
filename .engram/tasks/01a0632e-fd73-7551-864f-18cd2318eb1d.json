@@ -1,0 +1,61 @@
+{
+  "id": "01a0632e-fd73-7551-864f-18cd2318eb1d",
+  "external_ref": null,
+  "title": "Exclude retired project memories from every search surface",
+  "outcome": "Exclude retired project memories from every search surface",
+  "acceptance": [
+    "Generic search by former key or body returns no row after forget"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Retired project memories are excluded from generic search and context surfaces, with regression coverage.",
+    "completed_at": "2026-09-02T17:37:48.500849200Z",
+    "actor": {
+      "actor_id": "codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "daef45521c29359774215385c0c5144b1fd08c168c1109aee93517179c513945": {
+        "activity_id": "daef45521c29359774215385c0c5144b1fd08c168c1109aee93517179c513945",
+        "task_id": "01a0632e-fd73-7551-864f-18cd2318eb1d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "407c746fad396b55b89938bb2c4c5fe9636388b023b3f8cb6193ff64d514c028"
+      },
+      "f787e0f80f2d6e684589b87188f73d30281e63cf16b8711958b7e1e9d7154e61": {
+        "activity_id": "f787e0f80f2d6e684589b87188f73d30281e63cf16b8711958b7e1e9d7154e61",
+        "task_id": "01a0632e-fd73-7551-864f-18cd2318eb1d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0a096a77302fbb6df3e500e17125ca2fad273c17d58942d5bf945591fa110771"
+      }
+    }
+  }
+}

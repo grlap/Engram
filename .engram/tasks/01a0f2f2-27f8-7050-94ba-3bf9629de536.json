@@ -1,0 +1,54 @@
+{
+  "id": "01a0f2f2-27f8-7050-94ba-3bf9629de536",
+  "external_ref": null,
+  "title": "Let core completion recovery distinguish unconfirmed root and fingerprint requirements",
+  "outcome": "Let core completion recovery distinguish unconfirmed root and fingerprint requirements",
+  "acceptance": [
+    "A test records a named-root evaluation declaring a new revision before its report: done returns a structured unconfirmed-declaration cause with end-turn/read-and-retry guidance, then a matching host sighting makes completion eligible without another judgment",
+    "Tests for missing completion measurement, measured mismatch and absent evaluation source basis retain their different safe remedies; source mismatch or absent basis never advises copying an earlier fingerprint as sufficient",
+    "The exact serialized-cause change is coordinated with Termal::Fable2 before coding and is covered by host-facing contract tests",
+    "The same core cause selects structured service recovery and word guidance; no cause claims to distinguish a declaration awaiting a future report from one that will never be reported solely from current absence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered typed source recovery causes and one shared safe remedy across service, words, show and raw details. Exact reviewed 32-path tree committed/pushed/installed; full gate passed, independent Codex+Claude reviews have no Medium+, acceptance4/4pass, three live stores ready.",
+    "completed_at": "2026-09-30T23:09:32.202155900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b51a078b6d2d45399df23f9b1520210e": {
+        "activity_id": "b51a078b6d2d45399df23f9b1520210e",
+        "task_id": "01a0f2f2-27f8-7050-94ba-3bf9629de536",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d1473b35f0e94c24a251dcf03ca6000a"
+      }
+    }
+  }
+}

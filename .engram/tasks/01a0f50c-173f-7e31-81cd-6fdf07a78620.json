@@ -1,0 +1,50 @@
+{
+  "id": "01a0f50c-173f-7e31-81cd-6fdf07a78620",
+  "external_ref": null,
+  "title": "MCP invalid_argument errors lack the reminders and next every tool error is documented to carry",
+  "outcome": "MCP invalid_argument errors lack the reminders and next every tool error is documented to carry",
+  "acceptance": [
+    "An MCP invalid_argument error (src/mcp.rs invalid_argument, returned by ordinary-mode update) carries error.reminders and error.next like the verb errors, or docs/features/cli-and-mcp.md narrows its claims that every tool error adds those two fields (the Read-only mode section and the general error paragraph) to the errors that do; a test pins the shape."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "MCP invalid_argument errors (update's seven refused argument combinations) now carry error.reminders (the reason) and error.next (empty, as the verb guidance fallback gives a refusal with no specific remedy), so every Engram-built MCP tool error has both fields. A unit test pins all seven combinations, and the stdio dogfood test checks a real refusal. Landed 1ddded7. Round 1 was clean; rmcp's own argument errors are filed separately as w-50992fc0da41. Full gate test-5fe4b396 passed 9/9; the independent evaluation passed 1/1.",
+    "completed_at": "2026-10-01T01:59:29.361431900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b71977ff785a46c7b7644d75ff28e5f9": {
+        "activity_id": "b71977ff785a46c7b7644d75ff28e5f9",
+        "task_id": "01a0f50c-173f-7e31-81cd-6fdf07a78620",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "08276c207c4a4fcfa7270aa33d2e2839"
+      }
+    }
+  }
+}

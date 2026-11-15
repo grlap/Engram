@@ -1,0 +1,29 @@
+{
+  "id": "01a19886-0240-7a90-9365-54699be2a5f3",
+  "external_ref": null,
+  "title": "Document ordinary host records' older-reader and binary rollback limits",
+  "outcome": "Make the host contract and landing guidance state that optional turn outcomes and ordinary host receipts are unreadable or unhealthy for pre-change readers, so producers wait for affected readers to exit before emission.",
+  "acceptance": [
+    "Host contract states that unadmitted_turn.outcome and host_* work-operation receipts cannot be produced until no older Engram reader of the affected store remains, including readers outside TermAl",
+    "Guidance distinguishes unchanged-schema readiness from reader compatibility and states that rolling back after emission makes older doctor/import unhealthy, without deleting history or adding a registry"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

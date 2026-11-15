@@ -1,0 +1,54 @@
+{
+  "id": "01a1ccd9-430c-74c0-aea8-801fd101b538",
+  "external_ref": null,
+  "title": "Repair existing stores before native readers require the imported evidence partition",
+  "outcome": "Existing stores with valid native memory heads can rebuild the sync projections atomically and become ready without changing durable canonical data.",
+  "acceptance": [
+    "Reproduce the real upgrade failure from a prior supported store shape with native memory heads and absent or outdated sync evidence projections, then make supported projection repair and readiness succeed while preserving durable records and imported/native authority boundaries.",
+    "Behavioral regressions cover the dependency order, meaningful retained memory and evidence state, and refusal/rollback for genuinely invalid durable heads; the fixed package records focused validation and independent acceptance on its exact source.",
+    "State whether the fix changes durable schema or record meanings; if it does, stop and report the conversion consequence before proceeding. Otherwise retain the projection-only cutover contract and provide a complete package for integration's corrected private-store rehearsal."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "cutover",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered projection-only repair ordering on clean candidate e9e64779a3f12b0adf9ce724aa202850f49402e8/tree ba04a67d32852df7919a760ab4c1209b715a5558, parent CC09. Core schema preparation precedes unchanged work/evidence rebuild, then native memory-head validation and FTS/state, within one transaction. Intended regression RED followed by 33/33 GREEN, strict Clippy/fmt/doc links and host verification. Fresh 2GB real snapshot copy repaired healthy and readiness ready; source baseline unchanged. Independent evaluation112f60b79faf48d39be041384ec4ae8e passes all3 criteria on exact source, fresh at completion. No durable conversion, landing, install or live-store action; parent owns combined review/full/all-store cutover. Retained package and original proof recorded on open parent.",
+    "completed_at": "2026-11-12T01:42:19.827846200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5007cd94257a420c85cf184442dceaf9": {
+        "activity_id": "5007cd94257a420c85cf184442dceaf9",
+        "task_id": "01a1ccd9-430c-74c0-aea8-801fd101b538",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "00741ed2e0bd4bee886fe9ba9f4ce0d8"
+      }
+    }
+  }
+}

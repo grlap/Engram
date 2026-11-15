@@ -1,0 +1,27 @@
+{
+  "id": "01a122ea-2fa4-7da3-8f4a-a6d181e0374c",
+  "external_ref": null,
+  "title": "Preserve diagnostic history when Windows ring rotation cannot rename an open head",
+  "outcome": "Preserve diagnostic history when Windows ring rotation cannot rename an open head",
+  "acceptance": [
+    "Repeated failed rotations while a Windows reader holds engram-0 without FILE_SHARE_DELETE preserve previously retained diagnostic files and remain within the four-file bound."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

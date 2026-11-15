@@ -1,0 +1,53 @@
+{
+  "id": "01a13175-b981-7ee1-9c2d-4df5868f905a",
+  "external_ref": null,
+  "title": "Own the per-project task-sync opt-in setting in Engram",
+  "outcome": "Own the per-project task-sync opt-in setting in Engram",
+  "acceptance": [
+    "Engram owns a per-project task-sync opt-in setting with explicit, attributed enable and disable actions through the Engram CLI and MCP; TermAl reads and writes it only through that supported Engram API; no TermAl-owned or Git-admin file holds it, and nothing infers it from shared or Git files (Greg's correction relayed by Engram::Advisor, 2026-10-12 #1280).",
+    "The setting is off by default and fails closed: an absent setting reads as disabled with reason \"not configured (off by default)\", and an invalid or unreadable one reads as unknown with its reason; both gate as not enabled.",
+    "A dedicated non-strict status read reports format engram-task-sync-status-v1, project_id, state enabled, disabled or unknown (never implied by absence), reason, and a one-line effect description; fail-first tests cover absent, invalid, disabled and enabled.",
+    "Its storage location is presented to Greg and decided before code when it changes the durable store; TermAl's three strict readers are not changed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a12302-8b0e-7ba1-a0be-79022fc49394",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Engram owns per-project task-sync status/enable/disable through shared CLI and MCP service, with attributed explicit enable, off-by-default and fail-closed reads, private atomic file replacement and no SQLite or strict-reader changes. Validated and landed.",
+    "completed_at": "2026-10-13T01:19:30.353580200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7d52eb048b684ce888cf1e1b481a262d": {
+        "activity_id": "7d52eb048b684ce888cf1e1b481a262d",
+        "task_id": "01a13175-b981-7ee1-9c2d-4df5868f905a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "04c68528bf9e4ba1a29b67440a5002b0"
+      }
+    }
+  }
+}

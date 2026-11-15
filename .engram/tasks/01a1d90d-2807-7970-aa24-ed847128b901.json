@@ -1,0 +1,29 @@
+{
+  "id": "01a1d90d-2807-7970-aa24-ed847128b901",
+  "external_ref": null,
+  "title": "Assess Windows startup headroom in descendant-cleanup fixtures",
+  "outcome": "Descendant cleanup test timing has enough Windows startup headroom while preserving the distinction between forced cleanup and natural descendant exit.",
+  "acceptance": [
+    "Use retained Windows W1 or a justified focused result to document whether pwsh and descendant startup fit the fixture's current deadline and outer guard under representative load.",
+    "If correction is warranted, change only fixture timing or startup mechanics while preserving deadline < outer guard < descendant lifetime and verification of typed Deadline, decoded payload, callback failure/panic cleanup; confirm on Windows."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "review-low",
+    "testing",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0a353-ebdc-7a10-a881-3ea8593d43d8",
+  "external_ref": null,
+  "title": "Define coordinated upgrade state-transition contract",
+  "outcome": "A bounded documented state model guides further tests and corrections without replacing existing implementation.",
+  "acceptance": [
+    "A short invariant summary and document link beside the implementation identifies the contract without duplicating its complete table; existing implementation is preserved.",
+    "All latest review findings map to contract rows and required tests; Fable consultation is recorded and concrete adjustments resolved; no Cartesian-product coverage claim.",
+    "Invariants cover complete preflight, preservation of verified originals, unknown-byte refusal, rollback closure and cleanup ownership; reachable intermediate states are distinguished from corruption and excluded scenarios.",
+    "One linked documentation table defines initial state, guards, allowed command, effects, next state and interrupted recovery; contradictory states specify refusal before effects."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a1db-4dc0-70d2-abe1-0bb2120a6fc1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented and consulted upgrade transition contract with ordered guards, state outcomes, boundary families, finding/test mapping and module link; implementation conformance remains separately owed.",
+    "completed_at": "2026-09-15T05:22:04.760944900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2488a8bb173a2746314ea3b91cc7400213aa42ff5f2682836661704c5825b929": {
+        "activity_id": "2488a8bb173a2746314ea3b91cc7400213aa42ff5f2682836661704c5825b929",
+        "task_id": "01a0a353-ebdc-7a10-a881-3ea8593d43d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "79b24cc429850c75c66bacac232cfe1e426b21d0df2fc59b859c45fb5015c4fd"
+      }
+    }
+  }
+}

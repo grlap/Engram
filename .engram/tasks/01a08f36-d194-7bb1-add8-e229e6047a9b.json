@@ -1,0 +1,51 @@
+{
+  "id": "01a08f36-d194-7bb1-add8-e229e6047a9b",
+  "external_ref": null,
+  "title": "Neutral schema refusal without invalid-data prefix",
+  "outcome": "Neutral schema refusal without invalid-data prefix",
+  "acceptance": [
+    "unrecognized_schema_and_corrupt_records_remain_distinct_on_open_and_repair passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered dedicated neutral DifferentBuildSchema Display and type-based classification; native/CLI matrices forbid invalid-data advice. Host/MCP wire codes intentionally preserved and tested. Full block8 and round5 clean.",
+    "completed_at": "2026-09-11T10:10:37.231576700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "66f8ea0518cd7ca0b707439d73e0d714c4c678307307bc4ee9452d0f5814bc0f": {
+        "activity_id": "66f8ea0518cd7ca0b707439d73e0d714c4c678307307bc4ee9452d0f5814bc0f",
+        "task_id": "01a08f36-d194-7bb1-add8-e229e6047a9b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0b7df7bc15d0c4b86654bbfda186a3e3c6a60aed59d38e5df31b9b72c60fe3dd"
+      }
+    }
+  }
+}

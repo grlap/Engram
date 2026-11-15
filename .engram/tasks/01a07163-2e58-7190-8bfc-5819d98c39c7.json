@@ -1,0 +1,63 @@
+{
+  "id": "01a07163-2e58-7190-8bfc-5819d98c39c7",
+  "external_ref": null,
+  "title": "Cover the independent detach handoff guard",
+  "outcome": "Cover the independent detach handoff guard",
+  "acceptance": [
+    "A regression reaches offered-handoff admission independently of live-claim refusal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0701e-3d2f-7432-a0e9-366cdba19e56",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered independently exercised live-handoff refusal ahead of claim refusal, authority unchanged and post-expiry success. Both reviewers accepted landed behavior.",
+    "completed_at": "2026-09-05T15:02:57.867144700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "61f75368be53809f103232e21ac91299d202817138add1d27c0de14d0c8f5f0a": {
+        "activity_id": "61f75368be53809f103232e21ac91299d202817138add1d27c0de14d0c8f5f0a",
+        "task_id": "01a07163-2e58-7190-8bfc-5819d98c39c7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "61f75368be53809f103232e21ac91299d202817138add1d27c0de14d0c8f5f0a"
+      },
+      "da6e08ae9dbd0998059279650c95e28d56187f80d2efc396e00e79aa498e0d11": {
+        "activity_id": "da6e08ae9dbd0998059279650c95e28d56187f80d2efc396e00e79aa498e0d11",
+        "task_id": "01a07163-2e58-7190-8bfc-5819d98c39c7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "aea09018262b79728fd4da37513f1834b078ffe48ac6fa8f369c07984b10f42c"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a10322-ddf3-7292-9d27-411aa5ee66f6",
+  "external_ref": null,
+  "title": "Pin parent waiver wording and retain admitted remedies in parent child JSON",
+  "outcome": "Pin parent waiver wording and retain admitted remedies in parent child JSON",
+  "acceptance": [
+    "The completed-root and open-sibling detach regressions assert required_owed resolve_first exactly equals \"waiver is unavailable; resolve the parent's execution context\".",
+    "The open-root successor regression shows the parent and asserts both children[].child_resolution.remedy and the required_owed row remedy retain the admitted required-child waive command."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pinned exact unavailable-waiver wording in completed-root and open-sibling regressions, and preserved admitted parent waiver remedies in both child JSON surfaces under an open root; rows matched by child identity.",
+    "completed_at": "2026-10-03T20:35:44.454919700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9f4119bc0443471781eca19bb070b894": {
+        "activity_id": "9f4119bc0443471781eca19bb070b894",
+        "task_id": "01a10322-ddf3-7292-9d27-411aa5ee66f6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1b7b25ed04de43b289a4447a579be24c"
+      }
+    }
+  }
+}

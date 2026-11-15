@@ -1,0 +1,28 @@
+{
+  "id": "01a19173-09e2-7e00-a23c-1e0512385fd6",
+  "external_ref": null,
+  "title": "Qualify the serving-store identity guarantee for retargetable links on the store path",
+  "outcome": "Qualify the serving-store identity guarantee for retargetable links on the store path",
+  "acceptance": [
+    "The control_connection_read docs and the StoreFileIdentity::opened, host.rs and Windows test comments state that the open-time identity is exact on Windows only when no component of the store path is a junction or symbolic link that can be retargeted, and name the excluded actor as one with write access to any directory or link on the store path, not only the store's directory.",
+    "The same docs say that when nothing existed at the path before the open, any file found there at the second observation is kept, and that ReFS's non-unique file index is part of the public guarantee's caveats.",
+    "Optionally, SQLite opens the store on its canonicalized path and both identity observations use that same path, which removes link retargeting from the open window; if done, a test shows a junction on the path no longer changes the kept identity."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

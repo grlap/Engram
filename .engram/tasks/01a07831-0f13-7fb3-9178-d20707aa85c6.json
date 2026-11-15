@@ -1,0 +1,51 @@
+{
+  "id": "01a07831-0f13-7fb3-9178-d20707aa85c6",
+  "external_ref": null,
+  "title": "Preserve transaction typing in shared lifecycle helpers",
+  "outcome": "Preserve transaction typing in shared lifecycle helpers",
+  "acceptance": [
+    "cargo check passes with shared cancellation and waiver helpers taking the existing transaction type"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "pilot",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0761c-5f75-78d0-a0ae-ed549daa9983",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shared lifecycle helpers retain Transaction typing; cargo check and all final gates passed.",
+    "completed_at": "2026-09-06T20:29:23.350591700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7a1614684f985162c093fea2afaf21f198ac7528b41611351745acf918da01d0": {
+        "activity_id": "7a1614684f985162c093fea2afaf21f198ac7528b41611351745acf918da01d0",
+        "task_id": "01a07831-0f13-7fb3-9178-d20707aa85c6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e1e86f0e7def3ff7b41678270fb862cec1cb084590e4b3e6771bcdc76a865527"
+      }
+    }
+  }
+}

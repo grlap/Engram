@@ -1,0 +1,53 @@
+{
+  "id": "01a10e8a-195e-7552-8861-8be5bcaa1588",
+  "external_ref": null,
+  "title": "The spec describes durable request-key tombstones as present behaviour; mark them designed, not built",
+  "outcome": "The spec describes durable request-key tombstones as present behaviour; mark them designed, not built",
+  "acceptance": [
+    "docs/spec.md no longer states in the present tense that compact durable request-key tombstones bind kind/key/intent/terminal state through work retention, or that operational control records have bounded retention; it marks the tombstone and the pruning as designed and not built, consistent with docs/features/behavioral-control-plane.md and docs/shipped.md",
+    "docs/features/behavioral-control-plane.md's \"Durable control records\" section marks as designed, not built: the pruning of operational records after a terminal retention window, the RequestKeyTombstone record, and the rebuilding of projections from canonical events; it states what ships instead (stored results and grants are kept, and recovery reads the durable session and grant rows)",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 5a47e9d on master, Markdown only.\n\ndocs/spec.md §2.7 and §3.1, and the \"Durable control records\" section of behavioral-control-plane.md, now mark three things as designed, not built: bounded retention and pruning of control records, compact request-key tombstones, and rebuilding projections from canonical events.\n\nThey state what ships instead:\n- Nothing prunes stored grants or results.\n- An exact retry of a turn, begin or checkpoint request finds its stored result; a session bind replays only its latest key.\n- Among session and turn transitions, only a turn checkpoint emits a canonical event, an audit record no production path consumes.\n- Recovery reads the durable session and grant rows, which are restored from backup.\n- A restart expires issued, unbegun grants, while a begun turn stays open.\n\nEvidence:\n- Four review rounds; the last has nothing at Medium or above. Its in-scope Low is filed as w-3710fc2ca41c; the out-of-scope ones as w-1ad48d5ce497 and w-524b15d690c5.\n- Link check test-07a7c9f0; identity check test-9fa839eb.\n- Evaluation b683d1aa, 3/3.\n- Readiness ready on all 4 stores.",
+    "completed_at": "2026-10-06T06:43:47.367072100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1769597fa1c043c29937da9aa17b011b": {
+        "activity_id": "1769597fa1c043c29937da9aa17b011b",
+        "task_id": "01a10e8a-195e-7552-8861-8be5bcaa1588",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dbb8d6c6a9b64ad099fba77551ad41c9"
+      }
+    }
+  }
+}

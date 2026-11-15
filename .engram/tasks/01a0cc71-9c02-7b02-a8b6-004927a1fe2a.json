@@ -1,0 +1,52 @@
+{
+  "id": "01a0cc71-9c02-7b02-a8b6-004927a1fe2a",
+  "external_ref": null,
+  "title": "An executor rewriting its own task's acceptance criteria retires a failed evaluation",
+  "outcome": "An implementer cannot clear a failing acceptance evaluation by rewriting the criteria it failed; criteria changes by the run's holder or executors are either refused, or keep the failure in force until someone else accepts the revision.",
+  "acceptance": [
+    "A test shows that an executor's criteria revision cannot turn a fresh failing evaluation into a completable task without the decided safeguard",
+    "Revisions by someone other than the executor, and revisions made with no failing evaluation, behave as today",
+    "The acceptance-evaluation design doc states the rule",
+    "The rule for acceptance revisions made by the run's holder or an executor after a fresh failing evaluation is decided with Greg and recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A failing acceptance evaluation now survives an executor's rewrite of the criteria it judged, until someone other than the executor accepts the revision.\n\n43c94d6 carried the failure: after a revision of the criteria or bindings it judged, it is shown, and it must be named with --supersedes after the executor's revision. e450eb0 implements Greg's decision \"so B it is\": the naming evaluation must come from an evaluator that never held the run (carried_failure_self_acknowledged otherwise). A failing evaluation that names the failure keeps it carried; only a passing one ends it, or the run ending (K3). show --full gives the evaluator the original, newest and current contracts.\n\nThe acceptance-evaluation design doc records it as R11, with rows B53–B58. Both landings were reviewed to a clean round and gated on the committed tree; build 4eb402bb7df2 is installed.",
+    "completed_at": "2026-09-29T16:00:37.132307300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b0d38bccd2b5488ba0a0ac5be0e3ed27": {
+        "activity_id": "b0d38bccd2b5488ba0a0ac5be0e3ed27",
+        "task_id": "01a0cc71-9c02-7b02-a8b6-004927a1fe2a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "69daabcb62e64beabd4a0692d7ea7e26"
+      }
+    }
+  }
+}

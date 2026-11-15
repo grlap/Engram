@@ -1,0 +1,52 @@
+{
+  "id": "01a10f09-dce3-7790-81ef-954e2d30bf4d",
+  "external_ref": null,
+  "title": "Removing a finished worktree deleted raw evidence an open item still needed",
+  "outcome": "Removing a finished worktree deleted raw evidence an open item still needed",
+  "acceptance": [
+    "The engram-repo skill's worktree-removal step requires the lander, before removal, to copy every path under that worktree cited by the landed item's notes, every still-needed launcher run directory and the freeze manifest to the main checkout's target/evidence/<commit>/<worktree>/, verify the copy, and record on the landing item each old path with its archive path, or that the landed item and the items it knows to cite the worktree cite none, never a global absence claim; it requires an item citing another worktree's target/tmp path to have it archived at citation time and cite the archive path, because no word searches note bodies; and it requires a worktree that predates the rule to be removed only after a full sweep of open items' notes, retaining anything ambiguous",
+    "The rule names who does it (the lander) and where the archive lives, and the doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "evidence",
+    "process",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The engram-repo skill's worktree-removal step now binds the lander: before `git worktree remove`, copy (never move) every path the landed item's notes and gate references cite, every still-needed launcher run directory and the freeze manifest into the main checkout's target/evidence/<full landed commit>/<worktree name>/, verify size and content bytes per file, never replace an archived file and stop on a byte mismatch, record the mappings and the landed commit on the landing item with a scoped statement (never a global absence), and note the archive path on known citing items; an item citing another worktree's target/tmp path has it archived at citation time because no word searches note bodies (filed as w-f30a6dfff805), with a provisional archive path for pre-landing citations; a worktree predating the rule is removed only after a full sweep of open items' notes and gates; a junction or link resolving outside the worktree stops the removal. Delivered in one changeset with w-59f19d400edd. Three review rounds on 43f5cd8 (867c02cc, 66139571, a516589a), round 3 clean from Codex and Claude; link and identity checks passed on a516589a; evaluation 4323d221fa6c4ceaa8cd30e332d3b02b passed 2/2 (attempt 2; the first, 9d4b4382…, was marked stale by an identical-revision observation, filed as w-fbc931f1b6ac); readiness x4 ready; landed as 144a44d, Markdown only, nothing installed.",
+    "completed_at": "2026-10-06T09:54:18.048347700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5246ef9b055e42d5892027bc1e27987e": {
+        "activity_id": "5246ef9b055e42d5892027bc1e27987e",
+        "task_id": "01a10f09-dce3-7790-81ef-954e2d30bf4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "454e0efdb67d4df293a020ebe910b65c"
+      }
+    }
+  }
+}

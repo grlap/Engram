@@ -1,0 +1,51 @@
+{
+  "id": "01a0faf8-343d-7ff3-beed-295ad487878b",
+  "external_ref": null,
+  "title": "Host source bases accept unsafe rendered characters, and root-generation history does not reset at a claim release",
+  "outcome": "Host source bases accept unsafe rendered characters, and root-generation history does not reset at a claim release",
+  "acceptance": [
+    "A decision recorded on the item says whether host-supplied workspace ids and source revisions must refuse unsafe rendered (control/format) characters on the admitted turn_checkpoint path, and the code and a test follow it",
+    "The source-root generation checks (validate_source_root_basis_on and the historical check rule) either reset at a claim release, since the claim id is reused after release, or the item records why history across a release is accepted, with a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "turn_checkpoint refuses new source-basis workspace ids and revisions holding a C0/C1 control or Bidi_Control character with source_basis_text_refused naming the field, after replay, persisting and echoing nothing; the resend under the same key is admitted. Root-generation history stays monotone across a claim release by decision (the claim id is reused), with a re-claim test. Docs in behavioral-control-plane.md. Store judgment: no durable row changes; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T07:09:22.598175400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "484adfd96ed247bda175aca1d14ab74b": {
+        "activity_id": "484adfd96ed247bda175aca1d14ab74b",
+        "task_id": "01a0faf8-343d-7ff3-beed-295ad487878b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4109ada948884e21b3454ed6b1492acd"
+      }
+    }
+  }
+}

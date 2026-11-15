@@ -1,0 +1,50 @@
+{
+  "id": "01a133b2-7485-7403-ab1b-60b9d2f77d6b",
+  "external_ref": null,
+  "title": "Document the citable-prefix exception to unchanged admission refusal text",
+  "outcome": "Document the citable-prefix exception to unchanged admission refusal text",
+  "acceptance": [
+    "The acceptance-evaluation admission-cause paragraph explicitly qualifies unchanged reason text for WrongSource refusals prefixed with citable-record discovery and agrees with the R5 description."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered: the admission-cause paragraph of docs/features/acceptance-evaluation.md now qualifies \"unchanged reason text\": a wrong-source citation refusal puts the citable-record discovery described under Record-time validation (R5) before it, and the original rejection and remedy follow unchanged. This agrees with R5 and the code: only WrongSource (OtherSource/OtherNaming) prepends citable::prefix, at acceptance_evaluation.rs:410-442.\n- Wording concurred by Engram::Fable (#2559).\n- Markdown-only validation on freeze fe11093d: link check and identity through the focused launcher, PASS with the input matched.\n- Pair: Codex clean; Claude accurate, one cosmetic Note.\n- Evaluation 5447fcf5 PASS.\nChangeset judgment: docs only; no durable row, schema, projection or TermAl strict-reader change. readiness was ready on all 4 stores with the new build and with the installed binary.\nLanded b58caa0 on origin/master, a fast-forward from e0072ba. Installed build 21d504b66eb1 (exe sha256 e8313868…3c1f); backup engram-20261013T175202Z-8f9e3f6a5d96.exe (sha256 3b040c06…7693).\nRunning sessions do not need the new build: docs only.",
+    "completed_at": "2026-10-13T17:52:17.819783400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1b2d1028aa294ba6a2573bbf12ccbcf4": {
+        "activity_id": "1b2d1028aa294ba6a2573bbf12ccbcf4",
+        "task_id": "01a133b2-7485-7403-ab1b-60b9d2f77d6b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e71d82874fa1470a9c4d261dd41de1fd"
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "01a0faa0-cf24-7712-8da2-44604335b06c",
+  "external_ref": null,
+  "title": "Conditional advance of a head: the adapter capability and its conformance suite",
+  "outcome": "Conditional advance of a head: the adapter capability and its conformance suite",
+  "acceptance": [
+    "A portable transport exposes exact expected-head conditional advance as an optional capability, independently reusable by backup; ordinary directory backup declares no such ownership capability. A missing/mismatched expected head refuses unchanged and reports the observed head; no backup receipt is treated as ownership.",
+    "Git conformance against a real local bare remote covers absent-ref bootstrap, exact update, competing updates, rollback to ancestor, deletion, missing/malformed pre-push helper input, late server update and lost reply. The owned helper checks exactly one old/new/ref tuple, candidate parent and invocation; no force update is used, and server old-id compare is demonstrated. A retry uses the same candidate; finding it as ancestor proves publication only, never current ownership.",
+    "The Git adapter passes Windows conformance using scratch under target/, with bounded noninteractive subprocess and input handling. Source branches/index/worktree and unrelated refs are unchanged. Scratch and retained history are isolated by full target authorization identity; fresh targets receive no old target history, and existing-lineage append requires explicit enrollment beyond fetch/list permission. Unsupported adapters refuse configure. Every Git invocation uses controlled configuration and an allowlisted environment before network access, fixes the owned helper, and checks/receipts the exact authorized URL. Windows tests inject ambient includes, URL rewrites, hooksPath, SSH/proxy/TLS and environment overrides and HTTP redirects: excluded/refused before payload disclosure, with no global edits. Explicit admitted credential and SSH routes cannot redirect targets. Missing helper evidence and the server old-id check are tested independently.",
+    "The head manifest carries a minted id, the lineage, its parent's id, the writer instance id, the epoch, the state, the export policy and its content fingerprint, the coverage summary, the payload parts with content fingerprints and sizes, the format identity, the capturing build and its source revision, and the time; a test asserts the fields and that no id is derived from content"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0faa0-685a-7f31-83d2-2028017ca901",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Portable handoff was replaced before any of it shipped: docs/features/git-task-sync.md says the previous portable writer-epoch and release/acquire design is gone, AGENTS.md says the selected sync uses no global writer lock, writer epochs or release/acquire protocol, and master has no portable code or brief. Cancelled under Greg's word, 43498a6e #683. Nothing here was built or tested.",
+  "completion": null
+}

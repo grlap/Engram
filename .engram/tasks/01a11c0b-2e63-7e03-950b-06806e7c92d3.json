@@ -1,0 +1,52 @@
+{
+  "id": "01a11c0b-2e63-7e03-950b-06806e7c92d3",
+  "external_ref": null,
+  "title": "Landing fixture test races Git's detached auto-maintenance on the victim repository",
+  "outcome": "Landing fixture test races Git's detached auto-maintenance on the victim repository",
+  "acceptance": [
+    "The doctor landing test fixtures run Git with automatic maintenance disabled (`-c maintenance.auto=false` in fixture_git_command), so a fixture `git commit` starts no detached `git maintenance run --auto`, and fixture_commands_ignore_inherited_repository_routing compares victim snapshots that no background Git process can change",
+    "The landing tests pass in the full gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "ci",
+    "gate",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed the GitHub CI flake Greg reported in fixture_commands_ignore_inherited_repository_routing. On Unix, a commit made with recent Git starts detached auto-maintenance, which held objects/maintenance.lock while the test snapshotted the victim repository. fixture_git_command now passes `-c maintenance.auto=false`, and a new test pins that option structurally.\n- Round 2: the full gate test-ae35778b passed 9/9, and the Codex+Claude pair was clean.\n- The round-1 gate failure (MCP close under host load) is classified and filed as w-9b4c461113c7. The other fixture helpers are filed as w-7ccecfeaa483.\n- Evaluation f5c9ccea passed 2/2. Landed as ed50f19 and installed as build 03bab16541c5.",
+    "completed_at": "2026-10-08T16:41:33.296752700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d9e12165bd65445e848f3037b72c379f": {
+        "activity_id": "d9e12165bd65445e848f3037b72c379f",
+        "task_id": "01a11c0b-2e63-7e03-950b-06806e7c92d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fc539c6b49174658a7ed07f5238cca18"
+      }
+    }
+  }
+}

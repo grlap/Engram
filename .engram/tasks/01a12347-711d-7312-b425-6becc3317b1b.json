@@ -1,0 +1,28 @@
+{
+  "id": "01a12347-711d-7312-b425-6becc3317b1b",
+  "external_ref": null,
+  "title": "Clarify that initial Git task push uses a code branch without a task tree",
+  "outcome": "Clarify that initial Git task push uses a code branch without a task tree",
+  "acceptance": [
+    "Specification initial1000-task push and Git task-sync brief consistently say the configured ordinary code branch has no task tree, rather than requiring an empty remote branch or a separate data branch."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Superseded. Its criterion asks the docs to say there is no separate data branch, but Greg chose a separate orphan data branch for task sync (rules-greg-sync-data-off-code-branch-2026-11-08), implemented by w-4eabb205c7b2, whose criterion 4 rewrites the task-sync docs. Closed by Engram::Fable after a read-only triage, under rules-greg-close-senseless-tasks-2026-11-08 and Greg's #803.",
+  "completion": null
+}

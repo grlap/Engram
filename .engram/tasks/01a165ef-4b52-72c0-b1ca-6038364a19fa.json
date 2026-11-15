@@ -1,0 +1,42 @@
+{
+  "id": "01a165ef-4b52-72c0-b1ca-6038364a19fa",
+  "external_ref": null,
+  "title": "Record the coder-to-merger validation workflow in project skills",
+  "outcome": "Record the coder-to-merger validation workflow in project skills",
+  "acceptance": [
+    "Project skills say that only Sol or Opus authors source/test changes",
+    "Project skills assign focused tests and review to the coding owner, and one final full gate plus commit/landing to Merger",
+    "Relevant Markdown skills pass link and consistency checks"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "8125f0e056f14a918865b326ad7255ab": {
+        "activity_id": "8125f0e056f14a918865b326ad7255ab",
+        "task_id": "01a165ef-4b52-72c0-b1ca-6038364a19fa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8125f0e056f14a918865b326ad7255ab"
+      }
+    }
+  }
+}

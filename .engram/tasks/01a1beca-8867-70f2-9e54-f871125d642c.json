@@ -1,0 +1,75 @@
+{
+  "id": "01a1beca-8867-70f2-9e54-f871125d642c",
+  "external_ref": null,
+  "title": "Instructions: keep project memories current, with queues and state on work items",
+  "outcome": "Instructions: keep project memories current, with queues and state on work items",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md carry, identically and under Start and resume, the wording agreed with Fable2 in mailbox ebe242f7 #7168, confirmed final in #7171 and #7172: lasting rules and facts in memories, queues and state on work items, revise rather than add dated copies, forget after a full read while keeping Greg's words still in force, a light look by whoever notices and by a coordinator, no gate and no size limit.",
+    "The change is on master, reported to Greg through Asistant with TermAl's matching item w-dc5a5711547e."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "agent-instructions",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The \"Keeping project memories tidy\" section of AGENTS.md and CLAUDE.md (identical) landed in c6a0784d (tree 51adb0cf) on master and origin/master, with Greg's combined-landing decision („bez roznicy”, Asistant #795). It was reported to Greg via Asistant #825 with TermAl's counterpart w-dc5a5711547e. Post-landing independent evaluation (Codex 17234) passed 2/2 after the doc-link check on the named root (test-3850618b).",
+    "completed_at": "2026-11-10T15:58:46.170872200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1df33c4b88624a71a2dbdafcac4778ac": {
+        "activity_id": "1df33c4b88624a71a2dbdafcac4778ac",
+        "task_id": "01a1beca-8867-70f2-9e54-f871125d642c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1df33c4b88624a71a2dbdafcac4778ac"
+      },
+      "2be9ce7fa8a74638b292fd9a11de77b0": {
+        "activity_id": "2be9ce7fa8a74638b292fd9a11de77b0",
+        "task_id": "01a1beca-8867-70f2-9e54-f871125d642c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "68242f3c7faa4571a48210b2f8ff2a76"
+      },
+      "a5b6bca35cf046b4a6fa6fbe2ae41a36": {
+        "activity_id": "a5b6bca35cf046b4a6fa6fbe2ae41a36",
+        "task_id": "01a1beca-8867-70f2-9e54-f871125d642c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f59b1a9fda144a5083643e2bf45729a3"
+      }
+    }
+  }
+}

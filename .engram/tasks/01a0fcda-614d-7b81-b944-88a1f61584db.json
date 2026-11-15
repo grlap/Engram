@@ -1,0 +1,28 @@
+{
+  "id": "01a0fcda-614d-7b81-b944-88a1f61584db",
+  "external_ref": null,
+  "title": "Record a push's finding that the newest copy is missing, so backup status stops qualifying it at once",
+  "outcome": "Record a push's finding that the newest copy is missing, so backup status stops qualifying it at once",
+  "acceptance": [
+    "When a push's confirmation finds the newest receipt's copy missing or changed and the replacement then fails, the state records that finding with its time, and the freshness rule reports `backup_copy_missing` for that receipt; a test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Folded into w-cb8f64e04546, landed as 63f046d. When push's confirmation finds the newest copy missing, it records the finding (missing_copy) before preparing the replacement, so a failed replacement leaves it recorded. The test is a_missing_newest_copy_is_recorded_before_its_replacement_so_a_failed_replacement_leaves_it. The freshness rule that turns the finding into backup_copy_missing is S2, w-1dd24a10891b.",
+  "completion": null
+}

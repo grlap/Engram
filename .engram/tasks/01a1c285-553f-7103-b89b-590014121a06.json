@@ -1,0 +1,53 @@
+{
+  "id": "01a1c285-553f-7103-b89b-590014121a06",
+  "external_ref": null,
+  "title": "Keep foreign evidence decisions out of native eligibility projections",
+  "outcome": "Keep foreign evidence decisions out of native eligibility projections",
+  "acceptance": [
+    "Retained foreign verification-applicability and acceptance-use originals remain inert across ordinary verify, projection rebuild and summary or eligibility reads; original canonical IDs and bytes are preserved.",
+    "A real transitive consumed-decision evidence retention regression stays healthy under verify_all and projection repair, exposes no foreign decision as a local eligible use, and preserves ordinary local decision behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Foreign verification-applicability and acceptance-use decisions retained through evidence packs no longer reach this host's own projections or eligibility. Both owners rebuild and verify local decisions only, in both directions, and count a row for a foreign decision as extra. Foreign means listed in an immutable admission receipt's imported_objects, so rebuild order doesn't matter. A decision that returns to its host is not listed and stays native. eligible_for_on, acceptance qualify_on, both summaries and the replay paths refuse a foreign decision; canonical IDs and bytes are untouched. The regression test foreign_decisions.rs covers B's consumed decisions retained on A and then returned to B, under verify_all and repair_rebuildable_schema_on. Delivered in candidate 24815d44 (on master 0bd70a30, 98c1 plus the 6 owned files). Author batch on DL560 passed 4/4. Independent evaluation a44e0e7cafd942ac8e6ceb6699c81dc3 passed both criteria. Landing belongs to parent 12325 with the combined freeze.",
+    "completed_at": "2026-11-10T02:32:10.250794100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0460900d57f14f8091e7dfe32aac88bd": {
+        "activity_id": "0460900d57f14f8091e7dfe32aac88bd",
+        "task_id": "01a1c285-553f-7103-b89b-590014121a06",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "45085ea0ab964682a47c498df8130dca"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a11c37-a97a-7373-90e4-7ccecfeaa483",
+  "external_ref": null,
+  "title": "Other test fixture Git helpers let a commit start detached auto-maintenance that can race fixture cleanup",
+  "outcome": "Other test fixture Git helpers let a commit start detached auto-maintenance that can race fixture cleanup",
+  "acceptance": [
+    "The fixture Git helpers in tests/project_selection_cli.rs (linked_worktree_selection_crosses_git_boundary_only_without_its_marker), scripts/mcp-dogfood.test.mjs (doctor checks recorded landings), scripts/review-freeze-fingerprint.test.mjs (repository helper) and scripts/test-launcher.test.mjs (linked worktree run) run Git with automatic maintenance disabled, so no detached maintenance process outlives a fixture commit",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "ci",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Disabled commit-triggered automatic Git maintenance in all four fixture helpers with command-scoped maintenance.auto=false and effective-config assertions; preserved existing environment handling and behavioral assertions. Full exact-input gate and verified independent Codex/Claude pair passed; independent acceptance 690ff13e4a43472d93c9672d17dc49b1 passed 2/2 unchanged criteria. All four live stores ready with gated build; test-only changes require no migration or projection repair.",
+    "completed_at": "2026-10-09T06:04:43.055966900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9c8b86f3fe474be2ba74b21aead05e03": {
+        "activity_id": "9c8b86f3fe474be2ba74b21aead05e03",
+        "task_id": "01a11c37-a97a-7373-90e4-7ccecfeaa483",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "163f18624da24cb6afb0c3ee3ce3ab28"
+      }
+    }
+  }
+}

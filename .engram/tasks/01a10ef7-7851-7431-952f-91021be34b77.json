@@ -1,0 +1,62 @@
+{
+  "id": "01a10ef7-7851-7431-952f-91021be34b77",
+  "external_ref": null,
+  "title": "Correct the shipped backup restore row's differentiated remedies",
+  "outcome": "Correct the shipped backup restore row's differentiated remedies",
+  "acceptance": [
+    "The shipped inventory reserves capturing-build or migration advice for actual format mismatch and separately describes full-check and path/access recovery."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected shipped backup restore remedies and pre-move retained-copy disclosures; landed, pushed and installed 901111b5e8b3bcf283ee8ebe81c997df45fe77e4. Both Markdown checks and round-2 Codex/Claude reviews passed on the exact frozen input, independent acceptance passed 1/1, all four live stores ready.",
+    "completed_at": "2026-10-11T11:00:05.847765100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "89b1a5684dc24dcda45749fce5936d25": {
+        "activity_id": "89b1a5684dc24dcda45749fce5936d25",
+        "task_id": "01a10ef7-7851-7431-952f-91021be34b77",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "db6de7430a4c4fb8a14dbb71cd436838"
+      },
+      "a22af57b4ba34789821d20f0e36bcf01": {
+        "activity_id": "a22af57b4ba34789821d20f0e36bcf01",
+        "task_id": "01a10ef7-7851-7431-952f-91021be34b77",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a22af57b4ba34789821d20f0e36bcf01"
+      }
+    }
+  }
+}

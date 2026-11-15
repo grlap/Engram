@@ -1,0 +1,76 @@
+{
+  "id": "01a150f0-d989-7ea1-8e10-bf22d9ae1ed4",
+  "external_ref": null,
+  "title": "Publish task-sync directories through one fail-closed no-replace helper instead of a directory hard-link fallback",
+  "outcome": "Publish task-sync directories through one fail-closed no-replace helper instead of a directory hard-link fallback",
+  "acceptance": [
+    "directory::write_documents, directory::write_with and the progress journal publish directories through one shared helper that uses an atomic no-replace directory move and fails closed with a typed refusal where the platform cannot provide it; no path hard-links a directory or falls back to an exists-check plus plain rename.",
+    "Existing collision, retry and interruption semantics are unchanged on platforms that support atomic no-replace moves, shown by the existing directory and progress tests passing unchanged.",
+    "A deterministic test forces the unsupported no-replace case and shows a typed refusal with nothing published and no partial directory left behind."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-tooling",
+    "portability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed b2f1f473 on origin/master, a fast-forward from a3abda8d, with tree c2447d3b, the gated freeze cfea41c6. The implementation is by 11323 (Codex), carried unchanged by Engram::Opus.\n- C1: task-sync directory publication now goes through one helper, src/task_sync/publication.rs.\n  - It uses a no-replace directory move: rustix renameat_with NOREPLACE on Linux, Android, Redox and Apple; MoveFileExW without REPLACE_EXISTING on Windows.\n  - It is called from directory::write_documents, write_folder_documents, write_with and progress::journal::publish.\n  - Where the move is unsupported, it fails closed with the typed refusal task_sync_publication_unsupported.\n  - There is no hard-link fallback and no exists-check plus rename.\n- C2: other I/O errors pass through unchanged. The existing directory and progress tests are unchanged and pass.\n- C3: deterministic seam tests force the unsupported move. They show the typed refusal, nothing published, no stage left behind, and recovery on the next attempt.\n- Validation:\n  - Windows full gate test-44d25fef-0f6f-42a3-9305-ebc156c78727 PASS: 12/12 stages, 3/3 preflight, expected = before = after = cfea41c6.\n  - Mac Unix run (Merger note e97ec224): check, clippy, task_sync:: 342/0/2 and task_prepare_cli 12/0/0 on the byte-identical input, carried over per note 3f714960.\n  - Reviews: r1 had nothing at Medium or higher, r2 was clean, and carries r3 and r4 were clean at Low.\n  - Evaluation 36945c58 PASS 3/3.\n- Readiness was ready on all 6 stores, both pre-commit (build 8b9500c3) and post-commit (build 632989c9, clean b2f1f473).\n- Installed 632989c9; the backup is engram-20261020T215825Z-a5e1d71723f4.exe.",
+    "completed_at": "2026-10-20T21:58:35.193806200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09cb2f33c47c41509d5b3ccaffadd372": {
+        "activity_id": "09cb2f33c47c41509d5b3ccaffadd372",
+        "task_id": "01a150f0-d989-7ea1-8e10-bf22d9ae1ed4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "09cb2f33c47c41509d5b3ccaffadd372"
+      },
+      "6d18c6e2a7014117b76d23d9a0255421": {
+        "activity_id": "6d18c6e2a7014117b76d23d9a0255421",
+        "task_id": "01a150f0-d989-7ea1-8e10-bf22d9ae1ed4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "abfa49a327f14f8692233579303138bc"
+      },
+      "c66100ed166b48f18e65157ba0701a72": {
+        "activity_id": "c66100ed166b48f18e65157ba0701a72",
+        "task_id": "01a150f0-d989-7ea1-8e10-bf22d9ae1ed4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c66100ed166b48f18e65157ba0701a72"
+      }
+    }
+  }
+}

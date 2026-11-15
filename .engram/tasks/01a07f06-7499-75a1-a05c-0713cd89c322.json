@@ -1,0 +1,50 @@
+{
+  "id": "01a07f06-7499-75a1-a05c-0713cd89c322",
+  "external_ref": null,
+  "title": "Refuse display pseudonyms before offering a handoff",
+  "outcome": "Refuse display pseudonyms before offering a handoff",
+  "acceptance": [
+    "Generated peer labels refuse before any database write, name host-provided real session targets, and legitimate handoff still succeeds"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review",
+    "security"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06811-cfb3-71d2-b0cf-b79cb404da22",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Generated peer display labels now refuse before target binding or persistence, with host-provided real recipient guidance. Full-store no-write and real handoff acceptance regressions pass on Rust and CLI/MCP. All nine final gates green; accepted by Fable and installed as build 6cd83bdf7600 from the working tree, not committed to master. Existing MCP servers retain their original build.",
+    "completed_at": "2026-09-08T03:42:32.602569600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "62005932982391a29583089290bc3e6e3f72264701b58267d47d6aadd651adec": {
+        "activity_id": "62005932982391a29583089290bc3e6e3f72264701b58267d47d6aadd651adec",
+        "task_id": "01a07f06-7499-75a1-a05c-0713cd89c322",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6c69a19b4aa2d34f3692610559ee9ab9699b39f93f0a809d39ebdb395ef9e5e5"
+      }
+    }
+  }
+}

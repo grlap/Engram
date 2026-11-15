@@ -1,0 +1,53 @@
+{
+  "id": "01a14c4e-9b7d-7052-89d4-2125fe212e48",
+  "external_ref": null,
+  "title": "Git-folder sync S0: feasibility of the additive event/result/removal representation (no-format-change go/no-go)",
+  "outcome": "Git-folder sync S0: feasibility of the additive event/result/removal representation (no-format-change go/no-go)",
+  "acceptance": [
+    "An exact map of the new declared import-planning event, the compact last-applied sync result and the local removal record, each placed on existing canonical objects/projections or work_operation_results with source citations",
+    "An explicit go/no-go per D4 inventory row (origin, current WorkItem, relations, claims/admission, evaluation/done, checkpoint/settlement, child barriers, catalog/export, doctor/repair, migration) showing legacy validation, reconstructibility, atomic result and no required conversion; the three seams (removal membership, imported terminal attribution, relation replay) are each resolved or reported as the exact failing invariant",
+    "The concrete conflict predicates (live claim, run or admission basis, sealed completion, root membership) and the compact metadata contract are stated precisely; if any row needs a durable-meaning change or conversion, the slice stops and reports the exact evidence for Greg instead of proceeding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "design",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "S0 research complete: independent Codex evaluation 91c72d2344534e09874bd934d17a039e passed all 3 criteria at evidence cut 37. Conditional additive GO only: new task_sync_import_planning batch plus apply_task_sync_folder result, no DDL or old-row reinterpretation; terminal-restored change/removal is an all-or-nothing refusal. Greg’s #1636-style word remains required before S1. No code, tests, store action, commit, or landing.",
+    "completed_at": "2026-10-18T00:20:51.979337300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bcf50dbb341c4228b74405a081a3ebfa": {
+        "activity_id": "bcf50dbb341c4228b74405a081a3ebfa",
+        "task_id": "01a14c4e-9b7d-7052-89d4-2125fe212e48",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "385a8682914b4e879d1e42807d7e2e62"
+      }
+    }
+  }
+}

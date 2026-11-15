@@ -1,0 +1,52 @@
+{
+  "id": "01a0aec6-7ab1-7641-b12c-d372b6bc8247",
+  "external_ref": null,
+  "title": "Source-freshness completion path through the agent words, and matrix traceability with the missing B23 and B25 cases",
+  "outcome": "Source-freshness completion path through the agent words, and matrix traceability with the missing B23 and B25 cases",
+  "acceptance": [
+    "done accepts --source-fingerprint on CLI and MCP; under require_source_freshness a matching fingerprint seals, a missing one is refused with a remedy naming that flag, a changed one is refused as stale source, and ordinary show reports the source check as pending at read instead of stale",
+    "every boundary-matrix comment in the acceptance-evaluation tests names the document's row, and new tests cover B23 (reopen into a new run refuses MissingAcceptanceEvaluation) and B25 (done --link under an evaluated policy is refused with the run feed head unchanged)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "done --source-fingerprint on CLI and MCP (schema key list in mcp-dogfood updated); reads treat an unmeasured source as pending (show prints the recorded fingerprint as checked at done) while completion refuses missing or different fingerprints with source, without hiding revision/policy/identity reasons; the stale(source) remedy names the flag. Matrix comments in tests.rs relabeled to the doc rows; B23 (reopen -> Missing, fresh record on the new run) and B25 (done --link refused, feed head unchanged) added and disclosed as pins that already passed at RED time. Docs F4, agent surface, B23-B25 corrected, B42. RED logs/08, GREEN logs/11 and 12.",
+    "completed_at": "2026-09-17T10:44:53.103150600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "71ac5400c9361a186b9f237996ef9c181c8089b544a3159ec1cf85c63d27e0b6": {
+        "activity_id": "71ac5400c9361a186b9f237996ef9c181c8089b544a3159ec1cf85c63d27e0b6",
+        "task_id": "01a0aec6-7ab1-7641-b12c-d372b6bc8247",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8baf05795b70c9f2d7575abfe85687efa686fa6f4080bd55301da8c792de37d1"
+      }
+    }
+  }
+}

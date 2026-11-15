@@ -1,0 +1,52 @@
+{
+  "id": "01a103e3-e35c-7e42-bbe0-4eed1d675095",
+  "external_ref": null,
+  "title": "Keep note marker framing safe with invisible Unicode prefixes",
+  "outcome": "Keep note marker framing safe with invisible Unicode prefixes",
+  "acceptance": [
+    "Rendered note bodies beginning with Unicode whitespace, invisible/format or combining characters and U+2800 before a marker-like bracket cannot imitate the real note-session marker; the original prefix characters and raw JSON bodies remain preserved.",
+    "Regression tests cover U+2800 and combining-mark prefixes with real session markers present and absent, plus ordinary text and line/block indentation controls."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "security"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Note framing now escapes marker-shaped brackets after invisible and combining Unicode prefixes while preserving prefix characters and raw JSON. Exact regression tests, full Windows gate and independent acceptance pass.",
+    "completed_at": "2026-10-03T23:45:45.013233200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "aa24e0f72aac4e87a103850fd7908c70": {
+        "activity_id": "aa24e0f72aac4e87a103850fd7908c70",
+        "task_id": "01a103e3-e35c-7e42-bbe0-4eed1d675095",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "888f57bf98e54115b3ff36e016f7fec4"
+      }
+    }
+  }
+}

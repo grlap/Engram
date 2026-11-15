@@ -1,0 +1,50 @@
+{
+  "id": "01a10466-020e-7110-a245-d32fba0b4de2",
+  "external_ref": null,
+  "title": "Avoid repeating direct parent navigation in stranded child show receipts",
+  "outcome": "Avoid repeating direct parent navigation in stranded child show receipts",
+  "acceptance": [
+    "For a child whose nearest terminal ancestor is its direct parent, show.next includes engram work show PARENT exactly once, preserves admitted recovery first and history navigation, and a native exact-list regression covers the case."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Deduplicated the direct-parent show command in stranded child receipts. Recovery remains first, parent inspection appears exactly once before history, and distinct grandparent/direct-parent navigation is retained. Exact whole-list Rust and native CLI/MCP regressions and full Windows gate passed; independent Codex/Claude review no Medium+, Low documentation follow-up filed. Independent acceptance passed the unchanged criterion. Landed and installed with backup; four live stores ready.",
+    "completed_at": "2026-10-04T19:04:58.572605900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cdddbd08b3ab4908aa44dc6b3d5c0101": {
+        "activity_id": "cdddbd08b3ab4908aa44dc6b3d5c0101",
+        "task_id": "01a10466-020e-7110-a245-d32fba0b4de2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "274c4858728b44129e20d16d09ac872f"
+      }
+    }
+  }
+}

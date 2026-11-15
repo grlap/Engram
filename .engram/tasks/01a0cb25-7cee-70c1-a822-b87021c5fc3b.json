@@ -1,0 +1,60 @@
+{
+  "id": "01a0cb25-7cee-70c1-a822-b87021c5fc3b",
+  "external_ref": null,
+  "title": "Remove the migration retirement lists and old-format checks",
+  "outcome": "Migration export/import handles only the current format, and no code, test or doc exists just to convert or refuse older formats.",
+  "acceptance": [
+    "CLAUDE.md and AGENTS.md keep the export/import rule without the retirement lists and stay identical, and full-store-migration.md and shipped.md no longer describe retired data",
+    "Project notes store-recreated-182c123 and ssd-heavy-run-coordination are forgotten",
+    "The full quality gates pass",
+    "The new build passes readiness and doctor on a copy of each live store",
+    "The old listing-cursor tests (LegacyListingCursor in catalog.rs and the legacy hex token test in the verbs response-budget tests) and the tests that only pin removed agent-grant flags and tables are removed (the removed authority_grant host-frame test already went with 950a6f1); generic unknown-field refusal tests remain (host_control_frames_reject_unknown_nested_fields, and import refusing unknown tables and columns by name); readers and tests for seals and policies recorded before acceptance evaluation stay, because both live stores still hold such records",
+    "The rename and retirement tests are gone from storage/migration/tests.rs, and the remaining export/import round-trip tests pass",
+    "The restored-history shape check in storage/work/schema.rs is removed",
+    "storage/migration.rs keeps plain export/import but has no renamed-column, retired-column or retired-table lists and none of the one-time conversions (the direct-binding table mapping, the stored-field rewrite, the lease omission), and import refuses any table or column the current format lacks, by name"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0cb25-b105-7af3-8fb6-f90ed6511c57",
+    "01a0cb40-d713-7b01-bba5-e379c5a53498"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Migration export/import now handles only the current format. The rename/retirement lists, the direct-binding table mapping, the stored-field rewrite, the lease omission, the restored-history shape check and its read-time twin, and the tests that only pinned removed cursors, grant flags and tables are gone. Import refuses by name an unknown table or column (format marker included), a missing required column, rows for a rebuilt table, and a left-out entry this build would not leave out. Readers and regression tests for the historical records the live stores hold are kept. CLAUDE.md/AGENTS.md state the general conversion rule, and the migration, shipped, sqlite-store and snapshot docs match. Committed as dcd034a and pushed to origin/master with Greg's approval. Installed code-only as build df134a518b60 (same schema 81b4b805acfb): readiness passed on both live stores first, no process was stopped, and the previous binary is kept at ~/.engram/backups/engram-9029bfcbbd4c-20260923-122733.exe. Evidence: 8 review rounds ending clean, full gates on the final input, store-copy readiness/doctor/export-import (.git/review-runs/store-check-20260923-120808), and independent evaluation 19cf3815ced24d9d9f1ba40bd64fb8d6 (8/8 pass).",
+    "completed_at": "2026-09-23T19:27:44.033157700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ae8d9ce9bd43436782dbe22a4fa8a5d9": {
+        "activity_id": "ae8d9ce9bd43436782dbe22a4fa8a5d9",
+        "task_id": "01a0cb25-7cee-70c1-a822-b87021c5fc3b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f1fb46d9510547ff83fd8e20f71d6f03"
+      }
+    }
+  }
+}

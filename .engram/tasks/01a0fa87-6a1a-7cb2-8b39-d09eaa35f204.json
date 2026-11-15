@@ -1,0 +1,54 @@
+{
+  "id": "01a0fa87-6a1a-7cb2-8b39-d09eaa35f204",
+  "external_ref": null,
+  "title": "Capture a verified store copy without writing the live store",
+  "outcome": "Capture a verified store copy without writing the live store",
+  "acceptance": [
+    "A capture function opens the store with a read-only connection that does not set `query_only`, runs `VACUUM INTO` to a file in a local stage under ENGRAM_HOME, and checks the staged copy in full as `verify_backup` does; a test shows that capturing a missing store path is refused and creates no file",
+    "The capture returns a manifest with the project digest, the kind, the cut read from the finished staged copy, the capture start time taken before the copy began, the artifact's bytes and SHA-256, the store schema reference as format identity, the capturing build's fingerprint and its source revision when known, and the host name as asserted context, each as a separate field; a test asserts the fields and that the cut equals the staged copy's positions when the source moved during the capture",
+    "Before capturing, the stage is checked for free space of at least the store file plus its log, and as much again when the caller says a compressed file will be built in the stage; too little space fails with the code `backup_stage_no_space` before any file is written; a test injects the free-space reading for both cases",
+    "A test runs a second connection that commits at a fixed rate while a capture runs: the writer's commit count rises during the capture, the copy verifies, and the test prints the commit count and the slowest commit",
+    "A capture deadline is enforced: a test with a deadline shorter than the copy shows the capture fail with a typed code and remove its own stage file"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The backup capture: backup::capture_store copies a project's store into its own stage under <home>/backup-stage/<digest>/<uuid>/.\n- Read-only: the store goes through ordinary read-only admission without query_only, then VACUUM INTO on that connection, with no write transaction. A missing or empty store is refused and nothing is created.\n- Check: the staged copy is settled and checked in full; its cut and schema reference are read from the copy itself.\n- Space: free space is checked before any write (store plus log, doubled when a compressed file will be built in the stage). The codes are backup_stage_no_space and backup_stage_space_unknown.\n- Deadline: one deadline covers every step. It works through a progress handler at Admit, Copy, Settle, Scan and Hash, with lock waits capped at the time left. Expiry gives backup_capture_deadline and the capture removes its own stage.\n- Manifest: project digest, kind, cut, capture start, bytes, sha256, format identity, build fingerprint, source revision and host name, each a separate field.\n- Tests: 8 tests cover the criteria, including a writer committing inside the copy's read transaction and a real deadline that expires inside the copy.\n- Lows filed as separate items: w-764830bae2ff and w-ade5bdd69870.\n- Landed as 20c7929.",
+    "completed_at": "2026-10-02T10:08:34.697638500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f213967eb32342629428eb27dab72b03": {
+        "activity_id": "f213967eb32342629428eb27dab72b03",
+        "task_id": "01a0fa87-6a1a-7cb2-8b39-d09eaa35f204",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "12110de6d4d3419ebffb13c448659927"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1b979-4a65-75a2-af68-92cadf6e3719",
+  "external_ref": null,
+  "title": "Mark watcher-only observation documentation as retained history",
+  "outcome": "Mark watcher-only observation documentation as retained history",
+  "acceptance": [
+    "The shipped inventory and EO observation wire/accounting documentation clearly mark watcher_only as historical-only and agree that new watcher-only writes are refused."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

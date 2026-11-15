@@ -1,0 +1,64 @@
+{
+  "id": "01a116fc-d87b-7a72-b767-bb7ce40f55a0",
+  "external_ref": null,
+  "title": "Make note-match family rendering and listing-row invariant explicit",
+  "outcome": "Note-match receipts use an explicit family word and handle the listing-row structure invariant clearly, with no silent wrong-family fallback.",
+  "acceptance": [
+    "Render WorkRecordFamily explicitly rather than through a serialization round-trip with a silent notes fallback.",
+    "Document why the just-constructed items array must exist or propagate a clear projection error, while preserving receipt bounds and matching locators."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "technical-debt"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Render note-match families with an exhaustive singular-name mapping beside their rows inside byte fitting, and document the listing JSON-array invariant. Existing full locators and JSON family values remain intact.",
+    "completed_at": "2026-10-09T05:15:24.975944Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6bc4dd34838b49b3ac9accae744e0ea7": {
+        "activity_id": "6bc4dd34838b49b3ac9accae744e0ea7",
+        "task_id": "01a116fc-d87b-7a72-b767-bb7ce40f55a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6bc4dd34838b49b3ac9accae744e0ea7"
+      },
+      "7c7a82caae05422eb4303315d306aa0d": {
+        "activity_id": "7c7a82caae05422eb4303315d306aa0d",
+        "task_id": "01a116fc-d87b-7a72-b767-bb7ce40f55a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2e57d6b293cd4f57a6299307d199cc77"
+      }
+    }
+  }
+}

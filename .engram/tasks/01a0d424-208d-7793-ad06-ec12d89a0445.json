@@ -1,0 +1,54 @@
+{
+  "id": "01a0d424-208d-7793-ad06-ec12d89a0445",
+  "external_ref": null,
+  "title": "Read-only host command for the claims a session holds, with their bindings",
+  "outcome": "Read-only host command for the claims a session holds, with their bindings",
+  "acceptance": [
+    "It is one read-only snapshot on the existing store, like `work core inspect`: no focus change, delivery staging, events or session registration, and a missing or uninitialized store is refused; its order (claim time newest first, then work id) and its item bound with an exact omitted count are documented",
+    "Tests cover several held claims; a claim with a pending handoff offer listed with a null binding; a holder's revision showing a fresh binding at the new revision (another session cannot revise a claimed item); a claim received through a handoff (its claim time is the acceptance, unchanged by a later renewal); focus flagging; the read-only guarantees; the order; and the bound. The CLI and control-plane docs describe it for hosts, and the full quality gates pass",
+    "`engram work core held` returns, for the calling session, every item in the project it holds a live claim on: work id and short ref, claim id, fence, expiry and claim time (when this session acquired the claim, by claim or accepted handoff, unchanged by renewals), whether the item is the session's focus, and control_binding always present (the binding session bind would accept, computed as focus and inspect compute it, or an explicit null)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0d42f-787e-7302-9bd1-0dbdf53746e4"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`engram work core held` lists every claim the calling session holds in the project. Each row has the work id and short ref, claim id, fence and expiry; claimed_at, when this session acquired the claim by claiming it or accepting a handoff, unchanged by renewals; the focus flag; and control_binding, the tuple session bind would accept, computed as focus and inspect compute it, or explicit null. Rows are newest first, then by work id, at most 16, with exact total and omitted counts. It is one read-only snapshot like inspect. Tests cover order and tie-break, focus, a pending offer's null, the holder's revision, a handoff, renewal, retake, recovery, project scoping, the missing-acquisition refusal, the bound and budget, no mutation, and the CLI with --json. Committed as fca4bcd, pushed, and installed as build e99502395aef. The full gate test-e8bb6d3d passed 9/9 on the landed input; two review rounds found no correctness defect. TermAl's reader matched it live. The lookup-cost Medium is deferred to w-cb53ac531843.",
+    "completed_at": "2026-09-24T22:14:47.602582900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3bdf20e62a4d46039866328e5ab56592": {
+        "activity_id": "3bdf20e62a4d46039866328e5ab56592",
+        "task_id": "01a0d424-208d-7793-ad06-ec12d89a0445",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "201eac151282492a81d789dcf73a6a4c"
+      }
+    }
+  }
+}

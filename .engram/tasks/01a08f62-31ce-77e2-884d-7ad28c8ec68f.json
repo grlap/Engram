@@ -1,0 +1,53 @@
+{
+  "id": "01a08f62-31ce-77e2-884d-7ad28c8ec68f",
+  "external_ref": null,
+  "title": "Recognize literal SQLite internal names without hiding user schema",
+  "outcome": "Recognize literal SQLite internal names without hiding user schema",
+  "acceptance": [
+    "sqlite_name_lookalike_cli_refuses_foreign_schema_without_mutation passes",
+    "sqlite_name_lookalikes_remain_user_schema_on_open_and_repair passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "review",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered literal sqlite_ prefix detection in both predicates. Named native/CLI lookalike criteria passed full block8 with unchanged bytes/shape. Round5 clean.",
+    "completed_at": "2026-09-11T10:10:41.121644600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "069c5a122bb1d429983ba25fd0d5190abdd0db485fcf4bba14d9a991f4e346e5": {
+        "activity_id": "069c5a122bb1d429983ba25fd0d5190abdd0db485fcf4bba14d9a991f4e346e5",
+        "task_id": "01a08f62-31ce-77e2-884d-7ad28c8ec68f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "53653b3b8f07eac704e3f2bd99e1deff274ab3415e1d157608478382c9cdb3cf"
+      }
+    }
+  }
+}

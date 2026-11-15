@@ -1,0 +1,29 @@
+{
+  "id": "01a1bcc5-58aa-7941-8efc-1cef1d756e40",
+  "external_ref": null,
+  "title": "Cover large shared evaluation records through storage replay and bounded display",
+  "outcome": "Cover large shared evaluation records through storage replay and bounded display",
+  "acceptance": [
+    "An existing real evaluation fixture persists an owner-valid shared evaluation larger than 1 MiB within the accepted canonical allowance, then exact-replays it and decodes its receipt.",
+    "The same fixture verifies bounded public show/window output and unchanged store footprint on a reachable total or non-source capacity refusal, without a heavy new gate or implementation-mirroring text test."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "source-identity",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

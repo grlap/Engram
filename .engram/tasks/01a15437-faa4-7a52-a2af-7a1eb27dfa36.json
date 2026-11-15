@@ -1,0 +1,31 @@
+{
+  "id": "01a15437-faa4-7a52-a2af-7a1eb27dfa36",
+  "external_ref": null,
+  "title": "Tighten the test-ref authority bullet: parent reachable from origin/master, not a landing, deletion refspec, grant citation",
+  "outcome": "Tighten the test-ref authority bullet: parent reachable from origin/master, not a landing, deletion refspec, grant citation",
+  "acceptance": [
+    "The test-ref bullet in AGENTS.md and CLAUDE.md requires the test commit's parent to be reachable from origin/master at push time, so a push cannot publish unpushed local commits through the ref",
+    "The bullet states that a test-ref push is not a landing, so the master pre-push checks and the full-gate landing condition do not apply to it, and names the refspec used to delete the ref",
+    "The bullet's grant citation names Greg's recorded route for attaching the push to the merger role (Advisor #1783/#1785/#1788) rather than only the word about Opus",
+    "The change lands under the authority-text rule: both coordinators' concurrence on the exact wording, Greg sent the wording, and the final-diff audit recorded as passed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority-text",
+    "remote-pilot",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

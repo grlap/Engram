@@ -1,0 +1,65 @@
+{
+  "id": "01a1c988-b7b2-7c51-911c-ef0ef82ab594",
+  "external_ref": null,
+  "title": "Apply native evidence disclosure rules to retained proof text and actors",
+  "outcome": "Native evidence capture and export consistently honor the selected disclosure contract for free text and attribution across all retained record kinds, while preserving immutable original bytes.",
+  "acceptance": [
+    "Native capture/export cover free-text fields and actors of every exported record kind under the selected disclosure contract; unsupported or disallowed content refuses the whole immutable closure rather than rewriting records.",
+    "Behavioral coverage includes path-bearing verification summary or evaluation rationale and a disallowed actor, exercises capture and export with notes-off and supported explicit disclosure, and preserves allowed evidence exchange and original canonical bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Complete the delivered native evidence disclosure fix: typed free-text/actor checks use the existing capture/replay/export validator, refuse whole immutable closures and preserve canonical bytes. The original disclosure bypass RED is recovered, delivered author checks pass, current native_capture check passes21/21 with actual host verification satisfying all6source obligations, and fresh independent evaluation passes both criteria on unchanged c0dd9d65. No new source edits were needed for this completion duty. Parent12325 retains unchanged combined contribution, required review/full-gate/landing ownership and retained evidence.",
+    "completed_at": "2026-11-11T21:37:58.824271100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1e26cd9772404e928ce37342508a8781": {
+        "activity_id": "1e26cd9772404e928ce37342508a8781",
+        "task_id": "01a1c988-b7b2-7c51-911c-ef0ef82ab594",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1f646911bd36469a88ea0880e72d1365"
+      },
+      "78cee43805ab4322b15405bea3d58ffa": {
+        "activity_id": "78cee43805ab4322b15405bea3d58ffa",
+        "task_id": "01a1c988-b7b2-7c51-911c-ef0ef82ab594",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "78cee43805ab4322b15405bea3d58ffa"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a1c285-6403-77d2-884f-9fd1de393ab2",
+  "external_ref": null,
+  "title": "Stage evidence packs under the managed data-worktree ignore policy",
+  "outcome": "Stage evidence packs under the managed data-worktree ignore policy",
+  "acceptance": [
+    "Setup-managed data-worktree policy permits ordinary staging of correctly shaped evidence-pack paths together with planning data while unsafe paths and unrelated private files remain refused.",
+    "A behavior regression runs setup, exports or stages an actual evidence pack, uses plain git add .engram, commits the data snapshot, and reads the selected pack through the existing evidence reader without force-add; materialization inventory and retry behavior remain correct."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Stage valid evidence packs with ordinary Git staging and publish the initial managed project exchange envelope while preserving raw preparation/task bytes, profile, strict inventories and retry ownership. The unchanged composed regression and affected materialization, folder and CLI tests pass on the checked contribution.",
+    "completed_at": "2026-11-09T23:45:10.879643600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a3f9de32863c406895ef9cb23b70c71d": {
+        "activity_id": "a3f9de32863c406895ef9cb23b70c71d",
+        "task_id": "01a1c285-6403-77d2-884f-9fd1de393ab2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9c127d79a18247f5aecccd53d9c5b326"
+      }
+    }
+  }
+}

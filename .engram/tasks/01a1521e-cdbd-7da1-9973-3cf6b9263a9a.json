@@ -1,0 +1,85 @@
+{
+  "id": "01a1521e-cdbd-7da1-9973-3cf6b9263a9a",
+  "external_ref": null,
+  "title": "Cover notes-enabled folder round-trip across differing machine origins",
+  "outcome": "Folder import/export is covered for notes-enabled documents whose source note origins differ from the destination machine origin",
+  "acceptance": [
+    "A test applies a non-empty notes-enabled folder with note origins different from the destination origin_machine, then verifies the destination export equals the applied tree and fresh-key re-apply is a no-op"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "test-gap"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered notes-enabled folder round-trip coverage across differing machine origins in landed Batch D.",
+    "completed_at": "2026-10-19T21:19:24.039204600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "357f781062564b0f94a32df1037749be": {
+        "activity_id": "357f781062564b0f94a32df1037749be",
+        "task_id": "01a1521e-cdbd-7da1-9973-3cf6b9263a9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5387343ef05c4871a275edf8e691e697"
+      },
+      "8616bd3fc6394c979e2dfa6b08ec551c": {
+        "activity_id": "8616bd3fc6394c979e2dfa6b08ec551c",
+        "task_id": "01a1521e-cdbd-7da1-9973-3cf6b9263a9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8616bd3fc6394c979e2dfa6b08ec551c"
+      },
+      "9d0ee68b413c45c3af7e42243d6ad9b8": {
+        "activity_id": "9d0ee68b413c45c3af7e42243d6ad9b8",
+        "task_id": "01a1521e-cdbd-7da1-9973-3cf6b9263a9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9d0ee68b413c45c3af7e42243d6ad9b8"
+      },
+      "f476253745364fbebe2ab59531e9de11": {
+        "activity_id": "f476253745364fbebe2ab59531e9de11",
+        "task_id": "01a1521e-cdbd-7da1-9973-3cf6b9263a9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f476253745364fbebe2ab59531e9de11"
+      }
+    }
+  }
+}

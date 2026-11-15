@@ -1,0 +1,49 @@
+{
+  "id": "01a093ab-a40a-7cc1-9c7d-33351e1bc27f",
+  "external_ref": null,
+  "title": "Coordinate Grok receipt navigation and expiry batch",
+  "outcome": "Coordinate Grok receipt navigation and expiry batch",
+  "acceptance": [
+    "Verify the three existing implementation items against their unchanged criteria using retained RED/GREEN evidence, final gates and the required independent review pair; report any remaining gap before handoff."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "coordination"
+  ],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Verified the corrected three-task receipt batch, fresh nine gates, clean Codex/Claude reviews, unchanged freeze and all four sealed author-linked evidence positions; disclosed historical limitations.",
+    "completed_at": "2026-09-12T04:42:05.024250Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "063d25a4ff6fc78cab191c2f4382ce232e7594b15a47daf9294cf0e75a94c494": {
+        "activity_id": "063d25a4ff6fc78cab191c2f4382ce232e7594b15a47daf9294cf0e75a94c494",
+        "task_id": "01a093ab-a40a-7cc1-9c7d-33351e1bc27f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cf701a57dede26f09b51df5a4205712a90f5d1e2167a16369022953c02e14467"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a0710c-a269-7582-9a2a-c97874e6fe0e",
+  "external_ref": null,
+  "title": "CLI parses without eagerly computing diagnostic build identity",
+  "outcome": "CLI parses without eagerly computing diagnostic build identity",
+  "acceptance": [
+    "version keeps full identity while help and non-diagnostic command construction stay cheap"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06f14-b12d-7f73-8566-6655cbc8a930",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "CLI parses without eagerly computing diagnostic build identity; verified by targeted regressions, final gates and two-reviewer closure.",
+    "completed_at": "2026-09-05T10:40:44.526165Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ee43a941743df295fe0d5463f1a2d2abba549b8b66eba85dfad51acb02fe1fd0": {
+        "activity_id": "ee43a941743df295fe0d5463f1a2d2abba549b8b66eba85dfad51acb02fe1fd0",
+        "task_id": "01a0710c-a269-7582-9a2a-c97874e6fe0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b76710fac1b4a9e894d2caaa74146ee146d6a2007bac4f6ba5c8d9d96318429b"
+      }
+    }
+  }
+}

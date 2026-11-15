@@ -1,0 +1,51 @@
+{
+  "id": "01a06f1a-2f6c-74f2-893f-46b2df1fc2fb",
+  "external_ref": null,
+  "title": "Preserve completed-work late-note guidance for keyless claim attempts",
+  "outcome": "Preserve completed-work late-note guidance for keyless claim attempts",
+  "acceptance": [
+    "phoenix_claim_renewal_refuses_pending_handoff_and_completed_work passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-253f-7483-904d-3bd25dc6cd60",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented Preserve completed-work late-note guidance for keyless claim attempts. Targeted regression and all nine repository gates pass on the unchanged closure freeze; no commit or installation.",
+    "completed_at": "2026-09-05T01:17:36.288115200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "08f59e1dae13f31153f7a9d4e6708bbd3ca9966cf1c066d39df52b6b03740ca9": {
+        "activity_id": "08f59e1dae13f31153f7a9d4e6708bbd3ca9966cf1c066d39df52b6b03740ca9",
+        "task_id": "01a06f1a-2f6c-74f2-893f-46b2df1fc2fb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d62e515406f35545ae9c22f37fcee7ba3092bf94bb7721935da7f59e00b98762"
+      }
+    }
+  }
+}

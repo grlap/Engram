@@ -1,0 +1,46 @@
+{
+  "id": "01a1a497-7501-7a03-97e3-d077df634aba",
+  "external_ref": null,
+  "title": "Test local restore cancellation after its retained destination is removed",
+  "outcome": "A regression test proves that abandoning a bound local restore with no destination clears the active observation instead of reinstating its earlier completed occurrence.",
+  "acceptance": [
+    "Create O1 completed, create a local pending O2 with an explicit predecessor binding, remove the destination store, abandon O2, and assert RestoreRecords::None while the kept O1 file remains unchanged.",
+    "The regression fails if the local abandonment policy always reinstates the predecessor; use deterministic fixtures without changing production restore behavior.",
+    "Focused tests pass and the normal repository review and landing requirements are met."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-tests",
+    "backup",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "9ee1379be4d9461eb989af9e820f06cb": {
+        "activity_id": "9ee1379be4d9461eb989af9e820f06cb",
+        "task_id": "01a1a497-7501-7a03-97e3-d077df634aba",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ed9911d3575244299fd35014244052e7"
+      }
+    }
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "id": "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+  "external_ref": null,
+  "title": "Add keyed historical exchange lookup and rebuildable ledger views",
+  "outcome": "Provide exact receipt-first historical lookup over the existing canonical ledger, maintained atomic keyed projections, repair and verified projection cutover fixtures.",
+  "acceptance": [
+    "Keyed rebuildable operation/head views resolve a complete immutable exchange intent and return its original canonical completed outcome before payload or current-planning reads, including after later exchanges and local movement; collisions and inconsistent provenance refuse without full-scan fallback.",
+    "Existing canonical writers maintain the derived views in the same transaction. One transition reducer supports chain validation, projection derivation, writer updates and doctor comparison; historical records, fingerprints, receipts, IDs and links retain original bytes and meaning.",
+    "All new SQL structures are explicitly rebuildable projections. Deterministic repair derives them from validated historical canonical chains and refuses incomplete/corrupt history atomically; no durable SQL reshape or historical-record conversion.",
+    "Actual old/new binary fixtures prove new-build no-write refusal before repair, unchanged historical canonical bytes and receipts after repair, and old-build refusal after repair. READY specifies every-live-store projection repair and coordinated cutover before new writes.",
+    "Library tests discriminate exact intent mismatch, original receipt replay after movement, bounded reads as unrelated history grows, missing/stale projection refusal, atomic canonical/view rollback and failed repair. Typed delta application and ordinary sync wiring remain required separate parent work."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "delta-ledger",
+    "greg-directed",
+    "implementation",
+    "performance",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "18448439079c41068aa4c3b7d1f2aec7": {
+        "activity_id": "18448439079c41068aa4c3b7d1f2aec7",
+        "task_id": "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "18448439079c41068aa4c3b7d1f2aec7"
+      },
+      "24e9507a0d5a46e2bf8c54bc9badd7f9": {
+        "activity_id": "24e9507a0d5a46e2bf8c54bc9badd7f9",
+        "task_id": "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8e20441eedb3444b891f7b2a6e5b9624"
+      },
+      "7db184f66d8542aa922a46e5ddbbc760": {
+        "activity_id": "7db184f66d8542aa922a46e5ddbbc760",
+        "task_id": "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7db184f66d8542aa922a46e5ddbbc760"
+      },
+      "847bfdf5824749e5936bb91ff837afb2": {
+        "activity_id": "847bfdf5824749e5936bb91ff837afb2",
+        "task_id": "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "847bfdf5824749e5936bb91ff837afb2"
+      },
+      "8e20441eedb3444b891f7b2a6e5b9624": {
+        "activity_id": "8e20441eedb3444b891f7b2a6e5b9624",
+        "task_id": "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8e20441eedb3444b891f7b2a6e5b9624"
+      },
+      "90ed643b04cc4c54b247ec311ea447c4": {
+        "activity_id": "90ed643b04cc4c54b247ec311ea447c4",
+        "task_id": "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3ec474fd4e904e6db0875fe2fcd52ec5"
+      }
+    }
+  }
+}

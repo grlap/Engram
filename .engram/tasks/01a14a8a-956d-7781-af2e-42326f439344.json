@@ -1,0 +1,31 @@
+{
+  "id": "01a14a8a-956d-7781-af2e-42326f439344",
+  "external_ref": null,
+  "title": "Record a durable \"waiting on X by T, owner O\" handoff on an item that the host can scan for overdue successors",
+  "outcome": "Record a durable \"waiting on X by T, owner O\" handoff on an item that the host can scan for overdue successors",
+  "acceptance": [
+    "A holder can record on its item, through the existing words, a durable wait: what it waits on (a named successor event or a message), a deadline, and a recovery owner session. The record survives restarts and is attributed and audited like other item records.",
+    "The host, or any project-bound session, can list overdue waits (deadline passed, wait not resolved) through a bounded read without claiming the item. The listing names the item, the awaited event, the deadline and the recovery owner.",
+    "Resolving or superseding a wait is explicit and idempotent, and a retried record or resolution never duplicates or loses evidence. Covered by deterministic tests, including a missed-wake case where the awaited event never arrives and the overdue listing reports it after the deadline.",
+    "No store-format migration unless justified and approved; if one is needed, the design says so before coding and follows full store migration rules."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "recovery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

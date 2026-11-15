@@ -1,0 +1,50 @@
+{
+  "id": "01a06dac-3e46-72a1-8fa9-e39f059b062d",
+  "external_ref": null,
+  "title": "Make saved graph history acceptable to its loader",
+  "outcome": "Make saved graph history acceptable to its loader",
+  "acceptance": [
+    "every saveable actor and history text either round-trips or save refuses before audit and disclosure"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Save validates the generated document with loader rules before audit or disclosure; unsafe historical text is refused.",
+    "completed_at": "2026-09-04T18:50:00.786803200Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1c70200f8eb72f9bedf3506cabeb255913be30ad41b9abb4c97251f430a8d167": {
+        "activity_id": "1c70200f8eb72f9bedf3506cabeb255913be30ad41b9abb4c97251f430a8d167",
+        "task_id": "01a06dac-3e46-72a1-8fa9-e39f059b062d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cc0f6b00dd2330ec94365edcfca2a12593c4b1eb6f8c3ad127e436e7736f6830"
+      }
+    }
+  }
+}

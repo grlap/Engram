@@ -1,0 +1,61 @@
+{
+  "id": "01a06499-3722-7a62-afcd-d275c5b64762",
+  "external_ref": null,
+  "title": "next cannot honor its own default limit under the 4 KiB compact ceiling and labels staged changes as byte_budget omissions",
+  "outcome": "next with the default limit returns the default row count, and an omission says staging when the entries are staged for the next call rather than dropped for budget",
+  "acceptance": [
+    "next --limit 20 on a store with 20 ready items returns 20 compact rows; a changes section staged for the next call is labeled staged, not byte_budget"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Made compact next honor its default limit under the shared response ceiling and corrected staged-delivery semantics: the 20-row default survives in bounded JSON/text, future-page entries use the staged reason, current-response byte-budget discards remain distinct, and text never promises discarded entries will be redelivered.",
+    "completed_at": "2026-09-03T13:59:04.479177500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "97cf692d133af6be06fd2f4f5f7c06e30efe197cb998a52448ee39208bb6fedb": {
+        "activity_id": "97cf692d133af6be06fd2f4f5f7c06e30efe197cb998a52448ee39208bb6fedb",
+        "task_id": "01a06499-3722-7a62-afcd-d275c5b64762",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "97cf692d133af6be06fd2f4f5f7c06e30efe197cb998a52448ee39208bb6fedb"
+      },
+      "ca4aea4f8d69a8a4aa094e7d1073cfc2cede8b98f7075efb963e22bb80897568": {
+        "activity_id": "ca4aea4f8d69a8a4aa094e7d1073cfc2cede8b98f7075efb963e22bb80897568",
+        "task_id": "01a06499-3722-7a62-afcd-d275c5b64762",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9ca9487758f97482270c2d8be262090d983d3f0e67cf88264ddfab247c023555"
+      }
+    }
+  }
+}

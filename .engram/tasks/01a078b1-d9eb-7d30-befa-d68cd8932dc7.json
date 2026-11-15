@@ -1,0 +1,53 @@
+{
+  "id": "01a078b1-d9eb-7d30-befa-d68cd8932dc7",
+  "external_ref": null,
+  "title": "Tests and dogfood keep every fixture under Temp\\engram per run, clean up after themselves, and prove the leak cause fixed",
+  "outcome": "Tests and dogfood never litter the user's Temp: every fixture home lives under <TEMP>\\engram\\run-<pid>-<random>, is removed reliably once its handles close, and each gate run proves its own run subtree is empty",
+  "acceptance": [
+    "Docs state the Fair Temp Usage rule for Engram, that dogfood build targets never live under the user's Temp, and that nothing historical is deleted by scripts",
+    "Each gate run audits only its own run subtree and fails on residue, with no whole-product counts and no sweeps",
+    "Every Rust and node fixture home lives under <TEMP>\\engram\\run-<pid>-<random> through the shared test-support constructor and helper, the directory is the last thing dropped in every fixture that owns a store, service, verbs or child process, and a removal that still fails after the bounded retry is reported with path and OS error, never swallowed",
+    "The deterministic OS error 32 open-handle regression and the field-order negative control stay in the suite (Windows-only where OS-specific)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "gate",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered shared owned Temp/engram per-run fixtures, corrected SQLite field-drop lifetime, bounded reported cleanup and run residue audits, validated launcher-root policy, failure-safe successor cleanup, and portable documentation. Recorded Windows OS32 and original-field-order negative control; all nine parent and coordinator gates passed on reviewed freeze 664cccba. Both Mediums closed; remaining retry-pause coverage Low separately filed by coordinator. Landed ede88b8 confirmed locally with clean worktree; no historical Temp data deleted. All other work remains halted.",
+    "completed_at": "2026-09-06T22:56:08.073347300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4b4222df8afd0ecd9fcee0f02f8f0cbfe875275dc224b6a2d4771d8066c53a5c": {
+        "activity_id": "4b4222df8afd0ecd9fcee0f02f8f0cbfe875275dc224b6a2d4771d8066c53a5c",
+        "task_id": "01a078b1-d9eb-7d30-befa-d68cd8932dc7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8f1b041282d7d32a1df8f0adbc2bec1c02be94852b5ad310fec4ac8e6676227c"
+      }
+    }
+  }
+}

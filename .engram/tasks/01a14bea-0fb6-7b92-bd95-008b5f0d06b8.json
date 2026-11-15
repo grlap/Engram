@@ -1,0 +1,51 @@
+{
+  "id": "01a14bea-0fb6-7b92-bd95-008b5f0d06b8",
+  "external_ref": null,
+  "title": "Apply Git pilot platform verification to every participating Engram host",
+  "outcome": "Apply Git pilot platform verification to every participating Engram host",
+  "acceptance": [
+    "Both task-sync briefs require per-platform Engram binary and Git transport/subprocess verification for every participating or joining Engram host, including central-TermAl and CLI-only peers, reserving satellite terminology for TermAl coordination; changed brief bytes have fresh joint concurrence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Applied platform binary and Git transport verification to every participating or joining Engram host, including central-TermAl and CLI-only peers; satellite terminology remains TermAl coordination.",
+    "completed_at": "2026-10-17T23:07:09.487755600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8c9b0e6ad4d74dda9e2fb4b2b95a4381": {
+        "activity_id": "8c9b0e6ad4d74dda9e2fb4b2b95a4381",
+        "task_id": "01a14bea-0fb6-7b92-bd95-008b5f0d06b8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bdfa88cb824742ceaf2498026e1e88fc"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a14e34-22dc-75d3-9867-d5cfe8fd94b1",
+  "external_ref": null,
+  "title": "Give the main checkout's review-run folders a documented cleanup route",
+  "outcome": "Give the main checkout's review-run folders a documented cleanup route",
+  "acceptance": [
+    "docs/development.md states how review-run folders under the main checkout's .git/review-runs are removed (a bounded removal) or that they are kept indefinitely, matching the worktree-removal rule"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "evidence-retention",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

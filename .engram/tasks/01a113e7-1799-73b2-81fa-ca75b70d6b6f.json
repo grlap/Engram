@@ -1,0 +1,53 @@
+{
+  "id": "01a113e7-1799-73b2-81fa-ca75b70d6b6f",
+  "external_ref": null,
+  "title": "Audit backlog closure, refactoring completion and code simplification after the macOS snapshot fix",
+  "outcome": "After the current macOS snapshot fix lands, reconcile open work against delivered behavior, establish the remaining refactoring and legacy-code scope, and prioritize concrete simplifications.",
+  "acceptance": [
+    "Review the complete open-work catalog and relevant current evidence; close items whose actual acceptance is satisfied, and distinguish obsolete or duplicate items from completed deliveries with explicit disposition evidence.",
+    "Report which refactoring goals are complete and which remain, citing current source and tracked work rather than assuming completion from prior changes.",
+    "Identify remaining legacy, compatibility, duplicated or unnecessary code and rank concrete simplifications by benefit, risk and required validation; distinguish removable code from necessary historical-data readers and live external contracts.",
+    "Record closures and justified follow-ups in Engram and give Greg a concise report of results and the next implementation priorities."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "technical-debt"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Audited the complete160-item open catalog and selected current acceptance/source evidence after macOS fix8aa6bd2. Cancelled one immaterial cycle-optimization proposal as not planned, corrected obsolete migration verification scope, confirmed completed mechanical refactors with524Rust files all below2500lines, and ranked existing legacy/simplification work while preserving historical readers, live TermAl contracts and explicit stops. Delivered concise results and priorities to Greg. Independent evaluator11258 attempt2 recorded fresh4/4pass8ec26e7d92af4590ba42d465933a5f54. Read-only source audit; no code change, new landing or runtime-test pass claimed.",
+    "completed_at": "2026-10-07T01:44:50.325938600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f1299d46bdbf4d4ca250dfbad7854ec6": {
+        "activity_id": "f1299d46bdbf4d4ca250dfbad7854ec6",
+        "task_id": "01a113e7-1799-73b2-81fa-ca75b70d6b6f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "650632b5ac4242f6aef3cb2daf94769c"
+      }
+    }
+  }
+}

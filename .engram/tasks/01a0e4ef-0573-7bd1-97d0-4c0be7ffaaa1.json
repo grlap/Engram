@@ -1,0 +1,64 @@
+{
+  "id": "01a0e4ef-0573-7bd1-97d0-4c0be7ffaaa1",
+  "external_ref": null,
+  "title": "Write the council's standing-rule sentence into AGENTS.md and CLAUDE.md: a verbatim recorded rule of Greg's is an instruction for the acts it names; install, restart, global configuration and deletion keep his own line",
+  "outcome": "Write the council's standing-rule sentence into AGENTS.md and CLAUDE.md: a verbatim recorded rule of Greg's is an instruction for the acts it names; install, restart, global configuration and deletion keep his own line",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (byte-identical) carry in Authority and Git the two decided authority bullets, adapted as concurred on this item",
+    "docs-only gate (link check and AGENTS/CLAUDE identity check through the focused launcher) and both reviewers clean on the exact tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "coordination",
+    "council",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 0a0de0d (fast-forward push 68407d7..0a0de0d). Two bullets now sit in Authority and Git of AGENTS.md and CLAUDE.md: the rule on changing authority text, and the rule that the standing approval grants no commit or push beyond its conditions and no restart. Their text matches the wording both coordinators concurred on, byte for byte. Greg's word on that exact text was \"slusznie\", given to the verbatim disclosure (Advisor #692, ~16:00Z, relayed by Engram::Fable #196). Docs-only gate: the link and identity checks passed through the focused launcher on the frozen tree. Codex and Claude reviews were clean on the verified freeze. Independent evaluation delegation-15f4714b: both criteria pass.",
+    "completed_at": "2026-09-28T16:04:07.806052100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0074d3093fe047b09c21737c47d623b2": {
+        "activity_id": "0074d3093fe047b09c21737c47d623b2",
+        "task_id": "01a0e4ef-0573-7bd1-97d0-4c0be7ffaaa1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "680e98e6f36e491ca63db07ba8c3e4fb"
+      },
+      "dc736db593fd4ceeb6621ce31b1f7497": {
+        "activity_id": "dc736db593fd4ceeb6621ce31b1f7497",
+        "task_id": "01a0e4ef-0573-7bd1-97d0-4c0be7ffaaa1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dc736db593fd4ceeb6621ce31b1f7497"
+      }
+    }
+  }
+}

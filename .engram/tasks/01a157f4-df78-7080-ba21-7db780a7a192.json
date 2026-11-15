@@ -1,0 +1,53 @@
+{
+  "id": "01a157f4-df78-7080-ba21-7db780a7a192",
+  "external_ref": null,
+  "title": "S3 failure-mode tests (criterion 1)",
+  "outcome": "S3 failure-mode tests (criterion 1)",
+  "acceptance": [
+    "Tests cover crash and lost reply, concurrent edit and ABA, feedless restored changes, malformed or partial folders, deleted dependencies, and native terminal/seal preservation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": "independent_session",
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "gate",
+    "pilot",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14c4e-d3f4-7333-a5bc-70c009dde0ec",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed S3 failure-mode regression tests covering crash/lost reply, concurrent edits and ABA, feedless restored changes, malformed/partial folders, deleted dependencies, and native terminal/seal preservation. Exact tree passed full gate and clean Codex/Claude review pair. Both landing release builds passed, all six live stores ready, binary installed with backup. Fresh postcommit acceptance 4bc0e740e994430a8210f9b94df5cd02 passed 1/1. Physical two-host pilot remains on the open parent.",
+    "completed_at": "2026-10-20T07:56:18.010312300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4f78192e65d04d2ca33acea036de063b": {
+        "activity_id": "4f78192e65d04d2ca33acea036de063b",
+        "task_id": "01a157f4-df78-7080-ba21-7db780a7a192",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "00a473112aeb4a8a82b4ed9b964f7a6d"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a0ee3b-922e-7eb3-8cc7-08f9a82bcd91",
+  "external_ref": null,
+  "title": "Define the evaluation unit and host re-evaluation in the acceptance-evaluation contract",
+  "outcome": "Define the evaluation unit and host re-evaluation in the acceptance-evaluation contract",
+  "acceptance": [
+    "docs/features/acceptance-evaluation.md has a section that defines the evaluation unit (one item's run at one work revision and one source revision), states that a new whole record is required whenever the newest record is stale or does not pass everywhere, and states that the core never stitches per-criterion verdicts across records and that every verdict in a new record is a fresh judgment of all evidence up to that record's cut, where an earlier rationale may be quoted but never stands in for the judgment",
+    "the same section states the host contract for producing that record without a new session when nothing but evidence changed: re-evaluation in the same evaluator session under a fresh attempt key with refreshed criteria, bases, source and policy; a moved source needs a whole new inspection; a resubmit refusal is answered by re-reading the evidence and never by silently advancing the cut; one evaluator may serve items delivered together with per-item attempts and receipts; the first brief is the host's and parent text is attributed context",
+    "the section states what the numbers of 2026-09-29 support and what they do not (fewer new sessions, not fewer judgments), and the change is docs only with the link check and the AGENTS/CLAUDE identity check passing; AGENTS.md and CLAUDE.md are not edited, because 'a small correction stays on the held item' is already stated in Required Quality Gates"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "docs",
+    "simplification",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0c298-1ad4-7101-906f-d353c681b9ac",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented the evaluation unit, fresh whole-record re-evaluation, independent evaluator-session reuse, moved-source and R3b handling, per-item batching, host-authored briefs, and the qualified 2026-09-29 repeat-run findings.",
+    "completed_at": "2026-09-29T20:22:21.985245100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "daae7054d01a4bb4a3873908cf38c660": {
+        "activity_id": "daae7054d01a4bb4a3873908cf38c660",
+        "task_id": "01a0ee3b-922e-7eb3-8cc7-08f9a82bcd91",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0dd0f31d1433454aadf3af1b9421c995"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a1559d-9608-7ce0-a467-1d5b7f16f78e",
+  "external_ref": null,
+  "title": "Apply execution-free task-folder deletions with retained history and required-child barriers",
+  "outcome": "Apply execution-free task-folder deletions with retained history and required-child barriers",
+  "acceptance": [
+    "On an enrolled destination, eligible Open task-sync-restored members omitted from the selected complete folder are materialized through one ordinary local Cancelled Disposed event per task, run-free and children-before-parents, in the same transaction as S2.2 adds and scalar edits. No run, root execution, claim, contributor, grant, waiver or native completion is created or changed by removal. Original task rows, parent/root/relations, origins/restored records, notes/activity, older events/results/seals are retained. New complete membership excludes removals; already-retired rows remain excluded across re-export/restart/repair; retained Cancelled documents remain members. Enrolled delete-all followed by new add uses full enrolled admission, never legacy bootstrap; retired ids remain reserved.",
+    "Adds/edits/deletes share preflight, atomic commit, existing bounded task-id-ordered refusal and exact replay/dry-run semantics. Select one conflict per task under documented per-task-before-graph precedence; preserve omitted-conflict counts. Deletion names target run/history/lifecycle/origin or blocking ancestor/root and surviving local/shared referrer as applicable. Graph-invalid R retains existing early invalid_graph precedence. Full prospective export includes omitted local nonmembers; immutable historical-origin union includes retired rows. One refusal writes no selected change, baseline or receipt, and changes no runtime authority. Unchanged terminal/native neighbors gain no event.",
+    "Removing a required child preserves the parent's durable required-child barrier and parent row. Ordinary otherwise-admitted parent's done refuses until a project-bound session records the ordinary explicit attributed waiver; a valid done can then proceed under all unchanged conditions. Import creates no implicit waiver, child seal or acceptance credit. Optional disposed children keep their ordinary handling too.",
+    "Fail-first tests prove the event/read/replay/no-runtime path and deletion/add integration, hidden-local references, historical retirement waves, delete-all routing, held/prior-run/seal/terminal refusals, barrier preservation, complete rollback, dry-run/replay and notice preservation. verify_all remains healthy. Repair touches only declared disposable projections; compare ALL durable rows/old results and object bytes. Any need for new kind/operation/transition/DDL/conversion or altered old-row/completion meaning stops that seam for an explicit decision."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14c4e-c8ba-7922-8cdf-a7d90d9445f8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed run-free task-folder removals with retained history, shared atomic admission, required-child barriers and deterministic regression coverage. Full gate passed all 12 stages and 3,737 tests; independent acceptance passed all four criteria; all six live stores ready before and after commit. Installed the clean committed release without stopping running processes.",
+    "completed_at": "2026-10-20T02:35:50.406728300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4988399c7df546e6b30088928aee15a6": {
+        "activity_id": "4988399c7df546e6b30088928aee15a6",
+        "task_id": "01a1559d-9608-7ce0-a467-1d5b7f16f78e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "be9f7c30e4fc402d84e99fce6e3ebb9f"
+      }
+    }
+  }
+}

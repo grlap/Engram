@@ -1,0 +1,53 @@
+{
+  "id": "01a0fdeb-0d4c-7df1-b978-f577d840f311",
+  "external_ref": null,
+  "title": "Restore store-equality test and the restore runbook",
+  "outcome": "Restore store-equality test and the restore runbook",
+  "acceptance": [
+    "A CLI test exports the rows of a quiescent source with `engram migration export`, pushes a store copy, changes the source, and restores into a second clean home: the restored file's SHA-256 equals the manifest's (checked before doctor or any claim), `engram doctor` reports it healthy, and its exported rows equal the rows exported before the push and differ from the changed source's, comparing everything but the export header's `exported_at`",
+    "docs/features/off-host-backup.md's restore steps match the shipped `backup list`, `backup fetch` and `backup restore` words, put retiring the origin first and say why, and say plainly that restored claims stay held until their recorded expiry and are then recovered explicitly, that a restored begun turn has no clock end and stays open until its own session checkpoints it, and that restore never renews, resets or revives authority from the local clock"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa88-0748-70e0-8ac5-c22ec2923803",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fdeb-0245-7983-8b40-38c7d38def0c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The restore store-equality test and the rewritten restore runbook landed as ad70ec6 on origin/master.\n\n- The test checks, in order, that:\n  - the source is quiescent (its -wal holds no frames);\n  - the restored engram.db's SHA-256 equals the manifest's, checked before doctor;\n  - doctor reports it healthy;\n  - its parsed export, minus only exported_at, equals the pre-push export and differs from the changed source.\n- The runbook in off-host-backup.md retires the origin first and uses the shipped list, fetch and restore words. It says plainly that:\n  - claims stay held until their recorded expiry and are then recovered with --recover;\n  - issued grants expire at their recorded time, or sooner when their session's control connection is opened;\n  - a begun turn has no clock end and stays open until a caller acting as its session checkpoints it;\n  - restore never renews, resets or revives authority from the local clock;\n  - the asserted session id is the only boundary.\n- Review: round 1 and round 2 each had a Medium on the authority boundary wording, both fixed. Round 3 on freeze 64d2877b was clean (Codex session-9902, Claude session-9903).\n- Gate test-92a412ea passed.\n- Independent evaluation passed both criteria.\n- Follow-up: the begun-turn gap is filed as w-d5245036da8d.",
+    "completed_at": "2026-10-02T20:51:24.699906Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d75335ac1a79428b81456b13205922b8": {
+        "activity_id": "d75335ac1a79428b81456b13205922b8",
+        "task_id": "01a0fdeb-0d4c-7df1-b978-f577d840f311",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dd974796809e4b20990fadbd121c1168"
+      }
+    }
+  }
+}

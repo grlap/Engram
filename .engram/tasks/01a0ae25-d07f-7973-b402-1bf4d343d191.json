@@ -1,0 +1,53 @@
+{
+  "id": "01a0ae25-d07f-7973-b402-1bf4d343d191",
+  "external_ref": null,
+  "title": "Core: immutable AcceptanceEvaluation, acceptance-evaluation policy, and completion enforcement",
+  "outcome": "Engram stores immutable per-criterion acceptance evaluations bound to the exact criteria, run, evaluated cut and evidence, validates verdict bases against cited objects, enforces the per-project policy and task mode at completion with typed refusal causes, and binds the passing evaluation into the completion seal; the default policy leaves existing behavior unchanged.",
+  "acceptance": [
+    "Fixture tests trace to every row of the documented boundary matrix: port-PR build pass and fail via fixture verification evidence, non-build judgment criterion, missing evidence, stale after checkpoint and after criteria revision, evaluator failure leaves no record and completion refuses, mode and basis violations refuse the evaluate write, same key with a different payload refuses",
+    "Under the default policy every existing completion test passes unchanged and receipts label the path as self-asserted",
+    "cargo fmt --check, cargo check, cargo clippy --all-targets --all-features -- -D warnings and scripts/test-rust pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Core delivered: domain types (AcceptanceEvaluation, modes, verdicts, bases, policy, stale reasons, request), control-policy field with the audited set_acceptance_evaluation transition (asserted attribution, CAS, replay, history verify), storage record path with record-time validation (policy/mode/pin, identity per mode, criteria by position against the read revision, evidence basis cut with mutation-race and beyond-cut refusal, citation provenance, content-derived or explicit attempt identity), freshness at completion (revision hash, run, host-observed mutation, relied-on gate superseded, policy strengthening, source fingerprint), completion enforcement with typed recovery causes and derived sealed vector bound to the evaluation hash, doctor feed integrity for the new kind, and the task-level evaluation_mode revision. Storage tests cite matrix rows B01–B34 including host-minted observed evidence via the control checkpoint protocol. Gates recorded on this item; scripts/test-rust.ps1 ran once on the pre-retrofit input (lib green, one CLI word-enumeration case added), the full nine-gate run on the handoff input is review-parent owned; control-dogfood not run (control plane untouched).",
+    "completed_at": "2026-09-17T08:17:40.625622400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3ec561ea402c761c0322775c848da0b67b6171cda29e5bbedcbc5f0ab133b054": {
+        "activity_id": "3ec561ea402c761c0322775c848da0b67b6171cda29e5bbedcbc5f0ab133b054",
+        "task_id": "01a0ae25-d07f-7973-b402-1bf4d343d191",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f6574563f9fda4520d02bb2870fafbbad898db4447a01c65e5f856bc81958d0a"
+      }
+    }
+  }
+}

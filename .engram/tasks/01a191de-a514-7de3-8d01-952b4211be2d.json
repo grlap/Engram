@@ -1,0 +1,32 @@
+{
+  "id": "01a191de-a514-7de3-8d01-952b4211be2d",
+  "external_ref": null,
+  "title": "Prove which store file SQLite actually holds, so a recovered Engram control child can be matched to TermAl's pinned store (required for TermAl Unknown recovery)",
+  "outcome": "control_connection_read returns the canonical path of the store file SQLite actually holds, proven at handle level, on every supported platform. TermAl's Unknown-outcome recovery (TermAl w-decd R4) can then match a recovered child to its pinned store, instead of leaving it GAP.",
+  "acceptance": [
+    "On a current serving connection (original or resumed), control_connection_read returns the canonical database_path of the file SQLite itself holds, proven by SQLite's own handle-level check: SQLITE_FCNTL_HAS_MOVED on Unix; on Windows the SQLite-held handle with GetFinalPathNameByHandle and a 128-bit FILE_ID_INFO identity, safe on ReFS. It refuses with control_connection_identity_unavailable whenever that proof is unavailable or fails, and never returns a possibly different file.",
+    "Any unsafe code is limited to that single proof function, under an explicit exception Greg approves (Cargo.toml currently sets unsafe_code = \"forbid\"); no other unsafe is introduced.",
+    "Tests cover: a proven match on each platform; a swap or restore of the file, a parent junction or symlink, and a moved file each causing a refusal; and the read changing no state and needing no grant.",
+    "The protocol docs replace the fail-closed-only contract from w-e96f37a1f665 with this proven contract, with no wire-shape change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "gated-control",
+    "needs-greg"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

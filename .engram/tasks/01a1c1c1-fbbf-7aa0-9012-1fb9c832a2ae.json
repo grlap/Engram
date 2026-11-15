@@ -1,0 +1,28 @@
+{
+  "id": "01a1c1c1-fbbf-7aa0-9012-1fb9c832a2ae",
+  "external_ref": null,
+  "title": "Replay concurrent identical imported acceptance associations",
+  "outcome": "Replay concurrent identical imported acceptance associations",
+  "acceptance": [
+    "Two concurrent identical AcceptanceUseRequest submissions with the same prepared decision identity return the same retained id after the IMMEDIATE writer serializes them.",
+    "Changed retry intent or a conflicting identity still refuses, and a behavior regression covers concurrent identical requests."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1d2d3-d3bb-7580-84ce-ba178fc9e4c1",
+  "external_ref": null,
+  "title": "List the task-sync-folder test stage in the Required Quality Gates of AGENTS.md and CLAUDE.md once the sync wrapper lands",
+  "outcome": "List the task-sync-folder test stage in the Required Quality Gates of AGENTS.md and CLAUDE.md once the sync wrapper lands",
+  "acceptance": [
+    "After w-e0e2d50ed1d7 lands, the Required Quality Gates command list in AGENTS.md and CLAUDE.md names `node --test scripts/task-sync-folder.test.mjs` exactly as docs/development.md and the launcher's full sequence do, and the two files stay identical",
+    "The change is Markdown-only and lands under the standing approval with the link check and both reviewers"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "instructions"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,91 @@
+{
+  "id": "01a16e6d-22bf-7a73-9449-772b700b3518",
+  "external_ref": null,
+  "title": "Inspect a recorded control operation result by session, operation and idempotency key without claiming replay",
+  "outcome": "Inspect a recorded control operation result by session, operation and idempotency key without claiming replay",
+  "acceptance": [
+    "A supported read-only inspection returns found/not_found, the operation, its original recorded time, the decision, and an allowlisted refusal code for an exact (target session, turn_begin|turn_checkpoint, idempotency key), in one admitted snapshot",
+    "It verifies that the stored intent names the selected grant, bounds payload sizes before decoding, and never returns keys, raw intent or result, or directives",
+    "It makes no was_replayed claim; docs state it proves only that a recorded outcome is available for exact replay"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "delivered",
+    "diagnostics",
+    "evaluation-pending"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A supported read-only inspection returns a recorded control operation's outcome for an exact (session, turn_begin|turn_checkpoint, idempotency key) in one admitted snapshot, verifies the grant binding, bounds payloads, never echoes keys/intents/directives and makes no replay claim. Landed at 1739693f (ancestor of e7426a6) and verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed all 3 criteria (record f8d2c8a0b085432ba88be72167a48b88).",
+    "completed_at": "2026-10-28T01:39:24.503208300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "08ca8d7594ba4fd28e0e8883c87703e8": {
+        "activity_id": "08ca8d7594ba4fd28e0e8883c87703e8",
+        "task_id": "01a16e6d-22bf-7a73-9449-772b700b3518",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3638abe96b1647a2b3da2dc5ecdca726"
+      },
+      "3638abe96b1647a2b3da2dc5ecdca726": {
+        "activity_id": "3638abe96b1647a2b3da2dc5ecdca726",
+        "task_id": "01a16e6d-22bf-7a73-9449-772b700b3518",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d952303e231e487b9d92235f8b6dd214"
+      },
+      "58041689f31f4b359b40e8bf2b875704": {
+        "activity_id": "58041689f31f4b359b40e8bf2b875704",
+        "task_id": "01a16e6d-22bf-7a73-9449-772b700b3518",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "58041689f31f4b359b40e8bf2b875704"
+      },
+      "973f03f308644fae9a5a8875d9d303ae": {
+        "activity_id": "973f03f308644fae9a5a8875d9d303ae",
+        "task_id": "01a16e6d-22bf-7a73-9449-772b700b3518",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dd540dd1bf3442fe86888adfd687b6d9"
+      }
+    }
+  }
+}

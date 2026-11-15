@@ -1,0 +1,52 @@
+{
+  "id": "01a0ae89-9ec2-7ee1-aae7-ec46f7924663",
+  "external_ref": null,
+  "title": "An admitted acceptance evaluation cannot commit and then fail the agent response budget",
+  "outcome": "An admitted acceptance evaluation cannot commit and then fail the agent response budget",
+  "acceptance": [
+    "a service test records a maximal admitted evaluation and still receives a WorkEvaluateResult under the 12 KiB agent protocol limit",
+    "the evaluation object has an explicit canonical byte cap enforced before insert, refusing with nothing appended, and WorkEvaluateResult carries a bounded projection instead of the full record"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "An admitted evaluation never commits into a failed response: explicit documented admission bounds (1 MiB object cap, 256-byte source basis fields, 128-byte model segments, 256-byte attempt key) refused before any write, a bounded WorkEvaluationProjection with exact verdicts_total/verdicts_omitted preflighted against the real envelope before the commit, receipt and ordinary show fitted by explicit omission, and `show REF --full` returning the complete newest evaluation. Regression tests many_short_criteria_return_a_bounded_result_with_exact_omissions, a_large_blocking_criterion_and_a_large_rationale_still_fit, oversized_evaluations_are_refused_with_nothing_appended, and the verbs many-criteria receipt/show test pass; RED and GREEN logs retained. Focused checks recorded here; parent gates and the review pair on the final input remain the review parent's.",
+    "completed_at": "2026-09-17T09:07:03.317273800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7600476250efdcb677d98d3ff6fc71bd990a487d38250a981f8a24aeca1f24eb": {
+        "activity_id": "7600476250efdcb677d98d3ff6fc71bd990a487d38250a981f8a24aeca1f24eb",
+        "task_id": "01a0ae89-9ec2-7ee1-aae7-ec46f7924663",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0ba1db9cbeb75c39c290910a997a26685cdc97b391eed549e89f13941c447037"
+      }
+    }
+  }
+}

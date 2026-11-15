@@ -1,0 +1,53 @@
+{
+  "id": "01a0729e-2371-76c0-94df-31fef89664ba",
+  "external_ref": null,
+  "title": "Compact MCP mutation receipts by default: add, gate, note, claim, and done return the operation result, returned refs and revisions, relevant authority and obligations, and actionable next, without repeating the item across content, structuredContent, focus, status, work, history, and parent",
+  "outcome": "Compact MCP mutation receipts by default: add, gate, note, claim, and done return the operation result, returned refs and revisions, relevant authority and obligations, and actionable next, without repeating the item across content, structuredContent, focus, status, work, history, and parent",
+  "acceptance": [
+    "full durable evidence stays retrievable through an explicit read (show, show --notes, verbose), and the compact receipt says so once",
+    "mcp-dogfood measures the wire size of add, gate, note, claim, and done receipts before and after on the same fixture and asserts the compact form carries no duplicated item projection while protocol-required text and structured forms remain",
+    "the compact receipt keeps build_fingerprint once wherever its contract supplies it, together with refusal, remedy, and omission signals"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered shared compact mutation envelopes and full-detail navigation; landed after parent/coordinator gates and accepted reviewer dispositions.",
+    "completed_at": "2026-09-06T06:55:49.827061400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "55a32aaa3402714fd85fc7c1b762add9a5e04296f9945e1a2a2322fded75f86c": {
+        "activity_id": "55a32aaa3402714fd85fc7c1b762add9a5e04296f9945e1a2a2322fded75f86c",
+        "task_id": "01a0729e-2371-76c0-94df-31fef89664ba",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "53ff184107e973eafae9be0fd61425dac773b98866edc597922097e5722efb32"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a0c76a-6950-7f12-8e50-2698c47b42d4",
+  "external_ref": null,
+  "title": "Bound full serialized task-delta items before delivery",
+  "outcome": "Bound full serialized task-delta items before delivery",
+  "acceptance": [
+    "Delivery paging accounts for the full serialized delta-item cost and a regression test proves one event cannot permanently wedge cursor advancement.",
+    "Task-feed append or validation prevents an object_kind and envelope from making one immutable delta item exceed the delivery capacity."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete: production task-delta delivery is gone; task_delta is #[cfg(test)] (src/storage/objects_tasks.rs:42) with test-only callers and grants carry no page; current work-feed delivery is a separate surface. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null
+}

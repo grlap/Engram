@@ -1,0 +1,31 @@
+{
+  "id": "01a13629-57d9-7a62-90e5-ab1015259650",
+  "external_ref": null,
+  "title": "Clarify the team strategy's idle-root count, reassessment item and provenance list",
+  "outcome": "Clarify the team strategy's idle-root count, reassessment item and provenance list",
+  "acceptance": [
+    "docs/team-strategy.md item 4 says an idle root counts toward item 3's host-capacity limit (not the ready-package count), so items 3 and 4 no longer conflict",
+    "Item 5 says each coordinator records the measurements in one note on its own project's item for this strategy",
+    "The precedence sentence or the provenance list makes clear the listed fields are a minimum and TermAl's record procedure is not shortened (for example, 'at least')",
+    "Both coordinators (Engram::Fable and Termal::Fable2) record concurrence on the exact new wording on this item before landing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "coordination",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

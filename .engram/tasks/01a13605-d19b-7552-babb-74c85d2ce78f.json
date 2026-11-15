@@ -1,0 +1,32 @@
+{
+  "id": "01a13605-d19b-7552-babb-74c85d2ce78f",
+  "external_ref": null,
+  "title": "Task sync stage 1: structured refusal and candidate retention for TermAl-responsible runs",
+  "outcome": "Task sync stage 1: structured refusal and candidate retention for TermAl-responsible runs",
+  "acceptance": [
+    "Before any final planning or receipt mutation, the complete affected run/claim/local basis is discovered and revalidated; any affected run with TermAl responsibility, or with unproven responsibility/settlement, refuses the whole final batch with a stable distinct code (reserved: task_sync_host_responsibility), plus distinct causes for a moved candidate/readset basis, an immutable-operation intent conflict and a pending hold",
+    "On refusal the candidate bytes and identity are retained, and no graph, receipt or cursor advances, no claim is released or run retired, no prompt is cleared and nothing is dispatched; exact retries keep candidate and operation identity; the same key with changed input refuses",
+    "No Engram-only query, quiet period, elapsed time, dead host, crash or restart is accepted as settlement; host-unreachable, mid-turn cut, unsettled carried check, uncertain Begin/Evaluate and late-dispatch cases are retained, proven by tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13605-a966-7c50-b8e9-4111b50b57de"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

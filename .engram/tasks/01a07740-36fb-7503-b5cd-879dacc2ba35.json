@@ -1,0 +1,51 @@
+{
+  "id": "01a07740-36fb-7503-b5cd-879dacc2ba35",
+  "external_ref": null,
+  "title": "Refresh the losing pending decomposition attempt under CAS",
+  "outcome": "Refresh the losing pending decomposition attempt under CAS",
+  "acceptance": [
+    "decomposition_retry_refreshes_the_existing_pending_attempt_after_revision_race passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "gate",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0703b-8465-7903-9d1b-907d206da5be",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pending decomposition revision races recover under the existing CAS; deterministic concurrent finisher refusal and exact replay regressions pass.",
+    "completed_at": "2026-09-06T16:17:53.158943700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "eb8e7e9517c0a9cd1142fe5426a68810277e64aa44bef565507b8b6f48f2d78d": {
+        "activity_id": "eb8e7e9517c0a9cd1142fe5426a68810277e64aa44bef565507b8b6f48f2d78d",
+        "task_id": "01a07740-36fb-7503-b5cd-879dacc2ba35",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dced394c1b2dec98e4fe0e0edc4745a8a0f3395336713a995544d9ab7d437c82"
+      }
+    }
+  }
+}

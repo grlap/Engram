@@ -1,0 +1,32 @@
+{
+  "id": "01a13605-f076-7c81-b16c-4a746d6f713e",
+  "external_ref": null,
+  "title": "Task sync stage 1: migration, retention and atomicity integration proof",
+  "outcome": "Task sync stage 1: migration, retention and atomicity integration proof",
+  "acceptance": [
+    "An integration matrix covers each stage-1-admitted lifecycle row and every deferred active case, with fault injection before each final write/receipt/commit and after committed-outcome recovery, full-store conversion counts and unknown-shape refusal, connected-graph races, exact repeat versus changed intent, seal/required-child accounting, and note/activity cases",
+    "A fake host with responsibility or unknown state proves a retained candidate and zero final effects; a missing or not-found original Begin outcome is never accepted as settlement; local timers, crashes and restarts are negative controls; fake-host tests claim no production host proof",
+    "No test is skipped or weakened and no live store is converted to pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13605-e1cd-7863-826d-a5e3d46b3a90"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a1a4a0-d624-70a0-b1d4-2817e9c140d6",
+  "external_ref": null,
+  "title": "Recover task-sync custody explicitly after a historical repository moves",
+  "outcome": "An operator has an explicit audited route to preserve and reconcile retained custody when a historical binding's Git admin directory moved or was retired, with a specific refusal while unavailable.",
+  "acceptance": [
+    "A missing or relocated historical Git admin directory produces a specific custody refusal that identifies the required recovery without silently skipping artifacts or assuming publication success.",
+    "A named cold-audit relocation or retirement operation preserves canonical bindings, historical publication-witness obligations and pending effects; ordinary admission remains fail-closed until that operation proves continuity.",
+    "Behavioral tests cover a settled superseded binding with a relocated root and a historical confirmed push, failure/rollback and exact retry; documentation names the supported recovery and its limits."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

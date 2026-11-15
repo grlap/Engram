@@ -1,0 +1,27 @@
+{
+  "id": "01a0ef51-b64b-7f60-bb54-5fbf0781d875",
+  "external_ref": null,
+  "title": "Every active blocker of an item is reachable from agent words when more than eight are active",
+  "outcome": "Every active blocker of an item is reachable from agent words when more than eight are active",
+  "acceptance": [
+    "A bounded read lists the active blockers of an item beyond the focus cap, each with its selector and exact clear command, with exact total and omitted counts and a continuation that refuses when stale",
+    "The read changes neither focus, claims nor records, and never splits a selector or a command when rows are shed for size"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 4,
+  "labels": [
+    "area-agent-ux"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a19f92-c28d-7a93-b748-7e3e85302454",
+  "external_ref": null,
+  "title": "Exercise the contended local append-lock timeout with a live deadline",
+  "outcome": "Exercise the contended local append-lock timeout with a live deadline",
+  "acceptance": [
+    "A test holds the worker's append gate, calls the fatal append path with a positive controlled deadline, and proves the actual WouldBlock/wait branch returns TimedOut before the worker releases the gate",
+    "The test preserves the bounded watchdog, no-hang, no-I/O and ordinary-emit semantics and runs deterministically without real sleeps beyond the bounded deadline"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "diagnostics",
+    "test-coverage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

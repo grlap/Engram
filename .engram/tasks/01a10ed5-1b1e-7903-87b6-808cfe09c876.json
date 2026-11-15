@@ -1,0 +1,51 @@
+{
+  "id": "01a10ed5-1b1e-7903-87b6-808cfe09c876",
+  "external_ref": null,
+  "title": "Graph snapshot restore's open-descendant validation visits every snapshot item once per root",
+  "outcome": "Graph snapshot restore's open-descendant validation visits every snapshot item once per root",
+  "acceptance": [
+    "Graph snapshot restore validates each root's open-descendant limit in time linear in the snapshot's items, proven by a test whose row-visit count does not grow with the number of roots times items",
+    "Restore still refuses a snapshot whose root exceeds the open-descendant limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Graph snapshot restore now validates each root's open-descendant limit in one pass: src/storage/graph_snapshot/load.rs builds the item map once after the duplicate-and-shape loop, uses it for the parent lookup (formerly a linear find per item), and after the parent-chain walk counts proposed and open non-root items grouped by root_id, refusing with the unchanged message; the phase order is unchanged, so a document with both a bad depth and an excessive count keeps the depth refusal. Proven by tests/hierarchy_limits.rs with a thread-local test-only visit counter: six equal-size shapes (64 roots × 3, 1 × 255, 256 roots only, 1 × 255 cancelled, 32 × 3, 1 × 127) each cost exactly their item count, against roots × items for the old shape; an injected 256th open or proposed child is refused with no partial state while 255 open with 16 cancelled loads; depth-before-count, malformed root binding, cross-root child and the empty graph are covered. Docs state restore's cost once beside the planning sentence. Landed with w-37a24b8cccb3 and w-987b34f92b57 as 7340a475c1ac9cc1c857bb5a0c04ddb2bae9307c on origin master (fast-forward from 73c0f8d, pushed 2026-10-06T05:53:51Z); full gate test-6b8532a2 9/9 on freeze 5d82c31f… (nine gates recorded); round-2 pair clean of Medium or higher, the shared Low filed as w-ae1fe23de0b6; evaluation 7df419edd71442e7b6b65aa1a3f919f8 passed both criteria; readiness ready on all four live stores with the build from the commit; installed build c1f7f82e2853 (exe 29ec899ee953…), previous exe backed up as engram-20261006T055332Z-ca8a56871983.exe. Running sessions do not need this build: it changes only the cost of restore validation, which runs on graph load; no durable row, schema or projection change.",
+    "completed_at": "2026-10-06T05:54:22.296354500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3d783ecca1d64900b9468ed942b8bd69": {
+        "activity_id": "3d783ecca1d64900b9468ed942b8bd69",
+        "task_id": "01a10ed5-1b1e-7903-87b6-808cfe09c876",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f8d5762f547646c1b82cc2b01c8eb659"
+      }
+    }
+  }
+}

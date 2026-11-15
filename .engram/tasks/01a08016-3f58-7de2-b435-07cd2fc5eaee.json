@@ -1,0 +1,64 @@
+{
+  "id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+  "external_ref": null,
+  "title": "Work events embed the whole root-execution aggregate, so the object store grows superlinearly",
+  "outcome": "Work events embed the whole root-execution aggregate, so the object store grows superlinearly",
+  "acceptance": [
+    "reconstruction to an exact state is separately bounded and states how the base is chosen, how delta contiguity is verified, and how the result is checked",
+    "the same bound holds across child completions and successive recovery generations, none of which may each copy a larger aggregate",
+    "total stored bytes attributable to root-execution state stay bounded when one root accumulates many events while its contribution set grows, demonstrated by measurement against the current shape rather than asserted"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered accepted02314067: delta-addressed root events and exact pre-seal references remove repeated aggregate copies; measured write growth, child completion and generation boundaries pass. Required implementation child completed; optional follow-ups remain disclosed.",
+    "completed_at": "2026-09-08T20:50:43.554638Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c14f7f6219bfbfab7ed4dfdfd851acccac713fb37d9b950659e6409aa9a71411": {
+        "activity_id": "c14f7f6219bfbfab7ed4dfdfd851acccac713fb37d9b950659e6409aa9a71411",
+        "task_id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c14f7f6219bfbfab7ed4dfdfd851acccac713fb37d9b950659e6409aa9a71411"
+      },
+      "f90d93a388c6be734d61de465b236abadf18e3b38b3dd3c8990a3ec3e658d5d5": {
+        "activity_id": "f90d93a388c6be734d61de465b236abadf18e3b38b3dd3c8990a3ec3e658d5d5",
+        "task_id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d1ea702199a5adf7c78280ed8818c05c67901ae348239d1ca154d38b37d5d428"
+      }
+    }
+  }
+}

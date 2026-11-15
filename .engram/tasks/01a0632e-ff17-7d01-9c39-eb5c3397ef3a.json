@@ -1,0 +1,61 @@
+{
+  "id": "01a0632e-ff17-7d01-9c39-eb5c3397ef3a",
+  "external_ref": null,
+  "title": "Verify project-memory compact rows and snapshot related reads",
+  "outcome": "Verify project-memory compact rows and snapshot related reads",
+  "acceptance": [
+    "List rows fail closed on projection corruption and multi-query reads share one SQLite snapshot"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Project-memory list rows fail closed on projection drift and related reads share one SQLite snapshot.",
+    "completed_at": "2026-09-02T17:37:48.829899Z",
+    "actor": {
+      "actor_id": "codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a4f6fbfd7f34228c4107c02e512ce4d96aebcc1eb57eec2275152baf77547470": {
+        "activity_id": "a4f6fbfd7f34228c4107c02e512ce4d96aebcc1eb57eec2275152baf77547470",
+        "task_id": "01a0632e-ff17-7d01-9c39-eb5c3397ef3a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "19a4c8ee28a63e8c557bf8a00fc848bd8b836c03f5ac898578b836a936c51f07"
+      },
+      "c91c3453b2b2aab7121f34d4abecefebfcca49c4cdb9c39581c841d1cd381a4e": {
+        "activity_id": "c91c3453b2b2aab7121f34d4abecefebfcca49c4cdb9c39581c841d1cd381a4e",
+        "task_id": "01a0632e-ff17-7d01-9c39-eb5c3397ef3a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f4779c636698f9aaa00e5257b145ef9c15796222b8365633a2577a4df1cac8f3"
+      }
+    }
+  }
+}

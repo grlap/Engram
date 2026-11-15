@@ -1,0 +1,52 @@
+{
+  "id": "01a0aefb-ce76-7662-9c7c-43b67180acac",
+  "external_ref": null,
+  "title": "Identity regression asserts the identity stale reason and uses a sibling child run as the positive control",
+  "outcome": "Identity regression asserts the identity stale reason and uses a sibling child run as the positive control",
+  "acceptance": [
+    "an_independent_evaluator_who_becomes_the_holder_cannot_consume_its_own_pass matches AcceptanceEvaluationStale { reason: AcceptanceStaleReason::Identity } in both the handoff and the recovery branch, and its positive control has the evaluator hold a sibling child run under the same root (not another root) while its independent evaluation of the parent run stays fresh; test-only change, passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Test-only: an_independent_evaluator_who_becomes_the_holder_cannot_consume_its_own_pass now matches AcceptanceEvaluationStale { reason: Identity } in both the handoff and the recovery branch, and its positive control decomposes a sibling child under the same root, has the evaluator hold that child's run, admits its independent evaluation of the parent run as fresh, completes the child, and seals the parent for the original holder. Pins of already-correct behavior; logs/15 (focused), logs/18 (final sequence, all pass).",
+    "completed_at": "2026-09-17T11:26:45.919316200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9d74365a7a7dc01ae1359e5c5034e17cfef2d038e4ddd0abc926da52e66726d5": {
+        "activity_id": "9d74365a7a7dc01ae1359e5c5034e17cfef2d038e4ddd0abc926da52e66726d5",
+        "task_id": "01a0aefb-ce76-7662-9c7c-43b67180acac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "66380900b73277502da9dbee12fb63e81a945027c849d9a0aa493b541b8d873c"
+      }
+    }
+  }
+}

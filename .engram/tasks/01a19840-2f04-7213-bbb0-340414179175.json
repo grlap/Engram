@@ -1,0 +1,50 @@
+{
+  "id": "01a19840-2f04-7213-bbb0-340414179175",
+  "external_ref": null,
+  "title": "Keep the elapsed search-budget tests passing under whole-suite load on a many-core host",
+  "outcome": "Keep the elapsed search-budget tests passing under whole-suite load on a many-core host",
+  "acceptance": [
+    "mcp::search::tests::search_does_not_block_other_verbs_on_the_same_mcp_connection, listing::corrections::listing_continuation_metadata_overflow_is_an_explicit_refusal and listing::corrections::listing_continuation_receipt_budget_overflow_is_an_explicit_refusal pass in a whole-library cargo test --lib run on DL560 (CARGO_BUILD_JOBS=48, normal test threads), without loosening what each test asserts"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "test-timing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The three search tests no longer depend on the real 10 s budget or a 12 s rescue, so whole-suite load on a many-core host can't fail them that way. First fixed in c7e379a4; final form in landed master 2667355d. They passed in FULL test-1eef162a on DL560 and in four concurrent library copies in test-2f46e868, without any assertion loosened. Self-asserted: evaluation enforcement is off. The criterion's exact configuration, one cargo test --lib run at CARGO_BUILD_JOBS=48 with normal test threads, was not run: the FULL used RUST_TEST_THREADS=36, the margin run was capped, and CARGO_BUILD_JOBS for both is unrecorded here. Closed on that evidence at the coordinator's request, under Greg's direction to stop timing runs.",
+    "completed_at": "2026-11-04T07:43:17.857649700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "360b34492bbe4dd994b5e2d262acd0a7": {
+        "activity_id": "360b34492bbe4dd994b5e2d262acd0a7",
+        "task_id": "01a19840-2f04-7213-bbb0-340414179175",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fd5ea40a9ec548e1a6fdb5f14099e8bf"
+      }
+    }
+  }
+}

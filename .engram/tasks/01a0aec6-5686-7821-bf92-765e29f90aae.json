@@ -1,0 +1,52 @@
+{
+  "id": "01a0aec6-5686-7821-bf92-765e29f90aae",
+  "external_ref": null,
+  "title": "Evaluate cites the locators agents actually read, and completed items keep their evaluation provenance",
+  "outcome": "Evaluate cites the locators agents actually read, and completed items keep their evaluation provenance",
+  "acceptance": [
+    "done receipts and completed show name acceptance as evaluated (mode, asserted) by the evaluator or self-asserted (legacy), next carries a bounded evaluation summary for the focused open item, and tests cover legacy, same_session, and independent_session completion and readback",
+    "word and MCP tests citing the locator returned by show --notes --gates record an evaluation, while observation and wrong-run locators are refused and full hashes of typed evidence still resolve"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "evaluate resolves every citation through the shared done --link resolver (observations, inherited members, other items/runs, artifact paths refuse naming the locator and the reason) with host-minted verification/environment hashes passed through; records keep full hashes and refusals leave the feed untouched. Completion provenance is read from the frozen seal through the shared binding check and disclosed in done (text and JSON), completed show (text always, JSON block for evaluated seals), and next (evaluation line and focus.evaluation); replay reloads it. Docs R7, completion step 5, agent surface and scoped exceptions, B41/B43. RED logs/08, GREEN logs/11 and 12.",
+    "completed_at": "2026-09-17T10:44:44.648477900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cd48e2766e1647c44c59ccca5fc4ceb47dcd48165b984789edb6d2d24e2c4cc7": {
+        "activity_id": "cd48e2766e1647c44c59ccca5fc4ceb47dcd48165b984789edb6d2d24e2c4cc7",
+        "task_id": "01a0aec6-5686-7821-bf92-765e29f90aae",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "acef276e7e5d20f1700a0be71b0ded6188a0ac2dc4245132ccbcdd65cf68a219"
+      }
+    }
+  }
+}

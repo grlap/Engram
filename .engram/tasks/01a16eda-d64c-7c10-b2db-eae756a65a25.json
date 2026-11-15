@@ -1,0 +1,28 @@
+{
+  "id": "01a16eda-d64c-7c10-b2db-eae756a65a25",
+  "external_ref": null,
+  "title": "Document the work included in restore timing stages",
+  "outcome": "Document the work included in restore timing stages",
+  "acceptance": [
+    "Each restore timing stage documents its actual work, including destination FTS checks before the catalog loop and project-memory projection rebuilding after it, so aggregate insertion labels do not imply pure insertion cost."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "scale"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

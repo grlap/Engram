@@ -1,0 +1,31 @@
+{
+  "id": "01a152a4-eeff-74b2-81ab-748bfe76f077",
+  "external_ref": null,
+  "title": "Protect owed closing source observations from completion after a named-root clear (durable unresolved-accounting barrier)",
+  "outcome": "Protect owed closing source observations from completion after a named-root clear (durable unresolved-accounting barrier)",
+  "acceptance": [
+    "An Engram architecture decision chooses between (a) a protected ordering in which the owed closing source observation is recorded before a named-root clear or release, and (b) an Engram-owned durable unresolved-accounting barrier that completion checks transactionally, and states the recovery contract when the barrier is set",
+    "The decision shows that a direct MCP/CLI `done` cannot consume a pre-move evaluation through decide_accounting_on's audit_only/root_basis_moved path while an owed closing observation is unresolved, and names the tests that would prove it",
+    "Any durable-format change is named and judged under the full-store migration rule and presented to Greg before implementation; the TermAl twin (TermAl w-dfb4bc61eabc) is linked and the host-protocol contract is agreed with TermAl"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "area-host-integration",
+    "termal-request"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

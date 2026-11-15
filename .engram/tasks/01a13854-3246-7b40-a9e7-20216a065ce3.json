@@ -1,0 +1,52 @@
+{
+  "id": "01a13854-3246-7b40-a9e7-20216a065ce3",
+  "external_ref": null,
+  "title": "Refuse oversized preparation metadata before publishing a generation",
+  "outcome": "Refuse oversized preparation metadata before publishing a generation",
+  "acceptance": [
+    "Preparation refuses serialized state.json larger than its 1 MiB reader limit before publishing a generation or candidate, preserving existing progress/output; an owned regression supplies a large capture reason or omission map and verifies the refusal.",
+    "Metadata at the supported size remains readable by journal load and the explicit prepared reader, including recovery after opt-out."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed c96b71e on master. publish() serializes preparation metadata and refuses a state.json over the shared 1 MiB STATE_LIMIT before it prunes, stages or writes anything. Every state.json reader (journal load, resume x2, prepared reader x2) uses the same limit. The regressions cover an oversized reason and both omission maps, with progress and output unchanged, and an exact-limit state that stays readable and recoverable after opt-out.\n- Full gate test-63821e58 passed on freeze 0ec430aa.\n- Pair: Codex had no findings; Claude raised 2 Lows, filed as w-8e09f66e0f8c and w-88f797e1dd5e.\n- Evaluation 18448cc7 passed 2/2.\n- Installed build ca655b36456a17249fd9386d88648979f1ecea53b718e65674da5c338608b747 (exe 947a4b66740c). Backup engram-20261014T114622Z-5bd5892ec6fe.exe. All 4 live stores ready.",
+    "completed_at": "2026-10-14T11:46:38.695738200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2a1e9bc6a06e42c99e9a5961b9573410": {
+        "activity_id": "2a1e9bc6a06e42c99e9a5961b9573410",
+        "task_id": "01a13854-3246-7b40-a9e7-20216a065ce3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0ba1b00774884a398b1856cbc15015e4"
+      }
+    }
+  }
+}

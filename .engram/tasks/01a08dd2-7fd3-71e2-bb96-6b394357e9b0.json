@@ -1,0 +1,53 @@
+{
+  "id": "01a08dd2-7fd3-71e2-bb96-6b394357e9b0",
+  "external_ref": null,
+  "title": "Clarify remember text alternatives and JSON file input documentation",
+  "outcome": "Clarify remember text alternatives and JSON file input documentation",
+  "acceptance": [
+    "CLI input documentation names shared validation and the four BOM-aware core mutations with the raw propose bound",
+    "Documentation link check and affected documentation consumers pass",
+    "Full CLI and skill remember synopses show exactly-one positional or --text alternative"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "feedback",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08da5-ac13-7231-995f-04a7169dcc74",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Clarified the shared input validator, named BOM-aware core operations and the raw propose limit, and showed positional/--text alternatives in both full synopses. Doc links and diff checks passed; searched documentation consumers, with no additional affected test reader found. Fable2203 accepted delta and freeze0563b3dd. Code/tests unchanged across this prose correction; existing full9 evidence retained, not rerun. No install or Git; installed inventory update remains installer-owned.",
+    "completed_at": "2026-09-11T00:20:22.664885200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "dd37eda6f449d23d537d13b2e69aebe11b8c6a9cb3a7dfe90dd1b1a85293c736": {
+        "activity_id": "dd37eda6f449d23d537d13b2e69aebe11b8c6a9cb3a7dfe90dd1b1a85293c736",
+        "task_id": "01a08dd2-7fd3-71e2-bb96-6b394357e9b0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "006e0e48ab558777404fa70a62fbf683af2bd88285530ec09183a47275afc872"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a0fc9e-db2e-7d63-ae59-7cc3e1058c5a",
+  "external_ref": null,
+  "title": "`engram backup push` retention, and the docs for the push word",
+  "outcome": "`engram backup push` retention, and the docs for the push word",
+  "acceptance": [
+    "After a receipt, copies beyond the configured retention count are removed from the target, never the newest confirmed one; the count covers only copies whose receipts this home recorded for the current target identity, so a copy from another home or from an earlier identity of the target is never removed; a failed removal is a warning and a failed push removes nothing; a test covers the count, the newest copy, a foreign copy and the failed push",
+    "docs/features/cli-and-mcp.md states that push is a CLI process by design and must not be run in-process inside a long-lived server, because ending the process is how a passed transport deadline cancels it, and that a read stuck in the kernel on a hung share can delay that process exit",
+    "docs/shipped.md and docs/features/cli-and-mcp.md describe the word, its exit codes and its typed failure codes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-bba2-79c1-b3c9-f69a56c4af36",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fc9e-cf36-7100-a5a7-127d12e0da43"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Backup push retention:\n- After a push that did not fail has recorded its receipt, copies beyond the retention count are removed from the target, oldest first.\n- Only this home's receipts for the current target identity count, and the newest copy is never removed.\n- A failed removal is a warning, and the copy stays in the ledger. A removal past the deadline is also a warning, with the lock held and the push's own exit code.\n\nDocs: shipped.md and cli-and-mcp.md describe the word, its exit codes, the complete set of typed codes and the CLI-process design. The brief's status names backup push as shipped.\n\nLanded as 0f2c633. The installed build is 2e0b8d5642aa and reports rev 0f2c633f0194.",
+    "completed_at": "2026-10-02T14:09:43.848604100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "125f03e608314fe498ecf94254ac12cc": {
+        "activity_id": "125f03e608314fe498ecf94254ac12cc",
+        "task_id": "01a0fc9e-db2e-7d63-ae59-7cc3e1058c5a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "09fb6f188a2c4cbf8fef27fb1f3d9b19"
+      }
+    }
+  }
+}

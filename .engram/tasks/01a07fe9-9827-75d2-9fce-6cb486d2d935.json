@@ -1,0 +1,50 @@
+{
+  "id": "01a07fe9-9827-75d2-9fce-6cb486d2d935",
+  "external_ref": null,
+  "title": "Terminate option parsing in source lookup navigation",
+  "outcome": "Terminate option parsing in source lookup navigation",
+  "acceptance": [
+    "source_detail uses an option terminator and a leading-hyphen key resolves as source detail"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Source lookup navigation inserts -- before quoted positionals; actual --help source-key regression resolves the item. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:51.480466600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9c09081e23a817d635c56c6cbd06159c1970258930e47c375eaad8e67da585f0": {
+        "activity_id": "9c09081e23a817d635c56c6cbd06159c1970258930e47c375eaad8e67da585f0",
+        "task_id": "01a07fe9-9827-75d2-9fce-6cb486d2d935",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d471fcc4cf8693acedb4a1c9e36dc6ea8862912e0fd523b7e3f3acc7d0a010df"
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "id": "01a09409-0f78-7c80-a610-9c85a49617ff",
+  "external_ref": null,
+  "title": "Agree CLI safety batch plan with Fable and Grok",
+  "outcome": "Agree CLI safety batch plan with Fable and Grok",
+  "acceptance": [
+    "Consult both peers, verify current premises, consolidate scope, sequence and discriminating tests, and report the agreed plan before any implementation assignment."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Consulted Fable and Grok, verified premises, consolidated phased scope and tests, and retained the explicit raw-limit tradeoff for Greg before implementation.",
+    "completed_at": "2026-09-12T05:22:20.415173600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f11a03c7f2c231e63791a23884c6fb06b919f32e5891c2d07be1dfec75ac9b1b": {
+        "activity_id": "f11a03c7f2c231e63791a23884c6fb06b919f32e5891c2d07be1dfec75ac9b1b",
+        "task_id": "01a09409-0f78-7c80-a610-9c85a49617ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9fa2f68582c131d66e3983b673d916b8a5149d17274e8eea27d3d25ffadc990d"
+      }
+    }
+  }
+}

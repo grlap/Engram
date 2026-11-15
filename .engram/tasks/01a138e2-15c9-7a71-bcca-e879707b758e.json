@@ -1,0 +1,64 @@
+{
+  "id": "01a138e2-15c9-7a71-bcca-e879707b758e",
+  "external_ref": null,
+  "title": "Exercise materialization capacity reservation through production admission",
+  "outcome": "Exercise materialization capacity reservation through production admission",
+  "acceptance": [
+    "A mutation-sensitive test drives the real materialization admission path with one-too-small root and shared-directory capacities and proves refusal before any new private/public state or SQLite change.",
+    "The test fails if production check_disk_names or check_reserved_names omits reservation or reserves the wrong declared entries, and still demonstrates exact-capacity publication and repeat without raising the production 100000-entry cap."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered production-path materialization capacity regression tests with independent reservation-name expectations, one-too-small refusal before new state, exact-capacity publication/repeat, and unchanged production 100000-entry limits. Full gate and both reviews passed on the exact input; independent acceptance passed 2 of 2 unchanged criteria.",
+    "completed_at": "2026-10-15T18:36:46.446386900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7a444382a6cd48ddbbdb8d94723356ec": {
+        "activity_id": "7a444382a6cd48ddbbdb8d94723356ec",
+        "task_id": "01a138e2-15c9-7a71-bcca-e879707b758e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "37e40137698e4ed59e0700885afc0d2f"
+      },
+      "f86773dbe51840c49f48a28ac4936029": {
+        "activity_id": "f86773dbe51840c49f48a28ac4936029",
+        "task_id": "01a138e2-15c9-7a71-bcca-e879707b758e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f86773dbe51840c49f48a28ac4936029"
+      }
+    }
+  }
+}

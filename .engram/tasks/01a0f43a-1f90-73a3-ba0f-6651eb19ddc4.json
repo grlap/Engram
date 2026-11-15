@@ -1,0 +1,60 @@
+{
+  "id": "01a0f43a-1f90-73a3-ba0f-6651eb19ddc4",
+  "external_ref": null,
+  "title": "Diagnose intermittent MCP completion replay latency above the sanity limit",
+  "outcome": "Diagnose intermittent MCP completion replay latency above the sanity limit",
+  "acceptance": [
+    "Identify and address the measured cause of the 12281.5ms done replay delay, retaining the original failed evidence",
+    "mutation and continuation titles are terminal-safe while MCP JSON retains their bytes passes without relaxing its 10000ms call limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "awaiting-recurrence",
+    "control-plane",
+    "dogfood",
+    "gate",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "59622de4538848b0b3f08647285dc318": {
+        "activity_id": "59622de4538848b0b3f08647285dc318",
+        "task_id": "01a0f43a-1f90-73a3-ba0f-6651eb19ddc4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "59622de4538848b0b3f08647285dc318"
+      },
+      "a305c05d32824dbebc98d52591bbb57e": {
+        "activity_id": "a305c05d32824dbebc98d52591bbb57e",
+        "task_id": "01a0f43a-1f90-73a3-ba0f-6651eb19ddc4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1820fe75f3214258b3d8f7952a89ca7b"
+      }
+    }
+  }
+}

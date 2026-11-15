@@ -1,0 +1,65 @@
+{
+  "id": "01a155e7-1d63-7d33-be00-f892275377de",
+  "external_ref": null,
+  "title": "Name an addition under a held task whose reparent is refused for its ancestor, not as a retained-graph culprit",
+  "outcome": "Name an addition under a held task whose reparent is refused for its ancestor, not as a retained-graph culprit",
+  "acceptance": [
+    "When one folder both moves a held restored task to a new parent (a change refused as unsupported_fields) and adds a new task under it, the new task is refused as ancestor_binding naming that held ancestor, not as retained_graph with 'its root differs from the folder's'",
+    "The differing-root fault class no longer claims the planning would be an invalid task graph when the graph itself is valid",
+    "A regression test exercises the differing-root class and fails without the fix",
+    "The folder-import docs describe additions in one strongly connected component accurately (one cycle structure that may hold several cycles), matching the joint-fault wording"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in de18e4ee on origin/master. An addition beneath a held task whose own change in the folder is refused, such as a move to another parent, now refuses as ancestor_binding, \"held ancestor X is refused (<reason>)\", instead of a retained_graph differing-root culprit. FaultClass::detail gives each class its own sentence, and DifferingRoot now says the graph is valid but the computed root differs. Docs describe an SCC as one cycle structure that may hold several cycles. Red run test-0d773f3a, then the full gate test-7421dc84 PASS 12/12 on freeze 4fad3ca4. The r3 review pair was clean (target/tmp/lows-r2-r3-review-full-outputs.md and lows-r1-review-findings.md). Pre-commit evaluation 8b880e91 passed 4/4. Readiness was ready on all 6 stores before and after the commit. Installed build 47ade72d; backup engram-20261020T063513Z-ec840df00a02.exe.",
+    "completed_at": "2026-10-20T06:35:27.203030400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4b60ca523dde4de2b6f6ea519c77dd99": {
+        "activity_id": "4b60ca523dde4de2b6f6ea519c77dd99",
+        "task_id": "01a155e7-1d63-7d33-be00-f892275377de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4b60ca523dde4de2b6f6ea519c77dd99"
+      },
+      "da41869e4afa4e53aaff40f4858deffb": {
+        "activity_id": "da41869e4afa4e53aaff40f4858deffb",
+        "task_id": "01a155e7-1d63-7d33-be00-f892275377de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7ee5b88b92874d269b1b6d404ff823f7"
+      }
+    }
+  }
+}

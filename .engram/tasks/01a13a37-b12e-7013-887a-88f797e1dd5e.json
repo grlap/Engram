@@ -1,0 +1,64 @@
+{
+  "id": "01a13a37-b12e-7013-887a-88f797e1dd5e",
+  "external_ref": null,
+  "title": "Refuse an oversized task-sync candidate document before pruning or staging a preparation generation",
+  "outcome": "Refuse an oversized task-sync candidate document before pruning or staging a preparation generation",
+  "acceptance": [
+    "Preparation refuses a candidate that exceeds the task candidate limits write_documents enforces (per-file, task count, total bytes), such as an include_notes task whose inline notes serialize past the per-file limit, before journal::publish prunes the predecessor generation or creates a staging directory.",
+    "An owned regression seeds two completed generations, prepares an oversized inline-notes task, asserts the refusal, asserts the progress directory listing and bytes are unchanged, and shows the predecessor generation is still readable by read_prepared."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 0f351db on master. The writer's candidate admission (parse, notes_included with no tasks, the per-file, task-count and total-byte limits) moved into directory::admit_documents, with texts and the InvalidWork kind unchanged. journal::publish runs it right after the state-size check, before it prunes the predecessor, creates staging or writes, and write_documents still runs it first. The regression tests/candidate_limit.rs (two completed generations; an oversized inline-notes task to a fresh destination; the refusal; the whole-home listing and bytes unchanged; both retained generations readable via read_prepared) failed on the unfixed code at the listing assertion and passes with the fix.\n- Full gate test-98a04bad passed on freeze 128c6081. Its host credit was voided by the TermAl restart; Fable ruled to record the pass.\n- Pair: Codex had no findings; Claude had 2 Notes, no action.\n- Evaluation 33316672 passed 2/2.\n- Installed build a3411b53f4581826fb3d2c713c7978451c2dceec4298f7117b03482dde407468 (exe 309dc16d1ffe). Backup engram-20261015T150126Z-64a6ebc850c2.exe. All 4 live stores ready.",
+    "completed_at": "2026-10-15T15:01:46.141706Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5d6eb678b64c44b9b92a57dcb2508f7f": {
+        "activity_id": "5d6eb678b64c44b9b92a57dcb2508f7f",
+        "task_id": "01a13a37-b12e-7013-887a-88f797e1dd5e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5d6eb678b64c44b9b92a57dcb2508f7f"
+      },
+      "d59764556c6341f7ae4f03705a344143": {
+        "activity_id": "d59764556c6341f7ae4f03705a344143",
+        "task_id": "01a13a37-b12e-7013-887a-88f797e1dd5e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2d9f6fe56c914b0186daef7a0eaba144"
+      }
+    }
+  }
+}

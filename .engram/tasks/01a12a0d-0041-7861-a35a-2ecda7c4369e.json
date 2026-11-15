@@ -1,0 +1,29 @@
+{
+  "id": "01a12a0d-0041-7861-a35a-2ecda7c4369e",
+  "external_ref": null,
+  "title": "Correct the task-sync design brief's stale shared-notes capability lead-in",
+  "outcome": "Correct the task-sync design brief's stale shared-notes capability lead-in",
+  "acceptance": [
+    "The git-task-sync design brief describes opt-in directory shared-note exchange as implemented and keeps Git enablement/exchange, activity and reconciliation explicitly deferred",
+    "Capability wording agrees with task-planning-text.md and docs/shipped.md, with valid documentation links"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Already resolved by b60f09e (w-30c2): git-task-sync.md lines 8-10 on master 1e135bc no longer carry the stale lead-in, and criterion 1's \"activity deferred\" is obsolete because activity has shipped. Evidence is in the coordinator note of 2026-10-12 03:08Z.",
+  "completion": null
+}

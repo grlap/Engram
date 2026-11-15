@@ -1,0 +1,62 @@
+{
+  "id": "01a08413-b68d-72a2-b718-4969096e48cf",
+  "external_ref": null,
+  "title": "Refuse mismatched source completion seal projections before migration",
+  "outcome": "Refuse mismatched source completion seal projections before migration",
+  "acceptance": [
+    "A corrupted source seal_json with intact canonical seal is refused before publication, with no changed source or remaining stage"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08329-3195-7b23-ae2d-cdd3438bc8d6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Source completion seal projection is validated against original canonical bytes before mapping or publication. Pre-fix negative control, corrected row-copy regression and full executable corrupt-source probe recorded; final nine gates and review accepted. Installed migration completed by Advisor without repair.",
+    "completed_at": "2026-09-09T04:28:15.466018700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "229c85cf5c81d83e726805e81fadba5adf2a9d0340a38771a22b11ccb7eb6cbe": {
+        "activity_id": "229c85cf5c81d83e726805e81fadba5adf2a9d0340a38771a22b11ccb7eb6cbe",
+        "task_id": "01a08413-b68d-72a2-b718-4969096e48cf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "605060172c03e778ced886181b3c3eee18a8e3152e6c2948f6dea080e234d01d"
+      },
+      "438d9bb0b77fcb563f0044145811850bdb22d68a3a3673be9af6f311948a61eb": {
+        "activity_id": "438d9bb0b77fcb563f0044145811850bdb22d68a3a3673be9af6f311948a61eb",
+        "task_id": "01a08413-b68d-72a2-b718-4969096e48cf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "438d9bb0b77fcb563f0044145811850bdb22d68a3a3673be9af6f311948a61eb"
+      }
+    }
+  }
+}

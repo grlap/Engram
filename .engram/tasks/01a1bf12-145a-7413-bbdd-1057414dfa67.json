@@ -1,0 +1,67 @@
+{
+  "id": "01a1bf12-145a-7413-bbdd-1057414dfa67",
+  "external_ref": null,
+  "title": "Reuse native planning owners for checked task-sync successors",
+  "outcome": "Factor transaction-local native reopen and planning transitions so a checked task-sync successor applies retained local construction identities without changing live authority or bypassing ordinary holds.",
+  "acceptance": [
+    "Native reopen, revision, prerequisite and blocker transitions expose transaction-local cores while their ordinary public operations retain existing replay, authority, hold, lifecycle, graph and validation behavior.",
+    "A checked successor applies only within its opaque checked transaction and selected scope after local execution ends normally; native reopening creates fresh unclaimed Open generations and preserves older terminal runs, seals, evidence, original creation provenance and required-child accounting.",
+    "Every new native event, run and root-execution identity comes from the retained construction plan; the shared native event appender keeps canonical, relation, root-reference, feed and projection checks. Reopening orders ancestors before children, and no temporary hold deletion, generic skip flag, host proof or runtime authority transfer is introduced.",
+    "Focused native tests cover successful completed-run reopening/planning, active and unfinished-run refusal, stale basis/identity refusal, preservation of earlier completion evidence, ordinary hold refusal and SQL rollback. Deliver an author-checked exact patch/API package to the parent; the combined feature owns final integration validation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered shared transaction-local native reopen, revision, prerequisite and blocker cores for checked planning successors, preserving ordinary replay/authority/hold checks, retained construction identities and historical completion evidence. Checked contribution carried into the combined package. Independent evaluation4cabab48a0cf4eddaea73aab8a1d803a passed all four criteria.",
+    "completed_at": "2026-11-09T18:11:41.237889800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cd86eb6a2a3e41b9889e1ca6693eea6d": {
+        "activity_id": "cd86eb6a2a3e41b9889e1ca6693eea6d",
+        "task_id": "01a1bf12-145a-7413-bbdd-1057414dfa67",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cd86eb6a2a3e41b9889e1ca6693eea6d"
+      },
+      "d09131a1a86f487abf60d777123c542d": {
+        "activity_id": "d09131a1a86f487abf60d777123c542d",
+        "task_id": "01a1bf12-145a-7413-bbdd-1057414dfa67",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c893ee79888a4492a047b14c17d341f6"
+      }
+    }
+  }
+}

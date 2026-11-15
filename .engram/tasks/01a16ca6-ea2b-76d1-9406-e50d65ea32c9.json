@@ -1,0 +1,137 @@
+{
+  "id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+  "external_ref": null,
+  "title": "Make phase-trace test flush completion explicit",
+  "outcome": "Make phase-trace test flush completion explicit",
+  "acceptance": [
+    "Phase-trace tests report a flush timeout or missing acknowledgement explicitly instead of proceeding to line-count or stage assertions with a possibly incomplete capture; their ordering and stage assertions remain intact."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "delivered",
+    "evaluation-pending",
+    "mcp",
+    "review",
+    "testing"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Every phase-trace test flush wait now uses assert_flushed, which panics on a flush timeout or missing acknowledgement before any line-count or stage assertion; ordering and stage assertions unchanged. Landed at 94ff56c0 (full gate test-94094c24 PASS, installed build 5fb0a88c). A fresh independent acceptance evaluation passed criterion 1 (record 1f29cb3be36f4c6f86a06e42e66bd023), superseding the stale failed verdict 79af2f48.",
+    "completed_at": "2026-10-28T02:29:58.212150200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5aea379d3f0e454b9e8f03b85eed1bd0": {
+        "activity_id": "5aea379d3f0e454b9e8f03b85eed1bd0",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "facca07db15d41679ecb5303c50f7e5f"
+      },
+      "6eb872ff47c24171b55e0b38be83565e": {
+        "activity_id": "6eb872ff47c24171b55e0b38be83565e",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "32603b2f555c4438a10032b2fe8d79c5"
+      },
+      "872b02def0be4f71bb4ee9f9913570f5": {
+        "activity_id": "872b02def0be4f71bb4ee9f9913570f5",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "872b02def0be4f71bb4ee9f9913570f5"
+      },
+      "96216c585f474267bbc7706c2edfd87e": {
+        "activity_id": "96216c585f474267bbc7706c2edfd87e",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "5aea379d3f0e454b9e8f03b85eed1bd0"
+      },
+      "a21788085de8478fac88ef0b1586bc54": {
+        "activity_id": "a21788085de8478fac88ef0b1586bc54",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "872b02def0be4f71bb4ee9f9913570f5"
+      },
+      "cf3ef5f391c741ebafc91fcc6e41df56": {
+        "activity_id": "cf3ef5f391c741ebafc91fcc6e41df56",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d1cf0b46b3f343909819043d2cc0ced4"
+      },
+      "d1cf0b46b3f343909819043d2cc0ced4": {
+        "activity_id": "d1cf0b46b3f343909819043d2cc0ced4",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7c65183c65af44fab92fe0ac08e5753c"
+      },
+      "e91e5f1e643b4e3881e6bee610da2479": {
+        "activity_id": "e91e5f1e643b4e3881e6bee610da2479",
+        "task_id": "01a16ca6-ea2b-76d1-9406-e50d65ea32c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ce35850f6a184ad68344a1114663e44a"
+      }
+    }
+  }
+}

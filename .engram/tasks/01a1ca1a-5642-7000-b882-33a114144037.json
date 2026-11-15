@@ -1,0 +1,53 @@
+{
+  "id": "01a1ca1a-5642-7000-b882-33a114144037",
+  "external_ref": null,
+  "title": "Keep task-data Git operations running for at least sixty seconds",
+  "outcome": "New task-data worktree Git operations use at least a sixty-second abort limit and log one non-interrupting warning after ten seconds, preserving the caller's absolute deadline and atomic recovery behavior.",
+  "acceptance": [
+    "The new task-data worktree and commit query paths use an abort allowance of at least sixty seconds, admitted by the shared Git query layer; an existing longer allowance is preserved, and internal remaining time stays tied to the same absolute operation deadline.",
+    "An operation still running after ten seconds emits one bounded warning with operation or attempt identity and elapsed time, without interrupting it or exposing a complete source_id; behavioral coverage proves the warning and abort boundaries and unchanged refusal or retry atomicity."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review-follow-up",
+    "sync"
+  ],
+  "assigned_to": "peer-ea0f02214a47fa758ff7f868",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented at-least-sixty-second task-data and exchange request deadlines with one bounded ten-second warning, preserving longer allowances, spent absolute deadlines and recovery semantics. Final clean candidate 0fa7b372d11de72502b5c1f3004a88ce6af64ab0/tree d2fa0b34ecebb426114a9bb17a42a375ec7871a0 has strict Windows Clippy, 135 executed tests passing, five intentional subprocess helpers ignored, and formatting passing. Fresh independent evaluation 3bd613003edc4e5eb23cdca2800b474e passes both criteria on this exact source.",
+    "completed_at": "2026-11-11T12:47:09.745865600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6bdcfd1e7c944777a07017d659b9fabd": {
+        "activity_id": "6bdcfd1e7c944777a07017d659b9fabd",
+        "task_id": "01a1ca1a-5642-7000-b882-33a114144037",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6eb59edb5109434fadd9b8a08cd5ed7f"
+      }
+    }
+  }
+}

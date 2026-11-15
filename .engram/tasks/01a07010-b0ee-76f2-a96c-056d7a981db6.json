@@ -1,0 +1,51 @@
+{
+  "id": "01a07010-b0ee-76f2-a96c-056d7a981db6",
+  "external_ref": null,
+  "title": "Preserve creation operation attribution on initial observations",
+  "outcome": "Preserve creation operation attribution on initial observations",
+  "acceptance": [
+    "Root and child initial observations preserve the creator actor and session plus truthful source tool and creation reason; standalone notes retain work_update attribution, and both paths remain explicitly authority-free without checkpoint or run credit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06f14-bcc9-73d3-b295-c22bea35567e",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved creator attribution and explicit no-execution-credit wording with passing Phoenix regressions.",
+    "completed_at": "2026-09-05T05:56:27.724022500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7552c78402745467c18a35b65cedea56459e783e41607b6e39f98cd34aa1c2db": {
+        "activity_id": "7552c78402745467c18a35b65cedea56459e783e41607b6e39f98cd34aa1c2db",
+        "task_id": "01a07010-b0ee-76f2-a96c-056d7a981db6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d69720659cfa41fe8be63353bde1bfb0f9bd5a60a45e0693f0e5117dfa23afb7"
+      }
+    }
+  }
+}

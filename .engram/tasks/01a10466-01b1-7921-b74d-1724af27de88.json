@@ -1,0 +1,51 @@
+{
+  "id": "01a10466-01b1-7921-b74d-1724af27de88",
+  "external_ref": null,
+  "title": "Use a deliberate documented blocking ancestor shape across rich and compact work receipts",
+  "outcome": "Use a deliberate documented blocking ancestor shape across rich and compact work receipts",
+  "acceptance": [
+    "The blocking_ancestor shapes on show, compact and verbose ls, verbose next, core focus/next/inspect are deliberately defined and documented; fields preserve typed ancestor identity and correct lifecycle.",
+    "Native receipt regressions pin the admitted shapes, and TermAl's running readers are checked against actual candidate rich/core payloads before the new shapes land."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented and pinned deliberate native compact versus rich core blocking ancestor shapes, nearest non-open ancestor lifecycle including Proposed, and separate direct-parent state. Actual candidate payload checked against TermAl production reader code with scoped GO; no live reader execution claimed. Exact Rust/native regressions and full Windows gate passed, whole-input Codex/Claude pair has no Medium+; Low documentation enumeration follow-up filed separately. Independent acceptance passed 2/2 unchanged criteria. Landed and installed reviewed source; all four live stores ready.",
+    "completed_at": "2026-10-04T19:03:49.967755200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "82ac96afc4d6407f91c41f8c9e5a010b": {
+        "activity_id": "82ac96afc4d6407f91c41f8c9e5a010b",
+        "task_id": "01a10466-01b1-7921-b74d-1724af27de88",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c94f174cb36a445eb6bb66938b85c2b0"
+      }
+    }
+  }
+}

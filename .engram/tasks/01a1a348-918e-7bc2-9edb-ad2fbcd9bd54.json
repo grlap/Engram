@@ -1,0 +1,63 @@
+{
+  "id": "01a1a348-918e-7bc2-9edb-ad2fbcd9bd54",
+  "external_ref": null,
+  "title": "Add cinematic cyberpunk artwork to the website agent section",
+  "outcome": "Add original cyberpunk city and memory-core artwork to the agent-facing marketing half in an isolated worktree.",
+  "acceptance": [
+    "The four agent folios include richer original cyberpunk artwork while the manuscript half stays intact.",
+    "Text, controls and navigation remain readable and usable at desktop and mobile sizes, including reduced motion.",
+    "Artwork is stored locally with generation prompts and website documentation updated."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and published the approved cyberpunk artwork at 74db28c856a3bbca320931fd10d15d5b2bee0c76; installed build da9f0c515e9b5165aa55899efea37f3e0da9331a25352ce38b1ec403af68cce0",
+    "completed_at": "2026-11-03T23:38:40.704158400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5100bc8023394147b52729cabaf6df10": {
+        "activity_id": "5100bc8023394147b52729cabaf6df10",
+        "task_id": "01a1a348-918e-7bc2-9edb-ad2fbcd9bd54",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ecd4fc193de943418e1523b673621e66"
+      },
+      "ecd4fc193de943418e1523b673621e66": {
+        "activity_id": "ecd4fc193de943418e1523b673621e66",
+        "task_id": "01a1a348-918e-7bc2-9edb-ad2fbcd9bd54",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4b6e3ae790b942d480f3712b1c718612"
+      }
+    }
+  }
+}

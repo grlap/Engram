@@ -1,0 +1,60 @@
+{
+  "id": "01a1392e-1138-7bd0-8f89-96b9c954d31e",
+  "external_ref": null,
+  "title": "Task sync SSH transport without shell interpolation",
+  "outcome": "Task sync SSH transport without shell interpolation",
+  "acceptance": [
+    "The bounded Git runner supports fetch and push over SSH remotes using the user's existing SSH agent or keys, with no prompts (batch mode) and no shell interpolation of Engram-supplied values, under the same process-tree job, deadline and output bounds as HTTPS, with tests",
+    "Unsupported SSH configurations (custom core.sshCommand with arbitrary scripts, interactive authentication, unknown ssh variants) refuse explicitly with guidance",
+    "Local fixtures prove logic only; a real SSH remote check is listed in the cross-machine test plan rather than claimed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13924-4e7e-7600-aa71-26c0b584547f"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "3bc5a2b754d548f6baf21d2e6c537136": {
+        "activity_id": "3bc5a2b754d548f6baf21d2e6c537136",
+        "task_id": "01a1392e-1138-7bd0-8f89-96b9c954d31e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "825443dea78846a9874f2fee2739cb40"
+      },
+      "f0a934d0c497481290cf45e3174cbc65": {
+        "activity_id": "f0a934d0c497481290cf45e3174cbc65",
+        "task_id": "01a1392e-1138-7bd0-8f89-96b9c954d31e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f0a934d0c497481290cf45e3174cbc65"
+      }
+    }
+  }
+}

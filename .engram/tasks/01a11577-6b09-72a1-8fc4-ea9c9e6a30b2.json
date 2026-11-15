@@ -1,0 +1,52 @@
+{
+  "id": "01a11577-6b09-72a1-8fc4-ea9c9e6a30b2",
+  "external_ref": null,
+  "title": "Hide disposal actions while the current run has a live handoff offer",
+  "outcome": "Hide disposal actions while the current run has a live handoff offer",
+  "acceptance": [
+    "Owner show/focus/inspect do not advertise cancel or supersede while a live offered handoff on the active run makes disposal refuse; handoff cancellation remains available",
+    "After handoff cancellation, acceptance or expiry, the admitted disposal actions are advertised again, with focused owner-view regressions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "handoff",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Owner show, focus and inspect hide cancel/supersede while the active run has a live offered handoff; cancellation stays available and admitted actions return after cancellation, acceptance or expiry. Focused owner regressions, full frozen gate, independent Codex/Claude reviews and independent acceptance2/2 pass; clean committed release installed with backup and all four stores ready.",
+    "completed_at": "2026-10-09T03:44:03.581026100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "004bb87bb7b04e62ba129970627dac34": {
+        "activity_id": "004bb87bb7b04e62ba129970627dac34",
+        "task_id": "01a11577-6b09-72a1-8fc4-ea9c9e6a30b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8899cbcf02f24533a0292fd8cb3a6b8c"
+      }
+    }
+  }
+}

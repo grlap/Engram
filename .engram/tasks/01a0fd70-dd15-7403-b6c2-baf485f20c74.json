@@ -1,0 +1,52 @@
+{
+  "id": "01a0fd70-dd15-7403-b6c2-baf485f20c74",
+  "external_ref": null,
+  "title": "Backup doctor-block and reminder follow-ups: plain-status wording in the push row, the stale roadmap sentence, the access-error exception, the not-read newline, and a past-window doctor test",
+  "outcome": "Backup doctor-block and reminder follow-ups: plain-status wording in the push row, the stale roadmap sentence, the access-error exception, the not-read newline, and a past-window doctor test",
+  "acceptance": [
+    "BackupBlock::text writes its not-read line with an escaped newline, and a doctor test shows healthy true with a past-window (backup_confirmation_expired or backup_stale) backup",
+    "The docs for the `next` reminder state that a config-file existence check that cannot answer counts as configured",
+    "docs/shipped.md's Backup push row says only `backup status --check-target` contacts targets, and docs/roadmap.md no longer says doctor reports no backup freshness"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed with w-70034a479cde as cff3bcb:\n- doctor's not-read backup line now uses an escaped newline;\n- a new CLI test shows doctor healthy beside an expired backup confirmation, beside the existing stale-copy test;\n- the reminder docs, in off-host-backup, cli-and-mcp and shipped, say that a configuration file whose existence cannot be checked counts as present;\n- the shipped push row says plain backup status contacts no target, while --check-target asks each target. roadmap.md needed no change.\nEvidence: gate test-f5d55410 passed on freeze 7fa6361b; pair round 2 was clean (Codex 10073, Claude 10074); independent evaluation 19302b5a passed 3/3; readiness was ready on all 4 stores.",
+    "completed_at": "2026-10-03T04:46:06.154295400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4099252090164b98ac1bb3a1d9e583f8": {
+        "activity_id": "4099252090164b98ac1bb3a1d9e583f8",
+        "task_id": "01a0fd70-dd15-7403-b6c2-baf485f20c74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bb32c6e3526f4164812f5931c1899f7d"
+      }
+    }
+  }
+}

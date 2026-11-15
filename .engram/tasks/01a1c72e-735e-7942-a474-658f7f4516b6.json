@@ -1,0 +1,55 @@
+{
+  "id": "01a1c72e-735e-7942-a474-658f7f4516b6",
+  "external_ref": null,
+  "title": "Keep retained exchange preparation recoverable and publication confirmations observed",
+  "outcome": "Fresh evidence and successor retention is serialized, outgoing retained delta preparation recovers exactly after a failed commit, and caller-facing publication confirmation rests on an owner remote observation.",
+  "acceptance": [
+    "Fresh evidence ordinary and definite-head-change preparation and planning successor preparation validate complete construction under the existing origin reservation and SQL writer before first retention; Git stays outside the writer, stale construction refuses before new recipe publication, and valid retained recipes preserve original ids and bytes.",
+    "Outgoing delta preparation interrupted after retention but before SQL commit can exact-retry its retained validated payload even after a selected native task changes; no canonical or retained original is rewritten, changed requests and bytes refuse, and subsequent exchange remains usable.",
+    "Caller-facing publication and retry confirmation cannot settle or become a confirmed export basis without the owner observing the selected remote tip equal to the exact retained commit. Unknown or mismatching remote state remains unresolved or refuses atomically, with no new push authority and documented assertion boundaries.",
+    "Deterministic behavioral regressions cover the competing-writer evidence/successor race, retained outgoing preparation plus commit failure and native change, and absent/different/exact remote tips for publication and retry. Existing exact replay, private uncertainty, pin, generation and retry-budget guards remain effective.",
+    "A complete bounded READY handoff names exact source, owned patch, native focused results/counts and remaining artifact/rollout limits. The frozen parent stays unchanged; no fix is integrated before all six reviews and one consolidated candidate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered as frozen candidate 0f47c562dbc0800f8cf1db2b1da6e63485fa9b74 (tree 0cfc215e), on top of the parent input 8d77fa4e. Owned patch: .evidence/w-658f-ready-0f47c562/owned.patch, sha256 21b358f4…fd3b.\n- Fresh evidence and planning-successor construction is serialized under the origin reservation and the SQL writer (with_construction).\n- Outgoing retained delta preparation exact-retries after a failed SQL commit.\n- Caller-facing publication and retry confirmation rest on the owner's own remote-tip read.\n- Also delivered: definite evidence selection mismatches end as known stops; data-worktree checks are bounded by the exchange deadline; the held-scope refusal comes before commit selection, with audited abandonment of a fetched carrier; the Windows HTTPS workflows are split into supervised children that take turns.\n- Native results: DL560 Clippy, data_worktree 21/21, exchange 19/19, git 32/32 and checkpoint_tests 96/96; Central Windows Clippy, the exchange suite 31/31 and the writer 6/6.\n- READY went to 12325. Nothing is integrated: integration, the six reviews and the full gates belong to the parent.\n- An independent evaluation passed all 5 criteria on a fresh basis.",
+    "completed_at": "2026-11-11T03:32:06.640216300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "41d9dfeef0b14ed2847693d33a54f025": {
+        "activity_id": "41d9dfeef0b14ed2847693d33a54f025",
+        "task_id": "01a1c72e-735e-7942-a474-658f7f4516b6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ba10f9e8b1b34254b8c62bd98feb6fbc"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a0fad8-94a0-7ad0-b71c-7f2e417262bb",
+  "external_ref": null,
+  "title": "The control-plane and spec docs describe the degraded action envelope as if it were built",
+  "outcome": "The control-plane and spec docs describe the degraded action envelope as if it were built",
+  "acceptance": [
+    "behavioral-control-plane.md and spec.md describe the degraded envelope and degraded action debt as designed and not built, matching docs/shipped.md and the source, with no present-tense claim of shipped behavior"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

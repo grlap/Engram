@@ -1,0 +1,52 @@
+{
+  "id": "01a0656a-a962-70c0-a895-01dd4c2e13bf",
+  "external_ref": null,
+  "title": "Bound storage retained for process-defaulted work sessions",
+  "outcome": "Repeated unconfigured shell invocations do not grow session-keyed projection and protocol-attempt storage without bound.",
+  "acceptance": [
+    "A documented reclamation or bounded reuse policy covers work_session_state and work_protocol_attempts created by process-defaulted sessions.",
+    "Concurrency, integrity verification, and session isolation remain fail-closed under the selected policy."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "performance",
+    "review",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bound process-default session retention with creator-paid indexed reclamation, exact seven-day reuse refusal, complete exclusion/rollback/query-plan coverage, and consistent CLI/MCP/docs behavior.",
+    "completed_at": "2026-09-04T01:02:12.845852900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5b09d46abc7edef1d9c07555b31881806062e17c3ff9def11c980b0b1b9e6f4f": {
+        "activity_id": "5b09d46abc7edef1d9c07555b31881806062e17c3ff9def11c980b0b1b9e6f4f",
+        "task_id": "01a0656a-a962-70c0-a895-01dd4c2e13bf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "875818b121773f3c54156070fa4b418dc9f7df51a769aa6beb0557546951dc52"
+      }
+    }
+  }
+}

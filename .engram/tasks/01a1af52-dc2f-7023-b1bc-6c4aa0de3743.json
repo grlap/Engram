@@ -1,0 +1,68 @@
+{
+  "id": "01a1af52-dc2f-7023-b1bc-6c4aa0de3743",
+  "external_ref": null,
+  "title": "Expose the shared committed-input reader as a store-independent JSON command",
+  "outcome": "Install one read-only committed-input command before launchers migrate to it, removing the bootstrap cycle.",
+  "acceptance": [
+    "`engram source --root <absolute worktree> --json` returns the jointly reviewed JSON v1 contract: version, clean/not_clean/unavailable status, canonical root when established, one git-commit source, tree metadata, bounded changed-porcelain entries from the same status read, and a bounded named refusal. Exit 0 means a completed clean or dirty measurement, exit 1 unavailable, exit 2 invalid invocation; exit 0 alone grants no credit.",
+    "The command dispatches before project/home/store/session resolution, reuses Engram's committed_input reader as the single predicate implementation, and performs rev 5 root commit, root and child filter guard, recursive submodule pin, one root status, and stable HEAD checks without deriving or buffering full file/index lists. It neither initializes, fetches, repairs nor mutates inspected repositories.",
+    "Existing deadline and output limits remain enforced (eight seconds and one MiB); a caller's supported shorter budget cannot increase them. Process failure, deadline, malformed Git output, unsupported input and root mismatch fail closed with a named reason. Trusted Git selection stays outside the inspected tree and inherited Git redirection remains isolated.",
+    "One reusable real-Git fixture constructor and expected verdict table lives in Engram for owner-command and later adapter conformance: clean, root/child dirty and untracked, off-pin/uninitialized, nested pinned children, root/child filters, child-local hiding config, ignored output, and the documented hidden-index-flag limitation. IDs and fingerprints are derived at runtime; command tests also cover refusal/exit semantics, root identity and store-independent operation.",
+    "No stored evaluation, verification, resolution or seal is rewritten or reinterpreted; existing live-currency callers retain the shared predicate and historical validators remain unchanged. This changeset does not migrate launcher fingerprints or launcher admission; those follow installation under the parent and separate fingerprint scope.",
+    "The command and fixtures pass the required exact-input review pair and FULL, relevant Windows checks and current readiness classification; the exact gated build is landed, pushed and installed under standing approval. The installed command's version/source identity is recorded, enabling a later separate launcher-migration changeset."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered one store-independent committed-input JSONv1 command backed by Engram's shared reader, with bounded fail-closed output, real-Git conformance and exact Linux/Windows validation; landed, pushed and installed as 2d03fd4e8cbb9f2d1d1b34bc327cb170a04e3e3d.",
+    "completed_at": "2026-11-06T12:53:46.644620700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6429e45ea5f0411c92bff506e818317e": {
+        "activity_id": "6429e45ea5f0411c92bff506e818317e",
+        "task_id": "01a1af52-dc2f-7023-b1bc-6c4aa0de3743",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6429e45ea5f0411c92bff506e818317e"
+      },
+      "cd48ea271c9d452f956df765609520ee": {
+        "activity_id": "cd48ea271c9d452f956df765609520ee",
+        "task_id": "01a1af52-dc2f-7023-b1bc-6c4aa0de3743",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "20f553594128477ca054f7e6fe057134"
+      }
+    }
+  }
+}

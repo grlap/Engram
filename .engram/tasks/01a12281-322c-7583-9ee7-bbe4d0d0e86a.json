@@ -1,0 +1,29 @@
+{
+  "id": "01a12281-322c-7583-9ee7-bbe4d0d0e86a",
+  "external_ref": null,
+  "title": "Explain an identical selected unblock when another call commits the clear first",
+  "outcome": "Explain an identical selected unblock when another call commits the clear first",
+  "acceptance": [
+    "A deterministic two-service same-session test completes an identical keyless selected unblock between another call's missing-core-result read and its clear transaction; the later caller recovers the committed result or receives truthful no-clear guidance without an invented changed-intent/new-key remedy, and no second clear or retirement occurs",
+    "Genuine changed-intent explicit-key conflicts retain their refusal semantics and committed selected-unblock recovery remains exact"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "concurrency",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

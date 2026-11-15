@@ -1,0 +1,41 @@
+{
+  "id": "01a0775d-7b3a-7893-96fa-eb8936937711",
+  "external_ref": null,
+  "title": "next carries schema_reference beside build_fingerprint so a host can tell a different build with the same schema from an incompatible one without running doctor",
+  "outcome": "next carries schema_reference beside build_fingerprint so a host can tell a different build with the same schema from an incompatible one without running doctor",
+  "acceptance": [
+    "next JSON carries schema_reference once beside build_fingerprint and the footer prints schema SCHEMA12 after the build token; the value equals engram --version's schema; doctor and core results unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "deferred",
+    "parked",
+    "pilot",
+    "stream-host-admission"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-2291-7eb3-96af-67191ca1e4b0",
+      "kind": "manual",
+      "detail": "Greg deferred runtime-version/schema-reference machinery. Revisit only on an independently established correctness need or an explicit revised decision.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:05.061640600Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

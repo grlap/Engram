@@ -1,0 +1,44 @@
+{
+  "id": "01a064d3-84fc-7150-8b58-a1b3b5a3a5ef",
+  "external_ref": null,
+  "title": "Refuse inverted completion contributor revisions",
+  "outcome": "Completion recovery fails closed before key derivation when a holder's participant revision exceeds the root contributor revision.",
+  "acceptance": [
+    "A tamper regression proves holder participant revision greater than the root total returns a typed projection refusal."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integrity",
+    "review",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "obsolete: filed against the completion-barrier/participant-revision design that was rejected and removed before landing (1d04b09 shipped the refusal-recompute fix without that machinery)",
+  "completion": null,
+  "activity": {
+    "central": {
+      "0ec60ad85eb2a93f3037351f7173ff8b60cb5471009a567cf4b84d88e960a4dc": {
+        "activity_id": "0ec60ad85eb2a93f3037351f7173ff8b60cb5471009a567cf4b84d88e960a4dc",
+        "task_id": "01a064d3-84fc-7150-8b58-a1b3b5a3a5ef",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "9c2366563708c495eaf5d24366827c89733f94b739e08965c5052264361ddd1f"
+      }
+    }
+  }
+}

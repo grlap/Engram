@@ -1,0 +1,51 @@
+{
+  "id": "01a08350-f981-7902-a8a6-21c2e4564cc6",
+  "external_ref": null,
+  "title": "Recognize the actual aggregate-root source layout without intake indexes",
+  "outcome": "Recognize the actual aggregate-root source layout without intake indexes",
+  "acceptance": [
+    "migration_restore_aggregate_without_intake_indexes passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08329-3195-7b23-ae2d-cdd3438bc8d6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Recognized and preserved the actual source durable layout, independent of rebuildable intake indexes and SQL indentation.",
+    "completed_at": "2026-09-08T23:48:30.660411900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4eaa344b259d8c1b9d37b10302b8de389abd0b9eba083ab79d759c048008c7ee": {
+        "activity_id": "4eaa344b259d8c1b9d37b10302b8de389abd0b9eba083ab79d759c048008c7ee",
+        "task_id": "01a08350-f981-7902-a8a6-21c2e4564cc6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e809c115c9137108a5765fb357495c29a8f7ceb77343534d7bae2549aa47c48e"
+      }
+    }
+  }
+}

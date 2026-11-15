@@ -1,0 +1,77 @@
+{
+  "id": "01a122be-244c-7dc1-9276-698816632ed1",
+  "external_ref": null,
+  "title": "Specify optional Git task sync with agent-merged text and main-checkout export",
+  "outcome": "Update the specification for Greg's selected text-based Git synchronization model and obtain Architect1 and Architect2 architectural review.",
+  "acceptance": [
+    "Specification describes local change collection, imported-commit progress, text task layout, initial 1000-task push and incremental push/pull with agent conflict resolution.",
+    "Specification defines shared local SQLite with main-checkout-only task export/import and linked-worktree exclusion, with no global writer lock or background network requirement.",
+    "Both Engram architects review the concrete candidate and their findings are incorporated or explicitly recorded; prior sequential-handoff material is clearly superseded for this selected workflow."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "area-storage",
+    "design"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Specified optional agent-merged Git task synchronization with per-host shared SQLite, main-checkout-only text exchange, incremental progress and lifecycle admission, explicit disclosure rules, no global writer ownership, and supersession of sequential handoff. Incorporated architect-reviewed design and approved corrections; seven Markdown files landed after exact-tree doc gates, clean Codex/Claude round2 and fresh independent acceptance3/3.",
+    "completed_at": "2026-10-10T01:41:25.604649500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "026607df223e414d9f2ea4305ea4a982": {
+        "activity_id": "026607df223e414d9f2ea4305ea4a982",
+        "task_id": "01a122be-244c-7dc1-9276-698816632ed1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0e626fcb5b7b44d088db6545f29323e8"
+      },
+      "21fff87bf2c7496eb5abba4965a07ddd": {
+        "activity_id": "21fff87bf2c7496eb5abba4965a07ddd",
+        "task_id": "01a122be-244c-7dc1-9276-698816632ed1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e2bab7d2841741c1abf38df0d3e378ae"
+      },
+      "4cd0818a4d1e4754b2ddc6f997014a19": {
+        "activity_id": "4cd0818a4d1e4754b2ddc6f997014a19",
+        "task_id": "01a122be-244c-7dc1-9276-698816632ed1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ad90d43ec6a44e77bcd40b32696a2139"
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "01a1281e-757e-7462-9964-2cadac80db84",
+  "external_ref": null,
+  "title": "Task sync refusals carry dedicated machine-readable codes",
+  "outcome": "Task sync refusals carry dedicated machine-readable codes",
+  "acceptance": [
+    "Each task export or import refusal (native execution state, divergent or removed planning state, foreign id collision, invalid graph, origin binding mismatch, destination refusals) carries a distinct stable code in a --json receipt, and the human text keeps its current reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "agent-ergonomics",
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Each task export or import refusal now carries a distinct stable task_sync_* code in the CLI's --json error receipt: native state, divergent and removed planning, id collision, invalid graph, origin mismatch, and 13 destination leaves. The human text is byte-identical and the host wire code is unchanged. The codes are documented in docs/features/task-planning-text.md under \"Refusal codes\", with a test that checks the docs table. Full gate test-9b69c01f passed on freeze 0cabf8de. The round-5 Codex and Claude pair was clean at Medium and above. Evaluation 3bd19a94 passed. Landed as 0b5824b and installed as build d8e04d2d9317; all 5 stores report ready.",
+    "completed_at": "2026-10-16T19:22:56.135951500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5e7ba6fefc984753acb07932f337cfa3": {
+        "activity_id": "5e7ba6fefc984753acb07932f337cfa3",
+        "task_id": "01a1281e-757e-7462-9964-2cadac80db84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6f36933748604dc388e5c9583dc8c86f"
+      },
+      "bf3e569d2e1540ea8d38bc00d05d7758": {
+        "activity_id": "bf3e569d2e1540ea8d38bc00d05d7758",
+        "task_id": "01a1281e-757e-7462-9964-2cadac80db84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bf3e569d2e1540ea8d38bc00d05d7758"
+      }
+    }
+  }
+}

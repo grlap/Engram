@@ -1,0 +1,51 @@
+{
+  "id": "01a0aec6-43ba-7751-b051-2e947a750ef0",
+  "external_ref": null,
+  "title": "Independence is rechecked when an evaluation is consumed, against the run's full holder history",
+  "outcome": "Independence is rechecked when an evaluation is consumed, against the run's full holder history",
+  "acceptance": [
+    "a storage test in which an independent evaluator later becomes the holder by handoff and by recovery is refused at completion with stale reason identity, while the original holder completing on that pass seals and an evaluator that held only a sibling child run stays independent, passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Independence is rechecked when an independent_session evaluation is consumed: staleness() compares the evaluator session against the current holder, the executor, and the run's immutable holder history (claim/renewal/recovery/handoff events) and reports AcceptanceStaleReason::Identity; done names the remedy. Regression covers handoff and recovery variants plus three positive controls. RED logs/08, GREEN logs/11 and 12; docs F7, recovery table, B35.",
+    "completed_at": "2026-09-17T10:44:41.101583100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "299ed18d6965d0d01e36edc22acc02e85de53a74b2460f17a872b58049970385": {
+        "activity_id": "299ed18d6965d0d01e36edc22acc02e85de53a74b2460f17a872b58049970385",
+        "task_id": "01a0aec6-43ba-7751-b051-2e947a750ef0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "650c7ffe963a7493669bdb6474d83782465b80f4ef5b9f3608cee43a79338a92"
+      }
+    }
+  }
+}

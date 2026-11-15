@@ -1,0 +1,62 @@
+{
+  "id": "01a0a290-00e6-7832-9984-09753fb6b563",
+  "external_ref": null,
+  "title": "Prevent finalize success with an invalid upgrade journal transition",
+  "outcome": "Finalization after interrupted live publication either persists valid phase records or refuses without corrupting recovery state.",
+  "acceptance": [
+    "upgrade_cli_finalize_never_reports_success_with_an_illegal_journal_transition passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a272-a5e6-75e3-9485-f771ace3fc1a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against saved accepted V7 evidence; original acceptance unchanged.",
+    "completed_at": "2026-09-16T16:44:42.100216400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d1b66bc58181803352ba54fd01ab62ed619ebec3a9914432a6340c475a247e0e": {
+        "activity_id": "d1b66bc58181803352ba54fd01ab62ed619ebec3a9914432a6340c475a247e0e",
+        "task_id": "01a0a290-00e6-7832-9984-09753fb6b563",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d1b66bc58181803352ba54fd01ab62ed619ebec3a9914432a6340c475a247e0e"
+      },
+      "df91b02678b51db5f01e15b99cec50be124a4405dfd7e150a89383efa2e5f370": {
+        "activity_id": "df91b02678b51db5f01e15b99cec50be124a4405dfd7e150a89383efa2e5f370",
+        "task_id": "01a0a290-00e6-7832-9984-09753fb6b563",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "330f370b3bf122284e7940f2ebfd89733603583f472c4b30890ba8c58df03506"
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "01a0cb88-f829-7762-a219-728ead1f430a",
+  "external_ref": null,
+  "title": "Migration import fails with an opaque SQLite error when its staged file path passes the Windows path limit",
+  "outcome": "Importing into a deep directory on Windows either works or refuses with a message that names the path length, instead of 'unable to open database file'.",
+  "acceptance": [
+    "A test imports into an output directory whose staged .engram-migration-<uuid>.tmp-wal path exceeds 260 characters on Windows and either succeeds or refuses with an error that names the path length",
+    "full-store-migration.md tells the operator to keep the output path short, or the limit no longer applies"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Windows migration import refuses oversized destination, staging and sidecar paths before filesystem probes or creation, names measured UTF-16 length and shorter-output remedy, and documents the limit in operator guidance and CLI help.",
+    "completed_at": "2026-10-03T18:12:11.844388100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "024b0d7f08f748489e5d07106b065a97": {
+        "activity_id": "024b0d7f08f748489e5d07106b065a97",
+        "task_id": "01a0cb88-f829-7762-a219-728ead1f430a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "024b0d7f08f748489e5d07106b065a97"
+      },
+      "6a0b947dc4a9469e983dd106d0349674": {
+        "activity_id": "6a0b947dc4a9469e983dd106d0349674",
+        "task_id": "01a0cb88-f829-7762-a219-728ead1f430a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a71ae728e59b449e89690e135e1df4d1"
+      }
+    }
+  }
+}

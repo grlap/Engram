@@ -1,0 +1,51 @@
+{
+  "id": "01a073d0-2723-7973-bbb3-30e41424cb68",
+  "external_ref": null,
+  "title": "show --notes reaches every note: a bounded window that prioritizes the newest notes rendered chronologically with explicit direction, an item-bound continuation for older pages, exact counts, and a detail path for a single over-budget note; history likewise",
+  "outcome": "show --notes reaches every note: a bounded window that prioritizes the newest notes rendered chronologically with explicit direction, an item-bound continuation for older pages, exact counts, and a detail path for a single over-budget note; history likewise",
+  "acceptance": [
+    "a single note larger than the budget is reachable through a detail path instead of making it and every later note unreachable; history uses the same window and continuation shape; docs state that notes[].summary in full-note mode is the complete stored body",
+    "show REF --notes renders the newest notes that fit in feed order oldest-to-newest within the window, states the window direction and exact notes_omitted, and prints one continuation command bound to the item that reaches every older note; a fixture with a newer verdict note after enough old material to exceed the budget shows the verdict on the first page"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered newest-first note and history windows with exact continuation, complete immutable note detail, 64 KiB note-write limits, CLI/MCP parity, relative attribution, verified restored-record reuse, and live-path integrity and omission regressions.",
+    "completed_at": "2026-09-06T01:56:36.018097400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5d82d75338128efbe46551cc9d023d73bc490acfa2ec0fe4231452d9f70d8e14": {
+        "activity_id": "5d82d75338128efbe46551cc9d023d73bc490acfa2ec0fe4231452d9f70d8e14",
+        "task_id": "01a073d0-2723-7973-bbb3-30e41424cb68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7abdc79bb6d3e0b49740cad2f4ac20f34e7568219e6646b0b588952ff00aa0a8"
+      }
+    }
+  }
+}

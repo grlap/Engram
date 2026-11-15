@@ -1,0 +1,52 @@
+{
+  "id": "01a1b381-7db6-7482-8000-a577d36eba5c",
+  "external_ref": null,
+  "title": "Ban tests that pin AGENTS.md or CLAUDE.md wording in Engram's instructions",
+  "outcome": "Ban tests that pin AGENTS.md or CLAUDE.md wording in Engram's instructions",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md, byte-identical, state in Required Quality Gates that no test or check may read, pin or assert the wording of AGENTS.md, CLAUDE.md or another agent instruction file, quoting Greg's word from Asistant mailbox 43498a6e #487 verbatim",
+    "Engram has no tracked test that reads or pins the content of AGENTS.md, CLAUDE.md or another agent instruction file",
+    "The change is landed on master under the Markdown-only lane with a clean review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "instructions"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The instruction-content-test ban is landed on master, pushed, and installed. Exact reviewed Markdown-only tree passed its focused link check; governed-text audit passed; tracked code search found no AGENTS.md/CLAUDE.md references in Rust/JS/TS tests. Exact commit build is installed and all six live Central stores are ready.",
+    "completed_at": "2026-11-07T02:23:38.509397600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "50fe5d2df1bc4152a4f53491f86aae5c": {
+        "activity_id": "50fe5d2df1bc4152a4f53491f86aae5c",
+        "task_id": "01a1b381-7db6-7482-8000-a577d36eba5c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3ff1244ca5ac4399a5139b969979a77f"
+      }
+    }
+  }
+}

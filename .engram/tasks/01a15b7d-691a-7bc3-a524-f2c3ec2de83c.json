@@ -1,0 +1,54 @@
+{
+  "id": "01a15b7d-691a-7bc3-a524-f2c3ec2de83c",
+  "external_ref": null,
+  "title": "Standing approval: a criterion only the landing can satisfy does not block a fully validated changeset",
+  "outcome": "Standing approval: a criterion only the landing can satisfy does not block a fully validated changeset",
+  "acceptance": [
+    "The staged changeset holds byte-identical AGENTS.md and CLAUDE.md wording, in the standing approval's acceptance-criteria condition, saying that a criterion only the landing itself can satisfy (the change being committed, pushed, on master or installed) does not block a changeset that meets every other condition; and that the landing and its post-landing evaluation must then make it true before completion",
+    "Every existing safeguard is unchanged: the gate or Markdown-only checks, the two-vendor review condition, host-observed criterion evidence, scope, readiness and migration, rebase and history-rewrite limits, and the restart rules",
+    "Both coordinators' concurrence (Engram::Fable and Termal::Fable2) on the exact wording is recorded on this item; Greg was sent the exact wording and its consequence; and, because this widens agent authority, Greg's explicit verbatim approval of that wording is recorded with its source",
+    "The final-diff audit that /review-changes requires is recorded on this item as passed; the Markdown-only checks pass; and a Codex and a Claude review find no in-scope Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "agent-instructions",
+    "authority",
+    "policy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the exact Greg-approved landing-only acceptance clause identically in AGENTS.md and CLAUDE.md; committed and fast-forward pushed the reviewed tree, built the clean landed source, verified all six live stores ready before and after commit, and installed it without stopping running processes.",
+    "completed_at": "2026-10-21T00:25:07.405841500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "dc6a87a546a3477a8e572c6787f5f784": {
+        "activity_id": "dc6a87a546a3477a8e572c6787f5f784",
+        "task_id": "01a15b7d-691a-7bc3-a524-f2c3ec2de83c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fefbede7991b46f8b2e39fb6cc7fe4da"
+      }
+    }
+  }
+}

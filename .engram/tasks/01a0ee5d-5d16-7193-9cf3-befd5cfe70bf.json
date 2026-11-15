@@ -1,0 +1,52 @@
+{
+  "id": "01a0ee5d-5d16-7193-9cf3-befd5cfe70bf",
+  "external_ref": null,
+  "title": "Make untested-source reminder match named-root completion disposition",
+  "outcome": "Make untested-source reminder match named-root completion disposition",
+  "acceptance": [
+    "A regression covers both dispositions without changing completion's existing authority or resolution rules",
+    "For an ordinary in-root stock source change with no matching recognized test, the completion reminder says that done will record it as untested, matching evaluation_obligations and actual completion; it does not imply that every named root blocks",
+    "For foreign or unknown-root source changes that do block completion, the reminder names the credited check or authorized waiver and does not promise an automatic untested resolution"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The stock untested-source reminder now says what done will do with each open obligation, from the classification completion already computes. An in-root change is recorded as untested. A change before the root was named is displaced, with no action. An unlocated change needs the credited check or a waiver, or a named root first once none is bound. A foreign change under a bound root needs only an authorized human waiver. Refusing cases say done refuses until then, and an unclassified page promises neither. Under a self-asserted policy only the bounded page's open obligations are classified. The evaluated-only disclosures and completion's authority and resolution are unchanged. Five named-root regressions compare the reminder with actual done. Round 3 on freeze 58979b86…f7d1 was clean from Codex and Claude, and gate test-aa5906d6 passed 9/9. Readiness reported all three live stores ready. Commit 34e722e is pushed, and build 9d65e2c1544a is installed with the previous build backed up.",
+    "completed_at": "2026-09-29T21:32:30.689156400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "84df65d4454541408f6c0811d674eabe": {
+        "activity_id": "84df65d4454541408f6c0811d674eabe",
+        "task_id": "01a0ee5d-5d16-7193-9cf3-befd5cfe70bf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "323e7ad1469f40dc86e1efe2a976b12e"
+      }
+    }
+  }
+}

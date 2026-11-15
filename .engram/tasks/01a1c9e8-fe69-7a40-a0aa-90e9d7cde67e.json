@@ -1,0 +1,28 @@
+{
+  "id": "01a1c9e8-fe69-7a40-a0aa-90e9d7cde67e",
+  "external_ref": null,
+  "title": "Isolate Git configuration in the incoming-commit audit test",
+  "outcome": "The Windows incoming-commit audit fixture runs Git only inside its owned repository with isolated configuration and explicit identity.",
+  "acceptance": [
+    "The incoming_commit_audit_reads_complete_real_git_selection fixture uses the hardened Git command and disables ambient system/global configuration, hooks and templates through the repository's supported fixture helper.",
+    "The fixture retains meaningful real-Git selection assertions and cannot be redirected by inherited GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-testing",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

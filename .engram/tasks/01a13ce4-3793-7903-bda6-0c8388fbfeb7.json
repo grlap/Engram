@@ -1,0 +1,78 @@
+{
+  "id": "01a13ce4-3793-7903-bda6-0c8388fbfeb7",
+  "external_ref": null,
+  "title": "Test materialization capacity rechecks after admission",
+  "outcome": "Test materialization capacity rechecks after admission",
+  "acceptance": [
+    "Deterministic tests exercise the existing-shared and freshly-owned publication branches after unrelated sibling growth between initial admission and their capacity recheck, asserting the appropriate bound refusal and preservation of state from the injected boundary onward.",
+    "The tests fail when either publication recheck ignores its forwarded shared capacity, retain positive permitted-capacity controls, and leave the production 100000-entry limit unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a138e2-15c9-7a71-bcca-e879707b758e"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added deterministic regression tests for both publication capacity rechecks after sibling growth, with exact refusals, preserved boundary state, and permitted-capacity/repeat controls. Both temporary weakened-bound mutants failed as intended; production capacity remains 100000.",
+    "completed_at": "2026-10-16T05:36:27.757292900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0504902a0c654d00b3d46a0589164c79": {
+        "activity_id": "0504902a0c654d00b3d46a0589164c79",
+        "task_id": "01a13ce4-3793-7903-bda6-0c8388fbfeb7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0fc919184e964e5ba497069abfd79b93"
+      },
+      "371a8279b62f4395b38db9afb3d71ecb": {
+        "activity_id": "371a8279b62f4395b38db9afb3d71ecb",
+        "task_id": "01a13ce4-3793-7903-bda6-0c8388fbfeb7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "86790e0c24e74774981d263e4fe2f5bb"
+      },
+      "4a1561387f614bd090ef8a52ab18ed00": {
+        "activity_id": "4a1561387f614bd090ef8a52ab18ed00",
+        "task_id": "01a13ce4-3793-7903-bda6-0c8388fbfeb7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4a1561387f614bd090ef8a52ab18ed00"
+      }
+    }
+  }
+}

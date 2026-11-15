@@ -1,0 +1,54 @@
+{
+  "id": "01a1caef-a1d7-70e2-81f8-537c7d0c2535",
+  "external_ref": null,
+  "title": "Warn once when a source observation exceeds ten seconds across multiple queries",
+  "outcome": "One bounded operation-level warning covers each complete source observation, registered committed-input read and external task-sync command through result processing, preserving absolute deadlines and existing independent non-interrupting slow-query diagnostics.",
+  "acceptance": [
+    "A source observation emits one bounded warning once its total elapsed time exceeds ten seconds, including multiple individually shorter Git queries and postprocessing, and retains the same absolute deadline and existing result/refusal behavior.",
+    "Behavioral regression coverage demonstrates the multi-query warning and unchanged spent-deadline refusal; fresh focused checks pass on the exact repair candidate and independent acceptance passes both criteria."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": "independent_session",
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "operation-limits",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered one operation warning across complete source observations, registered committed-input reads and task-sync CLI processing, including actual source JSON output. Preserved absolute deadlines, refusals, output/error/exit behavior and existing independent slow-query diagnostics. Final clean candidate7a3bdf2b82b4abf2c87e8e07ce996ca3946cf73d/tree4ac37373e5afdb26739baba705822ee80e8e5c31 on parent2121803e; fresh Mac and Windows five-check batches passed. Full independent Claude/Opus evaluation d9ea3130ab5d4b6eb29d2cc87065e88b recovered, both criteria pass and fresh; no checks or source changes after evaluation.",
+    "completed_at": "2026-11-11T15:41:24.630676800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "becdaba613e241c3b22013f45815f2a8": {
+        "activity_id": "becdaba613e241c3b22013f45815f2a8",
+        "task_id": "01a1caef-a1d7-70e2-81f8-537c7d0c2535",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "39d5d019a53c4818b189096e71c1eef6"
+      }
+    }
+  }
+}

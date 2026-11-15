@@ -1,0 +1,53 @@
+{
+  "id": "01a12302-8ccf-79d2-aa2e-30c2bd282c9e",
+  "external_ref": null,
+  "title": "Task sync informational machine-activity notices",
+  "outcome": "Task sync informational machine-activity notices",
+  "acceptance": [
+    "Origin-machine activity notices round-trip without exporting claim tokens or becoming local authority, with ordered changes and no renewal chatter, with tests",
+    "No TermAl remote relay is introduced, and Greg approves the optional durable activity field before landing; activity-bearing records are not imported into a store served by an old build."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a12302-746c-7570-a6df-a88094a73d20"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed informational task-sync machine activity with stable origin identities, inert round trips, lifecycle revisions and no renewal chatter or remote relay. Clean release installed and origin/master verified. Greg's specific A decision and mixed-build import restriction are recorded. Acceptance changed from revision 2 to 3 under that decision; both revision-3 criteria passed independent evaluation.",
+    "completed_at": "2026-10-11T23:41:55.333379500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "51413af14aa344299bb85cbe6bfb59a9": {
+        "activity_id": "51413af14aa344299bb85cbe6bfb59a9",
+        "task_id": "01a12302-8ccf-79d2-aa2e-30c2bd282c9e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d5067ee8ff1b4f3385651d836d5f4214"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a19212-bbcf-7e20-aca8-18dbead71f89",
+  "external_ref": null,
+  "title": "Check an Engram-recorded actor's run_id as a UUID in the host id contract, and fix three wording gaps around its table",
+  "outcome": "Check an Engram-recorded actor's run_id as a UUID in the host id contract, and fix three wording gaps around its table",
+  "acceptance": [
+    "The host id-contract check classifies run_id by where the actor sits: an Engram-recorded actor (such as a bind's binder) is checked as a lowercase hyphenated UUID, and only a host-asserted actor (causality.claimed_actor) as host text; or the docs/features/cli-and-mcp.md table is narrowed so that code and table agree",
+    "The cli-and-mcp.md sentence on test coverage claims only that a real receipt of every host operation is checked, not every host receipt the tests produce",
+    "The Record id row names both the repeat and the source_change accounting kinds as naming a record, and the unadmitted-observation test comment names only the host values its receipt actually carries"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

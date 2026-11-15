@@ -1,0 +1,51 @@
+{
+  "id": "01a06dd5-2cce-7c73-b45e-305d1f0332e7",
+  "external_ref": null,
+  "title": "Validate restored relation basis before the first native transition",
+  "outcome": "Validate restored relation basis before the first native transition",
+  "acceptance": [
+    "A restored prerequisite or blocker projection tamper is refused before reopen or another first native transition appends a WorkEvent"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "integrity",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Validated restored prerequisite and blocker basis in the shared item read before first native transitions; tamper-before-claim regression passes.",
+    "completed_at": "2026-09-04T20:00:13.233279400Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0e92d080d060539efba3709a10c53f69de84ef292c9ad2a98a738e89855af6a8": {
+        "activity_id": "0e92d080d060539efba3709a10c53f69de84ef292c9ad2a98a738e89855af6a8",
+        "task_id": "01a06dd5-2cce-7c73-b45e-305d1f0332e7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "756c0f3b18f7c857fc7bf6f2e04600ce6538edb5697f0b226b99a001ac4d61aa"
+      }
+    }
+  }
+}

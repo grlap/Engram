@@ -1,0 +1,29 @@
+{
+  "id": "01a1d739-066f-73c0-a6b1-04b3ad75ddac",
+  "external_ref": null,
+  "title": "Keep the partial-import CLI test focused on observable behavior",
+  "outcome": "The any-host CLI regression checks partial status and preserved pending files without a tautological simulated success branch or incidental prose pinning.",
+  "acceptance": [
+    "Remove the local if-success/write-base block whose condition was already proved false, while retaining exit3/status/path/pending-file assertions",
+    "Guidance assertions validate actionable structure rather than the two incidental prose fragments"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review-low",
+    "task-sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

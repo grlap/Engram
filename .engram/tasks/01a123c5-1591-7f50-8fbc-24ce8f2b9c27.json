@@ -1,0 +1,27 @@
+{
+  "id": "01a123c5-1591-7f50-8fbc-24ce8f2b9c27",
+  "external_ref": null,
+  "title": "Keep nested tempfile errors in backup abandonment diagnostics on logical paths",
+  "outcome": "Keep nested tempfile errors in backup abandonment diagnostics on logical paths",
+  "acceptance": [
+    "Deterministic Windows creation and failed-cleanup regressions exercise actual tempfile errors and verify that abandonment diagnostics retain useful error details and logical path spelling without introducing a canonical/verbatim path; archive safety and pending-record preservation still hold."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

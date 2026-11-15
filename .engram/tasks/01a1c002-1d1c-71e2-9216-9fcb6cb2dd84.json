@@ -1,0 +1,119 @@
+{
+  "id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+  "external_ref": null,
+  "title": "Remove the rest of legacy source identity from Engram, after TermAl stops producing it",
+  "outcome": "Remove the rest of legacy source identity from Engram, after TermAl stops producing it",
+  "acceptance": [
+    "The named list B1-B6 from w-c4d66d741cb3 (note 4fca9c5d) is removed in landed changesets that name what they removed, or each item left is recorded with why, as the compiler and TermAl's C6 show: new fingerprint input on evaluate and done, new commit and remote revision inputs, the legacy arms of evaluation's live path, and legacy source-revision sightings.",
+    "Each removal that refuses a TermAl input lands only after TermAl has stopped producing it on every running host, or after TermAl source evidence shows that TermAl treats the refusal as final, records nothing and never retries it, recorded on this item with its source.",
+    "Live evaluation and TermAl's strict readers keep working, and rows the live stores hold keep being read as stored; a change to what durable rows must hold goes to Fable before coding.",
+    "No new mechanism, gate or compatibility shim is added; tests that only pinned a removed path go with it, and behavior checks stay."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "24ad31985ccd40ef939ddc80cbbe5789": {
+        "activity_id": "24ad31985ccd40ef939ddc80cbbe5789",
+        "task_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "24ad31985ccd40ef939ddc80cbbe5789"
+      },
+      "7b453e82af084a88955bb2b6688adb40": {
+        "activity_id": "7b453e82af084a88955bb2b6688adb40",
+        "task_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7b453e82af084a88955bb2b6688adb40"
+      },
+      "893bf427be5c448d956d13d5580326ef": {
+        "activity_id": "893bf427be5c448d956d13d5580326ef",
+        "task_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "893bf427be5c448d956d13d5580326ef"
+      },
+      "89b84e2279a9424eba362293b138c8b8": {
+        "activity_id": "89b84e2279a9424eba362293b138c8b8",
+        "task_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "89b84e2279a9424eba362293b138c8b8"
+      },
+      "93f4adff2f134a25ac7be6a731a119c0": {
+        "activity_id": "93f4adff2f134a25ac7be6a731a119c0",
+        "task_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "93f4adff2f134a25ac7be6a731a119c0"
+      },
+      "dc0c7a5f2fdd4dfaab9983f8c1ae0a4e": {
+        "activity_id": "dc0c7a5f2fdd4dfaab9983f8c1ae0a4e",
+        "task_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dc0c7a5f2fdd4dfaab9983f8c1ae0a4e"
+      },
+      "e957a611825b46f4905a98dd0887b39b": {
+        "activity_id": "e957a611825b46f4905a98dd0887b39b",
+        "task_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7b453e82af084a88955bb2b6688adb40"
+      }
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "id": "01a0ae25-f5e1-7451-86ae-da97606ee102",
+  "external_ref": null,
+  "title": "Record delivered TermAl independent evaluation, mode selection and evaluation-time source checks",
+  "outcome": "The delivered host paths (independent and sub_agent evaluators, mode selection, Build and Test observation, evaluation-time source checks) are shown by retained real records and cited source on this item; the undelivered host work (Build-bound proof, project default versus task pin, completion-time fingerprint, and any unretained submission-time measurement) is owned by named TermAl items, and nothing here claims it delivered.",
+  "acceptance": [
+    "A holder note on this item describes mode selection as implemented at a named TermAl source revision, citing the source lines: how the task pin, the admitted project default and the fallback order interact; that independent_session and sub_agent each create a read-only evaluator while same_session returns a brief and spawns nothing; and the admitted modes of each live store's policy, read from the store",
+    "A holder note on this item gives complete record ids for a real host independent_session evaluation and the completion seal that consumed it, with the host-carried evaluator identity, model, attempt key and source fingerprint, and for observed Test verification; for Build verification it gives a real host-produced record if one exists among retained records, or states plainly that none was found, citing the delivered Build producer's TermAl item",
+    "A holder note on this item shows the source fingerprint recorded at evaluation request, and the submission-time check either as a retained record of that measurement or, where the host retains none, as the cited source that performs it plus a TermAl item that owns retaining or exposing it; and it names the TermAl item that owns each undelivered obligation: Build-bound proof, project default versus task pin, and completion-time fingerprint"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Recorded implemented mode selection at the named TermAl revision, read all six live-store policies without mutation, and retained a real host Test/evaluation/consuming-seal chain with full metadata. Documented that no real-task Build verification was found and assigned the unretained measurement and remaining strict proof gaps to confirmed TermAl owners. Independent evaluation 1e88a59ff8c341b4b3fd511cf7b975bf passed all three revision-5 criteria on judgment; its full rationale and stated read-only access limitations were inspected. No source code, configuration, build, installation or restart changed.",
+    "completed_at": "2026-10-21T05:43:37.890225800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0e1f940710784c409600951d6c32f3dd": {
+        "activity_id": "0e1f940710784c409600951d6c32f3dd",
+        "task_id": "01a0ae25-f5e1-7451-86ae-da97606ee102",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0e1f940710784c409600951d6c32f3dd"
+      },
+      "1916eddc34e149a88effab09738628ec": {
+        "activity_id": "1916eddc34e149a88effab09738628ec",
+        "task_id": "01a0ae25-f5e1-7451-86ae-da97606ee102",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1916eddc34e149a88effab09738628ec"
+      },
+      "6fd38f524339472f89b5c159445cf4de": {
+        "activity_id": "6fd38f524339472f89b5c159445cf4de",
+        "task_id": "01a0ae25-f5e1-7451-86ae-da97606ee102",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0e1f940710784c409600951d6c32f3dd"
+      },
+      "a9aafcbe6ad04e4db8ce80329995d4d8": {
+        "activity_id": "a9aafcbe6ad04e4db8ce80329995d4d8",
+        "task_id": "01a0ae25-f5e1-7451-86ae-da97606ee102",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e09f264875c74e03aa3723f9b2492f8d"
+      },
+      "aff9be0091f34c5d943c3c4951bf4656": {
+        "activity_id": "aff9be0091f34c5d943c3c4951bf4656",
+        "task_id": "01a0ae25-f5e1-7451-86ae-da97606ee102",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "aff9be0091f34c5d943c3c4951bf4656"
+      }
+    }
+  }
+}

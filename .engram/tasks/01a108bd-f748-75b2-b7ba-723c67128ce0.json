@@ -1,0 +1,137 @@
+{
+  "id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+  "external_ref": null,
+  "title": "Engram control answered control_unavailable one second after a granted checkpoint, parking a TermAl session",
+  "outcome": "Engram control answered control_unavailable one second after a granted checkpoint, parking a TermAl session",
+  "acceptance": [
+    "No durable record of the 2026-10-04T21:04:04Z control_unavailable for session-8581 survives (TermAl kept neither the error kind and message nor the sidecar lifecycle), so the exact historical cause cannot be shown. The holder records that evidence gap, enumerates with file:line every path in current Engram and TermAl source that can yield control_unavailable after a granted checkpoint, and for each Engram-owned path either rules it out from source or fixes it under criterion 2. Each path TermAl owns is named to Termal::Fable2 with its TermAl item.",
+    "If Engram's control can answer unavailable during a normal sidecar reap/restart or a store-busy window, a fix makes that window either wait (bounded) or answer a retryable class, with a test reproducing the condition",
+    "The finding is reported to Termal::Fable2 so it can be correlated with TermAl w-7224e6317e55's automatic re-admission"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "dogfood",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered typed startup failure replies after bounded store admission and reproducing locked-store/framing tests on actual master e56f7193/tree8aefa0a2. Current Engram/TermAl4200 path inventory and correlation fully recorded309f0474; historical2026-10-04cause remainsUNKNOWN, no invented nonapplication/replay guarantee. Read complete independent15491attempt2 native69b0a81cadb24a9b93b31ae20434ca8a cut515/revision2 and2681Bfulloutput: all3criteriaPASS fresh; Engram source personallychecked, TermAl/correlation basedonholderattributedrecords. Fullgate08fd exacttreePASS, originalCodex/ClaudeR2cleanunchangedcarry, readerfirstRUNNINGconfirmed. Cleanrelease3092PASS/readinessALL6/no-gapbackup/install/pushactualreadback0248a1017eb04b518dc0359a849e07c9. Websiteandauthorityalsocompleted aftertheirfreshpostlandingPASS. NEXT postclosure retentioncheck/archiveONLYrecordedopenuses thenremoveownedcleanintegrationroot; do notclaimcleanupdone. Currentsharedrun08fd stillcitedbyopenTermAlfec/Engrame7badiagnosticcomparison untiltheirrecordedneedends; owner14575coordinatesarchives/citingnotes. Allproductworklanded; no additionaltest/Cargo/restart.",
+    "completed_at": "2026-10-30T17:42:56.618856600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "367e99b5e8ea4b2b9b3324e82b7e9973": {
+        "activity_id": "367e99b5e8ea4b2b9b3324e82b7e9973",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "367e99b5e8ea4b2b9b3324e82b7e9973"
+      },
+      "81d6403d75f74b09af27a088a081086f": {
+        "activity_id": "81d6403d75f74b09af27a088a081086f",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "55f0b4f7bbde4609aa2ddb78a561eea9"
+      },
+      "8e0bf6332570471696bba33e9605fba6": {
+        "activity_id": "8e0bf6332570471696bba33e9605fba6",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8e0bf6332570471696bba33e9605fba6"
+      },
+      "ac572d7d93ab4ec99b3b340657772a6d": {
+        "activity_id": "ac572d7d93ab4ec99b3b340657772a6d",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f2b952d2ef9a490797ee0a0ee3c11c77"
+      },
+      "c298925f30804d6684ef79071183e9d2": {
+        "activity_id": "c298925f30804d6684ef79071183e9d2",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c298925f30804d6684ef79071183e9d2"
+      },
+      "dbb3d27bb5b54c91b8d96868ca1a63e4": {
+        "activity_id": "dbb3d27bb5b54c91b8d96868ca1a63e4",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dbb3d27bb5b54c91b8d96868ca1a63e4"
+      },
+      "f2b952d2ef9a490797ee0a0ee3c11c77": {
+        "activity_id": "f2b952d2ef9a490797ee0a0ee3c11c77",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e386a53df47a41faa08572b2c8978d29"
+      },
+      "f99e44601e3b42d98e74ea1a6e7bf6df": {
+        "activity_id": "f99e44601e3b42d98e74ea1a6e7bf6df",
+        "task_id": "01a108bd-f748-75b2-b7ba-723c67128ce0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f99e44601e3b42d98e74ea1a6e7bf6df"
+      }
+    }
+  }
+}

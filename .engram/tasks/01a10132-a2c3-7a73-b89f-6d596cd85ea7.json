@@ -1,0 +1,27 @@
+{
+  "id": "01a10132-a2c3-7a73-b89f-6d596cd85ea7",
+  "external_ref": null,
+  "title": "Readers fail when a source-change obligation's projection row is lost",
+  "outcome": "Readers fail when a source-change obligation's projection row is lost",
+  "acceptance": [
+    "With a source-change obligation's projection row lost, plain show and the other read paths still render the item, and doctor reports the damage; completion still refuses it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

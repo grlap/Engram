@@ -1,0 +1,28 @@
+{
+  "id": "01a19fce-f12b-7f32-9997-3e589bb8a15a",
+  "external_ref": null,
+  "title": "Move launcher helper comments beside their extracted shared helpers",
+  "outcome": "Move launcher helper comments beside their extracted shared helpers",
+  "acceptance": [
+    "The parkingBroker comment and the host record-grammar contract comment sit above their corresponding shared helpers in scripts/test-launcher-tests/support.mjs, with the orphan comments removed from recovery.mjs and execution.mjs",
+    "Launcher tests and the required validation pass without behavior or outcome changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "file-split",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

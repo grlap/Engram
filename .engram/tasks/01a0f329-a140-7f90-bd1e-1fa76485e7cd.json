@@ -1,0 +1,53 @@
+{
+  "id": "01a0f329-a140-7f90-bd1e-1fa76485e7cd",
+  "external_ref": null,
+  "title": "Pin the late bound-check and flagged post-cut move/revert evaluation boundaries with regressions",
+  "outcome": "Pin the late bound-check and flagged post-cut move/revert evaluation boundaries with regressions",
+  "acceptance": [
+    "A regression declares the judged source, takes the evaluated cut before a later passed host verification for a bound criterion, and proves the declared passed-check exemption allows movement scanning but the citation is refused as beyond the evidence basis",
+    "A regression evaluates revision A, records flagged source changes to B and back to A after its cut, and proves the original evaluation remains void despite the equal final revision",
+    "The changeset is test-only and retains current runtime behavior; both exact transitions pass through the required full gate and independent review"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Two regressions pin acceptance-evaluation boundaries the lifecycle brief had reached by reasoning only. (1) same_turn.rs: a bound criterion's only passed check, after the cut on the declared revision, is exempt from the movement scan, but citing it is refused as beyond the evidence basis; a cut including it records. (2) basis_moves.rs: a flagged A->B->A after the cut, declared or not, in one or two turns, leaves the evaluation void, with the change to B as the deciding observation. The lifecycle brief's coverage paragraph names them (prose change authorized by Engram::Fable, #484). No runtime change. Landed bf1d4454, full gate test-f11a791d 9/9, round 1 clean, independent evaluation passed 3/3.",
+    "completed_at": "2026-09-30T20:29:39.715739300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b197b96cccfa4c85a0575db32637311e": {
+        "activity_id": "b197b96cccfa4c85a0575db32637311e",
+        "task_id": "01a0f329-a140-7f90-bd1e-1fa76485e7cd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f153d1d9aa3b425d8a30af5edae040a2"
+      }
+    }
+  }
+}

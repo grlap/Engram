@@ -1,0 +1,52 @@
+{
+  "id": "01a09218-b1a5-79f2-9582-5825d50bef02",
+  "external_ref": null,
+  "title": "Allow same-run keyless completion retry after legitimate claim recovery",
+  "outcome": "Allow same-run keyless completion retry after legitimate claim recovery",
+  "acceptance": [
+    "Same-run lapse reclaim reuses one finished attempt; current foreign holder remains refused",
+    "keyless_completion_retries_after_a_foreign_claim_is_reclaimed passes",
+    "keyless_completion_retries_after_its_released_claim_is_reclaimed passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a091f9-066d-78f3-87cf-86dfad463cb5",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and validated stable same-run completion retry identity with safe reclaim and authority guidance; required corrections sealed and authoritative review pair accepted.",
+    "completed_at": "2026-09-11T21:24:29.234013700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d516b5e3b0aa617a1541c9aec1abdbffb731b928fec23012ced69dc25226d551": {
+        "activity_id": "d516b5e3b0aa617a1541c9aec1abdbffb731b928fec23012ced69dc25226d551",
+        "task_id": "01a09218-b1a5-79f2-9582-5825d50bef02",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3c328f25fef839266c75341eed7f386d8575cf94bcf61da815020c2eff49cb47"
+      }
+    }
+  }
+}

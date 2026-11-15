@@ -1,0 +1,29 @@
+{
+  "id": "01a1a7d6-fc4a-7de2-b409-a9b8925ea26d",
+  "external_ref": null,
+  "title": "Clarify cleanup timing and ownership for landed and staged-tree worktrees",
+  "outcome": "Clarify cleanup timing and ownership for landed and staged-tree worktrees",
+  "acceptance": [
+    "Clarify that cleanup of a landed candidate worktree waits until the item has closed and required evidence is no longer needed.",
+    "Clarify who owns cleanup for staged-tree landings and other non-candidate worktrees while keeping AGENTS.md and CLAUDE.md byte-identical."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "cleanup",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,56 @@
+{
+  "id": "01a06811-d1db-7823-8734-74f822579d38",
+  "external_ref": null,
+  "title": "Make multi-blocker unblock actionable from agent words",
+  "outcome": "An agent can select and clear the intended blocker when multiple blockers are active, and history names what was cleared.",
+  "acceptance": [
+    "A two-blocker word-surface test supplies an exact runnable unblock action and records the cleared blocker.",
+    "History names the cleared blocker by the same selector with its kind and original detail, for clear events stored before this change too, without rewriting stored bytes",
+    "Repeating the exact selected command after a lost response yields one cleared blocker and one event and returns the recorded result; an unfinished attempt whose basis changed refuses; bare unblock keeps its meaning for a single blocker, and other update actions keep their retry behaviour",
+    "show prints for each visible active blocker a stable selector with its kind and detail and the exact command that clears it, on the CLI and through MCP; a selector of another item, a cleared one, or an old one after a replacement with the same text refuses and never clears a remaining blocker, and an invalid selection changes neither blockers, revision nor history",
+    "show states the exact number of active blockers and how many it does not show; raw ids, session, claim and fence data stay out of agent show"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "stream-agent-receipts",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 2de784a plus af719fc.\n- show lists each visible active blocker with a selector (b1- plus unpadded base64url of the stored id, canonical), its kind and detail, and the exact update REF --unblock --blocker SELECTOR command (MCP blocker) for every reader, with the exact active total and omitted count.\n- Guidance offers the exact command for an only blocker and show for several; the detach remedy names it.\n- Invalid, foreign, cleared and replaced selectors refuse without changing blockers, revision or history.\n- A selected clear's keyless retry identity binds item and blocker, so a repeat after a lost answer replays one clear. A core-refused attempt is retired; an interrupted one refuses in words once the item changed.\n- Receipts name the blocker from the committed clear at its own revision. History names raised and cleared blockers by selector, kind and detail from the verified retained row, earlier clears included, without rewriting events.\nThe independent evaluation 6e653834 passed 5 of 5. Deferred Lows and Notes are in w-aa421c5f62da.",
+    "completed_at": "2026-09-30T04:24:41.583881600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3ed3409014aa4f1cb5c182ff2114d108": {
+        "activity_id": "3ed3409014aa4f1cb5c182ff2114d108",
+        "task_id": "01a06811-d1db-7823-8734-74f822579d38",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5c1a74fd74b24d9aa70883fee757eace"
+      }
+    }
+  }
+}

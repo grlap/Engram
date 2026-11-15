@@ -1,0 +1,88 @@
+{
+  "id": "01a16527-e27c-7cf3-9d54-64202ce27b68",
+  "external_ref": null,
+  "title": "Reclaim disk by removing stale Engram worktrees and build directories under .worktrees",
+  "outcome": "Reclaim disk by removing stale Engram worktrees and build directories under .worktrees",
+  "acceptance": [
+    "Only Engram worktrees under the repository's .worktrees are touched. Each path is resolved and checked to lie inside the repository before removal, and worktrees cited by an open item, worktrees on a named branch, and worktrees active in the last 24 hours are kept",
+    "Uncited, clean, detached worktrees are removed with git worktree remove without force. For uncited worktrees with uncommitted changes, only the regenerable target/ build directory is removed and the source with its changes is kept",
+    "A holder note records the removed worktree names, the target/ directories removed, the kept worktrees with their reasons, and the free space before and after"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "disk",
+    "housekeeping"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed one stale clean detached worktree with git worktree remove (no force), its ignored target build output, and a target build directory for completed Phoenix work. Recorded the retained 208 worktree names, reasons for retention, all 42 remaining root target directories with size/newest time/owner, retained .logs/.evidence inventory, and C: free-space readings.",
+    "completed_at": "2026-11-04T18:21:14.820509900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "072a6c9bd69646059b3aa9545a2945c0": {
+        "activity_id": "072a6c9bd69646059b3aa9545a2945c0",
+        "task_id": "01a16527-e27c-7cf3-9d54-64202ce27b68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "072a6c9bd69646059b3aa9545a2945c0"
+      },
+      "56aaa4227e06439d87d07cb1accf9fe1": {
+        "activity_id": "56aaa4227e06439d87d07cb1accf9fe1",
+        "task_id": "01a16527-e27c-7cf3-9d54-64202ce27b68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "78373c491a44472dabbcb696fa96304c"
+      },
+      "5936c336499a440996eb2284fac119fa": {
+        "activity_id": "5936c336499a440996eb2284fac119fa",
+        "task_id": "01a16527-e27c-7cf3-9d54-64202ce27b68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "57512e6f14ab45b19b7450a59a94f97d"
+      },
+      "718d211aed614f64ac7a698225744ae6": {
+        "activity_id": "718d211aed614f64ac7a698225744ae6",
+        "task_id": "01a16527-e27c-7cf3-9d54-64202ce27b68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "718d211aed614f64ac7a698225744ae6"
+      }
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "id": "01a0cb25-6a57-7831-96ac-188aa519ffed",
+  "external_ref": null,
+  "title": "Greg decides: contract clean-ups and whether one final store conversion is allowed",
+  "outcome": "Greg's decision on each host-contract simplification and on one final store conversion is recorded, and the other children are ordered or cancelled to match.",
+  "acceptance": [
+    "A note records Greg's decision on binding control sessions directly by external reference instead of a compatibility task",
+    "A note records Greg's decision on removing resource leases and the host obligation-waive operation",
+    "A note records Greg's decision on renaming object_hash wire fields to object_id",
+    "A note records Greg's decision on renaming the legacy acceptance mode to self-asserted with one show --json shape",
+    "A note records whether one final store conversion is allowed; if it is, a conversion child is filed and the retirement-list removal is ordered after it",
+    "Every declined contract child is cancelled with the decision as its reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "decision",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Recorded and enacted Greg's cleanup decisions: direct binding, lease/host-waiver removal, finalizer removal, object_id naming, self-asserted provenance, and the approved final stored-field conversion. Conversion preceded migration-machinery retirement; no contract child was declined. Independent acceptance: 6/6 judgment passes.",
+    "completed_at": "2026-09-23T19:37:26.515505300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "94983adfbc61434fac5d5a1e0e4ffff9": {
+        "activity_id": "94983adfbc61434fac5d5a1e0e4ffff9",
+        "task_id": "01a0cb25-6a57-7831-96ac-188aa519ffed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "94983adfbc61434fac5d5a1e0e4ffff9"
+      },
+      "d2c439ab0f204dc4ae77023420220778": {
+        "activity_id": "d2c439ab0f204dc4ae77023420220778",
+        "task_id": "01a0cb25-6a57-7831-96ac-188aa519ffed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "06b57b3ac5424a14b4fce3412c8ac05b"
+      },
+      "d81354156d9943b29ff0eefdc4be9d33": {
+        "activity_id": "d81354156d9943b29ff0eefdc4be9d33",
+        "task_id": "01a0cb25-6a57-7831-96ac-188aa519ffed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d81354156d9943b29ff0eefdc4be9d33"
+      }
+    }
+  }
+}

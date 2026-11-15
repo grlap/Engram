@@ -1,0 +1,65 @@
+{
+  "id": "01a0ccff-87ce-7262-9353-906ad8e3ad5d",
+  "external_ref": null,
+  "title": "Reduce test-run wall time and correction-cycle latency",
+  "outcome": "Make validation materially faster without weakening correctness coverage or hiding failures.",
+  "acceptance": [
+    "Define fast correction checks and full landing validation explicitly; any cadence change is agreed and reflected consistently in repository instructions and launcher documentation.",
+    "Identify and reduce the dominant root-history scale-test cost while preserving its asserted invariants and intended scale coverage.",
+    "Preserve actual exit-code verdicts, bounded diagnostics, full saved logs and completion-driven execution; do not skip failing tests or add uncontrolled concurrent runs.",
+    "Record comparable before/after full-gate wall times, per-phase timings, toolchain and concurrency; demonstrate a material reduction on the same host."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-tooling",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Validation is materially faster without weaker coverage. Child w-5878261d5e1e (30ebfaf) runs the root-delta scale phase at 500 steps by default, with 1000 on demand through ENGRAM_ROOT_DELTA_SCALE and every assertion kept. 933d4ec defines the fast correction check (focused, after each fix, before the next freeze) and the full landing validation (full, on the frozen tree to be committed) in AGENTS/CLAUDE and the launcher docs, with no mode or cadence change. Measured as a checkable pair on the same tree, build and host (e365a6bd…, rustc 1.98.1, 8 threads): the full gate took 597.6 s at 1000 steps (test-91ca046c) and 323.0 s at 500 (test-ffb1c259), a 46% cut; the scale phase took 418.70 s and 126.29 s. Independent evaluation db3ffc06 passed all four criteria.",
+    "completed_at": "2026-09-27T16:59:34.977526Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2a0661dca00b43e691009c4fe5947def": {
+        "activity_id": "2a0661dca00b43e691009c4fe5947def",
+        "task_id": "01a0ccff-87ce-7262-9353-906ad8e3ad5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e8b348eeff004c65a0c3a5f00459ecb1"
+      },
+      "705f3f3438d2448f991179e156233cf6": {
+        "activity_id": "705f3f3438d2448f991179e156233cf6",
+        "task_id": "01a0ccff-87ce-7262-9353-906ad8e3ad5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "705f3f3438d2448f991179e156233cf6"
+      }
+    }
+  }
+}

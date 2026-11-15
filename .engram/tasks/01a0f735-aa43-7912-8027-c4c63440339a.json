@@ -1,0 +1,53 @@
+{
+  "id": "01a0f735-aa43-7912-8027-c4c63440339a",
+  "external_ref": null,
+  "title": "A source observation recorded after a run's completion opens no obligation on the completed run",
+  "outcome": "A source observation recorded after a run's completion opens no obligation on the completed run",
+  "acceptance": [
+    "A regression reproduces completion sealed then a source-changing checkpoint from the same begun session, including mixed typed evidence and exact replay: original seal bytes and acceptance links remain unchanged, no new obligation or root contribution appears, receipt ids replay exactly, and the grant closes. Active-run observations still open required obligations; observations preceding completion still gate it; evidence is never rebound to a later focus or run.",
+    "After this fix, a valid begun-grant checkpoint targeting a completed or sealed run retains its late execution observation, truthful source-change metadata, original grant/run binding, receipt and grant closure, while opening no new mutation obligation; show and core inspect expose no newly opened obligation for that checkpoint.",
+    "The execution-observation and mixed typed verification/environment writers share one completed-run lifecycle decision: late records remain auditable outside the completion seal and neither reopen or satisfy run obligations nor change the sealed root's contributor or contribution accounting. Existing exact binding/source-root validation and whole-checkpoint atomicity remain enforced.",
+    "This changes future writes only. Existing canonical late observations and erroneously opened historical obligations remain readable as stored, with no deletion, hidden filtering, rewritten seal or implicit migration; any supported historical resolution is separately owned."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A host turn checkpointed after its run finished keeps its observations and evidence under the original binding but is audit only: no obligation opened or satisfied, no root contributor or contribution changed; WorkRun::is_finished decides it for writers and history readers. The obligation read and the doctor accept a source change after the completion cut with none or the full older-build set, staying strict before the cut and for an unreadable seal. The live stores held 23 such late changes (22 in Engram), each still checked in full; doctor healthy before and after on all 4 stores.",
+    "completed_at": "2026-10-01T17:52:36.111424300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fb3b0115a74c4302931baa879c86fcbb": {
+        "activity_id": "fb3b0115a74c4302931baa879c86fcbb",
+        "task_id": "01a0f735-aa43-7912-8027-c4c63440339a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "afd1617817244e0abd1ffe4874786491"
+      }
+    }
+  }
+}

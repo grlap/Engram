@@ -1,0 +1,66 @@
+{
+  "id": "01a1a036-6eb1-7a80-ab6b-ce09ee60bc8c",
+  "external_ref": null,
+  "title": "Pin the named-root read refusals TermAl relies on to retire unresolvable runs: RunUnknown and ClaimNotCurrentForRun stay stable across store reopen",
+  "outcome": "Pin the named-root read refusals TermAl relies on to retire unresolvable runs: RunUnknown and ClaimNotCurrentForRun stay stable across store reopen",
+  "acceptance": [
+    "A test shows that a named-root read refused with RunUnknown for a run id absent from the store is refused the same way after the store is closed and reopened, and after a later claim, release or new run on the same work item",
+    "A test shows that a read with a claim id that is not the run's recorded claim is refused with ClaimNotCurrentForRun, and stays refused after reopen and after the run's claim is released or completed, while the run's own recorded claim keeps reading successfully",
+    "A test shows that a contradictory canonical association (for example a run feed without its run row) is reported as a store-integrity error, not as either refusal",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "test-coverage"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added regression coverage proving RunUnknown and ClaimNotCurrentForRun remain stable across reopen and claim lifecycle, with contradictory canonical associations reported as integrity errors. The exact aggregate full gate passed; the candidate is landed, pushed, and installed.",
+    "completed_at": "2026-11-03T08:55:08.562866800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0ea6dba8e9e14622871e76f891241963": {
+        "activity_id": "0ea6dba8e9e14622871e76f891241963",
+        "task_id": "01a1a036-6eb1-7a80-ab6b-ce09ee60bc8c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "deef29f35f4146ce99a1ac504739dfb6"
+      },
+      "7f17b1ff5b334522aebd20d8cf277238": {
+        "activity_id": "7f17b1ff5b334522aebd20d8cf277238",
+        "task_id": "01a1a036-6eb1-7a80-ab6b-ce09ee60bc8c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7f972c868e7745dd8d8eb62a03f5ecd8"
+      }
+    }
+  }
+}

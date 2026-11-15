@@ -1,0 +1,50 @@
+{
+  "id": "01a0913b-df37-7d40-b78d-2ae35c59d0d7",
+  "external_ref": null,
+  "title": "The standing instructions promise injected MCP words and identity variables to every hosted session, without the condition that the host integration is enabled",
+  "outcome": "The standing instructions promise injected MCP words and identity variables to every hosted session, without the condition that the host integration is enabled",
+  "acceptance": [
+    "AGENTS.md, CLAUDE.md and the engram-repo skill state that the injected words and ENGRAM_* variables arrive only when the host's Engram integration is enabled for the project and supported for the runtime, and say what a session without them sees and must obtain from the operator (an explicit home) before any read",
+    "docs/check-doc-links passes and the three texts agree word for word on that condition"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered consistent host-integration access instructions in five docs: conditional MCP/config injection, explicit confirmed home before recovery, and non-advancing startup/compaction peek. Full v4 nine gates passed, clean Codex/Claude review and coordinator closing accepted; migration files unchanged. No Git publication or installation.",
+    "completed_at": "2026-09-11T17:51:25.497496600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2e1ff0b56864256006a0659053d7857ff4e83098cd5ea58a6498515c3f6eb2b9": {
+        "activity_id": "2e1ff0b56864256006a0659053d7857ff4e83098cd5ea58a6498515c3f6eb2b9",
+        "task_id": "01a0913b-df37-7d40-b78d-2ae35c59d0d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4bf6c4b0ea77333a52fdddbc2ad940111c292e81d43123fb7e00867cefcede02"
+      }
+    }
+  }
+}

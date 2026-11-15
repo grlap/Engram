@@ -1,0 +1,101 @@
+{
+  "id": "01a1537d-d8ff-7e60-86e6-13b44cf369af",
+  "external_ref": null,
+  "title": "review-freeze-fingerprint --write silently freezes the process cwd's repository even when the manifest path belongs to another worktree",
+  "outcome": "review-freeze-fingerprint --write silently freezes the process cwd's repository even when the manifest path belongs to another worktree",
+  "acceptance": [
+    "scripts/review-freeze-fingerprint.mjs --write and --check refuse with a clear message when the manifest path's owning worktree (its git dir) differs from the repository the script would fingerprint (the process cwd's worktree), instead of writing a manifest that binds a different tree",
+    "A test in scripts/review-freeze-fingerprint.test.mjs covers the mismatch (cwd = main checkout, manifest under .git/worktrees/OTHER) and the normal case"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "delivered",
+    "evaluation-pending",
+    "review",
+    "tooling"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "review-freeze-fingerprint --write now refuses to freeze the process cwd's repository when the manifest path belongs to another worktree (landed b28a180643ad4359d1eccf393ed49deb4d978c22). Independent evaluation 59b747756f5e44d2b9a42f01a71d2a7a (Codex, session 14928) passed both criteria under Greg's hybrid model, with remote observation from the Windows B full gate test-fdd408e3 on master e7426a6.",
+    "completed_at": "2026-10-28T01:23:22.950488200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "03278d34216647c98b97f489a48b2675": {
+        "activity_id": "03278d34216647c98b97f489a48b2675",
+        "task_id": "01a1537d-d8ff-7e60-86e6-13b44cf369af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "363ab231fa824c7b89e4958287834a36"
+      },
+      "363ab231fa824c7b89e4958287834a36": {
+        "activity_id": "363ab231fa824c7b89e4958287834a36",
+        "task_id": "01a1537d-d8ff-7e60-86e6-13b44cf369af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "363ab231fa824c7b89e4958287834a36"
+      },
+      "73e2457656ae4e78b1d56dcedfd93501": {
+        "activity_id": "73e2457656ae4e78b1d56dcedfd93501",
+        "task_id": "01a1537d-d8ff-7e60-86e6-13b44cf369af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4ac566d5bd9c40c393a02f31418ba298"
+      },
+      "979a52cbde254cf5a42412f7fce73f61": {
+        "activity_id": "979a52cbde254cf5a42412f7fce73f61",
+        "task_id": "01a1537d-d8ff-7e60-86e6-13b44cf369af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "73e2457656ae4e78b1d56dcedfd93501"
+      },
+      "f38bcf869ab64aa0a892276f707a3b0d": {
+        "activity_id": "f38bcf869ab64aa0a892276f707a3b0d",
+        "task_id": "01a1537d-d8ff-7e60-86e6-13b44cf369af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "affcfa69d34b493a89e7b0090c655d60"
+      }
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "id": "01a07396-840a-7312-abcb-24f53cebd726",
+  "external_ref": null,
+  "title": "Quote PowerShell listing filters as literal arguments",
+  "outcome": "Quote PowerShell listing filters as literal arguments",
+  "acceptance": [
+    "listing_powershell_commands_round_trip_literal_filters passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a065cc-43af-7613-8414-1c9649237fca",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the reviewed listing correction with direct regressions and all required gates passing.",
+    "completed_at": "2026-09-05T22:15:17.052561400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "059eea4cea3fe9a14fb1c4cd60782c8707a50891f87b252779bad8346ea5ee57": {
+        "activity_id": "059eea4cea3fe9a14fb1c4cd60782c8707a50891f87b252779bad8346ea5ee57",
+        "task_id": "01a07396-840a-7312-abcb-24f53cebd726",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b4fb4db4e648f8c342f8d0d8db57d947af0d805492e853bb004416e2ad4c4795"
+      }
+    }
+  }
+}

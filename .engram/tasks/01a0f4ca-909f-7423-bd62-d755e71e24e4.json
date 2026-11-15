@@ -1,0 +1,63 @@
+{
+  "id": "01a0f4ca-909f-7423-bd62-d755e71e24e4",
+  "external_ref": null,
+  "title": "Clarify that the installed binary's recorded hash is the build_fingerprint",
+  "outcome": "Clarify that the installed binary's recorded hash is the build_fingerprint",
+  "acceptance": [
+    "The Authority and Git install text names the build_fingerprint as the recorded hash, or the coordinators rule the current wording sufficient and record why"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as febf61eb06bf1fc09b5b1af092321205708ab36c on origin/master (pushed 2026-10-01T02:14:07Z, values recorded per §8). AGENTS.md and CLAUDE.md (byte-identical) now say the install records the `build_fingerprint` that `engram readiness --json` reports when run with the installed binary, replacing the unnamed 'records its hash'; the restart-signal sentence is untouched, and the exe sha256 remains legitimate for verifying a backup or install. One combined 4-file changeset with w-2c0a4b78b357. Authority-text pipeline: both coordinators' concurrences (mailbox-6f31ef05 #126, mailbox-38e17f30 #39), Greg notified before the landing (Advisor/session-6219 after mailbox-ef254411 #13, confirmed #14, plus Fable's direct send), final-diff audit PASS (mailbox-38e17f30 #41; diff hash f26a5a25 identical across three base moves 89af563 -> c0ac723 -> 1ddded7), Markdown checks passed on landing freeze fa7948b7 (test-93de9100, test-bd0c2d49), landing pair clean (Codex delegation-1e05d14f no findings; Claude delegation-806f3910 two Notes, no action). No installed build recorded: binary NOT installed pending Greg's answer on w-d254fcdc3d22; release build of the landed tree staged at .worktrees/landing-values/target/release/engram.exe. Acceptance evaluation ed612b2be7ef4e3da94f306c0132f873: 1/1 pass.",
+    "completed_at": "2026-10-01T02:17:50.892411Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8bfb4363529c424c89202c55fc59984d": {
+        "activity_id": "8bfb4363529c424c89202c55fc59984d",
+        "task_id": "01a0f4ca-909f-7423-bd62-d755e71e24e4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "afedb185c97745e88ddb4d866da8c146"
+      },
+      "ec6ebd5dda314ed191aa44462c9ddb9c": {
+        "activity_id": "ec6ebd5dda314ed191aa44462c9ddb9c",
+        "task_id": "01a0f4ca-909f-7423-bd62-d755e71e24e4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "65821d13f5044d438b4d5c99722862fd"
+      }
+    }
+  }
+}

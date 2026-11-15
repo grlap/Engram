@@ -1,0 +1,76 @@
+{
+  "id": "01a150ed-eb9a-78d2-a986-d9e7b09a2fc5",
+  "external_ref": null,
+  "title": "Integrate Batch A (w-298e, w-8d8a, w-d326) on one combined freeze and land it",
+  "outcome": "Integrate Batch A (w-298e, w-8d8a, w-d326) on one combined freeze and land it",
+  "acceptance": [
+    "The three frozen, path-disjoint changesets (w-298e1dda5f25, w-8d8a49258b2e, w-d3265d98df0c) are applied unchanged onto one current master in a single worktree, with any real conflict resolved and recorded, and one combined freeze is exported.",
+    "One full gate and one Codex plus Claude read-only review pair (or a recorded Kimi stand-in) on that exact combined freeze pass with no outstanding in-scope Medium or higher finding.",
+    "The combined tree lands under the standing approval (one release build, install and push), and each constituent item is then completed by its owner with its own independent evaluation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "batch",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Integrated the three frozen, path-disjoint changesets onto master in one combined worktree and freeze; combined full gate and Codex/Claude review pair passed with no Medium-or-higher finding. Landed as e035aef1cdbfe9a2c02ab6e0bc623e71e1a2992f on origin/master at 2026-10-19T07:48:15Z, built and installed clean release binary with build_fingerprint 13fab6c2d4cc85b6de0144deee0f0f34496aa53a4deef6a153d6b6320d87fcb4, readiness passed on all six live stores. All three constituent items were completed by their owners with independent passing evaluations.",
+    "completed_at": "2026-10-19T08:02:48.104122400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3ce038a1eb2a480a82b13da2f56d2e7d": {
+        "activity_id": "3ce038a1eb2a480a82b13da2f56d2e7d",
+        "task_id": "01a150ed-eb9a-78d2-a986-d9e7b09a2fc5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3ce038a1eb2a480a82b13da2f56d2e7d"
+      },
+      "69bbe727c78943b98b5a4fea3762ea2d": {
+        "activity_id": "69bbe727c78943b98b5a4fea3762ea2d",
+        "task_id": "01a150ed-eb9a-78d2-a986-d9e7b09a2fc5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4d3efb037e9f45a5a6f80bb8beb04653"
+      },
+      "8f0aa8a0a25d446e88b0e0f055cdb83c": {
+        "activity_id": "8f0aa8a0a25d446e88b0e0f055cdb83c",
+        "task_id": "01a150ed-eb9a-78d2-a986-d9e7b09a2fc5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8f0aa8a0a25d446e88b0e0f055cdb83c"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a0fc33-2d19-7f91-9053-2ccb9c6fff08",
+  "external_ref": null,
+  "title": "backup target clear treats an uninspectable records directory as no target configured",
+  "outcome": "backup target clear treats an uninspectable records directory as no target configured",
+  "acceptance": [
+    "clear_target distinguishes a missing records directory from one whose metadata cannot be read (try_exists or metadata), refusing the latter with a path-bearing error instead of reporting that no target was configured; a test in the repository covers the error branch"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Fixed by the landing of w-76e601495068 (commit caaafac). clear_target no longer checks the directory with Path::exists. It reads both records first; only a file that is NotFound counts as absent, and any other read error is backup_record_unreadable. A test puts a directory in place of each record. The regression test for an uninspectable ancestor is tracked separately in w-e57434c7e119.",
+  "completion": null
+}

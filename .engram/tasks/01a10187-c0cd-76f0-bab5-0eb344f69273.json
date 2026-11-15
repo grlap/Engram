@@ -1,0 +1,26 @@
+{
+  "id": "01a10187-c0cd-76f0-bab5-0eb344f69273",
+  "external_ref": null,
+  "title": "Decide whether bare done, evaluate and note/gate need the implicit-target guard while other work is held",
+  "outcome": "Decide whether bare done, evaluate and note/gate need the implicit-target guard while other work is held",
+  "acceptance": [
+    "The council records a decision, with its reasons, on whether bare done, evaluate, note and gate in the host's core paths should follow the implicit-target rule while the session holds other work; bare handoff stays exempt by design"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "agent-ux"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "CLOSED AS DELIVERED in Greg's backlog hygiene sweep (Advisor #1072; Engram::Fable, 2026-10-09 ~00:05Z). The sole criterion asks for a recorded council decision with reasons. It is note aef1e88a (2026-10-05 17:32Z): bare done and evaluate follow the implicit-target guard; note and gate do not; handoff stays exempt. It was implemented in 835c846 and 7306ac3. Nothing remains to do. Cancelled rather than done only because done under the evaluated policy would need a fresh evaluation for a decision record.",
+  "completion": null
+}

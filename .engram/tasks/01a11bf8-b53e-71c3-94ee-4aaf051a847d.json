@@ -1,0 +1,27 @@
+{
+  "id": "01a11bf8-b53e-71c3-94ee-4aaf051a847d",
+  "external_ref": null,
+  "title": "Keep remaining replay-qualified control-plane targets visible in the roadmap",
+  "outcome": "Keep remaining replay-qualified control-plane targets visible in the roadmap",
+  "acceptance": [
+    "The roadmap distinguishes implemented advisory and turn-gated primitives from remaining Phase 1 and broader replay-qualified refusal targets, consistently with the behavioral-control-plane delivery sequence, without claiming additional shipped behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "CLOSED AS DELIVERED (Engram::Fable, 2026-10-09 ~00:30Z; backlog hygiene per Greg, Advisor #1072). Delivered by ce27c31 (roadmap refresh w-3421f913b800). docs/roadmap.md:76-81 says Engram's advisory and turn-gated primitives are implemented, while the broader replay-proven turn-refusal set and the degraded-envelope matrix remain V1 targets in the linked behavioral-control-plane delivery sequence, disabled until its phase 1 core prerequisites hold, which are incomplete. It claims no additional shipped behavior. Nothing remains.",
+  "completion": null
+}

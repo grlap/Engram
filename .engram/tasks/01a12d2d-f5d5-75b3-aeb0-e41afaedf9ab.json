@@ -1,0 +1,27 @@
+{
+  "id": "01a12d2d-f5d5-75b3-aeb0-e41afaedf9ab",
+  "external_ref": null,
+  "title": "SQLITE_PROTOCOL at a store's first write transaction or WAL restart is surfaced without recovery",
+  "outcome": "SQLITE_PROTOCOL at a store's first write transaction or WAL restart is surfaced without recovery",
+  "acceptance": [
+    "A decision records whether SQLITE_PROTOCOL from begin_work_mutation's BEGIN IMMEDIATE (its read snapshot) or from a WAL restart during a write is recovered, and how that recovery fits writer admission's budgets",
+    "If recovery is chosen, a deterministic test injects SQLITE_PROTOCOL at that point and shows the bounded outcome"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

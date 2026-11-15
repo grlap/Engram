@@ -1,0 +1,53 @@
+{
+  "id": "01a0ffbd-b4f2-7ea0-8c0b-873e77d8efdf",
+  "external_ref": null,
+  "title": "A read-only preflight a host can call to learn whether a work item's named source root has an initial sighting at an evaluated cut",
+  "outcome": "Before it spawns an evaluator, a host can ask Engram whether recording an evaluation at a cut would be refused for no initial sighting. The answer is authoritative and read-only, and keeps present, absent and unknown distinct.",
+  "acceptance": [
+    "A read-only operation on the host protocol takes a work reference, its run and an optional evaluated cut. The run must belong to the work item and the cut must be at or before the run-feed head; otherwise the operation refuses with a typed code. Within the routed store and project, and in one read snapshot, it returns: the named root bound at the cut, or that there is none; that root's workspace, generation, binding event position and the identity of the current binding; whether a qualifying sighting exists at or before the cut, with that sighting's record id, feed position and revision; whether the binding at the cut differs from the binding at the head; and the cut actually read. It selects the root and qualifying records with exactly the same code that acceptance-evaluation recording uses.",
+    "Tests cover each case: no named root; a root bound with no sighting; a sighting from a checkpoint; a sighting from an accounted execution_observe; a root named again at a higher generation after release and re-claim, whose earlier sighting does not count; and a binding at the cut that differs from the one at the head. In every case the operation's answer agrees with whether recording an evaluation at that cut is refused with no_initial_sighting.",
+    "The operation writes nothing (a test shows the store's feed heads and row counts unchanged), needs no live claim holder and no requester routing token, and its reply carries a schema version; the docs state that a host treats an unsupported, malformed or failed reply as unknown, never as missing",
+    "The wire contract is documented in docs/features/ and sent to TermAl before implementation. The item's notes record the mailbox sequence and TermAl's ruling, from Termal::Architect2, on the contract."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the host-private named_root_sighting_read operation. For an item's run at a cut (the run-feed head by default), it reads from one snapshot the named root recording would select and whether that root has the initial sighting recording requires. It uses recording's own named_root_at_on and the named_root_sighting_on helper, now shared with revision_seen_through. The result has its own schema version, a 16 KiB bound and typed refusals, needs no session, token or holder, and writes nothing. Documented in behavioral-control-plane.md with a test-pinned result table. Gate test-4d100ebc passed on freeze 0d4d22cd. The Codex and Claude pair was clean at Medium and above; the doc Low is filed as w-66f15625eb7f. The independent evaluation 2a733ca0 passed 4 of 4. Readiness was ready on all 4 live stores.",
+    "completed_at": "2026-10-03T04:20:42.390083400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1a50fc60d2714f989401276530ce26d4": {
+        "activity_id": "1a50fc60d2714f989401276530ce26d4",
+        "task_id": "01a0ffbd-b4f2-7ea0-8c0b-873e77d8efdf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1cb77c4f10bb4bbbaf6761d57f287f62"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a18569-4ded-7071-afbc-7454897d4b0c",
+  "external_ref": null,
+  "title": "Return committed handoff outcomes when response finalization fails",
+  "outcome": "Return committed handoff outcomes when response finalization fails",
+  "acceptance": [
+    "A successful core handoff mutation returns truthful success with its actual durable identity and supported readback when later response finalization fails; pre-core refusals remain errors.",
+    "A deterministic post-core failure regression verifies one committed semantic outcome and exact retry without duplicate effects; unavailable guidance or focus is not fabricated."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "post-commit",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

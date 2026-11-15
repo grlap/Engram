@@ -1,0 +1,38 @@
+{
+  "id": "01a191ca-b20d-7363-aef7-40e1aebd545a",
+  "external_ref": null,
+  "title": "Admit a registered run's owning_session_id by the session id rule",
+  "outcome": "Admit a registered run's owning_session_id by the session id rule",
+  "acceptance": [
+    "verification_record admits owning_session_id by the same rule as a session id (at most 64 bytes, the reserved marker refused), or the identifier table documents and a test pins why it differs"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a1920f-b609-78c0-9c01-b1e194e03c68",
+      "kind": "manual",
+      "detail": "Blocked on TermAl w-decd: its verification_record sender does not exist yet (Architect2 audit #46 on TermAl 972bc08c found no producer). Unblock once that sender exists and TermAl confirms its owning ids are at most 64 bytes. No code until then (Fable #3702).",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-31T13:04:25.603380900Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,68 @@
+{
+  "id": "01a1091b-0d83-78f3-a30c-14ce2b2dc934",
+  "external_ref": null,
+  "title": "Associate one verified source/test run with several items of one changeset, explicitly and auditably",
+  "outcome": "Associate one verified source/test run with several items of one changeset, explicitly and auditably",
+  "acceptance": [
+    "ONE EXPLICIT ATOMIC BIND. Through one host-control request naming the original and every target, a session binds one native, PASSED verification with a Succeeded producer, a Named basis, and a claim the session still holds on a current compatible named root, to 1..=16 distinct other open items it holds whose current named roots have the same workspace as the original's, within the session's held-claim bound. Duplicate targets and the original item as a target are refused. One transaction writes, per target, one verification record on that target's run: its producer is the original observation; its basis is the original's workspace and revision with the target's own generation; its environment is the original's, by reference; it carries a typed bound_from (the original id, work, run and original_position; the target's existing newest sighting; the host measurement; the binder and bind time; the intended criteria). No item is credited implicitly. No observation, turn or focus change is created.",
+    "ATOMIC REFUSAL. On any validation failure the whole binding request is refused with typed reasons naming the original or each failing target. No target verification, target evidence event or obligation-resolution effect is written; this does not prohibit a durable control result needed for audit or idempotent replay. Original: not native, not passed, producer not Succeeded, rootless, claim not held, root not current. Each target: every binding field equals current state (claim held, fence, run active, root execution, work revision); the work is open; same workspace; generation = the claim's current naming; the named sighting is the target run's newest under that generation and scope, with a revision equal to the original's and the measurement's; no unknown or unresolved source fact after it; criterion positions valid at that work revision; not already bound. An unknown or unresolved source fact the store holds for a target refuses the bind; the bind does not resolve it by asserting a matching measurement. A missing or mismatched sighting is a refusal with a remedy to obtain genuine source accounting, never an automatic focus switch or fabricated turn.",
+    "EXACT RETRY. Engram durably stores the exact semantic intent and the per-target receipt with the bound records. After a lost reply, including across restart and refreshed routing credentials, the same authenticated session/project/store, idempotency key and semantic intent return the stored per-target receipt marked replayed, even if the original or a target claim has since ended. Replay lookup precedes fresh current-state validation. The intent hash excludes the routing token while binding the authenticated stable identity and every semantic original, target, sighting, measurement and criterion field. A different semantic intent under the same key is refused as a conflict; a new bind still requires all original and target claims to be live and held.",
+    "TRUTHFUL CREDIT. A bound record is usable as evidence only under the target's existing obligation and criterion-binding rules, including check kind, fingerprint pin, result and source freshness. The receipt reports each intended criterion's eligibility, never a semantic criterion verdict; independent per-item acceptance evaluation remains required. The original check kind and fingerprint are copied unchanged. A criterion kind or pin mismatch is reported as ineligible with a reason; it neither refuses the binding nor satisfies that criterion's obligation. Its original producer and verification are validated in the original run, with 0 < producer.position < original_position. Target verification, resolution and evaluation positions are validated in the target run, never by comparing position integers across runs. Later source changes and later binding evidence obey the existing per-item freshness and evaluation-staleness rules, including their existing same-source passed-check exceptions; binding introduces neither a new exemption nor unconditional staleness.",
+    "READERS. show --note and acceptance_binding_read expose the typed bound_from fields verification, work_ref, run, original_position, original_basis, original_completed_at, binder, bound_at, sighting, measurement and criteria. Both the original check time and the binding time remain visible; the common producer record and position refer to the original run. Native records keep their exact current shape; the bound branch appears only on bound records. Docs and the recorded rollout order require the compatible TermAl binding-evidence reader to be landed and live before any bound records are created or exposed to it; the producer keeps native responses unchanged until that condition holds. Ordering is self-enforcing: only a TermAl host-control request creates bound records, and TermAl sends one only once that reader is live, so Engram may land its side first without a reader-first hold.",
+    "NO FORMAT CHANGE. (a) An existing verification's canonical bytes and fingerprint are unchanged; (b) doctor and projection repair on a store holding only existing records give identical derived rows and a clean report; (c) migration export then import round-trips a store with bound records and one without; (d) doctor and projection repair on a store containing bound records verify them and rebuild their rows exactly; (e) the holder's note quotes readiness=ready for each live store with the new build before the commit.",
+    "TESTS cover: a two-target success on one root with distinct claim generations; a batch containing both a valid target and an invalid target that leaves every target unchanged; typed refusals for revision mismatch, target not held, stale generation or wrong sighting scope, non-newest sighting, unresolved source uncertainty, and a bound record used as the original; exact replay after restart with refreshed credentials and an ended claim, with unchanged returned ids and no duplicate effects; a changed-intent conflict under the same key; original and target run positions deliberately chosen so that cross-run integer ordering would give the wrong answer; a criterion kind/pin mismatch reported without a false verdict; a later source change staling bound evidence; and preservation of the existing evaluation-staleness exceptions. The byte-compatibility, doctor/repair and migration checks in the no-format-change criterion are also exercised. Tests also cover duplicate-target, original-item, over-16 and over-held-count refusals; measurement revision differing from the target's newest sighting refusing the whole batch; and a criterion pin mismatch producing ineligible with a reason and no satisfaction of that criterion's obligation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "agent-workflow",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 321b80a on master. A host can bind one native passed check to up to 16 other held items on the same named-root workspace through the host-private verification_bind operation, atomically, with typed per-part refusals and exact replay. Bound records earn only what the target's existing rules allow, compare positions on one run only, and keep the native freshness and unadmitted floors. Readers add a bound branch for bound records only; native bytes and shapes are unchanged; doctor, repair and migration cover bound records. Six review rounds, the round-6 gate passed 9/9, and evaluation 72a9bb46 passed all 7 criteria (revision 3). The two host-side sentences moved to TermAl w-5bfb41017302 with both coordinators' concurrence. Unfixed Lows are filed as w-7817b59fc7ba and w-1fa9411b022a.",
+    "completed_at": "2026-10-05T18:33:24.416203700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "634299c3df3d4f0cbb184fd33c17e9b9": {
+        "activity_id": "634299c3df3d4f0cbb184fd33c17e9b9",
+        "task_id": "01a1091b-0d83-78f3-a30c-14ce2b2dc934",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "634299c3df3d4f0cbb184fd33c17e9b9"
+      },
+      "97e208dca8fc45eb8bc20ed05609a449": {
+        "activity_id": "97e208dca8fc45eb8bc20ed05609a449",
+        "task_id": "01a1091b-0d83-78f3-a30c-14ce2b2dc934",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "06e0f17459c3468aa99e98d6e22cbe4f"
+      }
+    }
+  }
+}

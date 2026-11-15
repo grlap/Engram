@@ -1,0 +1,89 @@
+{
+  "id": "01a14acc-37d6-7d80-9379-b64cb212b0d9",
+  "external_ref": null,
+  "title": "session_status surfaces SQLite \"database is locked\" as untyped storage_error instead of the typed retryable control_store_busy",
+  "outcome": "session_status surfaces SQLite \"database is locked\" as untyped storage_error instead of the typed retryable control_store_busy",
+  "acceptance": [
+    "A control session_status call that meets SQLITE_BUSY or SQLITE_LOCKED (after any configured busy wait) returns the typed retryable refusal the host protocol already defines for store contention (control_store_busy), not storage_error with \"SQLite operation failed: database is locked\". Proved by a deterministic test that holds a conflicting writer lock while session_status runs.",
+    "Every other control operation that can hit the same lock path (session_bind, turn_evaluate, begin, checkpoint, end) classifies busy or locked the same way, shown by a test per operation or a shared classification test that covers them all.",
+    "Genuine storage failures (corruption, I/O, a failed rollback or COMMIT) still return storage_error. The fix doesn't hide real errors as busy, and doesn't widen any retry allowlist beyond store contention."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed typed retryable session_status contention handling with deterministic writer-lock regressions, preserved genuine storage failures, and updated keyless retry contract. Full gate and both reviews passed; fresh independent closure evaluation passed all three criteria.",
+    "completed_at": "2026-10-18T17:30:44.189979400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "189c930b275f4fdc82db53d03da0a7e4": {
+        "activity_id": "189c930b275f4fdc82db53d03da0a7e4",
+        "task_id": "01a14acc-37d6-7d80-9379-b64cb212b0d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f34b445d45924f41ab3b65644d3e6691"
+      },
+      "592f4dcc108045f7bed10ac10a5f92fa": {
+        "activity_id": "592f4dcc108045f7bed10ac10a5f92fa",
+        "task_id": "01a14acc-37d6-7d80-9379-b64cb212b0d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "592f4dcc108045f7bed10ac10a5f92fa"
+      },
+      "b3d40b1a40844255b8aa1e14519cfeba": {
+        "activity_id": "b3d40b1a40844255b8aa1e14519cfeba",
+        "task_id": "01a14acc-37d6-7d80-9379-b64cb212b0d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b3d40b1a40844255b8aa1e14519cfeba"
+      },
+      "fe59e9c42a00438d95bcf9e98cad1ddc": {
+        "activity_id": "fe59e9c42a00438d95bcf9e98cad1ddc",
+        "task_id": "01a14acc-37d6-7d80-9379-b64cb212b0d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c84dd3923ac44d5caffc0473d0e68c8e"
+      }
+    }
+  }
+}

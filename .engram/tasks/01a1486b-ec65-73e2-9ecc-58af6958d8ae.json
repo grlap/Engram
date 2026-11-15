@@ -1,0 +1,58 @@
+{
+  "id": "01a1486b-ec65-73e2-9ecc-58af6958d8ae",
+  "external_ref": null,
+  "title": "Diagnose the 20.36 s Engram admission evaluate during TermAl's post-restart rebind burst",
+  "outcome": "Diagnose the 20.36 s Engram admission evaluate during TermAl's post-restart rebind burst",
+  "acceptance": [
+    "The time spent in the 20,359 ms admission evaluate for session-5135 at 2026-10-17 05:48:30Z is attributed by measurement to its phases: store open, SQLite lock or busy wait, query and projection work, and response serialization. If the evidence cannot settle the attribution, the record names the gap.",
+    "Under a reproduced or measured concurrent burst of named-root binds, claim renewals and admissions from about 10 sessions, the record shows whether admission latency grows with concurrency, and names the contended resource or rules out each candidate.",
+    "Either an in-scope Engram defect is filed or fixed with a test that reproduces the slow path, or the record concludes, with evidence, that the latency was outside Engram (host, disk or scheduling), with a cross-reference to the matching TermAl item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "dogfood",
+    "latency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete on Greg's word (Asistant #239): the admission evaluate it would diagnose no longer exists. A general store-latency problem would be its own item with current evidence.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "4d2e3cd1959c467b88915079766965b8": {
+        "activity_id": "4d2e3cd1959c467b88915079766965b8",
+        "task_id": "01a1486b-ec65-73e2-9ecc-58af6958d8ae",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4d2e3cd1959c467b88915079766965b8"
+      },
+      "f304424c871b48af93ecc2c654a80df4": {
+        "activity_id": "f304424c871b48af93ecc2c654a80df4",
+        "task_id": "01a1486b-ec65-73e2-9ecc-58af6958d8ae",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3cd95add4a5246ce8f57b073ce99505c"
+      }
+    }
+  }
+}

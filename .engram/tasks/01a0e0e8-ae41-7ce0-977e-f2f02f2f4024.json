@@ -1,0 +1,51 @@
+{
+  "id": "01a0e0e8-ae41-7ce0-977e-f2f02f2f4024",
+  "external_ref": null,
+  "title": "Every root mutation reads and hashes the root's whole membership, so its cost grows with the root's history",
+  "outcome": "Each mutation under a root (decompose, dispose, waive, note, gate, checkpoint) does a validated read of the root's current state and hashes all of its members, so its cost is linear in the root's members and a long-lived root makes every mutation under it slower. Either bound that cost by something that does not grow with closed history, or measure it on the live store with the release build and record why it is accepted.",
+  "acceptance": [
+    "A decision is recorded: either a bounded design (for example an incremental state checksum) filed as follow-up work with its migration or repair consequence named, or an explicit acceptance of linear cost with the member count at which it becomes a problem.",
+    "The per-mutation cost of a note, a gate, a decompose and a waive under the live store's largest root is measured with the installed release build and recorded."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Measured four root mutations using one verified pinned copy of the installed release on supported private copies:160 primary samples at the largest captured live root6733members/929647bytes, plus480 synthetic samples at1k/5k/10k. Primary warm waive p951032.6427ms exceeded the predeclared1000ms budget. Council#702 explicitly accepts linear root-mutation cost temporarily, naming that composition-specific problem point; no universal safe bound claimed. Filed P2w-d90ae18615dc for attribution and constant-factor optimization, and P3w-8c8151536e3e for triggered bounded-history research with migration/Greg consequence. 20kmeasurement remains owed under bounded-host-load stop. Fresh independent evaluationc317d6c793304821978729325af813b1 passed2/2 oncut126/revision1. No source change, delivered performance fix, growth bound, stored-format change, repair, migration or landing.",
+    "completed_at": "2026-10-03T11:34:23.566687700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5d9a649b8fb642678d0e539eef8a10a3": {
+        "activity_id": "5d9a649b8fb642678d0e539eef8a10a3",
+        "task_id": "01a0e0e8-ae41-7ce0-977e-f2f02f2f4024",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c79a0ae4efa2488c9df8002ab1f69db2"
+      }
+    }
+  }
+}

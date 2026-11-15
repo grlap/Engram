@@ -1,0 +1,58 @@
+{
+  "id": "01a0e397-5eda-7563-82ce-71a1a29cdda2",
+  "external_ref": null,
+  "title": "Reopen carries only portable bindings once environment pins are gone",
+  "outcome": "A reopened item's bindings can all be satisfied on its new run: with environment pins removed from verification requirements, reopen carries only portable bindings.",
+  "acceptance": [
+    "It is delivered in the same changeset as the removal of environment pins, whose required gates and both reviews pass.",
+    "With environment pins removed, reopen carries only portable bindings: a test reopens a completed item whose criterion is bound to a pinned check (check_fingerprint), and the new run's obligation is satisfied by a passing host verification of that check."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 2,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Reopen carries only portable bindings. With environment pins removed from verification requirements, a reopened item's bound criterion (a pinned check_fingerprint) owes its check again on the new run, and a passing host verification of that check satisfies the new obligation. Delivered in commit c17c9a6 together with the environment-pin removal. That changeset's full gate test-1563fac0 passed all nine stages on freeze 021cdfad…, and round 5 was clean from Codex (session-8097) and Claude (session-8098). Host evidence: TermAl credited the named-root run of a_reopened_item_owes_its_pinned_check_again_on_the_new_run as verification 03e927e0ee3e42a4b88490db97c0ca07 (passed, kind test, plan-bindings at content-v1:371cf6cd…), which satisfied the bound obligation. Independent Codex evaluation 05db3428bf2e4b49997f1454d2b4dd2e passed both criteria.",
+    "completed_at": "2026-09-28T04:45:38.026219200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "15ea90e67652470989351bdadd5c05ef": {
+        "activity_id": "15ea90e67652470989351bdadd5c05ef",
+        "task_id": "01a0e397-5eda-7563-82ce-71a1a29cdda2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "218a6fe26fd343f6834379583ca0d3a1"
+      }
+    }
+  }
+}

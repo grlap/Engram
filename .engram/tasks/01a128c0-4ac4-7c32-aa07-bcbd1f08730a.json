@@ -1,0 +1,63 @@
+{
+  "id": "01a128c0-4ac4-7c32-aa07-bcbd1f08730a",
+  "external_ref": null,
+  "title": "Remove the scheduling assumption from the latch panic-retry test",
+  "outcome": "Remove the scheduling assumption from the latch panic-retry test",
+  "acceptance": [
+    "build_identity::tests::a_bounded_call_never_reads_itself_after_its_reading_panicked no longer asserts the reading count right after its 300 ms held retry, which assumed the new reader thread was scheduled within 300 ms; the count is asserted only after release and a successful latch, or reader entry is synchronized without lengthening the deadline; the test passes, and no deadline or behaviour assertion is loosened"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "backup",
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The latch panic-retry test no longer assumes the reader thread spawned by its 300 ms bounded call was scheduled within 300 ms. After that call, a bounded 30 s yield loop waits for the reader to begin, then asserts READINGS == 2; every deadline and behaviour assertion is unchanged.\n- Test-only change: src/build_identity.rs, +11 lines.\n- Reviews: three clean rounds (3ab448b, 1e135bc, 4beaaa9).\n- Gates: the first gate test-11888305 failed only on two out-of-scope diagnostics flush tests, fixed by w-8e47801e0c3c. Re-gate test-9e6ab487 passed 12/12 on freeze d9e8be5a.\n- Independent evaluation 861681e5 passed.\n- Readiness ready on all 4 live stores.",
+    "completed_at": "2026-10-12T12:24:28.032290900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4253cc6d87bf4ec49a019433b415e011": {
+        "activity_id": "4253cc6d87bf4ec49a019433b415e011",
+        "task_id": "01a128c0-4ac4-7c32-aa07-bcbd1f08730a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b1c56baf59394b1e8b0ee9e8b7954bb3"
+      },
+      "fd740d9c8e794fa4bea5a3de46e9897d": {
+        "activity_id": "fd740d9c8e794fa4bea5a3de46e9897d",
+        "task_id": "01a128c0-4ac4-7c32-aa07-bcbd1f08730a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fd740d9c8e794fa4bea5a3de46e9897d"
+      }
+    }
+  }
+}

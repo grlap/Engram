@@ -1,0 +1,33 @@
+{
+  "id": "01a14bef-9842-7521-951d-0b366a8fb642",
+  "external_ref": null,
+  "title": "Bounded receive slice 6: E2 service integration and real Windows proof",
+  "outcome": "Bounded receive slice 6: E2 service integration and real Windows proof",
+  "acceptance": [
+    "E2 automatic fetch consumes only a validated quarantine Ready handle; it never mutates the selected repository or writes an ImportReceipt from the receive primitive",
+    "A real Windows run over admitted OpenSSH demonstrates an in-budget receive and bounded refusals for oversized history, oversized pack and exhausted disk budget, with the filesystem flush/publication ordering the protocol relies on",
+    "The D1 fail-first matrix plus the D2 additions all pass in the full gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "resource-limits",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a14bc4-fa6d-7101-90c3-8538455dd83d",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a14bef-5bbc-71c0-be3f-7092bd90b007",
+    "01a14bef-89ea-7e82-8ac7-6d2e5fd574d4"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

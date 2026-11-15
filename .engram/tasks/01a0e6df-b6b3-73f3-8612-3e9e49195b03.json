@@ -1,0 +1,54 @@
+{
+  "id": "01a0e6df-b6b3-73f3-8612-3e9e49195b03",
+  "external_ref": null,
+  "title": "done on an item with no acceptance criteria under an evaluated policy answers work_projection_invalid (\"preflight completion recovery criterion is absent from the bound work revision\") instead of a refusal that names the missing criteria and the remedy",
+  "outcome": "done on an item with no acceptance criteria under an evaluated policy answers work_projection_invalid (\"preflight completion recovery criterion is absent from the bound work revision\") instead of a refusal that names the missing criteria and the remedy",
+  "acceptance": [
+    "The refusal is exercised once on the live TermAl store against a migrated acceptance-less item (read-only until the owner revises) and its receipt is quoted on this item",
+    "The same call under a self-asserted policy keeps today's behaviour, and a regression test covers both policies with an acceptance-less item",
+    "`done` on a held item whose acceptance list is empty, in a project whose policy requires an acceptance evaluation, is refused with a named code (for example acceptance_criteria_required) whose reason says the item has no acceptance criteria and whose remedy names the words: `update REF --accept \"criterion\"` (revise), then the host evaluation, then `done`; the receipt never says work_projection_invalid or mentions a preflight recovery criterion for this case"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux",
+    "migration",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Under an evaluated acceptance policy, `done` on an item with no acceptance criteria is now refused by name. Landed as 68407d7 and installed as build 1151a5372540.\n- StoreError::AcceptanceCriteriaRequired is guarded at the start of assess_on, before any recovery cause is built, so both completion paths are covered.\n- Code acceptance_criteria_required. The reason names the missing criteria and the host's refusal to evaluate. The remedy names, in order, `engram work update REF --accept \"criterion\"`, the host evaluation, and `engram work done REF`, and the word's guidance offers the same.\n- The host protocol code stays storage_error. The self-asserted policy is unchanged. A recovery cause naming an absent criterion stays work_projection_invalid.\n- Tests: 3 storage tests and 1 word walk through refusal, retry, criteria, evaluation and seal.\n- Docs: acceptance-evaluation.md (plus boundary row B52), cli-and-mcp.md and shipped.md.\n- Live proof on the TermAl store: Termal::Fable2 ran `done` on migrated w-ce333e4d7ccf at 10:09:06Z with the installed build and got acceptance_criteria_required. The item was left unrevised and released.\n- Independent evaluation 7…, recorded at 10:13Z, passed all three criteria.",
+    "completed_at": "2026-09-28T10:13:33.628786300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ec44d997f1834d4d94b9e89cd18d5869": {
+        "activity_id": "ec44d997f1834d4d94b9e89cd18d5869",
+        "task_id": "01a0e6df-b6b3-73f3-8612-3e9e49195b03",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b445bd09774f432588dc7ceca0f3da4d"
+      }
+    }
+  }
+}

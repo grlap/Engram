@@ -1,0 +1,65 @@
+{
+  "id": "01a150c6-c7a5-77b3-ae31-db62f9fa278b",
+  "external_ref": null,
+  "title": "Git-folder sync S1b: route the existing task-sync export and import through the folder path",
+  "outcome": "Git-folder sync S1b: route the existing task-sync export and import through the folder path",
+  "acceptance": [
+    "The existing `engram task-sync export <dir>` and `engram task-sync import <dir>` commands use the S1 folder path end to end: export publishes the folder with its captured export basis through the no-clobber directory writer, and import applies the resolved folder through the folder apply operation with an explicitly selected destination basis. No new command is added.",
+    "The legacy import and export path is retired from these commands, and any remaining library use (preparation, setup materialization, tests) is explicitly scoped and documented, not silently reachable from export or import.",
+    "The work stays within Greg's #1677 scope: no schema, table, column or index change, no migration, no automatic fetch or merge, no service, no SQLite replication and no runtime or claim transfer. Folder-route refusals map to stable task_sync_* codes in the --json receipt, and the existing refusal-code docs table covers them."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "cli",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "task-sync export and import now run through the S1 Git-folder path.\n- Export publishes the folder with its captured export basis through the no-clobber folder writer, with omissions in the receipt.\n- Import reads the human-resolved folder and applies it through apply_task_sync_folder against a destination basis the caller selects: --basis FILE or --empty-basis, exactly one. --dry-run runs under the real key with an explicit rollback.\n- The note selection is shared between hosts; each host keeps its own origin-machine alias.\n- The legacy LocalWorkService export and import methods are removed. The store-level plain-candidate calls are documented as library API for tests.\n- No schema, migration, kind or operation change.\nLanded as b840ea5 on master: full gate test-65c39f97 12/12, r3 pair clean, independent evaluation c0e3ec22 passed on all 3 criteria. Installed build 3fa801e3186d, with all 6 live stores ready.",
+    "completed_at": "2026-10-19T08:51:50.683389100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4e15173da9624c1b9306f96f5b24e436": {
+        "activity_id": "4e15173da9624c1b9306f96f5b24e436",
+        "task_id": "01a150c6-c7a5-77b3-ae31-db62f9fa278b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "eea34eb757114be7873fd5248a7e4b2d"
+      },
+      "82a955e529b84e47bb6691069641336e": {
+        "activity_id": "82a955e529b84e47bb6691069641336e",
+        "task_id": "01a150c6-c7a5-77b3-ae31-db62f9fa278b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "82a955e529b84e47bb6691069641336e"
+      }
+    }
+  }
+}

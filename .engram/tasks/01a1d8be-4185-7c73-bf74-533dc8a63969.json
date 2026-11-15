@@ -1,0 +1,70 @@
+{
+  "id": "01a1d8be-4185-7c73-bf74-533dc8a63969",
+  "external_ref": null,
+  "title": "Accept a registered check at completion when the claim rebound the same root path with unchanged source",
+  "outcome": "Accept a registered check at completion when the claim rebound the same root path with unchanged source",
+  "acceptance": [
+    "Completion accepts a passing registered check whose named-root binding is an earlier binding of the same claim, with no claim release since, on the same root path as the claim's current Bound binding, when the measured current source_id equals the check's recorded source_id.",
+    "Completion still refuses when the current binding names a different path, the latest binding event is not Bound, the claim was released after the check, the measured source differs, or a newer failed check exists; each refusal names its reason.",
+    "Behaviour tests cover the accepted rebinding case and each refusal case through the completion path, not by pinning message text."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "termal-reported"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "35b03d7fc0f74791833775d0293354fc": {
+        "activity_id": "35b03d7fc0f74791833775d0293354fc",
+        "task_id": "01a1d8be-4185-7c73-bf74-533dc8a63969",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "35b03d7fc0f74791833775d0293354fc"
+      },
+      "95f7fbcf2bce4434ac5063a14f97ecb2": {
+        "activity_id": "95f7fbcf2bce4434ac5063a14f97ecb2",
+        "task_id": "01a1d8be-4185-7c73-bf74-533dc8a63969",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e683a9d98b024e85831d4bafb0675144"
+      },
+      "e683a9d98b024e85831d4bafb0675144": {
+        "activity_id": "e683a9d98b024e85831d4bafb0675144",
+        "task_id": "01a1d8be-4185-7c73-bf74-533dc8a63969",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e683a9d98b024e85831d4bafb0675144"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a15b93-68c0-7782-8ef8-f44575a25cdb",
+  "external_ref": null,
+  "title": "Say that the lander's own push and install confirmation is not a remote or running observation",
+  "outcome": "Say that the lander's own push and install confirmation is not a remote or running observation",
+  "acceptance": [
+    "The landing-only clause in the AGENTS.md/CLAUDE.md standing approval says that the lander's ordinary confirmation of the push and of the install (including recording the installed build_fingerprint) is not a 'live or remote observation' or 'the build running'",
+    "TermAl's twin text carries the same clarification, or TermAl records that it does not need it",
+    "Both files stay byte-identical and the authority-text procedure for a clarifying edit, (a), (b) and (c), is recorded on the item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

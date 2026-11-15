@@ -1,0 +1,63 @@
+{
+  "id": "01a19ef4-ab40-7ee3-89f5-0db84dd418d1",
+  "external_ref": null,
+  "title": "Remove the test-only open_work_obligations_at_cut production wrapper and confine historical fixture input types to test support",
+  "outcome": "Remove the test-only open_work_obligations_at_cut production wrapper and confine historical fixture input types to test support",
+  "acceptance": [
+    "src/storage/work/query.rs:251 open_work_obligations_at_cut and its allow(dead_code) are removed or moved to test support, keeping the underlying live obligation derivation",
+    "Historical fixture input types in src/domain/control.rs (355-502) move into test support and the cfg(test) re-exports at src/lib.rs:131 go, with all historical-reader tests kept",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "legacy-cleanup"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed the unused production wrapper and test-only historical fixture types; the exact aggregate passed the full gate, landed on master, was pushed, and installed. All six stores are ready on the installed build.",
+    "completed_at": "2026-11-03T08:51:06.869434600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4abffb50bd5e4a4ab7569884a8a74587": {
+        "activity_id": "4abffb50bd5e4a4ab7569884a8a74587",
+        "task_id": "01a19ef4-ab40-7ee3-89f5-0db84dd418d1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c2a872b2bc0b4dfbbf5dc7e2b83c7910"
+      },
+      "a8648ccd3e6041d89264335aefac4ec4": {
+        "activity_id": "a8648ccd3e6041d89264335aefac4ec4",
+        "task_id": "01a19ef4-ab40-7ee3-89f5-0db84dd418d1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "00dbfe8dba914900bbc841e79e7ac47b"
+      }
+    }
+  }
+}

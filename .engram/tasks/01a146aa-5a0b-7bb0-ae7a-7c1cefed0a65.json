@@ -1,0 +1,112 @@
+{
+  "id": "01a146aa-5a0b-7bb0-ae7a-7c1cefed0a65",
+  "external_ref": null,
+  "title": "Harden task-materialization recovery diagnostics and procedure tests",
+  "outcome": "Harden task-materialization recovery diagnostics and procedure tests",
+  "acceptance": [
+    "The process assertion compares the retained-attempt path using canonical path identity rather than invocation spelling.",
+    "A journal::initialize refusal after private creation names the retained attempt and actionable preserve/relocate/reprepare procedure on the first failure.",
+    "A relocated attempt test executes setup preparation and proves its expected idempotent result, or the procedure no longer directs that step."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "recovery",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Hardened materialization recovery diagnostics and procedure tests; full gate, fresh pair, and independent acceptance evaluation passed.",
+    "completed_at": "2026-10-17T16:04:48.708699100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "294c9920134e46f781c4429bf9271f7e": {
+        "activity_id": "294c9920134e46f781c4429bf9271f7e",
+        "task_id": "01a146aa-5a0b-7bb0-ae7a-7c1cefed0a65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "294c9920134e46f781c4429bf9271f7e"
+      },
+      "42cfa326b36e48d692f8b75039fa1030": {
+        "activity_id": "42cfa326b36e48d692f8b75039fa1030",
+        "task_id": "01a146aa-5a0b-7bb0-ae7a-7c1cefed0a65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "73a6db4eab454180ba487dbe66d5f6f9"
+      },
+      "4d2b6f15977a41d8ae5fb08bb1088f13": {
+        "activity_id": "4d2b6f15977a41d8ae5fb08bb1088f13",
+        "task_id": "01a146aa-5a0b-7bb0-ae7a-7c1cefed0a65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4d2b6f15977a41d8ae5fb08bb1088f13"
+      },
+      "6c29fc5c31f04f748acd034d2acd3cbd": {
+        "activity_id": "6c29fc5c31f04f748acd034d2acd3cbd",
+        "task_id": "01a146aa-5a0b-7bb0-ae7a-7c1cefed0a65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6c29fc5c31f04f748acd034d2acd3cbd"
+      },
+      "7d1bff12aed54b4fa5f409ec9a698874": {
+        "activity_id": "7d1bff12aed54b4fa5f409ec9a698874",
+        "task_id": "01a146aa-5a0b-7bb0-ae7a-7c1cefed0a65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7d1bff12aed54b4fa5f409ec9a698874"
+      },
+      "7fe2849ea3e247a395350f92b9ecb936": {
+        "activity_id": "7fe2849ea3e247a395350f92b9ecb936",
+        "task_id": "01a146aa-5a0b-7bb0-ae7a-7c1cefed0a65",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7fe2849ea3e247a395350f92b9ecb936"
+      }
+    }
+  }
+}

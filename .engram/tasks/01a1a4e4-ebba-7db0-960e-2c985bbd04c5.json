@@ -1,0 +1,99 @@
+{
+  "id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
+  "external_ref": null,
+  "title": "Audit task-sync custody explicitly and seed reconstructable source membership",
+  "outcome": "Provide a runnable cold custody audit/checkpoint and canonical bootstrap-membership adapter before enabling ordinary managed delta writes.",
+  "acceptance": [
+    "A named custody-audit CLI/service performs exhaustive retained-artifact validation under the existing project and repository reservations, refuses pending or unexplained effects, and never runs implicitly from open, status or ordinary work.",
+    "One additive CustodyCheckpoint transition in the existing exchange ledger retains its exact event ID/body and predecessor before commit, updates canonical checkpoint and rebuildable views atomically, and recovers post-commit acknowledgement without changing historical event bodies or completion meaning.",
+    "An explicit incoming or prepared-export seed resolves complete initial-import references or captured canonical/embedded documents, validates exact selected source and profile separately from the local destination baseline, and reconstructs membership through repair without retained Git files.",
+    "Behavioral tests prove exact interrupted retry, no-write refusal and rollback, custody-only missing-source refusal, legacy reconciled-source unavailability, source older than local baseline, preserved artifacts and named cold audit detection; capacity limits refuse before effects.",
+    "Documentation states B1's cold-scan boundary and pending B2/C ordinary writers; projection inventory and final combined repair/no-write/rollback obligations remain under one final cutover, with no standalone B1 landing or ordinary managed enablement."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "managed-custody",
+    "performance",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "1707d88bf9e64138a8fb0cd2f6599751": {
+        "activity_id": "1707d88bf9e64138a8fb0cd2f6599751",
+        "task_id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1707d88bf9e64138a8fb0cd2f6599751"
+      },
+      "1cd4ff2df71e4b918f6f95be271819fc": {
+        "activity_id": "1cd4ff2df71e4b918f6f95be271819fc",
+        "task_id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1cd4ff2df71e4b918f6f95be271819fc"
+      },
+      "80a74f75ca17409bab5afd5dafaf31e2": {
+        "activity_id": "80a74f75ca17409bab5afd5dafaf31e2",
+        "task_id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "80a74f75ca17409bab5afd5dafaf31e2"
+      },
+      "86b127ba10694b3ba8a1f9b318a27a03": {
+        "activity_id": "86b127ba10694b3ba8a1f9b318a27a03",
+        "task_id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1cd4ff2df71e4b918f6f95be271819fc"
+      },
+      "f373a2ba426f4741b06dc22cee3a4560": {
+        "activity_id": "f373a2ba426f4741b06dc22cee3a4560",
+        "task_id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f373a2ba426f4741b06dc22cee3a4560"
+      }
+    }
+  }
+}

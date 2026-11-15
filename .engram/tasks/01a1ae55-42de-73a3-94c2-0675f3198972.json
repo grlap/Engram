@@ -1,0 +1,69 @@
+{
+  "id": "01a1ae55-42de-73a3-94c2-0675f3198972",
+  "external_ref": "termal#w-8f4c5e2e071c",
+  "title": "Retire the test launcher's own file-list run fingerprint in favour of the shared source_id",
+  "outcome": "The launcher's run-input identity is only the `engram source` source_id compared before and after; its separate staged/unstaged/untracked fingerprint and .git/info rule images are gone",
+  "acceptance": [
+    "The launcher no longer computes its own run fingerprint from `git ls-files` output, untracked listings or .git/info rule images; its before/after input check compares the whole source_id from `engram source`",
+    "A run whose source_id is equal before and after passes the input check, including one with local changes; a run whose source_id changes, including by adding a non-ignored untracked file, fails it; the separate new-untracked-only disposition is removed",
+    "Engram's and TermAl's launchers compare the same source_id object, with both coordinators' recorded concurrence",
+    "The launcher tests cover an unchanged clean run, an unchanged dirty run, an input change mid-run and an added untracked file",
+    "Repository instruction text that names the old fingerprint is updated under the governance rule for instruction changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+    "01a1b383-2ef6-79f3-a643-77484daf004c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered E2 increment 1: automatic launcher input validation compares the complete shared source_id, preserves actual stage facts, and treats new untracked input as an ordinary mismatch. Landed and installed fc749042; explicit review-freeze retirement is follow-up w-269eb2ad0179.",
+    "completed_at": "2026-11-07T13:13:40.196689Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6e6375c68d854c1aa35d0f0e9182a7a8": {
+        "activity_id": "6e6375c68d854c1aa35d0f0e9182a7a8",
+        "task_id": "01a1ae55-42de-73a3-94c2-0675f3198972",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6e6375c68d854c1aa35d0f0e9182a7a8"
+      },
+      "7312104a8c5642cd8fa644bed729c770": {
+        "activity_id": "7312104a8c5642cd8fa644bed729c770",
+        "task_id": "01a1ae55-42de-73a3-94c2-0675f3198972",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4b06b129510f41bcb5d850e843e93c19"
+      }
+    }
+  }
+}

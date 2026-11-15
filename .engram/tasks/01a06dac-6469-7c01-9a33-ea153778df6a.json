@@ -1,0 +1,50 @@
+{
+  "id": "01a06dac-6469-7c01-9a33-ea153778df6a",
+  "external_ref": null,
+  "title": "Preserve typed graph-load errors and native relation failures",
+  "outcome": "Preserve typed graph-load errors and native relation failures",
+  "acceptance": [
+    "invalid carried canonical payloads use graph_snapshot_corrupt and native anchor verification errors are not swallowed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Embedded source/restored JSON failures map to corrupt snapshots and native relation-anchor storage/canonical errors propagate.",
+    "completed_at": "2026-09-04T18:50:08.178849500Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "811a7df585d6780cbce2a75d0db60a7334899a4502cbc690dbc7a9afde2f96eb": {
+        "activity_id": "811a7df585d6780cbce2a75d0db60a7334899a4502cbc690dbc7a9afde2f96eb",
+        "task_id": "01a06dac-6469-7c01-9a33-ea153778df6a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ede466c6bdbeba33136891ec37e2fcd1bb8f9234fb12939fd25685d151c6e572"
+      }
+    }
+  }
+}

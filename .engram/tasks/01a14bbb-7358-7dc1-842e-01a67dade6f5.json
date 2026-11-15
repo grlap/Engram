@@ -1,0 +1,131 @@
+{
+  "id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+  "external_ref": null,
+  "title": "Engram-internal origin/store identity and minimal host joining configuration for decentralized task sync",
+  "outcome": "Engram-internal origin/store identity and minimal host joining configuration for decentralized task sync",
+  "acceptance": [
+    "Each store enrolled for task sync has a stable Engram-owned origin identity, minted by the explicit enrollment as an additive canonical record, distinct from its display alias and from process boot. It survives restart and is usable by CLI-only Engram. A store that never enrolls needs no conversion, and ordinary store opening stays strict and never writes the identity implicitly.",
+    "A detected clone/restore or broken continuity quarantines pending exchange operations for explicit reconciliation, and a new install never silently adopts another origin's write authority, with tests for restart, clone and restore (including restoring an older copy that carries the same origin)",
+    "A new host joins with explicit local configuration (its own identity, project binding, configured remote and branch, opt-in). An empty target may bootstrap, and a store with existing independent tasks joins through the resolved merged-graph path under w-65fb79ead0c3; neither loses local planning or transfers claims, grants, runtime or evidence authority.",
+    "Any durable-format change is named, judged under the full-store migration rule and presented to Greg before landing; today's asserted --origin-machine alias is not silently reinterpreted"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "identity",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "14fe0b275e864afb844d78fde85073a1": {
+        "activity_id": "14fe0b275e864afb844d78fde85073a1",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "14fe0b275e864afb844d78fde85073a1"
+      },
+      "431d7ac5ed894c3b9d6ab95eee4af89e": {
+        "activity_id": "431d7ac5ed894c3b9d6ab95eee4af89e",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "431d7ac5ed894c3b9d6ab95eee4af89e"
+      },
+      "5efebd5532a248cfb4c768555bdd2d64": {
+        "activity_id": "5efebd5532a248cfb4c768555bdd2d64",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5efebd5532a248cfb4c768555bdd2d64"
+      },
+      "8657dd71f5a8453c831bb5492aadfbfd": {
+        "activity_id": "8657dd71f5a8453c831bb5492aadfbfd",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8657dd71f5a8453c831bb5492aadfbfd"
+      },
+      "8d59de6873aa4d1db2df1da91fc3220a": {
+        "activity_id": "8d59de6873aa4d1db2df1da91fc3220a",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8d59de6873aa4d1db2df1da91fc3220a"
+      },
+      "8f66b5955b63402789464fc35fc39f9f": {
+        "activity_id": "8f66b5955b63402789464fc35fc39f9f",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8f66b5955b63402789464fc35fc39f9f"
+      },
+      "9e6b567f98ed4937b33bbb5b49f4f97b": {
+        "activity_id": "9e6b567f98ed4937b33bbb5b49f4f97b",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "14fe0b275e864afb844d78fde85073a1"
+      },
+      "a4d875b1804146df9d4d932009ee6aee": {
+        "activity_id": "a4d875b1804146df9d4d932009ee6aee",
+        "task_id": "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a4d875b1804146df9d4d932009ee6aee"
+      }
+    }
+  }
+}

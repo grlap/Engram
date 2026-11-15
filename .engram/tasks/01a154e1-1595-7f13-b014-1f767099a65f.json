@@ -1,0 +1,29 @@
+{
+  "id": "01a154e1-1595-7f13-b014-1f767099a65f",
+  "external_ref": null,
+  "title": "Document that a resolved task folder's embedded inventory fingerprint may be resolved either way after a Git merge",
+  "outcome": "Document that a resolved task folder's embedded inventory fingerprint may be resolved either way after a Git merge",
+  "acceptance": [
+    "docs/features/task-planning-text.md states that importing a resolved folder reads its inventory from the task files and ignores project.json's embedded export_basis inventory_fingerprint, so a Git conflict on that line can be resolved by taking either side (or any well-formed value), and names where the fingerprint is still checked (task-sync prepare/setup candidates and --basis files)",
+    "a test pins that a resolved folder whose project.json carries a stale or the other host's inventory_fingerprint imports exactly as with its own"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

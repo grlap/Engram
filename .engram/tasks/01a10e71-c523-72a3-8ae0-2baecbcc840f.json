@@ -1,0 +1,53 @@
+{
+  "id": "01a10e71-c523-72a3-8ae0-2baecbcc840f",
+  "external_ref": null,
+  "title": "The host cannot read a specific control grant's state, so an ambiguous begin refusal stays unresolvable",
+  "outcome": "A host can ask Engram, read-only, for the state of one exact grant of its own session (issued, begun, completed, expired, superseded, or not found), with begun evidence where it exists. A begin-unknown reconcile can then resolve the cases a typed refusal leaves ambiguous (grant_scope_mismatch, unknown_control_schema) without guessing, re-evaluating blindly or needing an operator's database read.",
+  "acceptance": [
+    "A new host-control read takes the session's routing token plus a grant id and returns that grant's current state and begun_at/completed_at evidence. A grant not found is reported distinctly from never-begun. A grant belonging to another session is refused. The read mutates nothing; unlike session_status it does not lazily expire grants.",
+    "The addition is additive on the host wire: no existing request or response changes shape. The behavioral-control-plane doc lists it under shipped host channel operations.",
+    "Tests cover each state, not found, another session's grant, and that the read changes no row."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "recovery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered additive host-only turn_grant_read with exact same-session historical grant state/timestamps, distinct not_found and foreign-session refusal, one credential-and-grant snapshot, no writes or lazy expiry. Nine-stage full gate, complete verified Codex/Claude round3, all four live stores ready and fresh independent acceptance 3/3. Committed, installed with backup and pushed fast-forward. Low follow-ups w-929d05e48ae1 and w-c2ef96adc0d3 retained independently.",
+    "completed_at": "2026-10-06T07:49:10.839875900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "01828af7f1fa4ca09774b0ee0c70f020": {
+        "activity_id": "01828af7f1fa4ca09774b0ee0c70f020",
+        "task_id": "01a10e71-c523-72a3-8ae0-2baecbcc840f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c4a385d9c1fd4b9a8ac69ab8d5d0f091"
+      }
+    }
+  }
+}

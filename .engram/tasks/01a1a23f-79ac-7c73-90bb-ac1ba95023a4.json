@@ -1,0 +1,68 @@
+{
+  "id": "01a1a23f-79ac-7c73-90bb-ac1ba95023a4",
+  "external_ref": null,
+  "title": "Read task-sync commit deltas through the existing hardened Git intake",
+  "outcome": "Return changed task documents and explicit deletions between retained source commits without reading unchanged task blobs.",
+  "acceptance": [
+    "Given explicit prior and incoming commits, derive NUL-delimited changes for .engram through the existing Git executor, covering the complete old-to-new tree delta including intervening and merge commits.",
+    "Read and decode only added or modified task blobs plus project.json; represent deletion without reading a removed blob and handle renames as removal plus addition.",
+    "Reject missing bases, invalid paths or modes, links, malformed changed documents and wrong project bindings by name; preserve all input and make no importer, ref or durable-store mutation.",
+    "Tests count task blob reads on at least 2,000 tasks with five modifications, one addition and one deletion, prove unchanged blobs stay unread, and cover no-op, rename, missing-base and malformed-input cases."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Land task-sync commit delta intake in combined task-sync candidate",
+    "completed_at": "2026-11-03T20:21:01.165246600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "81ac9d9f0a364ee784f789ae34e24b25": {
+        "activity_id": "81ac9d9f0a364ee784f789ae34e24b25",
+        "task_id": "01a1a23f-79ac-7c73-90bb-ac1ba95023a4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "763435c9eb43463e9bbd85b81671adc0"
+      },
+      "d62c81f0b9bd46038e01c7cfe998159a": {
+        "activity_id": "d62c81f0b9bd46038e01c7cfe998159a",
+        "task_id": "01a1a23f-79ac-7c73-90bb-ac1ba95023a4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "81ac9d9f0a364ee784f789ae34e24b25"
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "id": "01a1c72e-7f2c-77b2-9b53-0d4cbabf0b12",
+  "external_ref": null,
+  "title": "Repair sync custody observation, retired proof credit and push rejection admission",
+  "outcome": "Sync writers avoid Git under SQL locks, retired imported proof cannot carry completion, and uncertain pushes cannot be reconciled as recorded rejections.",
+  "acceptance": [
+    "Abandoned-carrier Git and data-worktree observations run outside the SQL writer under existing reservations; writer admission compares captured canonical and retained facts and refuses changes without weakening pin, lineage, uncertainty or recovery guards.",
+    "A retired imported consumption cannot carry a criterion through an older unrelated native pass. A native replacement obeys shared obligation, source, kind/pin and current-result rules after the required trigger/import positions and becomes the carrier; ordinary historical bindings and original bytes are preserved.",
+    "Legacy and delta non-fast-forward resolution and stop require the current start's canonical recorded rejection; interrupted started-but-unknown dispatch refuses while an actual recorded rejection remains usable within the retry budget.",
+    "Meaningful focused regressions cover the writer-lock boundary with a second SQLite writer at actual Git queries, no-root retired credit with older and newer native checks, and unknown-start versus recorded-rejection admission. A complete handoff preserves exact source, patch and native check results/counts without changing the frozen parent."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Move abandoned-carrier Git checks outside SQLite writer transactions, require a current native proof after retired imported consumption, and reconcile non-fast-forward only after canonical push rejection. Delivered exact Opus fixture carry on da88414b; four focused checks pass and independent evaluation passes4/4.",
+    "completed_at": "2026-11-11T05:44:27.321597900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "01f731b5cbb340ac8619d2c4a5cb61b1": {
+        "activity_id": "01f731b5cbb340ac8619d2c4a5cb61b1",
+        "task_id": "01a1c72e-7f2c-77b2-9b53-0d4cbabf0b12",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "93e39a8256d64500b104a94c7a5e6442"
+      },
+      "8071d75ae88946ccacb47f4d507d1a6d": {
+        "activity_id": "8071d75ae88946ccacb47f4d507d1a6d",
+        "task_id": "01a1c72e-7f2c-77b2-9b53-0d4cbabf0b12",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8071d75ae88946ccacb47f4d507d1a6d"
+      },
+      "94225ebf8f2b4b0e88bc31680be82284": {
+        "activity_id": "94225ebf8f2b4b0e88bc31680be82284",
+        "task_id": "01a1c72e-7f2c-77b2-9b53-0d4cbabf0b12",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "94225ebf8f2b4b0e88bc31680be82284"
+      }
+    }
+  }
+}

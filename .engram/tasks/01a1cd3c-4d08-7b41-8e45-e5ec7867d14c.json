@@ -1,0 +1,54 @@
+{
+  "id": "01a1cd3c-4d08-7b41-8e45-e5ec7867d14c",
+  "external_ref": null,
+  "title": "Give the host an authoritative committed-input eligibility read for the evaluation preflight, including remote results and judgment-only work",
+  "outcome": "Give the host an authoritative committed-input eligibility read for the evaluation preflight, including remote results and judgment-only work",
+  "acceptance": [
+    "Engram exposes a host-private read that tells the host whether the destination work's current run has an eligible committed-input test result for the exact judged commit. The read is bound to work, run, revision and cut, current claim and root. It applies Engram's existing currency, time and mutation rules through the existing owners (registered_commit_currency and completion's live obligation resolver), with no parallel eligibility logic. It counts genuine remote verification associations credited under w-180d6f507470 without fabricating a registered host run, and it works for items with no bound criterion. It distinguishes three outcomes: no qualifying result; incomplete, unknown or unsupported; and an actual newer non-pass.",
+    "The request and response shape is agreed with TermAl's K3 owner and recorded on this item before code, because the host protocol is TermAl's stability contract. Behavioural tests cover a credited local run, a credited remote focused run, judgment-only work, a newer non-pass, a stale or moved claim or root, and an unknown or incomplete remote result.",
+    "A newer terminal remote non-pass bars an older PASS inside the one owner that evaluate and this read share, so the newest terminal result decides, as it does locally: (a) its scope is the same item and claim association, the exact judged commit and check_kind test; (b) results are ordered by actual completion time (the remote finished_at, the local terminal time), never association time; (c) only a terminal remote FAIL or Interrupted newer than the PASS bars it, and a missing finished_at gives incomplete, never a silent pass and never a permanent veto; (d) Running and Unknown never veto; (e) those remote non-pass rows stay uncredited and are never minted as evidence, they only bar an older PASS. Behavioural tests cover each of (a) to (e).",
+    "The barred-pass rule applies to every selection path of that owner, including completion's live registered-obligation resolver, so done never resolves an obligation with a pass that a newer terminal non-pass bars. It applies across origins on the same item, claim, exact commit and check_kind test: a newer terminal remote FAIL or Interrupted bars an older local registered PASS, and a newer local registered FAIL bars an older remote PASS; the existing same-fingerprint newer-failure rule between local checks is unchanged. Behavioural tests cover each direction and the completion path."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "This delivers the committed-input eligibility read for the host, together with the shared-owner rule that the newest terminal test result decides.\n- Candidate: 3bf2ba2e547c210255593e387b40dc09dbfd4d4b, tree c23b86ee, parent 0bd70a30, carrying the w-180d content. Freeze 77606fa5. Not yet landed; it lands after w-180d.\n- The read: the new host operation committed_input_eligibility_read, capability committed_input_eligibility_read_v1.\n  - Inputs: binding, root, judged_commit and run_cut, with no criterion.\n  - Guards: verification_record_refused with a field, checked again after the root is measured outside SQLite, and coherent root facts are required.\n  - The scan bound is answered before any loading.\n  - Verdicts: eligible | no_qualifying_result | incomplete | newer_non_pass, with candidate rows and a tagged producer.\n- The rule, inside the one currency owner (registered_commit_currency classify_on and barred_on), shared by evaluate, completion's selection, replay and the read:\n  - A newer terminal remote FAIL, INTERRUPTED or debris bars an older pass, and is never minted.\n  - A newer registered failure bars an older remote pass. Between registered checks the existing rule is unchanged.\n  - Order is by completion time; ties never bar; failures after the cut are counted. Running and Unknown never veto.\n  - A missing finish time is unordered unless the pass postdates the terminal-carrying association.\n- Docs: execution-observability.md and shipped.md.\n- Validation: fail-first red 10c44b71. Green on DL560: clippy, remote_verification 69/69 and registered_verification 105/105 on 3bf2ba2e; acceptance_evaluation 257/257, completion 269/269 and host 61/61 on db54d3c2.\n- Reviews: three rounds; the latest is clean, and the round-2 Medium was resolved by evidence plus a regression test.\n- Evaluation: an independent evaluation passed all 4 criteria.\n- Shape: frozen with K3 (note b38bdfdb).\n- Preconditions for the Merger: re-count remote_verification_association rows on every live store before installing. K3 live delivery waits for this to be installed. Fable #4097 orders the landings as sync, w-180d, this, then w-9fcb; 11330 re-cuts w-9fcb on top of this and moves its legacy fixtures.",
+    "completed_at": "2026-11-12T05:57:16.421689Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "dfc25f37a813448887f728282dc24539": {
+        "activity_id": "dfc25f37a813448887f728282dc24539",
+        "task_id": "01a1cd3c-4d08-7b41-8e45-e5ec7867d14c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3a1a7985d4ea49e8b5e1b186055db4ac"
+      }
+    }
+  }
+}

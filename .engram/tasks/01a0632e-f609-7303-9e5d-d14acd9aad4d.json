@@ -1,0 +1,59 @@
+{
+  "id": "01a0632e-f609-7303-9e5d-d14acd9aad4d",
+  "external_ref": null,
+  "title": "Beads remnants steered a fresh Phoenix session (bd-prime hook + beads skill): removed hook and skill in both repos, pre-release discipline moved into instruction files; Phoenix side rides t...",
+  "outcome": "Beads remnants steered a fresh Phoenix session (bd-prime hook + beads skill): removed hook and skill in both repos, pre-release discipline moved into instruction files; Phoenix side rides t...",
+  "acceptance": [
+    "Beads remnants steered a fresh Phoenix session (bd-prime hook + beads skill): removed hook and skill in both repos, pre-release discipline moved into instruction files; Phoenix side rides t..."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Beads hooks, skills, .beads directories, and instruction text removed from Engram and Phoenix; archives kept",
+    "completed_at": "2026-09-03T00:07:56.550461800Z",
+    "actor": {
+      "actor_id": "fable",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5bb26da47161b5a17faaced6cf4cb3c1aa354e85211b7669f86a35ef85a1e0c6": {
+        "activity_id": "5bb26da47161b5a17faaced6cf4cb3c1aa354e85211b7669f86a35ef85a1e0c6",
+        "task_id": "01a0632e-f609-7303-9e5d-d14acd9aad4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "aef30a30d06e17f804f0dc17c1ec8cba58f1c216d1667d3f23ad7a5feb45c83a"
+      },
+      "836014748721dfe9ed9d49b07ddfbe9e910b09f65dc480f34ea3ef25244f2f8c": {
+        "activity_id": "836014748721dfe9ed9d49b07ddfbe9e910b09f65dc480f34ea3ef25244f2f8c",
+        "task_id": "01a0632e-f609-7303-9e5d-d14acd9aad4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b881f7864ca31d5dfa521b81886dad2146f00d9b4e11c861a15447f6811073b0"
+      }
+    }
+  }
+}

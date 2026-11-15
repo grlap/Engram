@@ -1,0 +1,141 @@
+{
+  "id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "external_ref": null,
+  "title": "Move task-sync exchange to a dedicated orphan data branch and data worktree, off the code branch",
+  "outcome": "Move task-sync exchange to a dedicated orphan data branch and data worktree, off the code branch",
+  "acceptance": [
+    "Task-sync export, import and merge read and write `.engram/` data only in a dedicated data worktree on one long-lived orphan data branch per project; no code-branch commit, code worktree or code source_id contains or changes because of exported task or evidence data.",
+    "Concurrent hosts exchange through fetch, Engram's merge and a fast-forward commit on the data branch; a rejected push is resolved without force, rebase or history rewrite, shown by a behavior test with two local clones of a bare remote under target/.",
+    "The existing ledger, reducer, proportional delta, origin enrollment and evidence pack formats are reused unchanged in meaning; the binding targets the data branch, Git delta reading uses the data branch's commits, and the code no longer implements or requires the linked-worktree sparse-checkout contract; bringing the remaining repository design docs in line is tracked by w-5f56184f72c1.",
+    "docs/features/git-task-sync.md, task-planning-text.md, spec.md and shipped.md describe the data-branch design, and the w-09c87a312e95 evidence design is noted as living on the data branch."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1c62b-4894-7d63-9972-a06f7ea6c534",
+    "01a1c62d-3929-7850-bf0a-b8b1dd220685"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Moved task-sync task text and evidence exchange to a dedicated orphan data branch and MAIN/.engram-data worktree, preserving host-local authority and existing ledger/reducer/evidence formats. Landed exact AACB and completed installed release cutover on all six Central and both DL560 live stores; actual repair/readiness receipts and installed pins qualified. Independent evaluation e2af549062724a0790bf69ad99153f85 remains fresh 4/4 at revision49. Wider design-document cleanup remains w-5f56184f72c1.",
+    "completed_at": "2026-11-12T21:20:33.114793600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "02b64a6d65284371a13a13ebeacbb392": {
+        "activity_id": "02b64a6d65284371a13a13ebeacbb392",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "02b64a6d65284371a13a13ebeacbb392"
+      },
+      "55532e6407b74d8fb29bb169e0be33d5": {
+        "activity_id": "55532e6407b74d8fb29bb169e0be33d5",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "55532e6407b74d8fb29bb169e0be33d5"
+      },
+      "67f745c4aa28415d8331b1e64d2293d3": {
+        "activity_id": "67f745c4aa28415d8331b1e64d2293d3",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "67f745c4aa28415d8331b1e64d2293d3"
+      },
+      "721f60ed217e47f086615a7c8969d161": {
+        "activity_id": "721f60ed217e47f086615a7c8969d161",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "721f60ed217e47f086615a7c8969d161"
+      },
+      "85653c79ef47475cbeae7b05fc00e07d": {
+        "activity_id": "85653c79ef47475cbeae7b05fc00e07d",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "799e2e5945774b7c9e4bc7678895abbd"
+      },
+      "97170cc9fa21477390500e44cff07db3": {
+        "activity_id": "97170cc9fa21477390500e44cff07db3",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "97170cc9fa21477390500e44cff07db3"
+      },
+      "c45b7a7eb73d4d82b0f695dd12a56914": {
+        "activity_id": "c45b7a7eb73d4d82b0f695dd12a56914",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c45b7a7eb73d4d82b0f695dd12a56914"
+      },
+      "f6f2226270794f2eb6910e8f7d98d0b5": {
+        "activity_id": "f6f2226270794f2eb6910e8f7d98d0b5",
+        "task_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f6f2226270794f2eb6910e8f7d98d0b5"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a0653f-3026-74f3-91e3-3dbcc6cd9c54",
+  "external_ref": null,
+  "title": "Decide and preserve expired handoff audit semantics on completion recovery",
+  "outcome": "Typed completion recovery has an explicit, tested contract for expired handoff projection and audit events.",
+  "acceptance": [
+    "A completion recovery combined with an expired handoff either durably records expiry or explicitly documents and tests side-effect-free rollback"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Proved expired handoff sweep changes roll back on completion refusal, then audit exactly once on the next successful mutation; documented the transactional consequence.",
+    "completed_at": "2026-09-03T22:53:57.282056500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e5775631400dbf78a510a004b061845c5c6cd6510416d01d4444ccf72bf62749": {
+        "activity_id": "e5775631400dbf78a510a004b061845c5c6cd6510416d01d4444ccf72bf62749",
+        "task_id": "01a0653f-3026-74f3-91e3-3dbcc6cd9c54",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5d7b2062c3984478337b4008fc438f392bcc1b3fefac8c04bfbf5dfb1943fe32"
+      }
+    }
+  }
+}

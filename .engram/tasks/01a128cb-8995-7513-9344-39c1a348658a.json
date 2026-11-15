@@ -1,0 +1,28 @@
+{
+  "id": "01a128cb-8995-7513-9344-39c1a348658a",
+  "external_ref": null,
+  "title": "Plan a reversible observe-only control mode that keeps ordinary turns out of control admission",
+  "outcome": "Plan a reversible observe-only control mode that keeps ordinary turns out of control admission",
+  "acceptance": [
+    "A design note covers: today's advisory/turn_gated/action_gated behaviour on both Engram and TermAl sides; the pass-through contract (turns not withheld, diagnostics and evidence retained, what is lost); the narrow hard-blocking cases or none, with justification; the mode switch owner, knob, reversibility and in-flight grant handling; and migration and validation scope including whether a store-format change is needed",
+    "Both coordinators (Engram::Fable and Termal::Fable2) have reviewed the plan and it has been sent to Engram::Advisor for Greg's decision; no global runtime configuration is changed before that decision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Overtaken on Greg's word (Asistant #239): gating was removed rather than switched to an observe-only mode, so no mode plan is needed.",
+  "completion": null
+}

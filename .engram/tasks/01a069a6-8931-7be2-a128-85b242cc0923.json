@@ -1,0 +1,51 @@
+{
+  "id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "external_ref": null,
+  "title": "Plan intake: WorkSourceSnapshot import preview/apply with stable source-key lookup",
+  "outcome": "An external planner's item becomes local work citing an immutable source snapshot and is found again by its source key; a refresh is a new snapshot and an immutable source-change notice, never a mirror",
+  "acceptance": [
+    "A second snapshot for the same key lands as a new snapshot plus an immutable source-change notice with a typed receipt",
+    "A typed lookup or ls --search finds the item by source key and reports the snapshot it cites",
+    "engram import preview/apply admit a WorkSourceSnapshot with a stable source key and bounded raw{} data as one work item with origin imported and source_snapshot_id"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-3b3f-7332-8345-4557c3a9cc0d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit FILE source intake preview/apply and stable-key lookup. Creation requires authored local work and cites an immutable source snapshot; refresh appends an immutable source-change notice and typed receipt without mirroring local state or offering accept-proposal. Bounded selected-capture validation, full doctor/export closure, graph recovery, attribution retry, safe navigation and input bounds are covered by passing Rust and CLI/MCP regressions. All nine final gates passed; Fable independently accepted freeze539037a9. All28 required children completed. Criterion and outcome were revised before sealing under design ratification1565; completion changes no criterion. Git packaging, approval and installation remain outside this completion.",
+    "completed_at": "2026-09-08T08:01:03.686479900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f4cb83588aabd5213185eeb4cd293ef0e5e30cd7bccabee2c09d34e8b4705805": {
+        "activity_id": "f4cb83588aabd5213185eeb4cd293ef0e5e30cd7bccabee2c09d34e8b4705805",
+        "task_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1ce445615e86c907d1437de0a38672c37e5eabff05d5e957ded2703c3959e397"
+      }
+    }
+  }
+}

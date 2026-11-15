@@ -1,0 +1,29 @@
+{
+  "id": "01a1d68a-373d-7252-97f4-17f9ac5db73c",
+  "external_ref": null,
+  "title": "Keep a child's planning edit admissible when its parent's reparent is refused",
+  "outcome": "A refused unsupported parent move keeps current roots for existing descendants, allowing their independent planning edits to apply.",
+  "acceptance": [
+    "A folder that requests an unsupported reparent of existing T under another root and only a title edit of existing child C refuses T while applying C's title; C retains its current root",
+    "Dry run predicts the same per-task results without writing, and additions still use their admitted incoming roots",
+    "A behavioral regression fails on the mixed-graph expected-roots bug"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

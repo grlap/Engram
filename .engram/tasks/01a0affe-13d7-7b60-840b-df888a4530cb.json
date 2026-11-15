@@ -1,0 +1,53 @@
+{
+  "id": "01a0affe-13d7-7b60-840b-df888a4530cb",
+  "external_ref": null,
+  "title": "MCP update refuses a supplied evaluation_mode on other actions before effects",
+  "outcome": "A supplied evaluation_mode reaches the store only through the evaluation_mode action; any other action refuses it up front instead of silently ignoring it, and the evaluate test pins the exact completed-work refusal",
+  "acceptance": [
+    "the Note assertion in the verbs evaluate tests that accepted any non-unknown-mode error is tightened to the intended completed-work refusal",
+    "the mcp-dogfood suite passes an MCP regression in which update with action revise and a supplied evaluation_mode (blank and valid) is refused with invalid_argument before any effect, with the item revision, project feed, and focus unchanged, while update with action evaluation_mode still pins and clears"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round10"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "MCP update refuses a supplied evaluation_mode on any action other than evaluation_mode with invalid_argument before effects; the mcp-dogfood evaluated-policy test pins the valid and blank misroutes (show and focus unchanged) and the pin/clear positives through the CLI show text; the evaluate-word test's completed-work assertion is tightened to the exact COMPLETED_WORK_LATE_FINDING_REFUSAL. RED logs/38b, GREEN logs/39c and 39d; final sequence logs/42 all pass. Documented in matrix row B49.",
+    "completed_at": "2026-09-17T16:02:07.733255Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "661a949965ec9cb174d9f4ad19773a4ef90abc1910bac3853889171862cbcc3b": {
+        "activity_id": "661a949965ec9cb174d9f4ad19773a4ef90abc1910bac3853889171862cbcc3b",
+        "task_id": "01a0affe-13d7-7b60-840b-df888a4530cb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "65aaa474e49e7b01eb2da2816748c2fa8843b2c68abe0c485badcbe4d627d591"
+      }
+    }
+  }
+}

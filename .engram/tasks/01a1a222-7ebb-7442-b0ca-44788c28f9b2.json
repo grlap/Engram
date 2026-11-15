@@ -1,0 +1,77 @@
+{
+  "id": "01a1a222-7ebb-7442-b0ca-44788c28f9b2",
+  "external_ref": null,
+  "title": "Split src/storage/work/planning.rs by concern (normalization, authority, persistence, contributors) without changing planning behaviour",
+  "outcome": "Split src/storage/work/planning.rs by concern (normalization, authority, persistence, contributors) without changing planning behaviour",
+  "acceptance": [
+    "src/storage/work/planning.rs is split into child modules under src/storage/work/planning/ (normalization, authority, persistence, contributors), keeping creation, revision and decomposition orchestration and the existing plan, relations and detach modules in place, with existing helper paths preserved through scoped re-exports",
+    "Planning authority, budgets, persistence ordering and every existing test case and result are unchanged, shown by before/after test-name parity",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "file-split",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split src/storage/work/planning.rs into authority, contributors, normalization, and persistence modules; preserved existing planning behavior and helper paths, with test-name parity and full-gate evidence. Fast-forwarded and pushed to origin/master, installed from the landed commit, and confirmed all six live stores ready. No TermAl restart was performed.",
+    "completed_at": "2026-11-03T18:43:29.170198900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7644955f510b4922b4b9ddfc7c5be92b": {
+        "activity_id": "7644955f510b4922b4b9ddfc7c5be92b",
+        "task_id": "01a1a222-7ebb-7442-b0ca-44788c28f9b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "cd685616aabe45e39433a397b04eb491"
+      },
+      "cd685616aabe45e39433a397b04eb491": {
+        "activity_id": "cd685616aabe45e39433a397b04eb491",
+        "task_id": "01a1a222-7ebb-7442-b0ca-44788c28f9b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "af5622758d58462ea8511186db0f1f1e"
+      },
+      "fe379cdfd10748feb2cbb278b68553e3": {
+        "activity_id": "fe379cdfd10748feb2cbb278b68553e3",
+        "task_id": "01a1a222-7ebb-7442-b0ca-44788c28f9b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "978a08e7edbc4159856c43d41a97f46d"
+      }
+    }
+  }
+}

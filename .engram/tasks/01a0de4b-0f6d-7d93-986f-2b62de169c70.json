@@ -1,0 +1,52 @@
+{
+  "id": "01a0de4b-0f6d-7d93-986f-2b62de169c70",
+  "external_ref": null,
+  "title": "A source change that leaves the revision unchanged neither voids an evaluation nor opens a tests obligation",
+  "outcome": "A source change that leaves the revision unchanged neither voids an evaluation nor opens a tests obligation",
+  "acceptance": [
+    "A source_changed observation whose source revision equals the last revision recorded on the run neither voids an acceptance evaluation at write time nor makes it stale at done",
+    "Such an observation does not open a \"tests have not run since your last source change\" obligation",
+    "Tests cover both, including a same-revision observation that arrives after an evaluation's evidence basis, and a changed revision that still voids and still opens the obligation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0de49-40ad-7850-99e4-203304a1503a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "At checkpoint ingestion the core now records source_changed as the host's flag AND NOT a repeated revision. A report repeats when its revision equals the revision of the run's newest recorded source change and no observation or environment evidence recorded since carries a different revision.\n\nEffect:\n- A same-revision report (the watcher case for git-ignored writes) no longer voids an evaluation, makes one stale at done, or opens a \"tests have not run\" obligation.\n- A new revision, a revert, or a return after a move still counts.\n- Stored observations keep the host's literal flag.\n\nDelivery:\n- Commit 75b3f16 on master, pushed.\n- Installed build a1e9f65dd6b9; both stores reported ready.\n- Eight tests in basis_moves.rs.\n- Seven review rounds; the last was clean from both reviewers.\n- The independent Codex evaluation (session-7788) passed all 3 criteria.",
+    "completed_at": "2026-09-26T17:47:05.316626700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9aaa4797ca16437ca66978e41e0a7337": {
+        "activity_id": "9aaa4797ca16437ca66978e41e0a7337",
+        "task_id": "01a0de4b-0f6d-7d93-986f-2b62de169c70",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b8a51b380a4441e0a2605adef2135177"
+      }
+    }
+  }
+}

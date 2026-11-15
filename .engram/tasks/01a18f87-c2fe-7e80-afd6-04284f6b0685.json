@@ -1,0 +1,29 @@
+{
+  "id": "01a18f87-c2fe-7e80-afd6-04284f6b0685",
+  "external_ref": null,
+  "title": "Let a writable open go ahead without the open lock when its sidecar cannot be opened, instead of refusing",
+  "outcome": "Let a writable open go ahead without the open lock when its sidecar cannot be opened, instead of refusing",
+  "acceptance": [
+    "A writable open whose `<store>.open-lock` sidecar cannot be opened for a reason other than the store directory being missing (for example a sidecar name past the file system's component length limit, or a transient Windows sharing or lock violation) either goes ahead without the lock or waits as a busy store, and is no longer refused outright as a file I/O error",
+    "A regression covers a store whose basename fits SQLite's sidecars but whose `.open-lock` name exceeds the component limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "reliability",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

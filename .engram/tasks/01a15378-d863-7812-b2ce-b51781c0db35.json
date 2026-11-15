@@ -1,0 +1,63 @@
+{
+  "id": "01a15378-d863-7812-b2ce-b51781c0db35",
+  "external_ref": null,
+  "title": "Launcher test-count summary reports incomplete-summary for a filtered cargo test run that completed 17/17",
+  "outcome": "Launcher test-count summary reports incomplete-summary for a filtered cargo test run that completed 17/17",
+  "acceptance": [
+    "A focused run of a filtered `cargo test --lib <filter>` whose log ends with a complete libtest summary (e.g. 17 passed, 0 ignored, N filtered out) reports that count instead of executed=unknown/incomplete-summary, including when the log contains nested 'running 1 test' announcements",
+    "A launcher test pins this with a fixture log of that shape"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "launcher",
+    "test-launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Direct filtered cargo test now uses Cargo target framing, preserving the complete outer 17-pass summary despite nested running-1 announcements. Real subprocess fixtures pin the count and strict incomplete/quiet/error behavior. Landed in Batch D bf6772a; independent evaluation83fac4fb recorded2/2pass on identical private landed source.",
+    "completed_at": "2026-10-19T21:25:09.393584100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b5b236c220dd4d8691727df44050d6df": {
+        "activity_id": "b5b236c220dd4d8691727df44050d6df",
+        "task_id": "01a15378-d863-7812-b2ce-b51781c0db35",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8b6a825877f642e193b264eb2835c692"
+      },
+      "d5893e7ef80c44c9828a109e862a298a": {
+        "activity_id": "d5893e7ef80c44c9828a109e862a298a",
+        "task_id": "01a15378-d863-7812-b2ce-b51781c0db35",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d5893e7ef80c44c9828a109e862a298a"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a1c708-8e97-7fb1-b339-d34d13853824",
+  "external_ref": null,
+  "title": "Stop reporting stored evaluations that done cannot consume as fresh in show and next JSON",
+  "outcome": "Stop reporting stored evaluations that done cannot consume as fresh in show and next JSON",
+  "acceptance": [
+    "For a stored content-fingerprint evaluation under the source-freshness policy, and for a stored git-tree evaluation with freshness off, the show and next JSON no longer present the evaluation as fresh and checked at done when done would refuse it; a behaviour test covers both cases."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0e952-4622-7721-9bd7-45023fd56257",
+  "external_ref": null,
+  "title": "done and evaluate receipts surface open obligations before the evaluation is requested, so an agent waives or satisfies them first instead of losing an evaluation to a later obligation resolution",
+  "outcome": "done and evaluate receipts surface open obligations before the evaluation is requested, so an agent waives or satisfies them first instead of losing an evaluation to a later obligation resolution",
+  "acceptance": [
+    "When an item under an evaluated policy has open obligations, the surfaces read before an evaluation is requested (held-item `next` and `show`, and the structured facts the host's evaluation request reads from `show --json`) and the `evaluate` receipt name each bounded open obligation by an agent-safe distinguishing label with its check kind and its actual remedy, give the exact open total and the omitted-open count, and say that a waiver or satisfaction recorded after the evaluation's basis voids that evaluation; stock obligations that `done` waives by itself are named as needing no action before evaluation; recording is never refused and the warning survives the minimal receipt under tight budgets",
+    "`next` and `show` on a held item list open obligations ahead of the evaluate/done guidance, in dependency order (obligations, then evaluation, then done), and the mcp-dogfood suite covers an item with an open obligation evaluated before its explicit waiver (the evaluation goes stale, a fresh one seals) and after it (waiver-first order seals), plus a stock source-change obligation that `done` waives without voiding the evaluation",
+    "docs/features/acceptance-evaluation.md states the order, and the memory evaluation-order-waive-then-evaluate is removed once the receipt guidance ships, as Greg's retired-memories rule asks"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shipped evaluated-completion obligation guidance, bounded agent receipts, tests and documentation; retired the interim memory",
+    "completed_at": "2026-09-29T17:10:16.026774600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0c8c772bd1804d029cd9d8a92f28ede5": {
+        "activity_id": "0c8c772bd1804d029cd9d8a92f28ede5",
+        "task_id": "01a0e952-4622-7721-9bd7-45023fd56257",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3ea9731c4cde44a8aea202d5549fe33d"
+      }
+    }
+  }
+}

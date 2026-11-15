@@ -1,0 +1,28 @@
+{
+  "id": "01a0f8e6-8ac1-7162-98e4-c1370c2d4342",
+  "external_ref": null,
+  "title": "The title-placeholder rule is stated and tested for a list revised away and back",
+  "outcome": "The title-placeholder rule is stated and tested for a list revised away and back",
+  "acceptance": [
+    "The docs and test comments state the placeholder rule as 'the current list equals the creation placeholder list', or the rule also requires that no revision changed acceptance; either way a test covers an item created with the placeholder, revised to another criterion, then revised back to '<title> is done'"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Fixed in scope by w-9f610f09f824's fix round: a revision away from the placeholder now clears the status for good, with a test and the docs stating the rule.",
+  "completion": null
+}

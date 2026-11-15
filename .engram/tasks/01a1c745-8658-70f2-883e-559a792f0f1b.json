@@ -1,0 +1,53 @@
+{
+  "id": "01a1c745-8658-70f2-883e-559a792f0f1b",
+  "external_ref": null,
+  "title": "Preserve native obligation dependencies in historical evidence exchange",
+  "outcome": "Valid native binding-obligation triggers and imported-consumption satisfaction evidence can be captured, transported and retained with exact typed original provenance.",
+  "acceptance": [
+    "Typed dependency inventory recognizes actual native binding WorkEvent triggers using the shared rule classification and admits ImportedConsumption satisfaction only in the valid decision context, while preserving observation-only source rules, registered-input evidence constraints and existing semantic validation.",
+    "Behavioral cases use actual native obligation and imported-consumption producers, then capture/export/encode/read/plan/retain their complete closure with unchanged original ids, kinds, bytes and origins; malformed or missing required dependency kinds refuse atomically, and foreign records remain inert.",
+    "The author records durable/projection impact and delivers a complete exact-source focused-check package from a separately claimed named worktree, preserving the parent freeze and the earlier disclosure candidate's pending checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Native binding obligation triggers and imported-consumption satisfaction preserve typed original dependencies through capture and evidence exchange, with rule and registered-input constraints intact.",
+    "completed_at": "2026-11-10T21:47:51.449778300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e621efdaa89d456494605c00fa628e96": {
+        "activity_id": "e621efdaa89d456494605c00fa628e96",
+        "task_id": "01a1c745-8658-70f2-883e-559a792f0f1b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "19cd74bc9849437c921af4e12eb1557b"
+      }
+    }
+  }
+}

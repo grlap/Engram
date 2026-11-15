@@ -1,0 +1,27 @@
+{
+  "id": "01a122fa-f99f-7630-bb8d-935cc33f126e",
+  "external_ref": null,
+  "title": "Cover quarantine of a capacity-dropped MCP request key",
+  "outcome": "Cover quarantine of a capacity-dropped MCP request key",
+  "acceptance": [
+    "A deterministic regression fills all tracking slots, drops request N, frees one slot, receives N again, starts the original handler first, and proves neither that handler nor dispatch consumes a replacement's precise tracking."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,65 @@
+{
+  "id": "01a18a53-623a-70a1-b7b4-d03600a0f710",
+  "external_ref": null,
+  "title": "Let a passing remote full gate count for landing once the integration owner records its run facts (test-ref sentence in AGENTS.md and CLAUDE.md)",
+  "outcome": "In AGENTS.md and CLAUDE.md, the test-ref bullet's import condition is replaced: a full gate run by the standard launcher on the exact test ref counts as the landing gate once the integration owner has recorded on the item the run id, host, commit, tree id and the launcher's before and after fingerprints from that run's results. So Central no longer reruns a gate that an equivalent host already passed.",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md stay byte-identical, and each contains exactly this sentence in the test-ref bullet, with no other change: \"A full gate run by the standard launcher on the exact test ref counts as the landing gate for that tree on any host, with the same weight as one run on Windows, when its results record the same fingerprint before and after and the integration owner has recorded on the item the run id, host, commit, tree id and the launcher's before and after fingerprints from that run's results; it gates only a landing whose master commit has that tree id, and until then it is evidence only.\"",
+    "Conditions (a), (b) and (c) of the authority rule hold before landing, plus Greg's recorded word on the widening: both coordinators' concurrence on the exact full sentence is quoted in this item's notes; the exact wording and its consequence were sent to Greg; the final-diff audit is recorded as passed",
+    "The link check and the AGENTS/CLAUDE identity check pass through the focused launcher on the exact landed tree, and the Codex and Claude review pair has no outstanding in-scope finding of Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "authority-text",
+    "greg-directed",
+    "remote-gates"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered exactly the concurred remote full-gate sentence in identical AGENTS.md/CLAUDE.md on master e56f7193/tree8aefa0a2. Both coordinators' concurrence, exact prior Greg notice/consequence, verbatimTAK widening and final-diff PASS audits recorded beforelanding; fullprovenancequoted956d0e2e1d7c4777808354a3e5e24ef3. Postlanding independent15490 attempt3 native96e01df83b0141c4bfc1e10b1c7453e6 cut218 all3PASS fresh, fullpacket+2107Boutputread; source approvals judgedfromholderquotes, no strongerassuranceclaimed. Exactlandedblobdiff/checks/reviewsequalverified. Binarybuiltfromcleancommitinstalled/readinessALL6/pushed/readbackrecorded6dc3dfece029429e9f8a76d8b04c7868. Remaining sharedroot and startupreview/fullrun artifacts retained for open723/knownTermAldiagnosticuses; sharedcleanup not complete.",
+    "completed_at": "2026-10-30T17:37:51.648835400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "00d39a5abb9943b59a840d793b92dd55": {
+        "activity_id": "00d39a5abb9943b59a840d793b92dd55",
+        "task_id": "01a18a53-623a-70a1-b7b4-d03600a0f710",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "2cf428bc1b7c462eb1eb6e3ad4ea6bdd"
+      },
+      "2d8f96a727914900809b7672fa5996c5": {
+        "activity_id": "2d8f96a727914900809b7672fa5996c5",
+        "task_id": "01a18a53-623a-70a1-b7b4-d03600a0f710",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c72e19d5d70e4d78818e281bf904bc9c"
+      }
+    }
+  }
+}

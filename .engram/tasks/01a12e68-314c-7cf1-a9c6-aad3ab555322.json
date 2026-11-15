@@ -1,0 +1,64 @@
+{
+  "id": "01a12e68-314c-7cf1-a9c6-aad3ab555322",
+  "external_ref": null,
+  "title": "Diagnostic test drain distinguishes timeout from injected writer loss",
+  "outcome": "Diagnostic test drain distinguishes timeout from injected writer loss",
+  "acceptance": [
+    "A completion drain requires one newly requested and acknowledged generation and an unchanged timeout counter; a false caused by timeout cannot satisfy an injected I/O or lock-loss assertion after a late acknowledgement",
+    "Deterministic tests cover late acknowledgement after timeout and early return without a new generation, while preserving production exit behavior and exact loss and retained-record assertions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Diagnostic test drains now reject timeouts after late acknowledgement and early returns without a new flush generation; deterministic regressions preserve exact loss and retained-record assertions.",
+    "completed_at": "2026-10-13T19:09:35.756197200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "aa5244e1c0d24acfbfcd4a968f08d8c3": {
+        "activity_id": "aa5244e1c0d24acfbfcd4a968f08d8c3",
+        "task_id": "01a12e68-314c-7cf1-a9c6-aad3ab555322",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "aa5244e1c0d24acfbfcd4a968f08d8c3"
+      },
+      "fc47f06297e14ee998ef688cd1bd0060": {
+        "activity_id": "fc47f06297e14ee998ef688cd1bd0060",
+        "task_id": "01a12e68-314c-7cf1-a9c6-aad3ab555322",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "13c6dfb2485d4fcb95480bf1f0140d9f"
+      }
+    }
+  }
+}

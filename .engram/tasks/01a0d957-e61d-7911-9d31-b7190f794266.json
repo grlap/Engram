@@ -1,0 +1,54 @@
+{
+  "id": "01a0d957-e61d-7911-9d31-b7190f794266",
+  "external_ref": null,
+  "title": "Remove the never-used parts of the turn gate from code and spec",
+  "outcome": "The turn gate's code and spec describe only what hosts use. This covers Greg's 25 Sep decision to remove what was designed but never used, and to cut turn permission's refusal set down to the codes it can produce.",
+  "acceptance": [
+    "Records already stored that name a removed code or phase still decode, as the pre-release rule requires",
+    "Spec §2.7 and behavioral-control-plane.md no longer present control_bootstrap, action_authorize, action_begin, action_complete, delivery_ack, session_heartbeat or session_exit as part of the gate; each is removed or plainly marked not built",
+    "TermAl is told which wire values disappear before the build is installed",
+    "The defer turn decision is removed, together with the phases storage never writes (checkpoint_required, recovery_open, handoff_pending, contribution_required, participant_ready) and the codes that depend only on them (CheckpointRequired, LifecycleHold, ParticipantNotReady). The codes the stored permission check never produces (control_unavailable, store_corrupt, control_policy_missing, action_outcome_unknown, missing_authority, lease_required, resource_remapped) are removed or each kept with a stated reason",
+    "The unwired pure action-start check in control.rs and the action-grant basis are removed, or kept with a stated reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The turn gate's code and spec now describe only what hosts use. Committed as 7af8e96 and pushed; installed as build 6e160087008d, with readiness reporting ready on both live stores.\nRemoved: the defer decision, ControlHealth, the phases storage never writes, the refusal codes no path produces, the Human directive target and HumanAuthority satisfaction, the unwired action-start check and the action-grant types.\nKept: lease_required, as a decode-only historical code.\nTurn start now checks the anchor before membership. A start refused with task_unbound or task_access_denied retires the issued grant.\nThe docs mark the seven operations no host calls as not built.\nTermAl confirmed the wire changes safe (mailbox #252) before the install. Seven review rounds; the final round-7 freeze 0f81326a was clean; gate test-c144553b passed 9/9. The independent evaluation (Codex, delegation-3c9ff250) passed all 5 criteria.",
+    "completed_at": "2026-09-26T03:33:46.364760800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "43012db269564cd0afe8c977278f0ade": {
+        "activity_id": "43012db269564cd0afe8c977278f0ade",
+        "task_id": "01a0d957-e61d-7911-9d31-b7190f794266",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3a90caece49c4f4484051de8549d5883"
+      }
+    }
+  }
+}

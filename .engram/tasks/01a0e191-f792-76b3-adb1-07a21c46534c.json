@@ -1,0 +1,61 @@
+{
+  "id": "01a0e191-f792-76b3-adb1-07a21c46534c",
+  "external_ref": null,
+  "title": "Coordinate TermAl migration from Beads with enforced evidence and acceptance evaluation",
+  "outcome": "Coordinate TermAl migration from Beads with enforced evidence and acceptance evaluation",
+  "acceptance": [
+    "All nonclosed TermAl Beads items and retained project memories are accounted for in a verified migration manifest, preserving authored content, hierarchy, dependencies and old-to-new references without fabricating execution claims or historical verification.",
+    "Report the migrated counts, configuration, live evidence, remaining limitations and archive location to Greg; do not report cutover complete while a required host capability remains unavailable.",
+    "TermAl instructions, commands and hooks use Engram; local Beads data and integration are removed only after migration reconciliation and verification of the GitHub archive, under Greg's explicit deletion authorization.",
+    "TermAl's own Engram project has a confirmed store home and host configuration; live checks show host-observed test evidence on the actual task worktree, independent acceptance evaluation and source freshness, and completion refusal for missing, failed or stale required evidence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "coordination",
+    "migration"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0e4c3-d1ce-7b82-a987-d9d85d42c6ac"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "22fa69dbe194459db61887bf1c777a1d": {
+        "activity_id": "22fa69dbe194459db61887bf1c777a1d",
+        "task_id": "01a0e191-f792-76b3-adb1-07a21c46534c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "22fa69dbe194459db61887bf1c777a1d"
+      },
+      "6383795cf0dc431d9bb31d8deba68f11": {
+        "activity_id": "6383795cf0dc431d9bb31d8deba68f11",
+        "task_id": "01a0e191-f792-76b3-adb1-07a21c46534c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "889ecd0a368846448459b2e28066f242"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0641b-424c-7cc1-b2e4-c3cf75de300c",
+  "external_ref": null,
+  "title": "Bound completion retry freshness by compact barrier revisions",
+  "outcome": "Keyless completion retries change only when completion-relevant state changes and do not decode retained child or obligation history.",
+  "acceptance": [
+    "Completion retry freshness reads a canonically auditable compact barrier state in bounded work.",
+    "Scale coverage includes 128 sealed or waived required children and accumulated resolved obligations without history-linear decode growth."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06404-1420-7d51-bd1e-4522802e9797",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Replaced history-linear completion retry discrimination with compact, canonically auditable barrier revisions for required children, obligations, contributors, and mediated item projection state; retained authoritative completion validation and stable evidence capture.",
+    "completed_at": "2026-09-03T01:13:16.086329Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "23f8387da7b615fda13be0733381e8d25f9a1fac610f747dc260f6128bf389d2": {
+        "activity_id": "23f8387da7b615fda13be0733381e8d25f9a1fac610f747dc260f6128bf389d2",
+        "task_id": "01a0641b-424c-7cc1-b2e4-c3cf75de300c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "35bad0549b8dc57648283cf21e19ab4be86141d51710f8c03ac190d0c2d1f701"
+      }
+    }
+  }
+}

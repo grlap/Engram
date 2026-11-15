@@ -1,0 +1,53 @@
+{
+  "id": "01a0fd62-c0bf-74c2-ab84-22617bac2728",
+  "external_ref": null,
+  "title": "On macOS, setting a backup target right after an earlier set can be refused as backup_push_running",
+  "outcome": "On macOS, setting a backup target right after an earlier set can be refused as backup_push_running",
+  "acceptance": [
+    "A Unix regression test deterministically holds a child before exec after it inherits the push lock's file. After the parent releases its PushLock, a new independently opened holder acquires the lock while that child is still paused, and the child's later exit does not release the new holder. Current-run holder evidence records the Linux WSL Ubuntu command, source revisions and output showing this test fails without explicit unlock and passes with it using the installed toolchain. The test adds no acquisition retry.",
+    "A current-run holder note records the inherited-lock mechanism and source evidence from Linux glibc and macOS XNU showing spawn can copy close-on-exec descriptors before exec closes them. It includes the relevant source locations and excerpts for the evaluator, distinguishes source evidence from the Linux test result, and explicitly states that the original macOS CI occurrence was not reproduced.",
+    "PushLock explicitly unlocks before close, including Drop cleanup, and unlock errors are visibly reported rather than silently ignored. Its documentation states that an abnormal end before release may leave the lock held while an inherited child reference remains."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "PushLock now unlocks its file explicitly on Drop before it closes, so a child sharing the inherited lock file no longer keeps the lock. A failed unlock is reported on stderr without panicking, and the doc and brief explain abnormal ends and inherited references honestly. The Unix regression test is proved red and green under WSL Ubuntu, with WSL clippy clean. glibc and XNU source evidence is recorded; the macOS CI case was not reproduced. Landed ce97731; installed build 92381657….",
+    "completed_at": "2026-10-02T18:32:15.127332400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "738aa038d0f54138af1ce75f9236e752": {
+        "activity_id": "738aa038d0f54138af1ce75f9236e752",
+        "task_id": "01a0fd62-c0bf-74c2-ab84-22617bac2728",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "78d135c0e38b4074a681b9e4ac9a812e"
+      }
+    }
+  }
+}

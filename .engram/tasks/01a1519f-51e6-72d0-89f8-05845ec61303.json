@@ -1,0 +1,63 @@
+{
+  "id": "01a1519f-51e6-72d0-89f8-05845ec61303",
+  "external_ref": null,
+  "title": "Refresh the Engram presentation from current operator feedback",
+  "outcome": "docs/presentation.md reflects current shipped scope, observed workflow value, and qualified operating costs",
+  "acceptance": [
+    "Presentation claims about local scope, commands, review evidence, handoffs, and multi-host status match current feedback",
+    "Presentation uses dated current capacity figures and distinguishes Engram behaviour from TermAl workflow friction"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "documentation",
+    "presentation"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Presentation refresh committed and pushed as f40f5b7 on origin/docs/presentation-refresh-05845. Acceptance evaluation d8dfc1b2f38a492bbc853ed80d7694da passed both criteria; final docs checks and two-vendor review are recorded on the item.",
+    "completed_at": "2026-10-19T03:21:08.558649300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e885838f433e4c0a8323b0144da59076": {
+        "activity_id": "e885838f433e4c0a8323b0144da59076",
+        "task_id": "01a1519f-51e6-72d0-89f8-05845ec61303",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bc98608ced5b476698c89547b35948d8"
+      },
+      "edc6863f72ee4a5994ae038d31e423d0": {
+        "activity_id": "edc6863f72ee4a5994ae038d31e423d0",
+        "task_id": "01a1519f-51e6-72d0-89f8-05845ec61303",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "edc6863f72ee4a5994ae038d31e423d0"
+      }
+    }
+  }
+}

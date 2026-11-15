@@ -1,0 +1,52 @@
+{
+  "id": "01a11144-1e01-79e2-af68-1334bf37d97e",
+  "external_ref": null,
+  "title": "acceptance-evaluation-lifecycle.md says consumption maps movement after the cut to stale mutation only, omitting unadmitted_change",
+  "outcome": "The lifecycle document's \"Movement after the evaluated cut\" row says consumption maps movement to stale `mutation`, or `unadmitted_change` when an accounted change the host observed without admission decided it, matching acceptance-evaluation.md and the runtime receipt",
+  "acceptance": [
+    "docs/features/acceptance-evaluation-lifecycle.md's \"Movement after the evaluated cut\" row names both stale reasons, `mutation` and `unadmitted_change`, with the unadmitted case described as an accounted change the host observed without admission; the Rebound row keeps `mutation`",
+    "The doc link check and the AGENTS/CLAUDE identity check pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented mutation and accounted unadmitted_change after the evaluated cut while retaining rebound mutation.",
+    "completed_at": "2026-10-09T03:05:35.688878800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8bf55197cf0242b3b6e52d5b8f50e092": {
+        "activity_id": "8bf55197cf0242b3b6e52d5b8f50e092",
+        "task_id": "01a11144-1e01-79e2-af68-1334bf37d97e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2fbda3f5cbae461c9f55b4cf8e55fc24"
+      }
+    }
+  }
+}

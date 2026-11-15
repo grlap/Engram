@@ -1,0 +1,50 @@
+{
+  "id": "01a12d09-88a0-7f22-8efa-1ea5b8adf66a",
+  "external_ref": null,
+  "title": "Refuse a non-directory .engram path during task sync setup preparation",
+  "outcome": "Refuse a non-directory .engram path during task sync setup preparation",
+  "acceptance": [
+    "Owned fixtures prove setup preparation refuses a regular file at .engram, including indexed or retained HEAD occupancy, without changing its bytes, index, private intent or SQLite"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Task-sync setup preparation now refuses a non-directory at .engram, and a .engram entry (case-insensitive) in the Git index or HEAD, before any private intent, lock or store is touched.\n- Before: Windows admitted a regular .engram file, because the reserved-path probes beneath it returned NotFound, and went on to write the intent and lock. Every OS admitted an index or HEAD-only .engram entry. A .engram directory is still admitted.\n- Change: src/bin_support/task_sync/setup/repository.rs +18; a new three-case test in tests/task_sync_setup_cli.rs (+35) covering a file on disk, an indexed then deleted file, and a HEAD-only file. Each case asserts the bytes or absence, an unchanged index, and no intent, lock or store home.\n- Validation:\n  - Vacuity 3/3.\n  - Windows task_sync_setup_cli 36/36; Linux (WSL) 29/29; clippy clean on both.\n  - Reviews: three clean rounds (the last Codex 12310 and Claude 12311 on the final freeze).\n  - Full gate test-683b6cca 12/12 on freeze 7d0e0f46 (host verification 74b32a07).\n  - Evaluation 079b2d82 passed.\n  - Readiness: ready on all 4 live stores.\n- Landed 134b116; installed build 62c89c0f0172, sha256 c83b0938; backup engram-20261013T014802Z-054353f49451.exe.",
+    "completed_at": "2026-10-13T01:48:14.009633600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "56b00a2dc7ac4f1ca0d4808f01188f74": {
+        "activity_id": "56b00a2dc7ac4f1ca0d4808f01188f74",
+        "task_id": "01a12d09-88a0-7f22-8efa-1ea5b8adf66a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "11462a0fb652458ebce48bad4325f73c"
+      }
+    }
+  }
+}

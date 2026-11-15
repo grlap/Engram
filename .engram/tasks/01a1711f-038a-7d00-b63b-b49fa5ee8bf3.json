@@ -1,0 +1,30 @@
+{
+  "id": "01a1711f-038a-7d00-b63b-b49fa5ee8bf3",
+  "external_ref": null,
+  "title": "Provide supported recovery when a deleted host session leaves an unexpired work claim",
+  "outcome": "Provide supported recovery when a deleted host session leaves an unexpired work claim",
+  "acceptance": [
+    "A replacement executor can resolve an orphaned unexpired claim through an explicitly authorized, audited supported path without impersonating its former holder, editing SQLite, or waiting for its original TTL.",
+    "Recovery preserves work/run evidence, advances the claim fence, and rejects stale operations from the previous holder; ordinary competing live sessions cannot steal claims.",
+    "Document the host-session deletion and recovery boundary, including behavior when deletion or termination cannot be verified."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-work-lifecycle",
+    "host-integration",
+    "recovery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

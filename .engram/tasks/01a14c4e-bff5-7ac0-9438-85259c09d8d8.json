@@ -1,0 +1,138 @@
+{
+  "id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+  "external_ref": null,
+  "title": "Git-folder sync S1: folder export/import with the compact last-applied basis",
+  "outcome": "Git-folder sync S1: folder export/import with the compact last-applied basis",
+  "acceptance": [
+    "Export writes only onto a clean task subtree with no overwrite of local work and preserves baseline/export evidence; no transport, fetch or push",
+    "Import records one compact, recoverable last-applied complete-baseline result plus the export-time canonical shared-inventory fingerprint, in the same transaction as the applied changes; current authority/evidence generation guards are checked separately inside that transaction; the same input repeats as a no-op with no extra event (per D4.1: no generic revision/feed token)",
+    "A local edit after export refuses the import; a missing or partial baseline never deletes; no host-private state is mutated; a source-preserving local round trip passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a14c4e-9b7d-7052-89d4-2125fe212e48"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed Git-folder sync S1: folder export/import with compact last-applied baseline. Full gate and two-vendor reviews passed; independent acceptance evaluation 34015a1ac0354183bb7e3d4eb348bb74 passed 3/3. Clean release rebuild test-a8b44659-b056-4887-a939-78a597184588 passed at committed 0413e6202a29b10d8b9a67b1033387d46a6a973d. All six live stores were ready; the no-gap install completed, and installed readiness reports build fingerprint 6a5e9f8ca19430115f92aeee055530b7662c9b2c04fe0ca88507be3fa31988fb.",
+    "completed_at": "2026-10-19T06:38:10.111294900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "18c8e85d24dc4b40a1e895811f8a9aec": {
+        "activity_id": "18c8e85d24dc4b40a1e895811f8a9aec",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "18c8e85d24dc4b40a1e895811f8a9aec"
+      },
+      "1a8ab69ca50a4a9daab46af421f7553a": {
+        "activity_id": "1a8ab69ca50a4a9daab46af421f7553a",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1a8ab69ca50a4a9daab46af421f7553a"
+      },
+      "35bd96479a64439089b48013fdcb6249": {
+        "activity_id": "35bd96479a64439089b48013fdcb6249",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "35bd96479a64439089b48013fdcb6249"
+      },
+      "5817ee7d397b44cbb096ecdab837727e": {
+        "activity_id": "5817ee7d397b44cbb096ecdab837727e",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5817ee7d397b44cbb096ecdab837727e"
+      },
+      "60aedfabc2b74f22be3e7c28bb1e0a02": {
+        "activity_id": "60aedfabc2b74f22be3e7c28bb1e0a02",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "60aedfabc2b74f22be3e7c28bb1e0a02"
+      },
+      "bb85d514df6448c3a0d4b7de3be613e1": {
+        "activity_id": "bb85d514df6448c3a0d4b7de3be613e1",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f376077a45834f02b8e844b29002acbb"
+      },
+      "be94b6a5dda94770acf2733420f49d7a": {
+        "activity_id": "be94b6a5dda94770acf2733420f49d7a",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "be94b6a5dda94770acf2733420f49d7a"
+      },
+      "d29e6f2370e9423dba5b558114e6cb4f": {
+        "activity_id": "d29e6f2370e9423dba5b558114e6cb4f",
+        "task_id": "01a14c4e-bff5-7ac0-9438-85259c09d8d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d29e6f2370e9423dba5b558114e6cb4f"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a10eca-6b66-7f12-ae2e-37a24b8cccb3",
+  "external_ref": null,
+  "title": "Graph snapshot load admits an item with more prerequisites than the per-item bound",
+  "outcome": "Graph snapshot load admits an item with more prerequisites than the per-item bound",
+  "acceptance": [
+    "Either graph snapshot load refuses or reports, by name, an item whose prerequisite set exceeds MAX_WORK_PREREQUISITES_PER_ITEM, with a test, or the docs state that restore preserves historical sets above the bound and why, without refusing a store an older build wrote"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "planning",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Docs branch delivered, by the coordinator's ruling (never refuse a store an older build wrote; no new preview field): docs/features/atomic-work-plan.md, docs/features/local-work-system.md and docs/features/work-graph-snapshot.md state that the 1024 per-item prerequisite bound is an admission limit of the planning routes, not a stored invariant, so an item a graph restore or an older build admitted above it is restored as stored and only stops growing, because a recorded relation is preserved rather than dropped or refused and a store an older build wrote is never refused for it; graph load applies no per-item prerequisite bound (confirmed by both reviewers and the evaluator). Landed in the shared changeset with w-808cfe09c876 and w-987b34f92b57 as 7340a475c1ac9cc1c857bb5a0c04ddb2bae9307c on origin master (fast-forward from 73c0f8d, pushed 2026-10-06T05:53:51Z); round-2 pair clean of Medium or higher on freeze 5d82c31f…; full gate test-6b8532a2 9/9 with the doc link check; evaluation 31d70fad0a5f446f93e70a7b22594fb4 passed; readiness ready on all four live stores; installed build c1f7f82e2853 (exe 29ec899ee953…), previous exe backed up as engram-20261006T055332Z-ca8a56871983.exe.",
+    "completed_at": "2026-10-06T05:54:11.847446600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9daf75c54f2e4e429ff85ecbc94f7786": {
+        "activity_id": "9daf75c54f2e4e429ff85ecbc94f7786",
+        "task_id": "01a10eca-6b66-7f12-ae2e-37a24b8cccb3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "012bef4b4d8648c08bd72230dbb5139a"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1b14c-bbdd-7d61-a730-285343b3b5a9",
+  "external_ref": null,
+  "title": "Test the launcher's ~/.cargo/bin/engram default when CARGO_HOME is unset",
+  "outcome": "Test the launcher's ~/.cargo/bin/engram default when CARGO_HOME is unset",
+  "acceptance": [
+    "A launcher test asserts that sourceBinaryPath, with an environment containing neither ENGRAM_SOURCE_BINARY nor CARGO_HOME, equals resolve(homedir(), '.cargo', 'bin', <platform executable name>)",
+    "The assertion uses the runtime home directory and writes nothing outside the owned repository",
+    "A focused launcher check passes on the input that adds the test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "launcher",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

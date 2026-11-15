@@ -1,0 +1,54 @@
+{
+  "id": "01a1c629-34b8-7e60-8a3a-d4d3e8dab17f",
+  "external_ref": null,
+  "title": "Keep evidence import refusals recoverable and admit exchanges after settled family outcomes",
+  "outcome": "Stale evidence input cannot strand later repository exchanges, and legacy incoming admission recognizes the shared settled-family contract.",
+  "acceptance": [
+    "A fresh public evidence-apply request with stale selected HEAD refuses without leaving an unrecoverable private recipe that blocks a corrected new exchange; exact retries and uncertainty/custody protections remain intact, including failures after private retention where applicable.",
+    "Legacy incoming preparation accepts otherwise valid requests after settled evidence success/refusal and other settled new-family outcomes using the common settlement predicate, while unresolved operations still refuse.",
+    "Behavioral regression checks cover public stale-input refusal/recovery and evidence outcome to fresh incoming preparation, with exact owned patch/base/tree and focused results recorded."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review-repair",
+    "sync"
+  ],
+  "assigned_to": "greg/claude",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the evidence-custody repair, final candidate 9cb7b50c1c8a612f231a85b5cbbc1fb1ee22234f (tree 8a676cb9, parent master 0bd70a30).\n- 12325 carried exactly the 10-path owned patch against 07973336 (sha256 18c7f4f6f1d94a74c61fc387af252a722f964431242c71ff3ae972e0f65c656d) into its staged parent tree b15d4e9c. It is uncommitted while required sibling w-8c94dd8080c5 is pending.\n- Behavior:\n  - A definite selected-head change ends an evidence request as the canonical known stop EvidenceStop::Refused { SelectionChanged } under the retained identities, whether the request is fresh or already retained, so neither its fetched carrier nor its recipe can strand custody.\n  - Legacy incoming preparation uses the common settled_tail predicate.\n- Focused evidence:\n  - the Windows evidence public-step test PASS on Central (test-36e1373b, 9cb7b50c);\n  - ledger::operations::checkpoint_tests 93/93 with 0 cleanup warnings on Windows B (test-08258876; those files are identical in 9cb7b50c).\n- Independent acceptance evaluation af1e702ca1b7463e8225875f849ee263 (Codex gpt-6.1-sol, session-17252): all 3 criteria pass.\n- Retained for the parent's combined review and FULL, per 12325 #141: worktree .worktrees/evidence-custody-d4d3-7284, the owned patches under target/transfers/w-d4d3/, and the author-test ref author-test/w-d4d3e8dab17f-9cb7b50c. The ref will be deleted once the possibly withdrawn FOCUSED-4 confirm is accounted for.",
+    "completed_at": "2026-11-10T18:16:53.591659Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f8efa84d22a9446284851072ba2098ed": {
+        "activity_id": "f8efa84d22a9446284851072ba2098ed",
+        "task_id": "01a1c629-34b8-7e60-8a3a-d4d3e8dab17f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d7f3ef94030d4bfb930e0e1b5b252881"
+      }
+    }
+  }
+}

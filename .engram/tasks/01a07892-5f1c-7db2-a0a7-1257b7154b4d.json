@@ -1,0 +1,61 @@
+{
+  "id": "01a07892-5f1c-7db2-a0a7-1257b7154b4d",
+  "external_ref": null,
+  "title": "Give pending rejection refusal an accurate conditional remedy",
+  "outcome": "Give pending rejection refusal an accurate conditional remedy",
+  "acceptance": [
+    "pending rejection process and service tests show conditional cancel and parent waiver without claiming a recorded rejection"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07846-7b64-7783-b00a-7ed3dda5ba18",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pending retry refusals distinguish child drift from unchanged-child execution-basis drift with accurate conditional or fresh-intent guidance; strict original basis retained. Service and CLI/MCP regressions, final gates and pair closure accepted; landed fba7824.",
+    "completed_at": "2026-09-07T04:27:11.369529300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "14cc8153611ecbcb26012d8e78c0d0953b9db9f6cbcd4a7da0d4bb39d610d27a": {
+        "activity_id": "14cc8153611ecbcb26012d8e78c0d0953b9db9f6cbcd4a7da0d4bb39d610d27a",
+        "task_id": "01a07892-5f1c-7db2-a0a7-1257b7154b4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "14cc8153611ecbcb26012d8e78c0d0953b9db9f6cbcd4a7da0d4bb39d610d27a"
+      },
+      "343f380213f0006c5b1c1e4d1d0731f1b19320d162f130f9b90631b320f8b96e": {
+        "activity_id": "343f380213f0006c5b1c1e4d1d0731f1b19320d162f130f9b90631b320f8b96e",
+        "task_id": "01a07892-5f1c-7db2-a0a7-1257b7154b4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c532e41c55473fb8e5d871ceffa9cadd90d377bfd8a6acb978ba975c028c4783"
+      }
+    }
+  }
+}

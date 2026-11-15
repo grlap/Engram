@@ -1,0 +1,51 @@
+{
+  "id": "01a0653f-3381-7522-9287-fd97ba5d0181",
+  "external_ref": null,
+  "title": "Cover concurrent completion basis refresh CAS outcomes",
+  "outcome": "Concurrent identical and conflicting pending completion basis refreshes have deterministic regression coverage.",
+  "acceptance": [
+    "Different-holder refresh conflicts without replacing the durable target basis",
+    "Two-connection tests cover changed-zero idempotent accept and conflict outcomes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added two-connection pending-completion basis refresh coverage for identical zero-row CAS acceptance and conflicting-target refusal with durable target preservation.",
+    "completed_at": "2026-09-03T22:53:55.347587Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "db185d7f2703ce64bab4e93c11e8132392e95ca094cb9216c6387bd76e0b0743": {
+        "activity_id": "db185d7f2703ce64bab4e93c11e8132392e95ca094cb9216c6387bd76e0b0743",
+        "task_id": "01a0653f-3381-7522-9287-fd97ba5d0181",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fc6189fa5c907157c0f37c883ac5eb317e33c393a2464712576820e91ac1cdeb"
+      }
+    }
+  }
+}

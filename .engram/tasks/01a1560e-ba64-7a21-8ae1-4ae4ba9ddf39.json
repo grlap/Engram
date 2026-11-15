@@ -1,0 +1,53 @@
+{
+  "id": "01a1560e-ba64-7a21-8ae1-4ae4ba9ddf39",
+  "external_ref": null,
+  "title": "Apply run-free prerequisite and blocker deltas in resolved task folders",
+  "outcome": "Apply run-free prerequisite and blocker deltas in resolved task folders",
+  "acceptance": [
+    "One folder transaction materializes composed scalar, prerequisite and blocker changes on eligible restored Open run-free owners through existing Revised(Project), PrerequisiteAdded/Removed(Project), Blocked and Unblocked transitions. Exact event/relation bindings, owner revisions, blocker shared identity and asserted original attribution, original origins and runtime state are preserved; whole changed documents export as R. Obsolete existing-owner edges are removed before restored additions and new edges; S2.3 disposal, baseline, postconditions and result remain atomic.",
+    "Admission distinguishes changed owners from unchanged endpoints: native/current-run/prior-run owners refuse with precise existing reasons; an unchanged Open held/native prerequisite endpoint in another unaffected root is allowed without endpoint mutation. New edges to Completed prerequisites retain the ordinary already-satisfied refusal; matching retained Completed edges are event-free. Relation-readiness changes refuse ancestor_binding only for an affected bound ancestor or active owner-root execution, including sibling-created root execution; unrelated scalar-only edits and project claims remain allowed. Fail-first tests prove both refused and allowed cases with unchanged runtime state.",
+    "Preflight reports one deterministic bounded conflict per task and validates prospective export with retained local nonmembers, the full retained durable graph including retired rows, and immutable origin union. Immutable blocker rewrites/reuse, real cycles/bounds, unsupported origin/history and surviving references to deleted tasks refuse atomically. Explicit valid run-free history permits subsequent relation, scalar and deletion imports across reopen/verification without broadening native or terminal mutation.",
+    "Focused tests and ordinary verification prove composed event order, removal-before-add cycle/bound replacement, restored-seed additions without duplicate events, blocker creation/clear provenance, whole-store rollback at late failures, exact replay after later work, dry-run parity, return-leg behavior and disposable repair preserving every durable row/result/origin/runtime record. Existing schema, transition/operation inventory, origin meaning and completion/waiver authority are unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14c4e-c8ba-7922-8cdf-a7d90d9445f8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Resolved task-folder imports now atomically compose run-free scalar, prerequisite and blocker deltas with strict owner/execution admission, separate graph validation, preserved shared identities and replay/rollback guarantees. Landed and installed after clean review pair, 4/4 independent acceptance, full 3761-test gate and two six-store readiness passes.",
+    "completed_at": "2026-10-20T03:47:18.113999500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d7b5da2c6db94247941d35142f66764c": {
+        "activity_id": "d7b5da2c6db94247941d35142f66764c",
+        "task_id": "01a1560e-ba64-7a21-8ae1-4ae4ba9ddf39",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c1f7d16251684c4f99a1d952fa0dc6c7"
+      }
+    }
+  }
+}

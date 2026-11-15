@@ -1,0 +1,50 @@
+{
+  "id": "01a107c0-f3a8-7323-9efc-6a2cc096b297",
+  "external_ref": null,
+  "title": "A next --peek refused for its context generation offers an advancing next instead of the peek",
+  "outcome": "A next --peek refused for its context generation offers an advancing next instead of the peek",
+  "acceptance": [
+    "When `next --peek` (MCP next with peek true) is refused because its context generation is not a plain token, the CLI text, CLI JSON and MCP error offer `engram work next --peek`, not the advancing `engram work next`; a refused plain next keeps `engram work next`; a test covers both on CLI and MCP"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Invalid-generation guidance preserves peek versus advancing next on CLI text, CLI JSON and MCP; compact/verbose regression cases pass. Landed and installed after independent acceptance.",
+    "completed_at": "2026-10-05T04:57:30.490305300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2080998b64f144658970a8fc546deb90": {
+        "activity_id": "2080998b64f144658970a8fc546deb90",
+        "task_id": "01a107c0-f3a8-7323-9efc-6a2cc096b297",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "766ce4d3a7784c29ba0d3b0acf5039a6"
+      }
+    }
+  }
+}

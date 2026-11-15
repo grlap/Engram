@@ -1,0 +1,88 @@
+{
+  "id": "01a15434-adcd-79a0-a29d-cca44ef3b060",
+  "external_ref": null,
+  "title": "Document every lock taker a backup target show/clear reread can make refuse, and clear's own backup_io",
+  "outcome": "Document every lock taker a backup target show/clear reread can make refuse, and clear's own backup_io",
+  "acceptance": [
+    "docs/features/off-host-backup.md and docs/features/cli-and-mcp.md list backup push (outcome Busy) and the backup check recording step among the lock takers that a show/clear mismatch reread can make refuse, or describe them generically as any lock taker",
+    "cli-and-mcp.md states that only the mismatch reread keeps the backup_record_unreadable diagnosis when its lock cannot be opened, while clear's own writer lock still reports backup_io"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-backup",
+    "docs",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed and landed with Batch D at e01a046076f77192b76c1e6ba6fe9c1b690d7f8e on origin/master. The fresh independent acceptance evaluation 22fcea5b76dc45b3ade97d8470a7b0f8 recorded 2/2 criteria passing. The three open source-mutation obligations required no action before evaluation and are recorded as displaced/untested by completion.",
+    "completed_at": "2026-10-24T13:35:04.865979Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "39eec94537f0493ca6d86073fa7d033e": {
+        "activity_id": "39eec94537f0493ca6d86073fa7d033e",
+        "task_id": "01a15434-adcd-79a0-a29d-cca44ef3b060",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3df5e5f19bfa4c8e9aaed07fc53219b3"
+      },
+      "3df5e5f19bfa4c8e9aaed07fc53219b3": {
+        "activity_id": "3df5e5f19bfa4c8e9aaed07fc53219b3",
+        "task_id": "01a15434-adcd-79a0-a29d-cca44ef3b060",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3df5e5f19bfa4c8e9aaed07fc53219b3"
+      },
+      "55dc4c78c0b944d49ce45cdfed9eefa6": {
+        "activity_id": "55dc4c78c0b944d49ce45cdfed9eefa6",
+        "task_id": "01a15434-adcd-79a0-a29d-cca44ef3b060",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "55dc4c78c0b944d49ce45cdfed9eefa6"
+      },
+      "695e238dc3214269b4eb3a297dec9df1": {
+        "activity_id": "695e238dc3214269b4eb3a297dec9df1",
+        "task_id": "01a15434-adcd-79a0-a29d-cca44ef3b060",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3344d4d997484f44bd1808d0c0d10036"
+      }
+    }
+  }
+}

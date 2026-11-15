@@ -1,0 +1,49 @@
+{
+  "id": "01a111c6-33b9-7b40-9df1-f81812296a78",
+  "external_ref": null,
+  "title": "The doc link checker scans a physical .claude/worktrees directory, which .gitignore names, because it skips only directories whose basename is .worktrees",
+  "outcome": "The doc link checker scans a physical .claude/worktrees directory, which .gitignore names, because it skips only directories whose basename is .worktrees",
+  "acceptance": [
+    "scripts/check-doc-links.mjs skips the repository-relative .claude/worktrees path, without skipping other directories named worktrees or the rest of .claude, shown by a test where a dead link under .claude/worktrees/ passes and a dead link under .claude/commands/ fails"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documentation link checker skips only repository-root .claude/worktrees while continuing to check .claude/commands and other worktrees directories; four regression cases prove the behavior.",
+    "completed_at": "2026-10-09T00:44:07.434850900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f8f347214ad64918a8ed7b0ba28cc2d6": {
+        "activity_id": "f8f347214ad64918a8ed7b0ba28cc2d6",
+        "task_id": "01a111c6-33b9-7b40-9df1-f81812296a78",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "91eee5106b964012826ff60c24b6ad14"
+      }
+    }
+  }
+}

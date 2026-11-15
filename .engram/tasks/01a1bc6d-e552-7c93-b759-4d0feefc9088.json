@@ -1,0 +1,29 @@
+{
+  "id": "01a1bc6d-e552-7c93-b759-4d0feefc9088",
+  "external_ref": null,
+  "title": "Make the coder test-execution skill neutral about session type and integration owner",
+  "outcome": "Make the coder test-execution skill neutral about session type and integration owner",
+  "acceptance": [
+    "Step 4 of the skill chooses the completion route by what the project supports for this session, so a delegated coder that can't use a host run wait is told to disclose it",
+    "Step 6 no longer assumes an integration owner exists in every project, and doesn't tell a coder in a project without one to skip the whole-suite run with nobody named to run it",
+    "The Engram and TermAl copies stay byte-identical"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

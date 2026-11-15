@@ -1,0 +1,61 @@
+{
+  "id": "01a0632e-ffbd-7cb3-8c29-9ec18c82a65d",
+  "external_ref": null,
+  "title": "Preserve actionable next content ahead of advisory memory signals",
+  "outcome": "Preserve actionable next content ahead of advisory memory signals",
+  "acceptance": [
+    "Budget trimming drops memories first and unchanged next performs no advertisement write"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Next preserves actionable content ahead of the advisory memory signal and avoids unchanged acknowledgement writes.",
+    "completed_at": "2026-09-02T17:37:48.937669900Z",
+    "actor": {
+      "actor_id": "codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "512d6ac41bb941ae6702597aafea6cb579140149c9e2b14cc169401e18c1e4b6": {
+        "activity_id": "512d6ac41bb941ae6702597aafea6cb579140149c9e2b14cc169401e18c1e4b6",
+        "task_id": "01a0632e-ffbd-7cb3-8c29-9ec18c82a65d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8bb92d94d5372ed46b1269b020bfb6358ad09008064b4615c22983b7087e7ef6"
+      },
+      "79484ae0898aef294617f5147f3ea0aa84e1e94a20a8f2f573011c91a0b71aa9": {
+        "activity_id": "79484ae0898aef294617f5147f3ea0aa84e1e94a20a8f2f573011c91a0b71aa9",
+        "task_id": "01a0632e-ffbd-7cb3-8c29-9ec18c82a65d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "5e2b9636e55b549c3b32e237ed07465eb54a157ce470c80577054d6faf007db1"
+      }
+    }
+  }
+}

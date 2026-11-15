@@ -1,0 +1,153 @@
+{
+  "id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+  "external_ref": null,
+  "title": "Readiness of Engram, and of Engram + TermAl, for Greg's work team",
+  "outcome": "Supervised pilot of Engram for Greg's work team: pilot bar, onboarding, risk boundaries and evidence",
+  "acceptance": [
+    "Engram-alone readiness: w-ae6006fe7852 (monorepo subfolder project resolution) and w-34d233edb946 (usage-skill facts) are landed and installed, and a holder note quotes their landing commits.",
+    "Integrated readiness is tracked against TermAl's bar A and bar T (TermAl w-affe8a4dee48), with a holder note quoting the state of each bar row when this item completes.",
+    "Readiness estimates, and later the actual ready dates, are reported to Greg through Engram::Advisor, with a holder note quoting each report."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "059b98cebd8f40a5af9604b10fa9357c": {
+        "activity_id": "059b98cebd8f40a5af9604b10fa9357c",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "059b98cebd8f40a5af9604b10fa9357c"
+      },
+      "165b29ed839d46f29764f082c8fc75d5": {
+        "activity_id": "165b29ed839d46f29764f082c8fc75d5",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "165b29ed839d46f29764f082c8fc75d5"
+      },
+      "3c13b17a1c3e4ad5a7859b3407c53b64": {
+        "activity_id": "3c13b17a1c3e4ad5a7859b3407c53b64",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3c13b17a1c3e4ad5a7859b3407c53b64"
+      },
+      "3e4c61090ba647d8858dbe5223feb437": {
+        "activity_id": "3e4c61090ba647d8858dbe5223feb437",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "90155870a90f41f79875f5c237aacdb7"
+      },
+      "aa6e58a711174504a2cb8a26468834b5": {
+        "activity_id": "aa6e58a711174504a2cb8a26468834b5",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "aa6e58a711174504a2cb8a26468834b5"
+      },
+      "bcdaeaf4870d4bef9016a237d794ea8d": {
+        "activity_id": "bcdaeaf4870d4bef9016a237d794ea8d",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bcdaeaf4870d4bef9016a237d794ea8d"
+      },
+      "d3be9d0addb6463e83efb2fd27fe6bb9": {
+        "activity_id": "d3be9d0addb6463e83efb2fd27fe6bb9",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d3be9d0addb6463e83efb2fd27fe6bb9"
+      },
+      "eadba6e2602c46d98e555ebfacaa95f8": {
+        "activity_id": "eadba6e2602c46d98e555ebfacaa95f8",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "eadba6e2602c46d98e555ebfacaa95f8"
+      },
+      "ed11e963ddc04432b2bbdcc39b25f723": {
+        "activity_id": "ed11e963ddc04432b2bbdcc39b25f723",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ed11e963ddc04432b2bbdcc39b25f723"
+      },
+      "fb2469f60dcd4b74a67da8c6d6053df5": {
+        "activity_id": "fb2469f60dcd4b74a67da8c6d6053df5",
+        "task_id": "01a10cf0-5ab8-7fa1-a620-32eb47824d07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fb2469f60dcd4b74a67da8c6d6053df5"
+      }
+    }
+  }
+}

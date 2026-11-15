@@ -1,0 +1,67 @@
+{
+  "id": "01a0cb25-b105-7af3-8fb6-f90ed6511c57",
+  "external_ref": null,
+  "title": "Bind control sessions directly by external reference instead of a compatibility task",
+  "outcome": "A control session binds by its external reference and work claim without creating a task row, and the old task tables go away.",
+  "acceptance": [
+    "TermAl's existing session_bind request (external_ref and title) keeps working, or its adapter change lands in the same window",
+    "The four task tables are dropped in the approved store conversion",
+    "The full quality gates pass",
+    "Two binds with the same external reference still meet at the same session anchor, as today",
+    "session_bind creates no rows in tasks, task_participants, session_bindings or task_changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Direct control-session binding shipped in 950a6f1 and installed as9029bfcbbd4c. Both stores converted and healthy, current MCP works, nine gates and paired review passed, independent acceptance evaluation passed all five unchanged criteria.",
+    "completed_at": "2026-09-23T16:17:29.431018500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "374212a09f0947e0a4981ccae46c6ac6": {
+        "activity_id": "374212a09f0947e0a4981ccae46c6ac6",
+        "task_id": "01a0cb25-b105-7af3-8fb6-f90ed6511c57",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "374212a09f0947e0a4981ccae46c6ac6"
+      },
+      "6ed0b658ba9d437aa9e95c32abb55753": {
+        "activity_id": "6ed0b658ba9d437aa9e95c32abb55753",
+        "task_id": "01a0cb25-b105-7af3-8fb6-f90ed6511c57",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "12647ffeb83d4829bdc8718c0a2b7845"
+      }
+    }
+  }
+}

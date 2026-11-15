@@ -1,0 +1,29 @@
+{
+  "id": "01a19123-6cbe-7d92-b9bd-02ba467eaf4f",
+  "external_ref": null,
+  "title": "Tighten the new-untracked-only gate wording and the summary renderer after item C's round 5 (W9, Lows)",
+  "outcome": "Tighten the new-untracked-only gate wording and the summary renderer after item C's round 5 (W9, Lows)",
+  "acceptance": [
+    "The test launcher selects and renders the `new-untracked-only` reason only when newUntrackedOnly(result) holds, so a malformed saved results.json with that reason but no valid inputCheck cannot make the summary throw; a regression test covers it.",
+    "review-changes.md section 2, AGENTS.md and CLAUDE.md carry W9a–c, or a later concurred equivalent: the untracked listing may show exactly the run's recorded new paths and nothing else; a new-untracked-only full gate is recorded once, as a pass, only by the integration owner after its disposition note, with --ref naming the run, and the parent records nothing for it before then. Landed through the authority-text process: (a) both coordinators concur, (b) the wording is sent to Greg, (c) the final-diff audit is recorded."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "agent-instructions",
+    "authority-text",
+    "review-finding"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

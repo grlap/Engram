@@ -1,0 +1,53 @@
+{
+  "id": "01a1c053-8353-7420-9c3b-3a1c2265f189",
+  "external_ref": null,
+  "title": "Capture selected native execution closure into bounded evidence packs",
+  "outcome": "Publish actual native historical execution records and their existing witnesses through the accepted evidence-pack owners, rather than only re-exporting previously retained packs.",
+  "acceptance": [
+    "An explicit attributed service operation selects actual host-local native canonical execution/work/root records and existing governing/feed witnesses at a recorded cut, and constructs a closed bounded pack through the existing inventory/dependency and EvidencePack owners; record IDs, original bytes and links remain unchanged.",
+    "Prepared selection and pack identities are retained for exact retry; absent context, changed selection, unsupported kinds or limits refuse without partial pack publication. Imported records remain inert provenance and never become local execution authority.",
+    "Behavior tests cover a real native run/evidence closure, exact repeat, missing-context atomic refusal and a bounded continuation; hand off the exact checked patch/API to the parent. No new schema, merge engine, model calls or network/push authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": "session-11334",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered bounded native evidence capture and retained whole-pack continuation, preserving original bytes and identities, with atomic refusals and inert imported history. Exact checked patch/API carried into f5b87c01. Independent evaluation38cddabe47f74aeea9c714f8a58d4b42 passed all three criteria.",
+    "completed_at": "2026-11-09T18:04:32.093469400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bd491b706fa0401995502dcc6028d471": {
+        "activity_id": "bd491b706fa0401995502dcc6028d471",
+        "task_id": "01a1c053-8353-7420-9c3b-3a1c2265f189",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4b49413559e04d818180bced63c6fbf8"
+      }
+    }
+  }
+}

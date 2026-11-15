@@ -1,0 +1,49 @@
+{
+  "id": "01a0f4a4-1f1f-7cd0-8723-363652180b81",
+  "external_ref": null,
+  "title": "Completion also refuses evaluation records whose execution identity, extra metadata or verdict shape admission would refuse",
+  "outcome": "Completion also refuses evaluation records whose execution identity, extra metadata or verdict shape admission would refuse",
+  "acceptance": [
+    "done treats as stale an evaluation whose execution identity is out of admission's bounds, a non-sub_agent evaluation carrying sub_agent metadata, or a verdict list admission would refuse; a test covers each shape and records admitted today are unaffected"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 4,
+  "labels": [
+    "acceptance-evaluation"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 0d6eb26: completion reads identity-defective records as stale (identity) and malformed verdicts or stray sub_agent metadata as stale (record_shape), with shared shape rules.",
+    "completed_at": "2026-10-03T08:03:24.592361600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "912290c508284167a7a1472f22abd66a": {
+        "activity_id": "912290c508284167a7a1472f22abd66a",
+        "task_id": "01a0f4a4-1f1f-7cd0-8723-363652180b81",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e2d1c5ac10474a76890cae1de5e16f1d"
+      }
+    }
+  }
+}

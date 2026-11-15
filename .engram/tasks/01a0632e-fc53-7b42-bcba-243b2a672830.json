@@ -1,0 +1,61 @@
+{
+  "id": "01a0632e-fc53-7b42-bcba-243b2a672830",
+  "external_ref": null,
+  "title": "Clarify direct core parity for typed gate and atomic note",
+  "outcome": "Core protocol documentation accurately distinguishes the six ambient operations from word-only typed gate and atomic note suboperations.",
+  "acceptance": [
+    "The CLI brief and spec no longer claim direct core reachability that the host surface does not provide."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected the CLI and specification contracts for typed gate and atomic note reachability.",
+    "completed_at": "2026-09-03T20:46:25.969162700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c9aa03dc9b2eee2562579b674c7ad0449f81d6c02b0044b09420e4e57c611f99": {
+        "activity_id": "c9aa03dc9b2eee2562579b674c7ad0449f81d6c02b0044b09420e4e57c611f99",
+        "task_id": "01a0632e-fc53-7b42-bcba-243b2a672830",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4731f05f8a9a17522c4dc28fea73a64e03fa3136bc377fbd4c442975cadcaaed"
+      },
+      "e2737987fe4c70427561777a35433844de5f2736684d48b7408ebc35a43ef939": {
+        "activity_id": "e2737987fe4c70427561777a35433844de5f2736684d48b7408ebc35a43ef939",
+        "task_id": "01a0632e-fc53-7b42-bcba-243b2a672830",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8729fa783de97a45045a4827074152e087867499c5331f4f691c08a599b85454"
+      }
+    }
+  }
+}

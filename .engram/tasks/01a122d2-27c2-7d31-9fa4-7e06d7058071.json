@@ -1,0 +1,29 @@
+{
+  "id": "01a122d2-27c2-7d31-9fa4-7e06d7058071",
+  "external_ref": null,
+  "title": "Cover ACL reader cleanup wiring through the denied-root wrappers",
+  "outcome": "Cover ACL reader cleanup wiring through the denied-root wrappers",
+  "acceptance": [
+    "A cross-platform deterministic test drives withDeniedRoot with an injected denial that holds a fake ACL reader and verifies shutdown, restore, reader close, then root/home deletion in order.",
+    "A reader-close failure through the same wrappers retains both fixtures; removing either closeReader forwarding line makes the regression fail without waiting for a process timeout."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

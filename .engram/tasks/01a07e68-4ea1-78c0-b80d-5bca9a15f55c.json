@@ -1,0 +1,50 @@
+{
+  "id": "01a07e68-4ea1-78c0-b80d-5bca9a15f55c",
+  "external_ref": null,
+  "title": "Resume guidance mirrors nonadvancing contract and ordinary-next warning",
+  "outcome": "Resume guidance mirrors nonadvancing contract and ordinary-next warning",
+  "acceptance": [
+    "host checklist and CLAUDE mirror identify transient peek connection and ordinary-next implicit acknowledgement"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cd6-59d0-7bd3-bd3e-5b77516d222b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented and verified the recorded correction; focused regressions and all nine merged gates passed. Installed build 6d8043d8e8b1 from merged working tree, NOT committed to master; Git landing awaits explicit authority. Fable independently reports healthy doctor and nonadvancing live peek. Pre-swap MCP processes remain on 73401c0ab3cc; new shell invocations use the installed build.",
+    "completed_at": "2026-09-08T01:22:05.407366400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bdcf900dfe569c9d043c79bd6376e7cb8cb8dab9151669c91a3b45fcc7affaba": {
+        "activity_id": "bdcf900dfe569c9d043c79bd6376e7cb8cb8dab9151669c91a3b45fcc7affaba",
+        "task_id": "01a07e68-4ea1-78c0-b80d-5bca9a15f55c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ff79203a673068480fa5f51c9591276d90a62d7a6f7e271e2e9968c60cb10bb3"
+      }
+    }
+  }
+}

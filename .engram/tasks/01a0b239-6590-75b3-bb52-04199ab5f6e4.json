@@ -1,0 +1,66 @@
+{
+  "id": "01a0b239-6590-75b3-bb52-04199ab5f6e4",
+  "external_ref": null,
+  "title": "Retire hash-named identities and dead checksum columns in one schema change",
+  "outcome": "Nothing in the product calls a record id a hash, and no stored column is a checksum nothing compares. Both are schema changes, so they land together and the live stores are converted once, at install time, through the retired-column list.",
+  "acceptance": [
+    "every remaining *_hash column is classified in a note as a record id (renamed), a compared fingerprint (kept, with the comparing code site named) or a dead checksum (removed)",
+    "the two children are complete and their column renames and removals ride one conversion of both live stores, measured on copies before install"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "identity",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0b239-5499-7783-90e9-4460a78ed233"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the single legacy record-identity/checksum cleanup: 37 explicit record-link mappings preserve ids/canonical bytes; seven uncompared control checksums removed; all13 remaining fingerprint columns classified with comparison sites. Both live stores rehearsed on populated copies then converted, installed and verified under build d473866e3ba8; original databases/sidecars/executable and post-restart Phoenix data preserved. All required children independently accepted and completed. Parent independent Claude7182 evaluation09e384376ac44e3395bf6ac28283e7db passes both current criteria on judgment basis. Original code committed/pushed c7aad9b; current two-doc correction passed nine gates, Codex/Claude review and rename acceptance, still uncommitted. User-approved Low residuals remain explicit independent follow-ups, not claimed fixed. No Medium/High/Critical findings remain in reviewed cleanup; separate TermAl root-dispatch gating diagnosis is not certified or fixed by this work. Final freeze exact check passed unchanged d84df8b9...25c19. No further migration or install needed.",
+    "completed_at": "2026-09-21T04:19:33.217840500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "61daddc6b0154af6860da68d32eb2f6d": {
+        "activity_id": "61daddc6b0154af6860da68d32eb2f6d",
+        "task_id": "01a0b239-6590-75b3-bb52-04199ab5f6e4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "61daddc6b0154af6860da68d32eb2f6d"
+      },
+      "cea08c06984b48b996c8ca2dd4a413e4": {
+        "activity_id": "cea08c06984b48b996c8ca2dd4a413e4",
+        "task_id": "01a0b239-6590-75b3-bb52-04199ab5f6e4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7f2afd5791784b38a42c6695c29847d2"
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "01a1a374-3fec-7102-a853-9d99857a67d2",
+  "external_ref": null,
+  "title": "Validate task-sync touched closures through keyed graph and identity projections",
+  "outcome": "Provide indexed source, destination and immutable-origin closure admission over changed task documents, reusing existing graph rules without reading disconnected tasks.",
+  "acceptance": [
+    "Separate source-before/after, retained-destination and immutable-origin graph views traverse old/new parent, prerequisite and replacement relations in both directions; deletions probe unchanged incoming references, and existing graph validator semantics and refusal precedence are preserved.",
+    "Missing reverse replacements, seal-by-work, origin relation and shared identity ownership lookups are rebuildable projections/indexes maintained atomically by existing owners and doctor-checked; no historical canonical bytes, IDs, links or meaning change.",
+    "Selected document validation and keyed global identity probes retain note/activity/blocker/short-ref uniqueness and native/run/seal/history/hold refusals without loading disconnected documents or full historical trees. Missing or inconsistent basis/projections refuse explicitly.",
+    "Fixtures with at least2000 tasks/history, five edits plus addition/deletion, retained cycles and incoming references, disconnected identities, reverse/no-op cases count actual documents and visited nodes/edges separately; unrelated growth leaves relevant counts unchanged.",
+    "Focused checks and required independent review pair pass on exact candidate. Complete READY joins D for ONE all-live-store projection cutover and updates full projection inventory docs; no standalone installation or repair. Ordinary delta atomic apply remains owned by the separate required child."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "projection-cutover",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "5ef5923a921b45f4851bbe22bc08e782": {
+        "activity_id": "5ef5923a921b45f4851bbe22bc08e782",
+        "task_id": "01a1a374-3fec-7102-a853-9d99857a67d2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5ef5923a921b45f4851bbe22bc08e782"
+      },
+      "7cd77499ad604b958f8dbdcbadeed9b0": {
+        "activity_id": "7cd77499ad604b958f8dbdcbadeed9b0",
+        "task_id": "01a1a374-3fec-7102-a853-9d99857a67d2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7cd77499ad604b958f8dbdcbadeed9b0"
+      }
+    }
+  }
+}

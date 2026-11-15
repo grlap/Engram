@@ -1,0 +1,53 @@
+{
+  "id": "01a0af86-b9dc-7d91-a228-d8bf12b605af",
+  "external_ref": null,
+  "title": "A corrupted verification projection refuses show and completion alike through the existing evidence read; the evaluation classification adds no softer or stricter read path",
+  "outcome": "Reproduction pins the existing strict-read contract for an inconsistent evidence projection instead of adding an advisory evaluation block: show already refuses through the pre-existing evidence read before the evaluation block runs, completion refuses strictly, restoring the column restores the read and the observed pass, and the contract is documented with doctor as the repair signal",
+  "acceptance": [
+    "a reproduction test records an observed evaluation citing host-minted verification evidence, corrupts the verification_result column, and pins that ordinary show is refused by the existing evidence read (InvalidWorkProjection naming the redundant run projection), that done is refused strictly, and that restoring the column restores both the read and the observed pass, with no advisory disclosure introduced",
+    "the feature brief documents the strict-read contract: reads and completion refuse an evidence projection that disagrees with its canonical object through the existing evidence read, the evaluation classification adds no read path softer or stricter than that contract, and doctor names the row for repair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Narrowed on evidence: show and completion already refuse a corrupted verification projection through the pre-existing strict evidence read reached by the shared focus assembly, so no advisory evaluation block was added. Reproduction pinned by a_corrupted_verification_projection_refuses_reads_and_completion_through_the_existing_check (show refuses naming the redundant run projection, done refuses, restoring the column restores the read with the evaluation); R10 documents the strict-read contract. GREEN logs/26; final sequence logs/27 all pass.",
+    "completed_at": "2026-09-17T13:39:18.745068Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "647fb4e7c29320edbdc6d9e525363cc572a5467016e5bfe918593bd679d177f4": {
+        "activity_id": "647fb4e7c29320edbdc6d9e525363cc572a5467016e5bfe918593bd679d177f4",
+        "task_id": "01a0af86-b9dc-7d91-a228-d8bf12b605af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "680dc6817803c70ca8f7e4bd9b6ff2ae753be15e1f9020989a619f2fa84a2a88"
+      }
+    }
+  }
+}

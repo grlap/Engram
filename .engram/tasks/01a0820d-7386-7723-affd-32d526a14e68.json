@@ -1,0 +1,53 @@
+{
+  "id": "01a0820d-7386-7723-affd-32d526a14e68",
+  "external_ref": null,
+  "title": "Bound root history replay on completion and audit paths",
+  "outcome": "Bound root history replay on completion and audit paths",
+  "acceptance": [
+    "Derived limits fixed before corrected measurements bound checksum bytes, root head loads and canonical decodes; temporary measured ceilings cannot be presented as accepted budgets",
+    "Scale assertions for complete_work and verify_all cover 10, 100 and 1000 checkpoints with nonempty waivers and same-generation child completion",
+    "The stage2 review pair includes address-only backward traversal and forward canonical reload as well as CompletionSeal changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and accepted in02314067: derived live history-work bounds, scale assertions and reviewed exact pre-seal root binding; final nine gates passed. Known audit cost and optional review follow-ups remain explicit.",
+    "completed_at": "2026-09-08T20:50:02.013039Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3add975b2afe31a8ee7dc031d7468c5ed72191a3613c08ce66bfa2de253c6478": {
+        "activity_id": "3add975b2afe31a8ee7dc031d7468c5ed72191a3613c08ce66bfa2de253c6478",
+        "task_id": "01a0820d-7386-7723-affd-32d526a14e68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5074f7fcc1b3f0d0666a6a141d4937bde1e7402873a21ac44ad87a86759c55d9"
+      }
+    }
+  }
+}

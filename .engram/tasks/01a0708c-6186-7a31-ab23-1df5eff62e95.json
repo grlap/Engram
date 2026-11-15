@@ -1,0 +1,51 @@
+{
+  "id": "01a0708c-6186-7a31-ab23-1df5eff62e95",
+  "external_ref": null,
+  "title": "Cover current readiness bindings directly",
+  "outcome": "Cover current readiness bindings directly",
+  "acceptance": [
+    "Tests reject each invalid current waiver binding and a present seal absent from the execution seal list without relying on an earlier projection guard"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06fde-f44f-70a3-aeb2-b8e424eefcb1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Direct waiver and seal-membership guards have isolated coverage, public projection refusals are separately documented, and SQL waiver parameters are deterministic; reviewed, gated and landed.",
+    "completed_at": "2026-09-05T08:27:03.218309700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4161df53e08d2153aaac4b90801576c876f7c9323b1f09c690d55cb9dfe1934d": {
+        "activity_id": "4161df53e08d2153aaac4b90801576c876f7c9323b1f09c690d55cb9dfe1934d",
+        "task_id": "01a0708c-6186-7a31-ab23-1df5eff62e95",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5214ee64493f70da9a187f09d08730f29117f1c64a28321f6f34808d24a90761"
+      }
+    }
+  }
+}

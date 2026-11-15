@@ -1,0 +1,28 @@
+{
+  "id": "01a192b7-18fb-72d0-bbe6-ed53fe6bd12c",
+  "external_ref": null,
+  "title": "A keyless update retry after its commit can mint a new key and apply twice (a repeated block adds a second blocker)",
+  "outcome": "A keyless update retry after its commit can mint a new key and apply twice (a repeated block adds a second blocker)",
+  "acceptance": [
+    "Repeating a keyless update (block, revise, release and the other actions whose derived key binds the work or claim basis) after its first attempt committed replays the committed result instead of applying a second effect, or the word refuses the repeat with a typed answer naming how to read the committed outcome",
+    "Tests show a repeated keyless block after a lost answer leaves exactly one blocker, and a repeated keyless release does not fail as a fresh release against the released claim"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "post-commit",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

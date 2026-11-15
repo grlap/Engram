@@ -1,0 +1,29 @@
+{
+  "id": "01a0c298-1a7b-71b2-b2d1-e57091faa4e5",
+  "external_ref": null,
+  "title": "Make ordinary policy settings a normal Save operation",
+  "outcome": "Routine settings changes use Save/Cancel, without a second confirmation checkbox or generic administrative ceremony.",
+  "acceptance": [
+    "TermAl removes redundant confirmation steps for ordinary policy edits; any warning is specific to an actual reduction in enforcement and does not demand justification text.",
+    "Tests cover save, cancel, concurrent-change refusal and failed save without losing edits; existing authorization, CAS and retry protections remain."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "simplification",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Carried by TermAl, not done in Engram. Engram's part is delivered (w-a562563fed5c: policy setters need no reason; the receipt returns previous and new policy). The remaining criteria are TermAl's settings form and are carried by TermAl w-478c8a2dcc87 (P2), filed by Termal::Fable2 at Engram::Fable's request (mailbox-ebe242f7 #351, #352, 2026-09-30T22:30Z): a 409 keeps the operator's edits; the reduction warning is computed from the receipt; plain Save and Cancel; and closing TermAl w-e4a5b3186aa0 and w-1887d5476ed7. Evidence: Engram::Opus's read-only triage (mailbox-e3d12b08 #507). Decided by Engram::Fable.",
+  "completion": null
+}

@@ -1,0 +1,47 @@
+{
+  "id": "01a09446-72c8-7280-b0db-7003d1d1a800",
+  "external_ref": null,
+  "title": "Coordinate CLI path-policy and bounded-input implementation",
+  "outcome": "Coordinate CLI path-policy and bounded-input implementation",
+  "acceptance": [
+    "Verify both existing items against the consulted plan, retained focused RED/GREEN and I/O evidence, fresh parent gates and a clean Codex/Claude review pair, then independently read back completed author-linked evidence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Batch A verified and accepted; both holder completions and original linked evidence independently read back.",
+    "completed_at": "2026-09-12T07:50:58.805634900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7c132a83b4c2e40a721df0ac8c68fe63ecb9312adbf0c1de44b5ea0478c7134b": {
+        "activity_id": "7c132a83b4c2e40a721df0ac8c68fe63ecb9312adbf0c1de44b5ea0478c7134b",
+        "task_id": "01a09446-72c8-7280-b0db-7003d1d1a800",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b44015c75eb82317f67e7ee0b4a71a1e83005c6a88f47cb2448dd8ed1a989a0d"
+      }
+    }
+  }
+}

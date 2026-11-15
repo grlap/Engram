@@ -1,0 +1,45 @@
+{
+  "id": "01a10ea2-9ed1-7841-abe6-a3e9fbab2a12",
+  "external_ref": null,
+  "title": "Every planning change rescans the whole project's work items and edges to check for cycles, so its cost grows with closed history",
+  "outcome": "Every planning change rescans the whole project's work items and edges to check for cycles, so its cost grows with closed history",
+  "acceptance": [
+    "The cycle check after an ordinary prerequisite add, a decomposition, a supersession or an atomic plan reads a bounded quantity that does not grow with the project's completed, cancelled or superseded history, proven by a test that adds a large closed history to a project and asserts the check's row visits stay within the same bound as the same live graph without that history",
+    "Cycle detection still refuses every cycle it refuses today, covered by the existing acyclicity tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-performance",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Backlog audit requested by Greg after the macOS fix landed; disposition NOT PLANNED, not delivered. Coordinator ruling 856f5858209b44d3be8de389eb59b06a judged the measured scan immaterial (recorded 100 warm samples, median4.04ms, p904.45ms,1136items+57prerequisite edges) and parked implementation. Design ruling01ffb73b701940a69d740e820b9dd647 shows the authored history-independent guarantee is incompatible with closed dependency bridges and existing unrelated-corruption refusal without extra machinery. Retain the simpler current full scan. Preserve measurements and history; new follow-up is warranted only after a measured warm scan>100ms or live project items+edges>about50000, and must first adopt an achievable bound. No passing implementation, new timing or acceptance completion is claimed.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "8127359edce84ecc85cda48ed515b3eb": {
+        "activity_id": "8127359edce84ecc85cda48ed515b3eb",
+        "task_id": "01a10ea2-9ed1-7841-abe6-a3e9fbab2a12",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "9ad67c82177a47a39f9feb0713bd64a4"
+      }
+    }
+  }
+}

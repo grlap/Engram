@@ -1,0 +1,53 @@
+{
+  "id": "01a10223-8fb1-76a2-8112-edd1fa447bb0",
+  "external_ref": null,
+  "title": "Retire the presented done fingerprint and its policy field at the next justified migration",
+  "outcome": "Retire done --source-fingerprint together with AcceptanceEvaluationPolicy.require_source_freshness during the next justified, authorized migration, bundled with the parked claim-acquisition and retained-control-field changes. Decision in principle only: the live flag and its missing/mismatched-value refusals remain unchanged until execution. Historical seals remain readable as stored; ids and links are preserved. No legacy completion route is retained.",
+  "acceptance": [
+    "Execution occurs only as part of the next justified migration, bundled with the two parked format changes, after Greg's recorded word for that migration. Until then this item remains parked and the current flag, argument and refusal behavior stay live and unchanged.",
+    "The migration plan inventories every live store and its current and historical policy versions, including true, false and absent/default require_source_freshness values, normalized/self-asserted policies, authority decisions and policy heads/projections. It records counts and dependent historical seal/evaluation/refusal records; a dated current-policy read never substitutes for that inventory.",
+    "Before editing stored shapes, the plan specifies exactly which policy fields and related durable projection values import retires or maps, with a count for each conversion and an explicit treatment of historical policies and active heads. Import performs that named conversion, refuses unexpected data by name, and preserves all record ids and executable links. No active true policy is silently treated as false before the authorized change.",
+    "Every live store undergoes the supported one-way migration export/import and is verified with the new build before install. Historical seals, evaluations, policy provenance and source/refusal facts remain readable as stored, with their original meaning: neither judgments nor historical caller comparisons are rewritten into claims of host measurement. Historical reading does not restore the retired operation.",
+    "The full completion-only argument/requirement sweep is applied together: CLI and MCP arguments/help/schema/tool descriptions, handler/service/core completion inputs and readiness assessment, source_checked_at_done projections, completion-measurement recovery/remedies, doctor policy display and policy setter, affected tests, AGENTS.md and identical CLAUDE.md, shipped inventory and feature/lifecycle contracts. Evaluate --source-fingerprint, evaluator source basis, named-root binding/generation and bound-check source validation remain operative.",
+    "Regression tests cover the retired CLI/MCP/policy-input surface, preserved evaluator source declaration and named-root checks, current and historical policy import cases, historical seal/evaluation readability and unchanged ids/links, and the actual measured-endpoint/late-diagnostic guarantee. No test is removed or loosened merely to obtain a pass; the full gate and Codex/Claude review cover the exact input.",
+    "The AGENTS.md/CLAUDE.md Work Tracking change is classified under the authority-text rule before landing; required exact-wording concurrence, notice and final audit are recorded, with Greg's recorded word for any classified widening. Host consumption of the retired route is verified before the independently scoped TermAl completion-capability diagnostic gap is treated as retired."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 3,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 4,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 6,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "migration",
+    "parked"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

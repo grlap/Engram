@@ -1,0 +1,27 @@
+{
+  "id": "01a1d2f7-1f4c-77e2-bf32-457f1ddd088e",
+  "external_ref": null,
+  "title": "Account for expired execution state when importing a reported completion",
+  "outcome": "Account for expired execution state when importing a reported completion",
+  "acceptance": [
+    "Reported completion expires time-expired handoff offers through the existing audited helper without accepting or transferring a live offer",
+    "Unaccounted contributors on a retained active aggregate receive explicit supported recovery or attributed accounting, with tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

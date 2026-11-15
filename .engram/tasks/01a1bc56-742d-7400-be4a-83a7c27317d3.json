@@ -1,0 +1,124 @@
+{
+  "id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+  "external_ref": null,
+  "title": "Reusable cross-project skills for the coding and unattended-test workflow",
+  "outcome": "Reusable cross-project skills for the coding and unattended-test workflow",
+  "acceptance": [
+    "A simple reusable skill or instruction set, proposed by Kimi::Consultant and agreed with both coordinators, tells any project's coder how to own a working package (code, needed tests, build, meaningful changed-behavior checks, correct test selection, READY evidence) and how to run tests unattended using that project's own launcher and supported completion notification, reporting honestly when no notification exists; no polling, sleep, tail or progress loops, test logs kept out of agent context, running tests never cancelled.",
+    "Exact files and owners are named, the changes land through each project's normal route (authority text under the AGENTS rule), and the result is reported to Greg. No new gate or redundant system is added, and existing P0 sync and evaluation work isn't delayed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "greg-directed",
+    "skills",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The coder-test-execution skill (.agents/skills and its .claude wrapper) landed in c6a0784d (tree 51adb0cf) on master and origin/master through the normal Markdown route, with Greg's combined-landing decision („bez roznicy”, #795). TermAl's identical copy landed as 2e03d1a9 with the same blobs. It was reported to Greg via Asistant #825, and no new gate was added. Post-landing independent evaluation (Codex 17237) passed 2/2 after the doc-link check on the named root (test-01b8d829).",
+    "completed_at": "2026-11-10T16:03:32.226804Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6a15ad4d869849b0bfb5bed7343736dc": {
+        "activity_id": "6a15ad4d869849b0bfb5bed7343736dc",
+        "task_id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6a15ad4d869849b0bfb5bed7343736dc"
+      },
+      "71dc8e99629b43eca3f267a2667dfbcd": {
+        "activity_id": "71dc8e99629b43eca3f267a2667dfbcd",
+        "task_id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "71dc8e99629b43eca3f267a2667dfbcd"
+      },
+      "7e5ac21c3cce48938a5c32f69f267eb8": {
+        "activity_id": "7e5ac21c3cce48938a5c32f69f267eb8",
+        "task_id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "184929db967e4c358eb8e94c43280985"
+      },
+      "95b8cbeeb37947aaaacb75700c5af99d": {
+        "activity_id": "95b8cbeeb37947aaaacb75700c5af99d",
+        "task_id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "95b8cbeeb37947aaaacb75700c5af99d"
+      },
+      "9662dc00dcaf4cd5a13c45775af7333e": {
+        "activity_id": "9662dc00dcaf4cd5a13c45775af7333e",
+        "task_id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9662dc00dcaf4cd5a13c45775af7333e"
+      },
+      "e72d32bf176242479606bd7ba94d6f80": {
+        "activity_id": "e72d32bf176242479606bd7ba94d6f80",
+        "task_id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "5bc143411e27429ab1cfa85ad8832dbb"
+      },
+      "fa0f9e46d3624289a0a75fbaf1fcb9c4": {
+        "activity_id": "fa0f9e46d3624289a0a75fbaf1fcb9c4",
+        "task_id": "01a1bc56-742d-7400-be4a-83a7c27317d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fa0f9e46d3624289a0a75fbaf1fcb9c4"
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "id": "01a0a5c7-3bf4-74f0-b98c-4a091e8c0389",
+  "external_ref": null,
+  "title": "Equal-content empty WAL or journal split retain must complete by location",
+  "outcome": "Equal-content empty WAL or journal split retain must complete by location",
+  "acceptance": [
+    "Independent activate and recover after RetainedWal or RetainedJournal with empty durable sidecar complete Activated with per-sidecar byte/location assertions."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a382-0b72-7803-8346-15c884db56ba",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against accepted evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:45:13.688404500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3cf763df4ab766603fe39d4ba4bf8cdb6da1741f9b67738f13f37aeff9485080": {
+        "activity_id": "3cf763df4ab766603fe39d4ba4bf8cdb6da1741f9b67738f13f37aeff9485080",
+        "task_id": "01a0a5c7-3bf4-74f0-b98c-4a091e8c0389",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3cf763df4ab766603fe39d4ba4bf8cdb6da1741f9b67738f13f37aeff9485080"
+      },
+      "608c5782cdf7311d2e9e0346792e3ec959496bcd4761f8af52a8d272cd551555": {
+        "activity_id": "608c5782cdf7311d2e9e0346792e3ec959496bcd4761f8af52a8d272cd551555",
+        "task_id": "01a0a5c7-3bf4-74f0-b98c-4a091e8c0389",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c0ea3a0510e695f6f12cf70f9ab4d60dc8b51f008f0dfd94c0313d95604873fa"
+      }
+    }
+  }
+}

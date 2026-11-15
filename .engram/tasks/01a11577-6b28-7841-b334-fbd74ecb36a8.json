@@ -1,0 +1,52 @@
+{
+  "id": "01a11577-6b28-7841-b334-fbd74ecb36a8",
+  "external_ref": null,
+  "title": "Make disposed-handoff lifecycle refusal match exhaustive",
+  "outcome": "Make disposed-handoff lifecycle refusal match exhaustive",
+  "acceptance": [
+    "refuse_disposed_handoff handles every current WorkLifecycle variant explicitly and uses the existing lifecycle word mapping for cancelled/superseded refusal text",
+    "Current fresh refusal and committed replay regressions retain their behavior"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "handoff",
+    "refactor",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Disposed handoff refusal exhaustively handles every WorkLifecycle variant and uses lifecycle.word() without changing fresh refusal or committed replay behavior. Current-source full gate, independent Codex/Claude reviews and independent acceptance2/2 pass. Clean committed release installed with backup; all four live stores ready.",
+    "completed_at": "2026-10-09T03:45:45.178850500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e690a17082d9427abd9a9ef79a48532a": {
+        "activity_id": "e690a17082d9427abd9a9ef79a48532a",
+        "task_id": "01a11577-6b28-7841-b334-fbd74ecb36a8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a80ce62d8a71412983ded04fa7de0840"
+      }
+    }
+  }
+}

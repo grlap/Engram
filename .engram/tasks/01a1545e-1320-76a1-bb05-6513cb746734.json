@@ -1,0 +1,28 @@
+{
+  "id": "01a1545e-1320-76a1-bb05-6513cb746734",
+  "external_ref": null,
+  "title": "Add typed per-task details to the task_sync_import_conflict refusal for TermAl consumption",
+  "outcome": "Add typed per-task details to the task_sync_import_conflict refusal for TermAl consumption",
+  "acceptance": [
+    "A task_sync_import_conflict refusal carries a typed details.tasks array, one entry per refused task with its work id, a stable reason code and a detail, in task-id order, while the human message stays unchanged",
+    "The typed details are transient error data only: no durable row, schema or host-protocol change"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "cli",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a0f669-34eb-73e1-9bcc-b27e758799f2",
+  "external_ref": null,
+  "title": "The MCP phase trace names a busy-timeout wait in BEGIN IMMEDIATE, not only in the handler total",
+  "outcome": "The MCP phase trace names a busy-timeout wait in BEGIN IMMEDIATE, not only in the handler total",
+  "acceptance": [
+    "A BEGIN IMMEDIATE that gets the lock is still counted once, as today's contention test shows",
+    "A traced write refused after the store's busy timeout reports the wait in begin_immediate (count and max at least the timeout), shown by a Rust test that holds the write lock past the timeout"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Not a defect: SQLite profiles statements that end in SQLITE_BUSY. The observed gap came from a test that opened its traced store outside a traced call; the corrected test shows the timed-out wait in begin_immediate (5.5 s).",
+  "completion": null
+}

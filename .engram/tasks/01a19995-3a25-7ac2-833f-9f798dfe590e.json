@@ -1,0 +1,90 @@
+{
+  "id": "01a19995-3a25-7ac2-833f-9f798dfe590e",
+  "external_ref": null,
+  "title": "Rename the host feature to \"Execution Observability\" in Engram docs, CLI/MCP help and skills, dropping gated-control wording",
+  "outcome": "Rename the host feature to \"Execution Observability\" in Engram docs, CLI/MCP help and skills, dropping gated-control wording",
+  "acceptance": [
+    "User-facing Engram docs, CLI/MCP help text and skills name the host feature \"Execution Observability\" (project-level ON/OFF), and use the agreed terms work session, assignment, claim, host observations (execution, source and test), registered verification and acceptance evaluation",
+    "\"Gated control\", \"turn-gated control\" and \"control session\" no longer appear in user-facing docs, help or skills, except one history note naming the retired turn gating (turn grants: Evaluate/Begin) and saying that its records remain readable as stored",
+    "The terms match TermAl's docs as agreed between the coordinators; the link check and the AGENTS/CLAUDE identity check pass, plus the full gate if any non-Markdown file changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "docs",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Execution Observability naming and work-session terminology are delivered in the combined turn-gating removal and present on master90d2fec7215ce041c6d74f8e20056b9ecdcb0d39. Current docs/help/skills and removed-command regression match the agreed terminology; existing link/identity checks and exact-master full validation are cited in the holder evidence note.",
+    "completed_at": "2026-11-04T06:02:29.043923400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5bb23144a0d04fdc8f4f03d6ca3d1654": {
+        "activity_id": "5bb23144a0d04fdc8f4f03d6ca3d1654",
+        "task_id": "01a19995-3a25-7ac2-833f-9f798dfe590e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5bb23144a0d04fdc8f4f03d6ca3d1654"
+      },
+      "ceeaa15b457f41789e1102561bb546df": {
+        "activity_id": "ceeaa15b457f41789e1102561bb546df",
+        "task_id": "01a19995-3a25-7ac2-833f-9f798dfe590e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ceeaa15b457f41789e1102561bb546df"
+      },
+      "d8494c3aea93469dbdda89bb6e1b2728": {
+        "activity_id": "d8494c3aea93469dbdda89bb6e1b2728",
+        "task_id": "01a19995-3a25-7ac2-833f-9f798dfe590e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "68ee9754d91c45f6be511902fef280a8"
+      },
+      "e00c26ecb3e7493eaa34780150306a73": {
+        "activity_id": "e00c26ecb3e7493eaa34780150306a73",
+        "task_id": "01a19995-3a25-7ac2-833f-9f798dfe590e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "32b7ca1b280742f1ae42beb6c7db15d4"
+      }
+    }
+  }
+}

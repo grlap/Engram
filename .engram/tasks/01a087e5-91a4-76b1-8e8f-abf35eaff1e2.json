@@ -1,0 +1,49 @@
+{
+  "id": "01a087e5-91a4-76b1-8e8f-abf35eaff1e2",
+  "external_ref": null,
+  "title": "Core update, complete and handoff still read @file arguments with no ceiling",
+  "outcome": "Only CoreWorkCommand::Propose moved to the bounded JSON reader; core update, complete and handoff still use the unbounded reader with a whole-file read, so an oversized operator-supplied file is read entirely before any limit applies.",
+  "acceptance": [
+    "core update, complete and handoff use the bounded JSON reader, and an oversized file is refused before it is read whole"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Four core inputs share the 2 MiB bounded JSON reader; oversized @file refused before whole-file read.",
+    "completed_at": "2026-09-12T07:49:41.556981500Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8e1c56b0f48a162a196c480ed1fb80e7ffbc8fa7e9efbe6ae22f96fec4dcba68": {
+        "activity_id": "8e1c56b0f48a162a196c480ed1fb80e7ffbc8fa7e9efbe6ae22f96fec4dcba68",
+        "task_id": "01a087e5-91a4-76b1-8e8f-abf35eaff1e2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f0524fb7a785f00885313d0fd2f574acfa428eab383c42c9d3280ab04f0ea98a"
+      }
+    }
+  }
+}

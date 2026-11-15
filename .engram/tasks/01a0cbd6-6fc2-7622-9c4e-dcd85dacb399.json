@@ -1,0 +1,34 @@
+{
+  "id": "01a0cbd6-6fc2-7622-9c4e-dcd85dacb399",
+  "external_ref": null,
+  "title": "Dispatch and drain Engram recovery turns before replaying queued prompts",
+  "outcome": "TermAl automatically resolves Engram recovery_required responses and resumes each retained user or mailbox prompt exactly once.",
+  "acceptance": [
+    "A deterministic host integration test rebinds a session with more than MAX_CONTROL_DELIVERY_EVENTS outstanding events, proves at least two recovery pages are consumed, and verifies the original prompt completes without user resubmission.",
+    "During recovery the UI reports a recoverable waiting state rather than 'Engram did not authorize this turn for runtime delivery', and queued submissions do not accumulate as indistinguishable ordinary retries.",
+    "TermAl drains every partial recovery page until the Engram control session is ready, preserving stable retry identity and never invoking the model provider before a valid grant and begin.",
+    "The original direct, queued, or mailbox prompt remains byte-for-byte unchanged and is dispatched exactly once after recovery; repeated wakeups do not duplicate, overwrite, or strand it, and cancellation remains available.",
+    "When Engram refuses an ordinary root turn with recovery_required, TermAl submits a purpose=recovery turn instead of retrying purpose=ordinary or reporting a terminal policy denial."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "coordination",
+    "recovery",
+    "termal"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a0d957-d8b3-72a3-8600-106de4b03b57",
+  "disposal_reason": "Greg's turn-gate decisions (25 Sep, w-d5aa5056bbce) remove recovery turns together with the grant's context page. Engram no longer demands recovery turns, so TermAl needs no machinery to dispatch and drain them.",
+  "completion": null
+}

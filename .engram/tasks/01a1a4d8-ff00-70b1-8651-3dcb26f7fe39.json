@@ -1,0 +1,27 @@
+{
+  "id": "01a1a4d8-ff00-70b1-8651-3dcb26f7fe39",
+  "external_ref": null,
+  "title": "Open backup stage stores in tests through a path that survives the Windows path limit",
+  "outcome": "Open backup stage stores in tests through a path that survives the Windows path limit",
+  "acceptance": [
+    "backup::tests::capture_manifest_names_each_identity_and_the_copy_s_own_cut passes on Windows in a worktree whose staged store path exceeds 260 characters"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tests",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

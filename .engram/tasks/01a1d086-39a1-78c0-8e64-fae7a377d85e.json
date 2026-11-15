@@ -1,0 +1,57 @@
+{
+  "id": "01a1d086-39a1-78c0-8e64-fae7a377d85e",
+  "external_ref": null,
+  "title": "Integrate accepted task-sync design docs after cutover",
+  "outcome": "Carry the accepted documentation candidate onto post-cutover master, validate it, and land/install it in the agreed order",
+  "acceptance": [
+    "After the required sync cutover and w-34e0 landing, carry candidate 63ed3d70471e34cb114c4ef3bd012f1fadfac1da onto current master under review-changes section 6a, preserving the exact nine-document contribution; return it if any conflict or content change prevents a clean carry.",
+    "Record the unchanged-contribution proof and pass the Markdown link check on the exact final carried tree with equal complete source_id at check admission and completion.",
+    "After cutover, obtain readiness on every live store, land and install the exact validated tree in the coordinator's stated order, and record the installed build_fingerprint."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "integration",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "52a4ade96cad49d99fae420e94de2ad2": {
+        "activity_id": "52a4ade96cad49d99fae420e94de2ad2",
+        "task_id": "01a1d086-39a1-78c0-8e64-fae7a377d85e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "52a4ade96cad49d99fae420e94de2ad2"
+      },
+      "b508715916f6444697f2e57422ca411b": {
+        "activity_id": "b508715916f6444697f2e57422ca411b",
+        "task_id": "01a1d086-39a1-78c0-8e64-fae7a377d85e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b508715916f6444697f2e57422ca411b"
+      }
+    }
+  }
+}

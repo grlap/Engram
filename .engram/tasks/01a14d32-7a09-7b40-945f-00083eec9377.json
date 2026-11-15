@@ -1,0 +1,63 @@
+{
+  "id": "01a14d32-7a09-7b40-945f-00083eec9377",
+  "external_ref": null,
+  "title": "Limit Tokio workers in task-sync setup CLI fixtures",
+  "outcome": "Limit Tokio workers in task-sync setup CLI fixtures",
+  "acceptance": [
+    "Both named tests and the intentional first-call race pass with setup fixture CLI children limited to one Tokio worker, with the existing 30-second Git bound and all cases/assertions unchanged; the exact frozen tree passes required gates/reviews; retained evidence states that historic timeout attribution and concurrent-warm candidate resilience remain unproved."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-testing",
+    "gate",
+    "host-load"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14c9a-eaaf-7482-9981-e7b064985476",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Setup CLI fixture children now use TOKIO_WORKER_THREADS=1 in both constructors. Cases, assertions, first-call race and production 30-second Git bound are unchanged. Focused 40/40 and combined full 12/12 gate passed; Merger's independent Codex/Claude pair consolidation is clean. Fresh closure evaluation 256ddb9f244b4aaa83265af3d21291e1 passes 1/1. Historical timeout attribution and concurrent-warm candidate resilience remain unproved; parent remains open.",
+    "completed_at": "2026-10-18T18:29:41.060560300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "74e0de5556a14d50b5c98e39e3647ab1": {
+        "activity_id": "74e0de5556a14d50b5c98e39e3647ab1",
+        "task_id": "01a14d32-7a09-7b40-945f-00083eec9377",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "74e0de5556a14d50b5c98e39e3647ab1"
+      },
+      "9dc115cd513449b6a1e8d719b530407b": {
+        "activity_id": "9dc115cd513449b6a1e8d719b530407b",
+        "task_id": "01a14d32-7a09-7b40-945f-00083eec9377",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "165a4471a9cf474781552feec45e9a35"
+      }
+    }
+  }
+}

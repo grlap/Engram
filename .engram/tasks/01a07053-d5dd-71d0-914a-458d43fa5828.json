@@ -1,0 +1,24 @@
+{
+  "id": "01a07053-d5dd-71d0-914a-458d43fa5828",
+  "external_ref": null,
+  "title": "Smoke: peer optional proposal under a held parent",
+  "outcome": "Smoke: peer optional proposal under a held parent",
+  "acceptance": [
+    "Smoke: peer optional proposal under a held parent is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke item, cancelled after verification",
+  "completion": null
+}

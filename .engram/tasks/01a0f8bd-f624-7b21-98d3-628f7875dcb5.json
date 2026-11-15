@@ -1,0 +1,50 @@
+{
+  "id": "01a0f8bd-f624-7b21-98d3-628f7875dcb5",
+  "external_ref": null,
+  "title": "A revision that only reorders criteria is tested to list acceptance in history",
+  "outcome": "A revision that only reorders criteria is tested to list acceptance in history",
+  "acceptance": [
+    "A test revises an item with the same criteria in a different order and asserts that the history row's summary starts with \"acceptance:\""
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A planning test revises an item with the same criteria reordered and asserts its single revised history row starts with \"acceptance:\". It was mutation-checked: an order-blind comparison makes it fail. The full gate passed 9/9, the pair was clean, and the evaluation passed. Landed as 9842b31 with the binding and verification read test, and installed as build ef436b7a.",
+    "completed_at": "2026-10-01T22:34:09.081073Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a87ec2a2cb614f20a52e3d39be31abc8": {
+        "activity_id": "a87ec2a2cb614f20a52e3d39be31abc8",
+        "task_id": "01a0f8bd-f624-7b21-98d3-628f7875dcb5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f127f07b1c274a1882dcd736bd87fa87"
+      }
+    }
+  }
+}

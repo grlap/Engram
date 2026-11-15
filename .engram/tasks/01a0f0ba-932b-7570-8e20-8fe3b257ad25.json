@@ -1,0 +1,64 @@
+{
+  "id": "01a0f0ba-932b-7570-8e20-8fe3b257ad25",
+  "external_ref": null,
+  "title": "Split the \"Medium/Low\" line of the review-changes consolidation template so Medium sits with the findings that block",
+  "outcome": "Split the \"Medium/Low\" line of the review-changes consolidation template so Medium sits with the findings that block",
+  "acceptance": [
+    "The Consolidated Action template in .claude/commands/review-changes.md groups Medium with the findings that must be fixed before the landing and puts Low with Notes, matching the standing approval's review condition",
+    "The change lands under the authority-text rule: both coordinators' concurrence on the exact wording, Greg sent the wording before the landing, and a passed final-diff audit recorded on the item; the Markdown checks pass and the review pair has no outstanding finding of Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The Consolidated Action template in .claude/commands/review-changes.md now groups Critical/High/Medium as fixed before the landing, Low as fixed or filed as its own item (not blocking), and Notes as needing no action — matching the standing approval's review condition as landed in 4c792a0, so the template no longer groups Medium with the non-blocking severities. Both coordinators concurred on the exact wording (#318, #320); Greg was sent it through Engram::Advisor (mailbox-74a6af16 #756, 16:52Z) before the landing; Termal::Fable2's final-diff audit passed (#337, #339) on the shared changeset's frozen tree (d64741a6, master 31fc438); the review pair clean of Medium or higher in the latest round, with the one Low filed as independent root w-1a1eea90359e; Markdown checks passed on the frozen tree. Landed as 4a9eff2 (2026-09-30T18:11:48Z). No installed build (deferred to Greg's decision on w-d254fcdc3d22; binary staged in .worktrees/audit-greg-notice/target/release). Acceptance evaluation passed fresh on both criteria (281290c8, independent_session Claude).",
+    "completed_at": "2026-09-30T23:42:05.022150Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "570e45ba26514194b2cb6b2041e745f9": {
+        "activity_id": "570e45ba26514194b2cb6b2041e745f9",
+        "task_id": "01a0f0ba-932b-7570-8e20-8fe3b257ad25",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e2c3f308763941b1b8b175acd2a8eb59"
+      },
+      "cbd5df74d3dd430bbb0063fde7cd9420": {
+        "activity_id": "cbd5df74d3dd430bbb0063fde7cd9420",
+        "task_id": "01a0f0ba-932b-7570-8e20-8fe3b257ad25",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cbd5df74d3dd430bbb0063fde7cd9420"
+      }
+    }
+  }
+}

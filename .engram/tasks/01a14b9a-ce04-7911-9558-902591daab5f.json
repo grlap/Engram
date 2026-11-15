@@ -1,0 +1,60 @@
+{
+  "id": "01a14b9a-ce04-7911-9558-902591daab5f",
+  "external_ref": null,
+  "title": "Joint design: Engram synchronization between hosts (remote first-class)",
+  "outcome": "Joint design: Engram synchronization between hosts (remote first-class)",
+  "acceptance": [
+    "A design brief under docs/features/ defines the Engram cross-host sync boundary: which state crosses hosts (task text, planning, notes, evidence references) and what never does (claims, grants, delivery cursors, private scratch, evaluations), with origin-host and actor attribution preserved",
+    "The brief defines write authority per host, conflict handling (concurrent edits, divergent graphs, completion on two hosts, refusal versus merge) and recovery (lost transport, partial exchange, host loss, rejoin) with retained candidates and no silent rewrite",
+    "The brief reconciles independent-writer Git task sync with single-writer portable handoff (one coherent design or an explicitly stated split) and states the interface with TermAl's cross-host mailbox (TermAl w-d8eb48ba8844): what a message may carry versus what syncs through Engram's own exchange",
+    "A staged rollout names the smallest end-to-end first stage with its proof and maps every stage onto existing items (w-42885a9ab4f4, w-0ba5464d7ceb, w-65fb79ead0c3, w-e775b8a167af) or newly decomposed ones with independently checkable criteria",
+    "Both Engram architects and both TermAl design owners record concurrence on the final brief, and it is shown to Greg before any implementation item is activated"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "design",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Overtaken. This asked for one joint brief, concurred by Engram architects and TermAl design owners. The architects are gone, Greg ruled TermAl out of sync (43498a6e #635), and he chose the separate data branch (#655, #657), with designs on w-09c87a312e95 and w-4eabb205c7b2 and docs/features/git-task-sync.md. Its acceptance as written was not met and isn't claimed. Cross-host work continues under w-c5d58ec64202. Cancelled under Greg's word, 43498a6e #683.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "5d9a9b2ffed749c8bd53563314d1a1f8": {
+        "activity_id": "5d9a9b2ffed749c8bd53563314d1a1f8",
+        "task_id": "01a14b9a-ce04-7911-9558-902591daab5f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5d9a9b2ffed749c8bd53563314d1a1f8"
+      },
+      "f23058d3fd4a413d8335296889dc77b8": {
+        "activity_id": "f23058d3fd4a413d8335296889dc77b8",
+        "task_id": "01a14b9a-ce04-7911-9558-902591daab5f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "bf4e02f38d3845f9aae8805ddcd0ca89"
+      }
+    }
+  }
+}

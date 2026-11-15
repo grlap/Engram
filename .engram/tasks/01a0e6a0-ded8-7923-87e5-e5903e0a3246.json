@@ -1,0 +1,51 @@
+{
+  "id": "01a0e6a0-ded8-7923-87e5-e5903e0a3246",
+  "external_ref": null,
+  "title": "Name the member when a replayed completion receipt fails to decode",
+  "outcome": "A stored completion result that this build cannot decode is refused on replay with a shape-only reason naming the offending member, as every other replayed result is, instead of the untagged union's generic \"data did not match any variant of untagged enum WorkCompleteResult\".",
+  "acceptance": [
+    "Replaying a stored work_complete protocol result decodes it by its discriminant: a present seal selects WorkCompletedReceipt, and a refusal code selects WorkCompleteRefusal. The chosen variant's decode error, naming an unknown or missing member, reaches the caller, never the generic untagged-union mismatch.",
+    "The replayed-completion case in the replayed-pins test (a stored obligation page whose requirement names required_environment, with a value and as null) asserts the refusal names `required_environment`, like the update, note and gate cases."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A replayed completion result is now decoded by the shape it claims: a seal selects the receipt, otherwise a code selects the refusal. A result that does not decode is refused naming the member at fault, or only the kind of problem, never a stored value, instead of the untagged union's generic mismatch. The replayed-pins completion case names required_environment, like the other replays. Landed as 28ad8ff.",
+    "completed_at": "2026-10-03T23:00:32.200752900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "06ec07d6060342b5b414301bd4e41c6d": {
+        "activity_id": "06ec07d6060342b5b414301bd4e41c6d",
+        "task_id": "01a0e6a0-ded8-7923-87e5-e5903e0a3246",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7beb38773c674dbb810095ae3e2fca7d"
+      }
+    }
+  }
+}

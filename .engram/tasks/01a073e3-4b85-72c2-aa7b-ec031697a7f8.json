@@ -1,0 +1,52 @@
+{
+  "id": "01a073e3-4b85-72c2-aa7b-ec031697a7f8",
+  "external_ref": null,
+  "title": "Preserve historical parent inspection after root reopen",
+  "outcome": "Preserve historical parent inspection after root reopen",
+  "acceptance": [
+    "show_child_summary_preserves_historical_execution_after_root_reopen passes with exact execution canonical validation and historical waiver accounting"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0729e-24e1-7be0-9e97-a79e52dd1703",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bound retained summary executions to their exact canonical identity and generation while preserving scalar, snapshot and waiver validation. Real completed nested-parent/root-reopen test passes with and without historical waiver; corrupted scalar, waiver snapshot and generation each refuse. All nine fresh parent gates pass.",
+    "completed_at": "2026-09-05T23:36:10.266736800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a3bba7435e44b5bf00aa615901eefb13b4ebec0e77a75abf9fe9ed8ac8682668": {
+        "activity_id": "a3bba7435e44b5bf00aa615901eefb13b4ebec0e77a75abf9fe9ed8ac8682668",
+        "task_id": "01a073e3-4b85-72c2-aa7b-ec031697a7f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "72017d5cf9f8fe6b370b8e58fd7f87f60cfcdef353e25b4a100286793ff55f62"
+      }
+    }
+  }
+}

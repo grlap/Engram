@@ -1,0 +1,54 @@
+{
+  "id": "01a0ef16-46bf-7e50-91e4-5d283a7cc81d",
+  "external_ref": null,
+  "title": "A seal's installed build is shown as asserted and unchecked, in full",
+  "outcome": "A seal's installed build is checked against a build Engram has seen, or is marked as asserted only",
+  "acceptance": [
+    "A regression covers a full value, a value with a correct prefix and a wrong remainder, and an absent value, with fingerprints derived at run time; each reads back exactly as stored and as asserted",
+    "The documentation of done names the supported read that prints the full build value (readiness --json or doctor --json of the installed executable, run by its path) and says that a shortened value is never completed by hand",
+    "doctor --check-landings keeps its Git result apart from the installed build's status, and never compares a sealed build with the executable that runs doctor",
+    "show and doctor --check-landings print a landing's installed build in full with the words asserted, unchecked beside it, in terminal text and JSON, for old seals too; the assurance is derived when reading and no stored seal is rewritten; an absent value reads as no installed build recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "completion",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as cbd42e5 plus d1a3b5f. show, the done receipt and doctor --check-landings print a landing's installed build in full beside \"asserted, unchecked\", or \"no installed build recorded\", in text and JSON (installed_build_assurance). The words are derived when read, so no stored seal changes. doctor keeps the build apart from Git's verdict, lists every landing with its build even when the repository cannot be read, and never compares the build with any build. The docs of done name readiness --json / doctor --json of the installed executable, run by its path, as the source of the full value, and forbid completing a shortened value by hand. A regression covers full, correct-prefix-wrong-remainder and absent values derived at run time. The independent evaluation ac32a79b passed 4 of 4. Deferred Lows and Notes are in w-aa0af6296401.",
+    "completed_at": "2026-09-30T03:08:03.942169200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1f1b07c008b542e2ac8c31b5a5547f4f": {
+        "activity_id": "1f1b07c008b542e2ac8c31b5a5547f4f",
+        "task_id": "01a0ef16-46bf-7e50-91e4-5d283a7cc81d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4a8a46492e6e450ea6116ea705fcc88d"
+      }
+    }
+  }
+}

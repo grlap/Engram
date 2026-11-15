@@ -1,0 +1,24 @@
+{
+  "id": "01a06fdd-764d-7cb1-91e3-2fd87be70fd6",
+  "external_ref": null,
+  "title": "Smoke: defaulted acceptance reminder after installing slice 3",
+  "outcome": "Smoke: defaulted acceptance reminder after installing slice 3",
+  "acceptance": [
+    "Smoke: defaulted acceptance reminder after installing slice 3 is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke item, cancelled after verification",
+  "completion": null
+}

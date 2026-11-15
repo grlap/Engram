@@ -1,0 +1,53 @@
+{
+  "id": "01a0bd53-a143-7ba2-b739-df045397a871",
+  "external_ref": null,
+  "title": "Migrate active local stores and install the reviewed cleanup build",
+  "outcome": "Migrate active local stores and install the reviewed cleanup build",
+  "acceptance": [
+    "Confirm affected store paths and quiesce their consumers before export and cutover.",
+    "Export unchanged source data, import into fresh current-schema databases, inspect omission reports and validation results, and retain originals and matching sidecars for rollback.",
+    "Install the verified cleanup executable, resume compatible consumers and verify their build and migrated-store access."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "installation",
+    "migration",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Migrated both active Engram and Phoenix stores via unchanged JSON export and fresh-schema import, retained original databases with matching sidecars and old executable, installed reviewed build 103a9714d03b, and verified fresh MCP plus resumed TermAl Work list/detail access. Independent evaluator session-7108 recorded all three criteria passing (b2c0524a6d85448eb05a1a885aeb130a). Operator performed and attested the stopped-consumer interval; parent and evaluator checked retained artifacts. Backups/exports/logs remain in C:/Users/grzeg/.engram/cleanup-migration-59b4110. No control-policy, Save or turn-grant acceptance claimed.",
+    "completed_at": "2026-09-20T06:33:15.429768500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a9e59b7a84884c959571e5dce1a4ef85": {
+        "activity_id": "a9e59b7a84884c959571e5dce1a4ef85",
+        "task_id": "01a0bd53-a143-7ba2-b739-df045397a871",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0e8e1b7675b3487fbcdfde805a57a90f"
+      }
+    }
+  }
+}

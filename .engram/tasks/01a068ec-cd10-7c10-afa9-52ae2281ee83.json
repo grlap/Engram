@@ -1,0 +1,173 @@
+{
+  "id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+  "external_ref": null,
+  "title": "Cross-operation SQLite fullscan/sort metrics for the scale gate",
+  "outcome": "Cross-operation SQLite fullscan/sort metrics for the scale gate",
+  "acceptance": [
+    "the scale gate reports per-operation SQLite fullscan and sort counters alongside decode budgets"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-performance",
+    "delivered",
+    "evaluation-pending",
+    "performance",
+    "stream-performance-evidence"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Cross-operation SQLite fullscan/sort metrics for the scale gate are landed (in the ancestry of e7426a6); verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed criterion 1 (record e336ec65c92345819d929a1a30b8e17f).",
+    "completed_at": "2026-10-28T01:29:20.507527600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "07bd34dfaba3460086b46f60f86276f3": {
+        "activity_id": "07bd34dfaba3460086b46f60f86276f3",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "07bd34dfaba3460086b46f60f86276f3"
+      },
+      "0dff2c926f0b4d4dbd480fa8a6dda79d": {
+        "activity_id": "0dff2c926f0b4d4dbd480fa8a6dda79d",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "07bd34dfaba3460086b46f60f86276f3"
+      },
+      "25e8b1fde7cc46c6b7fa0cac3981df5a": {
+        "activity_id": "25e8b1fde7cc46c6b7fa0cac3981df5a",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "693c999c59b74425a9a90443f02c4c1b"
+      },
+      "274fd5c1e8514e0faef73612309d8afc": {
+        "activity_id": "274fd5c1e8514e0faef73612309d8afc",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "274fd5c1e8514e0faef73612309d8afc"
+      },
+      "57eb18afcefc486cbc0c5a899a1c9682": {
+        "activity_id": "57eb18afcefc486cbc0c5a899a1c9682",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "814cb94c4a0a404387e68b72b09f3231"
+      },
+      "7d1c8db1cf93489f879029adf1b91fc5": {
+        "activity_id": "7d1c8db1cf93489f879029adf1b91fc5",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "47829d07a0274dfd9ce918d2120c46a6"
+      },
+      "80ba967acea441e8b7d16f4630540cc5": {
+        "activity_id": "80ba967acea441e8b7d16f4630540cc5",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "80ba967acea441e8b7d16f4630540cc5"
+      },
+      "814cb94c4a0a404387e68b72b09f3231": {
+        "activity_id": "814cb94c4a0a404387e68b72b09f3231",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f7d30cab3ff849e296eba8c2b522940b"
+      },
+      "b609b6ce9fe7470a87192b5da8fccfad": {
+        "activity_id": "b609b6ce9fe7470a87192b5da8fccfad",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b609b6ce9fe7470a87192b5da8fccfad"
+      },
+      "b8991598105647839500e282bc035f0c": {
+        "activity_id": "b8991598105647839500e282bc035f0c",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b8991598105647839500e282bc035f0c"
+      },
+      "f7d30cab3ff849e296eba8c2b522940b": {
+        "activity_id": "f7d30cab3ff849e296eba8c2b522940b",
+        "task_id": "01a068ec-cd10-7c10-afa9-52ae2281ee83",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7d1c8db1cf93489f879029adf1b91fc5"
+      }
+    }
+  }
+}

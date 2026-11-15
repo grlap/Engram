@@ -1,0 +1,53 @@
+{
+  "id": "01a10ff2-3c96-7cd2-9926-3710fc2ca41c",
+  "external_ref": null,
+  "title": "The spec's checkpoint sentences omit that a checkpoint's observations and evidence enter the run feed",
+  "outcome": "The spec's checkpoint sentences omit that a checkpoint's observations and evidence enter the run feed",
+  "acceptance": [
+    "docs/spec.md §2.7 and §3.1 say that a turn checkpoint's control event goes only to the task's change index (an audit record no production path consumes), and that the same checkpoint's execution observations and evidence are canonical records appended to the run/root work feeds, which obligations and completion read",
+    "Where docs/spec.md and docs/features/behavioral-control-plane.md say a restart expires issued, unbegun grants, they name the mechanism: reopening the session's host-control connection, or lazily a status read or rebind",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 240e4c7 on master as one Markdown changeset with w-1ad48d5ce497, w-524b15d690c5 and w-787d1a13d22f.\n\nSpec §2.7 and §3.1:\n- A turn checkpoint's control event is stored as an object and indexed only in the task's change index, an audit record no production path consumes.\n- Its execution observations and verification and environment evidence are canonical work records on the project, root and run feeds, read by obligations and completion while the run is unfinished.\n\nRestart wording, in spec and bcp:\n- Reopening the session's host-control connection expires issued, unbegun grants.\n- A rebind does the same.\n- A status read lazily expires overdue issued grants.\n\nEvidence:\n- Two review rounds; round 2 has nothing at Medium or above, and its Lows are filed as w-6f0d61bdbf6d.\n- Link check test-25425f1c and identity check test-5baea34d passed.\n- Evaluation 88c57f6c passed 3/3.\n- Readiness ready on all 4 stores.",
+    "completed_at": "2026-10-06T08:16:49.944500300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0e4bb982178f4682984797e1575ac043": {
+        "activity_id": "0e4bb982178f4682984797e1575ac043",
+        "task_id": "01a10ff2-3c96-7cd2-9926-3710fc2ca41c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a817265547b7418dad8e7a2ada8ba5df"
+      }
+    }
+  }
+}

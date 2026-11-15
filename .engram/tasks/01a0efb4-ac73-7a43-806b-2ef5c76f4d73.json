@@ -1,0 +1,27 @@
+{
+  "id": "01a0efb4-ac73-7a43-806b-2ef5c76f4d73",
+  "external_ref": null,
+  "title": "The website's machine section prints legibly",
+  "outcome": "The website's machine section prints legibly",
+  "acceptance": [
+    "Folios V to VIII print as dark text on white with their commands and step lists readable and no text overlapping, from a fresh load and from a deep link, with background graphics on and off, on A4 and on narrow paper",
+    "The print rules are few and hide decoration by one rule per kind; no print rule repeats a value taken from a screen animation; the screen is unchanged and the human folios print as before"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 4,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

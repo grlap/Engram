@@ -1,0 +1,29 @@
+{
+  "id": "01a1414b-e71b-7b20-ae46-b40a066ef62f",
+  "external_ref": null,
+  "title": "Preserve the original busy error when control transaction rollback also fails",
+  "outcome": "Preserve the original busy error when control transaction rollback also fails",
+  "acceptance": [
+    "When a control transaction body returns SQLite BUSY or LOCKED and its explicit rollback fails, the operation still returns generic storage_error and preserves the original body error alongside useful rollback-failure context in diagnostics; no control_store_busy no-commit certification is issued.",
+    "Regression coverage proves both error provenance and generic classification for rollback failure, while successful explicit rollback keeps the existing control_store_busy classification."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0fcff-359b-7e20-8b1f-df727aca8ed0",
+  "external_ref": null,
+  "title": "`engram backup status [--json]` from local evidence",
+  "outcome": "`engram backup status [--json]` from local evidence",
+  "acceptance": [
+    "`engram backup status [--json]` reads only local files and the store: it prints the mode and, for each qualifying kind, its off-host text and what it restores, then per configured kind the acknowledgement, who made the assertion and when, the capture start and age, the cut and how far the store has moved, the last confirmation, the checking build when it differs from the running one, a pending attempt, and the last attempt with its error; an unreadable configuration or state file is reported as the typed reason `backup_record_unreadable` and not as a crash; the `--json` receipt carries a schema version; a test asserts that no output prints the mode without the off-host field and that a directory target reads exactly \"off-host asserted; not verified\""
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-e4c5-7d10-bd31-8f5379e3c9c7",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fcff-2b3b-7561-a79e-1dd24a10891b"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`engram backup status [--json]` reports from local evidence only.\n- The mode always appears with each qualifying kind's off-host text, which reads exactly \"off-host asserted; not verified\" for a directory, and with what the copy restores.\n- Each kind shows its reason as a backup_* code and its recorded evidence: statements, copy, acknowledgement, capture age, cut movement, confirmation, missing finding, checking build, pending attempt and last attempt.\n- An unreadable record is a typed reason, not a crash, and a negative recorded cut makes a state unusable.\n- The JSON carries schema_version 1.\nLanded as d667f23. The installed build is eacc4eef5472, rev d667f23fb152.",
+    "completed_at": "2026-10-02T15:36:58.255849200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "49ce1d6347154b49b1cfc40e3e09081e": {
+        "activity_id": "49ce1d6347154b49b1cfc40e3e09081e",
+        "task_id": "01a0fcff-359b-7e20-8b1f-df727aca8ed0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "97fb22ebc9a9409b9d0ca89fef0cb03d"
+      }
+    }
+  }
+}

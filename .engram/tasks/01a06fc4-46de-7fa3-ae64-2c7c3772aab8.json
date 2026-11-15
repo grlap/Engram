@@ -1,0 +1,50 @@
+{
+  "id": "01a06fc4-46de-7fa3-ae64-2c7c3772aab8",
+  "external_ref": null,
+  "title": "Build an animated Renaissance-inspired Engram project website",
+  "outcome": "Build an animated Renaissance-inspired Engram project website",
+  "acceptance": [
+    "Browser checks and required repository quality gates pass",
+    "Responsive website explains Engram accurately, with da Vinci-inspired artwork, accessible animation, working navigation and setup instructions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the animated da Vinci-inspired project website with responsive layouts, accessible interactive examples, self-contained original artwork, local preview instructions, all required quality gates passing, and the responsive fix sealed.",
+    "completed_at": "2026-09-05T04:34:52.790132300Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "935bbee561e7e02fc80a2a5830b1e719485875e122e2eab3f95a64a29a5eee2a": {
+        "activity_id": "935bbee561e7e02fc80a2a5830b1e719485875e122e2eab3f95a64a29a5eee2a",
+        "task_id": "01a06fc4-46de-7fa3-ae64-2c7c3772aab8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "95fa23e937f9d972f92a7297bbc6571a727b666098c9beef1630055f8459eaed"
+      }
+    }
+  }
+}

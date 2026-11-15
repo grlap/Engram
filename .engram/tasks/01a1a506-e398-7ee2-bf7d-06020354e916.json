@@ -1,0 +1,29 @@
+{
+  "id": "01a1a506-e398-7ee2-bf7d-06020354e916",
+  "external_ref": null,
+  "title": "Report undecodable remote terminal origins as doctor findings",
+  "outcome": "A remote origin object with the expected kind but an invalid payload is diagnosed without aborting verify_all, while database operational errors still propagate.",
+  "acceptance": [
+    "A tamper regression replaces an authoritative completion's terminal origin payload with valid JSON of the wrong shape and requires verify_all to return an unhealthy report naming the invalid origin instead of returning StoreError::Json.",
+    "Diagnosis leaves stored schema and rows unchanged and unrelated SQLite errors still propagate; the ordinary typed loader and verification admission remain strict."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "doctor",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

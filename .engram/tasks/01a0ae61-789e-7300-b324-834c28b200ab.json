@@ -1,0 +1,52 @@
+{
+  "id": "01a0ae61-789e-7300-b324-834c28b200ab",
+  "external_ref": null,
+  "title": "Accept --evaluation-mode on add so a task can pin its evaluator mode at creation",
+  "outcome": "Accept --evaluation-mode on add so a task can pin its evaluator mode at creation",
+  "acceptance": [
+    "add --evaluation-mode MODE (CLI and MCP) creates the item with evaluation_mode set and show prints it",
+    "the brief and cli-and-mcp docs describe add alongside update"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "add --evaluation-mode delivered on CLI and MCP for roots and --under children: the mode is parsed in the add word (unknown words refuse before creation), threaded through WorkProposeInput::Root, WorkChildInput, ChildWorkDraft, and CreateWorkRequest into the created item, and detach carries the pin to a successor root; show prints it. Verbs test add_pins_the_evaluation_mode_from_creation; brief, cli-and-mcp, and shipped docs describe add alongside update. Focused checks recorded here (fmt, check, clippy, parity, mcp-dogfood, doc-links: pass); the full Rust script and control-dogfood on the final input belong to the parent validation child.",
+    "completed_at": "2026-09-17T08:32:07.800685700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0918af38b9bdf4e29789c14daf9c5dd2128cda26f8c9a453c4657c924735ff8c": {
+        "activity_id": "0918af38b9bdf4e29789c14daf9c5dd2128cda26f8c9a453c4657c924735ff8c",
+        "task_id": "01a0ae61-789e-7300-b324-834c28b200ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a8e2df919487c35855c2e9e6c60a39ad600c9ef8dedfe98df42be4d8d900bd54"
+      }
+    }
+  }
+}

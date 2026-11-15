@@ -1,0 +1,52 @@
+{
+  "id": "01a0e07b-cb8a-72c2-92a3-4d16b4c9114d",
+  "external_ref": null,
+  "title": "A test-launcher run that is stopped stays \"running\" for ever, and the launcher has no way to settle it",
+  "outcome": "A run whose launcher process no longer exists is recorded as stopped, never as running and never as passed, and a reader of the run directory can tell which stages had finished.",
+  "acceptance": [
+    "A test stops a launcher during its second stage, recovers the run directory, and shows the first stage's fields and log bytes unchanged and the second stage interrupted; a second test shows the refusal for a living launcher with a stale heartbeat; a third shows that a launcher which finishes between the recovery's first reading and its proof of death keeps its own result; a fourth shows that a second recovery started while the first holds the lock refuses.",
+    "It refuses, changing no file, a run whose executor is alive even with a stale heartbeat, a run whose executor cannot be identified, and a run that has not yet published its executor; a run already terminal is left as it is; the executor is known by the run directory's record of process id and creation time, never by a command line.",
+    "`node scripts/test-launcher.mjs recover RUN_DIRECTORY` recovers a run whose executor is gone: it writes the terminal result of an interrupted run as TermAl's launcher and reader already agree it: state failed with interrupted true and an error that begins \"interrupted:\", which is neither running nor passed; it keeps every finished stage's result and log unchanged, marks the stage that was running as interrupted with unknown outcome, leaves unrun stages unrun, invents no stage exit code, signal or test count; the run's exitCode is 1, the launcher's failure status, as TermAl's launcher writes it; and reruns nothing.",
+    "summary on a recovered run prints INTERRUPTED with the stage or the startup phase it was in, never PASS or FAIL, and no record line of the test-launcher/v1 grammar is printed for it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`node scripts/test-launcher.mjs recover RUN_DIRECTORY` settles a run whose executor ended without saving a result, with TermAl's interrupted shape (failed, exitCode 1, interrupted true, ended, error \"interrupted:…\"; the running stage failed with outcome unknown; finished stages kept, nothing rerun, killed or notified). The executor records pid, creation time and host before readiness; recover asks the system for that process and refuses, changing no file, while it may be alive, cannot be identified, ran elsewhere, or never published itself. recovery.lock serialises recoveries with a re-read under it. summary prints INTERRUPTED, never PASS or FAIL.",
+    "completed_at": "2026-09-30T02:01:48.906629700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "52073f38081d48fcbd02556fc58c4876": {
+        "activity_id": "52073f38081d48fcbd02556fc58c4876",
+        "task_id": "01a0e07b-cb8a-72c2-92a3-4d16b4c9114d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "40e24a4064e04bc8add4355790dfc68b"
+      }
+    }
+  }
+}

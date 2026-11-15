@@ -1,0 +1,74 @@
+{
+  "id": "01a10f1d-d3c5-7470-8ffd-febdd6deafd2",
+  "external_ref": null,
+  "title": "A done refused for invalid input still moves the session's focus to the named item",
+  "outcome": "A done refused for invalid input still moves the session's focus to the named item",
+  "acceptance": [
+    "Either a done (and any other word) refused for invalid input before any mutation leaves the session's focus unchanged, with a test, or the docs state that naming an item moves the focus even when the word is refused, and the refusal says so"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ux",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Words now refuse malformed request input before moving focus or writing an attempt, on agent words and core JSON. Stored-state refusals stay with storage and are documented in the CLI and MCP guide. Landed as 411f8a8 after review round 16 and full gate test-1b01ec78.",
+    "completed_at": "2026-10-09T20:22:52.523410900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8ee78ac5d5864c6a8913c2253ad54da0": {
+        "activity_id": "8ee78ac5d5864c6a8913c2253ad54da0",
+        "task_id": "01a10f1d-d3c5-7470-8ffd-febdd6deafd2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "77b3862e121a4ef697cc29aa776a8195"
+      },
+      "c10ddc29a0154998b05ed745d3a44447": {
+        "activity_id": "c10ddc29a0154998b05ed745d3a44447",
+        "task_id": "01a10f1d-d3c5-7470-8ffd-febdd6deafd2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c10ddc29a0154998b05ed745d3a44447"
+      },
+      "dad780af038a408499143898aa203747": {
+        "activity_id": "dad780af038a408499143898aa203747",
+        "task_id": "01a10f1d-d3c5-7470-8ffd-febdd6deafd2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dad780af038a408499143898aa203747"
+      }
+    }
+  }
+}

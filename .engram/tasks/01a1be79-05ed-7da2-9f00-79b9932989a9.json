@@ -1,0 +1,29 @@
+{
+  "id": "01a1be79-05ed-7da2-9f00-79b9932989a9",
+  "external_ref": null,
+  "title": "Make the ended-root registration test isolate the binding-kind refusal",
+  "outcome": "Make the ended-root registration test isolate the binding-kind refusal",
+  "acceptance": [
+    "The ended-root registration fixture records registration after the Ended event while matching workspace and generation, so the binding-kind guard independently refuses it without writes.",
+    "The focused registered-verification tests pass, retaining the other root and authority refusal coverage."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

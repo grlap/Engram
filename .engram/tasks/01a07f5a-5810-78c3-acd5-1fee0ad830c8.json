@@ -1,0 +1,62 @@
+{
+  "id": "01a07f5a-5810-78c3-acd5-1fee0ad830c8",
+  "external_ref": null,
+  "title": "Document refusal contracts for public intake storage methods",
+  "outcome": "Document refusal contracts for public intake storage methods",
+  "acceptance": [
+    "cargo clippy --all-targets --all-features -- -D warnings passes missing_errors_doc for intake methods"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Public intake storage methods document their typed refusal contracts; final clippy passes without missing_errors_doc. Final gates passed; accepted freeze539037a9. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:59:04.904802400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ac5e44b5e30a551431c6f33d4ab18a62b62d0f2fa3a2bce0915941ee9d86447f": {
+        "activity_id": "ac5e44b5e30a551431c6f33d4ab18a62b62d0f2fa3a2bce0915941ee9d86447f",
+        "task_id": "01a07f5a-5810-78c3-acd5-1fee0ad830c8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "938d0c4f6c7308063053abd5bc2f10add0f77a2e4537e44a21df120fcb24dbc1"
+      },
+      "cb9ce23fc6ad715be179b00251c4f20c33fa285d28ab786e642763a53cba2ccb": {
+        "activity_id": "cb9ce23fc6ad715be179b00251c4f20c33fa285d28ab786e642763a53cba2ccb",
+        "task_id": "01a07f5a-5810-78c3-acd5-1fee0ad830c8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cb9ce23fc6ad715be179b00251c4f20c33fa285d28ab786e642763a53cba2ccb"
+      }
+    }
+  }
+}

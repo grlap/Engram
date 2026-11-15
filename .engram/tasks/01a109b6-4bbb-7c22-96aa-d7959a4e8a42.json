@@ -1,0 +1,66 @@
+{
+  "id": "01a109b6-4bbb-7c22-96aa-d7959a4e8a42",
+  "external_ref": null,
+  "title": "show --note's verification assessment leads with a status-grouped summary and every open or mismatch row in full; the full history stays one continuation away",
+  "outcome": "show --note's verification assessment leads with a status-grouped summary and every open or mismatch row in full; the full history stays one continuation away",
+  "acceptance": [
+    "The default `show --note RECORD` assessment view of a verification record starts with totals and a count per (status, reason), then lists in full every row whose status is open, mismatch or matches; rows left out as already closed appear only in the counts.",
+    "No open or mismatch row is ever hidden, truncated or pushed to a later page by closed rows; if the rows that must be shown exceed the byte budget, the view says so and gives a continuation that reaches them before any closed row.",
+    "The view states the record and cut positions and prints the continuation command that returns the full history at the same cut, so the earlier exhaustive listing is still reachable.",
+    "The CLI and MCP renderings agree, and tests cover a record shaped like the measured case (many closed rows with the open rows last), an all-closed record and a record over the byte budget."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ergonomics",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The default show --note assessment of a verification record is now a summary:\n- exact counts for every (status, reason) pair;\n- every row that matches, mismatches or is still recorded open, in full and in trigger order. Other left-out rows appear only in the counts.\n\nThe summary fits whole rows into a 6 KiB budget, at least one per page. When it overflows, the view says so and pages through the must-show rows before any closed row. Every page names the record and cut positions and gives the command for the full history at the same cut, which keeps the old page shape. v2 cursors cover both views, and v1 and stale cursors are refused. The CLI and MCP share one renderer, and a test asserts they agree. The docs are updated.\n\nEvidence:\n- Gate 99da5c46: 9/9, credit 7a6d9079.\n- Pair: clean on freeze b9771b1b.\n- Evaluation a0e11fd2: 4/4.\n- Landed after the observed TermAl restart that brought the w-96649 reader live.\n\nLanding:\n- Commit 7b8d87e on origin/master.\n- Readiness: ready on 4 stores.\n- Installed build 5a0a2c1d, with the old build backed up.\n\nFollow-up: w-529c2ef6e596.",
+    "completed_at": "2026-10-05T22:33:04.375865Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "099da0731ac84c7d9af9e5ae15ecdf4f": {
+        "activity_id": "099da0731ac84c7d9af9e5ae15ecdf4f",
+        "task_id": "01a109b6-4bbb-7c22-96aa-d7959a4e8a42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "099da0731ac84c7d9af9e5ae15ecdf4f"
+      },
+      "34ebc30e1c424081bedad7bd6feadc21": {
+        "activity_id": "34ebc30e1c424081bedad7bd6feadc21",
+        "task_id": "01a109b6-4bbb-7c22-96aa-d7959a4e8a42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9abe83651dda41bc88f974812cdc6d38"
+      }
+    }
+  }
+}

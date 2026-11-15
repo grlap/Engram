@@ -1,0 +1,53 @@
+{
+  "id": "01a1c28b-f04c-75d2-8dbc-fda5e7852af9",
+  "external_ref": null,
+  "title": "Refuse a reserved data checkout tracked by the code index or HEAD",
+  "outcome": "Refuse a reserved data checkout tracked by the code index or HEAD",
+  "acceptance": [
+    "Every data-worktree observation and revalidation refuses when the code index or committed HEAD tracks the reserved .engram-data path or descendants, including a gitlink introduced after initialization; no export, data commit or advance proceeds after that drift.",
+    "Behavior regressions initialize a valid data worktree, then track the reserved path in the code index and HEAD, and prove subsequent observe/export/advance refusal without changing code or data state; ordinary ignored untracked data worktrees still work."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Every DataWorktree observation/revalidation and initialization now rejects the reserved .engram-data path tracked in either code index or committed HEAD, including gitlinks, descendants and staged-removal masking. Both new initialized-state regressions pass alongside existing valid ignored-layout behavior. Exact231c67a37a7b66c0736a6feb77bb30cd5764a96b/tree59c7d473f6705d277e1b098baf457036edb63fb5 author focused5/5 PASS and independent evaluationd22bb53417454eb28c6ee99c83908f76 atcut148 PASS2/2 current nonstale judgment. Checked four-path patch delivered in587; combined integration reviews/FULL/cutover/landing remain parent-owned.",
+    "completed_at": "2026-11-09T23:30:38.505815Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0cec0fc8092647148e6476cfa9227d9e": {
+        "activity_id": "0cec0fc8092647148e6476cfa9227d9e",
+        "task_id": "01a1c28b-f04c-75d2-8dbc-fda5e7852af9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f6cf61c830ce4b28a06cde0649e8717f"
+      }
+    }
+  }
+}

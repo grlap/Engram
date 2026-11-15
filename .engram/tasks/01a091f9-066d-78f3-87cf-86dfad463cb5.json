@@ -1,0 +1,52 @@
+{
+  "id": "01a091f9-066d-78f3-87cf-86dfad463cb5",
+  "external_ref": null,
+  "title": "Stabilize completion attempt identity across its own terminal transition",
+  "outcome": "Stabilize completion attempt identity across its own terminal transition",
+  "acceptance": [
+    "keyless_completion_finishes_its_original_pending_attempt_after_core_commit passes",
+    "keyless_completion_identity_survives_its_terminal_transition passes",
+    "keyless_completion_replay_uses_the_original_attempt_not_a_fresh_fallback passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07db4-0772-7ac0-9b48-6cecd7f9e1a7",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and validated stable same-run completion retry identity with safe reclaim and authority guidance; required corrections sealed and authoritative review pair accepted.",
+    "completed_at": "2026-09-11T21:24:30.097354400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6830e4591c3d6412cac8e63eb942fc8554c2725de46e1771ba3faa5a0b7f158b": {
+        "activity_id": "6830e4591c3d6412cac8e63eb942fc8554c2725de46e1771ba3faa5a0b7f158b",
+        "task_id": "01a091f9-066d-78f3-87cf-86dfad463cb5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8b893574e61a4f05edef0007a54692af3fe6e6c197b65d86b1785f08bec5208e"
+      }
+    }
+  }
+}

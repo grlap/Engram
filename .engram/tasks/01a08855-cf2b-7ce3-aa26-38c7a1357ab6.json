@@ -1,0 +1,50 @@
+{
+  "id": "01a08855-cf2b-7ce3-aa26-38c7a1357ab6",
+  "external_ref": null,
+  "title": "Pin published atomic-plan limits and descendant coupling",
+  "outcome": "Pin published atomic-plan limits and descendant coupling",
+  "acceptance": [
+    "Tests pin 1024 edges and 1MiB typed input and require a complete 256-task single root"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08803-497f-7480-abb5-41fff20c7992",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pinned published256task 1024edge and1MiB bounds plus255descendant coupling; clarified former128boundary and documented scale guards. Final full gates passed.",
+    "completed_at": "2026-09-09T23:14:00.713188500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "164015e1a052a4fe846c96e75ee497f391c872d564aec0b2e995a1549f3799cd": {
+        "activity_id": "164015e1a052a4fe846c96e75ee497f391c872d564aec0b2e995a1549f3799cd",
+        "task_id": "01a08855-cf2b-7ce3-aa26-38c7a1357ab6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "97c8bb3d3cbedb85313bf1648ae9c726769adcc7a31a1fc7c3c096a6df4af71a"
+      }
+    }
+  }
+}

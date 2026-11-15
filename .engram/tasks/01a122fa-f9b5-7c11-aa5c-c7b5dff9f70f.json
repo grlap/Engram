@@ -1,0 +1,27 @@
+{
+  "id": "01a122fa-f9b5-7c11-aa5c-c7b5dff9f70f",
+  "external_ref": null,
+  "title": "Leave dispatch wait unknown in handler-settlement diagnostics",
+  "outcome": "Leave dispatch wait unknown in handler-settlement diagnostics",
+  "acceptance": [
+    "Handler-settlement and late-ticket fault records omit dispatch_wait_ms until a dispatch boundary has actually been observed; dispatch/send/cancel/finish records retain observed durations."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

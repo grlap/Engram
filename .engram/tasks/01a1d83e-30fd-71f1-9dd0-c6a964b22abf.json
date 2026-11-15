@@ -1,0 +1,82 @@
+{
+  "id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+  "external_ref": null,
+  "title": "Exchange project memories between hosts so every host's agents share the same recorded rules and context",
+  "outcome": "Exchange project memories between hosts so every host's agents share the same recorded rules and context",
+  "acceptance": [
+    "A design, reviewed before coding, states how keyed project memories (revisions, attribution, retiring targets, forget tombstones, restricted bodies) travel between hosts through the existing task-sync data branch or another explicit operation, how concurrent revisions of one key on two hosts are resolved without silent loss, and what is never transferred",
+    "After the change, a memory remembered or revised on host A is readable with the same key, revision history and attribution on host B after one documented sync operation, and a forget on A retires the key on B; shown on real Windows and DL560 or Mac hosts",
+    "docs/features/git-task-sync.md no longer states that project memories are outside the profile, or states exactly which parts still are"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "project-memory",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "1497d126f2324ae8be26cbd060d8e0b7": {
+        "activity_id": "1497d126f2324ae8be26cbd060d8e0b7",
+        "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1497d126f2324ae8be26cbd060d8e0b7"
+      },
+      "193a230c5a57423b85ee892bbad9e80b": {
+        "activity_id": "193a230c5a57423b85ee892bbad9e80b",
+        "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "193a230c5a57423b85ee892bbad9e80b"
+      },
+      "258627cabc094fde80ee0748dc008961": {
+        "activity_id": "258627cabc094fde80ee0748dc008961",
+        "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "258627cabc094fde80ee0748dc008961"
+      },
+      "7ed724daa971401aa54bb8fff7dfbbba": {
+        "activity_id": "7ed724daa971401aa54bb8fff7dfbbba",
+        "task_id": "01a1d83e-30fd-71f1-9dd0-c6a964b22abf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7ed724daa971401aa54bb8fff7dfbbba"
+      }
+    }
+  }
+}

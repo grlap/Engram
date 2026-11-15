@@ -1,0 +1,51 @@
+{
+  "id": "01a12a27-3515-71c1-b0ca-580da5474820",
+  "external_ref": null,
+  "title": "Describe missing-heartbeat launcher verdicts with complete, correctly scoped prose",
+  "outcome": "Describe missing-heartbeat launcher verdicts with complete, correctly scoped prose",
+  "acceptance": [
+    "The launcher heartbeat documentation uses a complete sentence for UNKNOWN/no-terminal-result and states that the running-stage BLOCKER is shown only when a next transition was declared."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "docs/development.md heartbeat paragraph rewritten:\n- A run with no terminal result and no valid heartbeat is reported as UNKNOWN with reason no-terminal-result, now a complete sentence.\n- A stale heartbeat's blocker carries reason interrupted and names the running stage when that name is valid.\n- `summary` shows a BLOCKER line only when the launch declared a next transition (--next-owner with --next-action) and the verdict is not PASS.\nReview: two rounds; round 2 clean (Codex 12140, Claude 12141); all round-1 Low and Notes applied. Markdown-only checks passed through the focused launcher with the input matched (doc links test-99aa25e6, AGENTS/CLAUDE identity test-b21b5857). Independent evaluation 5a5875b1 passed. Readiness ready on all 4 stores.",
+    "completed_at": "2026-10-12T01:24:24.223300400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a42962a48f26468393b182534375639e": {
+        "activity_id": "a42962a48f26468393b182534375639e",
+        "task_id": "01a12a27-3515-71c1-b0ca-580da5474820",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "01545a40f1524e95a698cabe8d002ba5"
+      }
+    }
+  }
+}

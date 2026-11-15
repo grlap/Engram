@@ -1,0 +1,53 @@
+{
+  "id": "01a11bdf-c8c7-7363-aa42-95ab1a61ef47",
+  "external_ref": null,
+  "title": "Skip verification producer-observation reads during note search",
+  "outcome": "Canonical note search decodes only the public note text and refs it matches, without loading verification producer facts.",
+  "acceptance": [
+    "The note-search read of verification evidence loads its producer ExecutionObservation only for the canonical projection validation, not again for displayed typed facts, while ordinary show readers retain their typed verification facts.",
+    "Tests cover verification summary/ref search without producer-fact loading and preserve eligible scope, matching locators, deduplication and snapshot semantics."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "low",
+    "performance",
+    "review",
+    "technical-debt"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed the redundant verification display-facts producer read from note search while retaining canonical producer validation and ordinary show facts.",
+    "completed_at": "2026-10-09T02:08:44.791848500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0dc3a115d2554ece9fcdb98821ffc5f3": {
+        "activity_id": "0dc3a115d2554ece9fcdb98821ffc5f3",
+        "task_id": "01a11bdf-c8c7-7363-aa42-95ab1a61ef47",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0fd22d7b72b24f36a07a0341ef089363"
+      }
+    }
+  }
+}

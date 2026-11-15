@@ -1,0 +1,55 @@
+{
+  "id": "01a0c9e8-25a9-79c1-95ed-534213778b0a",
+  "external_ref": null,
+  "title": "Add one completion-driven test launcher with bounded diagnostic output",
+  "outcome": "Add one completion-driven test launcher with bounded diagnostic output",
+  "acceptance": [
+    "Completion results are durable before notification, notification retry reuses run identity without rerunning tests, and a real root-worker launch survives yielding and wakes the coordinator through genuine inherited TermAl identity; any unsupported path is disclosed.",
+    "Final candidate passes required repository validation and independent Codex/Claude review; documentation describes usage without duplicating policy or weakening test requirements.",
+    "Full stdout/stderr remains in per-run ignored logs; compact terminal results preserve actual exits, warnings and bounded failure diagnostics with truncation/log locators. Fixtures prove success, failure with unrun stages, warnings, preflight/runner exceptions and truncation; interrupted runs never become PASS.",
+    "One maintained entrypoint runs focused commands and every existing required gate in order, with correct tools/configuration preflight and existing input identity checks; no hidden formatting/install/restart."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": "independent_session",
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-tooling",
+    "simplification",
+    "testing",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the maintained completion-driven test launcher, bounded diagnostics and durable logs/results, genuine worker-to-parent completion wake, notification-only retry, input checks, docs and CI integration. All nine existing gates passed and Codex/Claude review has no actionable findings. Independent evaluator recorded 4/4 pass with judgment basis, not host-attested verification. No new receipt-race test per Greg. No commit, push, install or restart performed.",
+    "completed_at": "2026-09-22T22:03:59.693648900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8e26f227698642f6b4311d06274711dd": {
+        "activity_id": "8e26f227698642f6b4311d06274711dd",
+        "task_id": "01a0c9e8-25a9-79c1-95ed-534213778b0a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9bd8bef929664237afde72ea2f43fae4"
+      }
+    }
+  }
+}

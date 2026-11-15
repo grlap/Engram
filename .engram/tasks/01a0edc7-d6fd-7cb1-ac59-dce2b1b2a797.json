@@ -1,0 +1,27 @@
+{
+  "id": "01a0edc7-d6fd-7cb1-ac59-dce2b1b2a797",
+  "external_ref": null,
+  "title": "Decide whether an executor may revise criteria again, and pass itself, after a distinct evaluator accepted its earlier revision",
+  "outcome": "Decide whether an executor may revise criteria again, and pass itself, after a distinct evaluator accepted its earlier revision",
+  "acceptance": [
+    "The design decides whether a revision made after a distinct evaluator's passing, superseding evaluation needs acceptance by someone other than the executor, and the acceptance-evaluation design doc records the decision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

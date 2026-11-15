@@ -1,0 +1,29 @@
+{
+  "id": "01a198ea-d53e-7d40-93ff-74b4b0b88d11",
+  "external_ref": null,
+  "title": "Report undecodable reconciliation records as labelled doctor findings",
+  "outcome": "Report undecodable reconciliation records as labelled doctor findings",
+  "acceptance": [
+    "Doctor reports individually labelled undecodable holds and shared versions and continues auditing remaining records.",
+    "Current admission and historical reads still fail closed; negative tests distinguish doctor reporting from direct refusal."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

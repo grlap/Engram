@@ -1,0 +1,54 @@
+{
+  "id": "01a1c629-1da9-7fa2-8c69-9051df33a738",
+  "external_ref": null,
+  "title": "Enforce paged evidence disclosure and keep recovery migration fixtures within Windows path limits",
+  "outcome": "Refuse every restricted native evidence page and exercise migration-based origin recovery in supported Windows fixture layouts.",
+  "acceptance": [
+    "A native capture exported one record per pack refuses a task-revision-only page after the current task becomes restricted; captured restrictions are also enforced independently of companion records, while permitted original IDs and canonical bytes stay unchanged.",
+    "The origin-recovery MigrationImport fixture uses a short owned migration output followed by a coherent backup or equivalent supported layout, and actually exercises recovery on Windows without weakening production path guards.",
+    "Focused behavioral checks cover the new disclosure refusal and actual migration/recovery path; exact patch/base/tree and results are recorded for parent integration."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review-repair",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Enforce current and captured task restrictions on every native evidence page, and exercise migration-based origin recovery using a short import path followed by a coherent backup.",
+    "completed_at": "2026-11-10T17:30:38.378032900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1d9eb0d847e44232a6cc7334bcc2075f": {
+        "activity_id": "1d9eb0d847e44232a6cc7334bcc2075f",
+        "task_id": "01a1c629-1da9-7fa2-8c69-9051df33a738",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c3aa1b7b90f341699dbf38cee1042152"
+      }
+    }
+  }
+}

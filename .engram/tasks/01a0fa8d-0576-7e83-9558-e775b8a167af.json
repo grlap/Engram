@@ -1,0 +1,71 @@
+{
+  "id": "01a0fa8d-0576-7e83-9558-e775b8a167af",
+  "external_ref": null,
+  "title": "Design portable handoff so one project moves between hosts with exactly one active writer",
+  "outcome": "Design portable handoff so one project moves between hosts with exactly one active writer",
+  "acceptance": [
+    "docs/features/ holds a portable-handoff design brief that reconciles spec section 3.2 and the portable sections of sqlite-store.md and local-work-system.md with the off-host backup brief, naming what it reuses from backup (adapters, receipts, manifest, freshness, clean-home restore) and what it adds",
+    "the brief defines the portable payload: the closed shared-state projection, what it excludes (live claims, grants, delivery state, private scratch), and how excluded references stay explicit stubs rather than dangling or rewritten records",
+    "the brief names release and the acquisition operation exposed as pull, what release freezes on the old host, what pull requires before any mutation on the new host, how a moved remote head is refused, and startup/resume writer-epoch validation; the proposed clean-handoff first version explicitly refuses forced takeover, preserves its bounded-detection requirement in the existing later-stage scope, and keeps the sequential-use product assumption visible",
+    "the brief states what a host such as TermAl must do at startup and resume to validate the writer epoch, and what the single-host setup gains from portable that backup does not already give",
+    "the implementation is decomposed into Engram items with criteria an independent evaluator can check, both architects record concurrence on the final brief, and any choice beyond the brief is recorded with the council's decision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "design"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "This designed the single-writer portable handoff, which was replaced: docs/features/git-task-sync.md and AGENTS.md select independent writers with no writer epochs or release/acquire. No portable brief is on master, and its design worktree never landed. Its last status (2026-10-08) was waiting on a formal review pair, so the design was never completed; it isn't claimed as done. Cancelled under Greg's word, 43498a6e #683.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "4a30d660e3754772848523d7395fe905": {
+        "activity_id": "4a30d660e3754772848523d7395fe905",
+        "task_id": "01a0fa8d-0576-7e83-9558-e775b8a167af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4a30d660e3754772848523d7395fe905"
+      },
+      "73c6d2fc390142f1857e08885f1457d7": {
+        "activity_id": "73c6d2fc390142f1857e08885f1457d7",
+        "task_id": "01a0fa8d-0576-7e83-9558-e775b8a167af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "cbb985aa3ce6427186dbde65eab30e10"
+      },
+      "bd86b6ce16814a7c9d90771d8c712ecd": {
+        "activity_id": "bd86b6ce16814a7c9d90771d8c712ecd",
+        "task_id": "01a0fa8d-0576-7e83-9558-e775b8a167af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bd86b6ce16814a7c9d90771d8c712ecd"
+      }
+    }
+  }
+}

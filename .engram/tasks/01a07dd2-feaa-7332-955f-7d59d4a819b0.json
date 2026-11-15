@@ -1,0 +1,62 @@
+{
+  "id": "01a07dd2-feaa-7332-955f-7d59d4a819b0",
+  "external_ref": null,
+  "title": "Render malformed CLI criterion links through structured refusals",
+  "outcome": "Render malformed CLI criterion links through structured refusals",
+  "acceptance": [
+    "Malformed --link with --json returns work_criterion_link_invalid and runnable guidance"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07ca4-c2b5-7b53-bf40-5f83bc6dbfac",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented the recorded correction; its named regressions and all nine merged gates passed. Completed through new shell CLI build 6d8043d8e8b1, installed from merged working tree, NOT committed to master; Git landing awaits explicit authority. Fable independently reports healthy doctor. Pre-swap running MCP servers remain on 73401c0ab3cc. Earlier implementation notes and gate records retain the detailed evidence; no individual criterion links supplied here.",
+    "completed_at": "2026-09-08T01:24:50.545035100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "77c9a11fe5938cf9507016b1af3e9b6fa7983ef91f76e21b43f29e985b340d2c": {
+        "activity_id": "77c9a11fe5938cf9507016b1af3e9b6fa7983ef91f76e21b43f29e985b340d2c",
+        "task_id": "01a07dd2-feaa-7332-955f-7d59d4a819b0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9a39e066a0309dc95829f0a2d252495edbeebad94a4677c63f55888c6807af90"
+      },
+      "e5eeb987e9a010d83b9472d21a4f20170716f797bf1702095d78357bfc7d40ae": {
+        "activity_id": "e5eeb987e9a010d83b9472d21a4f20170716f797bf1702095d78357bfc7d40ae",
+        "task_id": "01a07dd2-feaa-7332-955f-7d59d4a819b0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e5eeb987e9a010d83b9472d21a4f20170716f797bf1702095d78357bfc7d40ae"
+      }
+    }
+  }
+}

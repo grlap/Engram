@@ -1,0 +1,49 @@
+{
+  "id": "01a06335-2be3-7f91-a720-7400372df2d7",
+  "external_ref": null,
+  "title": "show hides open children behind the eight-child display cap",
+  "outcome": "show lists open children before completed ones and says how many more exist, so a required open child is never invisible",
+  "acceptance": [
+    "show on an item with more than eight children prints every open child and a (+N more) marker for the rest"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Prioritized unfinished direct children in bounded focus/show relations, added exact omitted-child counts and typed unfinished/terminal omission reasons, preserved rich child summaries, and covered both the one-open-behind-terminal case and the 128-open-child response ceiling.",
+    "completed_at": "2026-09-03T17:49:57.536174Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6f0927969d5c1f76e09a023510ce4a65e1ab587271b8372ecf7770766aaeeafc": {
+        "activity_id": "6f0927969d5c1f76e09a023510ce4a65e1ab587271b8372ecf7770766aaeeafc",
+        "task_id": "01a06335-2be3-7f91-a720-7400372df2d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dc488a54e52812a2044535c190a35783cc9758e3820bc665ddf3d7c24c684c30"
+      }
+    }
+  }
+}

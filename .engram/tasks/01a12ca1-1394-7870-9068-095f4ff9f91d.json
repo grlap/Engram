@@ -1,0 +1,63 @@
+{
+  "id": "01a12ca1-1394-7870-9068-095f4ff9f91d",
+  "external_ref": null,
+  "title": "Task sync setup preparation: main-repository admission and private setup intent",
+  "outcome": "Task sync setup preparation: main-repository admission and private setup intent",
+  "acceptance": [
+    "Explicit setup preparation verifies selected main repository/project and attached branch, refuses sparse/linked/bare/ambiguous or dirty/conflicted reserved/setup paths, records asserted visibility/readership/profile/alias in a private tool-owned Git-admin intent, and deterministically prepares narrow ignore/LF-attribute edits while leaving .engram files, Git index/branch/global config and SQLite unchanged, with owned Windows fixture tests",
+    "No TermAl remote relay is introduced, and any durable-store change is presented to Greg before coding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit main-checkout setup preparation with immutable private Git-admin intent, bounded admission, operator assertions and proposed ignore/LF edits without materialization or SQLite changes. Landed and installed the exact reviewed/gated content; full gate, Codex/Claude pair and independent 2/2 acceptance passed; four live stores ready; seven Low followups filed independently.",
+    "completed_at": "2026-10-12T04:14:07.673895400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5ce29ff83793469b84ac5f97083a6a68": {
+        "activity_id": "5ce29ff83793469b84ac5f97083a6a68",
+        "task_id": "01a12ca1-1394-7870-9068-095f4ff9f91d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5ce29ff83793469b84ac5f97083a6a68"
+      },
+      "c75f6d6079db48f293c5323ff55161cf": {
+        "activity_id": "c75f6d6079db48f293c5323ff55161cf",
+        "task_id": "01a12ca1-1394-7870-9068-095f4ff9f91d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8f6ae47b3d4a46a6aacb7154480d526b"
+      }
+    }
+  }
+}

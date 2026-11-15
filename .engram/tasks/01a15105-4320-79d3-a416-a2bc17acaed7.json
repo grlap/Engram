@@ -1,0 +1,110 @@
+{
+  "id": "01a15105-4320-79d3-a416-a2bc17acaed7",
+  "external_ref": null,
+  "title": "Report destination projection faults accurately during graph snapshot restore",
+  "outcome": "Report destination projection faults accurately during graph snapshot restore",
+  "acceptance": [
+    "A leftover destination work_catalog_fts row is reported as a destination projection inconsistency with a clear repair remedy, and regression coverage preserves refusal and destination-state guarantees."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "storage"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed commit e3c77fc20d9928dda7e96e2695335ea1be8a47ad on origin/master and installed its build 785ee5701edf7505752a9dd4c380da4fe09510fb4df9eb00ebdb4a12235d48a7 after the full gate, clean R1b review, and six-store readiness. Fresh post-landing independent evaluation a77fe711f9f44010b59f893f918e2ef7 passed the sole criterion. TermAl restart was not performed.",
+    "completed_at": "2026-10-24T14:54:52.413688700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "237e34bea0b2422da49705d0ce8ca531": {
+        "activity_id": "237e34bea0b2422da49705d0ce8ca531",
+        "task_id": "01a15105-4320-79d3-a416-a2bc17acaed7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ff109e2575f84c0496489bf4ba77c3fb"
+      },
+      "425866d9c6c945e2ac29f247b40c4a1f": {
+        "activity_id": "425866d9c6c945e2ac29f247b40c4a1f",
+        "task_id": "01a15105-4320-79d3-a416-a2bc17acaed7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "425866d9c6c945e2ac29f247b40c4a1f"
+      },
+      "4aa7aad9dfc843c1b1fd3809e6f2159e": {
+        "activity_id": "4aa7aad9dfc843c1b1fd3809e6f2159e",
+        "task_id": "01a15105-4320-79d3-a416-a2bc17acaed7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "425866d9c6c945e2ac29f247b40c4a1f"
+      },
+      "4b72a0b27aac4accbf9871ec08c11ce3": {
+        "activity_id": "4b72a0b27aac4accbf9871ec08c11ce3",
+        "task_id": "01a15105-4320-79d3-a416-a2bc17acaed7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4b72a0b27aac4accbf9871ec08c11ce3"
+      },
+      "af1ac65b1ce24599ba818fd0d1c57ae3": {
+        "activity_id": "af1ac65b1ce24599ba818fd0d1c57ae3",
+        "task_id": "01a15105-4320-79d3-a416-a2bc17acaed7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "af1ac65b1ce24599ba818fd0d1c57ae3"
+      },
+      "d26cdeecf4ff4fda989529afd4e39f2c": {
+        "activity_id": "d26cdeecf4ff4fda989529afd4e39f2c",
+        "task_id": "01a15105-4320-79d3-a416-a2bc17acaed7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "47a92629bdf7484e80d89d632324436a"
+      }
+    }
+  }
+}

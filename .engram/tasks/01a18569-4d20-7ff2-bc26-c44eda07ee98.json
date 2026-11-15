@@ -1,0 +1,45 @@
+{
+  "id": "01a18569-4d20-7ff2-bc26-c44eda07ee98",
+  "external_ref": null,
+  "title": "Return committed update outcomes when response finalization fails",
+  "outcome": "Return committed update outcomes when response finalization fails",
+  "acceptance": [
+    "A successful core update mutation returns truthful success with its actual durable identity and supported readback when later response finalization fails; pre-core refusals remain errors.",
+    "A deterministic post-core failure regression verifies one committed semantic outcome and exact retry without duplicate effects; unavailable guidance or focus is not fabricated."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "post-commit",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "39629df8eb1645359f8acb990d2b752d": {
+        "activity_id": "39629df8eb1645359f8acb990d2b752d",
+        "task_id": "01a18569-4d20-7ff2-bc26-c44eda07ee98",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c95250bc58ea409aab703ef4ce19c87a"
+      }
+    }
+  }
+}

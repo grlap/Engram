@@ -1,0 +1,52 @@
+{
+  "id": "01a07503-0449-7182-ac3e-50688d45d978",
+  "external_ref": null,
+  "title": "Successor resolution follow-ups: restored-parent execution fallback, many-to-one consolidation, done-refusal reason, typed verbose patch",
+  "outcome": "Successor resolution follow-ups: restored-parent execution fallback, many-to-one consolidation, done-refusal reason, typed verbose patch",
+  "acceptance": [
+    "A restored Open parent with no run yet computes required_child_successor from its latest run execution when present and from the active root execution only when absent (never active-first); a regression test restores P with Open C and S, finishes S, supersedes C, and asserts show, the parent's required_owed group, and done agree before and after P's first claim",
+    "The verbose ls JSON child_resolution patch goes through a typed verbs-only wrapper instead of index-addressed serde_json::Value mutation; ambient and core serialization keep serde(skip) on required_child_successor",
+    "Two required children superseded by the same completed required sibling both resolve through that one successor seal with two distinct resolved_by_successor entries; one test and one docs sentence state the audited consolidation",
+    "done's refusal row for an owed-with-successor required child carries the same one-line successor reason and lifecycle as show, sharing the ShowChildSuccessor rendering"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered restored-parent generation fallback, typed verbose receipts, explicit many-to-one consolidation coverage, and same-cut successor explanations in done refusals; reviewed, verified, and landed.",
+    "completed_at": "2026-09-06T05:21:26.108324400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7d868f4c801c588a8c314d9e19a81293415baab4a0dc3850b4368702a552e150": {
+        "activity_id": "7d868f4c801c588a8c314d9e19a81293415baab4a0dc3850b4368702a552e150",
+        "task_id": "01a07503-0449-7182-ac3e-50688d45d978",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1503ac7dcdb0182f66f060ac025a70ed039395cc993e945a43231009a68d0d5d"
+      }
+    }
+  }
+}

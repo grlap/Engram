@@ -1,0 +1,51 @@
+{
+  "id": "01a0f376-e516-7d21-9e63-89d029532bf6",
+  "external_ref": null,
+  "title": "Completion refuses an evaluation record whose evaluator identity has a shape admission would refuse",
+  "outcome": "Completion refuses an evaluation record whose evaluator identity has a shape admission would refuse",
+  "acceptance": [
+    "Records admitted under the current rules are unaffected: the policy and affiliation matrices from the lifecycle corrections keep every expected outcome and assertion unchanged; only the policy matrix's sub_agent fixture gains the parent session and execution identity that admission requires, since a sub_agent record without them could never be admitted",
+    "done treats as stale Identity an evaluation with no evaluator session in any mode, or a sub_agent evaluation without a parent session, so a record that could not be admitted today cannot complete work if it reaches a store by import or edit; a test covers each shape"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "defense-in-depth"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completion treats as stale Identity an evaluation without its evaluator's session in any mode, or a sub_agent evaluation without its parent session: shapes admission never records, so such a record that reached a store by import or edit cannot complete work. A private IdentityShape owns the two presence facts. Admission reads them at its existing stages with unchanged text and order. The consumer check sits after the run, revision, root and policy reasons and before independent affiliation and the later reasons, shared by status, preflight and done. The done reminder for stale identity names both causes and gives the task's own evaluation remedy. The policy matrix keeps every expected outcome. Landed 89af563 after two rounds (round 1: Codex Medium on the reminder, fixed; round 2 clean), full gate test-945d4082 9/9; the independent evaluation passed 2/2.",
+    "completed_at": "2026-10-01T01:14:51.541033200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "aa96ecc48f384ee5b177ed15cd241e76": {
+        "activity_id": "aa96ecc48f384ee5b177ed15cd241e76",
+        "task_id": "01a0f376-e516-7d21-9e63-89d029532bf6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5225e74f6a094ec3ba25013f21d88236"
+      }
+    }
+  }
+}

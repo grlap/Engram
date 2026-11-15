@@ -1,0 +1,52 @@
+{
+  "id": "01a1c20d-bfe8-70c3-975e-05acf0bdd2c0",
+  "external_ref": null,
+  "title": "Planning readers accept the evidence-pack subtree in the task-sync data folder",
+  "outcome": "Planning readers accept the evidence-pack subtree in the task-sync data folder",
+  "acceptance": [
+    "A data folder that holds evidence packs alongside planning task files is read without refusal by the planning snapshot, delta and folder readers, which ignore the evidence-pack subtree for planning and still refuse genuinely unknown paths.",
+    "A behavior test exchanges between two local clones of a bare remote where the data branch carries both task files and an evidence pack, and planning import and export succeed on both sides."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Planning snapshot, delta and admitted data-folder readers accept canonical evidence packs as opaque carrier content while preserving unknown-path, unsafe-mode and link refusals. Real local bare-remote two-clone import/export behavior passes on both peers. Exact3097430177af1dd9897deb22548000ac7e60a99c/tree161a621c6db9555bcde9b6b7eb04bcf1298adb55 author focused checks6/6 PASS and independent evaluation0020dbc45c2145738a6ca7382dc666eb all2criteria pass atcut408, current nonstale judgment verified. Checked14path patch delivered and parent562 confirms exact unchanged carry. Parent owns combined reviews/FULL/cutover/landing; no landing asserted.",
+    "completed_at": "2026-11-09T21:57:58.660944300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8a97f88b991b46debd07605c7ed7aac0": {
+        "activity_id": "8a97f88b991b46debd07605c7ed7aac0",
+        "task_id": "01a1c20d-bfe8-70c3-975e-05acf0bdd2c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "30a743f9d9ae4be898a59bf26884cc9d"
+      }
+    }
+  }
+}

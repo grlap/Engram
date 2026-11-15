@@ -1,0 +1,54 @@
+{
+  "id": "01a10ff7-a78b-72d3-80e0-787d1a13d22f",
+  "external_ref": null,
+  "title": "The control-plane doc's minimum-records list describes unbuilt records and fields as shipped",
+  "outcome": "The control-plane doc's minimum-records list describes unbuilt records and fields as shipped",
+  "acceptance": [
+    "In docs/features/behavioral-control-plane.md's minimum-records list, ControlPolicy lists only its shipped fields (version and record id, project epoch, required assurance, supported effect classes, grant TTL, the selected obligation rule set, the acceptance-evaluation policy) and marks a classifier version, synchronization rules, degraded-envelope rules and a portable writer-validation maximum age as designed, not built",
+    "ParticipantRecord and SessionProgress are stated not to ship as named records, with what the shipped control_sessions row holds (asserted actor, durable phase, assurance and mediated effects, optional work-claim binding) and the role, expected contribution and join/leave state marked designed, not built",
+    "WorkClaim lists its shipped fields (holder, accepted work revision, expiry, revision, claim fence, state) without an assignment reference; WorkClaim and HandoffOffer are marked as shipped work records",
+    "ReportAssembly and ReportAssemblyClaim, PortableWriterState, and DegradedEnvelope and DegradedActionDebt are marked designed, not built; TurnGrant states its shipped state machine (issued to begun and completed, or to expired or superseded)",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 240e4c7 on master, together with w-3710fc2ca41c, w-1ad48d5ce497 and w-524b15d690c5.\n\nThe bcp minimum-records list now names only the fields that ship:\n- ControlPolicy lists only its shipped fields; the rest are marked designed, not built.\n- ParticipantRecord/SessionProgress are described against the shipped control_sessions row.\n- WorkClaim has its shipped fields, and WorkClaim and HandoffOffer are marked as shipped work records.\n- ReportAssembly, PortableWriterState and Degraded* are marked designed, not built.\n- TurnGrant states its state machine.\n\nEvidence:\n- Evaluation 33ce4308 passed 5/5.\n- The link check test-25425f1c passed.\n- The round-2 pair is clean at Medium and above.",
+    "completed_at": "2026-10-06T08:16:38.723340500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a96cd83ef4f74164b9ea146578b47aca": {
+        "activity_id": "a96cd83ef4f74164b9ea146578b47aca",
+        "task_id": "01a10ff7-a78b-72d3-80e0-787d1a13d22f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "06dd8f0348b2491990e45ca07b0fa951"
+      }
+    }
+  }
+}

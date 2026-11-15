@@ -1,0 +1,88 @@
+{
+  "id": "01a18eba-4779-7b42-b425-58be4891bc8e",
+  "external_ref": null,
+  "title": "Diagnose the cold-open rendezvous timeout in concurrent first adds and preserve every opener result",
+  "outcome": "Concurrent first-add validation exposes every worker's result and stages the intended cold-open race without unexplained rendezvous timeouts.",
+  "acceptance": [
+    "Attribute the test-d13aaa74 cold-open rendezvous timeout using discriminating evidence, separating product errors, test staging and resource hypotheses; retain every opener's return/error rather than losing them behind ordered joins.",
+    "Fix the attributed cause with a meaningful regression and applicable independent reviews and full landing validation; preserve the intended three-opener cold-store race, existing production admission and bounded refusal behavior, and do not increase the watchdog or retry until green."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "gate",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Serialize writable SQLite admission with a bounded OS open lock; preserve three-opener race, all worker outcomes and existing refusal/watchdog/retry limits; invalid paths leave no fixture sidecar. Landed and installed dcbff8c7102efe1500b0a70d08f4ee9740a829a4 with full exact-tree gate, clean release, all-six readiness and fresh independent acceptance PASS.",
+    "completed_at": "2026-10-31T05:32:45.347276Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1e6ccc23875449e1b178d95e95c894e4": {
+        "activity_id": "1e6ccc23875449e1b178d95e95c894e4",
+        "task_id": "01a18eba-4779-7b42-b425-58be4891bc8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "63e9c14f31544745848712f13013ed1f"
+      },
+      "63e9c14f31544745848712f13013ed1f": {
+        "activity_id": "63e9c14f31544745848712f13013ed1f",
+        "task_id": "01a18eba-4779-7b42-b425-58be4891bc8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "bde597bf5b8a4b9cba4b0fb42000d082"
+      },
+      "bde597bf5b8a4b9cba4b0fb42000d082": {
+        "activity_id": "bde597bf5b8a4b9cba4b0fb42000d082",
+        "task_id": "01a18eba-4779-7b42-b425-58be4891bc8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "fcd7c42c624742f281fc760e76790b9a"
+      },
+      "fcd7c42c624742f281fc760e76790b9a": {
+        "activity_id": "fcd7c42c624742f281fc760e76790b9a",
+        "task_id": "01a18eba-4779-7b42-b425-58be4891bc8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "19d2c817207641059fc19175409e17bd"
+      }
+    }
+  }
+}

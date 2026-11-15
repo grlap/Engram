@@ -1,0 +1,29 @@
+{
+  "id": "01a1c228-72e5-75a1-b2a4-9322b7445536",
+  "external_ref": null,
+  "title": "Test existing-task prerequisite and blocker changes through the incoming and successor receipt writers",
+  "outcome": "Test existing-task prerequisite and blocker changes through the incoming and successor receipt writers",
+  "acceptance": [
+    "A behavior test commits an existing-task prerequisite and blocker change through the incoming and successor receipt writers and checks the exact receipt ids, actor, time and prior basis, a healthy ledger and replay."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "sync",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

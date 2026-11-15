@@ -1,0 +1,28 @@
+{
+  "id": "01a0f6b4-ea5a-7db3-8328-84cba43e2a18",
+  "external_ref": null,
+  "title": "The done recovery docs reflect the newest-check pointer, and the new bullet lists stop swallowing the prose after them",
+  "outcome": "The done recovery docs reflect the newest-check pointer, and the new bullet lists stop swallowing the prose after them",
+  "acceptance": [
+    "The bullet lists added for stale_source and open_obligation_check in docs/features/cli-and-mcp.md and docs/features/local-work-system.md are followed by a blank line, so the paragraphs after them render as paragraphs, not inside the last bullet",
+    "docs/features/cli-and-mcp.md no longer says the done verb exposes exactly one next entry: it says the recovery command comes first, and a newest open-obligation check adds its show pointer after it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

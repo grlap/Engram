@@ -1,0 +1,114 @@
+{
+  "id": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+  "external_ref": null,
+  "title": "Accept test evidence for evaluation and completion by matching Git input instead of a named-root sighting",
+  "outcome": "Accept test evidence for evaluation and completion by matching Git input instead of a named-root sighting",
+  "acceptance": [
+    "Acceptance-evaluation admission and consumption (including completion) accept a required check when the evaluated input equals the check's recorded Git input: the same full commit for an ordinary committed run, or the exact staged tree for the staged review/gate lane (base HEAD is provenance only). Different commits are never interchangeable merely because their trees match.",
+    "The separate named-root-sighting prerequisite (require_named_root_judged_source, assess_named_root_source and the matching consumption logic) and the source-freshness/obligation barriers whose only basis is a missing or assumed sighting or the retired content scheme are replaced by this rule. Actual failed results, work/claim/root/result scope, required check kinds and non-source safeguards stay.",
+    "An input dirty before the run is not eligible; a later commit never repairs an unrecorded dirty input. Old observations, evaluations, content-v1 records, seals and frozen in-flight intents keep their recorded meaning and are read as stored, with no relabelling or fabricated history.",
+    "Tests cover ordinary committed input, staged-tree input, a mismatched commit, a dirty-before input, a failed run, an old content-v1 record, and an OFF-project evaluation that is admitted once item (A)'s evidence exists."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "control-plane",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and installed the acceptance-evidence Git-input change. Independent evaluation c54d22235d504ae8898dc8f807cc2c4b passed all 4 criteria on the landed tree; exact full gate ff0649e447cd4510b8abe110078f4113 passed.",
+    "completed_at": "2026-10-31T19:07:33.218720500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0c843dd7bf7e4d6696798c69590cb858": {
+        "activity_id": "0c843dd7bf7e4d6696798c69590cb858",
+        "task_id": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "333a51b943b6491dafcff6161cc93ba6"
+      },
+      "333a51b943b6491dafcff6161cc93ba6": {
+        "activity_id": "333a51b943b6491dafcff6161cc93ba6",
+        "task_id": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "decd1bd4e5c64659aaf557349afacad5"
+      },
+      "35f7e770ff0d4d56ac06bf1dc7ebad89": {
+        "activity_id": "35f7e770ff0d4d56ac06bf1dc7ebad89",
+        "task_id": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0c843dd7bf7e4d6696798c69590cb858"
+      },
+      "53dc6501251f4d54b779586091c7890b": {
+        "activity_id": "53dc6501251f4d54b779586091c7890b",
+        "task_id": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "90212a1959114da2a835020b058743f8"
+      },
+      "90212a1959114da2a835020b058743f8": {
+        "activity_id": "90212a1959114da2a835020b058743f8",
+        "task_id": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "a05aa1da58c5434a8eb9f65664f45669"
+      },
+      "a05aa1da58c5434a8eb9f65664f45669": {
+        "activity_id": "a05aa1da58c5434a8eb9f65664f45669",
+        "task_id": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "35f7e770ff0d4d56ac06bf1dc7ebad89"
+      }
+    }
+  }
+}

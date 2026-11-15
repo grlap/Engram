@@ -1,0 +1,62 @@
+{
+  "id": "01a08413-b6c4-79c1-acfc-3a871b568d0e",
+  "external_ref": null,
+  "title": "Refuse mismatched source root scalar columns before migration",
+  "outcome": "Refuse mismatched source root scalar columns before migration",
+  "acceptance": [
+    "A source root column inconsistent with its full state is refused before publication, with no changed source or remaining stage"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08329-3195-7b23-ae2d-cdd3438bc8d6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "All eight original root scalar columns must match the canonical full root state before deriving target rows. Pre-fix negative control, corrected row-copy regression and full executable corrupt-source probe recorded; final nine gates and review accepted. Installed migration completed by Advisor without repair.",
+    "completed_at": "2026-09-09T04:28:15.556947500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "776b73a58950cc9b8bcb2dea230a6b5b64a7dae27c3a2dada61b0d7564e37205": {
+        "activity_id": "776b73a58950cc9b8bcb2dea230a6b5b64a7dae27c3a2dada61b0d7564e37205",
+        "task_id": "01a08413-b6c4-79c1-acfc-3a871b568d0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e5746046cad442c935b517e3cb721bb8b79a47a408ca04c81f7f09a02ecb3deb"
+      },
+      "fbe10f571b19de6b04c2ed0965b6e106b8a3d0fb2c24261efb3dcd954d972f1d": {
+        "activity_id": "fbe10f571b19de6b04c2ed0965b6e106b8a3d0fb2c24261efb3dcd954d972f1d",
+        "task_id": "01a08413-b6c4-79c1-acfc-3a871b568d0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fbe10f571b19de6b04c2ed0965b6e106b8a3d0fb2c24261efb3dcd954d972f1d"
+      }
+    }
+  }
+}

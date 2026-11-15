@@ -1,0 +1,77 @@
+{
+  "id": "01a0c666-bd33-71d0-8574-35d49919bc24",
+  "external_ref": null,
+  "title": "Split Engram src/main.rs below 2,500 lines",
+  "outcome": "One-file refactor of src/main.rs; original and extracted modules stay below 2,500 lines with measured acceptance evidence.",
+  "acceptance": [
+    "A host-observed automated test proves src/main.rs and every module extracted from it are each at most 2,499 physical lines at the final source revision. Evidence lists every covered path and before/after count; include blank/comment lines and a nonempty final unterminated line. Newly extracted modules must not escape the inventory.",
+    "A lightweight size check for this file family runs in normal validation and fails at 2,500 lines, passes at 2,499, counts LF/CRLF consistently, and refuses an empty or failed inventory. Reuse one shared checker if already available; do not build a new framework per task.",
+    "Independent-session final acceptance cites the fresh host-observed line-count test evidence. Completion must remain blocked when that bound evidence is missing, failed or stale; demonstrate that gating safely on an isolated fixture rather than relaxing the live task. A plan evaluation or author-written gate note is not a substitute for the observed size result.",
+    "Split only this file's responsibilities into ordinary modules without behavior, schema/SQL or public-interface changes. Preserve existing tests/assertions and pass relevant regressions plus required project gates/review. No minification, duplicate implementation, deleted tests or transferring the oversized body to another oversized file."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 1,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": "independent_session",
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-cli",
+    "file-size",
+    "maintainability",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0b5b4-14a8-7840-8eeb-108a13d58018"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed the already landed main file split on fresh host Test Passed 593855c8 and independent evaluation 8282812e (all four criteria passed). All 19 covered files are at most 2,499 physical lines; no code changes, waiver, binding changes or new landing.",
+    "completed_at": "2026-10-01T08:42:07.194090200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "39cc537dfcc242c99d5900973f7d1805": {
+        "activity_id": "39cc537dfcc242c99d5900973f7d1805",
+        "task_id": "01a0c666-bd33-71d0-8574-35d49919bc24",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "39cc537dfcc242c99d5900973f7d1805"
+      },
+      "7291f457fe8d4273bc3a9b32ff640fba": {
+        "activity_id": "7291f457fe8d4273bc3a9b32ff640fba",
+        "task_id": "01a0c666-bd33-71d0-8574-35d49919bc24",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5539ea52814b4ccfa912bbd6d60b164d"
+      }
+    }
+  }
+}

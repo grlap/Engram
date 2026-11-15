@@ -1,0 +1,64 @@
+{
+  "id": "01a18d99-1d36-7530-bd0a-e7ba3da8e36c",
+  "external_ref": null,
+  "title": "Diagnose the 30 s diagnostics drain failure in the real rmcp cancellation test on DL560",
+  "outcome": "The diagnostics cancellation test completes with trustworthy flush evidence under full-suite execution, without unexplained retries or weaker assertions.",
+  "acceptance": [
+    "Attribute why Diagnostics::flush returned false within the 30 s record-drain budget in test-9b95e2ed, retaining the observed counters and separating source defects from scheduling hypotheses",
+    "Fix the attributed cause with a meaningful focused regression and the applicable standard review/landing validation; do not retry until green or weaken the assertion without causal evidence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "diagnostics",
+    "gate",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Explicitly release diagnostic append locks on success/error/unwind, with deterministic Unix RED/GREEN and unchanged timeout/loss assertions; preserve original-counter attribution and unknown historical origins. Landed and installed dcbff8c7102efe1500b0a70d08f4ee9740a829a4 with full exact-tree gate, clean release, all-six readiness and fresh independent acceptance PASS.",
+    "completed_at": "2026-10-31T05:32:44.462877700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8b31f9ccc53547948f145f29a92e65ca": {
+        "activity_id": "8b31f9ccc53547948f145f29a92e65ca",
+        "task_id": "01a18d99-1d36-7530-bd0a-e7ba3da8e36c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "956164e81637462b90b413bdb9e41f71"
+      },
+      "c00799fcc4214d4e97ab6681710a78d9": {
+        "activity_id": "c00799fcc4214d4e97ab6681710a78d9",
+        "task_id": "01a18d99-1d36-7530-bd0a-e7ba3da8e36c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8b31f9ccc53547948f145f29a92e65ca"
+      }
+    }
+  }
+}

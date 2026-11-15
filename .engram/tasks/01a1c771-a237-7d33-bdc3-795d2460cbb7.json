@@ -1,0 +1,28 @@
+{
+  "id": "01a1c771-a237-7d33-bdc3-795d2460cbb7",
+  "external_ref": null,
+  "title": "Forward request content encoding in the task-sync HTTPS test server",
+  "outcome": "Forward request content encoding in the task-sync HTTPS test server",
+  "acceptance": [
+    "The loopback smart-HTTP fixture forwards the request content-encoding to git http-backend without changing its existing bounds, confinement or publication-race behavior.",
+    "A compressed Git request is handled consistently with the same ordinary request; verification uses actual fixture behavior instead of a source-string assertion."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

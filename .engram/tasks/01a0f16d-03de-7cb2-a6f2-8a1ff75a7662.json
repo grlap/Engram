@@ -1,0 +1,54 @@
+{
+  "id": "01a0f16d-03de-7cb2-a6f2-8a1ff75a7662",
+  "external_ref": null,
+  "title": "Review the acceptance-evaluation lifecycle so each admission and consumption rule has one owner",
+  "outcome": "Review the acceptance-evaluation lifecycle so each admission and consumption rule has one owner",
+  "acceptance": [
+    "A design brief under docs/ names, for each rule that decides whether an evaluation may be recorded or consumed at done (mode and mark eligibility, named-root declaration versus host sighting, basis movement and its exemptions, the re-roll guard, carried failures, bound evidence and obligation matching), the one function that owns it, and shows that record time and done call that same function or states why they differ",
+    "Corrections the brief calls for are filed as their own items or land with their own review; no behaviour changes in the brief itself",
+    "The brief defines the Engram side of the cross-project guarantee that a host's reported checks were recorded and fall inside the evaluator's run-feed cut, agreed with TermAl's architecture brief as a shared contract section",
+    "The brief replays the Mediums of the b3cd345 and b1de8b2 review rounds and the same-turn cases as concrete transitions, and names for each the duplicated or drifting rule that let it through"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the acceptance-evaluation lifecycle design brief, owner and horizon inventory, historical failure replay, agreed same-run host receipt-and-cut contract, and six independently tracked correction proposals. Final docs gates and Codex/Claude round3 reviewed the unchanged frozen tree; independent acceptance passed all four criteria. Three live stores ready with the release build.",
+    "completed_at": "2026-09-30T16:44:51.565641700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9605a8eb8fca4002a1a1f84ced46dbc3": {
+        "activity_id": "9605a8eb8fca4002a1a1f84ced46dbc3",
+        "task_id": "01a0f16d-03de-7cb2-a6f2-8a1ff75a7662",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7b8ab438ed954dd592e1a005a1a9fa4a"
+      }
+    }
+  }
+}

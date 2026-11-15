@@ -1,0 +1,52 @@
+{
+  "id": "01a1cd41-a8a8-7e31-b20f-6e4ef83906a5",
+  "external_ref": null,
+  "title": "Let the test launcher carry the original request message id into its run identity and registration, for remote-run attribution",
+  "outcome": "Let the test launcher carry the original request message id into its run identity and registration, for remote-run attribution",
+  "acceptance": [
+    "scripts/test-launcher.mjs full and focused accept optional --request-message-id according to the agreed contract recorded in 097271b8421a4defbd87fbad2ca48d36. Present requestMessageId is a conditional key in the JS immutable request identity; absence preserves historical identity bytes. The selector survives detached continuation and the launcher requires exact equality with the native GET run.requestMessageId projection before adoption. Behavioural tests here cover present/absent identity compatibility, detached continuation, registration round trips, and fail-closed malformed/missing/mismatched/tampered selectors and mode.",
+    "The launcher conforms to the agreed contract recorded in 097271b8421a4defbd87fbad2ca48d36, including unchanged optional POST selector, locator spelling, same saved request for detached execution, refusal without host confirmation and no retrospective selector adoption. Native registration, single-use binding and Rust identity parity are TermAl K3's (w-48c4a207f226, Sol-c593) to implement and test; this item only conforms to that agreed contract. No end-to-end remote verification, live native custody or host credit is claimed by this item's launcher fixtures."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "area-tooling",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the optional causal request selector for focused launcher runs by reusing the existing FULL selector flow. Preserved conditional immutable identity/absent historical bytes, exact native/relay spelling and POST/GET echo, frozen detached intent, and fail-closed mode/selector/snapshot checks. Meaningful full/focused tests cover39behaviors, including corrected specific CLI rejection assertions. Final working content treee3c35bd895aa5f64c2157a63c7cf0cd1a7603adf/base0bd70a3034260a228a5f7ad120ac6f7d9e622582, fourunstagedpaths+39/-33. GREEN2test9448d282-a349-46e8-94c2-5418458561be native0/39of39/equalcompleteadmittedbeforeafter/confirmedregistration. FreshR2Codex17603/Claude17604bothclean; earlierLowfixedandreviewedagain. IndependentClaude17607evaluatione0505a1c376d4629ad345db917dc8dcc fresh2of2PASS/stale=null against revisedlauncher-onlycriteria2 underFable1986scope. Native Rust identity parity, request custody/mode/single-use/replay/no-retroadoption remainTermAlK3w48c4a207f226/Sol-c593 implementation/tests; noendtoendremoteverification/liveK3hostcreditclaimed. No mastercommit/push/install/fullgateclaimed; READYforFableowncandidateaftersync. Retain exactworktree/runrecords for after-syncintegration and openEngramw180d6f507470/K3parity consumer until carried/consumed or declined; integrationowner archives remainingneeded evidence and removes worktree at that end.",
+    "completed_at": "2026-11-12T02:43:38.239892500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bd28bf85ca5a4b0cb4e73720f2629165": {
+        "activity_id": "bd28bf85ca5a4b0cb4e73720f2629165",
+        "task_id": "01a1cd41-a8a8-7e31-b20f-6e4ef83906a5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1827d4289db9488b912fad85a4513e95"
+      }
+    }
+  }
+}

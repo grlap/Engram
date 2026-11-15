@@ -1,0 +1,49 @@
+{
+  "id": "01a07396-8d1e-7572-8f7b-f547a98d8863",
+  "external_ref": null,
+  "title": "Refuse oversized listing continuation metadata honestly",
+  "outcome": "Refuse oversized listing continuation metadata honestly",
+  "acceptance": [
+    "listing_continuation_metadata_overflow_is_an_explicit_refusal passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a065cc-43af-7613-8414-1c9649237fca",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the reviewed listing correction with direct regressions and all required gates passing.",
+    "completed_at": "2026-09-05T22:15:50.076665900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "630529c905e5e36869b5ed3d345c09ff9ae6339bf4afcc48817469cfa7068a75": {
+        "activity_id": "630529c905e5e36869b5ed3d345c09ff9ae6339bf4afcc48817469cfa7068a75",
+        "task_id": "01a07396-8d1e-7572-8f7b-f547a98d8863",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7600a45b693941d70d243ccdd86faadee7c6282dd9c29718418688e660c68c97"
+      }
+    }
+  }
+}

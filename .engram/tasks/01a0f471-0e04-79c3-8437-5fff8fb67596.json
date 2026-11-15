@@ -1,0 +1,27 @@
+{
+  "id": "01a0f471-0e04-79c3-8437-5fff8fb67596",
+  "external_ref": null,
+  "title": "The --expected-policy-hash help names only doctor as its source",
+  "outcome": "The --expected-policy-hash help names only doctor as its source",
+  "acceptance": [
+    "The --expected-policy-hash help of the control-policy setters names `engram work control-policy show` (or the command that prints the policy hash) as a source of the current policy hash, not only `engram doctor`"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 4,
+  "labels": [
+    "control-plane",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a1c6a5-f25f-74f2-845a-8c94dd8080c5",
+  "external_ref": null,
+  "title": "Recover orphaned fetched carriers without blocking later exchanges",
+  "outcome": "An abandoned fetched carrier has an explicit audited recovery that preserves custody and uncertainty while allowing later exchanges.",
+  "acceptance": [
+    "A data-branch operation whose carrier commit selection was retained by fetch but whose request never reaches the exchange ledger has a supported, audited recovery that allows later exchanges, without loosening the custody guard, rewinding Git or deleting private files by hand.",
+    "A Windows behavioral regression retains a fetched operation, leaves it without a ledger outcome through a pre-ledger refusal other than head change, proves a later exchange is initially refused by custody, and proves it is admitted after the supported recovery.",
+    "Recovery proves the exact repository, binding and retained operation it accounts for, refuses contradictory canonical progress or uncertain publication/live execution authority, and preserves unrelated retained operations and original canonical bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review-repair",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added explicit audited abandonment of fetched carriers with exact repository/binding/pin validation, preserved custody and uncertainty, and reliable exact checkpoint replay. Independent acceptance 8b866d3c488f48f5aa2492c72226e3cf passed all3 criteria on47d1200f6cb4788f0ae8e3af36a9f6bf9a51663c/treef871957a2885fcba7d4f23a88b2ce1743ace8d11; full evaluator output read complete2876B, no outstanding findings. Finalfmt/strictClippy/4namedWindowsabandonmenttests/36sizechecks/doclinks allPASS, sourceidentities equal. Three realWindowsHTTPS cases eachPASS on91cd with verifiedtest-name-onlycarry. Checked15pathpatch delivered forparentintegration; parentownscombinedreviews/FULL/cutover/landing, no landing claimed. Served roots/raw evidence retained for concreteopenparentandhostincidentuses asrecorded onparent; allremoteauthorrefsdeleted.",
+    "completed_at": "2026-11-10T19:43:26.930938900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d73f4a879b024fc08efd494d68a3d55f": {
+        "activity_id": "d73f4a879b024fc08efd494d68a3d55f",
+        "task_id": "01a1c6a5-f25f-74f2-845a-8c94dd8080c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c80c7f682f3343adb76d53fcdb833d46"
+      }
+    }
+  }
+}

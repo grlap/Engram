@@ -1,0 +1,51 @@
+{
+  "id": "01a067f7-1202-7e90-b346-6673ed47a664",
+  "external_ref": null,
+  "title": "Preserve stable history details under summary bounds",
+  "outcome": "Transition-specific history detail survives long titles and enums render as stable agent words.",
+  "acceptance": [
+    "A long-title history summary retains the transition-specific holder, reason, count, or target",
+    "Evidence kinds and disposal lifecycles render as stable lowercase words rather than Rust Debug variants"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-376e-7c22-974e-413276ff3f69",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Transition summaries now use bounded components and stable lowercase words so core transition detail survives ordinary summary limits.",
+    "completed_at": "2026-09-03T16:20:07.364639700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b9a357d01fe1d348e7d1cb00f0d72ab9e189249af8e142555ce16c8cb15fdb21": {
+        "activity_id": "b9a357d01fe1d348e7d1cb00f0d72ab9e189249af8e142555ce16c8cb15fdb21",
+        "task_id": "01a067f7-1202-7e90-b346-6673ed47a664",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7f84d6084df8730b3143654723509553b2be7a20289733faf86fbd6798e0caba"
+      }
+    }
+  }
+}

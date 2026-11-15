@@ -1,0 +1,68 @@
+{
+  "id": "01a18078-07a3-7511-a3cf-7930235a76ac",
+  "external_ref": null,
+  "title": "Report what the parity root-journal watcher saw when its barrier times out",
+  "outcome": "A parity calibration timeout reports bounded watcher observations for diagnosis",
+  "acceptance": [
+    "When a root-journal waitFor in scripts/root-probe-harness.mjs times out, its error carries bounded diagnostics: the most recent watcher callbacks (at most 16, with event type and filename), watcher errors and omissions, the expected barrier name and its directory's realpath, and watch/write/wait timings",
+    "The 5000 ms budget, every parity assertion and journal cleanup are unchanged; the diagnostics are emitted only on the timeout path and a run where the barrier is seen prints nothing new",
+    "Regression tests in the root-journal suite cover a timed-out wait with unmatched callbacks, preexisting watcher errors or null filenames, and a successful barrier without diagnostics, and pass on Windows and macOS"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "delivered",
+    "diagnostics",
+    "evaluation-pending",
+    "gate",
+    "macos",
+    "parity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1800f-57c7-7a81-8558-4c5492b8e1f7",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A parity root-journal timeout now reports bounded watcher observations (last 16 callbacks, errors, barrier name/realpath, timings) only on the timeout path; budgets, assertions and cleanup unchanged; root-journal regressions pass on Windows and macOS. Landed diagnostics-only at 42118223 (Windows full gate test-2909383a PASS on the exact tree), installed build 57c858a5. An independent acceptance evaluation passed all 3 criteria (record f8bddd6a353b4871b01f7164a16889aa). Parent w-4c5492b8e1f7 stays open: cause unknown.",
+    "completed_at": "2026-10-28T03:46:21.349069Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2e4e94c7c0cc4db29af66e2adb7405f0": {
+        "activity_id": "2e4e94c7c0cc4db29af66e2adb7405f0",
+        "task_id": "01a18078-07a3-7511-a3cf-7930235a76ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "34060dbce7a04510a9c0a68f5cc8f94f"
+      },
+      "3b712fb847e140779559f7b60b43c431": {
+        "activity_id": "3b712fb847e140779559f7b60b43c431",
+        "task_id": "01a18078-07a3-7511-a3cf-7930235a76ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e428f9a5b38d4b0eb72c9be6e978aabe"
+      }
+    }
+  }
+}

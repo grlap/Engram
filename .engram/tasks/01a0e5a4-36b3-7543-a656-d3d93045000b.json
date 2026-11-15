@@ -1,0 +1,29 @@
+{
+  "id": "01a0e5a4-36b3-7543-a656-d3d93045000b",
+  "external_ref": null,
+  "title": "CI clippy failures are unreadable by agents: the quality job's diagnostics must reach the job summary or an artifact, since run logs need admin rights",
+  "outcome": "CI clippy failures are unreadable by agents: the quality job's diagnostics must reach the job summary or an artifact, since run logs need admin rights",
+  "acceptance": [
+    "A landed commit whose Linux clippy fails is classified from that output within one message, verified on the next such failure or on a deliberate probe branch, and the item's note records the run",
+    "The quality job in .github/workflows/ci.yml writes clippy's diagnostics (and fmt's, if it fails) into the GitHub job summary and uploads them as a run artifact, so an agent with the repository token reads the failure without run-log access"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "test-infra",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

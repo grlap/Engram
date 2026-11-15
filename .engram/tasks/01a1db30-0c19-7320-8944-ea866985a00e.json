@@ -1,0 +1,30 @@
+{
+  "id": "01a1db30-0c19-7320-8944-ea866985a00e",
+  "external_ref": null,
+  "title": "Update third-party notices for mimalloc and current locked dependencies",
+  "outcome": "Bring the third-party notice inventory up to date, including both mimalloc Rust packages and bundled native C notices.",
+  "acceptance": [
+    "The inventory includes the versions and applicable notices for mimalloc, libmimalloc-sys and the bundled Microsoft mimalloc C library shipped by the allocator change.",
+    "The existing inventory is reconciled against the current Cargo.lock and distribution contents; its declared package count and omitted direct dependencies are corrected.",
+    "The update preserves applicable copyright and license texts from the corresponding versioned upstream packages and identifies any dependency-specific distribution obligations."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "distribution",
+    "notices",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

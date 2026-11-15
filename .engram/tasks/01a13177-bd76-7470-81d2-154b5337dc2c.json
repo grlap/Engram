@@ -1,0 +1,50 @@
+{
+  "id": "01a13177-bd76-7470-81d2-154b5337dc2c",
+  "external_ref": null,
+  "title": "Remove the infallible Result from non-Windows check_directory in task-sync readers",
+  "outcome": "Remove the infallible Result from non-Windows check_directory in task-sync readers",
+  "acceptance": [
+    "cargo clippy --all-targets --all-features -- -D warnings passes on master's source for both x86_64-pc-windows-msvc and a Linux build (WSL), with no #[allow] and no vacuous check added to satisfy the lint.",
+    "Both check_directory helpers (src/task_sync/progress/prepared/files.rs and src/bin_support/task_sync/setup/files.rs) keep their Windows reparse-point refusal unchanged, and existing task-sync tests pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Both directory-check helpers and all six callers compile only on Windows, removing the infallible non-Windows Result without changing Windows reparse refusal. Final full Windows gate and WSL Clippy pass on the reviewed input; Codex and Claude reviews clean, independent acceptance 2 of 2 passed with unchanged criteria. Landed, installed and pushed; four live stores ready. Separate pre-existing WSL preparation failure remains tracked independently.",
+    "completed_at": "2026-10-12T23:40:01.184850800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8dde7639d7f1418f9755248edfe73ae7": {
+        "activity_id": "8dde7639d7f1418f9755248edfe73ae7",
+        "task_id": "01a13177-bd76-7470-81d2-154b5337dc2c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "68c03f2c8e0b4f4ea69c93018fe10ba3"
+      }
+    }
+  }
+}

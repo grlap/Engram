@@ -1,0 +1,28 @@
+{
+  "id": "01a12347-7105-7b30-b704-d8d8f845cbc1",
+  "external_ref": null,
+  "title": "Define Git task-sync missing-document refusal against the captured shared task tree",
+  "outcome": "Define Git task-sync missing-document refusal against the captured shared task tree",
+  "acceptance": [
+    "Specification and Git task-sync lifecycle brief define missing documents relative to the captured shared/exported/imported tree and preserve unrelated locally created tasks as pending changes rather than treating them as removals."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

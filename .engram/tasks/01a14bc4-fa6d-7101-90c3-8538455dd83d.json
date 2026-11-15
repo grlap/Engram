@@ -1,0 +1,42 @@
+{
+  "id": "01a14bc4-fa6d-7101-90c3-8538455dd83d",
+  "external_ref": null,
+  "title": "Enforceable bounded receive and storage primitive for task-sync fetch (quarantine repository with transfer/history/disk budget)",
+  "outcome": "Enforceable bounded receive and storage primitive for task-sync fetch (quarantine repository with transfer/history/disk budget)",
+  "acceptance": [
+    "Automated fetch receives into an isolated operation-owned quarantine object repository under the configured Git-admin area, never writing unvalidated incoming packs into the selected repository, with no shallow, filter, alternates or promisor bypass and no auto-GC or network under a database transaction",
+    "A finite admission budget is ENFORCED, not merely measured: received protocol bytes, object and commit counts plus maximum ancestry traversal, per-object decoded size and aggregate selected-task bytes, total operation disk bytes including partial pack, index, temp and journal, and project-wide unresolved-operation count and retained bytes; a resumed transfer keeps its consumed budget",
+    "Enforcement is either a metered receive path with hard storage enforcement for every subprocess write, or an owned bounded receive/index pipeline whose writes are all accounted before publication; plain fetch plus timeout, directory polling, deleting after an oversized pack, or index-pack --max-input-size alone do not satisfy this",
+    "Each supported platform has an identified mechanism and tests; an unsupported platform or budget refuses automatic fetch before any network access, and oversized history yields a bounded refusal, never a truncated graph"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "resource-limits",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a14bf1-d9ff-73b2-917f-9daae77317b9",
+      "kind": "manual",
+      "detail": "GREG STOP (via Advisor #1639, mailbox-74a6af16, 2026-10-17 22:18Z), verbatim: \"Nie nie. Nie róbcie tego. Nie teraz. Po prostu git fetch.\" Do not start or schedule this automatic-fetch bounded receiver or its six slices; the remote pilot uses explicit authorized git fetch plus Engram import. Deferred as future work; design D1 8bb7efdc and D2 e90c0822 retained. Unblock only on Greg's word.",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-17T22:18:23.607082800Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

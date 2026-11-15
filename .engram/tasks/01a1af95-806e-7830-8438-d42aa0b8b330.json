@@ -1,0 +1,51 @@
+{
+  "id": "01a1af95-806e-7830-8438-d42aa0b8b330",
+  "external_ref": null,
+  "title": "Show the TermAl host's actual refusal reason when Engram's test launcher registration POST is refused, instead of a generic \"unconfirmed/refused\"",
+  "outcome": "Show the TermAl host's actual refusal reason when Engram's test launcher registration POST is refused, instead of a generic \"unconfirmed/refused\"",
+  "acceptance": [
+    "When the TermAl host refuses a test-run registration POST, Engram's launcher reports the host's bounded refusal reason (status and message) in its admission output and run metadata, instead of only a generic unconfirmed/refused state",
+    "A launcher test covers a refused registration response and asserts that the reason is preserved and bounded, with no secret or unbounded body echoed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved bounded HTTP status and host refusal message in launcher metadata and output, with explicit unavailable-message fallback and regression coverage. Exact reviewed candidate landed, pushed and installed with all six stores ready.",
+    "completed_at": "2026-11-06T10:19:37.112259800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "172f0f1c25f4428aaefebc1d00905c6a": {
+        "activity_id": "172f0f1c25f4428aaefebc1d00905c6a",
+        "task_id": "01a1af95-806e-7830-8438-d42aa0b8b330",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "72e1a5521e234d9886dc11e635d5df7e"
+      }
+    }
+  }
+}

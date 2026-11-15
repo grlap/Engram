@@ -1,0 +1,51 @@
+{
+  "id": "01a0f633-e303-73d2-848d-f263747eac87",
+  "external_ref": null,
+  "title": "A stale_source_revision assessment names the flagged source change that decides it",
+  "outcome": "A passing check on the current named root is assessed stale_source_revision because of an observation from an earlier root",
+  "acceptance": [
+    "No matcher rule changes: a quiet sighting at a new revision still does not replace the flagged-change baseline; tests cover the TermAl w-2ccd39a4ff5a shape (flagged change at one revision, quiet sightings and a passed check at another) showing the stale verdict with its deciding change named, and each named-root case (a stale verdict decided by the active root's newest sighting, and one decided by the root binding) with its deciding record named",
+    "When a verification is assessed stale_source_revision against an obligation, the assessment (in show's verification detail and in done's refusal) names the deciding record (the latest flagged source change, the active root's newest sighting, or the root binding) with its run-feed position, revision and workspace, beside the verification's own revision, so a holder can see which change the check must follow"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A stale_source_revision assessment now names the record that decided it (the latest flagged source change, the named root's newest sighting, or the root binding), with its run-feed position, workspace and revision, beside the check's own source. It shows in show's verification detail, in done's typed bound refusal (cause.stale_source plus a reminder, reason unchanged), and in done's open-obligation refusal (recovery.open_obligation_check: the newest passed check after the obligation opened and why it doesn't satisfy it, or none_followed, plus the show pointer). The matcher's decision is unchanged; nothing new is stored.",
+    "completed_at": "2026-10-01T09:11:29.700439600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "628def0c984347d7a39a3d2c6ed73130": {
+        "activity_id": "628def0c984347d7a39a3d2c6ed73130",
+        "task_id": "01a0f633-e303-73d2-848d-f263747eac87",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4afea453bff94f4fb7fb404f6c657708"
+      }
+    }
+  }
+}

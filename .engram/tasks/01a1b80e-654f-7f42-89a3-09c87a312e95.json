@@ -1,0 +1,54 @@
+{
+  "id": "01a1b80e-654f-7f42-89a3-09c87a312e95",
+  "external_ref": null,
+  "title": "Design full cross-host exchange of execution evidence (verifications, gates, evaluations, observations) in Engram sync",
+  "outcome": "Design full cross-host exchange of execution evidence (verifications, gates, evaluations, observations) in Engram sync",
+  "acceptance": [
+    "An inventory names every execution-evidence record kind Engram stores (host verification, remote verification, gates, evaluations, execution observations, completion seals and their links) and, for each, whether and how it crosses hosts in sync",
+    "The design states the semantics of an imported evidence record: its original host and machine provenance kept unchanged, and exactly what it may and may not satisfy on the importing host (obligations, criteria, completion), with live claims, sessions and authority never transferred",
+    "The design states how the change fits the existing sync spec r4.1 and git-task-sync.md (which today excludes these records), what it replaces there, and confirms it needs no TermAl mechanism",
+    "Engram::Fable accepts the design after the read-only design review AGENTS.md requires; it is sent to Greg for information, and implementation items follow without waiting for a further approval"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the accepted full execution-evidence exchange design: Draft 2 note 7a94378ad0104890b4435fe621e43967 and amendment 31a28eeec35d42e89076bfbe34b4ce27. Fable acceptance and Greg-information receipt are attributed in holder evidence f04c425be06946a3968154781e576fdb, citing his original notes 408f465ceded41139d797350ea2071bb and 45bd4c8427ef4fdba0ee80eafd422385. All review findings are resolved. The design specifies complete inventory/provenance/closure, destination eligibility including association-only terminal conflicts, origin-feed witnesses, bounded packed transport and exact Deferred/family replay. Engram-only; no live authority transfers, implementation or landing claimed. Three useful implementation slices follow under the existing epic with ordering and shared-ledger seams agreed by 12325.",
+    "completed_at": "2026-11-08T02:07:34.908397Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e40f84c1d3aa46d78befef379ece3a88": {
+        "activity_id": "e40f84c1d3aa46d78befef379ece3a88",
+        "task_id": "01a1b80e-654f-7f42-89a3-09c87a312e95",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7342cbf32a3843d38d99181c25b3bbe2"
+      }
+    }
+  }
+}

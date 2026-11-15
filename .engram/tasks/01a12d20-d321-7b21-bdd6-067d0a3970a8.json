@@ -1,0 +1,52 @@
+{
+  "id": "01a12d20-d321-7b21-bdd6-067d0a3970a8",
+  "external_ref": null,
+  "title": "Concurrent first adds on a new store can fail with SQLITE_PROTOCOL under load",
+  "outcome": "Concurrent first adds on a new store can fail with SQLITE_PROTOCOL under load",
+  "acceptance": [
+    "concurrent_first_adds_on_a_new_store_all_succeed passes under concurrent machine load",
+    "SQLITE_PROTOCOL during concurrent store opening is handled rather than surfaced, with bounded retry and strict schema admission preserved"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "reliability",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Store opens now recover from SQLite's locking-protocol refusal (SQLITE_PROTOCOL, which SQLite returns after about 10 s of failing to begin a WAL read).\n- On the refusal, an open attempt rolls back the transaction it had open and starts again from its first probe, once. This allowance is separate from the restart after another opener initialized the store, and strict admission re-runs in full.\n- Deadline-bound opens (control host, control-session inspection, store copy, settle and verify) return the refusal at once.\n- The refusal keeps the PROTOCOL code, so it is classified as a busy store, and names the phase that ended each attempt.\n- The ColdOpenGate watchdog goes 10 s -> 60 s, a test defect: SQLite's own give-up takes 10.006 s.\n- Covered by 9 injected-refusal tests, with vacuity proven.\n- Full gate test-201782f4 PASSED 12/12 under heavy machine load, concurrent_first_adds_on_a_new_store_all_succeed included, on freeze 43db71be…541db.\n- Review: round 2 clean (Codex 12125, Claude 12126); round 1 had no Medium or higher, and all its Lows were fixed.\n- Independent evaluation 1d86d562 passed 2/2.\n- Readiness ready on all 4 live stores.\n- The out-of-scope PROTOCOL at the first write transaction is filed as w-e41afaedf9ab.",
+    "completed_at": "2026-10-12T00:52:14.535905800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d5d7b240d7e04c568dbac680d94cf13f": {
+        "activity_id": "d5d7b240d7e04c568dbac680d94cf13f",
+        "task_id": "01a12d20-d321-7b21-bdd6-067d0a3970a8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "98ed65e746b64c41b1da54cebb06e933"
+      }
+    }
+  }
+}

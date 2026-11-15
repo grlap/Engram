@@ -1,0 +1,76 @@
+{
+  "id": "01a18d93-d6cd-7140-8bab-797eb36e6f0c",
+  "external_ref": null,
+  "title": "Give a pre-write redaction refusal its own host error code instead of storage_error",
+  "outcome": "Give a pre-write redaction refusal its own host error code instead of storage_error",
+  "acceptance": [
+    "On the host control wire, a StoreError::RedactionRefused answers with a distinct, documented error code, not the generic storage_error, and its message still carries no captured content.",
+    "Every other error keeps its current host code; a test asserts the new code and that the refusal recorded nothing.",
+    "The host protocol documentation lists the new code as a definitive refusal that a host should not replay unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and installed the distinct redaction_refused host error. Independent evaluation f3e2d9bcb3b540ccad170b29c134d5ec passed all 3 criteria; exact full gate ff0649e447cd4510b8abe110078f4113 passed.",
+    "completed_at": "2026-10-31T19:07:39.552092900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1f1cd0ae9cf74e059376773fe60edac1": {
+        "activity_id": "1f1cd0ae9cf74e059376773fe60edac1",
+        "task_id": "01a18d93-d6cd-7140-8bab-797eb36e6f0c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "026f76bb59114fde8487d15ab2afcb9a"
+      },
+      "541eee70f4e241d69fe077e3b75212ac": {
+        "activity_id": "541eee70f4e241d69fe077e3b75212ac",
+        "task_id": "01a18d93-d6cd-7140-8bab-797eb36e6f0c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "85a7d25fc0aa4f11829ea6252b7708d7"
+      },
+      "85a7d25fc0aa4f11829ea6252b7708d7": {
+        "activity_id": "85a7d25fc0aa4f11829ea6252b7708d7",
+        "task_id": "01a18d93-d6cd-7140-8bab-797eb36e6f0c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1f1cd0ae9cf74e059376773fe60edac1"
+      }
+    }
+  }
+}

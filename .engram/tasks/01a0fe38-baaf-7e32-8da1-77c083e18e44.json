@@ -1,0 +1,55 @@
+{
+  "id": "01a0fe38-baaf-7e32-8da1-77c083e18e44",
+  "external_ref": null,
+  "title": "A pending backup restore whose copy is gone from the target can be neither finished nor abandoned",
+  "outcome": "A pending backup restore whose copy is gone from the target can be neither finished nor abandoned",
+  "acceptance": [
+    "The explicit documented command `engram backup restore COPY --abandon-pending --abandoned-by NAME` abandons only a readable pending restore whose copy equals COPY, under the existing store push lock and with no database or sidecars present. It makes no target contact, requires no --origin-retired-by, and never abandons implicitly. Tests show a missing target copy can be abandoned and a restore of another copy then proceeds; ordinary different-copy requests still refuse without abandonment.",
+    "Before cleanup the command validates that the exact recorded staging file belongs to this restore inside the intended project directory. It refuses traversal, external paths, directories, symlinks/reparse redirection and inspection errors; an already missing owned stage is allowed. It removes only that recorded owned file, never unrelated files, recursively or by wildcard. Tests cover these refusals and unrelated-file preservation.",
+    "Cleanup precedes archival: a cleanup failure leaves the pending record active and blocks abandonment. After cleanup, an archive with a no-replace UTC-stamped name contains format version, abandoned {by, at}, and pending as the original parsed JSON record with every field preserved. The active Pending format/state is unchanged. Archive failure leaves the pending record available for retry and reports that the stage was already removed; abandonment is never called completed. Tests cover cleanup/archive failures and archive-name collisions. Successful archival clears active pending status; the envelope remains readable provenance without adding a history listing.",
+    "A restore retry that fetches a replacement stage B verifies it against the pending copy's digest and persists the staging pointer to B before retiring earlier stage A. State-write failure preserves A and its original record, cleans B or names the cleanup failure, and stops; a later format/check refusal leaves B with the record pointing to B. The possible interrupted pointer-switch orphan is disclosed, and no sweep of unrelated files occurs. Regression coverage includes the A-to-B refusal followed by another retry.",
+    "The `backup_restore_pending_other` refusal and the pending status line name both the retry and the explicit COPY-bound abandonment command. Help, receipts and relevant backup documentation describe attribution, cleanup, the archive and refusal outcomes accurately; command rendering handles quoted copy/operator names. Tests cover the displayed alternatives and quoting."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 3a5a50e.\n- `engram backup restore COPY --abandon-pending --abandoned-by NAME` abandons the pending restore of COPY. It runs under the push lock, with no store or sidecar present, never contacts the target, and is never run implicitly.\n- It removes only the restore's own staging file. The file must carry its uuid name and lie directly in <home>/projects/<digest>/. That directory and `projects` are opened from the home without following links and held while the file is removed through them; on Windows the removal uses the full path checked against the held handle, so UNC homes work. The removal is then confirmed.\n- It archives the pending record whole as store.restore-abandoned-<UTC>Z.json, with the abandoner and the time: written to a tempfile, then moved there without replacing anything. Only after that is the record cleared.\n- A retry checks the copy it fetched again against the pending SHA-256, and points the record at it before removing the earlier staging file.\n- The pending refusal and the status line name both ways on as `--option=value` commands, quoted for POSIX and PowerShell; the shared quoting is now engram::shell.\nFour review rounds. All Highs and Mediums are fixed: R1 ancestor links and the removal race; R1 PowerShell quoting; R3 the UNC relative path. The remaining Low is w-dcaa74469919. Gate test-223321ac passed on freeze 5dd894d5. Independent evaluation 42ac9fc2 passed 5/5. Readiness reported ready on all 4 stores.\nThe UNC test writes only under the worktree's target/tmp test home; \\\\localhost\\C$ is only a second path to that same directory.",
+    "completed_at": "2026-10-03T06:35:51.812601Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c7b6d79bf43843c4b840e61f7faa2f8c": {
+        "activity_id": "c7b6d79bf43843c4b840e61f7faa2f8c",
+        "task_id": "01a0fe38-baaf-7e32-8da1-77c083e18e44",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d1582c448eb1410f9de7feedc2303493"
+      }
+    }
+  }
+}

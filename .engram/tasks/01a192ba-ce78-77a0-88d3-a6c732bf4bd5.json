@@ -1,0 +1,31 @@
+{
+  "id": "01a192ba-ce78-77a0-88d3-a6c732bf4bd5",
+  "external_ref": null,
+  "title": "Design one path-independent source_id contract for review, test runs, acceptance and landing",
+  "outcome": "Evaluate Greg's proposal relayed by Kimi::Consultant: one locally implemented, versioned source-content fingerprint exposed as source_id for source capture/verification across reviews, launcher runs, acceptance and landing, with one producer implementation and concrete transition/migration consequences; design only.",
+  "acceptance": [
+    "A concrete single capture_source/verify_source contract defines HEAD/index/worktree/untracked/submodule coverage, path independence, normalization and typed separation from record/run/build identities, with explicit unsupported/racy inputs rather than false matches.",
+    "The design maps the actual Engram Node launcher/review capture and TermAl compiled review/content/acceptance producers and consumers to one owner, preserving current clean-commit/test-ref/carry/debris and evidence-authority rules without adding manual capture or hash procedures.",
+    "The plan names exact bootstrap/local-runner interfaces and historical/durable migration and authority-text consequences before implementation; existing work continues under its current contract until the explicit coordinated change lands.",
+    "The design and concrete edge cases are recorded on this item and shared with Kimi::Consultant, Engram coordinator and TermAl architect/coordinator through existing mailboxes; no source, validation run, store conversion or authority widening is performed by the architect."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "cross-project",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "The design question is answered and implemented, so this item is closed rather than run as a second design effort. The single Engram-owned source_id contract is agreed (memory rules-source-identity-2026-11-03, rules-greg-only-source-id-everywhere-2026-11-06) and landed in both projects. TermAl's consumers switched to source_id (TermAl w-6f42c416b0c7, last in db52491e), and Engram's evaluation, launcher and remote verification use it. What remains is removal of the legacy identity, tracked in Engram w-9fcb6cb2dd84 (after TermAl's C6 producer deletion) and w-05a2b3141764 (source_revision, with its store-migration plan for Greg). Closed by Engram::Fable on Kimi::Consultant's queue-hygiene note (c15db92c #94) under rules-greg-close-senseless-tasks-2026-11-08.",
+  "completion": null
+}

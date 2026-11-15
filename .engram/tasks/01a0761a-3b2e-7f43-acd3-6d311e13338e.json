@@ -1,0 +1,50 @@
+{
+  "id": "01a0761a-3b2e-7f43-acd3-6d311e13338e",
+  "external_ref": null,
+  "title": "Review-finding idiom in the skill: blockers as required children, deferred findings optional or independent roots; rejection = evidence note + cancel + parent waiver",
+  "outcome": "Review-finding idiom in the skill: blockers as required children, deferred findings optional or independent roots; rejection = evidence note + cancel + parent waiver",
+  "acceptance": [
+    "the review-changes and engram-repo skills distinguish three placements for a finding on an open item: a required child only when landing depends on it; an optional child only for work intentionally finished inside the parent's execution window; an independent root (with provenance in a note) for a genuinely deferred finding, even while the reviewed item is still open, so it outlives the parent's completion — never a blanket 'nonblocking findings are optional children'",
+    "the skills state the rejection idiom: a finding rejected on evidence gets an evidence note, cancel with the reason, and — when it was required — the parent's --waive with that reason; done is reserved for satisfied current acceptance and its receipt makes that assertion visible"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed review and skill guidance for required, optional-in-window and deferred-independent placement, plus evidence rejection rather than false completion; docs gates and pair review passed.",
+    "completed_at": "2026-09-06T20:31:46.258715700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "900c022faf01c5f14c9bb43f117c75e569d128bd5c54a3062e595dd37cc8bb9b": {
+        "activity_id": "900c022faf01c5f14c9bb43f117c75e569d128bd5c54a3062e595dd37cc8bb9b",
+        "task_id": "01a0761a-3b2e-7f43-acd3-6d311e13338e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1d55888eac795892331000bdff89c3d3ce58f7b5919bac490a1c1012fa45475e"
+      }
+    }
+  }
+}

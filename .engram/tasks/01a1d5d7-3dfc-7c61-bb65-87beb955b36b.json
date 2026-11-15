@@ -1,0 +1,27 @@
+{
+  "id": "01a1d5d7-3dfc-7c61-bb65-87beb955b36b",
+  "external_ref": null,
+  "title": "Release the w-180d carry worktree and DL560 roots after the remote focused verification change lands",
+  "outcome": "Release the w-180d carry worktree and DL560 roots after the remote focused verification change lands",
+  "acceptance": [
+    "After 75af1b27 (or its successor carry of the remote focused verification change) is on origin/master and installed, the Central carry worktree .worktrees/remote-verification-carry-11859 is removed after a path check, the DL560 named roots retained for that change are released, and each removal is recorded with its path and time"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "landing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

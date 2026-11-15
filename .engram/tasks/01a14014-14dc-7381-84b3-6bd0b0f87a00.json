@@ -1,0 +1,28 @@
+{
+  "id": "01a14014-14dc-7381-84b3-6bd0b0f87a00",
+  "external_ref": null,
+  "title": "Preserve reviewer fallback decision provenance in workflow documentation",
+  "outcome": "Preserve reviewer fallback decision provenance in workflow documentation",
+  "acceptance": [
+    "Resolve the reviewer-fallback provenance gap in docs/agent-pair-workflow.md with accurate attribution of the 2026-09-29 Codex fallback and 2026-10-15 Claude widening, consistently with the repository rule that decision provenance belongs in work notes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1c880-f77e-7650-a3f9-46acaad3d361",
+  "external_ref": null,
+  "title": "Run task-sync Git exchange on macOS and Linux with the same bounded, confined process ownership as Windows",
+  "outcome": "Run task-sync Git exchange on macOS and Linux with the same bounded, confined process ownership as Windows",
+  "acceptance": [
+    "On macOS and Linux, task-sync exchange Git commands (including retained-commit pinning and explicit fetch and push) run under a confined local runner that owns every Git and credential descendant, enforces the shared deadline and cancellation, and bounds output, instead of refusing before spawn",
+    "The real-Git exchange and retained-construction tests that are today compiled only on Windows run and pass on macOS or Linux as well"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+  "disposal_reason": "Greg made macOS and Linux exchange support required for the whole sync („Tak. To musi byc.”, Asistant 43498a6e #892). It is replaced by the required P0 child w-6bbabe3a062b, which has the full acceptance criteria.",
+  "completion": null
+}

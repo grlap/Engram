@@ -1,0 +1,74 @@
+{
+  "id": "01a18539-105d-7041-ae03-b1ae95ab86d7",
+  "external_ref": null,
+  "title": "A note write can report busy_budget_exhausted although the note was committed",
+  "outcome": "A note write can report busy_budget_exhausted although the note was committed",
+  "acceptance": [
+    "Under write contention, a `note` or `gate` either commits and returns success (with the exact persisted locator and a readback command, even when later finalization fails), or does not commit and returns an error; a test reproduces the reported case (error returned, record persisted) and passes after the fix."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A note or gate write that commits but then fails during response finalization (for example busy_budget_exhausted at writer admission) now returns outcome \"committed\" with the exact persisted locator and a readback command, instead of an error, and a retry does not duplicate it. Uncommitted writes still return the error. Two reproducing tests (note and gate) passed in full gate test-878d6a11 on the landed tree aab6ddcf. Landed in 9f4a1c79, pushed and installed (build 05cc7f06). The independent evaluation 463761e7 passed. Truly unknown outcomes remain the separate open item w-d52974fbf3d4.",
+    "completed_at": "2026-10-29T20:36:37.196215400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0c7d852f069344f98984020bbfec03f3": {
+        "activity_id": "0c7d852f069344f98984020bbfec03f3",
+        "task_id": "01a18539-105d-7041-ae03-b1ae95ab86d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "91fd486f1102499b8f07ed61a0755757"
+      },
+      "6e861d688b3a4da3ac7d3464f4bf8109": {
+        "activity_id": "6e861d688b3a4da3ac7d3464f4bf8109",
+        "task_id": "01a18539-105d-7041-ae03-b1ae95ab86d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "331ec766d53849c0829b91c1a97c6078"
+      },
+      "91fd486f1102499b8f07ed61a0755757": {
+        "activity_id": "91fd486f1102499b8f07ed61a0755757",
+        "task_id": "01a18539-105d-7041-ae03-b1ae95ab86d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b57e8d2e0ee44b0aa2bff1a6d594b5de"
+      }
+    }
+  }
+}

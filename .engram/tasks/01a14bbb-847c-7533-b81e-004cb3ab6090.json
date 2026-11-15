@@ -1,0 +1,32 @@
+{
+  "id": "01a14bbb-847c-7533-b81e-004cb3ab6090",
+  "external_ref": null,
+  "title": "Three-or-more-host Git-only task sync integration proof (host-neutral pilot)",
+  "outcome": "Three-or-more-host Git-only task sync integration proof (host-neutral pilot)",
+  "acceptance": [
+    "An integration proof with three independently writable stores (separate homes, same project id, one shared Git remote) shows: two hosts edit concurrently while the third is offline, the third rejoins, and all reconcile through git push/fetch/merge plus atomic local import with no mailbox step",
+    "The proof covers reconnect, repeated fetch/import, two offline claims on the same task (duplicate work visible, Q6 accepted), conflicting edits retained for agent merge, and zero transfer of claims, grants, runtime or evidence authority",
+    "Crash recovery at each exchange boundary reuses the retained operation and local ImportReceipt, never reminting an import",
+    "The ordinary disconnected work cycle runs on a real laptop (the Mac), with no TermAl federation and no network path to the other hosts. In its own store the laptop claims, notes, gates and completes items DIFFERENT from those the other hosts work on, and commits code. When Git is reachable again, syncing tasks and code is the normal cycle: fetch, merge, import and push bring every host's work together with no conflict, duplicate claim or manual step. Same-task conflicts are tested separately, under criterion 2"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "integration",
+    "pilot",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

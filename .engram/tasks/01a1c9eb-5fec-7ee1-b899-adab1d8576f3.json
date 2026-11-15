@@ -1,0 +1,28 @@
+{
+  "id": "01a1c9eb-5fec-7ee1-b899-adab1d8576f3",
+  "external_ref": null,
+  "title": "Disclose the no-op redactor on native task-sync steps",
+  "outcome": "Agents see that native evidence capture/export and planning-successor steps use development no-op redaction.",
+  "acceptance": [
+    "The task-sync step CLI and structured receipt expose the development no-op redactor for affected native capture/export and successor operations.",
+    "The diagnostic is consistent with folder export and makes no real redaction or DLP guarantee."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-security",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

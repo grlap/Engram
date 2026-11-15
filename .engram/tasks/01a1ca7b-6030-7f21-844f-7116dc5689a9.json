@@ -1,0 +1,26 @@
+{
+  "id": "01a1ca7b-6030-7f21-844f-7116dc5689a9",
+  "external_ref": null,
+  "title": "Land the launcher scratch-placement diagnosis (candidate 53b4d6d7) on master after the sync landing",
+  "outcome": "Land the launcher scratch-placement diagnosis (candidate 53b4d6d7) on master after the sync landing",
+  "acceptance": [
+    "After the task-sync changeset lands, the reviewed change of candidate 53b4d6d7 (w-d593834eb672) is carried onto the then-current master as a fresh candidate, passes the full gate on that exact commit, and is fast-forwarded to master, pushed and installed under the standing approval; the retained source root and runner roots are then released and removed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "landing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

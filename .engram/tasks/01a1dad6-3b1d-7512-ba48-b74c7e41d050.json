@@ -1,0 +1,29 @@
+{
+  "id": "01a1dad6-3b1d-7512-ba48-b74c7e41d050",
+  "external_ref": null,
+  "title": "Retire the legacy task-sync baseline export_basis field in the next full-store migration batch",
+  "outcome": "Retire the legacy task-sync baseline export_basis field in the next full-store migration batch",
+  "acceptance": [
+    "The next full-store migration conversion removes export_basis from task_sync_import_planning records and the work_task_sync_baseline_heads projection, reporting the count of converted records, with record ids and links unchanged",
+    "Nothing reads or writes export_basis after the conversion; folder import and export compare only the additive inventory_root",
+    "The conversion runs in the same stopped-consumer window as the source_revision column retirement"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "migration",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0853b-ac25-7843-a454-ea995b70c739",
+  "external_ref": null,
+  "title": "The atomic work plan brief omits the opening normative-spec reference and its pillar row",
+  "outcome": "The atomic work plan brief omits the opening normative-spec reference and its pillar row",
+  "acceptance": [
+    "The brief opens with its normative reference blockquote and appears in the features README pillar table, or the convention is relaxed explicitly"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "docs",
+    "review",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added the atomic work plan brief's normative-reference opening and shipped pillar inventory row; existing reciprocal links verified. Reviewed, independently accepted, pushed and installed.",
+    "completed_at": "2026-10-02T23:59:57.593239Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2f89f394a98e4246b69e48f739c6987c": {
+        "activity_id": "2f89f394a98e4246b69e48f739c6987c",
+        "task_id": "01a0853b-ac25-7843-a454-ea995b70c739",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "86116e6fa5444f9fbc4ebf2c4d93c71f"
+      }
+    }
+  }
+}

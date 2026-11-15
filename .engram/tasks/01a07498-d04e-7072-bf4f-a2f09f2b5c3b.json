@@ -1,0 +1,52 @@
+{
+  "id": "01a07498-d04e-7072-bf4f-a2f09f2b5c3b",
+  "external_ref": null,
+  "title": "Continuation pages of show --notes and --history carry a compact header: item ref and title, window and family and omission counts, the reflected cut, and navigation — not the full outcome, acceptance, and completion sections already seen on page one — with the active byte budget shown as ls does",
+  "outcome": "Continuation pages of show --notes and --history carry a compact header: item ref and title, window and family and omission counts, the reflected cut, and navigation — not the full outcome, acceptance, and completion sections already seen on page one — with the active byte budget shown as ls does",
+  "acceptance": [
+    "a show --after page prints a compact header (ref, title, window and family and omission counts, cut, navigation) and an explicit full-item read command instead of repeating outcome, acceptance, and completion; the total emitted text and JSON stay under the existing ceiling; a long-header fixture shows the byte reduction per page and the page count for a fixed row set",
+    "note and history pages print the active page byte budget like ls, so a single-row page is explained"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered compact continuation headers with exact counts, families, reflected cut, active budget and one full-detail read; landed and independently verified.",
+    "completed_at": "2026-09-06T06:55:36.456184300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f8f0684a8d844065aff3c40b064dbf528b355299bf31d874e63da291120eb1f0": {
+        "activity_id": "f8f0684a8d844065aff3c40b064dbf528b355299bf31d874e63da291120eb1f0",
+        "task_id": "01a07498-d04e-7072-bf4f-a2f09f2b5c3b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4ee52039f01376f96f8dbf915135e91c474ba04973a89d4b6c272762ac737d51"
+      }
+    }
+  }
+}

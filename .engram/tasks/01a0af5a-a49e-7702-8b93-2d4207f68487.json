@@ -1,0 +1,53 @@
+{
+  "id": "01a0af5a-a49e-7702-8b93-2d4207f68487",
+  "external_ref": null,
+  "title": "Retry tests snapshot state around every replay group and pin word-level fresh-stale and completed-new refusals",
+  "outcome": "Retry tests snapshot state around every replay group and pin word-level fresh-stale and completed-new refusals",
+  "acceptance": [
+    "exact_retries_replay_after_a_revision_and_after_completion captures the run feed head and the newest evaluation hash before each replay group (after the revision and after completion) and asserts both unchanged after the replays, and asserts no effect for the fresh-stale and completed-new refusals",
+    "the_word_replays_exact_resends_after_a_revision_and_after_done takes the same snapshots around each replay group and additionally pins, through the word, the fresh-stale refusal (old basis, new payload -> WorkRevisionConflict) and the completed-item new-payload refusal, both with the feed head and newest evaluation unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Both retry tests snapshot the run feed head and the newest evaluation hash before each replay group and assert them unchanged after the replays and after every refusal; the word test additionally pins the fresh-stale refusal (WorkRevisionConflict) and the completed-item new-payload refusal (no active run) through the word, and the service test submits the completed-new case at the item's current revision so the intended refusal is the one proven. Focused suites logs/23; final sequence logs/24.",
+    "completed_at": "2026-09-17T12:43:51.292269800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e82cfaf85a33df35c64231d8196a3886137db98ec0cc6419c6faff1763ab96ba": {
+        "activity_id": "e82cfaf85a33df35c64231d8196a3886137db98ec0cc6419c6faff1763ab96ba",
+        "task_id": "01a0af5a-a49e-7702-8b93-2d4207f68487",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "93615e435607b82f264eb4b9cf40fe27051dc270fc8932cf383b73046ea32394"
+      }
+    }
+  }
+}

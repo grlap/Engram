@@ -1,0 +1,52 @@
+{
+  "id": "01a102f2-cf69-7cc3-99f0-bb5b444c0dcb",
+  "external_ref": null,
+  "title": "Detaching an open parent under a completed root fails with a projection error once its only open child was detached",
+  "outcome": "Detaching an open parent under a completed root fails with a projection error once its only open child was detached",
+  "acceptance": [
+    "Under a completed root, `update PARENT --detach REASON` on an open intermediate parent whose open descendants were all detached (superseded) succeeds and produces an independent successor, or refuses with a typed, actionable refusal naming a supported remedy; it never fails with work_projection_invalid such as 'root work … has no active execution'.",
+    "A regression test builds root (completed) → open parent → open child, detaches the child, then detaches the parent, and asserts the outcome above; the existing refusal while an open descendant remains is pinned unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-work-lifecycle",
+    "dogfood",
+    "termal"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed completed-root parent detach advisory lookup and guidance. Parent detaches into an independent successor after its open descendants are resolved, preserving completed-root history; open-descendant refusal remains unchanged. Child/parent/list guidance uses admitted waiver and detach candidates.",
+    "completed_at": "2026-10-03T19:05:35.191279800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c75958608e3f427493a7715dd23f0ecb": {
+        "activity_id": "c75958608e3f427493a7715dd23f0ecb",
+        "task_id": "01a102f2-cf69-7cc3-99f0-bb5b444c0dcb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dad2457e793b4ffe834987ef62f8564b"
+      }
+    }
+  }
+}

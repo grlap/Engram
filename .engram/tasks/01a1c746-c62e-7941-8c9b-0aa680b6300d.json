@@ -1,0 +1,53 @@
+{
+  "id": "01a1c746-c62e-7941-8c9b-0aa680b6300d",
+  "external_ref": null,
+  "title": "Recover the private acknowledgement of a committed evidence exchange",
+  "outcome": "An exact replay can finish its proven committed private witness after a post-commit custody refusal, without admitting any unknown carrier or new effect.",
+  "acceptance": [
+    "Exact mutating evidence replay can acknowledge only its matching committed local request under existing private reservation and checked writer proof; mismatched request, origin/store/restore, missing or changed canonical outcome, rewind or later anchor refuses without private mutation.",
+    "A deterministic real-owner regression retains a late fetched carrier after the actual evidence SQL commit and before witness recapture, proves the initial custody refusal and committed receipt, then exact acknowledgement, continued unknown-carrier refusal, explicit audit accounting and subsequent usable exchange. Replays preserve original canonical ids/bytes and do not duplicate effects.",
+    "Read-only offline completed lookups remain unchanged, unknown carrier bytes and pins stay preserved, normal custody checks remain exhaustive, and a complete exact-source focused-check handoff includes the durable/private impact assessment from a separately claimed named root."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented exact committed evidence acknowledgement recovery without admitting unknown carriers or duplicating canonical effects. Candidate07c82f6953feec5cc9f1ff73aa9af81d3456e800/tree9460508e passed six focused DL560 checks, Windows strictClippy and real late-carrier regression. Independent evaluationc96de0ca638b4c83adb43ce116b34293 passed all3criteria on this exact source with no findings. Complete actual-combined fixture adapter delivered unchanged; author test ref removed after allrequestedruns recorded. Root/source artifacts/run evidence retained for openparentw-4eabb205c7b2 actualcarry/check/review use; no landing/fullgate claimed.",
+    "completed_at": "2026-11-11T02:45:46.211641Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ee8ff623ad9a401b944431de9cbaf15f": {
+        "activity_id": "ee8ff623ad9a401b944431de9cbaf15f",
+        "task_id": "01a1c746-c62e-7941-8c9b-0aa680b6300d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fa117b48f48441b28804ff5fbc2aee57"
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "01a0f617-ef09-7201-a22c-cb353c060502",
+  "external_ref": null,
+  "title": "An opt-in MCP phase trace lets the next slow call name where its time went",
+  "outcome": "An opt-in MCP phase trace lets the next slow call name where its time went",
+  "acceptance": [
+    "Tests show stdout, results, errors and timeouts unchanged with the trace on; a writer-contention control raises begin_immediate; a blocked-client control keeps the server and send phases fast while the client's elapsed time rises; overflow, timeout and close stay bounded and visible; and one same-workload off/on comparison shows no measurable added work when the trace is off",
+    "The MCP dogfood runs with the opt-in, keeps the correlated records in its log, and prints a call's record beside its existing soft-threshold line when that call crosses it; a late, missing or evicted record is shown as unavailable, never as fast",
+    "With ENGRAM_MCP_PHASE_TRACE=1 at MCP server start, each tool call emits one bounded stderr record (at most 4 KiB) after it settles, correlated by the numeric request id, holding only the allowlisted phases handler_total, store_open_total, store_mutex_wait, begin_immediate, commit, receipt_serialize and wire_encode_send_inclusive, with no SQL, paths, parameters or bodies; unset, there are no hooks, buffers or output; while stderr is not drained, a record the bounded writer queue cannot take is dropped and counted in dropped_lines, never blocking the server"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The opt-in MCP phase trace's acceptance gaps are closed. A slow call now gets its phase line immediately: either its record, or 'unavailable (record not yet received)' followed by the record when it arrives. A partial record (evicted, incomplete or cancelled) reads as unavailable, never as a fast call. A busy-timeout test shows that a traced and an untraced writer wait the same bound and are refused the same way, with the traced BEGIN IMMEDIATE showing the wait. The docs cover a wait that ends in the busy timeout. The carried failed evaluation 8026a47f ended through TermAl's --supersedes path, the first real use of that path; evaluation 330b2d24 passed 3/3.",
+    "completed_at": "2026-10-01T18:09:38.635585200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "21a0346ef385499ebb109e50c307b2e5": {
+        "activity_id": "21a0346ef385499ebb109e50c307b2e5",
+        "task_id": "01a0f617-ef09-7201-a22c-cb353c060502",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "21a0346ef385499ebb109e50c307b2e5"
+      },
+      "403a58ceed4b4bf29384cb65d699eee8": {
+        "activity_id": "403a58ceed4b4bf29384cb65d699eee8",
+        "task_id": "01a0f617-ef09-7201-a22c-cb353c060502",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "239a580bee4443388863388003ad6594"
+      }
+    }
+  }
+}

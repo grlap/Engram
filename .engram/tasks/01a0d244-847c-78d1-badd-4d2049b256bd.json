@@ -1,0 +1,52 @@
+{
+  "id": "01a0d244-847c-78d1-badd-4d2049b256bd",
+  "external_ref": null,
+  "title": "Carry the exact open-obligation count on every live obligation page and receipt",
+  "outcome": "Carry the exact open-obligation count on every live obligation page and receipt",
+  "acceptance": [
+    "A live obligation page for an item with no run carries open_total 0, so an absent open_total only ever means a page stored before the count existed, as the docs say",
+    "Tests cover both; the full quality gates pass",
+    "The mutation receipt's obligations.open reports the exact open count (open_total), not only the open items shown"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Every live obligation page carries its exact open count. An item with no run (for example, one restored from a work-graph snapshot and not yet claimed) gets open_total 0, so an absent count only marks a page stored before the count existed. The mutation receipt's obligations.open reports open_total, falling back to the shown open items only for such a stored page. Landed as e996602 (installed in build a4c0b90d94ef) plus 823e61c. The second commit adds the regression test the first evaluation found missing: a restored item's revise and note results report open_total 0, and the test fails without the fix. The re-evaluation passed all three criteria.",
+    "completed_at": "2026-09-25T05:08:20.480822100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "98120412cbcb48bb880f7ce90ed25aa4": {
+        "activity_id": "98120412cbcb48bb880f7ce90ed25aa4",
+        "task_id": "01a0d244-847c-78d1-badd-4d2049b256bd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d9e42b7c2169452aa9d2b62e204c7a11"
+      }
+    }
+  }
+}

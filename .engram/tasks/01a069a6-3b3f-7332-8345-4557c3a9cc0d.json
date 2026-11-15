@@ -1,0 +1,43 @@
+{
+  "id": "01a069a6-3b3f-7332-8345-4557c3a9cc0d",
+  "external_ref": null,
+  "title": "MADE advisory pilot: MADE as host and planner over Engram control and execution",
+  "outcome": "MADE runs a single-ticket advisory integration: it injects the Engram identity and MCP child like the TermAl base tier, admits its plan items as source snapshots with stable plan keys, and reads readiness, claims, evidence, and completion from Engram",
+  "acceptance": [
+    "A MADE host checklist under docs/ mirrors the TermAl base tier (env injection, MCP child, next hook, advisory assurance)",
+    "A MADE plan item lands as a work item citing an immutable source snapshot keyed by plan_item_key and is found again by that key",
+    "A multi-level plan subtree admits in one transaction with typed refusals"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "awaiting-verification",
+    "integration",
+    "stream-made-pilot",
+    "verification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-29a3-7f62-ab7e-3cedcb76121c",
+      "kind": "manual",
+      "detail": "Awaiting MADE target-host runtime acceptance evidence and confirmation that the stable source key fulfils the intended plan-item-key binding. Five local children are completed; local delivery is not a witnessed MADE session.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:06.870453300Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

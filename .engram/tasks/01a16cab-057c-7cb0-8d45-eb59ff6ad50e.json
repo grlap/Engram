@@ -1,0 +1,28 @@
+{
+  "id": "01a16cab-057c-7cb0-8d45-eb59ff6ad50e",
+  "external_ref": null,
+  "title": "Update freeze review instructions for manifest Git-directory refusal",
+  "outcome": "Update freeze review instructions for manifest Git-directory refusal",
+  "acceptance": [
+    "The freeze and recovery prose in .claude/commands/review-changes.md accurately distinguishes administrative manifest Git-directory mismatch (both --write and --check) from custom-location recorded-root mismatch, without changing approval authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review-low",
+    "tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

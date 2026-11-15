@@ -1,0 +1,28 @@
+{
+  "id": "01a19bea-22a7-70b0-8937-1f7e469bf93f",
+  "external_ref": null,
+  "title": "Document import-superseded runs in the named-root read wire states",
+  "outcome": "Make the named_root_read contract include the terminal retirement state without implying completion credit.",
+  "acceptance": [
+    "execution-observability.md lists superseded_by_import alongside the actual WorkRunState wire values returned by NamedRootReadRun.state",
+    "The text explains that import supersession is terminal retirement and supplies no completion seal or completion credit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "host-protocol",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

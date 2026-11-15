@@ -1,0 +1,29 @@
+{
+  "id": "01a1bc6a-235e-7c50-8009-dfdd54033ce0",
+  "external_ref": null,
+  "title": "Offer the coder test-execution skill to Greg's other projects",
+  "outcome": "Offer the coder test-execution skill to Greg's other projects",
+  "acceptance": [
+    "Greg's decision on the route for projects beyond Engram and TermAl is recorded: a copy per repository through its normal route, or a user-level install, which needs his explicit word",
+    "The chosen route is carried out, and a coder in those projects is offered the skill"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "greg-directed",
+    "skills",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

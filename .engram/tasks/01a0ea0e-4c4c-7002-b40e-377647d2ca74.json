@@ -1,0 +1,112 @@
+{
+  "id": "01a0ea0e-4c4c-7002-b40e-377647d2ca74",
+  "external_ref": null,
+  "title": "Update README for acceptance evaluation, bound criteria, handoff, and two-project dogfood",
+  "outcome": "Update README for acceptance evaluation, bound criteria, handoff, and two-project dogfood",
+  "acceptance": [
+    "Link check and AGENTS/CLAUDE identity check pass through the focused launcher",
+    "README documents acceptance evaluation: the operator-set policy, the three modes, host evaluates/core enforces, and independent verification as host configuration (Engram never calls a model)",
+    "README documents bound criteria (--bind) and explicit handoff",
+    "README's dogfood line names both projects (Engram and TermAl)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The README documents acceptance evaluation: the operator-set policy, the three evaluator modes, an advisory example, what a control-plane host lets the policy require, the newest-record rule, the carried failure, and the host-evaluates/Engram-enforces boundary. It also documents bound criteria (`--bind`), explicit handoff and claim recovery, and the two-project dogfood line (Engram and TermAl). Kimi's draft was taken over unchanged on master, and every claim was checked against the code. Three Codex and Claude review rounds were run, and the last was clean. Landed as 11f6322 on origin/master; docs only, so no build was installed.",
+    "completed_at": "2026-09-29T17:43:22.180444300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3998a34fe81b405b945b8dd04c8ba2a8": {
+        "activity_id": "3998a34fe81b405b945b8dd04c8ba2a8",
+        "task_id": "01a0ea0e-4c4c-7002-b40e-377647d2ca74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3998a34fe81b405b945b8dd04c8ba2a8"
+      },
+      "3d6f94ca843146be9e35671f5bad20b5": {
+        "activity_id": "3d6f94ca843146be9e35671f5bad20b5",
+        "task_id": "01a0ea0e-4c4c-7002-b40e-377647d2ca74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3d6f94ca843146be9e35671f5bad20b5"
+      },
+      "425a86891edd40d28ca270ed08602cde": {
+        "activity_id": "425a86891edd40d28ca270ed08602cde",
+        "task_id": "01a0ea0e-4c4c-7002-b40e-377647d2ca74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "17bb7e74fa594b359cbd6c812742ce5c"
+      },
+      "4d9f23923a8e4b4b9482ee27fc655ca2": {
+        "activity_id": "4d9f23923a8e4b4b9482ee27fc655ca2",
+        "task_id": "01a0ea0e-4c4c-7002-b40e-377647d2ca74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4d9f23923a8e4b4b9482ee27fc655ca2"
+      },
+      "a2fad80234424ea88badf3540fc69648": {
+        "activity_id": "a2fad80234424ea88badf3540fc69648",
+        "task_id": "01a0ea0e-4c4c-7002-b40e-377647d2ca74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a2fad80234424ea88badf3540fc69648"
+      },
+      "dcbea3d06708430fbaa2f061d0788ede": {
+        "activity_id": "dcbea3d06708430fbaa2f061d0788ede",
+        "task_id": "01a0ea0e-4c4c-7002-b40e-377647d2ca74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dcbea3d06708430fbaa2f061d0788ede"
+      }
+    }
+  }
+}

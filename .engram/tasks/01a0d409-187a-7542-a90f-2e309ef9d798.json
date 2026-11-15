@@ -1,0 +1,53 @@
+{
+  "id": "01a0d409-187a-7542-a90f-2e309ef9d798",
+  "external_ref": null,
+  "title": "Print the source-size inventory so host test evidence carries per-file line counts",
+  "outcome": "Print the source-size inventory so host test evidence carries per-file line counts",
+  "acceptance": [
+    "The output is bounded and deterministic (sorted paths), and the failing path still lists every oversized file",
+    "docs/development.md names the exact command hosts run for the file-size evidence; the full quality gates pass",
+    "tests/source_file_size.rs prints one line per guarded file (path and physical line count, with the limit) when it passes, visible with `cargo test --test source_file_size -- --nocapture`, so a host-observed run of that command carries the per-file counts the file-size split criteria ask for"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "file-size",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The source-size test prints one line per guarded file, sorted by path across families, as \"PATH: N physical lines (limit 2499)\". It refuses a file guarded by two families and still names every oversized file. docs/development.md names `cargo test --test source_file_size -- --nocapture` as the host evidence command. Full gates passed; the Codex and Claude reviews are clean. Committed as be8bd18, pushed, and installed as build b1984ecec780. Follow-up w-c21e64736e39 adds per-family runs so one family's inventory fits the evidence summary.",
+    "completed_at": "2026-09-24T18:08:38.693272900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3ecf0c16fe384ef2976cf579c4c9047f": {
+        "activity_id": "3ecf0c16fe384ef2976cf579c4c9047f",
+        "task_id": "01a0d409-187a-7542-a90f-2e309ef9d798",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c93c5592d6ac4caf91e9e210ba8f07b3"
+      }
+    }
+  }
+}

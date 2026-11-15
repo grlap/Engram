@@ -1,0 +1,52 @@
+{
+  "id": "01a0c298-1af4-7d70-9a74-b61b89ee7fd5",
+  "external_ref": null,
+  "title": "Keep small fixes on one work item instead of mandatory correction hierarchies",
+  "outcome": "A bounded change can record and resolve its findings on its existing item; children are used for independently owned or genuinely separate deliverables.",
+  "acceptance": [
+    "A representative fix with a failed check and review correction is traceable through resolution and evidence without extra coordination/acceptance tasks; update standing instructions consistently while preserving unresolved blockers and completion truthfulness.",
+    "Replace blanket per-defect child creation with a simple split rule: independent ownership/scope or a real dependency warrants a child; a small in-scope correction can remain on the held item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-work-lifecycle",
+    "simplification",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered consistent same-item small-correction policy in497e81b; required children retained for independent ownership/scope/dependency and unresolved completion safeguards preserved. Independent Codex evaluation18c565ecb9484a8586865b5adde8b469 passed both criteria, citing cf9d4186ba254cc39f897340db27f610; evaluator corroborated real historical failed-check/review-fix trace. Full evaluator output explicitly no findings.",
+    "completed_at": "2026-09-27T20:32:12.987834900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f141f5e07e4747eda521fad1f37495b6": {
+        "activity_id": "f141f5e07e4747eda521fad1f37495b6",
+        "task_id": "01a0c298-1af4-7d70-9a74-b61b89ee7fd5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1b31243644184d228c1647eddf983906"
+      }
+    }
+  }
+}

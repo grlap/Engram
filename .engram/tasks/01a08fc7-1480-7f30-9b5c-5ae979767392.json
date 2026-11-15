@@ -1,0 +1,49 @@
+{
+  "id": "01a08fc7-1480-7f30-9b5c-5ae979767392",
+  "external_ref": null,
+  "title": "Claude read-only review delegations on Windows cannot run the freeze checker, so their packets carry no freeze proof",
+  "outcome": "Claude read-only review delegations on Windows cannot run the freeze checker, so their packets carry no freeze proof",
+  "acceptance": [
+    "a Claude read-only review delegation on Windows records its own byte-exact freeze boundary checks without rerouting a denied command"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered work reconciled against retained evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:46:06.562966900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8e8f960e3ebe9d08c8e424aebe431b06445c0aa351153ff4936dd71b4ce73c9f": {
+        "activity_id": "8e8f960e3ebe9d08c8e424aebe431b06445c0aa351153ff4936dd71b4ce73c9f",
+        "task_id": "01a08fc7-1480-7f30-9b5c-5ae979767392",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e1659e4a2bf21a12b078c7fea8c4ebdca99fbf2c56f663138e82809f96aa7449"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a0653f-31de-7690-99e2-aaad5daabe1f",
+  "external_ref": null,
+  "title": "Make completion checkpoint cut-key derivation explicitly pure",
+  "outcome": "The cut-key derivation contract cannot perform store I/O while the completion checkpoint holds the SQLite writer slot.",
+  "acceptance": [
+    "The atomic second-writer regression remains deterministic without teaching production callbacks to perform I/O",
+    "The key derivation API uses a pure immutable callback contract and its lock boundary is documented"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Pure refactor with no behavior: the cut-key callback has one internal production caller (key_for_cut) and the writer-slot boundary is already pinned by completion_checkpoint_holds_the_writer_slot_across_cut_selection_and_append. Pre-release rule: no ceremony from reviews.",
+  "completion": null
+}

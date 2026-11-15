@@ -1,0 +1,29 @@
+{
+  "id": "01a1c998-5020-7f22-877f-24375b45a37b",
+  "external_ref": null,
+  "title": "Cover imported evidence in canonical kind-word agreement checks",
+  "outcome": "The imported evidence kind's canonical serialization and persisted selection tag stay consistent and are covered by the evidence-kind agreement checks.",
+  "acceptance": [
+    "The evidence-kind serialization/word agreement coverage includes Imported alongside existing kinds, without pinning content hashes or testing repository instruction prose.",
+    "A regression would detect drift that breaks persisted imported-use selection while preserving existing evidence kinds."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

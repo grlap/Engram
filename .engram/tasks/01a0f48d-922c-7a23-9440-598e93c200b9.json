@@ -1,0 +1,52 @@
+{
+  "id": "01a0f48d-922c-7a23-9440-598e93c200b9",
+  "external_ref": null,
+  "title": "Pin source recovery string bounds and plain show guidance in regression tests",
+  "outcome": "Pin source recovery string bounds and plain show guidance in regression tests",
+  "acceptance": [
+    "A source recovery case asserts the plain show remedy line and preserves structured service, word and MCP guidance",
+    "Regression tests exercise all five optional source recovery strings across the 128-byte UTF-8 boundary, including multibyte text, and assert bounded agent projections with the stored-byte suffix while raw error details retain complete values"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in bb1099a: source-recovery strings are pinned at the 128-byte projection bound for all five fields with multibyte cuts and the stored-byte suffix; done, show, service and raw details are covered on real long histories.",
+    "completed_at": "2026-10-03T09:38:11.435821900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "02542ed7b47c4a2285fff955ba2816ca": {
+        "activity_id": "02542ed7b47c4a2285fff955ba2816ca",
+        "task_id": "01a0f48d-922c-7a23-9440-598e93c200b9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "30d452675dbf43c491896390ba13d493"
+      }
+    }
+  }
+}

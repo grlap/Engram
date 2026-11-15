@@ -1,0 +1,50 @@
+{
+  "id": "01a10455-be73-75b1-932f-cd81066cecc9",
+  "external_ref": null,
+  "title": "Decide whether U+061C ARABIC LETTER MARK joins the refused bidi controls for host source bases",
+  "outcome": "Decide whether U+061C ARABIC LETTER MARK joins the refused bidi controls for host source bases",
+  "acceptance": [
+    "A decision recorded on the item, with the TermAl coordinator's concurrence, says whether U+061C is refused in new host-supplied workspace ids and source revisions like the other bidi controls; the code and a test follow it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 4,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "U+061C ARABIC LETTER MARK joins the refused set (C0/C1 plus Unicode's whole Bidi_Control set) for new host source text on turn_checkpoint, named_root_bind and execution_observe; test the_refused_set_is_the_controls_and_the_bidi_controls and the per-endpoint refusal tests. Store judgment: no durable row changes; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T07:09:19.629676800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4f8be2eb82524ce7a789fced1f1dcc07": {
+        "activity_id": "4f8be2eb82524ce7a789fced1f1dcc07",
+        "task_id": "01a10455-be73-75b1-932f-cd81066cecc9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0960260dbb93469ca876204244d2ed75"
+      }
+    }
+  }
+}

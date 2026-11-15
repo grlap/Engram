@@ -1,0 +1,26 @@
+{
+  "id": "01a07a9c-c2fc-7313-9d0a-3839e0512cb4",
+  "external_ref": null,
+  "title": "Next surfaces stranded children after their parent completes",
+  "outcome": "Next surfaces stranded children after their parent completes",
+  "acceptance": [
+    "A session whose completed work left a stranded required or optional child learns of it from next without having read that child first"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Duplicate of coordinator-owned w-64737834c2ca, created while1145/1147 were crossing; retain provenance, no implementation",
+  "completion": null
+}

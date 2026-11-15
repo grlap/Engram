@@ -1,0 +1,67 @@
+{
+  "id": "01a1a435-9fb7-7003-9adf-7d5c91127787",
+  "external_ref": null,
+  "title": "Add the ordinary commit input flow to Engram's test launcher",
+  "outcome": "Add the ordinary commit input flow to Engram's test launcher",
+  "acceptance": [
+    "`node scripts/test-launcher.mjs focused|full --input commit` runs against the clean checked-out commit with its commit and tree recorded in the request and results and bound through registration, matching TermAl's scripts/test-launcher.mjs commit flow where the two share a host contract, and refusing a dirty or mismatched input by name",
+    "Runs without the flag behave exactly as before, with their request identity unchanged",
+    "A registered run with this flag on Central reaches the host's commit-bound verification path, shown by one actual run under a real claim and named root, or the exact refusal is recorded with its owner",
+    "Tests cover the flag on clean, dirty and moved-commit inputs, including detached workers",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented the commit-bound launcher input flow and landed it as 604f7cda4e9303c43f9a86840b1ed61be8e68c08. The exact candidate passed the standard FULL gate; it is pushed to origin/master and its release binary is installed. All six live stores report ready:true. No migration, projection repair, or restart was needed or performed.",
+    "completed_at": "2026-11-04T04:28:50.656336400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "248979e638ab4eecb5d14f500cd7ad50": {
+        "activity_id": "248979e638ab4eecb5d14f500cd7ad50",
+        "task_id": "01a1a435-9fb7-7003-9adf-7d5c91127787",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "6dd3334a47ac4bcfb2bffe89f254ee12"
+      },
+      "6dd3334a47ac4bcfb2bffe89f254ee12": {
+        "activity_id": "6dd3334a47ac4bcfb2bffe89f254ee12",
+        "task_id": "01a1a435-9fb7-7003-9adf-7d5c91127787",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cc560e99acfe4df98ad0f8c1c283b4b6"
+      }
+    }
+  }
+}

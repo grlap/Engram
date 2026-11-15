@@ -1,0 +1,28 @@
+{
+  "id": "01a12341-9ecd-7ae1-b35c-9ca5fa87f103",
+  "external_ref": null,
+  "title": "Reconcile sibling feature briefs with selected Git task sync and mark prior portable workflow superseded",
+  "outcome": "Reconcile sibling feature briefs with selected Git task sync and mark prior portable workflow superseded",
+  "acceptance": [
+    "The local-work-system, tracker-adapter, security-and-trust, off-host-backup, work-graph-snapshot and behavioral-control-plane briefs clearly distinguish selected Git task-text exchange from the superseded sequential writer-epoch proposal, preserving independent backup, migration and live local authority contracts."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

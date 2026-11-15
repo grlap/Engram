@@ -1,0 +1,27 @@
+{
+  "id": "01a1c293-b9b3-7ee1-b605-68e8d18873e8",
+  "external_ref": null,
+  "title": "Isolate Git configuration in imported verification and acceptance fixtures",
+  "outcome": "Isolate Git configuration in imported verification and acceptance fixtures",
+  "acceptance": [
+    "The verification fixture and reused acceptance fixture isolate global and system Git configuration, hooks, templates and signing so ambient user settings cannot alter fixture execution or measured source identity."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a128b4-5cd2-7043-813b-c0d05cb00325",
+  "external_ref": null,
+  "title": "Cover shipped MCP and control diagnostic wiring with CLI integration tests",
+  "outcome": "Cover shipped MCP and control diagnostic wiring with CLI integration tests",
+  "acceptance": [
+    "CLI integration coverage runs the shipped MCP/control binaries with a supplied test home, observes a typed fault/refusal and EOF, then asserts fixed-code diagnostic records and exit summary only under that home without private input text."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,56 @@
+{
+  "id": "01a069a6-8974-7260-978e-d85512ed108e",
+  "external_ref": null,
+  "title": "Atomic subtree admission from a plan snapshot",
+  "outcome": "One bounded call atomically adds an authored plan of new tasks, dependency edges and supplied parent relationships, returning a local-key-to-work-ref mapping.",
+  "acceptance": [
+    "A plan containing a parent and two levels of children commits all tasks and edges in one IMMEDIATE transaction or makes zero changes.",
+    "An identical request retry returns the original result with no duplicate tasks or edges; reusing the same key with different intent explicitly refuses.",
+    "One call accepts new tasks and dependency edges using payload-local keys and returns every created key-to-work-ref mapping, without mandatory preview/apply or N add/update calls.",
+    "Plan admission does not mirror an external tracker, apply external lifecycle authority or close external tasks.",
+    "Whole-input validation rejects duplicate keys, unresolved relationships and cycles with typed refusals; payload and collection limits are explicit and enforced."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-3b3f-7332-8345-4557c3a9cc0d",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a06499-37c0-7550-b632-3a880beccfa3",
+    "01a069a6-8931-7be2-a128-85b242cc0923"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered atomic authored local plans with complete key mapping, hierarchy and dependency validation, graph rollback and exact intent-bound recovery. Accepted implementation, regression tests and documentation are committed as 4508181. No external lifecycle, claim, push or installation was performed by plan admission or this closeout.",
+    "completed_at": "2026-09-09T08:52:23.265771700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8bc03dabda6c1dc3a2c03583837ff0b291e99e96462d5caf0b534069ee1c2512": {
+        "activity_id": "8bc03dabda6c1dc3a2c03583837ff0b291e99e96462d5caf0b534069ee1c2512",
+        "task_id": "01a069a6-8974-7260-978e-d85512ed108e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "53f39a0cf0e51de7df6406022911d1edde9b40836aa75b1e2a352df51e7e8c42"
+      }
+    }
+  }
+}

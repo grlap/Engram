@@ -1,0 +1,52 @@
+{
+  "id": "01a06913-34d2-7e10-b136-32fbb170a5e9",
+  "external_ref": null,
+  "title": "Checkpoint and CompletionSeal materialize the run-evidence cut as a full hash list; evaluate a positional cut bound to the dense run-feed position",
+  "outcome": "Checkpoint and CompletionSeal materialize the run-evidence cut as a full hash list; evaluate a positional cut bound to the dense run-feed position",
+  "acceptance": [
+    "A design note under docs/ states whether the seal keeps the materialized evidence list or binds only the dense run-feed cut plus acceptance citations, with the audit and report-assembly consequences",
+    "Decision recorded by Greg before any object-shape change"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "area-performance",
+    "design",
+    "stream-performance-evidence"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented the decision to keep CompletionSeal's exact selected evidence list, final-checkpoint and historical audit invariants, report evidence consequences and measurement-first checkpoint growth work. Added reciprocal feature link. Greg's recorded council decision and fresh independent 2-of-2 acceptance satisfy both unchanged criteria; pushed and installed the reviewed docs-only tree. An initial done with author links was refused under the evaluated project policy; this call relies on the recorded evaluator citations and carries no extra author links.",
+    "completed_at": "2026-10-03T05:45:28.908308200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2ab3993fb7ee4989b92217f63b05f4bc": {
+        "activity_id": "2ab3993fb7ee4989b92217f63b05f4bc",
+        "task_id": "01a06913-34d2-7e10-b136-32fbb170a5e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a294c8c98ff048a0a6198b659747b96e"
+      }
+    }
+  }
+}

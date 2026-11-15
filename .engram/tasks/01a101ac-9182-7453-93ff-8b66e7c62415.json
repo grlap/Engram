@@ -1,0 +1,28 @@
+{
+  "id": "01a101ac-9182-7453-93ff-8b66e7c62415",
+  "external_ref": null,
+  "title": "Require concrete worktree-access evidence for the authority audit fallback",
+  "outcome": "Require concrete worktree-access evidence for the authority audit fallback",
+  "acceptance": [
+    "The authority audit fallback requires the exact worktree-access refusal/error and explicitly excludes an unavailable or failing compiled checker when the worktree is readable."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

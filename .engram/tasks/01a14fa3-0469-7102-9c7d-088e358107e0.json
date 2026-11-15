@@ -1,0 +1,29 @@
+{
+  "id": "01a14fa3-0469-7102-9c7d-088e358107e0",
+  "external_ref": null,
+  "title": "Decide Engram's SQLite durability after an OS crash lost committed writes",
+  "outcome": "Decide Engram's SQLite durability after an OS crash lost committed writes",
+  "acceptance": [
+    "Greg's decision on the SQLite synchronous mode (keep NORMAL or move to FULL) is recorded verbatim with its source, together with the crash evidence and the measured per-commit cost of FULL on this host"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "durability",
+    "greg-decision",
+    "incident",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

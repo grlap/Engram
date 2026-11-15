@@ -1,0 +1,50 @@
+{
+  "id": "01a151ba-d0fc-7723-bb19-9944dbf6648d",
+  "external_ref": null,
+  "title": "Correct the presentation's bounded multi-claim refusal wording",
+  "outcome": "Slide 7 accurately describes bounded multi-claim refusal output",
+  "acceptance": [
+    "Slide 7 says the refusal lists at most three held items and counts any remaining items"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "documentation",
+    "presentation"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected slide 7: a multi-claim refusal names at most three held refs and counts any remaining items.",
+    "completed_at": "2026-10-19T16:24:26.311368500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "03bc8fa652c744e1b3cd3674aa84dd33": {
+        "activity_id": "03bc8fa652c744e1b3cd3674aa84dd33",
+        "task_id": "01a151ba-d0fc-7723-bb19-9944dbf6648d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dea32e328a254c9b8e35c2f985b9dd03"
+      }
+    }
+  }
+}

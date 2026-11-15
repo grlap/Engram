@@ -1,0 +1,30 @@
+{
+  "id": "01a193b2-1af4-7591-850b-2f7d61db284e",
+  "external_ref": null,
+  "title": "Refuse reuse of an exchange operation id across bindings of one Git directory",
+  "outcome": "Refuse reuse of an exchange operation id across bindings of one Git directory",
+  "acceptance": [
+    "prepare refuses, before any write, an operation id already Prepared under any binding whose Git directory is the same directory (same_directory)",
+    "A test prepares an outgoing operation under a binding, supersedes it, re-prepares the same operation under the successor and asserts the refusal with no new event or artifact"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "recovery",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Misfiled: a justified Low left for later must be an independent root, not a required child (engram-repo skill, review findings rule; pointed out by Engram::Coder-MacosFixSol, mailbox 3cf19104 #16). Refiled as an independent root with the same acceptance and provenance; the finding itself stands.",
+  "completion": null
+}

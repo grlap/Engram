@@ -1,0 +1,50 @@
+{
+  "id": "01a07ea7-e638-72a2-8177-efc6d88463d2",
+  "external_ref": null,
+  "title": "Refresh README for current shipped agent workflow",
+  "outcome": "Refresh README for current shipped agent workflow",
+  "acceptance": [
+    "Documentation links and whitespace checks pass",
+    "README describes nonadvancing recovery, explicit read targeting, criterion links and versioned project memories without overstating planned host capabilities"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Updated README for the currently shipped peek, read targeting, criterion evidence links and memory revisions; corrected host recovery warning, budget exceptions and shipped/planned distinctions while retaining document structure and opening voice. Documentation links and diff whitespace checks passed. README.md is the only changed file, unstaged; no runtime change, build, installation, commit or push.",
+    "completed_at": "2026-09-08T01:38:05.866115100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0d2267bf94bc7c54bc00e27c4130ea1ede5d017f03f9f904a712e1aa38ec94e0": {
+        "activity_id": "0d2267bf94bc7c54bc00e27c4130ea1ede5d017f03f9f904a712e1aa38ec94e0",
+        "task_id": "01a07ea7-e638-72a2-8177-efc6d88463d2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fd3762c620af8cb34918fb6266be0b97ff9c99499cbc529824013733e5649846"
+      }
+    }
+  }
+}

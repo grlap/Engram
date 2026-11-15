@@ -1,0 +1,29 @@
+{
+  "id": "01a18f3c-350b-7472-af42-215e4b0ef7fc",
+  "external_ref": null,
+  "title": "Keep one stalled writable open from making every other open of an established store refuse busy",
+  "outcome": "Keep one stalled writable open from making every other open of an established store refuse busy",
+  "acceptance": [
+    "A writable open of a store that is already in write-ahead-log mode with its schema no longer holds the cross-process open lock through its whole preflight and any locking-protocol retry, or a stalled holder no longer makes other writable openers refuse busy after the five-second wait; whichever design is chosen keeps concurrent first opens of a new store serialized",
+    "A test shows another writable opener of an established store is admitted while one opener is stalled in its preflight"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "reliability",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

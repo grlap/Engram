@@ -1,0 +1,52 @@
+{
+  "id": "01a139ba-8223-70c3-bf09-80d61e1765fa",
+  "external_ref": null,
+  "title": "Protect live fractional claims during process-session retention",
+  "outcome": "Protect live fractional claims during process-session retention",
+  "acceptance": [
+    "A process-default holder session with a fractional claim expiry is retained strictly before that exact expiry within its final millisecond, along with its completed protocol attempts, while the exact claim mutation guard still reports it live.",
+    "At exact expiry and afterward, retention follows the documented conservative policy without extending mutation authority; deterministic boundary tests cover both sides."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "session-retention"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved process sessions and completed protocol attempts through a fractional claim's expiry millisecond, with exact mutation authority unchanged. Delivered both unchanged acceptance criteria; independently passed 2/2, full gate and Codex/Claude reviews clean. Pushed and installed the validated changes.",
+    "completed_at": "2026-10-14T22:39:57.755639Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fcfd0cbf28a04297af6c9838f5b19ba7": {
+        "activity_id": "fcfd0cbf28a04297af6c9838f5b19ba7",
+        "task_id": "01a139ba-8223-70c3-bf09-80d61e1765fa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "23a2cdfb9c09483eb1aa4565f1cc5e5a"
+      }
+    }
+  }
+}

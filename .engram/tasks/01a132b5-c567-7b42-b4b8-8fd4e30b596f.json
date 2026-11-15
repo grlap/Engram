@@ -1,0 +1,29 @@
+{
+  "id": "01a132b5-c567-7b42-b4b8-8fd4e30b596f",
+  "external_ref": null,
+  "title": "Keep task-sync project-selection and attribution refusal reasons",
+  "outcome": "Keep task-sync project-selection and attribution refusal reasons",
+  "acceptance": [
+    "CLI task-sync settings refusals preserve a bounded useful project/home or attribution reason, including the missing-home remedy pass --home or set ENGRAM_HOME.",
+    "JSON and text fixtures distinguish missing home, invalid marker and invalid attribution while preserving the engram-task-sync-error-v1 refusal contract and absence of settings writes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

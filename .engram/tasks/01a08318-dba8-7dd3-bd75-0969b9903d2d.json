@@ -1,0 +1,52 @@
+{
+  "id": "01a08318-dba8-7dd3-bd75-0969b9903d2d",
+  "external_ref": null,
+  "title": "Two root-state header guards have no test that can reach them",
+  "outcome": "Two root-state header guards have no test that can reach them",
+  "acceptance": [
+    "A fault-injection test drives a projection-only scalar drift and asserts the exact reason 'header differs from canonical head'",
+    "A fault-injection test drives an extra or renamed header field and asserts the exact reason 'unexpected header fields'",
+    "Each new test fails when its guard is removed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fault-injection tests reach both header guards: scalar column drift refuses the exact reason header differs from canonical head; extra header field refuses unexpected header fields; each fails when its guard is removed. Refused reads write nothing.",
+    "completed_at": "2026-09-12T02:25:56.648041200Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b7ecae2003448a787523041623ecca02bc3604de8e2c625eea51b6f32b9a63b6": {
+        "activity_id": "b7ecae2003448a787523041623ecca02bc3604de8e2c625eea51b6f32b9a63b6",
+        "task_id": "01a08318-dba8-7dd3-bd75-0969b9903d2d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ceb431e6573b7c9ab2a32d06de9ac780486650b2da8a82b9554216127b15deb8"
+      }
+    }
+  }
+}

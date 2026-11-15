@@ -1,0 +1,50 @@
+{
+  "id": "01a0f89e-4b0c-7640-a198-462bd99a6866",
+  "external_ref": null,
+  "title": "The MCP dogfood's traced-notice check bounds the total number of phase lines",
+  "outcome": "The MCP dogfood's traced-notice check bounds the total number of phase lines",
+  "acceptance": [
+    "The integration check in scripts/mcp-dogfood.test.mjs fails when a phase notice appears for an id it did not expect, or twice for one id, by asserting that phaseNotices.length equals the sum of the per-id line counts"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The MCP dogfood traced-notice check sums each called id's lines and asserts that phaseNotices.length equals that sum. A notice for an id never called fails the total, and a duplicate record for one id fails the per-id checks. Gate 9/9, the pair was clean, and the evaluation passed. Landed as 242249f and installed as build 5f72edbf.",
+    "completed_at": "2026-10-01T22:47:43.064395900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0becea3a3ad04e5cb146848447d17810": {
+        "activity_id": "0becea3a3ad04e5cb146848447d17810",
+        "task_id": "01a0f89e-4b0c-7640-a198-462bd99a6866",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3065e59110174b4eb68e0f5d4fcd1276"
+      }
+    }
+  }
+}

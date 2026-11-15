@@ -1,0 +1,52 @@
+{
+  "id": "01a0afc0-8d95-78c0-9f20-b031777532f3",
+  "external_ref": null,
+  "title": "add refuses a supplied blank evaluation mode for roots and children before effects, sharing update's parsing",
+  "outcome": "Creation no longer trims and filters a supplied blank mode into an omission; the shared parser refuses it before any effect while genuine omission and valid selection are unchanged",
+  "acceptance": [
+    "a_blank_evaluation_mode_is_refused_at_creation passes: empty and whitespace modes are refused with InvalidWork for a root and for a child with no item created, the project feed and focus unchanged; an omitted mode creates without a pin and a valid mode creates pinned; the refusal parsing is shared with update"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round8"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "add and update share parse_supplied_evaluation_mode: a supplied blank or whitespace mode refuses with InvalidWork before any effect for roots and children, genuine omission creates unpinned, and a valid word pins. Pinned by a_blank_evaluation_mode_is_refused_at_creation with the earlier update-only pin still passing (RED logs/30, GREEN logs/31; final sequence logs/34 all pass). Documented in the feature brief's agent surface and matrix row B45.",
+    "completed_at": "2026-09-17T14:45:23.530973300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09dce887e73b79121b5909b88a2131a1072cd80ec0a54209b782146775c4faa7": {
+        "activity_id": "09dce887e73b79121b5909b88a2131a1072cd80ec0a54209b782146775c4faa7",
+        "task_id": "01a0afc0-8d95-78c0-9f20-b031777532f3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "543b34e3f55ec4cbccd6f7b3efef2e4cd42085d44aaaf88c4949d3525c4dd864"
+      }
+    }
+  }
+}

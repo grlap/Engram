@@ -1,0 +1,49 @@
+{
+  "id": "01a079d3-753a-7d91-b90e-1de974057f1f",
+  "external_ref": null,
+  "title": "Create original manuscript artwork for the agent notes page",
+  "outcome": "Create original manuscript artwork for the agent notes page",
+  "acceptance": [
+    "Fourth folio uses newly generated matching art, saved in the website with documented prompts and verified desktop/mobile rendering"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Generated and integrated original mechanical-scribe and listening-instrument manuscript artwork for the fourth website folio, with saved prompts and passing visual, accessibility and repository validation.",
+    "completed_at": "2026-09-07T03:13:21.815117600Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3f5736b20de7552f86924489edb20beea86e88ff9d6c5d398c1f1e0219dc574f": {
+        "activity_id": "3f5736b20de7552f86924489edb20beea86e88ff9d6c5d398c1f1e0219dc574f",
+        "task_id": "01a079d3-753a-7d91-b90e-1de974057f1f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e139d5441600a911676ea026b83b200786f0339845a76433f2f1e9895c4e3ef0"
+      }
+    }
+  }
+}

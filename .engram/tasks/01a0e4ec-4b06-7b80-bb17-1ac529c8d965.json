@@ -1,0 +1,52 @@
+{
+  "id": "01a0e4ec-4b06-7b80-bb17-1ac529c8d965",
+  "external_ref": null,
+  "title": "Document the evolving Engram and TermAl collaboration",
+  "outcome": "Document the evolving Engram and TermAl collaboration",
+  "acceptance": [
+    "A discoverable retrospective describes actual Engram and TermAl collaboration, with concrete attributed examples of what works well and poorly.",
+    "Documentation link and instruction identity checks pass, and both independent reviewers have no outstanding in-scope findings.",
+    "The record distinguishes observed outcomes from pending improvements and supports dated follow-ups describing changes and whether they helped; it does not become another operating manual."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the discoverable incremental collaboration retrospective with concrete successes/friction, attributed dated observations and later improvement outcomes. Both round4 reviews clean; required Markdown checks passed exact frozen input; independent evaluation passed all3 criteria. No runtime changes or installation.",
+    "completed_at": "2026-09-27T22:30:45.477971100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6b2974f9ab984378a0000413f09ab937": {
+        "activity_id": "6b2974f9ab984378a0000413f09ab937",
+        "task_id": "01a0e4ec-4b06-7b80-bb17-1ac529c8d965",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ac03ce7e02d248b4b6557fc68edbe0b4"
+      }
+    }
+  }
+}

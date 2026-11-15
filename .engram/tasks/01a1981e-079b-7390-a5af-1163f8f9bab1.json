@@ -1,0 +1,47 @@
+{
+  "id": "01a1981e-079b-7390-a5af-1163f8f9bab1",
+  "external_ref": null,
+  "title": "Make sure nothing in Engram core still needs a live gated-control session when the host runs with gated control OFF",
+  "outcome": "Make sure nothing in Engram core still needs a live gated-control session when the host runs with gated control OFF",
+  "acceptance": [
+    "A source inventory lists every Engram core path that reads or requires control-session state (control_sessions phase, connection token, routing token, grants) and that an ordinary OFF-mode host operation can reach, with file:line and whether it blocks ordinary work",
+    "Every inventoried path that blocks ordinary work under OFF (claim, note, gate, evaluate, done, named-root binding for acceptance evaluation) is either removed from the OFF path or covered by a supported OFF-mode route that the host actually uses, with a test that exercises it on a store holding real retained control state (exited session, expired or completed grants)",
+    "Under OFF, an acceptance evaluation of a claimed item can be recorded and completion can proceed without any turn grant or gated admission, demonstrated end-to-end with TermAl's OFF-mode build",
+    "No path grants gated authority, replays an old operation, or treats an old unknown operation's settlement as a precondition"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+  "disposal_reason": "folded into the removal P0",
+  "completion": null,
+  "activity": {
+    "central": {
+      "0d023337c92d47e097ecaa12c69c22cd": {
+        "activity_id": "0d023337c92d47e097ecaa12c69c22cd",
+        "task_id": "01a1981e-079b-7390-a5af-1163f8f9bab1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "4957b83d40ce4aae8c4bc512f0387ac6"
+      }
+    }
+  }
+}

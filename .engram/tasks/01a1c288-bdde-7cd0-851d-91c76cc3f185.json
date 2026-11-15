@@ -1,0 +1,28 @@
+{
+  "id": "01a1c288-bdde-7cd0-851d-91c76cc3f185",
+  "external_ref": null,
+  "title": "Classify imported proof selection errors as native admission refusals",
+  "outcome": "Classify imported proof selection errors as native admission refusals",
+  "acceptance": [
+    "User-correctable imported proof selection errors in completion and acceptance evaluation use their native typed admission refusal rather than InvalidWorkProjection; genuine projection damage keeps its integrity classification.",
+    "Behavior tests cover wrong-run, missing-current-claim, conflicting source declaration and multiple selected acceptance-use inputs without changing stored state."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

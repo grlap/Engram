@@ -1,0 +1,26 @@
+{
+  "id": "01a101a4-0cc3-7d73-9055-a9cb2dda7dac",
+  "external_ref": null,
+  "title": "Compact next shows a live claim as recoverable inside its expiry millisecond",
+  "outcome": "Compact next shows a live claim as recoverable inside its expiry millisecond",
+  "acceptance": [
+    "A next peek during the millisecond that holds a sub-millisecond claim expiry, before the claim's exact expiry, lists the claim as held by its holder, matching ls holder words at the same time"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

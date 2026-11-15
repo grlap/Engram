@@ -1,0 +1,87 @@
+{
+  "id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+  "external_ref": null,
+  "title": "Retain delivered root-gating and recovery evidence, with the remaining host work owned in TermAl",
+  "outcome": "TermAl owns root-session dispatch enforcement and its reliability under delays and recovery. This Engram coordination item holds an evaluator-readable record of the host admission and recovery work delivered and of the tests that bound it, keeps the original incident evidence, and names the TermAl owner of every unfinished part; source and tests are never presented as live root proof.",
+  "acceptance": [
+    "A holder note catalogs the delivered host source and retained regression results for waiting or unknown outcome versus policy denial, prompt retention, cancellation, and grant and begin before model delivery; each case names its input or build, what it asserted about provider calls and prompts, and its limits, and any unsupported case is listed as remaining host work",
+    "An independent delegated evaluator assesses every current criterion against the item's holder notes, final source where applicable and host review and test artifacts, returns insufficient_evidence for gaps, names the tested input or build, and distinguishes source or test acceptance from installed live verification",
+    "The holder notes describe the retained recovery evidence: operation intent, key and dispatch generation, terminal expiry reconciliation and the begun versus unbegun distinction; the missing single automatic identical resend and cold-takeover proofs are named as owned by TermAl w-dd45ba3a3710, with no claim of blind prompt redelivery or that absence proves no write",
+    "The holder notes give the allowed-lifecycle and denied direct and queued provider-count evidence at its actual level (disposable store with a simulated provider, or real host), and disclose unresolved host review findings rather than presenting an incomplete review as clean",
+    "The holder notes name TermAl root w-cb1b5e3be628 and its three required host defect children as owners of enabled root admission, and state that closing this item neither closes that work nor claims root enforcement proved end to end",
+    "The holder notes name each installation, restart or policy action taken and its authorization, or state that none was taken; no deployment or production gating claim is made from settings, binding or child-only receipts, and any future such action keeps its own operator authorization",
+    "The holder notes say which idle wake, delay, writer contention, response loss, denial, cancellation and unavailable-host cases were tested and which remain; the cold and warm phase measurement and the unexplained 624 ms and 10009 ms delays are named as carried by TermAl w-b47e56285703 and w-e0f80b315a6d, not as done here",
+    "The holder notes state the host control-call admission ceiling as 20 seconds, replacing the obsolete 10 seconds, with the effective per-call and overall budgets and the narrower binding paths (the production work-binding deadline of 6 seconds) and where each applies; 20 seconds is stated as a ceiling, not a measured latency or proof of slow-call behaviour"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": "independent_session",
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "coordination"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete on Greg's word (Asistant #239): root gating and its recovery are gone, so this catalog of delivered gating evidence has no further use. Its recorded notes stay readable as history; TermAl's own items are TermAl's to dispose.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "32ac501aa3434b38b84e863e97722be8": {
+        "activity_id": "32ac501aa3434b38b84e863e97722be8",
+        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "79f1aa7f7b8f4348b89bf2c6ec2e2512"
+      },
+      "6e762ec3b1a04360a577fb21a70f3000": {
+        "activity_id": "6e762ec3b1a04360a577fb21a70f3000",
+        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6e762ec3b1a04360a577fb21a70f3000"
+      },
+      "83f07a766b5b48d0a06bc1c373d5d811": {
+        "activity_id": "83f07a766b5b48d0a06bc1c373d5d811",
+        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "37bb9ba2d064444c9f1a18855fb1dca5"
+      },
+      "bc2fe88e38624c1c84c976cf6d5e176b": {
+        "activity_id": "bc2fe88e38624c1c84c976cf6d5e176b",
+        "task_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bc2fe88e38624c1c84c976cf6d5e176b"
+      }
+    }
+  }
+}

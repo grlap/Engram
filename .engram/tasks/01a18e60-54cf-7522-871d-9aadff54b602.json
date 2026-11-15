@@ -1,0 +1,28 @@
+{
+  "id": "01a18e60-54cf-7522-871d-9aadff54b602",
+  "external_ref": null,
+  "title": "Word the measured_unchanged refusal and inventory row to cover the named root's own sighting",
+  "outcome": "Word the measured_unchanged refusal and inventory row to cover the named root's own sighting",
+  "acceptance": [
+    "docs/shipped.md's unadmitted execution record row says a measured_unchanged report must also agree with the named root's own newest sighting at the reported generation, not only with the workspace's newest record",
+    "The execution_observation_unrecorded_change message no longer calls the recorded revision the workspace's newest when it comes from the root's own sighting (reworded, or a scope named in its details)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

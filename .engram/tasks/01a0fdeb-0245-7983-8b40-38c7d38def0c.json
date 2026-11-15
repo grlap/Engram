@@ -1,0 +1,56 @@
+{
+  "id": "01a0fdeb-0245-7983-8b40-38c7d38def0c",
+  "external_ref": null,
+  "title": "`engram backup restore` from the configured target onto a clean home",
+  "outcome": "`engram backup restore` from the configured target onto a clean home",
+  "acceptance": [
+    "`engram backup restore COPY --origin-retired-by NAME` holds the push lock, fetches the copy into a staging file beside the store, checks it against its manifest, verifies it, installs it with a no-replace move (never replacing anything) and verifies the installed store; it refuses without a non-blank `--origin-retired-by`, when a store or a store sidecar already exists at projects/<digest>/ (save only the completion of its own interrupted restore that criterion 2 names), when a push holds the lock, and when the manifest's project or the verified store's project id differs from the configured target's project (each with a typed code); tests cover all four refusals",
+    "The staging file is named so that store open, doctor and readiness never take it for a store or a sidecar, and a test shows doctor and readiness on a home holding only a leftover staging file treat it as no store; restore records a pending provenance record (copy, SHA-256, origin host, operator statement) before the move and marks it completed after, and a test of the crash point between the pending record and the move shows no store with the record pending, a retry with the same copy succeeding and a retry with a different copy refused; when a restore stopped after the move but before completion, a retry with the same copy that finds engram.db with no -journal file, no non-empty -wal file (an empty -wal and an -shm, which a read leaves, are allowed) and a SHA-256 equal to the pending record's verifies it and completes the record, saying \"completed an interrupted restore\", while a store whose SHA-256 differs is refused as an existing store, and a test covers both; `backup status` and doctor show a pending record as pending and a completed one as restored, and never contact the target",
+    "Restore prints, read from the verified copy with one local clock reading over the whole store, the number of unexpired active claims and of unexpired issued grants with when the last of each expires, and the number of begun turns separately; it changes no row of the restored store; a test asserts the output, that the restored store's exported rows are unchanged, the status line, and that a new session's `claim` of an item still held in the copy is refused until that claim's expiry",
+    "When the running build does not accept the copy's schema reference, or its full check of the copy fails, `backup restore` refuses, leaves the fetched file in place, prints its path and names both ways on (the build at the manifest's source revision unless that revision is `unavailable`, or `migration export` and `migration import`); tests with a manifest of another format identity and with a copy that fails the full check assert the refusal text",
+    "docs/shipped.md and docs/features/cli-and-mcp.md describe `backup restore`, its refusals and its report"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa88-0748-70e0-8ac5-c22ec2923803",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fdea-dcaf-7683-8cda-11fc801f286e"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`engram backup restore COPY --origin-retired-by NAME` landed as c562a70 on origin/master.\n\nWhat it does:\n- Under the push lock it fetches the copy into a `.backup-restore-<id>.staging` file, runs the full check, and records a pending provenance record.\n- It moves the copy into place with a no-replace rename, checks the installed store, and completes the record.\n- Typed refusals: origin unstated, store or sidecar present, push running, manifest or store of another project, another format, and a failed check. The last two keep the staging file and name both ways on.\n- A same-copy retry finishes a restore stopped before the move. One stopped after the move is completed only over the recorded SHA-256, with at most an empty -wal and an -shm beside it.\n- A completed record whose store is gone is kept aside under its UTC completion time.\n- The live-authority report uses one clock reading, and no row is changed. Status and doctor show the record.\n- doctor now refuses a missing store (store_not_initialized) instead of creating one.\n- The backup listing names foreign-project manifests separately.\n\nEvidence:\n- Round 1 had two Mediums; both were fixed. Round 2 on freeze 134d854a had no Medium or higher (Codex session-9892, Claude session-9893).\n- Gate test-50f5b58c passed.\n- Independent evaluation 5cf8a783 passed all 5 criteria.\n- All 4 live stores name only their own project, and all are ready on the installed build 86e90a44….\n- Follow-up w-77c083e18e44 is filed.",
+    "completed_at": "2026-10-02T20:21:18.686867900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0318666e7caa4b9fa350569106320fd2": {
+        "activity_id": "0318666e7caa4b9fa350569106320fd2",
+        "task_id": "01a0fdeb-0245-7983-8b40-38c7d38def0c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "12b5a7c4ae5548ef843a078d629992f5"
+      }
+    }
+  }
+}

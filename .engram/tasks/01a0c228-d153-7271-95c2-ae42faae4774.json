@@ -1,0 +1,53 @@
+{
+  "id": "01a0c228-d153-7271-95c2-ae42faae4774",
+  "external_ref": null,
+  "title": "Align remaining record-id terminology in documentation and CLI/MCP help",
+  "outcome": "Align remaining record-id terminology in documentation and CLI/MCP help",
+  "acceptance": [
+    "CLI reference describes the full record-id exclusion as 32 or 64 hex at all cited occurrences; the control-plane brief calls the policy reference an id.",
+    "Note-locator and evaluate-evidence CLI/MCP help and source comments describe record ids accurately while preserving all actual wire and flag spellings.",
+    "Required gates and paired review pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "identity",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed a584b90: CLI/MCP/docs identify record IDs accurately, preserve actual flags and wire fields, and scope input/output guarantees. Independent evaluator825ad749 passed3/3 using full gate and clean pair artifacts for committed tree.",
+    "completed_at": "2026-09-27T23:09:33.491064300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1afd646237044531aacf269c262407ce": {
+        "activity_id": "1afd646237044531aacf269c262407ce",
+        "task_id": "01a0c228-d153-7271-95c2-ae42faae4774",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7d29297f17344c86948ed061e5a97ee3"
+      }
+    }
+  }
+}

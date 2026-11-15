@@ -1,0 +1,79 @@
+{
+  "id": "01a101fe-464e-75b1-8ac3-f47aaa681073",
+  "external_ref": null,
+  "title": "Retain bounded durable diagnostics for observed MCP and control failures",
+  "outcome": "Observed MCP slowness/errors, control refusals and shutdown overruns leave bounded readable diagnostics with safe correlation, without requiring a test collector or changing the canonical store.",
+  "acceptance": [
+    "With ENGRAM_MCP_PHASE_TRACE unset, diagnostics under the explicitly confirmed Engram home retain observed slow MCP calls whose handler-to-terminal server duration exceeds 2000 ms, observable decoded MCP request/tool/send errors, and actual typed control refusals in both success and error envelopes. A refusal/error is admitted to the diagnostic queue before awaiting response delivery. After actually observed MCP EOF (InputEnded), crossing a separate 10-second diagnostic threshold while shutdown remains open admits exactly one shutdown_overrun record with the last observed milestone, without changing shutdown behavior. Healthy writable sinks retain accepted records through normal exit. Records contain fixed labels, timings/counts, fixed code and allowlisted actionable reason, producer build/process metadata and explicitly documented correlation handles only: control pid plus per-process 1-based frame_seq, validated opaque TermAl session-N or exact session comparison fingerprint, validated grant UUID where present, exact idempotency-key comparison fingerprint where present, and server-local numeric MCP request_id/local sequence. Comparison fingerprints use the documented namespace, zero byte and exact UTF-8 input without normalization; never authentication or anonymity. No raw actor/context, arbitrary keys/identities, routing/connection/delivery tokens, SQL, paths, arguments/results, error text or stored text. TermAl runtime tool-call IDs are not claimed to map to MCP request IDs. Document that rmcp-internal swallowed wire errors and never-observed host calls are outside Engram visibility; host not_started permits no Engram record expected, while an after-send deadline remains unknown. Deterministic test-only clocks/thresholds do not change production thresholds.",
+    "Retention across concurrent processes sharing one confirmed home has four owned JSONL files of at most 1 MiB each plus one fixed empty lock file, records of at most 4096 bytes including newline, a queue of at most 256 fixed events and finite request tracking. Serialization, filesystem creation, nonblocking OS locking, append/rotation and disk flush run on the writer, never awaited by request/send paths; cooperating writers cannot interleave or exceed the aggregate owned-file bounds. Queue saturation, writer-start failure, lock contention, permission/full-disk/unreadable destination, invalid destination layout and partial write/flush failures preserve original protocol responses/results and update saturating loss counters. Counters appear in subsequent successful diagnostics and the bounded exit summary when the sink can write; an always-unwritable sink and forced termination cannot promise durable diagnostics. Exit flush has an independent full-queue-safe signal, waits at most one second and truthfully reports drained or timed out, without joining an indefinitely blocked writer. Deterministic lifecycle, concurrency/rotation, privacy and injected-fault tests establish these boundaries.",
+    "MCP/control stdout and response bytes, both existing 10000 ms client sanity checks and explicit opt-in stderr phase/shutdown tracing remain unchanged. Default timing is cheap handler/dispatch/send timing; detailed store phase profiling remains opt-in. No canonical objects, SQLite schema/tables, durable records, projection derivations, migration/import or live-store configuration changes. Documentation names the confirmed-home log location, limits, thresholds, correlation meanings and visibility/loss boundaries; missing records never prove a client-only stall. Focused tests cover retained observed failures/typed refusals, slow/shutdown thresholds, opt-in tracing, cancellation/ID reuse, correlation, retention, normal exit and faults. Before landing, ordinary sequential baseline/candidate calls interleaved on the same machine, with background load disclosed, reporting the median and spread of paired differences demonstrate added successful-call cost below 50 microseconds median with no new per-call allocation beyond a fixed record, with actual producer/sample/method/result evidence in a holder note. No synthetic CPU load and no source copies archived as evidence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-mcp",
+    "diagnostics",
+    "proposed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a11c37-93a9-7c82-b658-9b4c461113c7"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered bounded durable operational diagnostics for observed MCP/control failures, safe correlation, slow-call and shutdown-overrun timing, retention/loss counters and bounded exit flush. Full gate and independent Codex/Claude reviews passed on exact source; three criteria passed fresh independent acceptance. Clean committed release installed with backup; all four live stores ready; fast-forward pushed to origin/master.",
+    "completed_at": "2026-10-11T07:58:45.708012Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0a8500a2d35849f79d9f6526c1c41fda": {
+        "activity_id": "0a8500a2d35849f79d9f6526c1c41fda",
+        "task_id": "01a101fe-464e-75b1-8ac3-f47aaa681073",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0a8500a2d35849f79d9f6526c1c41fda"
+      },
+      "25107411ada341298c95ab2927942687": {
+        "activity_id": "25107411ada341298c95ab2927942687",
+        "task_id": "01a101fe-464e-75b1-8ac3-f47aaa681073",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d19b4f613a08420b9f939a48bbe68af3"
+      },
+      "5c066d5228524817beae26555ed92fb0": {
+        "activity_id": "5c066d5228524817beae26555ed92fb0",
+        "task_id": "01a101fe-464e-75b1-8ac3-f47aaa681073",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5c066d5228524817beae26555ed92fb0"
+      }
+    }
+  }
+}

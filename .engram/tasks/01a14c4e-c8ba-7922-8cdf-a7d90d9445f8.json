@@ -1,0 +1,54 @@
+{
+  "id": "01a14c4e-c8ba-7922-8cdf-a7d90d9445f8",
+  "external_ref": null,
+  "title": "Git-folder sync S2: admitted adds, changes and deletes with concrete conflict diagnostics",
+  "outcome": "Git-folder sync S2: admitted adds, changes and deletes with concrete conflict diagnostics",
+  "acceptance": [
+    "Adds, changes and deletes apply through existing declared events (Revised{Project}, prerequisite and blocker transitions, and a proven run-free Disposed materialization, not the runtime-creating dispose wrapper) with correct relation replay and result-graph integrity; original origins, seals and deletion history are retained, never erased; restored Completed items stay unchanged and event-free",
+    "Any blocked task refuses the whole selected diff with a per-task reason naming the actual conflict (live claim, active run or admission basis, sealed completion versus reopen/terminal change, root/reparent move), judged on the actual mutation and influence closure rather than a blanket refusal for an unrelated claimed task; zero changes are committed and runtime state is unchanged",
+    "Doctor verifies canonical replay of the new events and removals; repair rebuilds only declared disposable projections and preserves all durable rows and old results"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a14c4e-bff5-7ac0-9438-85259c09d8d8"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed Git-folder sync S2 through all four sealed, landed required children: scalar edits, restored additions, run-free removals and prerequisite/blocker deltas. The complete holder proof maps existing-event replay/history retention, precise whole-folder atomic conflict admission with unchanged runtime state, and doctor/projection-repair preservation to child evaluations, full gates, seals and commits. Fresh independent evaluation5891ae2474a840c28c024e9dc648382c recorded all3 parent criteria passing on judgment from current source/tests. Parent closure only: code landed through children, so no new landing, build, install or gate is claimed.",
+    "completed_at": "2026-10-20T04:01:08.421300700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a1ca72a7aec84f669dcfafacbb0e1dce": {
+        "activity_id": "a1ca72a7aec84f669dcfafacbb0e1dce",
+        "task_id": "01a14c4e-c8ba-7922-8cdf-a7d90d9445f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3166bc4eb63c44258801bc822d9713c8"
+      }
+    }
+  }
+}

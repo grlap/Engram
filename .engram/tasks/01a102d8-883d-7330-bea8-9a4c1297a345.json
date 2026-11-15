@@ -1,0 +1,50 @@
+{
+  "id": "01a102d8-883d-7330-bea8-9a4c1297a345",
+  "external_ref": null,
+  "title": "The evaluate reserve tests compare the word-only envelope against a reserve that now includes the focus disclosure",
+  "outcome": "The evaluate reserve tests compare the word-only envelope against a reserve that now includes the focus disclosure",
+  "acceptance": [
+    "The evaluate reserve derivation guards in src/verbs/tests/evaluate/review.rs assert the word-only envelope against EVALUATE_WORD_RESERVE minus FOCUS_CHANGE_RESERVE (or against a separately named word-only constant), so the word envelope cannot grow into the room reserved for the focus disclosure without a test failing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The evaluate reserve guards now measure the word-only envelope against a named EVALUATE_WORD_ONLY_RESERVE (3072). EVALUATE_WORD_RESERVE is that plus the focus-disclosure reserve, so the envelope can't grow into the disclosure's room unnoticed. Landed as 3d52ed6.",
+    "completed_at": "2026-10-04T06:14:18.450552Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7033ad9d11344e5fba1c5e09da707936": {
+        "activity_id": "7033ad9d11344e5fba1c5e09da707936",
+        "task_id": "01a102d8-883d-7330-bea8-9a4c1297a345",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d55efda887f1437cb6ea6b3f72e98d68"
+      }
+    }
+  }
+}

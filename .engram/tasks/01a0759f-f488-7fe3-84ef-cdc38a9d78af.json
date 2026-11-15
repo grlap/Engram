@@ -1,0 +1,51 @@
+{
+  "id": "01a0759f-f488-7fe3-84ef-cdc38a9d78af",
+  "external_ref": null,
+  "title": "Every remaining terminal render site escapes stored text through the terminal text policy",
+  "outcome": "Every remaining terminal render site escapes stored text through the terminal text policy",
+  "acceptance": [
+    "a per-line whole-receipt scan over next, ls, show, show --notes and show --history text with a hostile fixture (ESC, C1 CSI, OSC+BEL, bidi, CR/LF injection) finds no C0/C1/format/separator character on any line and exactly one next: line; MCP structured/text JSON titles stay exact",
+    "compact next and ls rows (title, outcome, labels, blocked reason, remedy, holder label) and every other human text line that renders stored text — show lines, note and history row summaries, child rows, obligation rows — pass through the existing terminal text policy before bounding; JSON keeps stored bytes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "security"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Terminal receipt text escapes stored fields without altering structured projections or safe command whitespace; regression and independent review closure verified, landed and installed.",
+    "completed_at": "2026-09-06T08:43:31.396532400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cbc543033425105fc24dd1ec4634f6875c3ec71aaf4841e8c2043dc2c15698a9": {
+        "activity_id": "cbc543033425105fc24dd1ec4634f6875c3ec71aaf4841e8c2043dc2c15698a9",
+        "task_id": "01a0759f-f488-7fe3-84ef-cdc38a9d78af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4662e17fe0eb6c13755b082135756e4769cfbdf8acbc84b5dd499798cc55b933"
+      }
+    }
+  }
+}

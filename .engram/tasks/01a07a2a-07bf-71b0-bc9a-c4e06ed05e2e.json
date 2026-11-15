@@ -1,0 +1,51 @@
+{
+  "id": "01a07a2a-07bf-71b0-bc9a-c4e06ed05e2e",
+  "external_ref": null,
+  "title": "Compact status and STOP-tail resume guidance",
+  "outcome": "Compact status and STOP-tail resume guidance",
+  "acceptance": [
+    "pilot_compact_status_once_and_stop_tail_requires_full_read passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "pilot",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a079e2-afa1-7072-8c32-e35292234420",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered compact same-capture status deduplication and complete-driven STOP/approval read-first guidance with full locators. Negative controls discriminated literal ellipsis and complete multiline defects; held and unclaimed assigned regressions, budget fitting, and full final gates pass. Pair and coordinator accepted correction73153de7; landed1a8eee0 installed d5720902bd4f.",
+    "completed_at": "2026-09-07T06:18:36.074832600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "054bedc3cd8819689844d034fda31674722286ef019c3887b44dcfc54ad8efa5": {
+        "activity_id": "054bedc3cd8819689844d034fda31674722286ef019c3887b44dcfc54ad8efa5",
+        "task_id": "01a07a2a-07bf-71b0-bc9a-c4e06ed05e2e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "61c4fe176a79baa44865206764b30911b6e0b15b0a8686a98f8acba76069ff80"
+      }
+    }
+  }
+}

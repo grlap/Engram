@@ -1,0 +1,51 @@
+{
+  "id": "01a06edb-c406-72a3-96ea-3b6501e76de4",
+  "external_ref": null,
+  "title": "Correct dense note-order lookup binding",
+  "outcome": "Correct dense note-order lookup binding",
+  "acceptance": [
+    "cargo test --lib phoenix_ passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-08ae-7670-a743-edae30510dd6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected dense root-feed lookup to status.work.root_id; all five phoenix_ regressions pass.",
+    "completed_at": "2026-09-04T23:59:58.537166Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "56d1a232261e7c5e137e09b134f8d2cc4b37ce1478a170339ff1051627e5d4df": {
+        "activity_id": "56d1a232261e7c5e137e09b134f8d2cc4b37ce1478a170339ff1051627e5d4df",
+        "task_id": "01a06edb-c406-72a3-96ea-3b6501e76de4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7bfb5d963feadbd9171ab9cb1f24ca729c3894b346a2ad1b1c5bef1ebb68d403"
+      }
+    }
+  }
+}

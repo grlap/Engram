@@ -1,0 +1,29 @@
+{
+  "id": "01a1ca40-54b0-7910-81f9-cb0953eb1f92",
+  "external_ref": null,
+  "title": "Verify manual push-refusal records before preventing later confirmation",
+  "outcome": "Verify manual push-refusal records before preventing later confirmation",
+  "acceptance": [
+    "Manual publication and retry progress cannot permanently prevent confirmation of an applied push through an unsupported caller-asserted PushRejected.",
+    "Behavioral coverage preserves exact automatic non-fast-forward refusal, uncertain publication and successful observation/replay semantics."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

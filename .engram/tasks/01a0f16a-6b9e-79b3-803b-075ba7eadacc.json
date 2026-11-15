@@ -1,0 +1,52 @@
+{
+  "id": "01a0f16a-6b9e-79b3-803b-075ba7eadacc",
+  "external_ref": null,
+  "title": "Same-turn evaluation follow-ups: a stale evidence_basis help text, the stale (source) docs path, and the exemption's revision test",
+  "outcome": "Same-turn evaluation follow-ups: a stale evidence_basis help text, the stale (source) docs path, and the exemption's revision test",
+  "acceptance": [
+    "A test declares the run's current revision, lands a passed check on another revision after the cut, and expects the evaluation stale (mutation); it fails with the revision comparison in the exemption disabled",
+    "The WorkEvaluateInput.evidence_basis description in src/work_service/operations.rs carries the passed-check-on-the-declared-revision exception, like its siblings in mcp.rs, main.rs and the domain type",
+    "The recovery-cause table in docs/features/acceptance-evaluation.md and the completion flowchart in docs/features/local-work-system.md name the named-root path for stale (source): the host reports the root at the declared revision at the turn's close, then done runs again, with no new evaluation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Three review follow-ups to the same-turn evaluation change, landed as 4e04e94. (1) The evidence_basis description of the work-service evaluate input carries the passed-check-on-the-declared-revision exception. (2) The recovery-cause table and the completion flowchart name the named-root wait for a stale (source) evaluation. (3) Test B81 pins the exemption's revision comparison and fails with it disabled. No runtime behavior changes. Criterion 4 (split stale-source causes) was removed by Engram::Fable's decision and recorded on the evaluation-lifecycle review. Gate 1613 Rust tests; Codex and Claude reviews clean; independent evaluation c2a1b619 passed all 3 criteria, requested in the landing turn.",
+    "completed_at": "2026-09-30T15:24:44.295345400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6c904c8d6ad04f7fa8e2dd83a7386ada": {
+        "activity_id": "6c904c8d6ad04f7fa8e2dd83a7386ada",
+        "task_id": "01a0f16a-6b9e-79b3-803b-075ba7eadacc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d241d33af41e4fa09addb09715d00ded"
+      }
+    }
+  }
+}

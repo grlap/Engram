@@ -1,0 +1,53 @@
+{
+  "id": "01a0ae25-b857-7c72-a98b-e43ac43ffa7a",
+  "external_ref": null,
+  "title": "Record the acceptance-evaluation state machine and boundary matrix in repository docs",
+  "outcome": "One feature brief defines the acceptance-evaluation contract before code changes: modes and their compatibility rules, the per-project policy, the immutable evaluation object, verdict bases, freshness and mutation rules, state transitions, refusal causes, and the boundary matrix that tests trace to.",
+  "acceptance": [
+    "docs/features/acceptance-evaluation.md defines modes, policy, object, verdict bases, freshness, state transitions, refusal causes and the boundary matrix, and is cross-linked from local-work-system.md, cli-and-mcp.md, the features index and the identical instruction files",
+    "node scripts/check-doc-links.mjs passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "docs/features/acceptance-evaluation.md records the agreed contract (boundary, three modes, policy, evaluation object, rules R1–R9, freshness F1–F5, refusal causes, state table, boundary matrix B01–B30, surface and host obligations, no-DDL storage note), cross-linked from the features index, local-work-system.md, cli-and-mcp.md and the identical AGENTS.md/CLAUDE.md; check-doc-links passes.",
+    "completed_at": "2026-09-17T07:03:50.288680Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1ac0a03a69d95741ee835442456530f39afcca94d92c84596b5a0d795f278d4a": {
+        "activity_id": "1ac0a03a69d95741ee835442456530f39afcca94d92c84596b5a0d795f278d4a",
+        "task_id": "01a0ae25-b857-7c72-a98b-e43ac43ffa7a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "53e0874984841cdf04a980f364352f50043304ff72345e3a086c61f89cdd96ef"
+      }
+    }
+  }
+}

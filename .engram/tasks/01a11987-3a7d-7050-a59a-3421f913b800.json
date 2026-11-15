@@ -1,0 +1,76 @@
+{
+  "id": "01a11987-3a7d-7050-a59a-3421f913b800",
+  "external_ref": null,
+  "title": "Refresh roadmap with supervised pilot readiness and current integration blockers",
+  "outcome": "Refresh roadmap with supervised pilot readiness and current integration blockers",
+  "acceptance": [
+    "docs/roadmap.md distinguishes delivered Engram-alone supervised pilot prerequisites, conditional integrated C# readiness, current SEV0 root-session diagnostics/recovery and TRX status using attributed source evidence without speculative dates.",
+    "The roadmap clearly separates completed, in-progress, pilot-critical and deferred/non-blocking work, preserves accurate capability boundaries and existing backup risks, and passes documentation checks on an isolated frozen candidate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "docs",
+    "pilot"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The roadmap is refreshed (docs/roadmap.md, commit ce27c31).\n- Greg's pilot definition: installing Engram, or Engram + TermAl, for a colleague and observing real work. Agent-run checks are technical qualification.\n- Engram alone is ready to install.\n- Integrated Engram + TermAl qualification is open, with each condition stated: SEV0 diagnostics, recovery narrowed to proven causes, TRX declared test commands, real C# evidence, the submodule basis, Build outcomes and runtime safety.\n- Kept accurate: the V1 control targets gated on phase 1, the backup risks, and the deferred portable and team-sync scope.\n- No forecast dates.\nFive Codex+Claude rounds: round 5 had no findings, and every earlier Low and Note was fixed. docs and agents-claude-identity passed on freeze ae778c78…, and the independent evaluation passed 2/2 (87e48f39…). Release build ef54b308… is installed with backup engram-20261009T001207Z-03bab16541c5.exe, and readiness was ready on all 4 stores.",
+    "completed_at": "2026-10-09T00:12:36.528614900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a32db1a11cd448279cfd6eafc0b215e3": {
+        "activity_id": "a32db1a11cd448279cfd6eafc0b215e3",
+        "task_id": "01a11987-3a7d-7050-a59a-3421f913b800",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a32db1a11cd448279cfd6eafc0b215e3"
+      },
+      "e61c884885df43f8b1fad4d88d25c16f": {
+        "activity_id": "e61c884885df43f8b1fad4d88d25c16f",
+        "task_id": "01a11987-3a7d-7050-a59a-3421f913b800",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e61c884885df43f8b1fad4d88d25c16f"
+      },
+      "edeb9db19f0f4d16a2a87f64c64c2da1": {
+        "activity_id": "edeb9db19f0f4d16a2a87f64c64c2da1",
+        "task_id": "01a11987-3a7d-7050-a59a-3421f913b800",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "948df864b8a64a9ca89ef9e9674c0fd3"
+      }
+    }
+  }
+}

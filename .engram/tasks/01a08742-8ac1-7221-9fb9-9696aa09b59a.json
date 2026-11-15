@@ -1,0 +1,51 @@
+{
+  "id": "01a08742-8ac1-7221-9fb9-9696aa09b59a",
+  "external_ref": null,
+  "title": "Nothing bounds a work item's prerequisite in-degree, so building edges on one item costs quadratically",
+  "outcome": "A single work item can accumulate unlimited prerequisites, and each add re-derives the whole existing set, so reaching N prerequisites through the ordinary word costs on the order of N-squared canonical decodes with the last add alone paying O(N) under the exclusive writer lock. Either bound the per-item in-degree with a declared, typed refusal, or make one add cost independent of the current in-degree.",
+  "acceptance": [
+    "a test adds prerequisites one at a time to a single item and asserts either a typed refusal at a declared per-item in-degree bound, or a total canonical decode count that grows no faster than linearly in the number of edges added"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-performance",
+    "performance",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Each item admits at most MAX_WORK_PREREQUISITES_PER_ITEM = 1024 prerequisites (the existing plan-edge bound) on the add-prerequisite, decomposition and atomic-plan routes, refused with the typed InvalidWork \"prerequisite in-degree exceeds the per-item bound\"; an existing edge stays a no-op, a completed prerequisite's kept edge still counts, removal admits again, and rows an older build or graph restore admitted above it are read as stored. No durable schema change. Proven by decomposition_refuses_a_child_over_the_prerequisite_bound, an_atomic_plan_fan_in_at_the_bound_is_admitted, prerequisite_adds_decode_in_proportion_to_the_in_degree and the ignored planning_scale_prerequisite_adds_one_at_a_time_reach_the_bound, run by the Rust gate's new third scale phase (test-rust.ps1 and test-rust.sh). Landed with w-0c66e05fb5d0 in one changeset as 8ca25387d51f370c60154a10ca77e9b10d84db86 (content equal to review freeze bb516606…, reproduced from the commit); full gate test-3b8334a7 9/9 (nine gates recorded here); round-3 pair clean; evaluation 0b25a4a4748b426980fd6b155d42dfdb pass; readiness ready on all four live stores with the installed build; installed build 1d9997cf42d8 (exe a05291cca19c), previous exe backed up as engram-20261006T024736Z-6de414d079d9.exe. Running sessions keep the old build until the TermAl restart; the only behaviour change is the 1024 in-degree refusal, which no live item approaches.",
+    "completed_at": "2026-10-06T02:48:51.803554200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9373d9233c794bbaa553053a76fa8beb": {
+        "activity_id": "9373d9233c794bbaa553053a76fa8beb",
+        "task_id": "01a08742-8ac1-7221-9fb9-9696aa09b59a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "984e3303bdb24ec0b85b7c9e4778b8aa"
+      }
+    }
+  }
+}

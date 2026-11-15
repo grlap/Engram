@@ -1,0 +1,54 @@
+{
+  "id": "01a08e71-08df-7f72-b5da-05e774c04ebc",
+  "external_ref": null,
+  "title": "State in the standing instructions that justified in-scope review findings are fixed before closure",
+  "outcome": "State in the standing instructions that justified in-scope review findings are fixed before closure",
+  "acceptance": [
+    "docs/shipped.md lists the installed explicit memory text option and BOM-prefixed JSON file input, each linked to its contract section",
+    "review-changes step 7 cites the skill, records an in-scope fix as a note on the reviewed item or as a required child, and forbids filing an in-scope finding as an optional child",
+    "the agent pair workflow proposal no longer authorizes deferring in-scope Medium or Low findings and points to the skill as the source of the rule",
+    "the documentation link check passes and the required review pair on the final frozen input leaves no unresolved in-scope finding",
+    "the engram-repo skill states that every justified finding about the scope a change modifies, Low included, is fixed before that change closes, and that only an existing problem unrelated to that scope is left for later as an independent root with a provenance note"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the standing fix-before-close rule for in-scope review findings in the engram-repo skill, review-changes step 7 and fix-bug step 8; aligned the pair workflow proposal with it in its policy paragraph, improvement table and status line; and added the shipped inventory rows for explicit memory text and BOM-prefixed JSON files. Six review rounds; the final pair on freeze 97bd98c7 left no in-scope finding. The five files are uncommitted and any commit awaits Greg's explicit approval.",
+    "completed_at": "2026-09-11T03:58:36.472942300Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d8464cb19424882d04b157b79c6a48cd501264fa49b29295cd4ee78e6e71074f": {
+        "activity_id": "d8464cb19424882d04b157b79c6a48cd501264fa49b29295cd4ee78e6e71074f",
+        "task_id": "01a08e71-08df-7f72-b5da-05e774c04ebc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a660cab17bd0a9b6e2449dcdc13afedb1c12931711f9da87b1d5a95403f633c0"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a0fc3d-b8c5-7a71-a023-e57434c7e119",
+  "external_ref": null,
+  "title": "Cover clear_target's refusal when an ancestor of the backup records cannot be inspected",
+  "outcome": "Cover clear_target's refusal when an ancestor of the backup records cannot be inspected",
+  "acceptance": [
+    "A test in the repository makes inspecting an ancestor of the backup records directory fail (a permission fixture or a nonprivileged subprocess), asserts backup_record_unreadable from show and clear with the records unchanged, and fails when an absence shortcut on the directory is reintroduced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

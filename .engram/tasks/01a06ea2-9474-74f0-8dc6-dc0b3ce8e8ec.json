@@ -1,0 +1,50 @@
+{
+  "id": "01a06ea2-9474-74f0-8dc6-dc0b3ce8e8ec",
+  "external_ref": null,
+  "title": "Refuse duplicate-member destinations before snapshot save equivalence",
+  "outcome": "Refuse duplicate-member destinations before snapshot save equivalence",
+  "acceptance": [
+    "graph save refuses an existing duplicate-member snapshot as different bytes, preserves the existing file, and never reports AlreadySaved for it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "snapshot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e17-fb1a-74d1-85f0-7de8abbad748",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Strict save equivalence refuses poisoned destinations and preserves no-replace publication; regression and all gates pass.",
+    "completed_at": "2026-09-04T23:16:03.485720400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3f89506e91e24ec8b22fa28c0cff844f29b2fe0bdc6b68ccf2c9ecc1b03f1519": {
+        "activity_id": "3f89506e91e24ec8b22fa28c0cff844f29b2fe0bdc6b68ccf2c9ecc1b03f1519",
+        "task_id": "01a06ea2-9474-74f0-8dc6-dc0b3ce8e8ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a8cd2473fae6f22b815325b2f3855ec66b6405c7b5e3dca488a2394378a7cb9a"
+      }
+    }
+  }
+}

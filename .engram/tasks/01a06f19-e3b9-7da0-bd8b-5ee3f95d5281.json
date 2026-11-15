@@ -1,0 +1,51 @@
+{
+  "id": "01a06f19-e3b9-7da0-bd8b-5ee3f95d5281",
+  "external_ref": null,
+  "title": "Mark non-holder authority in immediate note receipts and durable replay",
+  "outcome": "Mark non-holder authority in immediate note receipts and durable replay",
+  "acceptance": [
+    "phoenix_note_marker_collisions_preserve_authority_and_restored_classification and phoenix_non_holder_note_recovers_core_commit_without_appending_again pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-08ae-7670-a743-edae30510dd6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented Mark non-holder authority in immediate note receipts and durable replay. Targeted regression and all nine repository gates pass on the unchanged closure freeze; no commit or installation.",
+    "completed_at": "2026-09-05T01:17:00.685941400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0ae6adff29f1e78a50b493cef24bc608964835dca7cc075db522f68f2f75257e": {
+        "activity_id": "0ae6adff29f1e78a50b493cef24bc608964835dca7cc075db522f68f2f75257e",
+        "task_id": "01a06f19-e3b9-7da0-bd8b-5ee3f95d5281",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "28e2117a79f34c848df5c81d5d6b4e85b33fb10b8300d7ce5732c26ea8294942"
+      }
+    }
+  }
+}

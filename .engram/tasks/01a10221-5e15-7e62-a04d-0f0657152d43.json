@@ -1,0 +1,50 @@
+{
+  "id": "01a10221-5e15-7e62-a04d-0f0657152d43",
+  "external_ref": null,
+  "title": "Doctor fails instead of reporting a full-text row whose key or text is not text",
+  "outcome": "Doctor fails instead of reporting a full-text row whose key or text is not text",
+  "acceptance": [
+    "A full-text row in object_fts or work_catalog_fts whose key or text is NULL, an integer or a blob is reported as an orphan or a binding finding by doctor rather than aborting it with a conversion error, with a regression test for a NULL-keyed orphan in each table"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "doctor",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Doctor now reports a full-text row in object_fts or work_catalog_fts whose key or text is NULL, a number, a blob or non-UTF-8 as an orphan or binding finding instead of stopping on a conversion error. Regression tests cover NULL and integer keys and NULL, blob and integer text in both tables. Landed as 0e543ec on master after: full gate test-79426400 passed, before and after equal to freeze 451d585c…164e; Codex and Claude pair clean; independent Codex evaluation passed 1/1; readiness ready on Engram, PhoenixCodeNav, TermAl and CV. Installed build 0c00eeb36d12cc3768eb358bc562f1c4fe37d92ac29950b67a769953e2a4d39a, exe sha256 1bd7cd0742fb05ffd6d111bc243236715d24426fb683673383f41a2f2232e879; previous binary backed up to C:\\Users\\grzeg\\.engram\\backups\\engram-20261003T155344Z-60f36717c95d.exe.",
+    "completed_at": "2026-10-03T15:53:59.751516100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "34a9b13f0a524cf0bcfa387faf7b9cc5": {
+        "activity_id": "34a9b13f0a524cf0bcfa387faf7b9cc5",
+        "task_id": "01a10221-5e15-7e62-a04d-0f0657152d43",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c702c265a3ae430bb72d6e8efc184289"
+      }
+    }
+  }
+}

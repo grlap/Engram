@@ -1,0 +1,79 @@
+{
+  "id": "01a1b4c6-cfe4-7843-883a-ff34628d24a7",
+  "external_ref": null,
+  "title": "Remove Engram's non-agreed blockers from EO credit: remote exit-code, focused-mode, clock-ahead and unadmitted-change barriers",
+  "outcome": "Remove Engram's non-agreed blockers from EO credit: remote exit-code, focused-mode, clock-ahead and unadmitted-change barriers",
+  "acceptance": [
+    "A remote completion whose outcome is passed and whose source_id before == after is credited without requiring exit == Some(0) (control.rs ~73-80); a failed outcome still fails",
+    "A remote focused run of the declared check is credited like a full run; the not_full_mode refusal (control.rs ~51-52) no longer withholds EO credit",
+    "A remote finish time ahead of the receiving host's clock no longer refuses credit (control.rs ~54-62); finished_at presence stays as record shape",
+    "The unadmitted-change ordering barrier (feeds.rs ~950-997) no longer withholds credit from a check whose source_id before == after on the bound item",
+    "Agreed conditions are unchanged: passed outcome, source_id equality, item/claim/root/run binding, newer-failed-evidence selection, obligations at completion"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the agreed EO changes in the reviewed and fully gated combined landing; installed on Central and DL560.",
+    "completed_at": "2026-11-07T13:10:30.623355500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1cf1953822e84ea39bb025c743a9af3d": {
+        "activity_id": "1cf1953822e84ea39bb025c743a9af3d",
+        "task_id": "01a1b4c6-cfe4-7843-883a-ff34628d24a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1cf1953822e84ea39bb025c743a9af3d"
+      },
+      "9f2ea16a3a144dc396c0c1d38043c140": {
+        "activity_id": "9f2ea16a3a144dc396c0c1d38043c140",
+        "task_id": "01a1b4c6-cfe4-7843-883a-ff34628d24a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "32044abbe5ce41cfbd0442cca8c5d50d"
+      },
+      "a89cbf33ab1140f7a3e2adb412276071": {
+        "activity_id": "a89cbf33ab1140f7a3e2adb412276071",
+        "task_id": "01a1b4c6-cfe4-7843-883a-ff34628d24a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a89cbf33ab1140f7a3e2adb412276071"
+      }
+    }
+  }
+}

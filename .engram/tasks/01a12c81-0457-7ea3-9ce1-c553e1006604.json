@@ -1,0 +1,52 @@
+{
+  "id": "01a12c81-0457-7ea3-9ce1-c553e1006604",
+  "external_ref": null,
+  "title": "Review the validation suite: map each required check to the surfaces and contracts it protects",
+  "outcome": "Review the validation suite: map each required check to the surfaces and contracts it protects",
+  "acceptance": [
+    "A read-only analysis, recorded in a holder note or a hash-named docs file, lists every stage of the full gate and every test group it runs (Rust unit and integration modules, scale tests, freeze and launcher tests, MCP, control and parity dogfood, doc links). For each it gives the measured duration from recent full-gate results, the source surfaces and external contracts it protects, and whether it is UI-heavy or host-heavy",
+    "It proposes how landing validation could be scoped to the changed surface without blanket removal: which checks always run, which are cross-cutting and keep the full gate, and which could be selected by changed paths. Each proposal states the risk it accepts and the coverage it keeps",
+    "It changes no test, script or instruction file; any proposal that would change AGENTS.md or CLAUDE.md Required Quality Gates, or what the standing approval treats as a passing gate, is marked as authority text that needs the two coordinators' concurrence, Greg's word for any widening, and the final-diff audit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "simplification",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered a read-only validation-suite inventory with measured recent stage/binary/group durations, surface and external-contract mapping, UI/host classification, and scoped-validation proposals with retained coverage, accepted risks and authority-text requirements. Independent Claude evaluation898741d7f2ff4c46b5757df212560ca0 passed3/3. No tests, scripts or instructions changed; current full-gate policy remains in force.",
+    "completed_at": "2026-10-11T20:07:49.739307300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3ffab78b4e124fd28bb98bfc2e2f7638": {
+        "activity_id": "3ffab78b4e124fd28bb98bfc2e2f7638",
+        "task_id": "01a12c81-0457-7ea3-9ce1-c553e1006604",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8908f03987d745a6b62c229c1b6d5e80"
+      }
+    }
+  }
+}

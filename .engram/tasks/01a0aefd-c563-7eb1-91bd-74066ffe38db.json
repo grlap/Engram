@@ -1,0 +1,55 @@
+{
+  "id": "01a0aefd-c563-7eb1-91bd-74066ffe38db",
+  "external_ref": null,
+  "title": "Authored criterion coverage owed by the four other correction children: validator unit cases, independent_session readback, MCP/CLI transport scenarios, preflight key equality",
+  "outcome": "Authored criterion coverage owed by the four other correction children: validator unit cases, independent_session readback, MCP/CLI transport scenarios, preflight key equality",
+  "acceptance": [
+    "a test builds the preflight projection and asserts its attempt_key equals the recorded attempt_key for both the explicit and the content-derived form",
+    "a word-level test completes an item on an independent_session evaluation by a peer session and reads back done text and completed show naming evaluated (independent_session, asserted) by that peer",
+    "scripts/mcp-dogfood.test.mjs runs an evaluated-policy scenario over the real MCP transport with require_source_freshness on: evaluate cites the locator returned by show --notes --gates and refuses an observation locator, done without a fingerprint is refused naming --source-fingerprint, done with a changed fingerprint is refused as stale source, done with the matching fingerprint seals with evaluated provenance, and the CLI done --source-fingerprint path seals a second item; a word-level test covers the matching and changed fingerprint cases; a test cites the full hash of host-minted verification evidence through the word",
+    "validate_completion_seal_acceptance_evaluation_on has a unit case per relationship: missing object, other work or run, position after the completion cut, a non-pass evaluation, a derived-vector mismatch, a legacy None seal, and a valid binding; the legacy seal test asserts doctor health explicitly; the policy-authority fixture also proves that reopening the store refuses the re-frozen history"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Test-only coverage for the four completed correction children's authored criteria: per-relationship validator unit cases plus the legacy doctor assertion and store-reopen refusal; independent_session completion and readback through the words with the opaque peer label; word-level changed/matching fingerprint cases and a real MCP/CLI transport scenario in mcp-dogfood (isolated home, policy enabled through the operator CLI with source freshness, printed locator cited through MCP evaluate, observation refused, done without/changed/matching fingerprint, evaluated provenance, CLI independent-session evaluation and done --source-fingerprint); typed evidence hash cited through the word; preflight-vs-recorded attempt key equality for both forms. One disclosed visibility tweak (preview_projection pub(super)); the fixture field rename fixed the one clippy lint. Gates recorded here; logs/15, /16, /17, /18.",
+    "completed_at": "2026-09-17T11:26:50.519081200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0c98905f52bc7d967fa8cfd01005fc85ea4499785b22f9c4b89845e6708b6a28": {
+        "activity_id": "0c98905f52bc7d967fa8cfd01005fc85ea4499785b22f9c4b89845e6708b6a28",
+        "task_id": "01a0aefd-c563-7eb1-91bd-74066ffe38db",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c64f92f63a014c83541da370bf3883911aad8c80167b5aaf092fef2501ff7a50"
+      }
+    }
+  }
+}

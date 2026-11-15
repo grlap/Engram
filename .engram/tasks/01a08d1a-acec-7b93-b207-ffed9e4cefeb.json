@@ -1,0 +1,49 @@
+{
+  "id": "01a08d1a-acec-7b93-b207-ffed9e4cefeb",
+  "external_ref": null,
+  "title": "A first delivery orients on what the session holds before listing what it could take",
+  "outcome": "A session receiving its first delivery is given a large ready list ahead of the little it needs to orient itself. Present what the session holds or is assigned first, bound the number of ready candidates, give each candidate the reason it is ready, and name the command that reaches the remainder, so the omitted part is reachable rather than lost.",
+  "acceptance": [
+    "a first delivery to a session holding nothing presents held and assigned before ready candidates, bounds the candidate list, states for each candidate why it is ready, and names the continuation that reaches the rest; a test asserts the bound and that the omitted remainder is reachable through that named continuation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and reviewed shorter compact orientation in source: held and assigned precede at most five ready candidates, smaller requested limits are disclosed, each candidate retains its readiness reason, and actual emitted ready-list continuations recover the omitted set exactly once in the exercised tests, including partial and zero-row byte shedding and stale-cursor recovery. The required correction child is completed; coordinator2175 accepted freeze bdb3608c after the review pair and narrow correction read. Final nine gates passed, including CLI/MCP process tests. Catalog ID order is disclosed, not priority ranking; five independently tracked follow-ups remain deferred. This completes the implementation and tested cases, not host rollout: no commit, push or installation was performed.",
+    "completed_at": "2026-09-10T22:33:17.681531300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2b021721a47e3d962caf4e068050e58e9e6a175acc52db62385638cfdb9f534f": {
+        "activity_id": "2b021721a47e3d962caf4e068050e58e9e6a175acc52db62385638cfdb9f534f",
+        "task_id": "01a08d1a-acec-7b93-b207-ffed9e4cefeb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0ec40da9ab3069b925256d0616bd30def40a0c61618e0b29fc0e541c746a1da7"
+      }
+    }
+  }
+}

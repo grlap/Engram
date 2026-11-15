@@ -1,0 +1,52 @@
+{
+  "id": "01a07fe9-97e2-70a1-acfb-1811f78b8f6d",
+  "external_ref": null,
+  "title": "Bound source intake apply to the selected capture and delta",
+  "outcome": "Bound source intake apply to the selected capture and appended delta, without an arbitrary lifetime notice cap",
+  "acceptance": [
+    "apply performs a bounded number of canonical decodes regardless of accumulated native notices and inherited layers",
+    "doctor and graph export retain full omitted source closure checks while apply refuses damaged selected captures without writes",
+    "restoring the full audit makes the decode-budget regression fail"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Apply validates selected captures and new delta with a fixed canonical decode budget. Native and inherited history grew to32 notices; full-audit negative control failed135 versus15. Doctor/export omitted-closure and selected-corruption no-write regressions pass. No lifetime cap or total O(1) claim. Accepted freeze539037a9.",
+    "completed_at": "2026-09-08T08:00:25.345806Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5fee813b4126937d27950c28aabb9aef0555cf45074f03cb8ada9b8b9c64293a": {
+        "activity_id": "5fee813b4126937d27950c28aabb9aef0555cf45074f03cb8ada9b8b9c64293a",
+        "task_id": "01a07fe9-97e2-70a1-acfb-1811f78b8f6d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6f539735d9411603fdc04dddf3ca1b74edc0d984e8da5f1f4f41faa099507bdb"
+      }
+    }
+  }
+}

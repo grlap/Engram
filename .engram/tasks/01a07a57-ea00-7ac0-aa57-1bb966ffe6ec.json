@@ -1,0 +1,51 @@
+{
+  "id": "01a07a57-ea00-7ac0-aa57-1bb966ffe6ec",
+  "external_ref": null,
+  "title": "Keep distinct capture attribution in compact references",
+  "outcome": "Keep distinct capture attribution in compact references",
+  "acceptance": [
+    "pilot_correction_distinct_actor_captures_keep_attribution passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "pilot",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a079e2-afa1-7072-8c32-e35292234420",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Distinct captures retain identical body text and their actors; same-capture reference retains rendered kind and actor attribution. Real two-peer negative control and corrected regression pass, with final nine gates and pair/coordinator closure. Landed1a8eee0 installed d5720902bd4f.",
+    "completed_at": "2026-09-07T06:19:43.092682600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0f1fc5014d380577d0e67c89cb8af314dda8dcb9e614aad08dde83dcb031cbfd": {
+        "activity_id": "0f1fc5014d380577d0e67c89cb8af314dda8dcb9e614aad08dde83dcb031cbfd",
+        "task_id": "01a07a57-ea00-7ac0-aa57-1bb966ffe6ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d282bfedec438a64f15f902a2c66780a22dd65e53c7d39a5f4a9936c9b5e81ef"
+      }
+    }
+  }
+}

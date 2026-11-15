@@ -1,0 +1,29 @@
+{
+  "id": "01a11e80-a190-7620-9437-2e8600e4bcfd",
+  "external_ref": null,
+  "title": "Qualify delivery-token refusal ordering in the spec and behavioral control contract",
+  "outcome": "Qualify delivery-token refusal ordering in the spec and behavioral control contract",
+  "acceptance": [
+    "docs/spec.md §8.3 and docs/features/behavioral-control-plane.md delivery-token refusal statements qualify grant_scope_mismatch with the earlier turn_begin checks passing, matching src/control.rs.",
+    "The documentation link check passes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+  "disposal_reason": "The targeted grant_scope_mismatch and turn_begin documentation is gone with turn gating (landed at 5e8). Verified at master fe9a: grant_scope_mismatch has no hits, and turn_begin appears only in refusal tests and doctor's historical reader. Remaining stale prose is tracked on w-6f9629e964a7.",
+  "completion": null
+}

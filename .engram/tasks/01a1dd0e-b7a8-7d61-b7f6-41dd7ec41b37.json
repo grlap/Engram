@@ -1,0 +1,47 @@
+{
+  "id": "01a1dd0e-b7a8-7d61-b7f6-41dd7ec41b37",
+  "external_ref": null,
+  "title": "Exchange Engram's own task data on its public data branch and bootstrap DL560 from it",
+  "outcome": "Exchange Engram's own task data on its public data branch and bootstrap DL560 from it",
+  "acceptance": [
+    "Central's Engram store is opted in for task sync with Greg's quoted instruction, and the dedicated data worktree exists on the orphan engram-data branch; no code branch, index or master is touched",
+    "The first Central export has been checked before publication for secrets and private personal data, above all the user's email address; what was checked and found is recorded",
+    "The export is committed on engram-data and pushed to origin as a new branch or a fast-forward, with no force, rebase or rewrite; the commit, tree and push time are recorded",
+    "DL560 has an Engram store for github.com/grlap/Engram, bootstrapped from that branch by a dry run and then an empty-basis import with no task held or refused; its task count matches Central's export",
+    "The limits are recorded: notes off, and memories, claims, runs and evidence not transferred"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "e080dfbc27884692bf2ced74c00e13cf": {
+        "activity_id": "e080dfbc27884692bf2ced74c00e13cf",
+        "task_id": "01a1dd0e-b7a8-7d61-b7f6-41dd7ec41b37",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e080dfbc27884692bf2ced74c00e13cf"
+      }
+    }
+  }
+}

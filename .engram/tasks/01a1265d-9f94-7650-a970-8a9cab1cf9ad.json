@@ -1,0 +1,29 @@
+{
+  "id": "01a1265d-9f94-7650-a970-8a9cab1cf9ad",
+  "external_ref": null,
+  "title": "Task-sync export handles a symlinked destination parent explicitly",
+  "outcome": "Task-sync export handles a symlinked destination parent explicitly",
+  "acceptance": [
+    "Task-sync directory export accepts a destination under an existing directory symlink, or explicitly documents the safe refusal policy; a platform-appropriate regression pins the chosen behavior",
+    "Candidate intake and destination no-clobber protections remain enforced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "portability",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

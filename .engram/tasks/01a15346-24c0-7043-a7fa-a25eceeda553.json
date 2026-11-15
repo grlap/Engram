@@ -1,0 +1,52 @@
+{
+  "id": "01a15346-24c0-7043-a7fa-a25eceeda553",
+  "external_ref": null,
+  "title": "Refresh the presentation's task-sync, landing-gate and search slides once folder exchange ships",
+  "outcome": "Refresh the presentation's task-sync, landing-gate and search slides once folder exchange ships",
+  "acceptance": [
+    "docs/presentation.md slides 14-15 describe the shipped folder exchange route (once its CLI surface and docs/shipped.md row exist) instead of calling multi-host merge not shipped / in active development",
+    "The landing-gate sentence reflects that a full gate on a test ref may count as the landing gate on another host, once one has",
+    "Search is described as MCP search or CLI `ls --search TEXT --all`"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Updated the presentation to describe shipped limited Git-folder exchange, conditional equal-weight remote test-ref gates, and the correct MCP/CLI search commands.",
+    "completed_at": "2026-10-19T16:21:50.342950500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e1ef104e9d34486d861c15494c8d5d80": {
+        "activity_id": "e1ef104e9d34486d861c15494c8d5d80",
+        "task_id": "01a15346-24c0-7043-a7fa-a25eceeda553",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1e274f1b931448489c83005a8660df84"
+      }
+    }
+  }
+}

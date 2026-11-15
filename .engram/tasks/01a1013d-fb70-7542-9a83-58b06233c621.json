@@ -1,0 +1,27 @@
+{
+  "id": "01a1013d-fb70-7542-9a83-58b06233c621",
+  "external_ref": null,
+  "title": "Completion reports lost obligation projections before its named-root and source-change refusals",
+  "outcome": "Completion reports lost obligation projections before its named-root and source-change refusals",
+  "acceptance": [
+    "On a run with a named root whose source-change obligation lost its waiver row, completion refuses with InvalidWorkProjection naming the lost record, before any named-root or source-change refusal, and no resolution is appended; a test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

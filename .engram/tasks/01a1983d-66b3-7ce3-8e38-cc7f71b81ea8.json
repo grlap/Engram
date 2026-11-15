@@ -1,0 +1,78 @@
+{
+  "id": "01a1983d-66b3-7ce3-8e38-cc7f71b81ea8",
+  "external_ref": null,
+  "title": "Add the ordinary work-session control route alongside the legacy turn channel",
+  "outcome": "Provide grant-free named-root, evaluator and observation/registered-verification association over the existing host channel, preserving legacy turn behavior and history for the coordinated consumer transition.",
+  "acceptance": [
+    "The ordinary work-session route uses fixed host project/session/actor context and the current connection fence, without any control-session phase, routing token, grant, Evaluate/Begin or old-operation settlement requirement",
+    "Named-root binding/reads, evaluator reads and host observation/registered-verification recording work on real retained issued, begun, expired and completed grants including Exited sessions; wire and work/source/claim authority negatives stay enforced with no unintended writes",
+    "The legacy control channel retains its behavior and historical records remain readable as stored; ordinary startup and requests neither erase, expire nor replay old turn operations",
+    "Documentation describes the gate-free host route and its unchanged evidence/authority limits; the exact reviewed input passes the normal full gate and is landed/installed for TermAl's coordinated switch"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and installed 8b5495eb on Greg's direct word, with the exact Mac full gate PASS (12/12 stages, 3936 pass, 0 fail, matching input fingerprint) and readiness ready on all six live stores. The independent acceptance evaluator was refused before spawning because TermAl lacked an eligible named-root sighting (HTTP 409, recorded once, defect w-a7f0d25bf103); under Greg's current rule evaluation enforcement is OFF and this does not block landing or completion. The evaluation remains absent, not passed.",
+    "completed_at": "2026-11-02T00:09:54.316430100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "541b866e0136455782da9111e00670f3": {
+        "activity_id": "541b866e0136455782da9111e00670f3",
+        "task_id": "01a1983d-66b3-7ce3-8e38-cc7f71b81ea8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "541b866e0136455782da9111e00670f3"
+      },
+      "60102b523d4f4fa88c6612f70eef91e5": {
+        "activity_id": "60102b523d4f4fa88c6612f70eef91e5",
+        "task_id": "01a1983d-66b3-7ce3-8e38-cc7f71b81ea8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0bf7b7aae74b4367aac71c68075092ea"
+      },
+      "d1c2a76d33a34136b0a5177a0a15fdc9": {
+        "activity_id": "d1c2a76d33a34136b0a5177a0a15fdc9",
+        "task_id": "01a1983d-66b3-7ce3-8e38-cc7f71b81ea8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "541b866e0136455782da9111e00670f3"
+      }
+    }
+  }
+}

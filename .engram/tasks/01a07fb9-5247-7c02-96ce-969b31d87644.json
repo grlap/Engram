@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-5247-7c02-96ce-969b31d87644",
+  "external_ref": null,
+  "title": "Use the terse clock for source notice timestamps",
+  "outcome": "Use the terse clock for source notice timestamps",
+  "acceptance": [
+    "Source notice text uses the shared clock helper without fractional seconds"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Source notice text uses the shared terse clock without fractional timestamps. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:48.156941100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "de651dd686b8201122b843e504170549aa9c88cd74f7cdcb7b4ea92effbeeee9": {
+        "activity_id": "de651dd686b8201122b843e504170549aa9c88cd74f7cdcb7b4ea92effbeeee9",
+        "task_id": "01a07fb9-5247-7c02-96ce-969b31d87644",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1c5230750e3709d3ac2dfaf3a97836c04ce5d4a6c41d699a46de773db961d972"
+      }
+    }
+  }
+}

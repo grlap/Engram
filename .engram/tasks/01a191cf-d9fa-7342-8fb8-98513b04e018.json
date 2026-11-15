@@ -1,0 +1,30 @@
+{
+  "id": "01a191cf-d9fa-7342-8fb8-98513b04e018",
+  "external_ref": null,
+  "title": "Test that legacy Git strings and bound copies keep sighting-based evidence rules",
+  "outcome": "Add negative tests proving registered Git-input eligibility requires both a genuine registered producer and an unbound original evidence record.",
+  "acceptance": [
+    "A grant-backed execution-observation check with a syntactically valid git-commit revision stays on the legacy sighting path, with refusal/no effects where the sighting prerequisite is unmet.",
+    "A cross-item verification_bind copy of a registered check stays on the legacy contract and cannot inherit the registered Git-input shortcut; refusal has no effects.",
+    "The tests would fail if either registered_git_basis guard (registered producer run_outcome presence or bound_from absence) were removed, without changing production eligibility or relabelling historical evidence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "control-plane",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

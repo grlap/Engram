@@ -1,0 +1,53 @@
+{
+  "id": "01a0f2f2-280d-7762-ab14-91d7adde9aa5",
+  "external_ref": null,
+  "title": "Preserve the bound-verification mismatch through completion recovery",
+  "outcome": "Preserve the bound-verification mismatch through completion recovery",
+  "acceptance": [
+    "A test records a passing check of an older source after the latest source mutation: done exposes the typed VerificationEvidenceMismatch from the existing matcher, with the appropriate run-current-check remedy",
+    "A test satisfies a bound criterion and then records a newer relevant failing check: done returns typed contradiction context naming the criterion and check rather than only WorkCompletionRefused prose",
+    "Service, CLI and MCP formatting consume the structured cause without guessing it from reason strings; admissible binding and waiver behavior is unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved typed bound-verification mismatch and contradiction context through completion errors and service/CLI/MCP guidance, keeping original refusal messages/status, selection and waiver rules. Full round3 gate and Codex/Claude pair pass; independent acceptance 3/3; reviewed release build ready on every live store.",
+    "completed_at": "2026-09-30T20:09:16.618162600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "540af194af7b4c348d602b53dfc6edca": {
+        "activity_id": "540af194af7b4c348d602b53dfc6edca",
+        "task_id": "01a0f2f2-280d-7762-ab14-91d7adde9aa5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cd86d0fbaec045669025f3b2cf552106"
+      }
+    }
+  }
+}

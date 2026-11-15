@@ -1,0 +1,28 @@
+{
+  "id": "01a101ac-9198-7771-9558-39121c17b9ed",
+  "external_ref": null,
+  "title": "Bound the post-landing authority comparison and disclose any pending result",
+  "outcome": "Bound the post-landing authority comparison and disclose any pending result",
+  "acceptance": [
+    "The authority audit procedure assigns the post-landing comparison a concrete reporting boundary, or requires the landing report to disclose it as pending until its result is recorded."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

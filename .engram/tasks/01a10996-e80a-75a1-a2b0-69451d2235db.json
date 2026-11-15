@@ -1,0 +1,59 @@
+{
+  "id": "01a10996-e80a-75a1-a2b0-69451d2235db",
+  "external_ref": null,
+  "title": "Prevent a completion focus turn from leaving its owner silently idle",
+  "outcome": "A workflow that must end a turn for completion accounting has a durable, recoverable next action: its correct owner resumes through normal admission after accounting, or receives a bounded actionable stalled-state alert, without weakening focus, claim or completion checks.",
+  "acceptance": [
+    "Both Engram recovery paths, EndTurnReadAndRetry and CaptureRootAndEvaluate, give vendor-neutral guidance to arrange and verify a durable host continuation before a deliberate focus/accounting yield, then reread the intended run. Guidance truthfully covers absent host capability and failed/unknown registration, does not invent a host operation or promise a source report, and is consistent across CLI, MCP, acceptance documentation and agent usage guidance. A missing acknowledgement means unknown registration state: reconcile the same idempotent intent with bounded retries and a recorded, actionable coordinator escalation on exhaustion; never claim an automatic wake is armed without confirmation.",
+    "Repository tests cover both remedy paths and preserve their typed causes, source/claim/evidence freshness enforcement and distinction between registration acknowledgement, checkpoint outcome and source confirmation. The changes introduce no scheduler, automatic claim renewal, completion bypass or new source-accounting producer.",
+    "Holder notes contain the agreed ownership/design split, both projects' concurrence, review resolution, precise linked TermAl acceptance and landed/build evidence. Host queue/crash/Stop/delivery/deadline tests remain in the TermAl implementation items and are quoted with attributable evidence/artifact locators for this item's evaluator; absent or partial evidence is explicit. Quote the source item, full note/artifact locator and landed hash for each host result, rather than asking the evaluator to follow a bare cross-project reference.",
+    "After the linked host capabilities are available, an attributed end-to-end evidence note records the target item/run, trigger turn, build/source identity, acknowledgement/outcome and subsequent authoritative read for (a) an explicitly registered focus-only completion yield and (b) the reported unregistered idle-claim case. Each resumes safely or produces the agreed durable actionable alert within its bound without a manual nudge; a wake/alert alone is never counted as test, source confirmation or completed work. The root remains open while either outage case lacks proof. The evidence quotes a numeric bound agreed on the TermAl item and observed timestamps for comparison; any narrowed coverage requires an explicit scope decision and disclosure through Advisor, never an implicit pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "agent-ergonomics",
+    "area-host-integration",
+    "coordination",
+    "reliability"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a109a0-a0e7-7f81-b5d2-5cd009bac6e4",
+      "kind": "manual",
+      "detail": "Await TermAl w-07dca1a93d8f source-backed fact inventory and joint design, then Fable2 concurrence on exact two-trigger alert criteria. Existing wake implementation w-1df557dae3ac is the host prerequisite. Engram four-criterion split has Architect2 concurrence; exact revision sent Fable for final concurrence. No implementation or runtime acceptance claimed.",
+      "created_by": {
+        "actor_id": "greg/codex",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-05T01:14:44.320236100Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "c8338cc7b37943d089231d737f4128f4": {
+        "activity_id": "c8338cc7b37943d089231d737f4128f4",
+        "task_id": "01a10996-e80a-75a1-a2b0-69451d2235db",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "031cc50db8114ce8bda560820c060bc8"
+      }
+    }
+  }
+}

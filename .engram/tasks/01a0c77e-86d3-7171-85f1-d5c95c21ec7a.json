@@ -1,0 +1,51 @@
+{
+  "id": "01a0c77e-86d3-7171-85f1-d5c95c21ec7a",
+  "external_ref": null,
+  "title": "Rename the shadowing canonical-bytes attribution local",
+  "outcome": "Rename the shadowing canonical-bytes attribution local",
+  "acceptance": [
+    "The normalized control-policy attribution byte buffer has a purpose-specific local name that does not shadow canonical_bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "rust"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed a584b90: normalized control-policy attribution buffer uses attribution_bytes, including length checks, without shadowing canonical_bytes. Independent evaluator passed sole criterion; batch full gate and clean pair retained.",
+    "completed_at": "2026-09-27T23:17:43.553383700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8e52fbe809804ec68bdec85e08a37942": {
+        "activity_id": "8e52fbe809804ec68bdec85e08a37942",
+        "task_id": "01a0c77e-86d3-7171-85f1-d5c95c21ec7a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7fbca1e4bead4952b2a997f658df8e25"
+      }
+    }
+  }
+}

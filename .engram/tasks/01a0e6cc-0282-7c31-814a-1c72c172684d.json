@@ -1,0 +1,64 @@
+{
+  "id": "01a0e6cc-0282-7c31-814a-1c72c172684d",
+  "external_ref": null,
+  "title": "The seal's acceptance block prints \"assurance\" without saying it is the recording identity's assurance, so readers take \"asserted\" for the verdict basis beside \"provenance\": \"evaluated\"",
+  "outcome": "The seal's acceptance block prints \"assurance\" without saying it is the recording identity's assurance, so readers take \"asserted\" for the verdict basis beside \"provenance\": \"evaluated\"",
+  "acceptance": [
+    "A test on an independent_session-evaluated completion asserts the text distinguishes identity assurance from verdict basis",
+    "The completed item's show text and the done receipt name the assurance as the recording identity's (for example \"recorded under asserted identity\") and keep the per-criterion verdict basis (observed/judgment) visibly separate; JSON field names and values are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered acceptance wording that identifies assurance as the recording identity's, with separate verdict basis and unchanged JSON.",
+    "completed_at": "2026-10-04T14:25:32.824360800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2220ecf022f94872b8835e5c846aabfb": {
+        "activity_id": "2220ecf022f94872b8835e5c846aabfb",
+        "task_id": "01a0e6cc-0282-7c31-814a-1c72c172684d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2220ecf022f94872b8835e5c846aabfb"
+      },
+      "4aca887981ef4169a8018de75f4a6f7c": {
+        "activity_id": "4aca887981ef4169a8018de75f4a6f7c",
+        "task_id": "01a0e6cc-0282-7c31-814a-1c72c172684d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "98330e78f0d946a79ec1a95e2fbeab24"
+      }
+    }
+  }
+}

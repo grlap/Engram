@@ -1,0 +1,63 @@
+{
+  "id": "01a105a2-e19d-77a3-950d-ca914f72aa77",
+  "external_ref": null,
+  "title": "Name the single observed check's source field as check.source_basis, and qualify edge-whitespace refusals, in host source-text refusals",
+  "outcome": "Name the single observed check's source field as check.source_basis, and qualify edge-whitespace refusals, in host source-text refusals",
+  "acceptance": [
+    "An execution_observe request of kind observed_check whose check source holds a refused character is refused as execution_observation_invalid naming check.source_basis.workspace_id or check.source_basis.source_revision (the request's actual path), while an unadmitted turn's checks keep observed_checks[i].source_basis.*; the refusals test asserts both paths",
+    "The behavioral-control-plane brief says that a refused character that is also whitespace at a field's start or end keeps the existing trim refusal code, or the character check runs first so every refused character gets the endpoint's text refusal; a test covers the chosen behaviour"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "execution_observe names a single observed check's refused source text check.source_basis.* (an unadmitted turn's checks keep observed_checks[i].source_basis.*), still as execution_observation_invalid; the control-plane brief documents that a refused whitespace control at a field's edge keeps the trimmed-field refusal (invalid_control_session at turn_checkpoint), with a test. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T13:16:02.034796800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0480d47cc9654c888a770c52e7e7e030": {
+        "activity_id": "0480d47cc9654c888a770c52e7e7e030",
+        "task_id": "01a105a2-e19d-77a3-950d-ca914f72aa77",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "131e4d02a6a8444898444d3a8eb7ee28"
+      },
+      "3de7dfd6243740ce86bbc3245ac3f134": {
+        "activity_id": "3de7dfd6243740ce86bbc3245ac3f134",
+        "task_id": "01a105a2-e19d-77a3-950d-ca914f72aa77",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3de7dfd6243740ce86bbc3245ac3f134"
+      }
+    }
+  }
+}

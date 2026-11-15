@@ -1,0 +1,52 @@
+{
+  "id": "01a11c2d-867a-7341-882c-343354bb39e5",
+  "external_ref": null,
+  "title": "Explain note-only matches in the core next search catalog",
+  "outcome": "A caller using the core next search catalog can understand why an item matched through note or gate text.",
+  "acceptance": [
+    "The core next --search behavior is documented as including canonical note and gate matches, or its catalog rows carry a bounded locator/family explanation for those matches.",
+    "A regression verifies that a note-only matching item remains discoverable through core next search, with explanation or documented route to the matching locator, while existing scope and receipt bounds remain intact."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "search"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Document core catalog note/gate search matching and the listing/show route to its matching locator; add regression coverage for note-only and gate-only discovery, project scope, receipt bounds and unchanged focus/delivery.",
+    "completed_at": "2026-10-09T05:15:33.370553100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b55b48904e8145309c9ba3805c59de5f": {
+        "activity_id": "b55b48904e8145309c9ba3805c59de5f",
+        "task_id": "01a11c2d-867a-7341-882c-343354bb39e5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4a91d73002ce467e809f1d65b6cdc368"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a12291-e796-76f0-abaf-7ac03c097a4a",
+  "external_ref": null,
+  "title": "update --accept replaces the whole criterion set without saying so in its receipt",
+  "outcome": "update --accept replaces the whole criterion set without saying so in its receipt",
+  "acceptance": [
+    "An update --accept receipt states that the acceptance set was replaced and shows the previous and new criterion counts (for example 3 -> 1), so an agent adding one criterion notices it dropped the others, with a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ux",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

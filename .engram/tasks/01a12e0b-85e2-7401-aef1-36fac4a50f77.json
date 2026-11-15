@@ -1,0 +1,27 @@
+{
+  "id": "01a12e0b-85e2-7401-aef1-36fac4a50f77",
+  "external_ref": null,
+  "title": "Bound task sync admission scans to selected paths without unrelated filename refusals",
+  "outcome": "Bound task sync admission scans to selected paths without unrelated filename refusals",
+  "acceptance": [
+    "Owned fixtures show task sync setup handles a large unrelated index/HEAD and non-UTF-8 unrelated filenames where supported while retaining bounded selected-path admission and conservative case-alias refusals; documented limits match behavior"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

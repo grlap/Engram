@@ -1,0 +1,50 @@
+{
+  "id": "01a09d10-ceb0-7d40-b53e-24c07b71f775",
+  "external_ref": null,
+  "title": "Bound uncapped work titles in mutation receipts without post-commit budget refusal",
+  "outcome": "Bound uncapped work titles in mutation receipts without post-commit budget refusal",
+  "acceptance": [
+    "Add cannot commit and then report a budget-only refusal because of an oversized title; regressions establish durable outcome",
+    "Mutation receipt title projection remains bounded for oversized stored titles, with full detail accessible"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Oversized-title add stores without a post-commit budget refusal. Mutation titles stay bounded. Complete authored detail is available via show --full. Parent accepted V2 on freeze 1e460558.",
+    "completed_at": "2026-09-14T18:30:24.360970Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1bbb3c9e33bff1102d7f21d0553041191311921eceb8756c2bf875a03862fe00": {
+        "activity_id": "1bbb3c9e33bff1102d7f21d0553041191311921eceb8756c2bf875a03862fe00",
+        "task_id": "01a09d10-ceb0-7d40-b53e-24c07b71f775",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "20dc9c745a1573c9126f5ee4fc884dc94a61302b02ede2fad9238d075daa5555"
+      }
+    }
+  }
+}

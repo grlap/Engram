@@ -1,0 +1,49 @@
+{
+  "id": "01a06499-3695-7252-9efb-48e310438f75",
+  "external_ref": null,
+  "title": "show gives contradictory guidance for a released claim: reminder demands a recovery reason while allowed_next and next offer plain claim",
+  "outcome": "reminders, next, and allowed_next derive from one source; a claim released or lapsed by another session that is already accounted reads as unclaimed and plain claim is offered",
+  "acceptance": [
+    "show on an item whose prior claim was released by another session prints no recovery-reason reminder and offers plain claim; the recovery reminder appears only when claim(recovery_reason_required) is the allowed operation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Unified agent-facing claim guidance around exact allowed_next and safe show routing; added deterministic regressions, updated dogfood fixtures and docs, passed every required gate, and completed clean Codex/Claude frozen review.",
+    "completed_at": "2026-09-03T04:45:34.922896700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ad129fa8497bb2805b2f23cd72c7692708017ed11f4b6f0eb4d8e04fdd0cafc3": {
+        "activity_id": "ad129fa8497bb2805b2f23cd72c7692708017ed11f4b6f0eb4d8e04fdd0cafc3",
+        "task_id": "01a06499-3695-7252-9efb-48e310438f75",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "18c3244cecda3344ba92578ea855b9fde95aed23d083b33fb67aa879c4ec6d46"
+      }
+    }
+  }
+}

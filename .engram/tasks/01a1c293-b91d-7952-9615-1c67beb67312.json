@@ -1,0 +1,27 @@
+{
+  "id": "01a1c293-b91d-7952-9615-1c67beb67312",
+  "external_ref": null,
+  "title": "Make CLI code-source isolation fixtures detect stray untracked writes",
+  "outcome": "Make CLI code-source isolation fixtures detect stray untracked writes",
+  "acceptance": [
+    "The common data-worktree CLI fixture ignores only its owned homes, snapshots and data folder, leaving unexpected code-checkout writes visible to source identity checks; tests discriminate a stray untracked code write."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

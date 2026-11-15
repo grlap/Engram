@@ -1,0 +1,90 @@
+{
+  "id": "01a0c666-bd45-7ec1-8ec1-19937b8ff8d9",
+  "external_ref": null,
+  "title": "Split Engram src/storage/work/acceptance_evaluation/tests.rs below 2,500 lines",
+  "outcome": "One-file refactor of src/storage/work/acceptance_evaluation/tests.rs; original and extracted modules stay below 2,500 lines with measured acceptance evidence.",
+  "acceptance": [
+    "A host-observed automated test proves src/storage/work/acceptance_evaluation/tests.rs and every module extracted from it are each at most 2,499 physical lines at the final source revision. Evidence lists every covered path and before/after count; include blank/comment lines and a nonempty final unterminated line. Newly extracted modules must not escape the inventory.",
+    "A lightweight size check for this file family runs in normal validation and fails at 2,500 lines, passes at 2,499, counts LF/CRLF consistently, and refuses an empty or failed inventory. Reuse one shared checker if already available; do not build a new framework per task.",
+    "Independent-session final acceptance cites the fresh host-observed line-count test evidence. Completion must remain blocked when that bound evidence is missing, failed or stale; demonstrate that gating safely on an isolated fixture rather than relaxing the live task. A plan evaluation or author-written gate note is not a substitute for the observed size result.",
+    "Split only this file's responsibilities into ordinary modules without behavior, schema/SQL or public-interface changes. Preserve existing tests/assertions and pass relevant regressions plus required project gates/review. No minification, duplicate implementation, deleted tests or transferring the oversized body to another oversized file."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 1,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": "independent_session",
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "file-size",
+    "maintainability",
+    "refactor",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0b5b4-14a8-7840-8eeb-108a13d58018"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed the already landed acceptance evaluation tests split on host Test Passed0d03698af1ff4572b63220b54c87a91c and fresh independent a28c33ab02d3448f8a333b0a112800a8, all four criteria passed. All33 inventoried family files are<=2499 physical lines. No authored code/index changes, waiver, binding relaxation, repeated test or new landing.",
+    "completed_at": "2026-10-01T11:01:18.622258500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4ecba857473a4240b3155daa5eb12e79": {
+        "activity_id": "4ecba857473a4240b3155daa5eb12e79",
+        "task_id": "01a0c666-bd45-7ec1-8ec1-19937b8ff8d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4ecba857473a4240b3155daa5eb12e79"
+      },
+      "53ae8c05f84349d3af2e0ba34cf267ca": {
+        "activity_id": "53ae8c05f84349d3af2e0ba34cf267ca",
+        "task_id": "01a0c666-bd45-7ec1-8ec1-19937b8ff8d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "76224b6010d3445b89668c7c652c0501"
+      },
+      "bcf946d984cc4f83916d7df6cf6132e3": {
+        "activity_id": "bcf946d984cc4f83916d7df6cf6132e3",
+        "task_id": "01a0c666-bd45-7ec1-8ec1-19937b8ff8d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bcf946d984cc4f83916d7df6cf6132e3"
+      }
+    }
+  }
+}

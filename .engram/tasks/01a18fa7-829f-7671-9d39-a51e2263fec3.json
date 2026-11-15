@@ -1,0 +1,91 @@
+{
+  "id": "01a18fa7-829f-7671-9d39-a51e2263fec3",
+  "external_ref": null,
+  "title": "Record a registered launcher run's terminal result as typed test evidence without a turn grant (gated control ON and OFF)",
+  "outcome": "Record a registered launcher run's terminal result as typed test evidence without a turn grant (gated control ON and OFF)",
+  "acceptance": [
+    "A registered launcher run's terminal result is recorded through the existing host transport as typed verification evidence, against the actual project/store/session/work/run/claim/named-root association pinned at registration, with honest host-run provenance and its actual Git input (full commit, or the staged tree for the staged review/gate lane). This works with gated control ON and OFF, without a fabricated grant or turn, a later focus, execution_observe credit:none, or exit-code prose.",
+    "It reuses the canonical verification persistence, matcher and idempotent exact-intent settlement; a retry of the same intent records nothing new, and a failed run records a failed result.",
+    "Tests cover ON and OFF recording, retry, a failed run, and a record whose association does not validate against the pinned project, store, session, work, run, claim and named root, including one never pinned by a registration (refused, nothing recorded). That the host sends a record only for a durably registered run is the sender's boundary, a required criterion on TermAl w-decd61d62831.",
+    "Host-protocol documentation and docs/shipped.md describe the producer. If the durable shape changes, the explicit import and readiness rules are followed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and installed the grant-free registered-run verification producer with canonical replay, honest failed results, and tested never-pinned association refusals. Exact commit 20dda026cf801a17a7138810ed1f74a6aed69c3a passed the full gate, clean release, all six live-store readiness checks, and fresh independent acceptance 4/4.",
+    "completed_at": "2026-10-31T10:53:30.822136200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1965d99806ab441da3cb4a5121cf0c77": {
+        "activity_id": "1965d99806ab441da3cb4a5121cf0c77",
+        "task_id": "01a18fa7-829f-7671-9d39-a51e2263fec3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "88de621909b8478a8882a0a970c9bc36"
+      },
+      "2c7ca8f770c743ed8e4d892d4380ccdd": {
+        "activity_id": "2c7ca8f770c743ed8e4d892d4380ccdd",
+        "task_id": "01a18fa7-829f-7671-9d39-a51e2263fec3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1965d99806ab441da3cb4a5121cf0c77"
+      },
+      "559ebc3005ca45bfb38f73a24187f8de": {
+        "activity_id": "559ebc3005ca45bfb38f73a24187f8de",
+        "task_id": "01a18fa7-829f-7671-9d39-a51e2263fec3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "2c7ca8f770c743ed8e4d892d4380ccdd"
+      },
+      "88de621909b8478a8882a0a970c9bc36": {
+        "activity_id": "88de621909b8478a8882a0a970c9bc36",
+        "task_id": "01a18fa7-829f-7671-9d39-a51e2263fec3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6f9f587dd96d479b9488657c2b32b854"
+      }
+    }
+  }
+}

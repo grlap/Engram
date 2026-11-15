@@ -1,0 +1,39 @@
+{
+  "id": "01a0faa1-0476-7862-9805-28d30fa4283d",
+  "external_ref": null,
+  "title": "Portable configure, push, release and returning pull with crash-safe installation",
+  "outcome": "Deferred runtime implementation of the reviewed first Git handoff proposal: manual configure/push/release/pull, durable retry and returning-home installation. Scheduling and required live-store migration approval remain separate.",
+  "acceptance": [
+    "Bootstrap durably prepares private registration, then atomically commits local-to-configuring and a prepared immutable intent before capture; candidate attaches after full staged validation and dispatch_started commits before Git. Faults at each boundary leave local/unpublished or frozen/recoverable state. Enrollment of an existing authorized lineage neither publishes nor activates; fetch permission alone grants no append.",
+    "Release holds host admission outside the replaced store, settles actual actions and outstanding turns through their owners, then atomically freezes and records prepared intent. Tests race admission and release, reject unknown outcomes/live claims, preserve already completed turns despite future expiry, and prove no action begins after freeze.",
+    "Release validates its frozen payload in a staged store before exact-head publication. Configure/release --cancel-prepared work only with no dispatch ever started and freshly verified expected remote state, and never reopen host admission themselves. Lost/late replies or an old remote observation after dispatch leave the writer frozen and retry the identical candidate.",
+    "Pull --preview is read-only and reports eligibility. Pull accepts an absent or same-lineage released destination with matching retained semantic basis, preserves the old store, refuses unrelated/divergent/local-tail destinations unchanged, and refuses active remote heads, policy mismatch or claims live by receiving clock without altering stored history.",
+    "Pull durably journals operation, paths, file identities and prepared registration outside swapped stores before remote acquisition or archive changes. Exact-head acquisition must succeed before activation. Crash/retry and competing-pull tests show one winner, no new retry instance, recoverable frozen remote winners, no overwritten old store and no writable ancestor restored. A verified competing strict successor whose complete valid ancestry excludes this candidate settles terminal lost under exclusive access, retires only its inert registration atomically with the journal outcome and retains old/staged files. Crash tests around settlement prove read-only reopening of the untouched old store and fresh pull after the winner releases; expected-old, unreachable, missing ancestry or rollback never settle lost.",
+    "Windows installation tests prove supported local same-volume durability boundaries and refuse unsupported filesystems, aliasing and sidecars before remote acquisition. Every consumer, including raw/immutable/diagnostic/migration paths, holds a lifetime shared lock; installer obtains exclusive access without upgrade, with internal opens narrowly scoped. Termination and injected flush/link/unlink/sharing/full-disk failures cover every journal/archive/install/activation boundary; process-kill tests are not claimed as power-loss proof. Explicit fault cases cover staged-alias removal before activation preparation/open, interrupted activation with expected SQLite recovery files, and committed activation before close. Recovery under the same exclusive intent verifies file identity and recorded paths/mode, lets SQLite recover authorized files, revalidates current ownership and completes activation; unknown sidecars refuse without deletion. The private operation journal pins journal_mode=DELETE and synchronous=EXTRA with readback.",
+    "Manual active push captures one consistent eligible cut without surrendering ownership, preserves exact-head retry behavior and cannot produce an acquirable snapshot while active. Tests show push then pull is refused until release and publication cost/transfer size are measured.",
+    "Every mutating lifecycle command serializes and resolves an existing intent before starting another. Operator documentation and shipped inventory describe configure, push, release, pull, status and internal/host validation with truthful refusal/recovery guidance only when delivered; no acquire alias, takeover, detach or automatic scheduling ships under this item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0faa0-685a-7f31-83d2-2028017ca901",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0faa0-8e8e-7b40-a67f-de00b37294fa",
+    "01a0faa0-b675-7f91-91d4-119323f6443f",
+    "01a0faa0-cf24-7712-8da2-44604335b06c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Portable handoff was replaced before any of it shipped: docs/features/git-task-sync.md says the previous portable writer-epoch and release/acquire design is gone, AGENTS.md says the selected sync uses no global writer lock, writer epochs or release/acquire protocol, and master has no portable code or brief. Cancelled under Greg's word, 43498a6e #683. Nothing here was built or tested.",
+  "completion": null
+}

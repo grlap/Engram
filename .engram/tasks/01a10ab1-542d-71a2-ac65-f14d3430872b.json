@@ -1,0 +1,74 @@
+{
+  "id": "01a10ab1-542d-71a2-ac65-f14d3430872b",
+  "external_ref": null,
+  "title": "Own evaluation basis wire codes on EvaluationBasisMove",
+  "outcome": "Own evaluation basis wire codes on EvaluationBasisMove",
+  "acceptance": [
+    "Both the host-private and agent error renderers obtain evaluation-basis move wire codes from EvaluationBasisMove without a host-to-verbs dependency; existing wire codes and remedies remain unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "debt",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "EvaluationBasisMove owns the two unchanged wire codes; host and neutral renderer consume its code method, removing host-to-verbs dependency. Literal host regression and basis tests passed, full Windows9stage gate and whole-input Codex/Claude pair passed, fresh independent acceptance1/1.",
+    "completed_at": "2026-10-05T21:37:27.506299600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "396e767fe27b41878c9ec43ed3a79a94": {
+        "activity_id": "396e767fe27b41878c9ec43ed3a79a94",
+        "task_id": "01a10ab1-542d-71a2-ac65-f14d3430872b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "396e767fe27b41878c9ec43ed3a79a94"
+      },
+      "52d035242b364a9e838de4139c4dc2c1": {
+        "activity_id": "52d035242b364a9e838de4139c4dc2c1",
+        "task_id": "01a10ab1-542d-71a2-ac65-f14d3430872b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "52d035242b364a9e838de4139c4dc2c1"
+      },
+      "da40d001312841db8e095407a45e780f": {
+        "activity_id": "da40d001312841db8e095407a45e780f",
+        "task_id": "01a10ab1-542d-71a2-ac65-f14d3430872b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bb47c1c172ee4d4ab62621dd32e776fb"
+      }
+    }
+  }
+}

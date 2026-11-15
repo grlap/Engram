@@ -1,0 +1,64 @@
+{
+  "id": "01a06811-d151-7b12-9e01-3809d83ff4e9",
+  "external_ref": null,
+  "title": "Use one evidence and lifecycle vocabulary across agent transports",
+  "outcome": "Structured and text agent receipts render each evidence kind and lifecycle with one shared stable word table.",
+  "acceptance": [
+    "Generic evidence and every lifecycle serialize and render with the same documented vocabulary."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "area-agent-ux",
+    "review",
+    "stream-agent-receipts"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered shared documented vocabulary for evidence kinds and every lifecycle across structured and text agent receipts.",
+    "completed_at": "2026-10-04T14:25:30.579043100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3a427649a1a34030bc4b66995ab602f0": {
+        "activity_id": "3a427649a1a34030bc4b66995ab602f0",
+        "task_id": "01a06811-d151-7b12-9e01-3809d83ff4e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "00bcbcd1902b4ef7bbcbdd66aef54c92"
+      },
+      "bd0902a2815d4ac69e54a59e31cb4f72": {
+        "activity_id": "bd0902a2815d4ac69e54a59e31cb4f72",
+        "task_id": "01a06811-d151-7b12-9e01-3809d83ff4e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bd0902a2815d4ac69e54a59e31cb4f72"
+      }
+    }
+  }
+}

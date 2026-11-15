@@ -1,0 +1,27 @@
+{
+  "id": "01a12e0b-863e-77c1-affe-59779ae2c875",
+  "external_ref": null,
+  "title": "Refuse index-only nested .engram attributes during setup preparation",
+  "outcome": "Refuse index-only nested .engram attributes during setup preparation",
+  "acceptance": [
+    "An owned fixture with a tracked nested .engram/.gitattributes absent from disk is refused from index or HEAD before setup writes; original index, intent and store are preserved"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

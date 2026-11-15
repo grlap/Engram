@@ -1,0 +1,81 @@
+{
+  "id": "01a19ef4-9c77-7260-8388-6f9629e964a7",
+  "external_ref": null,
+  "title": "Correct stale gated-control prose and comments so docs and code describe only current behaviour, with one history note",
+  "outcome": "Correct stale gated-control prose and comments so docs and code describe only current behaviour, with one history note",
+  "acceptance": [
+    "docs/features/sqlite-store.md:123-127, docs/spec.md:660, docs/features/verification-applicability.md:21 (invalid_control_session), src/main.rs:1462, the error docs in acceptance_binding_read.rs, acceptance_verification_read.rs, named_root_read.rs, verification_bind.rs, unadmitted_observation.rs, control_runtime.rs, domain/unadmitted_observation.rs and the named_root read test comment no longer describe control sessions, turn grants or routing tokens as current",
+    "Repeated removal history across architecture.md, host-checklist.md, roadmap.md, shipped.md and features/README.md is consolidated into one history note linked where needed; the acceptance-evaluation shipped row stays",
+    "Link check passes; no behaviour change",
+    "verification-applicability.md removes current turn_checkpoint/checkpoint-observation minting claims and obsolete invalid_control_session code",
+    "Documentation accurately distinguishes surviving verification_bind reasons, verification_record behavior and passive historical applicability records using current source as reference",
+    "full-store-migration.md no longer says current turn grants retain identities across the explicit retirement conversion, while accurately preserving surviving canonical historical records and receipts",
+    "security-and-trust.md describes surviving work-session/observation policy and rule-set selection without claiming a begun turn grant or current grant projections"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "greg-directed",
+    "legacy-cleanup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed exact candidate 65151918bdea7b61238822de0181a4a828be9e34, pushed to origin/master and installed from its release build. The exact-candidate full gate passed; it includes the documentation link check. The seven requested stale-prose/history corrections are present in the landed tree; all six live stores reported ready.",
+    "completed_at": "2026-11-03T16:17:34.289808600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "208aa67540a24d53bda03e308b0b4dc5": {
+        "activity_id": "208aa67540a24d53bda03e308b0b4dc5",
+        "task_id": "01a19ef4-9c77-7260-8388-6f9629e964a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3da2fc018d7549efa2d1a228601cb15f"
+      },
+      "235e1b6c5f434a99a42fa2736bbff442": {
+        "activity_id": "235e1b6c5f434a99a42fa2736bbff442",
+        "task_id": "01a19ef4-9c77-7260-8388-6f9629e964a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "db884e413fd24f1bbc09e5285da8e340"
+      },
+      "c1c7a4ab93f2432abe76c39be77fa432": {
+        "activity_id": "c1c7a4ab93f2432abe76c39be77fa432",
+        "task_id": "01a19ef4-9c77-7260-8388-6f9629e964a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c1c7a4ab93f2432abe76c39be77fa432"
+      }
+    }
+  }
+}

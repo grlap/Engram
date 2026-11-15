@@ -1,0 +1,51 @@
+{
+  "id": "01a0f334-95b9-7192-95a9-d254fcdc3d22",
+  "external_ref": null,
+  "title": "The standing approval says whether a Markdown-only landing installs a build",
+  "outcome": "The standing approval says whether a Markdown-only landing installs a build",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md, identically, state in Authority and Git whether a landing that touches only .md files installs a binary, and if it does not, what the landing record says about the installed build",
+    "The change lands under the authority-text rule: both coordinators' concurrence on the exact wording recorded on the item, Greg sent the wording and its consequence before the landing, Greg's recorded word if the change widens authority, and a passed final-diff audit; the Markdown checks pass and the review pair has no outstanding finding of Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Clarified identically in Authority and Git that Markdown-only landings still install a clean committed binary and record its build_fingerprint; landed and installed under standing approval.",
+    "completed_at": "2026-10-10T05:45:06.288244700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5e5cc7fa6f6a48e18e9feed78f1b253f": {
+        "activity_id": "5e5cc7fa6f6a48e18e9feed78f1b253f",
+        "task_id": "01a0f334-95b9-7192-95a9-d254fcdc3d22",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ba8c21d1a70247b4b8f8a0eb690370ce"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a0af40-8a6e-7703-acb1-a2ccf10f507c",
+  "external_ref": null,
+  "title": "Exact evaluation retries replay through the service and the words after a revision or a completion",
+  "outcome": "Exact evaluation retries replay through the service and the words after a revision or a completion",
+  "acceptance": [
+    "a fresh submission carrying the old basis with a different payload still refuses WorkRevisionConflict, and a submission on a completed item with a new payload refuses without effects",
+    "word-level tests cover the same explicit and keyless retries after a revision and after done, in src/work_service/evaluate/tests/review.rs and src/verbs/tests/evaluate/review.rs",
+    "work_evaluate_on resends an identical explicit-key and an identical keyless submission after the item revision changed (mode pin) and after the item completed, and receives the committed attempt as a replay (same hash, replayed true) with no new record and no feed effect; the replay probe keeps the submitted acceptance basis, resolves citations against the recorded run, and runs the same preflight"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "work_evaluate_on derives the attempt identity from the submitted basis and the active-or-latest run, resolves citations against that recorded run, and recovers the committed attempt through the read-only replay probe before the revision and active-run guards; a stale fresh submission still refuses WorkRevisionConflict with no effects and a completed item admits nothing new. Service and word tests cover explicit and keyless retries after a mode-pin revision and after done. RED logs/19, GREEN logs/20, final sequence logs/22; gates for the round recorded here.",
+    "completed_at": "2026-09-17T12:29:13.155625300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cc78d3094100505ad36ab29b6996b43fe3c860508b56843cc9977d989c6858d9": {
+        "activity_id": "cc78d3094100505ad36ab29b6996b43fe3c860508b56843cc9977d989c6858d9",
+        "task_id": "01a0af40-8a6e-7703-acb1-a2ccf10f507c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b9dba7e518d421a3d291aa1798287d3431968d1f908e56601bfa3e3bdb98f654"
+      }
+    }
+  }
+}

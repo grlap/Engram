@@ -1,0 +1,50 @@
+{
+  "id": "01a07e68-46e2-7211-a0cb-8800cec9202b",
+  "external_ref": null,
+  "title": "Peek cold refusal distinguishes uninitialized stores",
+  "outcome": "Peek cold refusal distinguishes uninitialized stores",
+  "acceptance": [
+    "peek_never_creates_or_initializes_a_missing_or_empty_store and real CLI MCP cold error assertions pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cd6-59d0-7bd3-bd3e-5b77516d222b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented and verified dedicated uninitialized-store refusals on native and CLI/MCP peek paths; focused regressions and all nine merged gates passed. Installed build 6d8043d8e8b1 from the merged working tree, NOT committed to master; Git landing awaits explicit authority. Fable reports healthy doctor and unchanged live session state across peek. Existing pre-swap MCP processes remain on 73401c0ab3cc; new shell invocations use the installed build.",
+    "completed_at": "2026-09-08T01:20:01.134070200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "647a5c8db1800615827903e70c8e15fc86fb2e5611310206345745756ff1cb0e": {
+        "activity_id": "647a5c8db1800615827903e70c8e15fc86fb2e5611310206345745756ff1cb0e",
+        "task_id": "01a07e68-46e2-7211-a0cb-8800cec9202b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2bece73e8724b8d26f8a13e0081ce17ea087bf2c126f1c072011c613d6ba0dad"
+      }
+    }
+  }
+}

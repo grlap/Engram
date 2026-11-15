@@ -1,0 +1,52 @@
+{
+  "id": "01a1b3e0-d140-7020-92e2-54db966ee0d0",
+  "external_ref": null,
+  "title": "Carry and land the reviewed E3(b) increment on current master",
+  "outcome": "Land the unchanged E3(b) source_id increment on current master with a fresh FULL gate and verified installation readiness",
+  "acceptance": [
+    "The reviewed E3(b) contribution from adcef014 is carried unchanged onto a fresh candidate whose sole parent is current master a4c488e3, with conflicts and dependencies assessed and the section 6a review carry recorded.",
+    "The standard FULL gate passes on the exact integration candidate with matching before and after input fingerprints; Windows coverage is included if any touched path requires it.",
+    "The exact candidate is landed and installed, and readiness reports all live Central and DL560 stores ready before the planned joint restart."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed unchanged reviewed E3(b) contribution on the fresh candidate 0cfb23415577ac706f5586a3970118425e7bd112 (sole parent a4c488e3d9baf094122246ebc2137b5f61de997f); the exact candidate passed FULL 12/12 stages and 3/3 preflights with matching input fingerprints. Pushed to origin/master at 2026-11-07T06:01:04Z. Installed the exact build on Central and DL560; all six Central stores and the DL560 Questly store reported ready before the planned joint restart. Verified backups and release artifact; no migration, repair, or process restart was needed. Removed the runner worktree and run artifacts after END. Recorded and reported TermAl 423/404 mailbox issues; retrying the ACK with the current listed relay locator succeeded and advanced the cursor.",
+    "completed_at": "2026-11-07T06:28:45.922541700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9ca754d8996548638939f42cc5a2f214": {
+        "activity_id": "9ca754d8996548638939f42cc5a2f214",
+        "task_id": "01a1b3e0-d140-7020-92e2-54db966ee0d0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e89646ef16494198aa01567ed17425c0"
+      }
+    }
+  }
+}

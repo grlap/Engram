@@ -1,0 +1,53 @@
+{
+  "id": "01a10d19-52f5-7151-806e-109e0b374d8e",
+  "external_ref": null,
+  "title": "Bare done and evaluate refuse while the session holds more than one live claim",
+  "outcome": "Bare done and evaluate refuse while the session holds more than one live claim",
+  "acceptance": [
+    "Through the CLI and MCP, a bare `done` or bare `evaluate` (no explicit work ref) from a session holding more than one live claim is refused with a typed reason that lists the held refs and gives the exact explicit command; nothing is recorded.",
+    "With exactly one live claim, or with an explicit ref, both words behave as today.",
+    "Bare `note`, `gate` and `handoff` are unchanged.",
+    "Tests cover all three cases on the CLI and MCP surfaces, and the docs state the rule."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "correctness"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A bare done or evaluate from a session whose held focus has another live claim beside it is now refused with work_bare_target_ambiguous. The refusal names the focus and every held ref, offers the explicit commands, and records nothing; it is checked before any write and before evaluate's attempt replay. A focus the session does not hold keeps the older implicit-target refusal. One claim, an explicit ref or an explicit retry act as before, and bare note, gate and handoff are unchanged.\n\nEvidence:\n- Tests on the agent words, MCP and the CLI binary.\n- Docs: cli-and-mcp and shipped.\n- Gate 93f12307: 9/9, host credit 28e09ef5.\n- Round-2 pair: clean at Medium and above.\n- Evaluation d21ec1fb: 4/4 pass.\n\nLanding:\n- Commit 835c846, pushed to origin/master.\n- Readiness: ready on 4 stores.\n- Installed build cca7d830, with the old build backed up.\n\nFollow-ups filed: w-daa03c4b5f88 (bound the refusal's list) and w-228b9d786330 (bare core complete).",
+    "completed_at": "2026-10-05T20:53:01.302871200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "350bd597eb054cb8917b8980f641608e": {
+        "activity_id": "350bd597eb054cb8917b8980f641608e",
+        "task_id": "01a10d19-52f5-7151-806e-109e0b374d8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "678ef4fc763e4abfb003c69d2d1535bb"
+      }
+    }
+  }
+}

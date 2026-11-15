@@ -1,0 +1,67 @@
+{
+  "id": "01a1a499-d776-7cf2-9274-f89128801a4b",
+  "external_ref": null,
+  "title": "Select a retained FULL request in Engram's launcher with --request-message-id",
+  "outcome": "Engram's launcher can select one native or relayed retained FULL request and refuses execution until the existing host registration readback confirms the exact selected request message.",
+  "acceptance": [
+    "Only full mode accepts --request-message-id with a valid native or relay-message spelling; focused and standalone selection are refused before any stage executes.",
+    "The field is included in immutable registration identity only when present; no-flag legacy request identity remains unchanged.",
+    "Before executing a selected request, the existing exact GET readback must contain run.requestMessageId === request.requestMessageId; an old host that ignores it and a mismatched or missing echo refuse execution without a standalone fallback.",
+    "Tests cover present, absent, matched, missing, mismatched and malformed request selectors and detached execution using existing launcher/registration owners; focused checks and the normal review and landing requirements pass.",
+    "Docs state the K3 dependency and distinguish fixture/parity proof from end-to-end proof; no end-to-end claim is made until K3 actually ships and a real run demonstrates it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "remote-verification",
+    "test-launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the retained FULL request selector on master at 90d2fec7215ce041c6d74f8e20056b9ecdcb0d39, pushed and installed. Selector tests and exact-candidate full gate passed; the full run's registration remained unconfirmed, so it does not provide host-check credit.",
+    "completed_at": "2026-11-04T05:51:42.895393300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "37f8a8e45b264d6b998de0f6d6e99b1c": {
+        "activity_id": "37f8a8e45b264d6b998de0f6d6e99b1c",
+        "task_id": "01a1a499-d776-7cf2-9274-f89128801a4b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d4e4938ba79c4bae8e8b3165424e9b6c"
+      },
+      "d4e4938ba79c4bae8e8b3165424e9b6c": {
+        "activity_id": "d4e4938ba79c4bae8e8b3165424e9b6c",
+        "task_id": "01a1a499-d776-7cf2-9274-f89128801a4b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f64035b1b2bd4382bebeca57ff2fa335"
+      }
+    }
+  }
+}

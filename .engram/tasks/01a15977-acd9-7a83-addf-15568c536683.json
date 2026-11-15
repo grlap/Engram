@@ -1,0 +1,52 @@
+{
+  "id": "01a15977-acd9-7a83-addf-15568c536683",
+  "external_ref": null,
+  "title": "Harden the completed-only opt-out recovery remap against wrapped errors and pin its predecessor half",
+  "outcome": "Harden the completed-only opt-out recovery remap against wrapped errors and pin its predecessor half",
+  "acceptance": [
+    "The opt-out recovery remap from the completed-only marker to the enable-task-sync remedy matches the marker by type, or by root cause, instead of the outer display string, so a .context() added between read_selected and the remap keeps the remedy; a test wraps the marker in context and still sees the exact enable-task-sync text",
+    "A regression covers a retained two-generation history whose latest generation is completed and whose earlier generation lacks its completion marker, asserting the exact original pending-recovery refusal and an unchanged fixture (paths and bytes) and store"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "hardening",
+    "review-followup",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Hardened completed-only opt-out recovery with a typed marker that survives wrapped errors, while preserving the original pending-recovery refusal whenever a predecessor remains pending. Landed after the exact-tree full gate, clean review pair, independent 2/2 acceptance evaluation, pre- and post-commit six-store readiness, and installation of the committed release binary.",
+    "completed_at": "2026-10-20T18:01:21.258081400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c4a250a6df344f41984715d62baf25f4": {
+        "activity_id": "c4a250a6df344f41984715d62baf25f4",
+        "task_id": "01a15977-acd9-7a83-addf-15568c536683",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2fae3afc2a8d4036a589918d7263d389"
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "id": "01a13b87-1bff-7cb1-93dc-1634799205dd",
+  "external_ref": null,
+  "title": "Match the selected Git ref exactly before interpreting exchange observation output",
+  "outcome": "Match the selected Git ref exactly before interpreting exchange observation output",
+  "acceptance": [
+    "Observation consumers select only the exact requested ref field and cannot confuse a tail-colliding ref with that branch; a local owned regression covers refs/heads/main and refs/heads/foo/refs/heads/main.",
+    "Zero or duplicate exact matches have an explicit result/refusal contract, and raw protocol output is documented at the adapter boundary."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "cce7f8d953c04d148e89ac0774de1693": {
+        "activity_id": "cce7f8d953c04d148e89ac0774de1693",
+        "task_id": "01a13b87-1bff-7cb1-93dc-1634799205dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cce7f8d953c04d148e89ac0774de1693"
+      },
+      "ffdda890ff414abf98df61dd832b4a08": {
+        "activity_id": "ffdda890ff414abf98df61dd832b4a08",
+        "task_id": "01a13b87-1bff-7cb1-93dc-1634799205dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d98f40280f0f47ebb99d17ce38c8290d"
+      }
+    }
+  }
+}

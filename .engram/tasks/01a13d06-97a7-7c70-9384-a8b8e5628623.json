@@ -1,0 +1,64 @@
+{
+  "id": "01a13d06-97a7-7c70-9384-a8b8e5628623",
+  "external_ref": null,
+  "title": "Kimi stands in for an unavailable Claude reviewer, as for Codex",
+  "outcome": "Kimi stands in for an unavailable Claude reviewer, as for Codex",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md remain byte-identical and, together with .claude/commands/review-changes.md, docs/agent-pair-workflow.md and docs/development.md, permit at most one Kimi stand-in per review round for a Codex or Claude reviewer unavailable due to a recorded usage limit or outage, preserving two independent reviewers of different vendors and all other landing conditions.",
+    "The review command's frontmatter, admission, spawn-failure and missing-submission guidance consistently apply that same single-stand-in rule to either vendor, without changing design-explorer fallback or optional third-review policy."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "authority",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Kimi may replace either unavailable counted reviewer, at most once per round, with the other vendor and all landing safeguards preserved.",
+    "completed_at": "2026-10-15T16:06:02.362477100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09015c0224e84ca0bf5aa9c347c42fd5": {
+        "activity_id": "09015c0224e84ca0bf5aa9c347c42fd5",
+        "task_id": "01a13d06-97a7-7c70-9384-a8b8e5628623",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "09015c0224e84ca0bf5aa9c347c42fd5"
+      },
+      "0ab18ca5a23c4d55a835926863e0f724": {
+        "activity_id": "0ab18ca5a23c4d55a835926863e0f724",
+        "task_id": "01a13d06-97a7-7c70-9384-a8b8e5628623",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a3caf5ea8e224eb19021477ddea8ff4f"
+      }
+    }
+  }
+}

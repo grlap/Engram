@@ -1,0 +1,28 @@
+{
+  "id": "01a0f973-95bf-7d83-8353-43b15b0ef1b1",
+  "external_ref": null,
+  "title": "rust-toolchain.toml pins an exact Rust version so lint changes arrive deliberately",
+  "outcome": "rust-toolchain.toml pins an exact Rust version so lint changes arrive deliberately",
+  "acceptance": [
+    "rust-toolchain.toml names an exact Rust version instead of the floating stable channel, so a machine updating Rust cannot change gate results silently; moving to a newer version is its own reviewed changeset with its lint fixes",
+    "The pinned toolchain is installed on every machine that runs Engram's gates before the pin lands, with Greg's explicit word for each toolchain install, and no agent session auto-installs it unannounced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "test-infra"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

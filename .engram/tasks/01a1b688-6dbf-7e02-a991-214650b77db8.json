@@ -1,0 +1,52 @@
+{
+  "id": "01a1b688-6dbf-7e02-a991-214650b77db8",
+  "external_ref": null,
+  "title": "Move naming and sealing source-revision strings to the shared source_id",
+  "outcome": "Inventory and coordination: no Engram naming or sealing field carries a source revision string; remaining source-bearing seams are tracked on the acceptance-evaluation item",
+  "acceptance": [
+    "An inventory names every Engram naming, root-binding and sealing field with file:line and read/write paths, and confirms none records source identity as a revision string (NamedRootBind/Event/Receipt/Read are source-free; CompletionSeal is link-only).",
+    "The remaining source-bearing wire seams (the acceptance-evaluation basis, the sealed diagnostic and named_root_sighting_read) are recorded on w-89f3b3eeb688 with their provenance, not folded in silently.",
+    "TermAl's counterpart w-c8c63c3decfa is agreed with TermAl to be TermAl-private naming capture needing no Engram wire change and no two-landing sequence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Inventory and coordination complete; no Engram code was needed. Criterion 1: 12329's consolidated source-backed inventory on this item (with earlier notes 1fecf857, 38cc4d03 and draft 3f0913ec) lists every Engram naming, root-binding and sealing field with file:line and read/write paths. NamedRootBind/Event/Receipt/Read are source-free; CompletionSeal is link-only. Criterion 2: 12329 transferred the source-bearing seams (acceptance-evaluation basis, sealed diagnostic, named_root_sighting_read) as a provenance note on w-89f3b3eeb688 without changing its criteria. Criterion 3: TermAl Sol-edfd (Fable mailbox ad6e72d1 #69–#73) agreed that w-c8c63c3decfa is TermAl-private capture with no Engram wire change and no two-landing sequence; Fable confirmed at #73. Criteria 2 and 3 of revision 1 (new records carry source_id, tests cover the change) were removed by revision 2 because no Engram record of those kinds stores a revision string, so there is nothing to change or test here.",
+    "completed_at": "2026-11-08T06:10:01.014107900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e9aa942b2f7e4409aab74be632286594": {
+        "activity_id": "e9aa942b2f7e4409aab74be632286594",
+        "task_id": "01a1b688-6dbf-7e02-a991-214650b77db8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ef423194b71b469f8caeab5df223342b"
+      }
+    }
+  }
+}

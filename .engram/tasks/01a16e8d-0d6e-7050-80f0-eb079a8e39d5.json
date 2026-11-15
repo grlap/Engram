@@ -1,0 +1,122 @@
+{
+  "id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+  "external_ref": null,
+  "title": "Bound the search verb's work and stop one long search from blocking every later call in its MCP server",
+  "outcome": "Bound the search verb's work and stop one long search from blocking every later call in its MCP server",
+  "acceptance": [
+    "A measured reproduction on a throwaway store under target/, sized like the live project's note and gate history, shows search's current cost and where it goes (scan versus mutex wait)",
+    "search completes within a documented bound on that reproduction, or refuses with a clear budget-exhausted error instead of running unbounded",
+    "While a search runs, other verbs in the same MCP server are not serialized behind it for the duration of the scan, shown by a concurrent-call test",
+    "Search results and ordering for existing tests are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "delivered",
+    "evaluation-pending",
+    "incident",
+    "mcp",
+    "performance"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "044eeebc9aa54629b73d9b979d27a684": {
+        "activity_id": "044eeebc9aa54629b73d9b979d27a684",
+        "task_id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "044eeebc9aa54629b73d9b979d27a684"
+      },
+      "094cf495df50411db78f7daccfb0a665": {
+        "activity_id": "094cf495df50411db78f7daccfb0a665",
+        "task_id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "094cf495df50411db78f7daccfb0a665"
+      },
+      "17c8f144b41f45f881df19bb611f2538": {
+        "activity_id": "17c8f144b41f45f881df19bb611f2538",
+        "task_id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "17c8f144b41f45f881df19bb611f2538"
+      },
+      "427e2e28a6f54e08aac9a4cd9b707081": {
+        "activity_id": "427e2e28a6f54e08aac9a4cd9b707081",
+        "task_id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "427e2e28a6f54e08aac9a4cd9b707081"
+      },
+      "4d9ee5b5bd52452f9b785f011a717bd9": {
+        "activity_id": "4d9ee5b5bd52452f9b785f011a717bd9",
+        "task_id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "da61037768d54e958a09bd09b0394a4c"
+      },
+      "65f3ac1d60db4461b66c8b9ad87eb364": {
+        "activity_id": "65f3ac1d60db4461b66c8b9ad87eb364",
+        "task_id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4d9ee5b5bd52452f9b785f011a717bd9"
+      },
+      "724c87775198431baeda178c38ca1b6c": {
+        "activity_id": "724c87775198431baeda178c38ca1b6c",
+        "task_id": "01a16e8d-0d6e-7050-80f0-eb079a8e39d5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "724c87775198431baeda178c38ca1b6c"
+      }
+    }
+  }
+}

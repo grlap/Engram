@@ -1,0 +1,49 @@
+{
+  "id": "01a065cc-4a19-75c0-8fd0-0969b03e8304",
+  "external_ref": null,
+  "title": "add --optional: file a child that never gates its parent's completion",
+  "outcome": "An agent can file review follow-ups and leads under the item they concern without turning them into completion barriers; add --optional creates a ChildRequirement::Optional child, and show marks optional children",
+  "acceptance": [
+    "engram work add \"…\" --under REF --optional creates an optional child; done on the parent succeeds with that child open; show lists it with an optional marker; parity covers CLI and MCP"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Exposed existing optional-child semantics through CLI and MCP add surfaces; optional children are marked in structured and text show output and remain non-gating for parent completion. Updated repository guidance and added CLI/MCP parity coverage, including rejecting --optional without --under.",
+    "completed_at": "2026-09-03T14:39:20.170917300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3bcdd1babeb80a2fb519baf9bd37a739a9ff56eff3a5390b668bc4cd01f59507": {
+        "activity_id": "3bcdd1babeb80a2fb519baf9bd37a739a9ff56eff3a5390b668bc4cd01f59507",
+        "task_id": "01a065cc-4a19-75c0-8fd0-0969b03e8304",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "134dba0f4ee7ea3cd576154335fa17a7245c18b6ccbad6b1eea5133b199d2bf4"
+      }
+    }
+  }
+}

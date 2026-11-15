@@ -1,0 +1,29 @@
+{
+  "id": "01a1237e-a287-71b1-b47d-fd4ac3ccb053",
+  "external_ref": null,
+  "title": "Keep ACL reader stdin errors handled after child closure",
+  "outcome": "Keep ACL reader stdin errors handled after child closure",
+  "acceptance": [
+    "An ACL reader stdin error delivered after the child close event remains handled and does not cause an uncaught exception, proven with a fake-child regression.",
+    "Unexpected reader exit during a read or requested closure preserves the classified ACL diagnostic and its cause while cleanup remains bounded and conservative."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

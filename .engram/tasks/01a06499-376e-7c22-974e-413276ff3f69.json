@@ -1,0 +1,49 @@
+{
+  "id": "01a06499-376e-7c22-974e-413276ff3f69",
+  "external_ref": null,
+  "title": "MCP show carries about 4 KB of inert fields on the agent path",
+  "outcome": "The agent-facing show is terse: no UUIDs, hashes, fences, revision counters, or control-plane fields (obligation_page, run, completion_seal); history summaries carry meaning beyond change_kind; the host-private channel keeps the rich projection",
+  "acceptance": [
+    "MCP show for a typical item is under 1 KB and contains no hash or UUID; parity covers CLI text and MCP"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Replaced agent-facing show with a terse allowlisted projection while preserving the rich host core view. Show now carries short refs, relative identities, typed notes, bounded meaningful history, and exact guidance across CLI and MCP.",
+    "completed_at": "2026-09-03T16:20:25.144850600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ea91f9dafb44de6195a68b5a861cc9c96d6da770fbe8c1a44f7f81f956fc0467": {
+        "activity_id": "ea91f9dafb44de6195a68b5a861cc9c96d6da770fbe8c1a44f7f81f956fc0467",
+        "task_id": "01a06499-376e-7c22-974e-413276ff3f69",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3dbce83342ab2b9c8c76e90d63d846b77d6684cf33da7cedead2409ab6c2120f"
+      }
+    }
+  }
+}

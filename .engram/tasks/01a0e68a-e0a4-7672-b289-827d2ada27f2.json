@@ -1,0 +1,52 @@
+{
+  "id": "01a0e68a-e0a4-7672-b289-827d2ada27f2",
+  "external_ref": null,
+  "title": "Correct graph-snapshot source comments on restored record identity",
+  "outcome": "Correct graph-snapshot source comments on restored record identity",
+  "acceptance": [
+    "Source comments describe inherited restored record ids as preserved and native layer record ids as freshly minted at load, with canonical bytes compared separately.",
+    "The source comments no longer describe graph load as unshipped or a content hash as a restored record's identity."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The graph-snapshot comments in src/graph_snapshot.rs now describe restored record identity as the load code has it: an inherited restored record keeps its record id and its canonical bytes are checked against its typed shape separately; a native layer's record id is minted at load; a record id is a stored identity, never derived from content. The 'once load ships' and 'its hash binds' claims are gone. Comments only; the snapshot format fingerprint strips descriptions. Landed 6bca326, full gate test-f0a56ca6 9/9, round 1 clean (out-of-scope identifier naming filed as w-e50091e98190), independent evaluation passed 2/2.",
+    "completed_at": "2026-09-30T23:22:18.988414Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5e0b1c6f84324de2a257b0b1697021fa": {
+        "activity_id": "5e0b1c6f84324de2a257b0b1697021fa",
+        "task_id": "01a0e68a-e0a4-7672-b289-827d2ada27f2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e78af450e76e47de86752f4d7407afee"
+      }
+    }
+  }
+}

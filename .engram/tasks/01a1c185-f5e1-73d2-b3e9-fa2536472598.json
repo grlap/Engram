@@ -1,0 +1,54 @@
+{
+  "id": "01a1c185-f5e1-73d2-b3e9-fa2536472598",
+  "external_ref": null,
+  "title": "Retire stale imported verification satisfaction and replay concurrent uses",
+  "outcome": "Retire stale imported verification satisfaction and replay concurrent uses",
+  "acceptance": [
+    "An uncited imported verification use that becomes stale after source, work revision, named-root or claim/session movement no longer permanently prevents completion; its stale satisfaction stops counting and a fresh native check can satisfy the resulting obligations.",
+    "Explicitly cited stale imported acceptance still refuses completion, and foreign provenance or terminal conflicts cannot become current native authority through retirement.",
+    "Concurrent exact retries for a prepared applicability or consumption identity replay the same retained result inside the writer transaction; changed requests under a reused identity still refuse.",
+    "Meaningful focused regression tests cover stale-use completion after source/revision/handoff changes and concurrent exact retry behavior, with existing native obligation owners reused."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Retire uncited stale imported verification credit using current local authority and source, preserve explicit acceptance/conflict refusals, and replay exact applicability/consumption retries within the writer transaction. Eight-path repair delivered and exact carry confirmed by parent.",
+    "completed_at": "2026-11-09T18:56:49.057576800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6799839b1a954e7291a87ebeca2e32d8": {
+        "activity_id": "6799839b1a954e7291a87ebeca2e32d8",
+        "task_id": "01a1c185-f5e1-73d2-b3e9-fa2536472598",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5553dd83200747b18a20d064336c8ef4"
+      }
+    }
+  }
+}

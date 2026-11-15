@@ -1,0 +1,58 @@
+{
+  "id": "01a1d820-e103-7581-ac8f-05e65b3717a0",
+  "external_ref": null,
+  "title": "Keep slow source-observation warnings from failing launcher input capture before checks run",
+  "outcome": "Keep slow source-observation warnings from failing launcher input capture before checks run",
+  "acceptance": [
+    "A real `engram source --json` observation that emits the supported slow-operation warning does not make test-launcher committed-input capture fail before the selected check runs",
+    "The source JSON reader still rejects malformed, oversized or otherwise unexpected process output, with regression coverage distinguishing the supported warning from invalid output",
+    "The applicable focused launcher check passes on the fix"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "gate",
+    "tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "2888393723d3421ba4ba3aaa78e6cc98": {
+        "activity_id": "2888393723d3421ba4ba3aaa78e6cc98",
+        "task_id": "01a1d820-e103-7581-ac8f-05e65b3717a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2888393723d3421ba4ba3aaa78e6cc98"
+      },
+      "5dae116c1d0345de95a695cd26bf21d5": {
+        "activity_id": "5dae116c1d0345de95a695cd26bf21d5",
+        "task_id": "01a1d820-e103-7581-ac8f-05e65b3717a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "2888393723d3421ba4ba3aaa78e6cc98"
+      }
+    }
+  }
+}

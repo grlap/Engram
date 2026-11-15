@@ -1,0 +1,29 @@
+{
+  "id": "01a1c464-bae9-7be3-8b81-0470cbd2bc03",
+  "external_ref": null,
+  "title": "Let a holder read every open work obligation: show and core inspect cap the list with no continuation",
+  "outcome": "Let a holder read every open work obligation: show and core inspect cap the list with no continuation",
+  "acceptance": [
+    "A supported read (an `--after` continuation on `show` or `core inspect`, or a dedicated obligations window) returns every open obligation of an item's run in bounded pages. Each entry carries its rule id and version, its requirement (check kind and fingerprint), its trigger position and its triggering source record. Each page states the exact omitted count, until the list is exhausted.",
+    "The `done` refusal for open_work_obligations names the read that lists them all. A project-bound non-holder may use that read without claiming.",
+    "Tests cover an item with more open obligations than one page: every obligation is reachable exactly once through the continuation, and a stale continuation after the run feed moves is refused with a re-read hint."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "termal-reported"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,76 @@
+{
+  "id": "01a1515b-848a-7f32-987b-992bb5eb562e",
+  "external_ref": null,
+  "title": "Pin the turn-checkpoint receipt's verification_evidence order as a host-protocol contract",
+  "outcome": "Pin the turn-checkpoint receipt's verification_evidence order as a host-protocol contract",
+  "acceptance": [
+    "A deterministic test proves TurnCheckpointReceipt.verification_evidence holds exactly one freshly minted id per verification_evidence input, in request input order, including duplicate-content inputs and an idempotent replay returning the same ordered ids",
+    "The host protocol documentation states this ordering guarantee as part of TermAl's contract",
+    "environment_evidence and execution_observations ordering is stated alongside it, or explicitly not guaranteed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pinned checkpoint receipt verification/environment record ids to request input order with per-input minted ids, duplicate-content coverage and exact replay/no-append assertions; documented all three host receipt list ordering guarantees.",
+    "completed_at": "2026-10-19T07:57:53.863355300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "34a9b5aa1f3b4887842c28aea60fad80": {
+        "activity_id": "34a9b5aa1f3b4887842c28aea60fad80",
+        "task_id": "01a1515b-848a-7f32-987b-992bb5eb562e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "34a9b5aa1f3b4887842c28aea60fad80"
+      },
+      "4e1e59b30e59451da006c345e267f754": {
+        "activity_id": "4e1e59b30e59451da006c345e267f754",
+        "task_id": "01a1515b-848a-7f32-987b-992bb5eb562e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6e51fa2985034bb890b518f2b12875a7"
+      },
+      "bf86f6e0d27b48af8948c562a58971f1": {
+        "activity_id": "bf86f6e0d27b48af8948c562a58971f1",
+        "task_id": "01a1515b-848a-7f32-987b-992bb5eb562e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "789dd0bfbb3e4072b81141de99bbde0a"
+      }
+    }
+  }
+}

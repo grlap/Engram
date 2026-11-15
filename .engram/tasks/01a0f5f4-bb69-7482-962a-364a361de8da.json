@@ -1,0 +1,30 @@
+{
+  "id": "01a0f5f4-bb69-7482-962a-364a361de8da",
+  "external_ref": null,
+  "title": "Revising a project memory resends its whole body; offer an append or section edit",
+  "outcome": "Revising a project memory resends its whole body; offer an append or section edit",
+  "acceptance": [
+    "Tests cover an append, a section replacement, a stale expected revision and a no-op edit",
+    "The receipt shows what changed, or that nothing did, so a caller can confirm the edit without reading the whole body back",
+    "remember --revise can change part of a memory (an append, or a named section replaced) without the caller resending the whole body, under the same expected-revision check"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "agent-surface",
+    "dogfood",
+    "memory"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a0f5f4-c248-7971-93b2-277ca5c53408",
+  "disposal_reason": "Duplicate filing of the same CV2 request (session-9302 mailbox #3, relayed by Engram::Advisor to both Engram::Opus and Engram::Fable). Canonical item: w-277ca5c53408, which carries the CV2 provenance. Reconciled by Engram::Fable at the Advisor's request (mailbox-74a6af16 #790).",
+  "completion": null
+}

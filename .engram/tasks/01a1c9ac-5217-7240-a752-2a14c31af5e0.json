@@ -1,0 +1,28 @@
+{
+  "id": "01a1c9ac-5217-7240-a752-2a14c31af5e0",
+  "external_ref": null,
+  "title": "Report labelled feed-integrity findings for damaged imported consumption",
+  "outcome": "Doctor and projection verification report the specific invalid imported-consumption feed entry while retaining other findings, with true SQLite failures still propagated.",
+  "acceptance": [
+    "A damaged or misprojected imported-consumption record produces a labelled feed-integrity finding naming the bad entry and does not discard unrelated findings.",
+    "Meaningful behavioral coverage distinguishes malformed canonical/projection data from actual SQLite failure without silently swallowing storage errors."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

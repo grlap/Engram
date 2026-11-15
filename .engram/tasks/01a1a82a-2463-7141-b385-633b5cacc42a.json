@@ -1,0 +1,79 @@
+{
+  "id": "01a1a82a-2463-7141-b385-633b5cacc42a",
+  "external_ref": null,
+  "title": "Make one Git read decide whether a registered test check is current, at evaluate and done, instead of turn reports",
+  "outcome": "A registered committed-input check counts while the named root is clean at exactly its commit when the decision is made; turn reports stay as history and stop deciding in that lane, so a correct check is not refused and a real change still is",
+  "acceptance": [
+    "At evaluate and at done, for a criterion resting on a registered committed-input check, Engram reads the named root: clean under the launcher's committed-input rule and HEAD exactly the check's commit means current; anything else refuses with a plain instruction. Absent or unreachable refuses, naming why",
+    "All decision sites in the registered Git lane call one function, so evaluation and done cannot disagree, and accounted turn reports, assumed or measured, no longer refuse there; the legacy flow and every non-currency check (producer, criterion, platform, root, fence, a newer failed run) stay as they are",
+    "Real-host rows pass against the built Engram: the four traced no-edit refusals accepted and done; a real edit, a new commit, an older check and a dirty root refused at both evaluate and done, also with evaluations off; an edit reverted before the decision accepted",
+    "Engram's launcher selects commit input by default when the tree is clean and a plain run when dirty, while an explicit --input commit keeps refusing a dirty tree, matching TermAl's selection",
+    "No existing evaluation, verification, obligation resolution or seal is rewritten or reinterpreted. New evaluations and Satisfied obligation resolutions may carry an optional internally minted registered-input decision proof so doctor, seal reconstruction and import validate their immutable provenance without fresh Git or the old currency floors; absent proofs preserve the original validator. No DDL or schema-marker change is made; input protocol stays unchanged and canonical import preserves both shapes. Old-reader behavior and all-live-store readiness are explicitly classified before FULL; a required migration or different_build_schema is escalated before landing."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and installed the shared live Git currency decision: registered committed checks count at evaluate and done only while the named root is clean at exactly their commit; ordinary reports remain history. The launcher selects clean commit input automatically and historical records retain their meaning.",
+    "completed_at": "2026-11-05T17:20:38.837995400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "767674e6ad2845acbadc79312bda92fa": {
+        "activity_id": "767674e6ad2845acbadc79312bda92fa",
+        "task_id": "01a1a82a-2463-7141-b385-633b5cacc42a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "767674e6ad2845acbadc79312bda92fa"
+      },
+      "e67553c97b60470cbe355d2a210e1cfc": {
+        "activity_id": "e67553c97b60470cbe355d2a210e1cfc",
+        "task_id": "01a1a82a-2463-7141-b385-633b5cacc42a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e67553c97b60470cbe355d2a210e1cfc"
+      },
+      "fc51e470e97e46bdab896424639e324b": {
+        "activity_id": "fc51e470e97e46bdab896424639e324b",
+        "task_id": "01a1a82a-2463-7141-b385-633b5cacc42a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2aae6b7008c443fa84d7c16f312d49b5"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a10ec0-2e5b-7772-a6eb-8a32292c6549",
+  "external_ref": null,
+  "title": "Each prerequisite add decodes every retained edge's binding event, so one add costs as much as the item's in-degree",
+  "outcome": "Each prerequisite add decodes every retained edge's binding event, so one add costs as much as the item's in-degree",
+  "acceptance": [
+    "A test adds prerequisites one at a time to one item and asserts that the canonical decodes of each add stay within a constant that does not grow with the item's existing prerequisite count, with no stored-format change",
+    "Every edge that fails its proof today is still refused or reported, covered by the existing prerequisite-proof tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-performance",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

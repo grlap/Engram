@@ -1,0 +1,52 @@
+{
+  "id": "01a0889d-5448-7310-8fbc-97598db58fa3",
+  "external_ref": null,
+  "title": "The host post-compaction nudge advances delivery while our own guidance for that moment says peek",
+  "outcome": "TermAl's post-compaction context nudge runs the advancing form of next, which stages and acknowledges ordinary delivery, then truncates the returned text to a fixed byte ceiling before attaching it to the next dispatched turn. Our own recovery guidance for exactly that moment tells an agent to peek precisely because peek does not stage or acknowledge delivery. Either the guidance or the integration is wrong for that boundary, and the pairing has a loss shape: the cursor advances when the CLI runs, while the text may be truncated, or never attached if no turn is dispatched afterwards.",
+  "acceptance": [
+    "the post-compaction nudge either uses the non-advancing read, or the advancing read is justified in writing against the loss path, with a test that a nudge whose text is truncated or never dispatched does not leave delivered-but-unseen work"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "host-owned",
+    "integration",
+    "stream-recovery-continuity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed as already delivered, found in the backlog triage. TermAl commit c9336a2, on TermAl master, makes the post-compaction and startup nudges run `next --peek`, the non-advancing read. Fixture tests pin that form (engram_authority_fixture.rs:87, engram_compaction.rs:121), so a truncated or undispatched nudge leaves no delivered-but-unseen work. An independent Codex evaluation (session-10852) passed criterion 1. No Engram change.",
+    "completed_at": "2026-10-05T17:31:37.879658500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "50e7564d3a434344b586b21218196fe2": {
+        "activity_id": "50e7564d3a434344b586b21218196fe2",
+        "task_id": "01a0889d-5448-7310-8fbc-97598db58fa3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "066458d0fc3b4269bdf41537899eaebe"
+      }
+    }
+  }
+}

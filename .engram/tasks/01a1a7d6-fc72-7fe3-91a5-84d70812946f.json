@@ -1,0 +1,29 @@
+{
+  "id": "01a1a7d6-fc72-7fe3-91a5-84d70812946f",
+  "external_ref": null,
+  "title": "Align path checks for delegated worktrees outside the repository folder",
+  "outcome": "Align path checks for delegated worktrees outside the repository folder",
+  "acceptance": [
+    "Define a safe, repository-scoped removal path for registered delegated worktrees located outside the repository folder.",
+    "Keep path validation explicit and prevent broad or unchecked recursive deletion."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "cleanup",
+    "docs",
+    "path-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

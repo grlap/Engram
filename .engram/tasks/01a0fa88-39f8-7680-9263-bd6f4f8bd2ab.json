@@ -1,0 +1,56 @@
+{
+  "id": "01a0fa88-39f8-7680-9263-bd6f4f8bd2ab",
+  "external_ref": null,
+  "title": "Document the host's backup trigger and give TermAl the status receipt",
+  "outcome": "Document the host's backup trigger and give TermAl the status receipt",
+  "acceptance": [
+    "docs/host-checklist.md has a section on off-host backup that tells a host to call `engram backup push` at its start, about hourly while a project has an active session and when the last session ends, that the call may be put off, what its exit codes mean, and that no retry loop is needed",
+    "The same section tells a host to read `engram backup status --json`, never to show the mode without its off-host field, to show a failed last attempt even while the mode reads backed up, and, after a restore, to give sessions identities the store has not seen",
+    "docs/features/cli-and-mcp.md documents the versioned `backup status --json` receipt field by field, and a test asserts that the documented field names are the ones the command emits",
+    "The item's notes record that the receipt schema and the checklist section were sent to TermAl's coordinator, with the mailbox sequence, and TermAl's answer"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fa87-e4c5-7d10-bd31-8f5379e3c9c7"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The host's backup trigger and the status receipt landed as bcf4f5a on origin/master.\n- docs/host-checklist.md \"## Off-host backup\" covers: the push trigger (start, about hourly, last session) and that a push may be put off; the exit codes, including a refusal with no report, and no retry loop; keeping a failed push's own report; the status display rules; and identities after a restore, matching the runbook.\n- docs/features/cli-and-mcp.md documents the v1 `backup status --json` receipt field by field: 88 paths.\n- tests/backup_status_receipt_cli.rs checks paths, listed values, JSON types and nullability against the emitted receipts.\n- TermAl's qualified acceptance (Termal::Fable2 #64) is recorded. Its two requests are filed as w-837afc363f0b and w-cdad270de5e2.\n- Review: the round-1 Medium is fixed; round 2 on freeze d6940bed was clean of Medium; its Lows are filed as w-70034a479cde.\n- Gate test-db4ad5b4 passed. The independent evaluation passed all 4 criteria.",
+    "completed_at": "2026-10-02T21:27:21.364137500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f6ada1d39c4441b19c15c70285fd42b6": {
+        "activity_id": "f6ada1d39c4441b19c15c70285fd42b6",
+        "task_id": "01a0fa88-39f8-7680-9263-bd6f4f8bd2ab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4f9bb98891324265a572e3d66d4fce1e"
+      }
+    }
+  }
+}

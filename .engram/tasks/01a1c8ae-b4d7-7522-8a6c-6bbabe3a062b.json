@@ -1,0 +1,94 @@
+{
+  "id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+  "external_ref": null,
+  "title": "Run task-sync Git exchange on macOS and Linux with the same bounded, confined process ownership as Windows (required for full sync)",
+  "outcome": "Run task-sync Git exchange on macOS and Linux with the same bounded, confined process ownership as Windows (required for full sync)",
+  "acceptance": [
+    "On macOS and Linux, every task-sync exchange Git command (retained-commit pinning, explicit fetch and push, target observation) runs under a confined local runner instead of refusing with UnsupportedPlatform. The runner starts Git as the leader of its own session and process group, kills every descendant that stays in Git's process group on cancellation, deadline, drop and root exit (with no process-group-id reuse window), bounds output, and applies the same non-interactive credential-helper rules as Windows. A descendant that leaves that process group (by setsid or setpgid) is bounded only by the deadline for Engram's result, and this is disclosed in the shipped text, as Windows discloses its gap.",
+    "Real Git operations and process control are exercised by tests that run and pass on macOS and on Linux, including the real-Git exchange and retained-construction tests that are today compiled only on Windows, plus cancellation, deadline and drop tests that prove by a liveness probe that no in-group descendant survives",
+    "The offline-MacBook cycle runs with Engram's own exchange on the Mac: the Mac works offline with local task and code changes, rejoins, fetches, reconciles and publishes, and the other hosts import the result, with the evidence recorded on the item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": "Engram::Opus",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "12ce028677344dd68bd230e155e8dcf3": {
+        "activity_id": "12ce028677344dd68bd230e155e8dcf3",
+        "task_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "12ce028677344dd68bd230e155e8dcf3"
+      },
+      "1e6f3f28645945609b09463bec2c4eab": {
+        "activity_id": "1e6f3f28645945609b09463bec2c4eab",
+        "task_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1e6f3f28645945609b09463bec2c4eab"
+      },
+      "46fda9c4aa814a228abc2f38d0f28232": {
+        "activity_id": "46fda9c4aa814a228abc2f38d0f28232",
+        "task_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "46fda9c4aa814a228abc2f38d0f28232"
+      },
+      "5478b4533c41459ba5a160401dc64325": {
+        "activity_id": "5478b4533c41459ba5a160401dc64325",
+        "task_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "72cd89067aef4260b7fe7cff5dfbb4ca"
+      },
+      "697c7b828dea4d73966d3664fc185fc5": {
+        "activity_id": "697c7b828dea4d73966d3664fc185fc5",
+        "task_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "697c7b828dea4d73966d3664fc185fc5"
+      }
+    }
+  }
+}

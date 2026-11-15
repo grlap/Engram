@@ -1,0 +1,28 @@
+{
+  "id": "01a1303e-69be-7ad0-ab33-fca036d8b341",
+  "external_ref": null,
+  "title": "Planning-text completion and blocker attribution export SharedActor without the author path policy",
+  "outcome": "Planning-text completion and blocker attribution export SharedActor without the author path policy",
+  "acceptance": [
+    "A decision records whether completion attribution and blocker created_by actors in shared planning text are checked by the same author path policy as notes and activity (omitted, refused on import, or explicitly allowed)",
+    "If checked, a test shows a path-shaped completion or blocker actor neither reaches the shared bytes nor is admitted on import"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

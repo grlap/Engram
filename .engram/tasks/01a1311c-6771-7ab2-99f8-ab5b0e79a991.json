@@ -1,0 +1,63 @@
+{
+  "id": "01a1311c-6771-7ab2-99f8-ab5b0e79a991",
+  "external_ref": null,
+  "title": "Avoid reading the preparation lock file when inspecting a retained candidate",
+  "outcome": "Avoid reading the preparation lock file when inspecting a retained candidate",
+  "acceptance": [
+    "On Windows, read_prepared can inspect a complete explicitly selected candidate while prepare holds its existing lock, by validating the ordinary bounded lock file through its opened no-follow handle metadata without reading its bytes; owned fixtures prove success and refusal preserve all input bytes and entries."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered metadata-only admission of the opaque preparation lock through the opened no-follow handle, preserving ordinary-file/64-byte/reparse checks. Windows regression requires successful candidate inspection while the production lock is held; directory/oversize refusals and all owned inputs are preserved. Full gate and independent Codex/Claude reviews pass on the frozen tree; independent observed acceptance passes 1/1, with acceptance revision 1 unchanged.",
+    "completed_at": "2026-10-13T20:06:38.676035200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09427402ea7f49e6a601f0ac9c3662fc": {
+        "activity_id": "09427402ea7f49e6a601f0ac9c3662fc",
+        "task_id": "01a1311c-6771-7ab2-99f8-ab5b0e79a991",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "09427402ea7f49e6a601f0ac9c3662fc"
+      },
+      "7c95b26928c34d8bae848a5b7a55a608": {
+        "activity_id": "7c95b26928c34d8bae848a5b7a55a608",
+        "task_id": "01a1311c-6771-7ab2-99f8-ab5b0e79a991",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "edba76ad9aea4c71baab3a21670589b7"
+      }
+    }
+  }
+}

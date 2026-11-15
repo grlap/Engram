@@ -1,0 +1,50 @@
+{
+  "id": "01a0694a-8edb-7ac0-9cde-b5fbdaab5eab",
+  "external_ref": null,
+  "title": "show's notes line under evidence-heavy runs reports the bounded page size as the total and an arbitrary item as latest",
+  "outcome": "show's notes line under evidence-heavy runs reports the bounded page size as the total and an arbitrary item as latest",
+  "acceptance": [
+    "After 128 gate transitions plus one note, show reports the true recorded total (or an explicit shown-of-total) and the chronologically latest note as latest",
+    "Structured show carries a typed omission for evidence items that did not fit, consistent with children and history"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Made terse show report the exact evidence total, latest note by dense run-feed position, typed count omissions, and bounded latest-note placement without leaking the raw evidence object.",
+    "completed_at": "2026-09-03T22:53:59.185682300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a152b2d1d7047f9eb600acddf9176325cc54b6137df9adf91b68deddadbb3162": {
+        "activity_id": "a152b2d1d7047f9eb600acddf9176325cc54b6137df9adf91b68deddadbb3162",
+        "task_id": "01a0694a-8edb-7ac0-9cde-b5fbdaab5eab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4deb66d98f6e13d48c091a62081ecd140d0687a755e443510ffec00ba55a1479"
+      }
+    }
+  }
+}

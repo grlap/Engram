@@ -1,0 +1,50 @@
+{
+  "id": "01a06e94-253f-7483-904d-3bd25dc6cd60",
+  "external_ref": null,
+  "title": "claim receipts announce the lease expiry and the renewal path",
+  "outcome": "claim receipts announce the lease expiry and the renewal path",
+  "acceptance": [
+    "the claim receipt and next show the expiry time; the shell claim word documents --ttl; re-claiming as the same holder is documented as renewal to max(current, now + default)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered keyless same-holder claim renewal with preserved identity and fence and a non-shortening TTL floor; explicit-key replay unchanged. Pending handoff refuses with cancel-or-accept-or-expire guidance; renewal after cancel and completed-work guidance covered. All nine gates pass on stable freeze4a2525eb. Fable owns land/install and requested no additional review round.",
+    "completed_at": "2026-09-05T01:18:19.019453200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "db53a483f0986fb3cd5e25416b4e619c899771b1664821a1c1087a301a148340": {
+        "activity_id": "db53a483f0986fb3cd5e25416b4e619c899771b1664821a1c1087a301a148340",
+        "task_id": "01a06e94-253f-7483-904d-3bd25dc6cd60",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3369ab45ca5ca20d0318d4fdbf79fde1129ab2f015ce4b5331416bd01074fc82"
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "id": "01a0bb78-ddb8-7111-82af-20d2da678889",
+  "external_ref": null,
+  "title": "Diagnose intermittent MCP completion replay latency above the sanity limit",
+  "outcome": "Diagnose intermittent MCP completion replay latency above the sanity limit",
+  "acceptance": [
+    "Identify and address the measured cause of the 12281.5ms done replay delay, retaining the original failed evidence",
+    "mutation and continuation titles are terminal-safe while MCP JSON retains their bytes passes without relaxing its 10000ms call limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "dogfood",
+    "gate",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a0f43a-1f90-73a3-ba0f-6651eb19ddc4",
+  "disposal_reason": "Superseded by the independent root w-6651eb19ddc4 (same title and acceptance) on Engram::Fable's decision (mailbox-e3d12b08 #499/#501, 2026-09-30): the unexplained 12 s MCP done replay stays open as its own problem instead of being waived; detach was refused while the parent w-67775bc92f06 is open. Greg's direct approval of 2026-09-19 (parent note 610ceaae): 'Keep historical timing anomaly open but no longer block review/integration on proving its unknown cause'.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "66b192262d314a6eaa30a85257a70f41": {
+        "activity_id": "66b192262d314a6eaa30a85257a70f41",
+        "task_id": "01a0bb78-ddb8-7111-82af-20d2da678889",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "fd347665666b4a91a43c9d963305787a"
+      }
+    }
+  }
+}

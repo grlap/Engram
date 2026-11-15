@@ -1,0 +1,52 @@
+{
+  "id": "01a0f4c4-77a1-7b01-aab3-918b1b657eaf",
+  "external_ref": null,
+  "title": "engram mcp has an enforced read-only mode for read-only host children",
+  "outcome": "engram mcp has an enforced read-only mode for read-only host children",
+  "acceptance": [
+    "In read-only mode, next is refused unless peek is true, memories is refused when context_generation is given, and any argument a read word does not declare is refused; each refusal is an MCP tool error (isError true) whose JSON body carries a stable code naming the read-only mode, and no call in this mode writes to the store, which it opens read-only",
+    "Tests cover the tool list, each refusal including an undeclared argument, a successful call of each read word, and that a session of read-only calls leaves the store unchanged",
+    "The host integration documentation states the flag and what it admits, so TermAl can run it for a read-only Codex child; ordinary engram mcp does not mark next or memories read-only, since both have writing forms",
+    "engram mcp --read-only, with the same identity arguments, lists only the read words next, ls, search, show and memories, and refuses any other tool call"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "engram mcp --read-only serves a read-only host child. It lists only next, ls, search, show and memories and admits only their reading forms: next with peek exactly true, memories without context_generation (present even as null is refused), and only the declared arguments. Every other call is refused before any tool runs, as an isError tool result with the stable code mcp_read_only_refused. The read-only work service never opens the store for writing. initialize gives the mode its own instructions; ordinary mode is unchanged. Docs: cli-and-mcp.md#read-only-mode and host-checklist step 3. Landed 7c45f23 after two review rounds (round 2: Codex clean; Claude's Low filed as w-00e15db457da), full gate test-135b9d02 9/9; the independent evaluation passed 4/4.",
+    "completed_at": "2026-10-01T00:41:24.854397100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1bfd6a5ed6c94159ab1c52af5ac9641a": {
+        "activity_id": "1bfd6a5ed6c94159ab1c52af5ac9641a",
+        "task_id": "01a0f4c4-77a1-7b01-aab3-918b1b657eaf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e701a64ff3da41fbbb19659699b7df2c"
+      }
+    }
+  }
+}

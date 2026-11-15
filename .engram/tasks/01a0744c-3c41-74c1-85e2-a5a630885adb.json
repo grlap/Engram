@@ -1,0 +1,49 @@
+{
+  "id": "01a0744c-3c41-74c1-85e2-a5a630885adb",
+  "external_ref": null,
+  "title": "Increase website typography for comfortable desktop and mobile reading",
+  "outcome": "Increase website typography for comfortable desktop and mobile reading",
+  "acceptance": [
+    "Navigation and supporting text are substantially larger, all three illustrated folios remain usable across desktop and mobile widths, and required checks pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Increased desktop and mobile website typography, adjusted layout and navigation for readability, and passed all required and focused browser checks.",
+    "completed_at": "2026-09-06T01:42:09.551623400Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e5c9f82202d95ab5c54387cdbce3c28cdc0488d6e301010df577e31500b6dcb3": {
+        "activity_id": "e5c9f82202d95ab5c54387cdbce3c28cdc0488d6e301010df577e31500b6dcb3",
+        "task_id": "01a0744c-3c41-74c1-85e2-a5a630885adb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e3f4778372d53fe7524d61e42c0a6b3f62959a49ed4f08277b349ee396e4c60b"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0eef6-5bc7-7fb1-a918-a20dfe589571",
+  "external_ref": null,
+  "title": "Two release builds of identical runtime source report different build fingerprints when built in different worktrees",
+  "outcome": "Two release builds of identical runtime source report different build fingerprints when built in different worktrees",
+  "acceptance": [
+    "a decision is recorded on whether the fingerprint should identify the runtime source and its build inputs, so that identical source gives an identical fingerprint wherever it is built, or should keep following the executable's bytes; the restart signal and the landing record's installed build then say what that value means",
+    "if the decision is to make it follow the source, a test builds or fingerprints the same source from two directories and gets the same value, derived at run time with no pinned hash; readiness and the different-build guard keep their behaviour",
+    "the cause is established and recorded: what the build fingerprint is computed from, and which input differs between two release builds of the same runtime source made in different worktrees (for example embedded paths, build time or the executable's own bytes)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-cli",
+    "build-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Established same-clean-commit Windows executable differences as 24 PE timestamp/CodeView GUID bytes; retained executable-following diagnostic meaning and documented installed build, source revision and restart reason separately. Landed and installed clean reviewed docs tree; all four live stores ready.",
+    "completed_at": "2026-10-03T06:56:55.986827500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f40f541c01e749d183a2cf2864757ee1": {
+        "activity_id": "f40f541c01e749d183a2cf2864757ee1",
+        "task_id": "01a0eef6-5bc7-7fb1-a918-a20dfe589571",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d3398b486890470cb38e577601a8a6e8"
+      }
+    }
+  }
+}

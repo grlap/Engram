@@ -1,0 +1,53 @@
+{
+  "id": "01a0f32a-f1bf-7fb3-9364-130a13e2ddd6",
+  "external_ref": null,
+  "title": "An agent can see which source observation made an evaluation stale or refused it",
+  "outcome": "An agent can see which source observation made an evaluation stale or refused it",
+  "acceptance": [
+    "Tests cover a sighting at an undeclared revision with source_changed false, a change to the declared revision in the declared workspace (exempt, so not named as a cause), and a sighting on another workspace (not named under a named root)",
+    "When an evaluation is refused, or reads stale, because a source observation after its cut decided that the source moved, the refusal and show name that observation: its run-feed position, workspace, revision, reporting session and time, each as recorded, beside the revision the evaluation declared or, without one, the revision judged at its cut; a refusal or staleness with another cause names no observation",
+    "show can list the source observations of the item's active or latest run, those on other workspaces included (position, workspace, revision, source_changed, reporting session, time), within its usual window and byte budget, as a read that records nothing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-work-lifecycle",
+    "diagnosability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "When an evaluation is refused as void, or reads stale, because a source observation after its cut decided that the source moved, the refusal and show name that observation (run-feed position, workspace, revision, reporting session, times, beside the declared or cut-judged revision). Causes and words unchanged; the refusal adds one bounded, one-line sentence that never spells \"database is locked\" (also not after whitespace collapsing, and not in the CLI JSON stderr, whose fields decode unchanged) and details.deciding_observation; plain and full show, the evaluations window and record detail add a line and stale_observation (fields cut at 128 bytes). show --observations lists the active or latest run's source observations, other workspaces included, in a bounded read-only window. Landed as 9da39db after three rounds (last: gate test-d8c80100 passed; Codex and Claude no Medium); installed build 79e14691; independent evaluation ef585255 passed all three criteria.",
+    "completed_at": "2026-09-30T19:31:40.731280200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9006067e35ad4080a02bd8ea0aa51b0f": {
+        "activity_id": "9006067e35ad4080a02bd8ea0aa51b0f",
+        "task_id": "01a0f32a-f1bf-7fb3-9364-130a13e2ddd6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dc15eb59336a4fb785be46c03b5ecdb8"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a1c30d-a79c-7370-a695-560bf6335204",
+  "external_ref": null,
+  "title": "Install current Engram on the Mac so the TermAl host there can find `engram`",
+  "outcome": "Install current Engram on the Mac so the TermAl host there can find `engram`",
+  "acceptance": [
+    "Engram built from origin/master 0bd70a3034260a228a5f7ad120ac6f7d9e622582 is installed on the Mac at ~/.cargo/bin/engram via cargo, with its `engram --version` output and sha256 recorded here",
+    "The PATH of the Mac TermAl host process (PID 42656 at the time of request) is checked and recorded: whether it contains the install directory; any needed config change is reported to Greg, not made"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "install",
+    "mac"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Engram master 0bd70a30 is installed on the Mac at /Users/greg/.cargo/bin/engram via cargo (sha256 f44a9a52…, version rev 0bd70a303426). The Mac TermAl host's PATH contains ~/.cargo/bin and resolves `engram` to it, with no config change. Reported to Fable2 and Greg. Independent evaluation 465478ad passed 2/2.",
+    "completed_at": "2026-11-10T01:38:25.486942800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3c4a1dfc43a54a19bd913774737c046f": {
+        "activity_id": "3c4a1dfc43a54a19bd913774737c046f",
+        "task_id": "01a1c30d-a79c-7370-a695-560bf6335204",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "528a4d4734bf4d3a9c429d35e6c932cf"
+      }
+    }
+  }
+}

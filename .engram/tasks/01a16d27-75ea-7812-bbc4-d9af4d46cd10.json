@@ -1,0 +1,114 @@
+{
+  "id": "01a16d27-75ea-7812-bbc4-d9af4d46cd10",
+  "external_ref": null,
+  "title": "A refused holder-only verb still moves the session's focus to the target item",
+  "outcome": "A refused holder-only verb still moves the session's focus to the target item",
+  "acceptance": [
+    "When a holder-only verb such as note, update or done is refused (for example work_invalid because a live handoff offer blocks it), the session's focus is unchanged, and the error carries no focus_change",
+    "Successful verbs keep their existing focus behavior",
+    "A test covers a refused note on a non-focused item and asserts that focus stays on the previous item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "agent-ux",
+    "delivered",
+    "evaluation-pending",
+    "focus"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A refused holder-only verb (note, update, done) no longer moves the session's focus and its error carries no focus_change; successful verbs keep their focus behavior. Landed at 5160c093 (ancestor of e7426a6) and verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed all 3 criteria (record 3a6a2177860742e78e8201fb93700a8c).",
+    "completed_at": "2026-10-28T01:39:35.896513700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5919bf63b3d54587aede2a2714e9f7c8": {
+        "activity_id": "5919bf63b3d54587aede2a2714e9f7c8",
+        "task_id": "01a16d27-75ea-7812-bbc4-d9af4d46cd10",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5919bf63b3d54587aede2a2714e9f7c8"
+      },
+      "63b5e1f4644f4dfd8b520bfc28876d7c": {
+        "activity_id": "63b5e1f4644f4dfd8b520bfc28876d7c",
+        "task_id": "01a16d27-75ea-7812-bbc4-d9af4d46cd10",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0ce32142c90849c3afd0da72dcfe2c74"
+      },
+      "750698a3558745a990082a94fbd343ab": {
+        "activity_id": "750698a3558745a990082a94fbd343ab",
+        "task_id": "01a16d27-75ea-7812-bbc4-d9af4d46cd10",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c93a7f11c5b04d709bd9bc30eef4a572"
+      },
+      "bdac29a9e7fd4e97b88c8887863d6acf": {
+        "activity_id": "bdac29a9e7fd4e97b88c8887863d6acf",
+        "task_id": "01a16d27-75ea-7812-bbc4-d9af4d46cd10",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e16444b33c8f4d8b8ca77a0f20caba3d"
+      },
+      "c93a7f11c5b04d709bd9bc30eef4a572": {
+        "activity_id": "c93a7f11c5b04d709bd9bc30eef4a572",
+        "task_id": "01a16d27-75ea-7812-bbc4-d9af4d46cd10",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e8651b50b0dc456a817d8f2477b10853"
+      },
+      "e8651b50b0dc456a817d8f2477b10853": {
+        "activity_id": "e8651b50b0dc456a817d8f2477b10853",
+        "task_id": "01a16d27-75ea-7812-bbc4-d9af4d46cd10",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "63b5e1f4644f4dfd8b520bfc28876d7c"
+      }
+    }
+  }
+}

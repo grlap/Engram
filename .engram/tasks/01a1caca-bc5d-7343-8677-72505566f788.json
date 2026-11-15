@@ -1,0 +1,50 @@
+{
+  "id": "01a1caca-bc5d-7343-8677-72505566f788",
+  "external_ref": null,
+  "title": "Stop the test-run registration check from reporting \"native wait unavailable\" for registration-sourced runs the host accepts",
+  "outcome": "Stop the test-run registration check from reporting \"native wait unavailable\" for registration-sourced runs the host accepts",
+  "acceptance": [
+    "For a run whose host registration is confirmed only by source=registration (not yet indexed), scripts/test-run-registration.mjs no longer reports the native wait as unavailable or tells the agent to use --notify. It either reports the host's actual wait admission or says plainly that wait admission was not checked. A behavioural test covers the registration-sourced case."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented the registration diagnostic correction on clean candidate dfe5fb8b3b6864d0ee853776b52cef0270eb9b15, tree126a0c1f61f6aee331c9b8bb40aebb1af15e8139, parent0bd70a3034260a228a5f7ad120ac6f7d9e622582. Absent wait acknowledgement now reports native-wait=not checked; actual wait rendering, registration state/nativeWaitReady, transport/admission/retry unchanged. Valid behavioral fail-first test-c5bb3c99 then final targeted test-13c0576e PASS6/6 inputmatched. Required whole-input Codex17466/Claude17467 attempt1 reviews clean, fulloutputsread; three informational Notes retained. Native independent Claude17468 evaluation291e1eaa85af4947bcc73fc47e7032f8 PASScriterion1, judgedfresh/stale=null, exactunchangedHEAD/tree/cleanchecked. EvaluatorENDslotreleased. Implementation complete; READY to Fable for after-sync integration, finalfullgateandlanding stillpending. Retain registration-wait-11323 and its3terminalruns until integrationowneraccepts package and records post-landing retention/cleanup; no remoteauthorrefwaspushed, no install/masterlanding claimed. Initial completion attempt with explicit criterionlinks refused by evaluatedpolicy; removed unsupportedlinks, preserving nativeevaluation.",
+    "completed_at": "2026-11-11T13:46:54.275093800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c80dbb39f053485d8ab92325d55117e9": {
+        "activity_id": "c80dbb39f053485d8ab92325d55117e9",
+        "task_id": "01a1caca-bc5d-7343-8677-72505566f788",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1d13efa27a0a4d2c9631792f69d004c8"
+      }
+    }
+  }
+}

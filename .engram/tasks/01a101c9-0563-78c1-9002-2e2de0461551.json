@@ -1,0 +1,66 @@
+{
+  "id": "01a101c9-0563-78c1-9002-2e2de0461551",
+  "external_ref": null,
+  "title": "Expose the evaluation id as evaluation beside hash for the live TermAl reader",
+  "outcome": "Expose the evaluation id as evaluation beside hash for the live TermAl reader",
+  "acceptance": [
+    "Current-evaluation show, complete evaluation detail/windows, and normal/minimal evaluate JSON/MCP expose evaluation equal to the existing hash alias. Compact next keeps its existing evaluation id. CLI text/docs identify the value as a minted evaluation id, with the temporary alias explicitly scoped to the live TermAl consumer.",
+    "Tests cover normal/minimal and replayed receipts, show/detail/windows/next identity consistency, superseded/carried evaluation references, and the maximal receipt budget with both keys. Canonical evaluation records, ids, links and historical operation results are not rewritten."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux",
+    "area-host-integration",
+    "design",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0ed15-d924-7510-b388-136c0e0b4729",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed additive preferred evaluation IDs across current/full show and normal/minimal evaluate, preserving the temporary equal hash alias for live TermAl. Stored evaluation records, IDs, links, historical receipts and strict budgets unchanged. Exact full round2 gate passed; independent Codex and Greg-authorized Kimi review pair has no actionable finding. Independent acceptance2e9c86785fa045ee9993b87ece04ac6a passed both unchanged criteria. Clean committed release installed with backup, all four live stores ready, installed CLI preferred/alias readback equal; main/remote verified at landing commit. Parent/removal phase remain open for the separately landed and running TermAl reader.",
+    "completed_at": "2026-10-07T04:38:50.976263100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "36c60758f0d447caa68e96e6a31a1b2d": {
+        "activity_id": "36c60758f0d447caa68e96e6a31a1b2d",
+        "task_id": "01a101c9-0563-78c1-9002-2e2de0461551",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "15ee50228980480d9f1032ab76edd394"
+      },
+      "bee42cd7d77e45c582c3413c4cf36685": {
+        "activity_id": "bee42cd7d77e45c582c3413c4cf36685",
+        "task_id": "01a101c9-0563-78c1-9002-2e2de0461551",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d2afa15f55e042c19b56d15d5f6d350a"
+      }
+    }
+  }
+}

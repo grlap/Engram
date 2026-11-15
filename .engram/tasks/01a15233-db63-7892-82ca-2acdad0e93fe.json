@@ -1,0 +1,31 @@
+{
+  "id": "01a15233-db63-7892-82ca-2acdad0e93fe",
+  "external_ref": null,
+  "title": "Clarify the test-ref authority bullet: define the Merger role, Markdown-only inputs, and ref deletion versus force-push",
+  "outcome": "Clarify the test-ref authority bullet: define the Merger role, Markdown-only inputs, and ref deletion versus force-push",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md define or reference who holds the Engram::Merger role and how it is assigned, so the test-ref grant names a lawful holder",
+    "The test-ref bullet states whether a Markdown-only input can qualify as merge-ready (it has no compile or tests), or says test refs are only for gated inputs",
+    "The bullet states that the force-push prohibition covers updating an existing ref and does not forbid the mandated ref deletion, and what happens when a same-name ref already exists",
+    "Landed under the authority-text rule (both coordinators' concurrence, notice to Greg, final-diff audit)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "remote",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

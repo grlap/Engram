@@ -1,0 +1,28 @@
+{
+  "id": "01a0fc33-3424-7f51-8ca4-98b32bafe0f1",
+  "external_ref": null,
+  "title": "cli-and-mcp.md says an unreadable backup record is backup_io; the code and brief refuse it as backup_record_unreadable",
+  "outcome": "cli-and-mcp.md says an unreadable backup record is backup_io; the code and brief refuse it as backup_record_unreadable",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md says a backup record that exists but cannot be read is refused with backup_record_unreadable, and that backup_io covers record writes and removals and the lock file; the link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Fixed by the landing of w-76e601495068 (commit caaafac). cli-and-mcp.md now says that a record which exists but cannot be read is backup_record_unreadable, and that backup_io covers record writes, record removals and the lock file. The Note about concurrent reads is tracked in w-a560f4bc46c6.",
+  "completion": null
+}

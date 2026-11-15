@@ -1,0 +1,88 @@
+{
+  "id": "01a14639-5bce-7660-bb6b-76d10475fdcc",
+  "external_ref": null,
+  "title": "Clippy -D warnings fails on non-Windows: exchange execute functions are async with no await off Windows",
+  "outcome": "Clippy -D warnings fails on non-Windows: exchange execute functions are async with no await off Windows",
+  "acceptance": [
+    "`cargo clippy --all-targets --all-features -- -D warnings` passes for a non-Windows target (x86_64-unknown-linux-gnu) on the fixed tree, shown by a recorded run (Linux/WSL or cross-target check), with no #[allow] or cfg_attr allow of clippy::unused_async added.",
+    "execute and execute_config keep their Windows behaviour (the Windows exchange tests pass in the full gate) and their non-Windows path still returns RunError::UnsupportedPlatform, shown by the cross-target Clippy type-check plus an unchanged unsupported-platform code path"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "gate",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Non-Windows clippy -D warnings no longer fails with clippy::unused_async in exchange/mod.rs. A cfg(not(windows)) `mod process` stand-in with the Windows signature returns a ready UnsupportedPlatform future and never launches the command. execute and execute_config await it on every platform, with no lint suppression and Windows behaviour unchanged. The non-Windows test also covers execute_config. Evidence: a cross-target Linux clippy on the final tree (launcher run test-899e8340, input dc95f6e9), with a control that reproduced Greg's error on the unfixed base; full gate test-14cce9e5 12/12; three clean Codex+Claude review rounds; evaluation 2c069de4 and closure evaluation 2a16b721, both 2/2. Landed as da82b38 and installed as build 161a07236b34; all six live stores ready.",
+    "completed_at": "2026-10-18T00:08:45.132346400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0991a96739aa45609579b66657aa891c": {
+        "activity_id": "0991a96739aa45609579b66657aa891c",
+        "task_id": "01a14639-5bce-7660-bb6b-76d10475fdcc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0991a96739aa45609579b66657aa891c"
+      },
+      "2c0c04cff08c48c89354f3e5693f6f72": {
+        "activity_id": "2c0c04cff08c48c89354f3e5693f6f72",
+        "task_id": "01a14639-5bce-7660-bb6b-76d10475fdcc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2c0c04cff08c48c89354f3e5693f6f72"
+      },
+      "43f9fcfe6bc7449ea66de41945df907a": {
+        "activity_id": "43f9fcfe6bc7449ea66de41945df907a",
+        "task_id": "01a14639-5bce-7660-bb6b-76d10475fdcc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "43f9fcfe6bc7449ea66de41945df907a"
+      },
+      "7e96f2b195ba492095ee1ea308c3f50c": {
+        "activity_id": "7e96f2b195ba492095ee1ea308c3f50c",
+        "task_id": "01a14639-5bce-7660-bb6b-76d10475fdcc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "38a125c3c6504b039f13e8cc3ee489e3"
+      }
+    }
+  }
+}

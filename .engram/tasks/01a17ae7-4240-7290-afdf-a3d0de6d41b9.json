@@ -1,0 +1,60 @@
+{
+  "id": "01a17ae7-4240-7290-afdf-a3d0de6d41b9",
+  "external_ref": null,
+  "title": "Temporarily raise the search elapsed limit from 10 s to 60 s so team searches stop refusing",
+  "outcome": "Temporarily raise the search elapsed limit from 10 s to 60 s so team searches stop refusing",
+  "acceptance": [
+    "The default cooperative elapsed limit for one catalog search is 60 s; every other search limit and the one-worker non-blocking isolation are unchanged",
+    "docs/features/cli-and-mcp.md states the 60 s value and says it is temporary containment until the note search no longer decodes every note per call",
+    "Focused tests covering the search budget pass on the changed tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "containment",
+    "delivered",
+    "evaluation-pending",
+    "greg-directed"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a17ae7-5884-7e43-9def-e0934a2db689",
+  "disposal_reason": "Its temporary 60 s containment ended by design. Its own docs said \"temporary containment until note search no longer decodes every note per call\", and w-e0934a2db689 (commit e3ca0fc, \"Index public work note text for bounded search\") delivered that fix and returned the limit to 10 s as its criterion 3 requires. Current master 83093646 has elapsed = 10 s, so this item's criterion 1 can no longer be evaluated as passing on master. Found by Engram::Fable at about 15:20Z, 2026-10-30, when looking for a live post-restart evaluation candidate.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "4c3a9d69257a4c518f78ea46d749f0b2": {
+        "activity_id": "4c3a9d69257a4c518f78ea46d749f0b2",
+        "task_id": "01a17ae7-4240-7290-afdf-a3d0de6d41b9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "aa45dd7b074142c58f700ce32bacbacd"
+      },
+      "aa45dd7b074142c58f700ce32bacbacd": {
+        "activity_id": "aa45dd7b074142c58f700ce32bacbacd",
+        "task_id": "01a17ae7-4240-7290-afdf-a3d0de6d41b9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c0dc7832fb22404590ad93808aa873ef"
+      }
+    }
+  }
+}

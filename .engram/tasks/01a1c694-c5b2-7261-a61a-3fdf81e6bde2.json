@@ -1,0 +1,28 @@
+{
+  "id": "01a1c694-c5b2-7261-a61a-3fdf81e6bde2",
+  "external_ref": null,
+  "title": "Close the store before removing the temporary home in the ledger view-delta and custody test fixtures",
+  "outcome": "Close the store before removing the temporary home in the ledger view-delta and custody test fixtures",
+  "acceptance": [
+    "In src/storage/work/task_sync/ledger/view/delta_tests.rs and src/storage/work/task_sync/ledger/custody_tests.rs, each Fixture's store is dropped before its TempHome, by field order or an explicit Drop.",
+    "The affected ledger view-delta and custody tests run on Windows without OS error 32 cleanup warnings."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "test",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

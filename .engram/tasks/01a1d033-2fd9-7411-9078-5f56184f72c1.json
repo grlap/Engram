@@ -1,0 +1,53 @@
+{
+  "id": "01a1d033-2fd9-7411-9078-5f56184f72c1",
+  "external_ref": null,
+  "title": "Bring the repository design docs in line with the data-branch task-sync design",
+  "outcome": "Bring the repository design docs in line with the data-branch task-sync design",
+  "acceptance": [
+    "Every repository document that describes task-sync exchange (at least docs/architecture.md, docs/spec.md, docs/vision.md, docs/roadmap.md, docs/features/cross-host-task-sync.md, docs/features/git-task-sync.md, docs/features/sqlite-store.md and docs/features/README.md) agrees with the normative data-branch sections of git-task-sync.md and with the shipped code: task and evidence data on one long-lived orphan data branch per project, exchanged through the dedicated MAIN/.engram-data/ worktree; no passage prescribes code-branch task files, a linked-worktree sparse-checkout contract, a main-checkout or combined code/task merge, or gating mixed source/data commits together",
+    "Statements about resolved data commits match what the data-branch exchange code accepts, with file:line citations recorded on this item",
+    "The changeset touches only Markdown and passes the link check and a two-reviewer review"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "docs",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the standalone nine-Markdown task-sync design alignment on candidate 63ed3d70471e34cb114c4ef3bd012f1fadfac1da, tree27990f547cf100347ad7d810e2025c8cc1e42d41, parentAACB. Separate orphan data carrier/worktree, source/data identity and authority boundaries, exact resolved two-parent retry semantics, shipped versus deferred operations, and source citations are documented. Final committed-input link check b3d1 PASS with equal complete source identities; latest Codex17658 and Claude17659 whole-input reviews have no Low-or-higher findings, two informational Notes retained. Independent evaluation2281fe1a4c73449fb49e89afd05a9a7a is fresh PASS3/3 on this exact clean source. No push or landing performed. READY transfers to Merger11859; retain active candidate root and cited patch/review/run artifacts for that concrete integration/review-adoption need until the Merger confirms final carry/landing and releases them, then owner cleanup follows. Historical earlier patches/runs remain provenance for this integration and must be included in that release assessment.",
+    "completed_at": "2026-11-12T16:07:03.829311700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "809fd90723ea4c2bb6b298661c11c5a3": {
+        "activity_id": "809fd90723ea4c2bb6b298661c11c5a3",
+        "task_id": "01a1d033-2fd9-7411-9078-5f56184f72c1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1b8ebbf3212a4f8fbf817056037a05bf"
+      }
+    }
+  }
+}

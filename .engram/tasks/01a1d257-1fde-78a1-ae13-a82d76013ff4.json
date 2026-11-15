@@ -1,0 +1,29 @@
+{
+  "id": "01a1d257-1fde-78a1-ae13-a82d76013ff4",
+  "external_ref": null,
+  "title": "Retire the legacy-only Present{revision} named-root sighting once TermAl handles legacy-only roots explicitly",
+  "outcome": "Retire the legacy-only Present{revision} named-root sighting once TermAl handles legacy-only roots explicitly",
+  "acceptance": [
+    "named_root_sighting_read no longer reports Present{revision} for a legacy-only root (the B5 step split out of w-9fcb6cb2dd84), landed only after TermAl's evaluation admission and batch-gate member binding give a legacy-only root an explicit, agreed outcome, recorded here with TermAl's item and its landed and installed build",
+    "Historical stored sighting rows still read as stored; no compatibility shim is added; tests that only pinned the removed shape go with it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "cleanup",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

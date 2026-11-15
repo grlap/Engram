@@ -1,0 +1,26 @@
+{
+  "id": "01a08000-5e09-7521-9ce6-2eb1abbe6609",
+  "external_ref": null,
+  "title": "Record each quality gate at its completion rather than at the end of the block",
+  "outcome": "Record each quality gate at its completion rather than at the end of the block",
+  "acceptance": [
+    "the workflow documentation instructs recording a gate immediately after that gate finishes, with its own reference, before the next gate starts"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a08001-a712-7da0-a702-3def99edc69b",
+  "disposal_reason": "The stated cause was wrong. This item claimed gate results were batched to the end of the block, and the implementer established by fact that each gate was already recorded before the next started; the lost artifact was the single final response of one launcher spanning two long phases. Prompt recording was already in place and could not have prevented the loss, so this item asks for something already true. The superseding item states the real structure: shorten the span one response covers, and let the run record its own completion so the evidence does not depend on a response arriving at all.",
+  "completion": null
+}

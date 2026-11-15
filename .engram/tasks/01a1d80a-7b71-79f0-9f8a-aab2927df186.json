@@ -1,0 +1,46 @@
+{
+  "id": "01a1d80a-7b71-79f0-9f8a-aab2927df186",
+  "external_ref": null,
+  "title": "Document reusable evidence-based delivery procedures as portable skills",
+  "outcome": "Document reusable evidence-based delivery procedures as portable skills",
+  "acceptance": [
+    "A portable skill defines a single READY evidence manifest, evidence reuse across workspace recovery, a criterion-based rerun decision, and atomic acceptance criteria without project-specific names or commands",
+    "The team-coordination skill remains portable by delegating project-specific authority and cross-host rules to each repository's own instructions",
+    "The Markdown link check passes through the focused launcher on the changed tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "skills",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "17e7f1edf6234f87bebcefa433e782ba": {
+        "activity_id": "17e7f1edf6234f87bebcefa433e782ba",
+        "task_id": "01a1d80a-7b71-79f0-9f8a-aab2927df186",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "17e7f1edf6234f87bebcefa433e782ba"
+      }
+    }
+  }
+}

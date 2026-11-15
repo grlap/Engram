@@ -1,0 +1,54 @@
+{
+  "id": "01a1c9fd-e876-7143-847d-d92b1b1ba587",
+  "external_ref": null,
+  "title": "Preserve same-session mark authorship when reusing evaluations after reopen",
+  "outcome": "Imported evaluation eligibility recovers the same origin-qualified mark author as native evaluation when a task is reopened with its same-session mark unchanged.",
+  "acceptance": [
+    "A retained evaluation after reopening a task with an unchanged same-session mark uses the origin-qualified item's creation/revision mark history independently of current-run holder history, matching native authorship and ordering rules.",
+    "A behavioral regression covers an unaffiliated earlier-run mark author, completion/reopen and a valid new-run same-session evaluation, plus refusal when mark authorship is genuinely unavailable; restored/detached and genuinely changed marks retain their existing safety rules."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "greg-directed",
+    "review-fix",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserve origin-qualified item mark authorship across completion/reopen without widening current-run holder history. Added real native lifecycle regression and missing-history refusal. Exact bd5e candidate passed fmt, strict Clippy, targeted1/1, imported40/40 and native251/251 author checks; independent evaluation78a777a04d6947f7b5d6f6e71a8f3e69 passed both criteria. Parent owns combined review/full gate/landing.",
+    "completed_at": "2026-11-11T10:55:19.869708600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "dcde136bfe654ea9b1f53420337108a3": {
+        "activity_id": "dcde136bfe654ea9b1f53420337108a3",
+        "task_id": "01a1c9fd-e876-7143-847d-d92b1b1ba587",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "679ec530141b43d697336a7b2bd5103c"
+      }
+    }
+  }
+}

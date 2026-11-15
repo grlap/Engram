@@ -1,0 +1,62 @@
+{
+  "id": "01a0a5c7-3ba0-74a1-928d-2b82e9612427",
+  "external_ref": null,
+  "title": "Refuse dual live/retained SHM with a legal journal temp after RetainedMain before cleanup",
+  "outcome": "Refuse dual live/retained SHM with a legal journal temp after RetainedMain before cleanup",
+  "acceptance": [
+    "Independent activate and recover refuse with unchanged no-follow inventory including journal-publish.tmp."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a382-0b72-7803-8346-15c884db56ba",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against accepted evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:45:12.307442700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "aa286dde6123b442fd29e29f28de4ecf39ccfa0626d0ff7af43952cd02e616e6": {
+        "activity_id": "aa286dde6123b442fd29e29f28de4ecf39ccfa0626d0ff7af43952cd02e616e6",
+        "task_id": "01a0a5c7-3ba0-74a1-928d-2b82e9612427",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f6e58be1c491adb05936efc23937524e49caf679b4463b01a8140f97189f8afe"
+      },
+      "d659448ef14bd249a3511839946390f31f197c93e0a19bef53634234eb681f31": {
+        "activity_id": "d659448ef14bd249a3511839946390f31f197c93e0a19bef53634234eb681f31",
+        "task_id": "01a0a5c7-3ba0-74a1-928d-2b82e9612427",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d659448ef14bd249a3511839946390f31f197c93e0a19bef53634234eb681f31"
+      }
+    }
+  }
+}

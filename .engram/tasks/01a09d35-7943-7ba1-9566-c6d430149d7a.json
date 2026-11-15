@@ -1,0 +1,59 @@
+{
+  "id": "01a09d35-7943-7ba1-9566-c6d430149d7a",
+  "external_ref": null,
+  "title": "Align remaining review guidance entry points with adopted rules",
+  "outcome": "Align remaining review guidance entry points with adopted rules",
+  "acceptance": [
+    "development.md distinguishes adopted rules from pilot proposal and CLAUDE.md links the adopted section; doc links pass; scoped handoff to existing review parent"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered identical self-contained AGENTS.md and CLAUDE.md with full preserved rules; development guidance aligned; V9 combined gates and both reviews accepted. No publication performed.",
+    "completed_at": "2026-09-14T03:06:21.787297400Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "67ec600baa05fc4a3e73669e716f36b0201ccce6e76568841a047ea5b8d0574c": {
+        "activity_id": "67ec600baa05fc4a3e73669e716f36b0201ccce6e76568841a047ea5b8d0574c",
+        "task_id": "01a09d35-7943-7ba1-9566-c6d430149d7a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "67ec600baa05fc4a3e73669e716f36b0201ccce6e76568841a047ea5b8d0574c"
+      },
+      "8f734065a00df20a5538cb7f9a8a2e29a8755a261c654f73a4f183ae07fb48d9": {
+        "activity_id": "8f734065a00df20a5538cb7f9a8a2e29a8755a261c654f73a4f183ae07fb48d9",
+        "task_id": "01a09d35-7943-7ba1-9566-c6d430149d7a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ce4c715244b1774e59f4ef769e4945abb23585a8eed49c32b40c3cff9cbb7ea4"
+      }
+    }
+  }
+}

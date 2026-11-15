@@ -1,0 +1,230 @@
+{
+  "id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "external_ref": null,
+  "title": "Make incremental task-sync export and import proportional to the changed tasks instead of scanning all N",
+  "outcome": "Make incremental task-sync export and import proportional to the changed tasks instead of scanning all N",
+  "acceptance": [
+    "An ordinary export after a recorded exchange discovers the changed tasks from the indexed project-feed interval since that exchange (with a rebuildable affected-ids projection including tombstones for changes the feed doesn't attribute to a work item), and reads, decodes, writes or removes only those tasks' documents; unchanged task files are not read, rewritten or touched. project.json records the feed cut.",
+    "An ordinary incremental import goes through the Git commit path: the changed paths come from the diff of .engram/ between the last-applied source commit and the incoming commit, and only those blobs are read and decoded, plus project.json and the documents a change references. Unchanged task documents are not opened or parsed; deletions are applied. A plain directory import without that commit context is either bootstrap (empty basis) or an explicit, named rebuild.",
+    "A full scan happens only for bootstrap or an explicit, named rebuild. A missing, gapped, stale or inconsistent cursor or basis refuses with a named reason, never a silent full scan. Baseline and membership history come from an indexed per-task projection, not by loading every historical complete tree.",
+    "Retry and replay stay exact; a repeat of a completed exchange resolves its recorded receipt before reading any payload (zero document reads), returning that exchange's historical receipt even if local state has moved on.",
+    "The model-A path uses the same changed set; per-sync task-document I/O and decoding grow with the number of changes, not the project size or its history.",
+    "Tests on a fixture of at least 2,000 tasks with history (5 changed, 1 added, 1 deleted) count documents read, decoded and written, and graph nodes visited. Document I/O equals the change set, and graph validation visits only the touched closure, for export, import, repeat no-op and the reverse direction. New SQL structures are rebuildable projections; new immutable delta-exchange record kinds and transitions are append-only additions to the existing ledger, and no existing durable record changes shape or meaning."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "0862f246170d4292a58123f4f61a0017": {
+        "activity_id": "0862f246170d4292a58123f4f61a0017",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0862f246170d4292a58123f4f61a0017"
+      },
+      "154d61c8e0104c74b4387110558b87f1": {
+        "activity_id": "154d61c8e0104c74b4387110558b87f1",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "154d61c8e0104c74b4387110558b87f1"
+      },
+      "1b7c7a7155d440c5a047a69a7dc5725c": {
+        "activity_id": "1b7c7a7155d440c5a047a69a7dc5725c",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1b7c7a7155d440c5a047a69a7dc5725c"
+      },
+      "28939f41305d40ed9723c52459d86a07": {
+        "activity_id": "28939f41305d40ed9723c52459d86a07",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "28939f41305d40ed9723c52459d86a07"
+      },
+      "2bed177e3a5444a5980e645c946a1bb9": {
+        "activity_id": "2bed177e3a5444a5980e645c946a1bb9",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2bed177e3a5444a5980e645c946a1bb9"
+      },
+      "3b61fa53efbd4f298e3d92d80081549a": {
+        "activity_id": "3b61fa53efbd4f298e3d92d80081549a",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3b61fa53efbd4f298e3d92d80081549a"
+      },
+      "4727555e548544a7bf6e4ad866dafa00": {
+        "activity_id": "4727555e548544a7bf6e4ad866dafa00",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4727555e548544a7bf6e4ad866dafa00"
+      },
+      "4b9b9005185040729f90d0e6c56d2a4e": {
+        "activity_id": "4b9b9005185040729f90d0e6c56d2a4e",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4b9b9005185040729f90d0e6c56d2a4e"
+      },
+      "685b62277043466e8317073791913cd8": {
+        "activity_id": "685b62277043466e8317073791913cd8",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "685b62277043466e8317073791913cd8"
+      },
+      "6996086a367c4467a5e37c7c08acc22e": {
+        "activity_id": "6996086a367c4467a5e37c7c08acc22e",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6996086a367c4467a5e37c7c08acc22e"
+      },
+      "6a59bbae229741b289944c424671ad48": {
+        "activity_id": "6a59bbae229741b289944c424671ad48",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6a59bbae229741b289944c424671ad48"
+      },
+      "af323f4206b343b984cb07f4776d7bde": {
+        "activity_id": "af323f4206b343b984cb07f4776d7bde",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "af323f4206b343b984cb07f4776d7bde"
+      },
+      "b6ae00854e3e48ce9e0884d8700e400b": {
+        "activity_id": "b6ae00854e3e48ce9e0884d8700e400b",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b6ae00854e3e48ce9e0884d8700e400b"
+      },
+      "ce0ae916cf264bf99eaa271092b5c79c": {
+        "activity_id": "ce0ae916cf264bf99eaa271092b5c79c",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ce0ae916cf264bf99eaa271092b5c79c"
+      },
+      "db9554fba56d4f08912d8915d9f70cad": {
+        "activity_id": "db9554fba56d4f08912d8915d9f70cad",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "db9554fba56d4f08912d8915d9f70cad"
+      },
+      "ea641ab4b62440a39a425c0688b7f33a": {
+        "activity_id": "ea641ab4b62440a39a425c0688b7f33a",
+        "task_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ea641ab4b62440a39a425c0688b7f33a"
+      }
+    }
+  }
+}

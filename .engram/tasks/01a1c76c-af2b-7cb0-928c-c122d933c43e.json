@@ -1,0 +1,53 @@
+{
+  "id": "01a1c76c-af2b-7cb0-928c-c122d933c43e",
+  "external_ref": null,
+  "title": "Validate historical evidence and delta receipts without rehashing retained payloads",
+  "outcome": "Ordinary exchange ledger loads validate historical pack, delta and successor structure and links without rerunning payload admission or recomputing historical fingerprints; new writes still validate the selected payload.",
+  "acceptance": [
+    "Historical full ledger loads validate pack receipt, delta and successor structure and exact canonical links without reconstructing evidence pack bodies, rerunning selected-document admission or recomputing historical payload fingerprints; stored original bytes, identifiers and fingerprints remain unchanged.",
+    "New evidence, delta and successor admission still validates the current frozen payload selection before writing; missing or mismatched canonical links, envelope, operation and typed-link inconsistencies still refuse, with live authority unchanged.",
+    "Focused behavioral checks distinguish historical metadata validation from fresh malformed payload refusal and cover changed writer/load, rejection and rebuild paths on the exact authored candidate; the complete READY package records commands, outcomes, source identity checks and artifact locators."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Historical evidence, delta and successor ledger reads now validate structure and exact canonical links without rehashing retained payloads; new admission retains full selected-payload checks. Completed on fresh independent evaluation 7aafff6076e641d399711ff073713373, all 3 criteria passed, exact bdc4adcfd7987892f5ccaf4aa5110444b70682f3 / tree 60d234da86e792ad5903524c300e21214775ae7a.",
+    "completed_at": "2026-11-11T00:24:55.560409200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c4555fb675614e40b2e91aea152c71fe": {
+        "activity_id": "c4555fb675614e40b2e91aea152c71fe",
+        "task_id": "01a1c76c-af2b-7cb0-928c-c122d933c43e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8e26b9a6fe224da7add16d89697d188f"
+      }
+    }
+  }
+}

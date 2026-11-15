@@ -1,0 +1,29 @@
+{
+  "id": "01a193b9-3fe5-76d1-a078-0288a274df0d",
+  "external_ref": null,
+  "title": "Admit or disclose a notes-enabled exchange of an empty project",
+  "outcome": "Admit or disclose a notes-enabled exchange of an empty project",
+  "acceptance": [
+    "An exchange whose binding profile includes notes on a project with no tasks either succeeds in both directions, using the folder validation and encoding consistently for exchange trees and local bases, or is refused with a stated reason documented as a limit in docs/features/git-task-sync.md",
+    "A test covers the incoming {notes_included: true, tasks: []} candidate and the outgoing basis of an empty notes-enabled store",
+    "docs/features/git-task-sync.md's 'Internal exchange foundation' section describes the later reconciled import as target behaviour, not in the present tense"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1c62d-395a-71f0-a31c-7ee27ec522f8",
+  "external_ref": null,
+  "title": "Measure and bound native-reader foreign-partition lookup overhead",
+  "outcome": "Measure and bound native-reader foreign-partition lookup overhead",
+  "acceptance": [
+    "Measure representative native read/append costs with and without admitted imports using meaningful counters or justified measurements.",
+    "If material overhead exists, reduce it without losing foreign-original exclusion or missing-projection detection; record decision and actual evidence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

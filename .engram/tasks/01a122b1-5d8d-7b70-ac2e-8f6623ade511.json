@@ -1,0 +1,63 @@
+{
+  "id": "01a122b1-5d8d-7b70-ac2e-8f6623ade511",
+  "external_ref": null,
+  "title": "Backup restore --abandon-pending fails with os error 3 when its abandon record path reaches the Windows MAX_PATH",
+  "outcome": "Backup restore --abandon-pending fails with os error 3 when its abandon record path reaches the Windows MAX_PATH",
+  "acceptance": [
+    "tests/backup_restore_cli.rs a_pending_restore_is_abandoned_by_copy_without_contacting_the_target passes when the store home sits under a deep root (the failing full path was exactly 260 characters), via the same long-path handling w-19d79e06d713 applied to the staged copy, or shorter record names, with a deterministic test at that depth"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "backup",
+    "gate",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed Windows MAX_PATH abandonment archives using one native record directory for tempfile creation and no-clobber persistence. Deterministic Unicode CLI/library regressions at 260 and400 UTF-16 units pass; logical successful receipts, envelope, collision, cleanup and pending-clear semantics preserved. Exact full gate and independent Codex/Claude reviews passed; observed independent acceptance1/1. Four Low concerns filed independently. Installed readiness all four stores ready.",
+    "completed_at": "2026-10-10T03:47:15.344385Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5ef398f4319249b683f899b6b41c9a82": {
+        "activity_id": "5ef398f4319249b683f899b6b41c9a82",
+        "task_id": "01a122b1-5d8d-7b70-ac2e-8f6623ade511",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5ef398f4319249b683f899b6b41c9a82"
+      },
+      "ba1465b502c543bf8c6846660de7bc5a": {
+        "activity_id": "ba1465b502c543bf8c6846660de7bc5a",
+        "task_id": "01a122b1-5d8d-7b70-ac2e-8f6623ade511",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e2c181a499b54906b08560f7d80d1b0a"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a06fb4-6bf8-73b1-9d79-e3078b95944c",
+  "external_ref": null,
+  "title": "Keep proposed-parent guidance distinct from terminal-parent follow-up refusal",
+  "outcome": "Keep proposed-parent guidance distinct from terminal-parent follow-up refusal",
+  "acceptance": [
+    "A valid restored Proposed parent receives accurate non-open guidance without terminal follow-up wording; completed, cancelled and superseded parents keep the new typed remedy and all refused child adds leave the graph unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06f7d-7e4f-74f3-82cd-c975bac41ece",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Proposed parents now direct inspection, terminal parents retain follow-up guidance; typed no-write regression passes without UUID leakage.",
+    "completed_at": "2026-09-05T04:27:18.345881700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "077da13a632ad7754499b1a38f50b026ab55403897219b3305524db0e069c968": {
+        "activity_id": "077da13a632ad7754499b1a38f50b026ab55403897219b3305524db0e069c968",
+        "task_id": "01a06fb4-6bf8-73b1-9d79-e3078b95944c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cbe1858a8aaddf178bc3816436225d586a0051326a2479d0180677e5d3ec571f"
+      }
+    }
+  }
+}

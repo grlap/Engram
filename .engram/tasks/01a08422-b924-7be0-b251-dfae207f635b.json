@@ -1,0 +1,50 @@
+{
+  "id": "01a08422-b924-7be0-b251-dfae207f635b",
+  "external_ref": null,
+  "title": "Validate migrated historical pending pages without rejecting old omitted attribution",
+  "outcome": "Validate migrated historical pending pages without rejecting old omitted attribution",
+  "acceptance": [
+    "Phoenix snapshot imports and old pending pages resume without rewriting original bytes or weakening explicit attribution mismatch refusals"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08329-3195-7b23-ae2d-cdd3438bc8d6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Exact-page migration attribution audit derives only genuinely omitted own-session bits from verified canonical source. Explicit mismatches and non-audited native pages still refuse. Focused 28 tests, negative control, final nine gates, full Phoenix import and actual pending replay plus ack passed; original bytes and token preserved. Review accepted and installed by Advisor.",
+    "completed_at": "2026-09-09T04:28:15.623239500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2a9dc52e49cb174a508db77666ad6ee133aa224cfd5b33affdedf66684b96aa1": {
+        "activity_id": "2a9dc52e49cb174a508db77666ad6ee133aa224cfd5b33affdedf66684b96aa1",
+        "task_id": "01a08422-b924-7be0-b251-dfae207f635b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6bdebbfe9d9d05e753ab8321e7ad0d002a32f2234595497a4f62e1d0e194d95c"
+      }
+    }
+  }
+}

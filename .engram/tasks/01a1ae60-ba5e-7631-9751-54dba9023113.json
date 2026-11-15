@@ -1,0 +1,83 @@
+{
+  "id": "01a1ae60-ba5e-7631-9751-54dba9023113",
+  "external_ref": null,
+  "title": "Preserve parenthesized submodule paths in refusal diagnostics",
+  "outcome": "Uninitialized or conflicted submodules whose paths end in parentheses are refused with their complete path, without mistaking path text for Git's revision annotation.",
+  "acceptance": [
+    "A recursive submodule status row for an uninitialized child named 'child (vendor)' is refused with the entire name and the uninitialized reason.",
+    "Conflicted rows retain the entire parenthesized path, including a path beginning with a space, while initialized rows still remove only their Git revision annotation.",
+    "Parser regressions cover these diagnostic cases without adding file/index scans or changing successful admission behavior."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 1,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 2,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 3,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserve complete parenthesized submodule paths in uninitialized/conflicted refusal diagnostics; the reviewed and fully gated candidate is pushed to origin/master, installed, and ready across all six live stores.",
+    "completed_at": "2026-11-06T06:53:28.819909200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f91d8bc34492478eaaa982ad4960b060": {
+        "activity_id": "f91d8bc34492478eaaa982ad4960b060",
+        "task_id": "01a1ae60-ba5e-7631-9751-54dba9023113",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7d146fa8a3e9450fab0d15b782555b5e"
+      },
+      "fa106b298d584ce7af66cdd77b7f63c7": {
+        "activity_id": "fa106b298d584ce7af66cdd77b7f63c7",
+        "task_id": "01a1ae60-ba5e-7631-9751-54dba9023113",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c66b1cef14794b56ac10e4d96bc31a78"
+      }
+    }
+  }
+}

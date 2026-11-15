@@ -1,0 +1,28 @@
+{
+  "id": "01a1d3ad-0cf8-73b1-bf86-1f4e71ff4687",
+  "external_ref": null,
+  "title": "Use the pre-event restored snapshot when rendering first planning revisions",
+  "outcome": "Keep the first local planning revision's before-fields stable after a later imported completion",
+  "acceptance": [
+    "The first local Revised event of an imported task compares with a restored snapshot preceding that event, rather than a later CompletionReported record",
+    "A behavior regression checks history and stored delivery summaries across import, local revision and later reported completion"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

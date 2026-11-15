@@ -1,0 +1,28 @@
+{
+  "id": "01a1ca0d-c569-71b1-9e5f-6b20a666c7a4",
+  "external_ref": null,
+  "title": "Update the acceptance-evaluation notice to reflect enabled project policies",
+  "outcome": "The acceptance-evaluation guide no longer says evaluation is temporarily off in projects where Greg enabled it.",
+  "acceptance": [
+    "The opening notice in docs/features/acceptance-evaluation.md describes current project-specific activation accurately, preserving the distinction between Engram/TermAl and other projects.",
+    "Documentation does not grant policy activation authority or imply evaluation is enabled for every project."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

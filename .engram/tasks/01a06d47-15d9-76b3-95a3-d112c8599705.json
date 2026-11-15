@@ -1,0 +1,53 @@
+{
+  "id": "01a06d47-15d9-76b3-95a3-d112c8599705",
+  "external_ref": null,
+  "title": "Validate the keyed project-memory shape on graph save exactly as doctor does; exercise the restricted redaction branch at unit level and document the non-validating projection helper",
+  "outcome": "Validate the keyed project-memory shape on graph save exactly as doctor does; exercise the restricted redaction branch at unit level and document the non-validating projection helper",
+  "acceptance": [
+    "a store whose keyed memory doctor calls invalid is refused by graph save; the redaction unit test covers snapshot_active_memory directly"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered keyed-memory doctor/graph-save canonical-shape regression, preserved direct redaction coverage and documented the projection-only helper. Fixed fixture FTS binding and MCP import host-context isolation. All nine required final gates passed; both independent reviews clean on unchanged frozen input. Acceptance unchanged; no Git publication.",
+    "completed_at": "2026-09-16T23:38:54.544707100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8dc31727e531445f639708ce5bc648b7f96d685b6cd72ac1668a1072e9100687": {
+        "activity_id": "8dc31727e531445f639708ce5bc648b7f96d685b6cd72ac1668a1072e9100687",
+        "task_id": "01a06d47-15d9-76b3-95a3-d112c8599705",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8e3b4b382a1da0aa3b9d925fc293b02f1187c856ddf2686a3e4f62fe6513e89e"
+      }
+    }
+  }
+}

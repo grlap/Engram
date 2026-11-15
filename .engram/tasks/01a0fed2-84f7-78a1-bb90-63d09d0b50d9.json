@@ -1,0 +1,27 @@
+{
+  "id": "01a0fed2-84f7-78a1-bb90-63d09d0b50d9",
+  "external_ref": null,
+  "title": "backup push panics on Instant overflow for a capture deadline near u64::MAX",
+  "outcome": "backup push panics on Instant overflow for a capture deadline near u64::MAX",
+  "acceptance": [
+    "`engram backup push --capture-deadline-secs 18446744073709551615` does not panic: a deadline too large for the clock is treated as no deadline for the preparation of the compressed file, as capture_store already treats it, and a test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "duplicate of w-6d63c447d70e; criterion carried over",
+  "completion": null
+}

@@ -1,0 +1,56 @@
+{
+  "id": "01a092b8-713f-7da2-b34b-c6d2b77f310e",
+  "external_ref": null,
+  "title": "Correct the host delivery acknowledgement recovery instruction",
+  "outcome": "An invalid ACK gives a recoverable host procedure that does not implicitly consume the lost page; existing delivery semantics stay unchanged.",
+  "acceptance": [
+    "ACK P can stage P+1; repeated ACK P cannot confirm P+1; explicit ACK P+1 advances it, while no-ACK advancement retains its existing contract.",
+    "Focus-only core next observes confirmed/pending without staging or ACK; ACK of confirmed replays identical retained payload/token/through despite later data.",
+    "Only ACK recovery remedy, host docs and regressions change; implicit ACK and public API remain unchanged.",
+    "Recovery serializes cursor-read, replay and ACK against advancing next and focus changes for the same session; no concurrent exact replay promise.",
+    "Remedy and both feature briefs plus host checklist describe the actual recovery commands and distinguish replayed changes from dynamic response sections.",
+    "Wrong cursor and matching pending cursor with wrong token refuse while preserving confirmed cursor and retained pending page."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "host-protocol",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected invalid-ACK recovery instructions for agents and hosts, synchronized all direct docs, and verified state-preserving replay regressions with clean final review.",
+    "completed_at": "2026-09-12T00:58:38.157451800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "28c5c53c8560a0c7764d00e7206517fadbb0397dd8dfce9645b8ca3b050eb011": {
+        "activity_id": "28c5c53c8560a0c7764d00e7206517fadbb0397dd8dfce9645b8ca3b050eb011",
+        "task_id": "01a092b8-713f-7da2-b34b-c6d2b77f310e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "76418b29f710329bb05fae6c46ca37c365aec34a29dec0ace80d63459124d1b3"
+      }
+    }
+  }
+}

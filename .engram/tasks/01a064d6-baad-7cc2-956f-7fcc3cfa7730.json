@@ -1,0 +1,79 @@
+{
+  "id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "external_ref": null,
+  "title": "Reduce completion preflight to refusal-only replay",
+  "outcome": "Keyless completion retries always recompute after a refusal, while committed success replay remains stable and the store schema is unchanged.",
+  "acceptance": [
+    "A cancelled and waived required child lets the next parent completion succeed instead of replaying the prior refusal.",
+    "A newly sealed required child lets the next parent completion succeed.",
+    "Explicit completion targets are checked before replay.",
+    "Parent status shows the child's real lifecycle and a runnable remedy.",
+    "Sibling activity does not perturb successful replay identity.",
+    "The slice adds no tables, triggers, counters, or integrity-replay machinery."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered by 1d04b09 (refusals recomputed, never replayed; committed success replays by target; disposed child named with a runnable --waive; no tables, triggers, counters, or integrity-replay machinery). Children: two completed with the slice, w-15eb69149398 closed as delivered, w-aaad5daabe1f cancelled and waived as a pure refactor, and the remaining three (prerelease branch removal, two-connection basis-refresh CAS tests, expired-offer sweep rollback docs and regression) closed in review batch C.",
+    "completed_at": "2026-09-03T22:55:03.506359300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0c3d98c219e41fb42e5ce5b53668c421cbbad1b10355a6c904ffd44768a7deec": {
+        "activity_id": "0c3d98c219e41fb42e5ce5b53668c421cbbad1b10355a6c904ffd44768a7deec",
+        "task_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2b24cbe947687bc3501c2e474dc809fe1df0657a76766a3641db5fd6431ff209"
+      },
+      "12821c794ef562b4ddb6f5b3f510290a308077419ad41982aa07ae86cf968c3c": {
+        "activity_id": "12821c794ef562b4ddb6f5b3f510290a308077419ad41982aa07ae86cf968c3c",
+        "task_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "12821c794ef562b4ddb6f5b3f510290a308077419ad41982aa07ae86cf968c3c"
+      },
+      "2a53bad7667ff4b17d600452fe8e798d3930ce6ecfbf07ea3b86f8e3a4a8ea2b": {
+        "activity_id": "2a53bad7667ff4b17d600452fe8e798d3930ce6ecfbf07ea3b86f8e3a4a8ea2b",
+        "task_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2a53bad7667ff4b17d600452fe8e798d3930ce6ecfbf07ea3b86f8e3a4a8ea2b"
+      }
+    }
+  }
+}

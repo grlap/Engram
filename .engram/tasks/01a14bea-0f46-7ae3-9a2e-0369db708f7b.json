@@ -1,0 +1,51 @@
+{
+  "id": "01a14bea-0f46-7ae3-9a2e-0369db708f7b",
+  "external_ref": null,
+  "title": "Update the cross-host task-sync brief to show its confirmed design status",
+  "outcome": "Update the cross-host task-sync brief to show its confirmed design status",
+  "acceptance": [
+    "The cross-host task-sync brief distinguishes jointly confirmed wording from separately authorized implementation and rollout, using fresh joint concurrence for the changed brief bytes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the jointly concurred task-sync clarity correction: attributed design/implementation status, local reconciliation glossary, unambiguous TermAl hub and platform verification for all participating Engram hosts.",
+    "completed_at": "2026-10-17T22:58:31.091288400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f60165b7bd654ab4b6588482ac74da38": {
+        "activity_id": "f60165b7bd654ab4b6588482ac74da38",
+        "task_id": "01a14bea-0f46-7ae3-9a2e-0369db708f7b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d0dadf9f4db7474cac3b0b5a236522e3"
+      }
+    }
+  }
+}

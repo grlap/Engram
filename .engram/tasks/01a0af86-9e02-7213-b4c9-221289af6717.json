@@ -1,0 +1,52 @@
+{
+  "id": "01a0af86-9e02-7213-b4c9-221289af6717",
+  "external_ref": null,
+  "title": "Verification projection consistency compares the exact canonical result word",
+  "outcome": "Verification projection consistency compares the exact canonical result word",
+  "acceptance": [
+    "classify_citation compares the canonical VerificationResult's serialized word with the verification_result column exactly, so a canonical Failed with an indeterminate or NULL column, and a canonical Indeterminate with a failed column, refuse the record as an invalid projection; tests cover each with the run feed head and newest evaluation unchanged, and the consistent cases still classify"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "classify_citation compares the canonical result's serialized word with the verification_result column exactly; NULL or any other variant refuses as InvalidWorkProjection. Pinned by verification_projection_mismatches_refuse_exactly (RED logs/25, GREEN logs/26; final sequence logs/27 all pass). R10 wording updated.",
+    "completed_at": "2026-09-17T13:39:14.685168800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "81f0d1730da481c4591be4ff09e09693ef52479535c65fe8fb6234a4cf528edb": {
+        "activity_id": "81f0d1730da481c4591be4ff09e09693ef52479535c65fe8fb6234a4cf528edb",
+        "task_id": "01a0af86-9e02-7213-b4c9-221289af6717",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b41e930b95a159fd1a967cb77780de80ad1ec77c84c177b409eb654edc558204"
+      }
+    }
+  }
+}

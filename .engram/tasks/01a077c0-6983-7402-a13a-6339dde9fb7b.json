@@ -1,0 +1,51 @@
+{
+  "id": "01a077c0-6983-7402-a13a-6339dde9fb7b",
+  "external_ref": null,
+  "title": "Add audited external references to work items",
+  "outcome": "Add audited external references to work items",
+  "acceptance": [
+    "status_resume_external_reference_is_audited_and_searchable passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "phoenix",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0775d-7936-7342-b9cb-b0fc0dc6b75d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Audited external linkage is implemented and searchable, with absent-field canonical identity and snapshot roundtrip covered.",
+    "completed_at": "2026-09-06T19:14:21.207585800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9cce5fdb25e5d476be34618cee3851322a10ebbf4eb221eb87ec98a88dc38407": {
+        "activity_id": "9cce5fdb25e5d476be34618cee3851322a10ebbf4eb221eb87ec98a88dc38407",
+        "task_id": "01a077c0-6983-7402-a13a-6339dde9fb7b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f09e51ee62942db839c2a13df84313e3da57238005db52eb227f53274e878f0e"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a1b1e8-5c8b-7031-876c-9afab8fada76",
+  "external_ref": null,
+  "title": "Build the engram binary in the review-integrity CI workflow before running the launcher tests",
+  "outcome": "The GitHub \"Review integrity helper\" workflow passes on ubuntu, macOS and Windows because it builds the engram binary that the launcher's committed-input tests call",
+  "acceptance": [
+    "`.github/workflows/review-freeze.yml` installs the Rust toolchain and builds `target/debug/engram` (as the launcher tests expect) before `node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs`, reusing the same toolchain and cache actions as ci.yml.",
+    "From a clean checkout of the candidate, running the workflow's steps in order (`cargo build --bin engram`, then the two node test commands) passes on a host, with no test skipped, loosened or deleted.",
+    "The local full gate is unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "ci",
+    "gate",
+    "test-infra"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Built Engram before review-integrity CI's existing Node suite; landed the reviewed CI contribution with the shared source-reader candidate and installed the exact gated build. Windows workflow steps and combined full gate passed; six live stores ready. Platform-specific cases accounted for under Greg's clarification.",
+    "completed_at": "2026-11-06T21:50:22.548947Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7ee50c172aa34f21a8ef49b3bcbb9c25": {
+        "activity_id": "7ee50c172aa34f21a8ef49b3bcbb9c25",
+        "task_id": "01a1b1e8-5c8b-7031-876c-9afab8fada76",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b724290cc9e54c379c8627ad502c9da3"
+      }
+    }
+  }
+}

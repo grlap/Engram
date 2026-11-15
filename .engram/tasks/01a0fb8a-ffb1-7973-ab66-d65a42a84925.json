@@ -1,0 +1,29 @@
+{
+  "id": "01a0fb8a-ffb1-7973-ab66-d65a42a84925",
+  "external_ref": null,
+  "title": "Align behavioral-control-plane 5b with whether an unlocated change breaks an unadmitted repeat under a named root",
+  "outcome": "Align behavioral-control-plane 5b with whether an unlocated change breaks an unadmitted repeat under a named root",
+  "acceptance": [
+    "a test pins the chosen behavior for A, watcher-only, A under a bound named root",
+    "behavioral-control-plane.md section 5b and the doc comment on newest_change_repeated_on state the same rule for an unlocated change between an unadmitted report and its anchor under a named root (either it breaks the repeat, or the named root's unknown-change rule is named as the reason it does not)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

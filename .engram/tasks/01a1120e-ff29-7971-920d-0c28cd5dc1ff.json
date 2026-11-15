@@ -1,0 +1,53 @@
+{
+  "id": "01a1120e-ff29-7971-920d-0c28cd5dc1ff",
+  "external_ref": null,
+  "title": "Assess known token overhead using available evidence",
+  "outcome": "Provide a lightweight account of known avoidable overhead and useful evidence from completed optimizations, without delaying fixes for difficult token measurement.",
+  "acceptance": [
+    "Summarize concrete known overhead in recovery, coordination and tool output using representative existing examples, with evidence locators.",
+    "Record available cheap comparisons, such as payload bytes or message counts, while distinguishing estimates from provider token usage; exact token totals and new instrumentation are not required.",
+    "Identify remaining optimization opportunities and measurement gaps without making measurement a prerequisite for the other token-efficiency tasks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered evidence-linked assessment of recovery, coordination and tool-output overhead. Independently reproduced archived byte comparisons; separated actual captures, synthetic examples and candidate message avoidance from unmeasured provider-token and model-turn savings. Identified concrete next optimizations without new instrumentation or weakened gates. Independent evaluation93313e78dfe0472b891a8eddfbd72f4e passed all3 criteria on fresh basis. Read-only work; no source changes or new test runs.",
+    "completed_at": "2026-10-07T05:36:57.616707600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6ca0a22aa3b340189bc10f3b3d65ca53": {
+        "activity_id": "6ca0a22aa3b340189bc10f3b3d65ca53",
+        "task_id": "01a1120e-ff29-7971-920d-0c28cd5dc1ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0ac2c90ede9344fcac7f5ba4d3308a44"
+      }
+    }
+  }
+}

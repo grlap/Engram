@@ -1,0 +1,68 @@
+{
+  "id": "01a0c0ab-fdbb-76d0-8e8b-d6c0d1e82fc4",
+  "external_ref": null,
+  "title": "Independently test record-link import mapping completeness",
+  "outcome": "Independently test record-link import mapping completeness",
+  "acceptance": [
+    "A runtime schema inventory independently checks applicable record-link columns against explicit RENAMED_COLUMNS destinations or justified unchanged/derived exclusions.",
+    "Canonical bytes and ids remain unchanged; ambiguous names and unknown/missing columns still refuse; required gates and paired review pass.",
+    "The import regression asserts the exact exercised mapping count instead of only a nonzero floor and fails when an applicable mapping is omitted."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "identity",
+    "legacy",
+    "migration",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added independent migration-mapping coverage that derives the current record-link inventory, proves every applicable legacy column has exactly one explicit mapping, verifies copied and populated mappings are exercised, and requires exact rebuilt-projection exclusion reasons. Combined gates and paired review passed.",
+    "completed_at": "2026-09-21T07:14:22.404290900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "932efc281366471e9ae0ef38f2acfbf0": {
+        "activity_id": "932efc281366471e9ae0ef38f2acfbf0",
+        "task_id": "01a0c0ab-fdbb-76d0-8e8b-d6c0d1e82fc4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "932efc281366471e9ae0ef38f2acfbf0"
+      },
+      "ec808bf8e8d2423280c43f8ee00b0d7c": {
+        "activity_id": "ec808bf8e8d2423280c43f8ee00b0d7c",
+        "task_id": "01a0c0ab-fdbb-76d0-8e8b-d6c0d1e82fc4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d33c31f3ee304c9f9d0dadbdb4c5e306"
+      }
+    }
+  }
+}

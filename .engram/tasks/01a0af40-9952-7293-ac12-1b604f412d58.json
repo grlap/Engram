@@ -1,0 +1,53 @@
+{
+  "id": "01a0af40-9952-7293-ac12-1b604f412d58",
+  "external_ref": null,
+  "title": "The evaluate word fits its finished receipt with the shared strict budget rule and a bounded row-free envelope",
+  "outcome": "The evaluate word fits its finished receipt with the shared strict budget rule and a bounded row-free envelope",
+  "acceptance": [
+    "the evaluate word measures its finished receipt, including effective_session_id, with agent_receipt_fits (strictly under the agent budget) while shedding verdict rows, and never returns a row-free receipt it did not measure as fitting",
+    "the service preflight leaves a documented reserve for the word envelope so the row-free word receipt is bounded by construction; a test measures the row-free word overhead (lines, guidance, session metadata) on a maximal fixture and asserts it stays under the reserve, and the many-criteria verbs test asserts strict < for JSON and text"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The evaluate word measures its finished receipt (effective_session_id included) with the shared strict agent_receipt_fits, sheds verdict rows then reminders then extra next commands, and never refuses after the commit; the service preflight fits under the budget minus EVALUATE_WORD_RESERVE, whose derivation from admitted field limits at worst-case escaping is written on the constant and pinned by the_reserve_covers_the_derived_word_envelope (maximal envelope built from a real receipt after asserting each assumed bound), with the_word_envelope_stays_within_its_reserve as a regression sample and the many-criteria test tightened to strict <. GREEN logs/20 and /22.",
+    "completed_at": "2026-09-17T12:29:16.286793Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8c38697311032a73f13165e4208515dfc27c5ce4a006c8dce72a620c20b75a69": {
+        "activity_id": "8c38697311032a73f13165e4208515dfc27c5ce4a006c8dce72a620c20b75a69",
+        "task_id": "01a0af40-9952-7293-ac12-1b604f412d58",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1f8e11528bb1f050fa3e159b9f0bcc54136eb69665a034ba6228674ccf00924b"
+      }
+    }
+  }
+}

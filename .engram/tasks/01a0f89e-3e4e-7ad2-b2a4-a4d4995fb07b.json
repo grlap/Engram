@@ -1,0 +1,50 @@
+{
+  "id": "01a0f89e-3e4e-7ad2-b2a4-a4d4995fb07b",
+  "external_ref": null,
+  "title": "The MCP dogfood docs describe a slow call's immediate unavailable line and partial phase records",
+  "outcome": "The MCP dogfood docs describe a slow call's immediate unavailable line and partial phase records",
+  "acceptance": [
+    "The dogfood paragraph of docs/features/cli-and-mcp.md says that a slow call whose phase record has not arrived prints 'unavailable (record not yet received)' at once and its record when it arrives, and that a record in a state that did not time the whole call (evicted, incomplete, cancelled) reads unavailable"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The dogfood paragraph of docs/features/cli-and-mcp.md now says:\n- a slow call whose record has not arrived prints 'unavailable (record not yet received)' at once, then its record when it arrives;\n- a record that never comes reads unavailable at close;\n- an evicted, incomplete or cancelled record reads 'unavailable (record STATE)' with its fields.\nGate 9/9, the pair was clean, and the evaluation passed. Landed as 242249f and installed as build 5f72edbf.",
+    "completed_at": "2026-10-01T22:47:40.875500500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5f5e137194494aeca2b4be6c621fe6ec": {
+        "activity_id": "5f5e137194494aeca2b4be6c621fe6ec",
+        "task_id": "01a0f89e-3e4e-7ad2-b2a4-a4d4995fb07b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "755ce73d14d14f00a06db256992e15fe"
+      }
+    }
+  }
+}

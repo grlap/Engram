@@ -1,0 +1,62 @@
+{
+  "id": "01a07da8-04ee-7571-97d6-c3be6f5e9def",
+  "external_ref": null,
+  "title": "Classify a checkpoint citation using its actual run-feed membership",
+  "outcome": "Classify a checkpoint citation using its actual run-feed membership",
+  "acceptance": [
+    "criterion_links_refusals_distinguish_observation_checkpoint_and_wrong_locator passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07ca4-c2b5-7b53-bf40-5f83bc6dbfac",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented the recorded correction; its named regressions and all nine merged gates passed. Completed through new shell CLI build 6d8043d8e8b1, installed from merged working tree, NOT committed to master; Git landing awaits explicit authority. Fable independently reports healthy doctor. Pre-swap running MCP servers remain on 73401c0ab3cc. Earlier implementation notes and gate records retain the detailed evidence; no individual criterion links supplied here.",
+    "completed_at": "2026-09-08T01:24:21.301953400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5e2878001e0e8e589803880fb5ecc5e0c801030253530fe412bf45cd7567f430": {
+        "activity_id": "5e2878001e0e8e589803880fb5ecc5e0c801030253530fe412bf45cd7567f430",
+        "task_id": "01a07da8-04ee-7571-97d6-c3be6f5e9def",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5e2878001e0e8e589803880fb5ecc5e0c801030253530fe412bf45cd7567f430"
+      },
+      "9783ebfdeef4ff6ddc7f3eb18c1a7cfa97b0245e615da71e226c910effc0330f": {
+        "activity_id": "9783ebfdeef4ff6ddc7f3eb18c1a7cfa97b0245e615da71e226c910effc0330f",
+        "task_id": "01a07da8-04ee-7571-97d6-c3be6f5e9def",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fbb6086677b1cb6745b163fba0512ffa106fc9c78bd02938c3b5b030bab7ee30"
+      }
+    }
+  }
+}

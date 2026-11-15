@@ -1,0 +1,50 @@
+{
+  "id": "01a128bd-499c-74d3-a44c-c47dcf686634",
+  "external_ref": null,
+  "title": "Control replies distinguish a transient SQLite busy or locked store from other storage errors",
+  "outcome": "Control replies distinguish a transient SQLite busy or locked store from other storage errors",
+  "acceptance": [
+    "For session_bind, turn_evaluate, turn_begin and turn_checkpoint, SQLITE_BUSY or SQLITE_LOCKED, under the configured SQLite busy policy, during BEGIN IMMEDIATE with autocommit still true, or before COMMIT after a successful explicit rollback, returns control_store_busy documented as transient for this attempt and retry-safe with the exact retained operation/key/payload and still-valid binding; COMMIT/rollback failures and other storage failures retain storage_error. One real busy regression per operation proves no changes and exact retry; include replay-under-lock and phase controls."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed phase-safe control_store_busy for bind, evaluate, begin and checkpoint with exact-retry guidance, real contention regressions, generic commit/rollback failures and private diagnostics. Full gate and independent pair passed; acceptance 1/1 passed; installed clean build ready on all four live stores.",
+    "completed_at": "2026-10-16T00:56:20.217951500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3cb6227ecbe349ada8b3a67e54c2b61a": {
+        "activity_id": "3cb6227ecbe349ada8b3a67e54c2b61a",
+        "task_id": "01a128bd-499c-74d3-a44c-c47dcf686634",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a42b6f753d1c4b2698097d310d812c30"
+      }
+    }
+  }
+}

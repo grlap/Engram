@@ -1,0 +1,53 @@
+{
+  "id": "01a1c72e-8c24-7c01-bd8b-a9fe90dccc2d",
+  "external_ref": null,
+  "title": "Close generic retained-pack export bypass of native disclosure policy",
+  "outcome": "Generic pack export cannot expose native-capture prose whose profile-bound native export refuses.",
+  "acceptance": [
+    "Generic capture/export rejects native-origin or native-original packs before releasing original bytes, including resumed cursors and mixed selections, or enforces the same captured and current disclosure rules as typed native export; permitted foreign-retained exchange remains usable.",
+    "Behavioral regressions capture permitted native task/note evidence, add restriction and require both public export routes to refuse, preserving original immutable bytes. Positive foreign-only export and cursor behavior remain covered.",
+    "The change preserves foreign inertness, original ids/bytes and profile-bound native publication, with an explicit durable/projection impact assessment. A complete exact-source focused-check handoff is delivered without modifying the frozen parent."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Generic retained-pack export now refuses native publishing origins, member origins and originals before releasing bytes; permitted foreign-only relay and profile-bound native export remain usable.",
+    "completed_at": "2026-11-10T21:21:37.866216700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "814d3c58b0224cfea7282d5c5c128f05": {
+        "activity_id": "814d3c58b0224cfea7282d5c5c128f05",
+        "task_id": "01a1c72e-8c24-7c01-bd8b-a9fe90dccc2d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "81257d80cd45494987b94a9fc3fff765"
+      }
+    }
+  }
+}

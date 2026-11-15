@@ -1,0 +1,34 @@
+{
+  "id": "01a0faa1-3da0-76b0-8700-5f39501a9d8e",
+  "external_ref": null,
+  "title": "Portable status, doctor and reminders report ownership and unresolved recovery",
+  "outcome": "Deferred first-version portable status and recovery guidance; detach and forced takeover remain later-scope decisions preserved on the later-stage item.",
+  "acceptance": [
+    "`engram portable status [--json]`, the `doctor` block and one `next` reminder line show the mode, lineage, epoch, writer state, the last validation with its result and how much of its age is left, an unresolved intent, and the target's off-host text as the backup brief defines it; a test drives the store through `configuring`, `active`, `releasing`, `released`, `acquiring`, superseded and unverified and asserts that each is shown and that none is shown as `local`",
+    "`next` adds its reminder only when the store is frozen or the validation is close to its age, and adds nothing for a `local` project; tests cover the cases",
+    "Status distinguishes backup freshness from current writer ownership and separates historical publication from current activation. Tests cover a published ancestor, unresolved dispatch, installed-but-journal-incomplete state, absent registration and cancelled preparation; none implies writable local fallback.",
+    "The first-version CLI has no detach or forced takeover command. Help and docs explain clean release is required for pull, lost-host recovery remains separate, and no automatic scheduling ships. docs/shipped.md is updated only for demonstrated commands. Help explicitly states offline startup/resume blocks portable writes until fresh remote validation, and lost active-host backup restore offers only read-only inspection with no writable v1 recovery, takeover or new-lineage fork. Returning pull leaves prior private scratch only in the frozen archive. Terminal losing acquisition is distinct from unresolved dispatch and permits read-only access without writer admission."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0faa0-685a-7f31-83d2-2028017ca901",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0faa1-0476-7862-9805-28d30fa4283d",
+    "01a0faa1-223d-7c10-87a5-6e2cc3beacd7"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Portable handoff was replaced before any of it shipped: docs/features/git-task-sync.md says the previous portable writer-epoch and release/acquire design is gone, AGENTS.md says the selected sync uses no global writer lock, writer epochs or release/acquire protocol, and master has no portable code or brief. Cancelled under Greg's word, 43498a6e #683. Nothing here was built or tested.",
+  "completion": null
+}

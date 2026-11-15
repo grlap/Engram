@@ -1,0 +1,24 @@
+{
+  "id": "01a07333-88cc-7d42-8f0b-45a8f4ca0f1d",
+  "external_ref": null,
+  "title": "Smoke: optional child left open",
+  "outcome": "Smoke: optional child left open",
+  "acceptance": [
+    "Smoke: optional child left open is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a07333-886f-7992-bcd1-b86a1c945c18",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a07333-8982-75d2-9ea5-0402072d186f",
+  "disposal_reason": "smoke cleanup: detach then cancel",
+  "completion": null
+}

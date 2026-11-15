@@ -1,0 +1,76 @@
+{
+  "id": "01a11231-4dc4-71f0-b20d-5d19e17dc5bd",
+  "external_ref": null,
+  "title": "Keep agent instructions focused on current rules",
+  "outcome": "Keep agent instructions focused on current rules",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md contain direct operating rules without incident anecdotes, dated decision narratives or historical quotations; operative conditions are preserved.",
+    "AGENTS.md and CLAUDE.md remain byte-identical and documentation checks pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Instruction cleanup landed 53e3f69 on 2026-10-07; authority-text conditions closed post-landing: TermAl coordinator concurrence and final-diff audit PASS by Termal::Fable2 (mailbox-ebe242f7 #1354), Greg wording notice delivered 2026-10-07; acceptance 2/2 fresh independent evaluation a47aecc3",
+    "completed_at": "2026-10-11T22:40:53.480252400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7d758cfcb0074a6e85716835e034bbce": {
+        "activity_id": "7d758cfcb0074a6e85716835e034bbce",
+        "task_id": "01a11231-4dc4-71f0-b20d-5d19e17dc5bd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7d758cfcb0074a6e85716835e034bbce"
+      },
+      "9528312ebe9f4105bf7130c9020fdb69": {
+        "activity_id": "9528312ebe9f4105bf7130c9020fdb69",
+        "task_id": "01a11231-4dc4-71f0-b20d-5d19e17dc5bd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9528312ebe9f4105bf7130c9020fdb69"
+      },
+      "b55e261b32804935ad538a1d531218e7": {
+        "activity_id": "b55e261b32804935ad538a1d531218e7",
+        "task_id": "01a11231-4dc4-71f0-b20d-5d19e17dc5bd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6787bfa278bf48c48f1ac56a73322adc"
+      }
+    }
+  }
+}

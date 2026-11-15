@@ -1,0 +1,51 @@
+{
+  "id": "01a0746d-44f7-78f1-96d6-3e5698c836c1",
+  "external_ref": null,
+  "title": "The notes window shows decisions by default: show --notes renders notes and observations, counts gate evidence separately, and reaches gate rows explicitly, so the newest ruling is never buried under gate records",
+  "outcome": "The notes window shows decisions by default: show --notes renders notes and observations, counts gate evidence separately, and reaches gate rows explicitly, so the newest ruling is never buried under gate records",
+  "acceptance": [
+    "show REF --notes renders note and observation rows only, states the gate-evidence count for the item once, and offers show REF --notes --gates (or the history window) for gate rows; exact per-family counts and omitted counts remain; the continuation and locators are unchanged; a fixture with nine gate records after a verdict note shows the verdict on page one"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered default decision-focused note windows, explicit gate-inclusive reads, exact family counts and cursor-bound continuation across CLI and MCP",
+    "completed_at": "2026-09-06T02:40:32.876445700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "16463457687e2534f51604007209723274fedf9438d5f7ee05603686b0bfc4d5": {
+        "activity_id": "16463457687e2534f51604007209723274fedf9438d5f7ee05603686b0bfc4d5",
+        "task_id": "01a0746d-44f7-78f1-96d6-3e5698c836c1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6d37ec74359aed1f33ae9372e552fb6664a804d4835634fbebe36d0142c260c1"
+      }
+    }
+  }
+}

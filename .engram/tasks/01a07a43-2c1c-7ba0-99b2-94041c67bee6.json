@@ -1,0 +1,52 @@
+{
+  "id": "01a07a43-2c1c-7ba0-99b2-94041c67bee6",
+  "external_ref": null,
+  "title": "done discloses which acceptance criteria carry no evidence of their own",
+  "outcome": "The completion receipt and show make an acceptance assertion with no linked evidence visible at the moment of sealing; this is disclosure, not prevention of a false completion, which stays with reviewer reconciliation and one-word rejection",
+  "acceptance": [
+    "A completion that supplies no per-criterion acceptance still seals every criterion as asserted, and the receipt names how many criteria have no evidence linked to that criterion, so an assertion with no linked evidence is visible instead of implied by a bare count; the label never claims that no evidence exists on the work",
+    "Regression: completing with no acceptance input reports every criterion as unlinked, completing with per-criterion evidence hashes reports none, and a mixed case reports exactly the unlinked ones",
+    "show on completed work and the completion receipt agree with the frozen seal on that count and on which criteria have linked evidence, including replay; no criterion text is interpreted and no hash is demanded merely to clear the label"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered seal-bound criterion evidence disclosure without new completion barriers or per-criterion hash requirements. None all and mixed link regressions plus fitted show replay and advisory-failure coverage passed; all three required corrections completed. Final19 focused and9 quality gates green, landed and installed. First three real child completions each rendered 1 of1 unlinked at position1 with the exact no evidence linked label; natural nonempty optional-child combination remains unobserved.",
+    "completed_at": "2026-09-07T20:35:32.994532600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cd41f74e6fc349a8f5dc5838f08a7a75acdd17502fe57f3d99f7ae3cb2b531aa": {
+        "activity_id": "cd41f74e6fc349a8f5dc5838f08a7a75acdd17502fe57f3d99f7ae3cb2b531aa",
+        "task_id": "01a07a43-2c1c-7ba0-99b2-94041c67bee6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6e9eb1d79a04960a72cea52e736fdb3ba7f6a172970abdb1fb8caa793627ec90"
+      }
+    }
+  }
+}

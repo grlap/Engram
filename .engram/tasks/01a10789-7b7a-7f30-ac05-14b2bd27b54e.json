@@ -1,0 +1,52 @@
+{
+  "id": "01a10789-7b7a-7f30-ac05-14b2bd27b54e",
+  "external_ref": null,
+  "title": "Keep recovery next usable when stranded-child diagnostics are unavailable",
+  "outcome": "Keep recovery next usable when stranded-child diagnostics are unavailable",
+  "acceptance": [
+    "The diagnostic failure policy for stranded-child next advice is explicit and documented",
+    "A damaged canonical child diagnostic has a regression proving either the documented fail-closed refusal or an unavailable error class while independent next sections remain usable"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "recovery",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Stranded-child diagnostic failures now emit an atomic typed unavailable marker while independent next recovery sections remain usable; healthy receipts omit it and explicit admission remains strict. All four next modes and CLI/MCP fault, fit, repair and host context-nudge regressions pass.",
+    "completed_at": "2026-10-04T20:36:20.994125700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0f21eb5238c545e98a9d3070ba865175": {
+        "activity_id": "0f21eb5238c545e98a9d3070ba865175",
+        "task_id": "01a10789-7b7a-7f30-ac05-14b2bd27b54e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "70b6f3a9070548b99f4f3b08c4f9659d"
+      }
+    }
+  }
+}

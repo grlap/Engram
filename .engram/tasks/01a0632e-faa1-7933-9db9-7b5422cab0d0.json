@@ -1,0 +1,42 @@
+{
+  "id": "01a0632e-faa1-7933-9db9-7b5422cab0d0",
+  "external_ref": null,
+  "title": "Cross-operation SQLite fullscan/sort metrics for the scale gate",
+  "outcome": "Cross-operation SQLite fullscan/sort metrics for the scale gate",
+  "acceptance": [
+    "the scale gate reports per-operation SQLite fullscan and sort counters alongside decode budgets"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f42f-7c92-99fa-a3efda09fe52",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Re-filed as optional root child w-52ae2281ee83 so the delivered perf-gate parent can close; the counters are diagnostics with no consumer yet.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "0eb3c7f2c4c857bb0fec45e7dbb15feb99ebe1fa9c699f3d0511ee024296733b": {
+        "activity_id": "0eb3c7f2c4c857bb0fec45e7dbb15feb99ebe1fa9c699f3d0511ee024296733b",
+        "task_id": "01a0632e-faa1-7933-9db9-7b5422cab0d0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "963f308889dce153c6609478a210132042af74973173aee43f043af0196ee359"
+      }
+    }
+  }
+}

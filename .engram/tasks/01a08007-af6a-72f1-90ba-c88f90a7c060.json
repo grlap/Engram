@@ -1,0 +1,28 @@
+{
+  "id": "01a08007-af6a-72f1-90ba-c88f90a7c060",
+  "external_ref": null,
+  "title": "Sweep tracker prose when a design decision is ratified, not when work is closed",
+  "outcome": "Sweep tracker prose when a design decision is ratified, not when work is closed",
+  "acceptance": [
+    "ratifying a design change includes checking open items whose title, outcome or acceptance criteria promise the superseded behaviour, before any of them is completed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "review",
+    "stream-review-docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "NOT PLANNED, backlog hygiene sweep (Greg via Advisor #1072 and #1074; Engram::Fable, 2026-10-09 ~00:10Z). A process-procedure proposal (sweep tracker prose at ratification) from 09-08, superseded by current practice: rulings are recorded on the item they concern, canonical project memories are revised in one pass when a rule changes, and Greg's 'no ceremonies' direction. No rule for it was ever adopted, and none is needed.",
+  "completion": null
+}

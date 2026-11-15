@@ -1,0 +1,30 @@
+{
+  "id": "01a19b85-bbf6-79f1-951b-cd0420945456",
+  "external_ref": null,
+  "title": "Exercise an ordinary mutation in the failed-startup control regression",
+  "outcome": "Restore proof that a failed work-session host startup cannot dispatch queued ordinary mutations.",
+  "acceptance": [
+    "The failed-startup dogfood test queues a valid ordinary mutation for a seeded project/work claim, retains one-response/exit assertions, and proves relevant durable state stays unchanged for startup refusal and busy paths.",
+    "A healthy-server positive control proves the same mutation frame normally changes the expected state, so invalid or read-only input cannot satisfy the test.",
+    "The regression uses the ordinary work-session route and does not restore removed turn or grant operations."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "host",
+    "review-followup",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,65 @@
+{
+  "id": "01a141a3-77f5-7cd2-9802-7e874bb1359e",
+  "external_ref": null,
+  "title": "Let a CLI ls --json caller request a larger page byte budget",
+  "outcome": "Let a CLI ls --json caller request a larger page byte budget",
+  "acceptance": [
+    "An opt-in CLI option on `engram work ls` (e.g. `--page-bytes N`, valid only with --json, bounded to an explicit maximum such as 1 MiB) raises the per-page response byte budget, so `ls --all --verbose --json --limit 200` returns up to 200 rows per page; continuation anchoring on the last emitted row and the more/after semantics are unchanged.",
+    "Without the option, CLI and MCP output, the 12 KiB default budget and cursor behaviour are byte-for-byte unchanged; the MCP surface does not gain the option; out-of-range values are refused with an actionable message."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "cli",
+    "performance",
+    "termal",
+    "work-ui"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`engram work ls --json --page-bytes N` (12288..=1048576) fits each listing page to N bytes, so `ls --all --verbose --json --limit 200` returns full 200-row pages. Rows, order, last-emitted-row cursors and more/after are unchanged, and cursors continue across budgets. The option is refused without --json or out of range, with an actionable message. Without it the CLI runs the unchanged `ls`, and MCP `ls` gains no option. Landed as 17a28f2 after review rounds 1-6 (the last two clean), full gate test-97f28fd0 PASS on freeze d35e48a9, and independent evaluations ee746bc4 and 849229a9 PASS 2/2 (the second fresh after landing). Installed build c2ac63da (exe sha256 cc1cc903…a97557); the backup of 787a310a is engram-20261016T152339Z-787a310a5b24.exe. All five live stores are ready.",
+    "completed_at": "2026-10-16T15:27:23.844240600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5c6ab5adaf3746c690ce71f498803da8": {
+        "activity_id": "5c6ab5adaf3746c690ce71f498803da8",
+        "task_id": "01a141a3-77f5-7cd2-9802-7e874bb1359e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3a71e5722c364042abb6f265016ae33c"
+      },
+      "8d4e8cc1bb7549559b65a63a7391e8a1": {
+        "activity_id": "8d4e8cc1bb7549559b65a63a7391e8a1",
+        "task_id": "01a141a3-77f5-7cd2-9802-7e874bb1359e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8d4e8cc1bb7549559b65a63a7391e8a1"
+      }
+    }
+  }
+}

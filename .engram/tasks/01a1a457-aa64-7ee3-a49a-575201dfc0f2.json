@@ -1,0 +1,66 @@
+{
+  "id": "01a1a457-aa64-7ee3-a49a-575201dfc0f2",
+  "external_ref": null,
+  "title": "Remove fragile wall-clock assertions from Engram's tests while keeping real regression protection",
+  "outcome": "Remove fragile wall-clock assertions from Engram's tests while keeping real regression protection",
+  "acceptance": [
+    "Every test in src/, tests/ and scripts/ that asserts elapsed wall-clock time, or fails on scheduling or machine load, is listed and classified: a real product requirement, or a fragile assumption",
+    "Each fragile assertion is replaced by a check of the behaviour or a load-independent measure, such as counted reads, documents, nodes or SQL statements, with an injected clock, or an event or ordering rather than a duration; regression protection is kept, and no test is deleted, skipped or quarantined merely to pass",
+    "Each retained wall-clock limit is a real product requirement, stated as such next to the assertion, with a margin measured under load on a remote runner, or moved to a separately run scale test",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-tests",
+    "greg-directed",
+    "test-timing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Engram's tests no longer depend on host speed wherever a duration was only a proxy. Landed as 2667355d (tree 7bb6cc9d), which contains reviewed 9de15323 and the doctor follow-up from w-e95c35f8ed70. Search time stands still in test builds, trace cost is counted in SQL statements and line encodings, deadlines are compared on their own clocks or by event order, and waits that only end a stuck test are 60 s hang guards. Limits that are product behaviour stay real and say so beside the check. No test was deleted, skipped or quarantined.\n\nSelf-asserted: evaluation enforcement is off, so no independent evaluation backs this completion.\n\nCriterion 1: the inventory is a pattern sweep of src/, tests/ and scripts/ recorded on this item. A sweep cannot prove completeness: it missed one test once, later found by review and corrected on the item.\nCriterion 2: replacements and the mutations that exercised them are on this item; some changes had no mutation, and each note says which.\nCriterion 3: NOT fully met as written, and it rests on evidence at Greg's direction to stop measuring („Moim zdaniem tracicie czas. Nie wiem co ma to dać. Testy na czas nigdy nie sa wiarygodne i stabilne.”, 06:23Z). Margins were measured once under load on DL560 (test-2f46e868, on 7fe327f6, which differs from the landed candidate in the shared helper and launcher timeouts, not in these limits; coordinator's note e5c43506) plus a partial run at extreme load. Those are whole-test times, not the limited interval. The Windows-only limits were run on Central, not measured under load remotely. The longest frame against the 15 s control allowance was not traced; no test failed on it.\nCriterion 4: FULL test-1eef162a passed on DL560 on the landed tree at RUST_TEST_THREADS=36 (coordinator's note 9297f346); Windows group test-993960cd 20 passed, 4 ignored.\nCriteria 3 and 4 carry no criterion link because their evidence is in coordinator observations, which the link check refuses as non-holder records; they are cited here instead.\n\nLeft for whoever next touches those files, no new item: stop.mjs:340 at 90 s, open_guard.rs:251 wording, planning_scale.rs:580 at 120 s. The path-limit failure of capture_manifest_names_each_identity_and_the_copy_s_own_cut in long worktree paths is separate, on w-3dcb26f7fe39.",
+    "completed_at": "2026-11-04T07:42:57.749848700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "53915a7b5d864e8683e42b9623e7721b": {
+        "activity_id": "53915a7b5d864e8683e42b9623e7721b",
+        "task_id": "01a1a457-aa64-7ee3-a49a-575201dfc0f2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a26f80f6549046f79432c8f89f6a162f"
+      },
+      "79181258e43e4538b8b89aa23a7c1a44": {
+        "activity_id": "79181258e43e4538b8b89aa23a7c1a44",
+        "task_id": "01a1a457-aa64-7ee3-a49a-575201dfc0f2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "79181258e43e4538b8b89aa23a7c1a44"
+      }
+    }
+  }
+}

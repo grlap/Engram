@@ -1,0 +1,53 @@
+{
+  "id": "01a129b8-6f8d-7d00-878a-f946574d8e01",
+  "external_ref": null,
+  "title": "A finished detached gate delivers an actionable sign-off: what finished, verdict, next owner and exact next action",
+  "outcome": "A finished detached gate delivers an actionable sign-off: what finished, verdict, next owner and exact next action",
+  "acceptance": [
+    "The launcher's completion message (stdout summary and --notify delivery) is metadata-only and carries: run id, what finished (item, stage counts), verdict with input-fingerprint result, the owner of the next transition and the exact next action, both supplied at launch and echoed unchanged; tests cover pass, fail, interrupted and fingerprint-mismatch, and that no log text is injected",
+    "Delivery goes to the coordinator and the launching holder through the existing notification route, with an immutable body and a stable idempotency key; no polling, watchdog, timer, daemon or new telemetry is added",
+    "The host/client contract for showing an active detached runner apart from an idle agent, with the pending next transition, is agreed with TermAl's coordinator and recorded in a holder note quoting TermAl's item reference"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-tooling",
+    "coordination",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Detached gates deliver metadata-only sign-offs with exact launch-supplied item, next owner and next action; admitted metadata and notification targets frozen for recovery/retry, safe failure locators retained, and TermAl host contract recorded. Full gate passed, Codex/Claude pair noMedium+, independent acceptance3/3. Committed, installed and pushed master.",
+    "completed_at": "2026-10-11T09:21:45.077723100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6cd36b6f36164ea19ce94a4c50eb99bc": {
+        "activity_id": "6cd36b6f36164ea19ce94a4c50eb99bc",
+        "task_id": "01a129b8-6f8d-7d00-878a-f946574d8e01",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "de10cee881f14931bdea1e4faa4f9be7"
+      }
+    }
+  }
+}

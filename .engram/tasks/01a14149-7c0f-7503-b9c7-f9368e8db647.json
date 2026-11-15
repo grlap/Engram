@@ -1,0 +1,52 @@
+{
+  "id": "01a14149-7c0f-7503-b9c7-f9368e8db647",
+  "external_ref": null,
+  "title": "Windows exchange policy fixture helper hits its Deadline inside a full gate",
+  "outcome": "Windows exchange policy fixture helper hits its Deadline inside a full gate",
+  "acceptance": [
+    "The failure and available evidence are recorded; the 42-launch / one-30s-watchdog structural exposure is removed by the 21/22 split and <=30 guard; the exact historical cause is stated as unproven.",
+    "The test passes reliably in full gates under the project's normal concurrent workload without loosening what it proves (bounded launch workload per group, refusal semantics), or the defect it exposed is fixed; no retry-until-green and no skip."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "sync",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split the Windows helper policy fixture into independently owned 21- and 22-launch groups and enforce a <=30 launch declaration guard, retaining every assertion and unchanged default deadlines.",
+    "completed_at": "2026-10-15T23:42:35.779441600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "00b92c036481493b93bdcf1f720e9676": {
+        "activity_id": "00b92c036481493b93bdcf1f720e9676",
+        "task_id": "01a14149-7c0f-7503-b9c7-f9368e8db647",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d105f37fde44498298d26b54cf4932c0"
+      }
+    }
+  }
+}

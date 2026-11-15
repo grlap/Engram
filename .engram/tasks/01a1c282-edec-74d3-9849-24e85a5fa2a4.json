@@ -1,0 +1,53 @@
+{
+  "id": "01a1c282-edec-74d3-9849-24e85a5fa2a4",
+  "external_ref": null,
+  "title": "Replay the two-build cutover fixture through the admitted data worktree",
+  "outcome": "Replay the two-build cutover fixture through the admitted data worktree",
+  "acceptance": [
+    "The two-build cutover fixture uses a disposable admitted Git code/data-worktree layout for the new CLI and replays the original old-build import receipt after projection repair without changing original canonical records or operation-result bytes.",
+    "Focused execution with actual old and current candidate binaries completes all existing pre-write refusal, repair, historical receipt replay, old-build refusal and idempotent repair assertions; the fixture leaves no test scratch or changed operational store."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The cutover fixture now creates a disposable admitted main Git checkout and orphan .engram-data worktree, replays the original old-build receipt after repair, and preserves every earlier refusal/byte/idempotence assertion. Exact6e497b4f2d252ec025e495af218e698f4535b967/tree95230527e1446267ad5a607d96c7f3e40c2a22cb actual old6dd4/new98c1 focused fixture passed1/1, canonical6 and operation1 preserved, zero residual scratch. Independent evaluation bcfe6e49a560428188e440f785a6df28 at cut69 passes both criteria on current nonstale judgment; full2544B original result and tracker verdict read. One-path checked patch delivered to parent for combined repair reviews/gate/landing.",
+    "completed_at": "2026-11-09T23:05:44.791018600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9c4212b9e1bc454da9160cfb7e0e32dc": {
+        "activity_id": "9c4212b9e1bc454da9160cfb7e0e32dc",
+        "task_id": "01a1c282-edec-74d3-9849-24e85a5fa2a4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dfbbff21237a40dba86a23331f6c8ac2"
+      }
+    }
+  }
+}

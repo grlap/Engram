@@ -1,0 +1,67 @@
+{
+  "id": "01a0bdad-258e-71d3-8a61-c12da4c0699d",
+  "external_ref": null,
+  "title": "Fix nested transaction in control inspection snapshot admission",
+  "outcome": "Fix nested transaction in control inspection snapshot admission",
+  "acceptance": [
+    "control_inspection_absence_is_read_only_and_does_not_create_connection passes",
+    "control_inspection_counts_orphans_all_states_and_cross_session_retained_grant passes",
+    "control_inspection_does_not_filter_binding_by_project_or_decode_payload passes",
+    "control_inspection_presence_uses_pinned_snapshot passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "gate",
+    "recovery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0bd9e-bb30-7a72-918b-1d7c9c27e2eb",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed nested transaction in read-only control inspection; all four named regressions pass in the final round8 Rust gate. Independent session-7129 evaluation records 4/4 pass on judgment evidence; source unchanged and freeze rechecked. No live store/deployment claim.",
+    "completed_at": "2026-09-20T10:51:26.616677Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "043323687ae941baadc4286c3fbd5476": {
+        "activity_id": "043323687ae941baadc4286c3fbd5476",
+        "task_id": "01a0bdad-258e-71d3-8a61-c12da4c0699d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "043323687ae941baadc4286c3fbd5476"
+      },
+      "fdf7e7bc38e941779f8de2dca009e86f": {
+        "activity_id": "fdf7e7bc38e941779f8de2dca009e86f",
+        "task_id": "01a0bdad-258e-71d3-8a61-c12da4c0699d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ca3a6c1544ff4e17a65e02167c1e31ff"
+      }
+    }
+  }
+}

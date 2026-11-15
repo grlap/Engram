@@ -1,0 +1,29 @@
+{
+  "id": "01a1d134-0092-7331-a385-761908cf1e2a",
+  "external_ref": null,
+  "title": "Bound every hold that waits on Greg with a checked deadline, and reach Greg through Asistant",
+  "outcome": "Bound every hold that waits on Greg with a checked deadline, and reach Greg through Asistant",
+  "acceptance": [
+    "The shared waits-and-wakes procedure (rules-waits-and-wakes, mirrored in TermAl) says: a drain or hold that waits on a Greg act (restart or cutover) has an absolute deadline of the agreed start plus 15 minutes; each coordinator sets a real scheduled wake for it in its own session; on waking it checks the actual host state (process start times, installed binary hash, backup and log directories); if the act has not started it lifts the hold, tells every waiting session to resume, and tells Greg",
+    "Every request for a Greg act goes through Engram::Asistant (his direct channel) as well as Advisor, and asks him to reply when he starts",
+    "Both coordinators have recorded concurrence on the exact wording on this item, and the next cutover window uses it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

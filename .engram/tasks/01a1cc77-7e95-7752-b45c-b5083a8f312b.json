@@ -1,0 +1,51 @@
+{
+  "id": "01a1cc77-7e95-7752-b45c-b5083a8f312b",
+  "external_ref": null,
+  "title": "Describe the dedicated task-sync data worktree in the architecture overview",
+  "outcome": "Describe the dedicated task-sync data worktree in the architecture overview",
+  "acceptance": [
+    "The Optional Git task sync section of docs/architecture.md describes the dedicated orphan data branch and data worktree and removes obsolete code-branch and sparse-checkout guidance, consistent with the selected task-sync design."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Updated the architecture overview and capability row for the dedicated orphan data branch and persistent MAIN/.engram-data/ worktree, removing obsolete code-branch/sparse-checkout routing and distinguishing shipped folder/setup operations from planned automation. Eight-file combined staged package tree36fd481706f24b623574d0d96d3d99f87cb9de5d/basecc09052c7b5e3b92c90215818911a03c65f30367. LINKS-5 test-3f7822f6 passed native0/input matched; fresh whole-input R4 Codex17549 and Claude17550 attempt4 both no findings, earlier Medium/Low findings resolved. Independent Claude17565 evaluation28332745c3924dffb08b24691c496103 passed criterion1 with native stale=null after quiet-source capture. Markdown-only: no Cargo/runtime tests required or run. Implementation complete for READY; no landing/push/install claimed. Retain this worktree and run records while same package taskw-0c11fd1ac9ae remains open and for Fable's after-sync integration; integration owner removes after its recorded need ends.",
+    "completed_at": "2026-11-11T22:05:03.470101Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7f2de07d9b614171b692b411edffe996": {
+        "activity_id": "7f2de07d9b614171b692b411edffe996",
+        "task_id": "01a1cc77-7e95-7752-b45c-b5083a8f312b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1b52d62547d7474fa0a6efb789ddccb3"
+      }
+    }
+  }
+}

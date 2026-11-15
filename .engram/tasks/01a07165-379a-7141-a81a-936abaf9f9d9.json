@@ -1,0 +1,63 @@
+{
+  "id": "01a07165-379a-7141-a81a-936abaf9f9d9",
+  "external_ref": null,
+  "title": "Reconcile detach contributors only on live open-root executions",
+  "outcome": "Reconcile detach contributors only on live open-root executions",
+  "acceptance": [
+    "Lapsed no-checkpoint child under completed nonroot parent detaches and the open root completes; sealed-root bytes remain unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0701e-3d2f-7432-a0e9-366cdba19e56",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered existing attributed waiver only for an active execution under an Open root, with rollback and root-completion proof and sealed bytes unchanged; accepted by both reviewers. Residual defensive binding guard carries into the next slice per lead.",
+    "completed_at": "2026-09-05T15:03:12.177546Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cb11fe583711cd232cbc547c38176fa1fea063f5507b1d96525e908793ea4a1c": {
+        "activity_id": "cb11fe583711cd232cbc547c38176fa1fea063f5507b1d96525e908793ea4a1c",
+        "task_id": "01a07165-379a-7141-a81a-936abaf9f9d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cb11fe583711cd232cbc547c38176fa1fea063f5507b1d96525e908793ea4a1c"
+      },
+      "e9171384a76f2da7f8b8d9ad6e236b61a954bdad6ea13fa59218779bfc8b8313": {
+        "activity_id": "e9171384a76f2da7f8b8d9ad6e236b61a954bdad6ea13fa59218779bfc8b8313",
+        "task_id": "01a07165-379a-7141-a81a-936abaf9f9d9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8659bb8442009e58cd6c51b2d7bf9a2f0b5815bdd97d419fe57347270db1b677"
+      }
+    }
+  }
+}

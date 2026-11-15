@@ -1,0 +1,51 @@
+{
+  "id": "01a1ca4a-7438-77c2-85be-d593834eb672",
+  "external_ref": null,
+  "title": "Make launcher source-capture scratch placement compatible with repository-local TEMP",
+  "outcome": "Make launcher source-capture scratch placement compatible with repository-local TEMP",
+  "acceptance": [
+    "A focused commit-input run with repository-local TEMP/TMP either captures source successfully using a valid scratch location or reports the required placement clearly before launch; a behavioral test covers the previously refused placement."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "environment",
+    "launcher",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered clear prelaunch source scratch placement diagnosis on clean candidate53b4d6d7b16767d6423a194a6bff840a5e07df89/tree058a547ff06ec7e4282185f8db2a50735864dda0/solebase0bd70a3034260a228a5f7ad120ac6f7d9e622582. Owner containment unchanged, neutral shared guidance names runtime scratch/root and valid outside-tree/Engram-home placement; launcher surfaces bounded admission cause. Real-owner behavioral test proves inside target/tmp refuses with no stage/input artifact, valid repo-local outside-root placement succeeds once with equal source_id. Corrected Windowsbuild+3tests andDLfmt/Clippy/build+3launcher+2EOL tests passed; required freshR2wholeinputCodex/Claude reviews clean, bothR1Lowsfixed. Independent evaluation40840f68f0584e46ab86e0e1719059f6 PASS1/1 on judgment; native stale=null, no observed-verification claim. This is completed coder delivery, not landing: Fable queues separate POST-sync fresh-current-master candidate and integrationowner finalFULL/landing. Temporaryauthorrefs removed after requestedrunevidence settled. Retain source/root/build/run artifacts pending coordinatorintegrationpickup, finalgate/landing and exactretentionrelease; DL560bothroots likewise retained underOpus2 until11323+12325release. A06Froot remains retained for open syncparent separately. No masterpush/install/rebase/historyrewrite.",
+    "completed_at": "2026-11-11T11:59:17.320726600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4c4d44cce8f142418204527f2654dd67": {
+        "activity_id": "4c4d44cce8f142418204527f2654dd67",
+        "task_id": "01a1ca4a-7438-77c2-85be-d593834eb672",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "56527c36da7441f880be8ea7e92b75e4"
+      }
+    }
+  }
+}

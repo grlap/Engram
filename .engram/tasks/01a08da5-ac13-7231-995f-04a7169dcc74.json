@@ -1,0 +1,52 @@
+{
+  "id": "01a08da5-ac13-7231-995f-04a7169dcc74",
+  "external_ref": null,
+  "title": "remember answers a --text flag with a tip to store the flag name as the memory text",
+  "outcome": "remember answers a --text flag with a tip to store the flag name as the memory text",
+  "acceptance": [
+    "a test pins whichever behavior is chosen",
+    "if --text is accepted, giving the text both positionally and as --text is refused with an error that names the conflict",
+    "remember with the memory text given as --text either stores the same memory as the positional form or fails with an error that shows the positional form as a runnable example, and never suggests passing the flag name as the value"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "feedback",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented remember --text TEXT as an exactly-one alternative to positional TEXT. Conflicts and missing bodies are refused by clap; existing key/revise/expected-revision path and MCP text field are unchanged. Parser, real CLI body/key/history/replay and help tests passed. Shared full9 passed after fixing one test-helper clippy defect; Codex review clean, Claude wording Notes and coordinator synopsis Low resolved in accepted child. Fable2203 accepted freeze0563b3dd. Tests establish exercised cases, not universal correctness. Not committed or installed; shipped.md update belongs to installation.",
+    "completed_at": "2026-09-11T00:20:23.113829800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4e0c1ecef85a0ff1c69dea8cfe30e09dee2e742ea595928d5190695c7a23c9ab": {
+        "activity_id": "4e0c1ecef85a0ff1c69dea8cfe30e09dee2e742ea595928d5190695c7a23c9ab",
+        "task_id": "01a08da5-ac13-7231-995f-04a7169dcc74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8bfc8aa46f4086dc46208a5f24ae3b0a7da0433c54ed79e643206bc893047ca9"
+      }
+    }
+  }
+}

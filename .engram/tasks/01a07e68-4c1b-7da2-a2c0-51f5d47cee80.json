@@ -1,0 +1,50 @@
+{
+  "id": "01a07e68-4c1b-7da2-a2c0-51f5d47cee80",
+  "external_ref": null,
+  "title": "Peek budget rendering retains one header and terminates by row count",
+  "outcome": "Peek budget rendering retains one header and terminates by row count",
+  "acceptance": [
+    "forced-small-budget peek with changes has one header; checkpoint completion shedding regression passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cd6-59d0-7bd3-bd3e-5b77516d222b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented and verified the recorded correction; focused regressions and all nine merged gates passed. Installed build 6d8043d8e8b1 from merged working tree, NOT committed to master; Git landing awaits explicit authority. Fable independently reports healthy doctor and nonadvancing live peek. Pre-swap MCP processes remain on 73401c0ab3cc; new shell invocations use the installed build.",
+    "completed_at": "2026-09-08T01:21:39.464295200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9ebe973a3b9bfe878f0cb4d1a2b8e2d4648d7b4b6a62d1d350c2fdfc823c3e44": {
+        "activity_id": "9ebe973a3b9bfe878f0cb4d1a2b8e2d4648d7b4b6a62d1d350c2fdfc823c3e44",
+        "task_id": "01a07e68-4c1b-7da2-a2c0-51f5d47cee80",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c803409480faf1f1e2a84048ba30d15d5f6460129801aa430a9f344c0591bb90"
+      }
+    }
+  }
+}

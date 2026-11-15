@@ -1,0 +1,87 @@
+{
+  "id": "01a18fc0-cf6f-7033-a0d8-75bbbbef4f46",
+  "external_ref": null,
+  "title": "Say whether a test-ref full gate can gate a fast-forward landing of a candidate commit with the same tree",
+  "outcome": "Say whether a test-ref full gate can gate a fast-forward landing of a candidate commit with the same tree",
+  "acceptance": [
+    "AGENTS.md/CLAUDE.md state unambiguously whether a full gate run on an exact test ref counts for a landing that fast-forwards master to a candidate commit, and if so under which identity (the same commit, or a commit with the same tree), consistent with the candidate-commits bullet.",
+    "The change follows the authority-text process: both coordinators' concurrence, the wording sent to Greg, and the final-diff audit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "agent-instructions",
+    "authority-text"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Clarified that an exact test-ref full gate gates fast-forward landing to that same candidate commit. Landed and installed the reviewed Markdown change; both existing acceptance criteria passed independent post-landing evaluation, with no criterion change.",
+    "completed_at": "2026-10-31T19:38:38.587599900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4568b1602c124080bf63a48e969facea": {
+        "activity_id": "4568b1602c124080bf63a48e969facea",
+        "task_id": "01a18fc0-cf6f-7033-a0d8-75bbbbef4f46",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4568b1602c124080bf63a48e969facea"
+      },
+      "691ded3498704fbf87b60fd014603258": {
+        "activity_id": "691ded3498704fbf87b60fd014603258",
+        "task_id": "01a18fc0-cf6f-7033-a0d8-75bbbbef4f46",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "691ded3498704fbf87b60fd014603258"
+      },
+      "acc0537e9bf74a6d806b95076ce64609": {
+        "activity_id": "acc0537e9bf74a6d806b95076ce64609",
+        "task_id": "01a18fc0-cf6f-7033-a0d8-75bbbbef4f46",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3af5337640564756948baa8ed4bc4a34"
+      },
+      "d481492697924b858be9a2d7a4d1a443": {
+        "activity_id": "d481492697924b858be9a2d7a4d1a443",
+        "task_id": "01a18fc0-cf6f-7033-a0d8-75bbbbef4f46",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "acc0537e9bf74a6d806b95076ce64609"
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "id": "01a1a1e2-1172-74d0-973b-953f3b9e2120",
+  "external_ref": null,
+  "title": "Split src/verbs/handlers.rs by responsibility (orientation, creation, memories, completion, handoff) without changing the verb API",
+  "outcome": "Split src/verbs/handlers.rs by responsibility (orientation, creation, memories, completion, handoff) without changing the verb API",
+  "acceptance": [
+    "src/verbs/handlers.rs is split into child modules under src/verbs/handlers/ (orientation, creation, memories, completion, handoff), with construction, inputs and shared guidance kept in handlers.rs, narrow re-exports, and every crate::verbs path unchanged",
+    "The public API, receipts and existing verb test results and counts are unchanged, the mirrored tests under src/verbs/tests/ still pass, and the source file-size check passes",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "file-split",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed, pushed to origin/master, and installed as 8b91bf6688942069bc7b700f3620d05f24af3c5b. Shared DL560 standard-launcher FULL passed with matched before/after fingerprints. Release binary fingerprint 2c060909696de9b2b50bd617c54e6f33ff8621118a9c0b4bfec8c9de95bfa1fc; all six live stores report ready. Previous binary backed up; no migration or TermAl restart.",
+    "completed_at": "2026-11-03T17:31:29.402066300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "535b4e4455ef47baa1387be67615b5f2": {
+        "activity_id": "535b4e4455ef47baa1387be67615b5f2",
+        "task_id": "01a1a1e2-1172-74d0-973b-953f3b9e2120",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "eebfdcb96fe04d1ea23c2f1399e081e3"
+      },
+      "eebfdcb96fe04d1ea23c2f1399e081e3": {
+        "activity_id": "eebfdcb96fe04d1ea23c2f1399e081e3",
+        "task_id": "01a1a1e2-1172-74d0-973b-953f3b9e2120",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bbbabfa220354bc9a12406ee660c5259"
+      }
+    }
+  }
+}

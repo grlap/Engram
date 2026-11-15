@@ -1,0 +1,49 @@
+{
+  "id": "01a07f2e-dfbe-7870-8c53-5670f514cdca",
+  "external_ref": null,
+  "title": "Correct host environment expansion and forbid store defaults",
+  "outcome": "Every Claude Code integrator gets an accurate environment contract without assuming platform expansion validates project store or identity",
+  "acceptance": [
+    "Host checklist forbids ENGRAM_HOME defaults, describes missing-variable warning and literal fallback accurately, qualifies observed first-open refusal, and requires explicit prelaunch validation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected host-checklist expansion contract: no implicit home or required identity defaults, explicit launcher validation, warning plus literal fallback documented. Scoped measured home refusal and identity acceptance separately from inferred fallback risk; probes belong to coordinator evidence. Doc links and diff checks pass, coordinator1464 accepted. Documentation remains uncommitted in main; Fable owns check-in only after separate authorization.",
+    "completed_at": "2026-09-08T04:07:39.512276900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ff9c81d92e6bf42b9e4a0aea913af6412d0bab9cbb499010a7faef94acef9561": {
+        "activity_id": "ff9c81d92e6bf42b9e4a0aea913af6412d0bab9cbb499010a7faef94acef9561",
+        "task_id": "01a07f2e-dfbe-7870-8c53-5670f514cdca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "31b2f6f933bc8d590513772a0f9a6b2743e3da32174fc59298ddb64af1c72f7b"
+      }
+    }
+  }
+}

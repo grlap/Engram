@@ -1,0 +1,52 @@
+{
+  "id": "01a18922-d2a0-7362-9fbd-5eb6b685c6ca",
+  "external_ref": null,
+  "title": "Enrich the website machine section with cyberpunk visuals",
+  "outcome": "Enrich the website machine section with cyberpunk visuals",
+  "acceptance": [
+    "The four machine folios have visibly richer cyberpunk scenery and HUD detailing while manuscript folios, copy, links, and controls remain unchanged",
+    "Desktop and mobile previews remain readable without horizontal overflow or fixed-navigation obstruction",
+    "New decorative motion respects the existing motion toggle and prefers-reduced-motion, and docs/website.md describes the updated machine visuals"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "ui",
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Enriched all four machine folios with cyberpunk HUD scenery and motion, updated the website design documentation, and verified desktop/mobile rendering plus normal, paused, and reduced-motion states in Chrome. Independent acceptance evaluation passed all three criteria.",
+    "completed_at": "2026-10-29T20:40:03.454684700Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "596629d8f1c24bcdba56c8506d26c28c": {
+        "activity_id": "596629d8f1c24bcdba56c8506d26c28c",
+        "task_id": "01a18922-d2a0-7362-9fbd-5eb6b685c6ca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "456a7b70e6de4bdab2a9f7a37314a1a0"
+      }
+    }
+  }
+}

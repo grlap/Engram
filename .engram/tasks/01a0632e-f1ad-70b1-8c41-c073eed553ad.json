@@ -1,0 +1,356 @@
+{
+  "id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "external_ref": null,
+  "title": "Test phase: Engram as the project tracker",
+  "outcome": "Test phase: Engram as the project tracker",
+  "acceptance": [
+    "Test phase: Engram as the project tracker is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 2,
+  "labels": [
+    "area-work-lifecycle",
+    "stream-tracker-pilot",
+    "umbrella"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "13909bfe4ef4e4bf043f0c4f3e0ce5438742bfd5ae669f6646ab1c52a25ad549": {
+        "activity_id": "13909bfe4ef4e4bf043f0c4f3e0ce5438742bfd5ae669f6646ab1c52a25ad549",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "13909bfe4ef4e4bf043f0c4f3e0ce5438742bfd5ae669f6646ab1c52a25ad549"
+      },
+      "1666c8ec1b157065824d00c396456a29b74a83b5fe3ece801919cedc70025b9f": {
+        "activity_id": "1666c8ec1b157065824d00c396456a29b74a83b5fe3ece801919cedc70025b9f",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1666c8ec1b157065824d00c396456a29b74a83b5fe3ece801919cedc70025b9f"
+      },
+      "2a0b9fef1705ca5866a21d7e5146cf74597e4695d17c343841024952a1a28988": {
+        "activity_id": "2a0b9fef1705ca5866a21d7e5146cf74597e4695d17c343841024952a1a28988",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "76ca6b0deb363583904d36ce14c9dfe1bfed8de32bf6aa8f8245541835359ef2"
+      },
+      "4365d55021fca9865b434f484667f85d133c3c98b6d53db7095392c518f4ab48": {
+        "activity_id": "4365d55021fca9865b434f484667f85d133c3c98b6d53db7095392c518f4ab48",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4365d55021fca9865b434f484667f85d133c3c98b6d53db7095392c518f4ab48"
+      },
+      "4737f23357bd048ad417cb0f4fd31d7fb9a2d5b905f8007d980055cb7e008f36": {
+        "activity_id": "4737f23357bd048ad417cb0f4fd31d7fb9a2d5b905f8007d980055cb7e008f36",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4737f23357bd048ad417cb0f4fd31d7fb9a2d5b905f8007d980055cb7e008f36"
+      },
+      "4814e007a0da42190decc919d4b3b451f27f66ad7030dea5854b892bbf19242b": {
+        "activity_id": "4814e007a0da42190decc919d4b3b451f27f66ad7030dea5854b892bbf19242b",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8cabaa220045264eae8dd86fe663f33b14ecad540564881ef80a747b86df3b99"
+      },
+      "4deb75cf32aa4bb88e996fb67fa085b7223db6e3fde256f9b13da44d28ebecb9": {
+        "activity_id": "4deb75cf32aa4bb88e996fb67fa085b7223db6e3fde256f9b13da44d28ebecb9",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4deb75cf32aa4bb88e996fb67fa085b7223db6e3fde256f9b13da44d28ebecb9"
+      },
+      "5c52c29822406f016c6290098399c12a3381b14ac229e6f646d940a515e60424": {
+        "activity_id": "5c52c29822406f016c6290098399c12a3381b14ac229e6f646d940a515e60424",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "302d3fa2244dced372640c4adf08541d9625776409eae5e35699c3c35ebec328"
+      },
+      "60913b6bb32ee6026c43a3e952883e9c0ad899c224203b985aa40c15ef698a30": {
+        "activity_id": "60913b6bb32ee6026c43a3e952883e9c0ad899c224203b985aa40c15ef698a30",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1a5d4b7df21c0a3ae69c9dd37121c0ef21aee60ad1e2558228456cec9baa3b21"
+      },
+      "6cf2780478e7b67a8a98d931063fd20d5d868a69739884f822e61d3eea0a3a67": {
+        "activity_id": "6cf2780478e7b67a8a98d931063fd20d5d868a69739884f822e61d3eea0a3a67",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6cf2780478e7b67a8a98d931063fd20d5d868a69739884f822e61d3eea0a3a67"
+      },
+      "71ca201fd9171f58dcb7a383bd296c49b918efb42d728e1ed0de68942052be08": {
+        "activity_id": "71ca201fd9171f58dcb7a383bd296c49b918efb42d728e1ed0de68942052be08",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "71ca201fd9171f58dcb7a383bd296c49b918efb42d728e1ed0de68942052be08"
+      },
+      "8a4ee3875425e81700b20853a9f380f23a69a946dda1f9851f1321337154d53f": {
+        "activity_id": "8a4ee3875425e81700b20853a9f380f23a69a946dda1f9851f1321337154d53f",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f0cccd22302a9eef2df66fa035cc8083c16d6f4a917ea44968dfc0203a2ffe77"
+      },
+      "8fb28106d2bf47fa94df0d54ac56afc0334ec66061003b0de890741195482d26": {
+        "activity_id": "8fb28106d2bf47fa94df0d54ac56afc0334ec66061003b0de890741195482d26",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d016532ad5627df3abf10e99e695779ad0f918e505e60b70e6ae6868fdd8b609"
+      },
+      "9222cb0d7801e246e785017f180d7649a974f7730f6d1599deae456c70c4df04": {
+        "activity_id": "9222cb0d7801e246e785017f180d7649a974f7730f6d1599deae456c70c4df04",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ecdb20f4b68a73ab8862128499944bea0670a3ca82b82cae39249cfee6ad0d25"
+      },
+      "935086eaba93e6be3c7fe86e25afe9e31fa5ed208f48da364e3c293cd83cb42a": {
+        "activity_id": "935086eaba93e6be3c7fe86e25afe9e31fa5ed208f48da364e3c293cd83cb42a",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "9471718cce29623e99763a043453add00651c6af5443acffb8e286fadf70ce78"
+      },
+      "94bb94c09521e33fd550e3a0dc89ce8e1573a85e5d3ba48344af1ed9405485e4": {
+        "activity_id": "94bb94c09521e33fd550e3a0dc89ce8e1573a85e5d3ba48344af1ed9405485e4",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "75e60bcadbb9fbf5bcc19beb93cec23b13487725265008349f66576948f0aa56"
+      },
+      "a261fe4af0f4ef20e6e5407390553a63e03256b23edbf53251c53a3bc135c117": {
+        "activity_id": "a261fe4af0f4ef20e6e5407390553a63e03256b23edbf53251c53a3bc135c117",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "565688485e1ecff8df094cd5319b78af4a393849e038181193d8163c517fdc32"
+      },
+      "affd1cdd88ec955beeb69944f38eab0158e722db474426b024f9d8d4e8743673": {
+        "activity_id": "affd1cdd88ec955beeb69944f38eab0158e722db474426b024f9d8d4e8743673",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "affd1cdd88ec955beeb69944f38eab0158e722db474426b024f9d8d4e8743673"
+      },
+      "bb6809ed503a3c310c18158466720d7268b11f7611f7338b03e721fb2e2afb79": {
+        "activity_id": "bb6809ed503a3c310c18158466720d7268b11f7611f7338b03e721fb2e2afb79",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bb6809ed503a3c310c18158466720d7268b11f7611f7338b03e721fb2e2afb79"
+      },
+      "c11129ae6a6c0d3238078dae21247cc59c425105e5e2b937d43f98e6413ddbe4": {
+        "activity_id": "c11129ae6a6c0d3238078dae21247cc59c425105e5e2b937d43f98e6413ddbe4",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b15df6e425f8c2818d2ed7d3e373808db4ea9dec1e8cfd0ae370eb2f8e8da9c4"
+      },
+      "ce47edc696dd45afa3d8cb1ce4290e52": {
+        "activity_id": "ce47edc696dd45afa3d8cb1ce4290e52",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "89740b7153b3496cb652eb1b96a940a7"
+      },
+      "d033cd3069d3ace2a824b280671a5300e54a8b34e99153fce0aced8b8b8544d8": {
+        "activity_id": "d033cd3069d3ace2a824b280671a5300e54a8b34e99153fce0aced8b8b8544d8",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7bc9a82021425482496d4bedad3c32c3d7c467fb592918d510eb5d840ef464a1"
+      },
+      "d119f42b3d2f3fb536e602157654d00c7eb79b1b93c341743f942e2232ccec18": {
+        "activity_id": "d119f42b3d2f3fb536e602157654d00c7eb79b1b93c341743f942e2232ccec18",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "bfe283ed176feeeadeb44dfad7aff8943e6340069073420b286146abd419b42e"
+      },
+      "e81e36aaa066d3c64ff0fe5ec73470b4ce5115e0e3d9ab4b6c5f9394aa228dab": {
+        "activity_id": "e81e36aaa066d3c64ff0fe5ec73470b4ce5115e0e3d9ab4b6c5f9394aa228dab",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e81e36aaa066d3c64ff0fe5ec73470b4ce5115e0e3d9ab4b6c5f9394aa228dab"
+      },
+      "f724c0bc7df32194ac9e378cae497e26159f3756d5ddc3b241080398630baaf7": {
+        "activity_id": "f724c0bc7df32194ac9e378cae497e26159f3756d5ddc3b241080398630baaf7",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "a0ec4835f9d57531e46065b99171b38034e46ee49264f0934ee7cf43aa649152"
+      },
+      "f97dd9ecc00ee0fa5411b3baa108c3e6939d093778f9997910f520680814417a": {
+        "activity_id": "f97dd9ecc00ee0fa5411b3baa108c3e6939d093778f9997910f520680814417a",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "6f255bbf265c5409e38d141ea78e0448b6b664e177ec91c9d1ccf6ae8504421c"
+      },
+      "fc44cc123a1af535ba567d64b44dfca50b52ea194fadaa77f94465df201f467c": {
+        "activity_id": "fc44cc123a1af535ba567d64b44dfca50b52ea194fadaa77f94465df201f467c",
+        "task_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f850a3515993b7f687b96110a04a75b6f90bb5d6024179f8a8845d28483b39c5"
+      }
+    }
+  }
+}

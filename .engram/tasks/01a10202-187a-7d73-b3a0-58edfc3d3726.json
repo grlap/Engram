@@ -1,0 +1,27 @@
+{
+  "id": "01a10202-187a-7d73-b3a0-58edfc3d3726",
+  "external_ref": null,
+  "title": "The shipped inventory's project selection row omits undecodable project files and the typed refusal kinds",
+  "outcome": "The shipped inventory's project selection row omits undecodable project files and the typed refusal kinds",
+  "acceptance": [
+    "docs/shipped.md's project selection refusal row names non-UTF-8 content and the details.kind values missing, unreadable, undecodable and empty, or links the cli-and-mcp section that lists them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "CLOSED AS DELIVERED in Greg's backlog hygiene sweep (Advisor #1072; Engram::Fable, 2026-10-09 ~00:05Z). The criterion allows 'or links the cli-and-mcp section that lists them'. docs/shipped.md:70's project-selection row links features/cli-and-mcp.md#host-and-operator-cli, and that section lists non-UTF-8 content and details.kind missing, unreadable, undecodable and empty (cli-and-mcp.md:2545-2549; no other level-2 heading in between). Rewritten in 47f3cff. Nothing remains.",
+  "completion": null
+}

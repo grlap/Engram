@@ -1,0 +1,63 @@
+{
+  "id": "01a12d09-88c2-7bb0-b314-f14df8696642",
+  "external_ref": null,
+  "title": "Test stale task sync setup intent after HEAD moves",
+  "outcome": "Test stale task sync setup intent after HEAD moves",
+  "acceptance": [
+    "An owned fixture prepares an intent, commits an unrelated change, then proves preparation refuses the stale HEAD basis while preserving original intent bytes; regression fails if HEAD is removed from the compared basis"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 000d788 on master (test-only). New tests/task_sync_setup_cli.rs::setup_refuses_an_intent_whose_head_an_unrelated_commit_moved_and_keeps_its_bytes:\n- an owned fixture prepares an intent whose recorded head is the pre-commit HEAD;\n- it commits only an unrelated file, so HEAD is the only basis field that moves;\n- it proves preparation refuses with the existing-intent message while the intent and lock bytes stay unchanged, no pending file is left and no database is created.\nIt FAILED (\"unexpected success\") with HEAD removed from the intent.rs comparison and passes with it.\n- Full gate test-001547a0 passed 12/12 on freeze e6b5757e.\n- Final pair: Codex 12722 had no findings; Claude 12724 (which read all lens files) had 2 Notes, no change.\n- Evaluation 52a0f4cc passed 1/1.\n- Installed build b9269db43ea2258e8c5fa360f1ebe5f2d09c7390dcdf4efe25cab95aab5edfa6 (exe 41bc653d4083). Backup engram-20261015T194440Z-654488b874c7.exe. All 4 live stores ready.",
+    "completed_at": "2026-10-15T19:44:58.743641700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "30458ed20ac144caa5d00ca39e093ac7": {
+        "activity_id": "30458ed20ac144caa5d00ca39e093ac7",
+        "task_id": "01a12d09-88c2-7bb0-b314-f14df8696642",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "fac11998657f427783a1ee6650dd4b26"
+      },
+      "68f3aa11eb1c4f71b558546f784b5e44": {
+        "activity_id": "68f3aa11eb1c4f71b558546f784b5e44",
+        "task_id": "01a12d09-88c2-7bb0-b314-f14df8696642",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3161cd1e1dbc4bffa70f9deac14e8876"
+      }
+    }
+  }
+}

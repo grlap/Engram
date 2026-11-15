@@ -1,0 +1,27 @@
+{
+  "id": "01a1d2f7-1f6f-7c42-9cd7-69e9c91fa095",
+  "external_ref": null,
+  "title": "Preflight the catalog text budget for imported scalar task edits",
+  "outcome": "Preflight the catalog text budget for imported scalar task edits",
+  "acceptance": [
+    "An oversized incoming scalar edit follows the documented cross-host storage policy or receives an explicit per-task refusal before any folder writes",
+    "Independent admissible tasks still apply beside an oversized scalar task, with a regression test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

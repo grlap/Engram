@@ -1,0 +1,28 @@
+{
+  "id": "01a171f7-bc3c-7fb2-ae9b-3cf4034a05f1",
+  "external_ref": null,
+  "title": "Identify the holder of Engram's SQLite write lock when a 10 s store-busy refusal recurs, using the landed store-transaction diagnostics",
+  "outcome": "Identify the holder of Engram's SQLite write lock when a 10 s store-busy refusal recurs, using the landed store-transaction diagnostics",
+  "acceptance": [
+    "When a store-busy (writer_admission_refused) refusal recurs on an operational store, the process and operation holding the SQLite write lock and its hold duration are identified from the store_transaction / store_mutex diagnostics records, or marked explicitly unavailable or ambiguous where coverage does not reach the holder, with the evidence locators recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "diagnostics",
+    "greg-directed",
+    "store-lock"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a06d47-3080-7a33-a2e0-b3c5267b1301",
+  "external_ref": null,
+  "title": "Reword --include-restricted help for secret-ref bodies and count secret-ref bodies in the snapshot summary and save audit",
+  "outcome": "Reword --include-restricted help for secret-ref bodies and count secret-ref bodies in the snapshot summary and save audit",
+  "acceptance": [
+    "doctor shows a non-zero secret-ref body count for a new save that carried one, counting current and historical live bodies; new audits record zero explicitly, while an absent count on an older audit means not recorded rather than zero"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Graph snapshot body/manifest and new save audits record live secret-ref body counts; doctor shows nonzero values and distinguishes old absent counts as not recorded. Landed in cae372c/63da32f; full gate and cross-platform CI passed, paired reviews clean.",
+    "completed_at": "2026-09-28T05:10:23.467902Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "700342c4a67647098c1ed307c7c04a42": {
+        "activity_id": "700342c4a67647098c1ed307c7c04a42",
+        "task_id": "01a06d47-3080-7a33-a2e0-b3c5267b1301",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a0642a8cab2048bf8993acc97f1f6a73"
+      }
+    }
+  }
+}

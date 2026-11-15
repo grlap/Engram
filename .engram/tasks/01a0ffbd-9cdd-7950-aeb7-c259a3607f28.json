@@ -1,0 +1,29 @@
+{
+  "id": "01a0ffbd-9cdd-7950-aeb7-c259a3607f28",
+  "external_ref": null,
+  "title": "Measure SQLite work in same-session mark-author lookup and decide whether it needs a transition-kind index",
+  "outcome": "The mark-author query's SQLite scan cost is measured separately from fetched/decoded event bodies and a source-backed index decision is recorded.",
+  "acceptance": [
+    "A reproducible repository-local fixture measures SQLite statement VM/fullscan/sort work for the mark-author lookup across growing note and gate histories, separately from fetched/decoded event-body counters",
+    "The measured result and lookup plan support an explicit decision to retain the schema-free query or propose a separately scoped transition-kind index; no constant SQLite-work claim is made from decode counters alone"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "external_ref": null,
+  "title": "Improve token efficiency across agent recovery, coordination and tool use",
+  "outcome": "Reduce known redundant context and coordination overhead while preserving governing constraints, acceptance evidence, required tests and independent reviews. Exact token measurements are optional and do not block the improvements.",
+  "acceptance": [
+    "Required child outcomes address smaller recovery packets, relevant memory retrieval, unnecessary wakes, compact tool output, a lightweight assessment of known token overhead, and fresh session context for unrelated coding tasks.",
+    "Representative examples show what redundant content or coordination was removed and demonstrate that required instructions, actionable messages and verification evidence remain available. Exact token totals, a numeric savings threshold and new measurement infrastructure are not prerequisites."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 0,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Token-efficiency epic closed on existing child evidence (Greg via Advisor #1305): all 7 required children completed with independent evaluations; representative source-backed reductions recorded in holder map 432f87c9 (recovery 4400->3156 text / 4710->2901 JSON bytes, structured show 2018->1007, refusal 727->360, tool discovery 7162->1991) with required objective, criteria, STOP, locators, failures and refusal reasons retained. Independent evaluation 55ffcef234064fbbac6fe64d18d27589 passed 2/2. No new implementation or gate.",
+    "completed_at": "2026-10-12T23:51:18.118438Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "94b0ba6f64a04c16a5e26c58b4d25bdb": {
+        "activity_id": "94b0ba6f64a04c16a5e26c58b4d25bdb",
+        "task_id": "01a1120e-8381-7850-9559-e95ae7770943",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e0787f53dbcc4f438acbb5ea0a47fde3"
+      }
+    }
+  }
+}

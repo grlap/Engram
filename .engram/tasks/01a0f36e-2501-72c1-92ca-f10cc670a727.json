@@ -1,0 +1,27 @@
+{
+  "id": "01a0f36e-2501-72c1-92ca-f10cc670a727",
+  "external_ref": null,
+  "title": "The peek-and-reads contract says who removes the empty -wal a read-only open creates",
+  "outcome": "The peek-and-reads contract says who removes the empty -wal a read-only open creates",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md says that the empty -wal file a read-only open may create is removed when a later writable connection closes, not when the reading connection closes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 4,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

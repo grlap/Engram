@@ -1,0 +1,32 @@
+{
+  "id": "01a0fbab-6e74-7781-b6ae-1893f0383e11",
+  "external_ref": null,
+  "title": "Close the remaining gaps in the per-action gates brief before it is built",
+  "outcome": "Close the remaining gaps in the per-action gates brief before it is built",
+  "acceptance": [
+    "docs/features/action-gates.md's operation inventory names four state-changing operations including action_reconcile, and its state list includes reported-unresolved and expired",
+    "the brief requires a fresh idempotency key for automatic reauthorization after an expired grant or a changed policy or map, and the Deadline acceptance case covers it",
+    "the brief settles the operator's route for a begun action with no report (operator decision as first report, or a host must first report unknown) and covers it in the Operator decision case",
+    "the brief states that a second complete with a different payload on a reported grant is refused (conflict or directive to action_reconcile), with an acceptance case",
+    "the brief states that action_status returns the grant id and its newest observation id and can be queried by grant and listed by run or project for unresolved actions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "design",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

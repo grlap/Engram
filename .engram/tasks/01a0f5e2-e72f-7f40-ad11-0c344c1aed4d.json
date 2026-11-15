@@ -1,0 +1,52 @@
+{
+  "id": "01a0f5e2-e72f-7f40-ad11-0c344c1aed4d",
+  "external_ref": null,
+  "title": "Completion treats a lost acceptance-binding obligation row as no obligation",
+  "outcome": "Completion treats a lost acceptance-binding obligation row as no obligation",
+  "acceptance": [
+    "A test deletes the projection row of a bound criterion's newest obligation and shows completion refusing as a damaged store rather than sealing on, or skipping to, an older obligation",
+    "Completion's obligation load refuses with InvalidWorkProjection when a work_obligation or work_obligation_resolution recorded on the run feed has no work_run_obligations projection row, including acceptance-binding obligations triggered by work events"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 088fe7d: completion's cut reader, acceptance-binding selection and the binding read load the run's obligations through a checked load that refuses a feed-recorded obligation definition or resolution without its projection row as a damaged store; readers stay readable and doctor names the damage.",
+    "completed_at": "2026-10-03T10:22:31.537054800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4712c784ea4c47dba1b090c4f7a8d9a9": {
+        "activity_id": "4712c784ea4c47dba1b090c4f7a8d9a9",
+        "task_id": "01a0f5e2-e72f-7f40-ad11-0c344c1aed4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d3852dea4f8d43fa8ec2d164ec77f21c"
+      }
+    }
+  }
+}

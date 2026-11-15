@@ -1,0 +1,48 @@
+{
+  "id": "01a0b067-9c01-7da0-89e5-d8e2d0c721a3",
+  "external_ref": null,
+  "title": "Migration must not keep the old store inside the new one: detach retained originals and stop writing them",
+  "outcome": "A migrated store contains the new-format data plus the small old-to-new identity map and nothing else from the source; original bytes live only in the export archive outside the store, verification happens against that archive at migration time, and the next migration neither carries forward nor adds a copy of the previous format",
+  "acceptance": [
+    "a second migration on top of a migrated store composes the identity maps without carrying or adding original bytes, pinned by a test that measures the target's size against its working data",
+    "an operator command with a dry-run preview verifies the archive's identity, removes the already retained originals from an existing migrated store, vacuums, and records an audited detachment; measured on a copy of the real store before and after",
+    "old hashes still resolve after detachment (seals, receipts, note locators, pre-migration completion replay) and doctor reports detached originals with the archive identity instead of failing; a deep audit takes the archive file as input",
+    "the full-store migration brief, the SQLite store brief, the shipped inventory, and the discipline sentence in CLAUDE.md and AGENTS.md say that originals are preserved in the archive, not in the live store",
+    "the migration writes no original object bytes, original table rows, or re-expressed result bodies into the target store; it writes the old-to-new identity map and bindings, and verifies the conversion against the export archive during import"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "migration",
+    "store-size"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a0b088-cf8a-7502-a157-2cd1372b3329",
+  "disposal_reason": "Greg rejected both the retained-originals design and my detachment patch for it: identity becomes a UUID and migration a plain JSON export and import with no rehashing, which removes the provenance tables entirely instead of slimming them. The measurements and consumer analysis recorded here remain the evidence for the replacement item.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "cb9c71837eb881557b8f8db284beb98d6933cef9eb099d06ae89b7769121fda4": {
+        "activity_id": "cb9c71837eb881557b8f8db284beb98d6933cef9eb099d06ae89b7769121fda4",
+        "task_id": "01a0b067-9c01-7da0-89e5-d8e2d0c721a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "40899435e2f0bc39f185317fb52aaf827e4c76bd0b3985a77b88de488e8e3efa"
+      }
+    }
+  }
+}

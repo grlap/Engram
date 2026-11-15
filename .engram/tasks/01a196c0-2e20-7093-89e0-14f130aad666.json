@@ -1,0 +1,31 @@
+{
+  "id": "01a196c0-2e20-7093-89e0-14f130aad666",
+  "external_ref": null,
+  "title": "Give named_root_bind's exited-session and actor-mismatch refusals their own error codes so TermAl can tell a curable refusal from the others",
+  "outcome": "Give named_root_bind's exited-session and actor-mismatch refusals their own error codes so TermAl can tell a curable refusal from the others",
+  "acceptance": [
+    "named_root_bind reports a refusal caused by an Exited control session with its own stable code (for example control_session_exited), distinct from named_root_binding_refused",
+    "named_root_bind reports an actor/session mismatch with its own stable code, distinct from the exited case",
+    "all other named_root_bind refusals (field rules, workspace text, end rules, inactive claim, stale generation) keep named_root_binding_refused",
+    "the host protocol documentation lists the new codes, and tests assert each code from the corresponding branch"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "termal-request"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a19f1d-a601-76f3-b9b7-3b535b7ac25e",
+  "external_ref": null,
+  "title": "Clarify reason fields in abnormal control-exit diagnostics",
+  "outcome": "Diagnostic records consistently distinguish the machine exit cause from fixed human guidance.",
+  "acceptance": [
+    "Use a dedicated exit_reason field or explicitly document control_exit reason semantics without implying the common Fault guidance contract.",
+    "Tests and diagnostics documentation agree on panic and transport-failure fields while retaining privacy and correlation assertions."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "diagnostics"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

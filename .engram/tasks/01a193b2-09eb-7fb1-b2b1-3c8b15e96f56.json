@@ -1,0 +1,31 @@
+{
+  "id": "01a193b2-09eb-7fb1-b2b1-3c8b15e96f56",
+  "external_ref": null,
+  "title": "Admit or disclose a notes-enabled exchange of an empty project",
+  "outcome": "Admit or disclose a notes-enabled exchange of an empty project",
+  "acceptance": [
+    "An exchange whose binding profile includes notes on a project with no tasks either succeeds in both directions, using the folder validation and encoding consistently for exchange trees and local bases, or is refused with a stated reason documented as a limit in docs/features/git-task-sync.md",
+    "A test covers the incoming {notes_included: true, tasks: []} candidate and the outgoing basis of an empty notes-enabled store",
+    "docs/features/git-task-sync.md's 'Internal exchange foundation' section describes the later reconciled import as target behaviour, not in the present tense"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "recovery",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Misfiled: a justified Low left for later must be an independent root, not a required child (engram-repo skill, review findings rule; pointed out by Engram::Coder-MacosFixSol, mailbox 3cf19104 #16). Refiled as an independent root with the same acceptance and provenance; the finding itself stands.",
+  "completion": null
+}

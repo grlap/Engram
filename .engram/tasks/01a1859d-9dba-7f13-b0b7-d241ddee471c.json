@@ -1,0 +1,87 @@
+{
+  "id": "01a1859d-9dba-7f13-b0b7-d241ddee471c",
+  "external_ref": null,
+  "title": "Make commit messages meaningful: add the shared Commit messages section and update the test-ref sentence in AGENTS.md and CLAUDE.md",
+  "outcome": "Make commit messages meaningful: add the shared Commit messages section and update the test-ref sentence in AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md contain the concurred \"### Commit messages\" section verbatim (memory rules-commit-messages r1), and the test-ref sentence ends \"and its message follows the \\\"Commit messages\\\" section.\" instead of \"and its message names the fingerprint and nothing else.\"",
+    "AGENTS.md and CLAUDE.md are byte-identical, the link check passes, and the final-diff authority audit records both coordinators' concurrence and the notice to Greg"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "agent-instructions",
+    "authority"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "AGENTS.md and CLAUDE.md now carry the concurred \"### Commit messages\" section verbatim. The test-ref sentence now says its message follows that section, replacing \"names the fingerprint and nothing else\". The two files are byte-identical, and the link and identity checks passed. The final-diff authority audit records both coordinators' concurrence and the notice to Greg. Landed in 3de7f22f, pushed and installed (build 93ee55a5). The independent evaluation b31ecc00 passed 2/2.",
+    "completed_at": "2026-10-29T21:26:48.290368Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6cdfafe841b2454f86edeb8660673645": {
+        "activity_id": "6cdfafe841b2454f86edeb8660673645",
+        "task_id": "01a1859d-9dba-7f13-b0b7-d241ddee471c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b17ccc9491e441709170663dd1d91217"
+      },
+      "d76aa9e2dcd54a25941c0763c8fc7c61": {
+        "activity_id": "d76aa9e2dcd54a25941c0763c8fc7c61",
+        "task_id": "01a1859d-9dba-7f13-b0b7-d241ddee471c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "afc564ae040743cdb9d5ccdbef6374fb"
+      },
+      "ecb888719d5945d5b7310f3920b0b812": {
+        "activity_id": "ecb888719d5945d5b7310f3920b0b812",
+        "task_id": "01a1859d-9dba-7f13-b0b7-d241ddee471c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ecb888719d5945d5b7310f3920b0b812"
+      },
+      "f456559251c345219301f0b38c06cbec": {
+        "activity_id": "f456559251c345219301f0b38c06cbec",
+        "task_id": "01a1859d-9dba-7f13-b0b7-d241ddee471c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ecb888719d5945d5b7310f3920b0b812"
+      }
+    }
+  }
+}

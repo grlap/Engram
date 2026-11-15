@@ -1,0 +1,51 @@
+{
+  "id": "01a15549-8ff7-7002-9e08-d9c64c93a8de",
+  "external_ref": null,
+  "title": "Pin the launcher's final stop check with an end-to-end commit test, and give the sealed-source observation page an entry locator",
+  "outcome": "Pin the launcher's final stop check with an end-to-end commit test, and give the sealed-source observation page an entry locator",
+  "acceptance": [
+    "A launcher test injects a transient stop-request read failure into executeRun's commit() under the stop lock (first final read EPERM, next read returns an intent) and asserts the retained stop is surfaced, not a pass",
+    "On a historical sd1 observation page, sealed_source.observations_detail either names the entry command into the sealed window or is omitted from the page-level diagnostic, never the next-page continuation; a test covers the last page"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed ba72314a on origin/master, a fast-forward from 241abd47, tree dd69e5c1. It is the gated freeze d86df946.\n- C1: a win32 launcher test injects one EPERM into the final stop-request read that executeRun's commit makes under the stop lock, then returns an intent. It asserts the run reports failed/stopped/interrupted with the retained stop, not a pass.\n- C2: a historical sealed-source observation page no longer offers its own next-page continuation as observations_detail; the key is omitted and paging uses the window's after and next commands. A test walks every page, the last included, with a 40-page progress bound. One docs sentence was added.\n- Validation:\n  - full gate test-4be360e7-bdfc-4dbd-932b-2225a0f8e7fe PASS: 12/12 stages and 3/3 preflight, expected = before = after = d86df946;\n  - reviews r1 clean at Medium (its Low and Note fixed in r2), r2 clean, carry r3 clean;\n  - evaluation 8382f605 PASS 2/2.\n- Readiness ready on all 6 stores, both pre-commit (build 532c82b9) and post-commit (build 83528355, clean ba72314a).\n- Installed 83528355; backup engram-20261020T155043Z-70148af075c4.exe.",
+    "completed_at": "2026-10-20T15:50:57.628452900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "90d0140fbce643dfb2ff3b7613a32a4e": {
+        "activity_id": "90d0140fbce643dfb2ff3b7613a32a4e",
+        "task_id": "01a15549-8ff7-7002-9e08-d9c64c93a8de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a4edc19c762e4d21bc30c9a36b6ad837"
+      }
+    }
+  }
+}

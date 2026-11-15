@@ -1,0 +1,54 @@
+{
+  "id": "01a0fa15-1ea6-76f3-beb2-619afb1c38c0",
+  "external_ref": null,
+  "title": "Make graph recovery handle persisted hostile work text without rejecting the whole export",
+  "outcome": "Make graph recovery carry the persisted text, historical actors and gate history a live store holds, byte-exact, without rejecting the whole export",
+  "acceptance": [
+    "A fixture reproducing the persisted ESC-bearing cancelled work items can be exported and restored through the chosen documented graph recovery contract without dropping work items, relations, or history, and without rendering terminal controls unsafely.",
+    "New work-text admission and graph snapshot validation agree: a regression test covers ordinary add/update and save/load, proving admitted titles can be exported or the title is explicitly refused before its write.",
+    "The implementation explicitly resolves historical stored text outside any new admission rule, preserves original durable records and ids, and reports any deliberately transformed recovery fields rather than silently changing them.",
+    "A graph save and load rehearsal against an authorized coherent copy of the affected Engram store succeeds, or names every remaining offending field with actionable work/record context; no live data is edited merely to make the exporter pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "dogfood",
+    "snapshot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "graph save/load carry stored text byte-exact: persisted prose is non-empty and trimmed only, with controls carried and escaped on render; memory bodies keep their whitespace; gate history uses the stored gate rules; work-history actors use the write-path shape; memory version and tombstone actors use the project-memory attribution rule; the operator keeps the strict audit shape; the saved container escapes every terminal-unsafe character. Rehearsed on a read-only copy of the live Engram store (939 items, byte-exact). Two review rounds; round 2 is clean (one docs Note). Gate test-9201abf1 passed; the independent evaluation passed 4/4.",
+    "completed_at": "2026-10-02T03:32:48.950240300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5e9582757e0d4f0a8944e63c4eb64211": {
+        "activity_id": "5e9582757e0d4f0a8944e63c4eb64211",
+        "task_id": "01a0fa15-1ea6-76f3-beb2-619afb1c38c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f054963bc3414b90b85e6ed1a7a140ee"
+      }
+    }
+  }
+}

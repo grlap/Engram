@@ -1,0 +1,50 @@
+{
+  "id": "01a06dac-1842-7191-88f6-649ae9d5b48f",
+  "external_ref": null,
+  "title": "Canonically anchor restored work-item planning state",
+  "outcome": "Canonically anchor restored work-item planning state",
+  "acceptance": [
+    "tampering restored work item planning fields is refused by reads and reported by integrity verification"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Restored records canonically bind project and full planning state; reads and integrity reject projection-only tampering.",
+    "completed_at": "2026-09-04T18:49:55.320253600Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "03c6ea2f39b05888316b0a65c6405bc6f18600f5bd4bda5c2c5ccd7104229999": {
+        "activity_id": "03c6ea2f39b05888316b0a65c6405bc6f18600f5bd4bda5c2c5ccd7104229999",
+        "task_id": "01a06dac-1842-7191-88f6-649ae9d5b48f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e931533c0094026800dddc34134bda35ef1088b9342d0c87b93dab2ed31eb803"
+      }
+    }
+  }
+}

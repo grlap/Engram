@@ -1,0 +1,28 @@
+{
+  "id": "01a12347-7136-7642-8bf4-69b7502eb2bd",
+  "external_ref": null,
+  "title": "Report task-sync configuration separately from local backup durability mode in design docs",
+  "outcome": "Report task-sync configuration separately from local backup durability mode in design docs",
+  "acceptance": [
+    "The specification durability principle and roadmap distinguish local/local_backed_up durability from independent task-sync configuration/status, allowing backup and task sync together without representing task sync as a durability mode."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

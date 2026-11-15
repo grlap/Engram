@@ -1,0 +1,50 @@
+{
+  "id": "01a11028-aadc-7223-98d5-929d05e48ae1",
+  "external_ref": null,
+  "title": "Bound exact-grant timestamps to the documented RFC 3339 year range",
+  "outcome": "Bound exact-grant timestamps to the documented RFC 3339 year range",
+  "acceptance": [
+    "Exact grant reads refuse timestamps outside RFC 3339 years 0000 through 9999 as control_projection_invalid, or document a deliberately different supported timestamp contract; boundary tests cover both ends."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Exact-grant evidence refuses UTC timestamp years outside 0000–9999 with control_projection_invalid. Runtime-derived serialized endpoint and adjacent-millisecond tests cover every coherent slot, unchanged storage and no timestamp-order constraint. Full gate, independent Codex/Claude whole-input review and 1/1 independent acceptance passed. Pushed and installed; four live stores ready.",
+    "completed_at": "2026-10-06T10:55:53.590865200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4bab96412f324989b8621bb1fb35f444": {
+        "activity_id": "4bab96412f324989b8621bb1fb35f444",
+        "task_id": "01a11028-aadc-7223-98d5-929d05e48ae1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "30a032d86e8d4a77b9e5df1a70cf6361"
+      }
+    }
+  }
+}

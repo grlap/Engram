@@ -1,0 +1,50 @@
+{
+  "id": "01a0844e-7726-78f0-991b-eae0eeda04da",
+  "external_ref": null,
+  "title": "The function that grants the migration attribution exception disagrees with its own module's encoding rule",
+  "outcome": "The function that grants the migration attribution exception disagrees with its own module's encoding rule",
+  "acceptance": [
+    "A fault probe mutates a retained original row rather than deleting it, so the re-derivation binding is proven positively and not only by absence",
+    "The cell count and the cell index in the attribution derivation use the same hidden-column filter the exporter encodes with, matching the other consumers of that archive encoding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Migration attribution now follows the exported column encoding; retained-row mutation validates audit and runtime binding. All nine gates and both read-only reviews accepted.",
+    "completed_at": "2026-09-11T16:00:13.683915300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bee89b1c2596f4df65f68e049b33c64ca6340fa2b461f09c87af053d837b10e6": {
+        "activity_id": "bee89b1c2596f4df65f68e049b33c64ca6340fa2b461f09c87af053d837b10e6",
+        "task_id": "01a0844e-7726-78f0-991b-eae0eeda04da",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "22a6034aeb075478496aaab235c6cbccaf9f48c9a121e7fba2363443a656a9d2"
+      }
+    }
+  }
+}

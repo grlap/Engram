@@ -1,0 +1,26 @@
+{
+  "id": "01a067d7-2251-7722-a384-d637308d5bae",
+  "external_ref": null,
+  "title": "scratch: optional lead",
+  "outcome": "scratch: optional lead",
+  "acceptance": [
+    "scratch: optional lead is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 4,
+  "labels": [
+    "scratch"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a067d7-21f3-71a3-b932-914f8bc460c9",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "scratch check finished",
+  "completion": null
+}

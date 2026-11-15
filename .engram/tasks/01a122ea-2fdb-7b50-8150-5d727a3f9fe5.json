@@ -1,0 +1,27 @@
+{
+  "id": "01a122ea-2fdb-7b50-8150-5d727a3f9fe5",
+  "external_ref": null,
+  "title": "Reduce diagnostic admission loss from concurrent in-memory publication",
+  "outcome": "Reduce diagnostic admission loss from concurrent in-memory publication",
+  "acceptance": [
+    "Concurrent emitters with queue capacity do not lose records solely because a short publication overlaps, and exit flush includes the summary or reports bounded failure without acknowledging unpublished records."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,32 @@
+{
+  "id": "01a13605-bebe-76e2-a4d6-9bf54c91b725",
+  "external_ref": null,
+  "title": "Task sync stage 1: verify and run the ordinary migration for the model-A cutover, with no conversion code",
+  "outcome": "The model-A release reaches every live store through the existing migration export/import, with no conversion code",
+  "acceptance": [
+    "Before cutover, a census with the model-A build shows every live store holds no task-sync import, planning, binding or exchange record, so model A's new heads and holds start empty; nothing is seeded, fabricated or lazily derived. If any store holds some, stop and report to Greg.",
+    "The ordinary migration, export with the current build and import with the model-A build, of a COPY of each live store succeeds with unchanged per-table row counts, ids, links and bytes; the new model-A tables start empty and doctor plus readiness are healthy; a store holding an origin-created task without a head refuses before publish. The results and the cutover plan (store and consumer census, export and backups, fresh destination validation, swap, rollback and the coordinated restart) go to Greg before landing.",
+    "Tests use isolated stores only, inside the existing migration test owners: one round trip of a pre-model-A-shaped store into the model-A schema stays healthy with empty new tables, and an origin-created task without a head refuses. No conversion module, format selector, report field, build identity, legacy refusal or conversion-only fixture is added."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "migration",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13605-a966-7c50-b8e9-4111b50b57de"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,90 @@
+{
+  "id": "01a16d3c-5a77-7140-a713-f688a273eaea",
+  "external_ref": null,
+  "title": "Retire unambiguous cancelled MCP trace entries when their response dispatch is proven",
+  "outcome": "Retire unambiguous cancelled MCP trace entries when their response dispatch is proven",
+  "acceptance": [
+    "A safely attributable single-generation cancelled call releases its retained trace slot and emits any withheld summary when its response dispatch is observed; repeated completed cancellation lifecycles do not exhaust the shared tracking pool.",
+    "Duplicate, token-cancelled, missing-receive and otherwise ambiguous generations remain conservatively uncorrelated; deterministic regression coverage proves that slot retirement never lets an old response claim a replacement call."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-mcp",
+    "delivered",
+    "diagnostics",
+    "evaluation-pending",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Unambiguous cancelled MCP trace entries are retired when their response dispatch is done; landed (in the ancestry of e7426a6) and verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed both criteria (record 8ce103752fe548e09a5aff4c92810532).",
+    "completed_at": "2026-10-28T01:28:31.197493Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "98e573971c324aed94b6633d0017fd8b": {
+        "activity_id": "98e573971c324aed94b6633d0017fd8b",
+        "task_id": "01a16d3c-5a77-7140-a713-f688a273eaea",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "aa1d37d4383c4244a17d16b8a0ef2e10"
+      },
+      "aa1d37d4383c4244a17d16b8a0ef2e10": {
+        "activity_id": "aa1d37d4383c4244a17d16b8a0ef2e10",
+        "task_id": "01a16d3c-5a77-7140-a713-f688a273eaea",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "aa1d37d4383c4244a17d16b8a0ef2e10"
+      },
+      "e54983327d994a06b767b19d93722bba": {
+        "activity_id": "e54983327d994a06b767b19d93722bba",
+        "task_id": "01a16d3c-5a77-7140-a713-f688a273eaea",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8277af85812c42e8a435a86f56c4edc9"
+      },
+      "f665874fba814dec9f5944e9162324a8": {
+        "activity_id": "f665874fba814dec9f5944e9162324a8",
+        "task_id": "01a16d3c-5a77-7140-a713-f688a273eaea",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0137926e6d0240dca55656d8274733ec"
+      }
+    }
+  }
+}

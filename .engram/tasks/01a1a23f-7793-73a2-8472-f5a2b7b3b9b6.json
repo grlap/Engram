@@ -1,0 +1,68 @@
+{
+  "id": "01a1a23f-7793-73a2-8472-f5a2b7b3b9b6",
+  "external_ref": null,
+  "title": "Capture only selected task-sync documents through the existing typed export owner",
+  "outcome": "Provide one snapshot-scoped keyed document capture that reuses the current per-task exporter without scanning unrelated tasks or changing stored formats.",
+  "acceptance": [
+    "The current complete exporter and a keyed capture share one per-task capture implementation, preserving origin, activity, notes, completion, blocker and normalization behavior.",
+    "For explicitly selected task IDs, keyed capture reads and decodes only selected task data and reports absence or exchange retirement explicitly; it does not construct or globally validate a partial TaskTree or scan all project IDs.",
+    "A 2,000-task fixture compares keyed documents with the same snapshot's complete export for five edits, one addition and one removal, counts selected task loads/decodes, and proves unrelated malformed task payloads are not read.",
+    "No SQLite schema, durable record, baseline fingerprint meaning or projection derivation changes; focused checks and the independent review pair pass, with final FULL owned by Merger."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Land selected task document capture in combined task-sync candidate",
+    "completed_at": "2026-11-03T20:20:59.079668400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "05a173b95ea34290ab8320f2f0d9cc04": {
+        "activity_id": "05a173b95ea34290ab8320f2f0d9cc04",
+        "task_id": "01a1a23f-7793-73a2-8472-f5a2b7b3b9b6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5fa3cd2975d1484c88fedc148af0a36f"
+      },
+      "f1953e8e5bdf4c5587086dd0d53716bc": {
+        "activity_id": "f1953e8e5bdf4c5587086dd0d53716bc",
+        "task_id": "01a1a23f-7793-73a2-8472-f5a2b7b3b9b6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "05a173b95ea34290ab8320f2f0d9cc04"
+      }
+    }
+  }
+}

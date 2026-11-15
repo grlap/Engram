@@ -1,0 +1,51 @@
+{
+  "id": "01a10f0d-c61b-70f3-8788-ac2b186e9e67",
+  "external_ref": null,
+  "title": "Check in the Engram presentation draft as docs/presentation.md on Greg's word",
+  "outcome": "The presentation on what Engram is and why a Markdown file is not enough, with the agents' feedback folded in, is committed and pushed as docs/presentation.md on Greg's explicit word",
+  "acceptance": [
+    "docs/presentation.md exists on master with the draft-1 feedback from Engram::Fable and Termal::Fable2 folded in (at least the two factual errors Fable named: the 1024 in-degree bound is not shipped until its landing, and gates, reviews and wakes are recorded in Engram, not coordinated through it), contains no work refs, and the Markdown-only checks (node scripts/check-doc-links.mjs and the AGENTS/CLAUDE identity check) pass through the focused launcher on the exact committed tree",
+    "the landing is recorded with the commit, remote, branch, push time and installed build copied from command output, after readiness reported every live store ready and the binary was installed with a backup before the push"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "docs/presentation.md landed as 1f1514f3e255ad0ca0499f2658cd2f491b2e67ed on origin master (fast-forward from 8ca2538, pushed 2026-10-06T03:29:51Z) on Greg's own word in this session (verbatim, note 3856d821c53a4c1283616dab8f338ee4: \"also please check this in, you have my permission\", after \"can you create a presentation.md, collect feedback from other agents using it as well.\"). Fifteen slides with speaker notes and an appendix, with the feedback of Engram::Fable, Termal::Fable2, Engram::Opus, Engram::Advisor, Engram::Coder and Engram::Architect1 folded in, including Fable's two factual corrections; no work refs, session or mailbox ids. Markdown-only checks through the focused launcher on the exact committed tree at 1f1514f (fingerprint 486076f6…): link check test-0e9d3355 and AGENTS/CLAUDE identity test-6f938250, both PASS, recorded as gates; the same checks had passed on the same content before the commit (4dc81223…). The review pair was skipped for this one Markdown file on Greg's explicit word, as Engram::Fable's conditions allow; independent evaluation 171bad972a1046549ddb59426c01d863 passed both criteria. Release built from the committed tree (build 3824e40b61b8, exe sha256 591abc80ec2dbb58d1e7c39405f97d2f16602e86e19914fa3e187cf00b7ad684, rev 1f1514f, no +dirty); readiness with it from the four repository folders (Engram, TermAl, PhoenixCodeNav, CV): all ready, schema reference unchanged; installed at 03:29:36Z after moving the previous exe to C:\\Users\\grzeg\\.engram\\backups\\engram-20261006T032936Z-1d9997cf42d8.exe; installed-binary readiness ready. No behaviour change for running sessions: one Markdown file; the build differs only in its embedded revision.",
+    "completed_at": "2026-10-06T03:32:28.349160800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "86794e240a4748fb9c75edd180a7282d": {
+        "activity_id": "86794e240a4748fb9c75edd180a7282d",
+        "task_id": "01a10f0d-c61b-70f3-8788-ac2b186e9e67",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "65baa476ed864172a551373a9fa137d2"
+      }
+    }
+  }
+}

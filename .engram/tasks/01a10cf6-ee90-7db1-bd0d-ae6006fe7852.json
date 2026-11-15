@@ -1,0 +1,54 @@
+{
+  "id": "01a10cf6-ee90-7db1-bd0d-ae6006fe7852",
+  "external_ref": null,
+  "title": "Find the project file from a subdirectory: resolve .engram-project by searching the working directory's ancestors",
+  "outcome": "Find the project file from a subdirectory: resolve .engram-project by searching the working directory's ancestors",
+  "acceptance": [
+    "When no --project-file is given, the CLI and MCP resolve the project by walking from the working directory up through its ancestors to the nearest .engram-project, stopping at the filesystem root. An explicit --project-file still wins.",
+    "A refusal when no project file is found anywhere on the path names the directory searched from and the remedy, and never suggests creating a new .engram-project in a subdirectory.",
+    "Tests cover: resolution from a nested subdirectory of a repository; a nested different project (the nearest file wins); a linked worktree inside the repository; an explicit --project-file overriding the search; and the not-found refusal.",
+    "The docs (README setup and cli-and-mcp.md) state the resolution rule."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "agent-ergonomics",
+    "area-host-integration",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "CLI and MCP select the nearest .engram-project by walking cwd ancestors to the filesystem root, with explicit project-file override and no fallback on invalid markers. Refusal names search origin and existing marker remedy. Nested/nearest/linked-worktree/override/not-found tests and docs delivered. Full nine-stage Windows gate, Codex/Claude whole-input pair, independent four-criterion acceptance, and readiness of four live stores passed. Installed clean release and verified origin/master push; marker type/size robustness Low tracked separately.",
+    "completed_at": "2026-10-05T20:15:04.659969700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9aa39611a5254cb5b6b5ffa066c98d8e": {
+        "activity_id": "9aa39611a5254cb5b6b5ffa066c98d8e",
+        "task_id": "01a10cf6-ee90-7db1-bd0d-ae6006fe7852",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "289349b05a5542ca946645f912931969"
+      }
+    }
+  }
+}

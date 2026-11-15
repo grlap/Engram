@@ -1,0 +1,52 @@
+{
+  "id": "01a06d47-3ac8-7f73-bfab-19f79af321ea",
+  "external_ref": null,
+  "title": "Name unsupported hard-link publication and preserve success after stage cleanup failure",
+  "outcome": "Publish graph snapshots atomically without replacement; explicitly name hard-link support when unavailable, preserve underlying OS errors, and warn without failing when stage cleanup fails after successful publication.",
+  "acceptance": [
+    "graph save --out onto a filesystem without hard links succeeds or names hard-link support; a failed temp removal after publication exits zero"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Graph snapshot hard-link publication names unsupported support with the underlying OS error; cleanup failure after successful publication warns and preserves exit zero. Landed in cae372c/63da32f, exact full gate and CI passed, paired reviews clean.",
+    "completed_at": "2026-09-28T05:08:01.201872300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "984da7b041784ef5af0a786d937494d2": {
+        "activity_id": "984da7b041784ef5af0a786d937494d2",
+        "task_id": "01a06d47-3ac8-7f73-bfab-19f79af321ea",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ebcf6c86bfb5460ab4a489ddc2e68ef0"
+      }
+    }
+  }
+}

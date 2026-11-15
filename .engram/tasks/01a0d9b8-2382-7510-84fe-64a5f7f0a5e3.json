@@ -1,0 +1,53 @@
+{
+  "id": "01a0d9b8-2382-7510-84fe-64a5f7f0a5e3",
+  "external_ref": null,
+  "title": "Host-observed source changes attach to whichever item a multi-claim session last focused, not to the work the change belongs to",
+  "outcome": "Host-observed source changes attach to whichever item a multi-claim session last focused, not to the work the change belongs to",
+  "acceptance": [
+    "A session that holds several claims can keep each host-observed source change off items it did not change, or Engram documents why it cannot and what the agent must do",
+    "A test reproduces the misattribution before the fix: a targeted note moves focus to one claim, and a later source-changing turn opens an obligation on it",
+    "An acceptance evaluation in flight is not invalidated by a source change the evaluator already saw: a source_changed observation whose source revision equals the evaluation's declared source fingerprint on the same root does not refuse, and the evaluator can refresh its basis when no new entry is a source change it did not see",
+    "The stale-evaluation refusal names its class: a host-observed check after the basis says to refresh and resubmit, and an unseen source change says the evaluation is void and must be requested again"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A multi-claim session's host-observed source changes no longer drift onto items it did not change. A non-holder's note, gate or evaluate leaves focus alone, so the next turn stays bound to the session's own claim. docs/features/acceptance-evaluation.md \"Turns, focus and evaluation timing\" explains why Engram cannot split a turn's change by claim, and what to do: switch with `claim REF` at a turn boundary, and request evaluations at a turn boundary. An evaluation is no longer voided by a source change to the revision it declared it judged (source_fingerprint), nor by the obligation that change opened. A moved basis now refuses with its class: acceptance_evaluation_resubmit after a check, acceptance_evaluation_void after an unseen source change. The refusal message and the details carry the same remedy text. Tests in basis_moves.rs and observations.rs reproduce the misattribution and pin each behaviour. Landed as 24634aa (pushed) and installed as build 7094b7cc6743; both stores reported ready. TermAl was told about the new codes and the focus change. Independent evaluation ca463b4a passed all 4 criteria.",
+    "completed_at": "2026-09-26T06:27:53.933911500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9d53627b499b442ca27462b4d6267c81": {
+        "activity_id": "9d53627b499b442ca27462b4d6267c81",
+        "task_id": "01a0d9b8-2382-7510-84fe-64a5f7f0a5e3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "47956813f1054d79851244a946c0bd96"
+      }
+    }
+  }
+}

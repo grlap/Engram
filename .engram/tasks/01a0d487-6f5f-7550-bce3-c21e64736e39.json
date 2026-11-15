@@ -1,0 +1,54 @@
+{
+  "id": "01a0d487-6f5f-7550-bce3-c21e64736e39",
+  "external_ref": null,
+  "title": "Let one source-size family be checked alone, so its host-observed inventory fits the evidence summary",
+  "outcome": "Let one source-size family be checked alone, so its host-observed inventory fits the evidence summary",
+  "acceptance": [
+    "The all-families test still runs in normal validation: it refuses overlapping families and names every oversized file",
+    "The full quality gates pass and a Codex and a Claude review of the change are clean",
+    "docs/development.md names the exact per-family command a host runs as file-size evidence, such as `cargo test --test source_file_size -- --exact <family test> --nocapture`, and says that one family's output fits the 4096-byte verification summary",
+    "tests/source_file_size.rs has one test per guarded family, selectable by an exact test name. Run alone with --nocapture, it prints only that family's inventory lines, in the 'PATH: N physical lines (limit 2499)' form, and fails when any of that family's files is over the limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "file-size",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "guarded_families! declares each guarded source family once. It generates the FAMILIES list and one test per family, family::NAME, so a host can run one family with --exact --nocapture. That run prints one line per file in path order (\"PATH: N physical lines (limit 2499)\"), fails naming each file over the limit, and must fit a 3 KiB report budget. within_report_budget is tested against a size counted by hand: exactly the budget fits, one byte less is refused. docs/development.md gives the per-family and whole-tree commands and notes that plain --nocapture interleaves output across threads. Landed as da66d31, reviewed clean in two rounds; the independent evaluation passed all four criteria.",
+    "completed_at": "2026-09-25T04:42:15.443295200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "05bbd217030f422582a4a7f77d1a0474": {
+        "activity_id": "05bbd217030f422582a4a7f77d1a0474",
+        "task_id": "01a0d487-6f5f-7550-bce3-c21e64736e39",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "03017e651f184d098deb5e6ad732b0ad"
+      }
+    }
+  }
+}

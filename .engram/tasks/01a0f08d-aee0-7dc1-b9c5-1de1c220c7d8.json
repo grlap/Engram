@@ -1,0 +1,49 @@
+{
+  "id": "01a0f08d-aee0-7dc1-b9c5-1de1c220c7d8",
+  "external_ref": null,
+  "title": "Bind the audited authority-text diff to the landed tree",
+  "outcome": "Bind the audited authority-text diff to the landed tree",
+  "acceptance": [
+    "The audit or the landing confirms that the audited authority-text diff is the diff of the tree that lands (post-landing comparison of the landed commit's authority-text diff with the audited diff, or an auditor-run freeze check against the supplied fingerprint)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the authority audit procedure binding supplied authority diffs to the independently frozen local tree, with auditor-owned compiled checks and an explicit worktree-access comparison fallback.",
+    "completed_at": "2026-10-03T12:27:19.869025900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "45f5013658d24c15b77e7eb2ba2c993c": {
+        "activity_id": "45f5013658d24c15b77e7eb2ba2c993c",
+        "task_id": "01a0f08d-aee0-7dc1-b9c5-1de1c220c7d8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4f61f0635eb14f9a96c38a4ed603cc57"
+      }
+    }
+  }
+}

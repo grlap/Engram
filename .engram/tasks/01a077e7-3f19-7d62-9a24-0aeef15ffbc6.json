@@ -1,0 +1,61 @@
+{
+  "id": "01a077e7-3f19-7d62-9a24-0aeef15ffbc6",
+  "external_ref": null,
+  "title": "current_status.by distinguishes the same actor's other session from a different actor",
+  "outcome": "current_status.by distinguishes the same actor's other session from a different actor",
+  "acceptance": [
+    "current_status.by (and the status text label) reads you for the reader's own session, you (another session) for a note by the reader's actor from a different session, and another session for a different actor; existing privacy rule unchanged; tests for the three cases on show and next"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Three status labels distinguish same session, same actor other session, and other actor without principal disclosure on show and next. Role regressions, final gates and pair closure accepted; landed fba7824.",
+    "completed_at": "2026-09-07T04:29:20.714116200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "534a24752280299fb73c5346114af3871381de9fcfe496087cea4b90c9920ee2": {
+        "activity_id": "534a24752280299fb73c5346114af3871381de9fcfe496087cea4b90c9920ee2",
+        "task_id": "01a077e7-3f19-7d62-9a24-0aeef15ffbc6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cf5d3ef376559f7f8316bc3d7568c63fefe37c12096f2dffdfa96bcf5dcb0a1c"
+      },
+      "811c4971fd2c3eae36fa8da64e1a98645538beb43585ba9653b1811d9ad27e94": {
+        "activity_id": "811c4971fd2c3eae36fa8da64e1a98645538beb43585ba9653b1811d9ad27e94",
+        "task_id": "01a077e7-3f19-7d62-9a24-0aeef15ffbc6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "811c4971fd2c3eae36fa8da64e1a98645538beb43585ba9653b1811d9ad27e94"
+      }
+    }
+  }
+}

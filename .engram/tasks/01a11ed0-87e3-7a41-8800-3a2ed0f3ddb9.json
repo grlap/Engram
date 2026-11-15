@@ -1,0 +1,62 @@
+{
+  "id": "01a11ed0-87e3-7a41-8800-3a2ed0f3ddb9",
+  "external_ref": null,
+  "title": "A turn refused stale_fence after a host restart is lost instead of rebound and delivered",
+  "outcome": "A turn refused stale_fence after a host restart is lost instead of rebound and delivered",
+  "acceptance": [
+    "After a TermAl host restart, a session whose pre-restart work binding went stale has its next prompt delivered (rebinding or released focus), or receives a refusal that names the recovery step; a test reproduces the host_transition plus stale binding sequence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added deterministic regression coverage for stale work binding after store reopen/host reconnect, actionable recovery refusal, explicit claim recovery/rebind and fresh admission; pinned matching host directive/message assertions. Full gate and fresh Codex/Claude pair passed; independent acceptance passed1/1 with no criterion changes.",
+    "completed_at": "2026-10-17T08:02:07.214042500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "686ca5e59d28457eaa2b858b4a2746dd": {
+        "activity_id": "686ca5e59d28457eaa2b858b4a2746dd",
+        "task_id": "01a11ed0-87e3-7a41-8800-3a2ed0f3ddb9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "686ca5e59d28457eaa2b858b4a2746dd"
+      },
+      "aeac89dfde014ba3a3eba3a5e5aa476b": {
+        "activity_id": "aeac89dfde014ba3a3eba3a5e5aa476b",
+        "task_id": "01a11ed0-87e3-7a41-8800-3a2ed0f3ddb9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4d1fc73406244e56afdf79e0372a8cb2"
+      }
+    }
+  }
+}

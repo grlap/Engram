@@ -1,0 +1,28 @@
+{
+  "id": "01a1dae7-3baa-7962-859d-b2d775d8409f",
+  "external_ref": null,
+  "title": "Skip incompatible same-source checks when selecting a registered evaluation proof",
+  "outcome": "Let registered evaluation selection use a compatible original proof when a newer same-source check belongs to a different path encountered during a permitted detour.",
+  "acceptance": [
+    "After passing check A1 at path A, a passing same-source check B1 at path B, and returning to A with a later compatible binding, evaluate selects the valid A1 proof or returns its existing typed evaluation refusal rather than leaking B1's WorkCompletionRefused.",
+    "Behavior tests cover the detour with an intervening check, preserve newer relevant failed-check vetoes and release/source/root fences, and leave legacy/staged selection strict."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

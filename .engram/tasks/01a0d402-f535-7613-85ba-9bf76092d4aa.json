@@ -1,0 +1,54 @@
+{
+  "id": "01a0d402-f535-7613-85ba-9bf76092d4aa",
+  "external_ref": null,
+  "title": "Split src/storage/work/query.rs before it crosses 2,500 lines",
+  "outcome": "Split src/storage/work/query.rs before it crosses 2,500 lines",
+  "acceptance": [
+    "Only whole responsibilities move: no behavior, signature, schema/SQL or caller-path change (every caller reaches each moved item as before; an item nothing outside its new module uses may narrow its visibility, recorded in the commit message), every test and assertion kept, no comments added or dropped beyond a module header",
+    "The full quality gates pass and a Codex and a Claude review of the change are clean",
+    "The query family is guarded by tests/source_file_size.rs FAMILIES and that test passes",
+    "src/storage/work/query.rs and every module under src/storage/work/query/ are each at most 2,499 physical lines, with query.rs reduced enough to leave headroom (about 2,200 or fewer)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "file-size",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split src/storage/work/query.rs: the prerequisite projection family (nine functions) moved into src/storage/work/query/prerequisites.rs (243 lines), and query.rs went from 2,377 to 2,148 lines. Callers keep their reach through re-exports; prerequisite_state_rank, which nothing outside its new module uses, narrowed to private, as recorded in the commit message and allowed by criterion 1 as revised on Greg's decision. The query family is guarded in tests/source_file_size.rs. Full gates 9/9 (test-c32e5f55); the Codex and Claude reviews were clean. Committed as 475c778, pushed, and installed as build 4fc0a798d875.",
+    "completed_at": "2026-09-24T16:49:39.722544600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f1ea4344055b47989eef8fad2d15f8fc": {
+        "activity_id": "f1ea4344055b47989eef8fad2d15f8fc",
+        "task_id": "01a0d402-f535-7613-85ba-9bf76092d4aa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fff52597b2d846f1bedd78e4de862f6d"
+      }
+    }
+  }
+}

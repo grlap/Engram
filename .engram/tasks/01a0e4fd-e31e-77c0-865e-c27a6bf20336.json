@@ -1,0 +1,29 @@
+{
+  "id": "01a0e4fd-e31e-77c0-865e-c27a6bf20336",
+  "external_ref": null,
+  "title": "A terminology or contract rename batch needs a whole-path sweep before its first freeze; today's record-id batch took ten review rounds of prose corrections on green gates",
+  "outcome": "A terminology or contract rename batch needs a whole-path sweep before its first freeze; today's record-id batch took ten review rounds of prose corrections on green gates",
+  "acceptance": [
+    "The engram-repo skill and .claude/commands/review-changes.md tell an implementer of a rename or contract-wording batch to sweep every occurrence of the old term across src, tests, scripts and docs (rg over the term and its variants) and to list the changed user-facing strings before the first freeze, so that reviewers judge one complete input rather than discovering adjacent occurrences round by round",
+    "The measurement the council named is recorded: rounds from first freeze to clean pair and repeat-terminology findings per changeset, with today's record-id batch (ten rounds, R7-R10 prose only, all gates green) and docs batch (four rounds) as the baseline in the item's notes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "council",
+    "review",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

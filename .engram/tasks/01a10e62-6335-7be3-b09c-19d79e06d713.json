@@ -1,0 +1,54 @@
+{
+  "id": "01a10e62-6335-7be3-b09c-19d79e06d713",
+  "external_ref": null,
+  "title": "Backup restore cannot open its staged copy when the path reaches the Windows 260-character limit",
+  "outcome": "`engram backup restore` (and any SQLite open of a store-home file) works when the full path of the staged copy is 260 characters or longer on Windows, or refuses up front with a clear reason naming the path length. It never fails with a bare \"unable to open database file\" and a misleading remedy about installing another build.",
+  "acceptance": [
+    "On Windows, backup restore succeeds when the staging file path, <home>/projects/<64-hex>/.backup-restore-<uuid>.staging, is at least 260 characters, for example by opening through an extended-length path or keeping the staging name short. If that isn't possible, it refuses before fetching with a typed reason that names the path and its length.",
+    "The restore refusal no longer suggests installing the capturing build or a migration when the real cause is an unopenable path.",
+    "A test reproduces the over-260-character staging path (deep store home) and passes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "backup",
+    "gate",
+    "reliability",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Windows backup restore now handles 260/400-character staging paths through locking SQLite long-path opens, preserves logical receipts, and gives path/access errors their own recovery guidance. Full9/9 gate, independent Codex/Claude whole-input pair, fresh3/3 acceptance and all4live-store readiness passed. Six Low follow-ups filed independently.",
+    "completed_at": "2026-10-06T02:14:48.909280600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f9f9674251ec489e92f2b49dfd81cb9b": {
+        "activity_id": "f9f9674251ec489e92f2b49dfd81cb9b",
+        "task_id": "01a10e62-6335-7be3-b09c-19d79e06d713",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "02c9e61964214d56aba8a05f8e2b13ff"
+      }
+    }
+  }
+}

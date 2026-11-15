@@ -1,0 +1,52 @@
+{
+  "id": "01a110b9-d5a1-7c13-abd1-bcf3877db941",
+  "external_ref": null,
+  "title": "Host docs promise grant_scope_mismatch for any non-empty delivery_tokens, though earlier begin checks can refuse first",
+  "outcome": "Host docs promise grant_scope_mismatch for any non-empty delivery_tokens, though earlier begin checks can refuse first",
+  "acceptance": [
+    "docs/host-checklist.md and docs/features/cli-and-mcp.md say a non-empty turn_begin.delivery_tokens list is refused with grant_scope_mismatch only once the earlier turn_begin checks pass (or say tokens are unsupported without promising which refusal comes first)",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Qualified both token-refusal statements with earlier turn_begin checks passing first.",
+    "completed_at": "2026-10-09T03:05:36.307810400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "85bfa9b2b94449daa605464bbc17895d": {
+        "activity_id": "85bfa9b2b94449daa605464bbc17895d",
+        "task_id": "01a110b9-d5a1-7c13-abd1-bcf3877db941",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e55e7f912f494b54b9c5b9a86ef05f34"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a08741-5a98-76e1-bdc8-05db8d7d4d4e",
+  "external_ref": null,
+  "title": "Avoid duplicate canonical prerequisite validation in ordinary single-item updates",
+  "outcome": "Avoid duplicate canonical prerequisite validation in ordinary single-item updates",
+  "acceptance": [
+    "A normal prerequisite addition verifies the prior canonical edge set once while preserving corrupt-edge refusal and the same relation fingerprint"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-performance",
+    "performance",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "An ordinary prerequisite add or remove validates the item's relation basis once and hands it to its own append (CheckedRelationBasis with private fields; append_checked_relation_event refuses another item or transition). Corrupt-edge refusal and the recorded relation fingerprint are unchanged, with tests for one validation per add/no-op/removal, the independently built fingerprint, and refusal with nothing written on extra and dropped edges. Landed as 1403edb on master after round 3 (gate test-b3508a1c PASS on freeze 726db39e…, clean pair, independent evaluation 39df4d6c pass, readiness ready on all 4 stores); installed build 7f245a10…b0f2, exe sha256 8df06cfa…ffabb.",
+    "completed_at": "2026-10-03T19:22:35.535369100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "25ff9c6cb28c4641be384eb8e24c5553": {
+        "activity_id": "25ff9c6cb28c4641be384eb8e24c5553",
+        "task_id": "01a08741-5a98-76e1-bdc8-05db8d7d4d4e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8fa5570a283a4e9d9d0aaf3dfd1e072d"
+      }
+    }
+  }
+}

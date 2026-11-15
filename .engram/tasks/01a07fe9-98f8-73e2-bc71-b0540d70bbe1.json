@@ -1,0 +1,50 @@
+{
+  "id": "01a07fe9-98f8-73e2-bc71-b0540d70bbe1",
+  "external_ref": null,
+  "title": "Share the source intake input size bound",
+  "outcome": "Share the source intake input size bound",
+  "acceptance": [
+    "one shared constant and message are asserted by Rust and Node tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "File reader and parser share MAX_WORK_IMPORT_INPUT_BYTES and one refusal message, pinned by Rust and Node tests. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:52.894413Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c92cd6f749ebdbdeaf4c485019bdf5dfd3d454b17ccbffab5c4d132ae2fc3875": {
+        "activity_id": "c92cd6f749ebdbdeaf4c485019bdf5dfd3d454b17ccbffab5c4d132ae2fc3875",
+        "task_id": "01a07fe9-98f8-73e2-bc71-b0540d70bbe1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2fa20ed2a117b05f9019550e419b739620b62b78c353410a4698c4f2e27f62e6"
+      }
+    }
+  }
+}

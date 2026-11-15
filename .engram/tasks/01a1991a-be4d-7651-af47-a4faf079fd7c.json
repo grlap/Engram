@@ -1,0 +1,29 @@
+{
+  "id": "01a1991a-be4d-7651-af47-a4faf079fd7c",
+  "external_ref": null,
+  "title": "Show a held stranded child as a detach refusal while retaining sibling advisories",
+  "outcome": "Show a held stranded child as a detach refusal while retaining sibling advisories",
+  "acceptance": [
+    "Read-only detach admission presents a held child with its refusal reason and remedy rather than aborting the stranded-child group.",
+    "Tests with a held stranded child and siblings retain all advisory rows and done optional-child follow-up; actual detach remains fenced."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

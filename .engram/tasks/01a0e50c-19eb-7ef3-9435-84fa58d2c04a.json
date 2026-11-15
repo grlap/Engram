@@ -1,0 +1,52 @@
+{
+  "id": "01a0e50c-19eb-7ef3-9435-84fa58d2c04a",
+  "external_ref": null,
+  "title": "Reconcile remaining stale operational memory guidance",
+  "outcome": "Reconcile remaining stale operational memory guidance",
+  "acceptance": [
+    "Current heads are reread before editing and the audit's remaining technical guidance is corrected or explicitly retired with source attribution and revision history.",
+    "Outdated contact and council roster references point to current discovery/role notes; unresolved authority recommendations are not silently adopted.",
+    "Worktree guidance preserves Markdown-only checks and current scratch-path rules; store guidance separates repair from migration; host guidance separates command recognition from passed verification on the stated build."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "coordination",
+    "memory"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Reconciled stale operational memories with retained attribution/history and current-head readbacks. Fable corrected worktree checks/scratch, store cutover, recognition, contacts and council roster; Advisor corrected standing approval and retired the omitted historical host-verification recipe. Independent evaluation dfe18c14b5e24cb1ada83cbb14962c51 passes all three criteria on judgment after the first evaluation exposed two corrected evidence gaps. Original audit baseline remains unchanged; unresolved authority recommendations stay explicitly separate. No source changes, build, install or live host-test claims.",
+    "completed_at": "2026-09-27T22:53:27.924130300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "366dd094e5d947d69e0053493561c60c": {
+        "activity_id": "366dd094e5d947d69e0053493561c60c",
+        "task_id": "01a0e50c-19eb-7ef3-9435-84fa58d2c04a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8ca769bae4cc45788fc04869118fdddc"
+      }
+    }
+  }
+}

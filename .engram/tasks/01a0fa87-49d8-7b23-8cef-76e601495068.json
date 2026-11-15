@@ -1,0 +1,54 @@
+{
+  "id": "01a0fa87-49d8-7b23-8cef-76e601495068",
+  "external_ref": null,
+  "title": "Backup configuration and state files, the push lock, and the target words",
+  "outcome": "Backup configuration and state files, the push lock, and the target words",
+  "acceptance": [
+    "`engram backup target set --kind store --adapter directory --dir PATH --disclosure-authorized-by NAME --off-host-asserted-by NAME [--window-hours N] [--keep N]` writes one configuration per project and kind under ENGRAM_HOME, `backup target show` prints it with both statements, each with its name and time, and `backup target clear --kind store` removes it; a CLI test covers all three, and that `set` is refused without `--disclosure-authorized-by`, without `--off-host-asserted-by` for a directory target, or with a relative path",
+    "The configuration and the state file each carry a format version and are replaced whole by writing a new file and renaming it into place; a file with an unknown format version, or one that cannot be read, is left byte for byte unchanged by every backup word except `target set`: `target show` and `target clear` refuse with the code `backup_record_unreadable`, and `target set`, the stated way on, writes both files for that kind anew; tests cover the refusals, the unchanged bytes and the rewrite",
+    "The push lock is an exclusive operating-system lock on a file under ENGRAM_HOME, per project and kind, released when the holding process exits, with no takeover by age; `target set` and `target clear` refuse while another process holds it; a test holds the lock in a second process, shows the refusal, kills the holder and shows the next call succeed",
+    "A target's identity is derived from the project, the kind, the adapter, the location, the disclosure authorization and the off-host assertion, and a unit test shows that changing any one of them changes the identity",
+    "The changeset adds no table, column, index or trigger to the store schema, and docs/shipped.md and docs/features/cli-and-mcp.md describe the three words"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The backup target words `engram backup target set|show|clear` are delivered (operator CLI, no store access).\n- Storage: the configuration and state files live under <home>/backup-records/<digest>/, carry format version 1, and are replaced whole through a synced temp file and a rename. Any record this build cannot use is refused by show and clear with backup_record_unreadable and left untouched; set rewrites both files. That covers records that cannot be read or parsed, records that set would refuse, and a state recorded for another target.\n- Identity: derived on read from project, kind, adapter, location and both statements.\n- Push lock: an OS file lock per project and kind. set and clear refuse with backup_push_running while another process holds it, even when no records exist.\n- Defaults: a 24 h window and keep 3.\n- Docs: shipped.md, cli-and-mcp.md and the brief's status.\n- Lows filed: w-a560f4bc46c6 and w-e57434c7e119. w-2ccb9c6fff08 and w-98b32bafe0f1 are fixed by this landing.\n- Landed as caaafac.",
+    "completed_at": "2026-10-02T11:09:20.239248700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4791f387c37748c99223fd1cbd8541ec": {
+        "activity_id": "4791f387c37748c99223fd1cbd8541ec",
+        "task_id": "01a0fa87-49d8-7b23-8cef-76e601495068",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "31852fbcdd5f409aa88884c7a1acf687"
+      }
+    }
+  }
+}

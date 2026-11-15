@@ -1,0 +1,27 @@
+{
+  "id": "01a1a366-c12e-7d60-aeaa-aca421084a46",
+  "external_ref": null,
+  "title": "Preserve the recovery gauge caption in forced-colors themes",
+  "outcome": "Preserve the recovery gauge caption in forced-colors themes",
+  "acceptance": [
+    "Recovery gauge caption remains visible in light and dark forced-colors modes, and decorative artwork suppression is preserved."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review-low",
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

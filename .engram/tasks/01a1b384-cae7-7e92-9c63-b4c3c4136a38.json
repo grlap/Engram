@@ -1,0 +1,67 @@
+{
+  "id": "01a1b384-cae7-7e92-9c63-b4c3c4136a38",
+  "external_ref": null,
+  "title": "Remove Engram tests that only pin documentation text, keeping tests of observable behavior",
+  "outcome": "Remove Engram tests that only pin documentation text, keeping tests of observable behavior",
+  "acceptance": [
+    "Every Engram test that reads a docs/ or other Markdown file was judged case by case, and the judgment for each is recorded on this item",
+    "Tests that only pin documentation text without checking observable behavior are deleted, together with helpers left unused",
+    "Tests of observable behavior stay, even when they read a file",
+    "The change is landed on master under the standing approval"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1b381-7db6-7482-8000-a577d36eba5c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed Markdown wording-only tests and unused helpers while retaining case-by-case behavior tests. Exact candidate fc749042f32affc995fbe5fb802ae488cc2e8c24/tree ad88d1a82b8a7d7f77102b62f8e8a710e16861fa passed the final Codex/Claude review pair and DL560 FULL test-67457b7c (12/12 stages, 3/3 preflight, unchanged source_id/freeze); landed by fast-forward and pushed to origin/master. Installed exact release on Central and DL560; all six Central stores and DL560 Questly readiness were ready. Central installed build fingerprint 3cb2f9b3455356d18191600f284ba5dfa88e1d9bd67ba91c171e6986008f5a16; DL560 fingerprint 28ebd6c447396dfefbe1e5461d71384f02ccff93ec02c92eb686423affdd2167. Runner FULL result #57 has been processed and acknowledged. The pre-root source contribution is recorded as displaced; no restart or unrelated work is part of this item.",
+    "completed_at": "2026-11-07T13:04:48.560046600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "31a1279f400547d4ab27c1941c89301f": {
+        "activity_id": "31a1279f400547d4ab27c1941c89301f",
+        "task_id": "01a1b384-cae7-7e92-9c63-b4c3c4136a38",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1423b3f831aa4b9f993a5bda9c2ff1e2"
+      },
+      "db528302827e438b98e1af58b33bfa72": {
+        "activity_id": "db528302827e438b98e1af58b33bfa72",
+        "task_id": "01a1b384-cae7-7e92-9c63-b4c3c4136a38",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "61033ee07e6b40aaba1d25b28479927e"
+      }
+    }
+  }
+}

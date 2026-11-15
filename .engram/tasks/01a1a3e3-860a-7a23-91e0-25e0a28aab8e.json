@@ -1,0 +1,79 @@
+{
+  "id": "01a1a3e3-860a-7a23-91e0-25e0a28aab8e",
+  "external_ref": null,
+  "title": "engram restore records a restore occurrence like the backup restore does",
+  "outcome": "Route top-level store restore through the existing restore-occurrence owner so strict task-sync continuity detects every supported restore without changing stored canonical records.",
+  "acceptance": [
+    "Top-level engram restore records pending and completed restore provenance through the same existing owner as backup restore, with no duplicate sidecar or tracking mechanism and unchanged CLI restore behavior.",
+    "Every actual restore, including repeated restores of the same copy, has a distinct occurrence; interrupted retries preserve the same pending occurrence. The shared reader exposes pending, unreadable and changed-occurrence states so a strict consumer can refuse on them, shown by reader tests; the strict refusal itself is owned and tested by the strict delta writer.",
+    "Focused failure-window and no-write reader tests cover both supported restore entry points; existing backup status and doctor observations report the shared occurrence. Docs state the real destination-quiescence boundary and that arbitrary out-of-band file copies are not detected.",
+    "No durable store-format conversion or historical record/evaluation rewrite is introduced; any discovered need for one is reported before implementation. This work is an explicit required prerequisite of the strict delta writer, and uses its own focused checks, pair and exact landing gate if landed separately."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "backup",
+    "restore",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The top-level restore path now uses the existing occurrence owner and landed with the combined candidate 90d2fec7215ce041c6d74f8e20056b9ecdcb0d39. Exact-candidate FULL passed and all six stores were ready. Fable judged the receipt-shape point a Note after the zero-receipt live-home census; I repeated the census before landing.",
+    "completed_at": "2026-11-04T05:51:54.521739700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3ebee2d22d174e3b91c520e3949fe901": {
+        "activity_id": "3ebee2d22d174e3b91c520e3949fe901",
+        "task_id": "01a1a3e3-860a-7a23-91e0-25e0a28aab8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ec168db4c921413286d374d500f5c26e"
+      },
+      "a1048e5a6f184febb0ee5a0c23693d37": {
+        "activity_id": "a1048e5a6f184febb0ee5a0c23693d37",
+        "task_id": "01a1a3e3-860a-7a23-91e0-25e0a28aab8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1c6b695a539247f8a1db2f691618abe0"
+      },
+      "ec168db4c921413286d374d500f5c26e": {
+        "activity_id": "ec168db4c921413286d374d500f5c26e",
+        "task_id": "01a1a3e3-860a-7a23-91e0-25e0a28aab8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ec168db4c921413286d374d500f5c26e"
+      }
+    }
+  }
+}

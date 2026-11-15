@@ -1,0 +1,54 @@
+{
+  "id": "01a0fcff-41bd-7190-b11e-29356c831132",
+  "external_ref": null,
+  "title": "`engram backup status --check-target`: typed confirmation, guarded recording, and the window test",
+  "outcome": "`engram backup status --check-target`: typed confirmation, guarded recording, and the window test",
+  "acceptance": [
+    "A check records its result only under the push lock and only when the newest receipt is still the one it checked; a test lets a push record a newer receipt between the check's read and its write and shows the check record nothing",
+    "A test moves the clock past the window with no new push and shows the mode change from `local_backed_up` to `local` with `backup_confirmation_expired`; after `status --check-target` then confirms that old copy without a new capture, the reason reads `backup_stale`",
+    "`engram backup status --check-target` asks the adapter to confirm under a deadline: a copy the target no longer holds is recorded and reads `backup_copy_missing` at once; an unreachable target is reported as `backup_target_unreachable`, and a check that reached the target and passed its deadline before it had read the copy as `backup_check_timed_out`, each beside the recorded evidence without changing it; a test covers each of the three"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-e4c5-7d10-bd31-8f5379e3c9c7",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fcff-359b-7e20-8b1f-df727aca8ed0"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`engram backup status --check-target [--check-deadline-secs N]`: typed adapter confirmation (Unreachable, TimedOut, Unknown), guarded recording under the push lock only when identity, newest receipt and evidence are unchanged, the window test, and docs. Landed 4a28729 on master; installed build fecffb4f….",
+    "completed_at": "2026-10-02T15:58:50.608594500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e1d30d8d70364869b2a8242f90b543e0": {
+        "activity_id": "e1d30d8d70364869b2a8242f90b543e0",
+        "task_id": "01a0fcff-41bd-7190-b11e-29356c831132",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "421ea8db1d8b4521b97edb9c7f091855"
+      }
+    }
+  }
+}

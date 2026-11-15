@@ -1,0 +1,53 @@
+{
+  "id": "01a10d11-1721-7a01-8577-34d233edb946",
+  "external_ref": null,
+  "title": "Usage skill carries the facts a team needs when it sets up from the skill alone",
+  "outcome": "Usage skill carries the facts a team needs when it sets up from the skill alone",
+  "acceptance": [
+    "docs/skills/engram-use/SKILL.md states that agents must never write secrets, credentials or customer data into Engram, and that a secret written by mistake must be rotated because stored history keeps it.",
+    "The skill states that the store home belongs on a local, non-synced path, given explicitly at every launch point.",
+    "The skill states the project-file resolution rule as it is after w-ae6006fe7852 lands: the nearest .engram-project found by searching up from the working directory, or an explicit --project-file.",
+    "The skill's pointer block no longer names a path on one person's machine (C:\\github\\Personal\\Engram) or a mutable master URL; it tells the reader how to locate the skill in their own checkout."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the portable usage skill's four setup facts: stored-text restrictions and secret rotation, explicit local non-synced home at every launch, nearest ancestor marker selection with explicit override, and operator-confirmed checkout pointer. Exact authority wording concurred and audited; full nine-stage gate, Codex/Claude whole-input pair, independent 4/4 acceptance, and all four live stores ready. Installed clean release before verified push; existing processes retain prior build until supported restart.",
+    "completed_at": "2026-10-05T20:13:55.328689100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "29f1050b126a4967b5161a8afa759b66": {
+        "activity_id": "29f1050b126a4967b5161a8afa759b66",
+        "task_id": "01a10d11-1721-7a01-8577-34d233edb946",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9c0aa743a07747d3b1b8bfd51bcd4deb"
+      }
+    }
+  }
+}

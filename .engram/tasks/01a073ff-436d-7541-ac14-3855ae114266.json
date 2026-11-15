@@ -1,0 +1,51 @@
+{
+  "id": "01a073ff-436d-7541-ac14-3855ae114266",
+  "external_ref": null,
+  "title": "The generic children omission line on show names the exact all-children command: ls --under PARENT --all, reusing the landed pagination",
+  "outcome": "The generic children omission line on show names the exact all-children command: ls --under PARENT --all, reusing the landed pagination",
+  "acceptance": [
+    "show PARENT's generic children line, when it omits rows, prints ls --under PARENT --all as its navigation in text and JSON, so terminal optional members are reachable even when neither group links them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "show PARENT omitted-children navigation now names ls --under PARENT --all in text and JSON; terminal optionals stay reachable.",
+    "completed_at": "2026-09-12T04:39:49.062283300Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e8f2ef59a712eb2ca1d3c3156bed299505dfbcf9116b1dd8026b963cc0b5b4fb": {
+        "activity_id": "e8f2ef59a712eb2ca1d3c3156bed299505dfbcf9116b1dd8026b963cc0b5b4fb",
+        "task_id": "01a073ff-436d-7541-ac14-3855ae114266",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e9a5c5520d182364d1451766e6469e9ea1b1b71aa5c2ab396ea5c3c2145c1313"
+      }
+    }
+  }
+}

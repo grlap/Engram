@@ -1,0 +1,62 @@
+{
+  "id": "01a0a29c-a9f5-7512-a042-66bda5bf456a",
+  "external_ref": null,
+  "title": "Prepare backup must not open or mutate live sidecars",
+  "outcome": "Prepare backup must not open or mutate live sidecars",
+  "acceptance": [
+    "upgrade_sidecar_retain_faults_reconcile_per_component passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a1dd-4f2e-71c1-9316-85714c98709c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against saved accepted V7 evidence; original acceptance unchanged.",
+    "completed_at": "2026-09-16T16:44:44.857985800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1a783045c3af0b999c94141f5c8c651578efcbd5e637d7d2771310906c7fc2d4": {
+        "activity_id": "1a783045c3af0b999c94141f5c8c651578efcbd5e637d7d2771310906c7fc2d4",
+        "task_id": "01a0a29c-a9f5-7512-a042-66bda5bf456a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c03dc12ec255374a6c1cdb7454b53f149930ab78d3d313bd462a1a828a7c7e31"
+      },
+      "6e3eedaab0c243ed830ba60a76975544bc7e36f6b10eda21a5d6544c4c5a440e": {
+        "activity_id": "6e3eedaab0c243ed830ba60a76975544bc7e36f6b10eda21a5d6544c4c5a440e",
+        "task_id": "01a0a29c-a9f5-7512-a042-66bda5bf456a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6e3eedaab0c243ed830ba60a76975544bc7e36f6b10eda21a5d6544c4c5a440e"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a07c5b-153d-7220-ae68-4ddd90cf61a7",
+  "external_ref": null,
+  "title": "Keep memory revision projections consistent with retained canonical history",
+  "outcome": "Keep memory revision projections consistent with retained canonical history",
+  "acceptance": [
+    "memory_revisions_retain_attribution_replay_basis_and_rebuild_the_current_head passes; doctor and current-only FTS agree before and after rebuild"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "phoenix",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07879-5d33-7742-a3c9-e134d64087ed",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Current-only heads and FTS agree with retained revision history.",
+    "completed_at": "2026-09-07T16:03:17.972874700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "598b910c3c2f2142315d9e751995ac06cbbf81fd6146113aa141b9386924bea8": {
+        "activity_id": "598b910c3c2f2142315d9e751995ac06cbbf81fd6146113aa141b9386924bea8",
+        "task_id": "01a07c5b-153d-7220-ae68-4ddd90cf61a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0699712b928d2e520fa8b171cf45404099fa5587bc9594cbf7eb96b8731cc107"
+      }
+    }
+  }
+}

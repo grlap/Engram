@@ -1,0 +1,29 @@
+{
+  "id": "01a191fb-4c0d-7cd3-92a0-a53d0886292d",
+  "external_ref": null,
+  "title": "List control_connection_read in the two shipped host-channel operation lists",
+  "outcome": "List control_connection_read in the two shipped host-channel operation lists",
+  "acceptance": [
+    "docs/features/behavioral-control-plane.md 'Planned interfaces' and docs/spec.md section 8.3 both name control_connection_read among the shipped host-channel operations, after session_status",
+    "The in-memory refusal test in src/host/tests/connection_read.rs is named for what it exercises, or a temporary (empty-path) store case is added"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "host-protocol",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

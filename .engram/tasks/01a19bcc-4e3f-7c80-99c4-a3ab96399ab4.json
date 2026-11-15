@@ -1,0 +1,28 @@
+{
+  "id": "01a19bcc-4e3f-7c80-99c4-a3ab96399ab4",
+  "external_ref": null,
+  "title": "Document durable task-sync heads and holds separately from rebuildable projections",
+  "outcome": "Make SQLite and migration operator documentation list new task-sync/feed tables and their actual conversion requirements.",
+  "acceptance": [
+    "sqlite-store.md lists work_task_sync_import_heads and work_task_sync_reconciliation_holds as durable, and work_project_feed_tasks/work_task_sync_baseline/work_task_sync_baseline_heads/work_task_sync_reconciliation_active by their actual rebuildable class",
+    "full-store-migration.md accurately describes strict refusal/conversion requirements for stores with import-origin tasks; it never promises an unimplemented head conversion"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

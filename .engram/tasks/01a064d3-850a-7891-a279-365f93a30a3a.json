@@ -1,0 +1,45 @@
+{
+  "id": "01a064d3-850a-7891-a279-365f93a30a3a",
+  "external_ref": null,
+  "title": "Document completion barrier refusal and replay substeps",
+  "outcome": "The local-work contract states the full mediated-write refusal closure and the intentional evidence, checkpoint, and ambient-focus replay semantics.",
+  "acceptance": [
+    "Docs explain why completion evidence uses the stable capture key while checkpoints use the barrier-sensitive attempt key.",
+    "Docs state that barrier drift refuses all mediated writes for the affected required-child closure.",
+    "Docs state whether a caller-keyed replay without work_ref changes ambient focus."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "obsolete: filed against the completion-barrier/participant-revision design that was rejected and removed before landing (1d04b09 shipped the refusal-recompute fix without that machinery)",
+  "completion": null,
+  "activity": {
+    "central": {
+      "b196bdb7c36cf511f326f6690e1434ca297ccfb3fbc0c7acd2c5122896c8c558": {
+        "activity_id": "b196bdb7c36cf511f326f6690e1434ca297ccfb3fbc0c7acd2c5122896c8c558",
+        "task_id": "01a064d3-850a-7891-a279-365f93a30a3a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "36f8e781f6cafe116e34e3268af0b0280e18aaf1e8821b906c2ac04ef32ae16f"
+      }
+    }
+  }
+}

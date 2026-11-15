@@ -1,0 +1,64 @@
+{
+  "id": "01a06d47-4100-70d1-8bdb-58f6bd23ebdf",
+  "external_ref": null,
+  "title": "Make graph-snapshot output confinement race-safe against ancestor symlink or junction replacement",
+  "outcome": "Make graph-snapshot output confinement race-safe against ancestor symlink or junction replacement",
+  "acceptance": [
+    "a symlink swap of a snapshot ancestor between validation and publication cannot place the file under the project stores"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Race-safe graph-snapshot publication landed in 63da32f; retained directory handles, nofollow destination checks, no-replace hard-link publication, and ancestor-swap regression passed. Full gate and paired reviews clean; Linux CI quality and Ubuntu/macOS/Windows tests passed.",
+    "completed_at": "2026-09-28T05:05:45.833646200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5c8e37455260431595c3175e82fa71a4": {
+        "activity_id": "5c8e37455260431595c3175e82fa71a4",
+        "task_id": "01a06d47-4100-70d1-8bdb-58f6bd23ebdf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5c8e37455260431595c3175e82fa71a4"
+      },
+      "924d770c24b14c84918a08e151bdb0fd": {
+        "activity_id": "924d770c24b14c84918a08e151bdb0fd",
+        "task_id": "01a06d47-4100-70d1-8bdb-58f6bd23ebdf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0309c9a4bee44ad896ec2b3eebd84c44"
+      }
+    }
+  }
+}

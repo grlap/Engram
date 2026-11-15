@@ -1,0 +1,51 @@
+{
+  "id": "01a155bb-ab10-7e50-961c-261f59ec1f44",
+  "external_ref": null,
+  "title": "Show the judged-basis-unavailable reason in terse sealed-source output, and render judged-source and evaluation-detail lines in the observation window's text form",
+  "outcome": "Show the judged-basis-unavailable reason in terse sealed-source output, and render judged-source and evaluation-detail lines in the observation window's text form",
+  "acceptance": [
+    "When an evaluation is bound to a seal but its judged basis is unavailable, terse show and compact next state that fixed reason (no ids) instead of only 'no comparable later closing sighting'; a terse test covers it",
+    "The explicit sealed observation window's TEXT output shows the judged workspace and revision, the first differing observation, the latest endpoint and the evaluation-detail command within its byte budget, matching the JSON; a text-output test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Terse sealed-source output now states the unavailable judged-basis reason. Observation-window text shares the JSON diagnostic, renders judged source, historical difference, latest endpoint and evaluation navigation within its byte budget, and reports bounded previews safely.",
+    "completed_at": "2026-10-20T20:36:15.234725500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e0f450caab794f73a005bba67a9ed125": {
+        "activity_id": "e0f450caab794f73a005bba67a9ed125",
+        "task_id": "01a155bb-ab10-7e50-961c-261f59ec1f44",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "16dc83d3a28c4b15b05a3222d04268a6"
+      }
+    }
+  }
+}

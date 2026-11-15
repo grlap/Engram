@@ -1,0 +1,54 @@
+{
+  "id": "01a1c146-4f89-7202-ae46-5901f405e726",
+  "external_ref": null,
+  "title": "Let a session recover project memories after a context refresh without paging the full listing each time",
+  "outcome": "Let a session recover project memories after a context refresh without paging the full listing each time",
+  "acceptance": [
+    "The memories line of a peek or next names the project memory keys changed since this session's recorded memory position, at most a fixed number of them, marks a forgotten key as forgotten, and gives the count and the listing command when more changed.",
+    "The recovery listing that a peek directs a session to reaches every one of several hundred project memories in a small number of reads, and a test on such a store counts those reads.",
+    "After a new context generation, a peek directs the session to list every current project memory key, whether or not any key changed and whether or not the session listed them before.",
+    "Plain `engram work memories --json` keeps its current row shape, including each row's remembered_at and actor_id."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "memories",
+    "procedure-cost"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "After a context refresh, the memories line of next and peek names the keys changed since the session's recorded memory position: up to 8, newest first, forgotten ones marked, with the count and the listing command when more changed. A memories listing that carries the context generation is a compact recovery listing: key, revision and first-line preview, in pages fitted to the response budget, with continuations that keep the generation. 300 memories take at most 6 reads instead of 15. A new context is still directed to list every key. Plain memories and --json are unchanged. There is no schema change; a memory-state rebuild clears the recorded positions. Landed as 6be107c8 after a clean round-2 pair and FULL PASS test-a7a803f3; acceptance evaluation d05447db passed 4/4. Lows are filed as w-20f5d98ee3d7 and w-a7d8521d6c90.",
+    "completed_at": "2026-11-09T22:18:12.136471200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9f95cfb08be8489f85bcdf43bcd55017": {
+        "activity_id": "9f95cfb08be8489f85bcdf43bcd55017",
+        "task_id": "01a1c146-4f89-7202-ae46-5901f405e726",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5eedc9fae59c4acda767259661ab6ecd"
+      }
+    }
+  }
+}

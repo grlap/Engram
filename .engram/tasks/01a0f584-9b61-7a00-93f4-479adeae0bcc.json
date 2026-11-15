@@ -1,0 +1,54 @@
+{
+  "id": "01a0f584-9b61-7a00-93f4-479adeae0bcc",
+  "external_ref": null,
+  "title": "Split Engram src/storage/work/acceptance_evaluation.rs below 2,500 lines",
+  "outcome": "Split Engram src/storage/work/acceptance_evaluation.rs below 2,500 lines",
+  "acceptance": [
+    "The source-size check covers this file family and fails at 2,500 lines",
+    "The split moves responsibilities into ordinary modules without behaviour, schema, SQL or public-interface changes; existing tests and assertions are kept, and the project gates and review pass",
+    "src/storage/work/acceptance_evaluation.rs and every module extracted from it are each at most 2,499 physical lines at the final source revision, shown by the source-size check's inventory for its family"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "file-size",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split src/storage/work/acceptance_evaluation.rs (3,155 lines) into the facade (1,853) and source.rs (622), eligibility.rs (393) and citations.rs (346), a pure move. The source-size family now covers the whole module. Landed as 928cf4c and installed (build 69d758c0…). Independent evaluation c63961dc passed all 3 criteria.",
+    "completed_at": "2026-10-01T04:40:03.305133400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "23681d00db2f4aaa864e607a3815d086": {
+        "activity_id": "23681d00db2f4aaa864e607a3815d086",
+        "task_id": "01a0f584-9b61-7a00-93f4-479adeae0bcc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "031b15e6abaf42e48b27294dfacdeb5e"
+      }
+    }
+  }
+}

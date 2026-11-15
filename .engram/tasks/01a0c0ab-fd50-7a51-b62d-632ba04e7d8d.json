@@ -1,0 +1,54 @@
+{
+  "id": "01a0c0ab-fd50-7a51-b62d-632ba04e7d8d",
+  "external_ref": null,
+  "title": "Disclose the graph snapshot format boundary from the record-id rename",
+  "outcome": "Disclose the graph snapshot format boundary from the record-id rename",
+  "acceptance": [
+    "A disposable old/new build probe confirms the refusal and documented recovery; required gates and paired review cover the corrected input.",
+    "The documented recovery uses the matching old build and explicit full-store export/import without editing fingerprints, reminting ids, or implicitly migrating a live store.",
+    "The snapshot and full-store migration briefs explicitly state that the ObjectHash to ObjectId rename changes the runtime snapshot format fingerprint and older snapshot files refuse."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "identity",
+    "legacy",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0b239-8e44-7b81-ae1c-1628cce3cbc6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Disclosed the deliberate graph snapshot format boundary and verified the matching-old-build disposable recovery route. Independent acceptance passed all 3 unchanged criteria; corrected-input nine gates and Codex/Claude review passed with no Medium/High/Critical. No live conversion or cutover claimed.",
+    "completed_at": "2026-09-20T21:52:32.170428Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4e6ac48de3584d16a9d7f727aa7471ca": {
+        "activity_id": "4e6ac48de3584d16a9d7f727aa7471ca",
+        "task_id": "01a0c0ab-fd50-7a51-b62d-632ba04e7d8d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "95db080a0c254c119341745622fdd95a"
+      }
+    }
+  }
+}

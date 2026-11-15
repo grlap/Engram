@@ -1,0 +1,51 @@
+{
+  "id": "01a0880f-c0a4-7963-a4f0-0c66e05fb5d0",
+  "external_ref": null,
+  "title": "The root descendant check walks every descendant ever created while the limit counts only the open ones",
+  "outcome": "The recursive part of the root open-descendant query selects work_items by parent_id with no lifecycle filter; the proposed/open filter applies only to the final count. The traversal cost therefore tracks the whole history of a root subtree while the enforced ceiling bounds only its live part, and completed work is never pruned, so every check under a long-lived root grows more expensive for the life of the project while the limit stays fixed. Either bound the traversal itself, or maintain the open count incrementally so the check does not re-walk closed history.",
+  "acceptance": [
+    "the root descendant check cost is bounded by a stated quantity that does not grow with completed history, proven by a test that adds a large closed subtree under a root and asserts the check cost stays within the same bound as an all-open subtree of the live size"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-performance",
+    "performance",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "root_open_descendant_count counts the project's proposed and open rows through the work_items_ready lifecycle index (INDEXED BY), so a root's completed, cancelled and superseded history is never visited and the check's work is bounded by the project's live rows; a root an atomic plan mints is counted through its own subtree via the root index (new_root_open_descendant_count). No durable schema change. Proven by root_descendant_count_cost_does_not_grow_with_closed_history (512 cancelled + 255 live vs all-open 255: 2340 VM steps both), root_descendant_count_is_project_wide_and_keeps_the_walk_s_members and a_forest_plan_counts_each_new_root_through_its_own_subtree. Landed with w-9696aa09b59a in one changeset as 8ca25387d51f370c60154a10ca77e9b10d84db86 (content equal to review freeze bb516606…, reproduced from the commit); full gate test-3b8334a7 9/9; round-3 pair clean; evaluation 41cc448ced8f4e34b15024bf0be35917 pass; readiness ready on all four live stores with the installed build; installed build 1d9997cf42d8 (exe a05291cca19c), previous exe backed up as engram-20261006T024736Z-6de414d079d9.exe. Running sessions do not need this build for correctness; it only changes the cost of the budget check and adds the 1024 prerequisite refusal.",
+    "completed_at": "2026-10-06T02:48:58.996628800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ec85f8e6ad754751b067435d5e1fefbb": {
+        "activity_id": "ec85f8e6ad754751b067435d5e1fefbb",
+        "task_id": "01a0880f-c0a4-7963-a4f0-0c66e05fb5d0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1d40b88880154270b4e6818df82152c8"
+      }
+    }
+  }
+}

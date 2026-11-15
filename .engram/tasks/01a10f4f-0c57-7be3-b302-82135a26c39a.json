@@ -1,0 +1,51 @@
+{
+  "id": "01a10f4f-0c57-7be3-b302-82135a26c39a",
+  "external_ref": null,
+  "title": "Graph snapshot load rebuilds each restored relation basis by scanning every item and blocker",
+  "outcome": "Graph snapshot load rebuilds each restored relation basis by scanning every item and blocker",
+  "acceptance": [
+    "restored_relation_basis's cost in graph snapshot load is linear in the snapshot's items and blockers across both call paths (the Native-record check and the per-newest-item check), proven by a test-only visit counter on equal-size fixtures that differ in record count, with canonical order and bytes unchanged",
+    "Every refusal and its order in the load path stay as today, covered by the existing load tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Graph snapshot load now indexes the items and groups the blockers once (RelationBases, built in prepare_load after the relation pass), builds each item's relation basis on first demand at the same two call sites as before (native record materialization; the lifecycle check) and reuses it, and finds each item's newest record in one pass over the records; every refusal keeps its text and place, a native record is minted from the same elements in the same order, and carried records keep their recorded relations byte for byte. Proven by tests/relation_bases.rs: two test-only counters show basis work equal to items + blockers + items whether each item has one or three generations (real revisions between save→load→save rounds), and newest visits equal to the record count; the loader's bases equal a reference computed without it and carried record ids and canonical bytes survive a further load and save; refusal places pinned (native duplicate, carried-only duplicate at the lifecycle check, dangling record first, item without records) with no partial state. Landed with w-ae1fe23de0b6 as 6eff0959c70ed36d12f8458c04b87560405ef1fe on origin master (fast-forward from 5a47e9d, pushed 2026-10-06T07:21:33Z); full gate test-5dcfda5c 9/9 on freeze 39e54b42… (nine gates recorded); round-2 pair clean with no findings (round 1's Low and Notes fixed); evaluation 59b0b359207f4d9d8bdfd9624dacea46 passed both criteria; readiness ready on all four live stores with the build from the commit; installed build c1344e2d47a7 (exe 303d8c74fc6d…), previous exe backed up as engram-20261006T072119Z-69053c38355f.exe. Running sessions do not need this build: it changes only restore validation cost (graph load) and docs; no durable row, schema or projection change.",
+    "completed_at": "2026-10-06T07:21:50.817139100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d1ebffaf76ee440e944185007aa5577d": {
+        "activity_id": "d1ebffaf76ee440e944185007aa5577d",
+        "task_id": "01a10f4f-0c57-7be3-b302-82135a26c39a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c3b674a338f944538059a0aad08df2fc"
+      }
+    }
+  }
+}

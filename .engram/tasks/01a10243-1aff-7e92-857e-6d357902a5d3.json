@@ -1,0 +1,50 @@
+{
+  "id": "01a10243-1aff-7e92-857e-6d357902a5d3",
+  "external_ref": null,
+  "title": "The sqlite-store brief's projection repair section omits the restored-history and observation projections and finding-then-refuse repair",
+  "outcome": "The sqlite-store brief's projection repair section omits the restored-history and observation projections and finding-then-refuse repair",
+  "acceptance": [
+    "docs/features/sqlite-store.md 'Rebuildable and durable projections' names work_observations, work_restored_records and work_restored_evidence as rebuilt projections and describes how repair names each unprojectable record (decode, generation range, missing item, planning basis, constraint), keeps checking, then refuses and rolls back, in line with docs/shipped.md"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The sqlite-store brief now names work_observations, work_restored_records and work_restored_evidence among the projections repair rebuilds. It also describes how repair names each unprojectable record (decode, generation range, missing item, planning basis, constraint), keeps checking, then refuses and rolls back, in line with shipped.md. Landed as 3d52ed6.",
+    "completed_at": "2026-10-04T06:14:21.093145500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f786732bcf7945cd93daa5a0e5b7863c": {
+        "activity_id": "f786732bcf7945cd93daa5a0e5b7863c",
+        "task_id": "01a10243-1aff-7e92-857e-6d357902a5d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "43338564449940f093af45571884ea50"
+      }
+    }
+  }
+}

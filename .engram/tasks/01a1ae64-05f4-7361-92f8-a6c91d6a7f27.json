@@ -1,0 +1,90 @@
+{
+  "id": "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+  "external_ref": "termal#w-6f42c416b0c7",
+  "title": "Extend the shared `engram source` reader to describe local changes, so every consumer uses one source_id",
+  "outcome": "`engram source` reports one source_id object (root commit, submodule HEADs, local changes with Git blob ids), and Engram's launcher consumes it; TermAl and EO switch to it in their own items",
+  "acceptance": [
+    "`engram source --root ABS --json` keeps its existing fields and adds the local delta: for each changed, untracked (non-ignored), deleted or renamed path from the existing root status, its status, rename origin, Git blob id from one non-writing `git hash-object --stdin-paths` call over only the dirty paths (default filters), and mode/type; a deletion is a tombstone without a hash; ignored files are excluded; a clean source reports an empty delta",
+    "Each submodule reports its path and actual HEAD from the existing recursive submodule status; dirty or off-pin children report their own delta the same way, clean children need no extra status call, and uninitialized or conflicted children make the result unavailable with a reason",
+    "No .git contents are hashed, no repository or index listing is added, and no watcher is consulted; exceeding the existing 1 MiB output or 8 s deadline, or a detected change during capture, makes the result unavailable, never a partial identity",
+    "Engram's launcher adapter accepts the extended JSON and records and compares the whole source_id before and after a run, in the same changeset as the reader change",
+    "Shared fixtures cover equal and different dirty states at the same commit, additions, deletions, renames, mode changes, ignored exclusion, off-pin, dirty and nested children, overflow and deadline, with expected hashes derived at runtime; existing stored records are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed the one shared source_id with root/actual child commits and local Git-blob deltas; Engram launcher records/compares the whole closed value. Exact combined890 FULL passed12/12+3/3 withunchangedinput, latestrequiredwholeinputR3 pair noMedium+, Low w-2f6bc893a37e filed. Pushedorigin/master andinstalledexactgatedbuild; sixlivestoresready. No durable/history rewrite. M1/E3/nativeactivationremainseparateitems; no TermAlrestartclaimed.",
+    "completed_at": "2026-11-06T21:52:35.351845600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0e41ec897858404591a5c8d82787c247": {
+        "activity_id": "0e41ec897858404591a5c8d82787c247",
+        "task_id": "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0e41ec897858404591a5c8d82787c247"
+      },
+      "4ab95dc871d34548a606507ceb3d505d": {
+        "activity_id": "4ab95dc871d34548a606507ceb3d505d",
+        "task_id": "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "327ed1878c924824921342592cd6480a"
+      },
+      "51b1f18d70b74529b2b452223a0b3112": {
+        "activity_id": "51b1f18d70b74529b2b452223a0b3112",
+        "task_id": "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8bbd74f22753427bb230668c07f395e6"
+      },
+      "5f51ef26ccfd46548f15e1f36d73aa9f": {
+        "activity_id": "5f51ef26ccfd46548f15e1f36d73aa9f",
+        "task_id": "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "95fdc1f7aa4549d5be98ce2b73624f16"
+      }
+    }
+  }
+}

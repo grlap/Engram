@@ -1,0 +1,53 @@
+{
+  "id": "01a0736f-0269-7412-9af6-9f610f09f824",
+  "external_ref": null,
+  "title": "Acceptance provenance stays visible after creation: show, claim, and done receipts carry a concise 'acceptance defaulted from title' status until explicit criteria are set",
+  "outcome": "Acceptance provenance stays visible after creation: show, claim, and done receipts carry a concise 'acceptance defaulted from title' status until explicit criteria are set",
+  "acceptance": [
+    "an item whose acceptance is only the title placeholder ('<title> is done') and was never revised to a different list shows a one-line placeholder status on show (including --full), on its claim receipt, and on done's owed list; once any revision has stored a different acceptance list the status is gone for good, while an update --accept with text identical to the placeholder leaves it shown, because the list still is the placeholder; no criterion is inferred from title prose and the creation path is unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-work-lifecycle",
+    "dogfood",
+    "phoenix",
+    "stream-acceptance-evidence",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "An open item whose only criterion is still the '<title> is done' placeholder it was created with, never revised to another list, says so first on show, show --full, the claim receipt and done's owed list. The text is \"acceptance is only the title placeholder (...); set real criteria by revising acceptance with update\", with acceptance_placeholder: true in the show JSON. It is derived at read time from the item's events, so nothing changes in the store. A rename keeps it; a revision to another list drops it for good; an identical-text --accept leaves no trace and keeps it, as the revised criterion states. The history is scanned only for items created with the placeholder. One wording serves CLI and MCP, it is never shed, and admission is unchanged. The first evaluation's failure (69a96564) was superseded after the fix round.",
+    "completed_at": "2026-10-01T19:53:09.236449600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "48cda41e71fd44f6853af426ecadadcf": {
+        "activity_id": "48cda41e71fd44f6853af426ecadadcf",
+        "task_id": "01a0736f-0269-7412-9af6-9f610f09f824",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6d1ef5a6d9ac4599a33c871c47887c3e"
+      }
+    }
+  }
+}

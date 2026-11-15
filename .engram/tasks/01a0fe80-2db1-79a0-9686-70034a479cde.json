@@ -1,0 +1,52 @@
+{
+  "id": "01a0fe80-2db1-79a0-9686-70034a479cde",
+  "external_ref": null,
+  "title": "Push-failure wording follow-ups: the unrecorded-write case in the checklist, and the cli-and-mcp push paragraph that still says every failed push is recorded",
+  "outcome": "Push-failure wording follow-ups: the unrecorded-write case in the checklist, and the cli-and-mcp push paragraph that still says every failed push is recorded",
+  "acceptance": [
+    "docs/host-checklist.md says that a push whose state cannot be written reports it in its `code`, `message` or `warnings`, not only in warnings. The case: when the put succeeds and the final state write fails, the report is `failed` with the write error in code and message, and warnings stay empty.",
+    "The push paragraph in docs/features/cli-and-mcp.md no longer says that every failed push records its last attempt. It names the exceptions the receipt's `kinds[].target.last_attempt` row gives: refused before the lock, records that cannot be used (which the kind's `reason` shows), or state that cannot be written. It also names the confirm-then-missing path that records a missing finding before failing."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed with w-baf485f20c74 as cff3bcb:\n- host-checklist says a push whose state cannot be written reports it in its code, message or warnings. When the push otherwise succeeded (uploaded or unchanged) and only the final write failed, it is failed with the write error as its code and message, and no warning is added for it.\n- The cli-and-mcp push paragraph and the last_attempt row name the three cases that record no last attempt (refused before the lock, records that cannot be used, state that cannot be written), plus the confirm-then-missing path. The shipped push row names the same three.\n- The push test asserts the write error message and empty warnings.\nEvidence: gate test-f5d55410 passed on freeze 7fa6361b; pair round 2 was clean; independent evaluation passed 2/2; readiness was ready on all 4 stores.",
+    "completed_at": "2026-10-03T04:46:26.652786400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "df26ae7c144c4777997ae90e73ff5a66": {
+        "activity_id": "df26ae7c144c4777997ae90e73ff5a66",
+        "task_id": "01a0fe80-2db1-79a0-9686-70034a479cde",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ece3930003f942678f6007cdacb12b12"
+      }
+    }
+  }
+}

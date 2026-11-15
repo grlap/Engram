@@ -1,0 +1,51 @@
+{
+  "id": "01a06811-cfb3-71d2-b0cf-b79cb404da22",
+  "external_ref": null,
+  "title": "Prevent raw identity leakage across agent word renderers",
+  "outcome": "Agent-facing release, holder, handoff, reminder, error, and change prose uses one deliberate relative or opaque identity vocabulary while canonical audit attribution remains intact.",
+  "acceptance": [
+    "A claim -> default release -> show regression with a non-UUID actor id emits no raw actor id.",
+    "UUID-shaped peer session ids do not leak through item, held, handoff, reminder, or change renderers."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "security"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered project-scoped display identity across terse word renderers, default release and handoff prose, and claim refusal envelopes, while canonical audit and explicit verbose metadata retain raw identity. Correction children complete; all nine gates pass. Fable accepted freeze e26f2233 and verified live data without raw session leakage. Installed build 6cd83bdf7600 from working tree, NOT committed to master; pre-swap MCP servers still run their original build. Other error envelopes remain an independent open follow-up.",
+    "completed_at": "2026-09-08T03:45:13.088787500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b1ae9a53aa0e6d38b623835128dbdc0ef39c3b6382eed7dd2cd61e64d0916c66": {
+        "activity_id": "b1ae9a53aa0e6d38b623835128dbdc0ef39c3b6382eed7dd2cd61e64d0916c66",
+        "task_id": "01a06811-cfb3-71d2-b0cf-b79cb404da22",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "269d2f4e958b192405ab4bc498885039fce8d37ad1466c7d0bd42c6e11f3a222"
+      }
+    }
+  }
+}

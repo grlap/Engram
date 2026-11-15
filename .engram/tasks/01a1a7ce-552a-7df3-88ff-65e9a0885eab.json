@@ -1,0 +1,54 @@
+{
+  "id": "01a1a7ce-552a-7df3-88ff-65e9a0885eab",
+  "external_ref": null,
+  "title": "Remove the finished Engram worktrees still on Central, keeping only named live use",
+  "outcome": "Central's .worktrees holds only roots in live use, each with a named reason, and the build output of finished work is gone",
+  "acceptance": [
+    "Every root under Central's Engram .worktrees is either removed or listed with one named keep reason: a live owner names it as still in use, a process is using it, or an open item names it as its input, candidate or required evidence. A mere mention in a note or an uncommitted change alone is not a keep reason.",
+    "Before an unkept root is removed, archive under .evidence/provisional/worktree-sweep-20261104/<name>/: `git diff HEAD --binary`, a separate `git diff --cached --binary` when staged changes exist, an archive of untracked non-ignored files, `git status --porcelain`, HEAD, and review-runs; bundle HEAD if unreachable. Verify each required saved file exists and is nonempty where changes require it, record SHA256s, and check the absolute removal path is inside the repository. Then remove with one `git worktree remove --force`; if locked, keep and list it.",
+    "Remove target/ first from roots not in active use, preserving named keep-set roots and any pinned, transfer or other explicitly retained build output; remove generated target/ from the other kept roots unless a live owner or running process uses it. Record each retained target/ reason.",
+    "Record roots removed and kept with their reasons, commits saved and archive paths/hashes, locked roots, and reclaimed space measured as the summed sizes of what was removed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "disk",
+    "greg-directed",
+    "housekeeping"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the serial Central sweep: removed 71 registered roots with hash-verified archives, retained four registered roots with named live reasons plus the explicitly reserved unregistered directory, cleaned the finished cleanup-on-close-740d target, and verified the final inventory and reclaimed-byte totals.",
+    "completed_at": "2026-11-04T23:54:09.935335Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "dd233ee3475643468a8ee7f030b5ae28": {
+        "activity_id": "dd233ee3475643468a8ee7f030b5ae28",
+        "task_id": "01a1a7ce-552a-7df3-88ff-65e9a0885eab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "88bef54d646344f292004db80d355527"
+      }
+    }
+  }
+}

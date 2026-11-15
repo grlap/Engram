@@ -1,0 +1,30 @@
+{
+  "id": "01a18a5a-4bbf-79b1-a4a0-a9ee01511618",
+  "external_ref": null,
+  "title": "Handoff accept should say when the work's live offer is addressed to a different recipient, instead of \"ambient work has no live incoming handoff offer\"",
+  "outcome": "A session that tries to accept a handoff whose live offer names someone else (for example a display name rather than its session id) gets a refusal naming that mismatch and the offer's recipient, so the owner can re-offer to the right session without a diagnosis round.",
+  "acceptance": [
+    "When the focused work has exactly one live outgoing offer whose recipient is not the calling session, `handoff accept` refuses with a reason that says the offer is addressed to a different recipient and names that recipient as recorded, rather than the generic \"ambient work has no live incoming handoff offer\"",
+    "The genuine no-offer case keeps its current refusal, and acceptance by the named recipient is unchanged",
+    "A test covers the mismatched-recipient refusal and the unchanged no-offer and matching-recipient paths"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "cross-project",
+    "handoff",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

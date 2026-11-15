@@ -1,0 +1,46 @@
+{
+  "id": "01a1914d-c218-7513-8073-4a45b0c45d55",
+  "external_ref": null,
+  "title": "Make evaluation check exemptions honor failed registered-run aggregates",
+  "outcome": "A failed or indeterminate registered aggregate reported after an evaluation's cut cannot preserve freshness merely because its completed stages passed.",
+  "acceptance": [
+    "ExemptChecks::after consults genuine shared producer facts and does not exempt a passing stage when its registered aggregate did not succeed; historical execution-observation semantics stay unchanged.",
+    "A regression with a failed aggregate and only passing emitted stages after the evaluated cut requires resubmission when the Git revision and sighting align; include an indeterminate aggregate.",
+    "The change preserves passing same-revision exemptions, evidence cuts, exact replay, and existing mutation handling."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "ca9cec6960cd4dcc8e42bc58955ffd0c": {
+        "activity_id": "ca9cec6960cd4dcc8e42bc58955ffd0c",
+        "task_id": "01a1914d-c218-7513-8073-4a45b0c45d55",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ca9cec6960cd4dcc8e42bc58955ffd0c"
+      }
+    }
+  }
+}

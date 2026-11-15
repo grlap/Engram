@@ -1,0 +1,100 @@
+{
+  "id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "external_ref": null,
+  "title": "Canonical export/import of the agent-visible work graph as the recreation and multi-machine path",
+  "outcome": "A store can be exported as a deterministic snapshot of items, notes, evidence summaries, prerequisites, and memories and imported into a fresh store on any build, replacing archive-and-script recreation and giving multi-machine a migration path that does not strand the second host",
+  "acceptance": [
+    "export then import on a fresh store reproduces every open item with refs mapped, notes, and memories; completed history is carried as history, not lost"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a069c3-834f-7431-902c-5874f299a76c",
+    "01a069c3-8536-7330-833b-aa8ce4af50f3"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shipped deterministic graph save/load and dry-run: fresh-store recreation preserves ids, refs, open planning, notes and keyed memories, with completed history retained as inert records and no transferred execution authority. Acceptance and prior gate/review evidence verified at landed 7932b49; loading requires the documented matching format fingerprint.",
+    "completed_at": "2026-09-04T23:32:02.702572300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3a880e880945723b07144035b72b4399c9c2ee0a02fdab53da80261497fcbe50": {
+        "activity_id": "3a880e880945723b07144035b72b4399c9c2ee0a02fdab53da80261497fcbe50",
+        "task_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f84ad78499b8ea1568606ed7b805ec1e50fe7edcdd641fb95c441064242cabd7"
+      },
+      "54ecc105cf8334cdb2805d79ef063337d7645f9e8c3b528845927f7fa67c81f7": {
+        "activity_id": "54ecc105cf8334cdb2805d79ef063337d7645f9e8c3b528845927f7fa67c81f7",
+        "task_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "54ecc105cf8334cdb2805d79ef063337d7645f9e8c3b528845927f7fa67c81f7"
+      },
+      "64f71ef80901cd1270fd6d1fd659b9757a00e43573b3a4f3bd79c0d0a6a50ed1": {
+        "activity_id": "64f71ef80901cd1270fd6d1fd659b9757a00e43573b3a4f3bd79c0d0a6a50ed1",
+        "task_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "64f71ef80901cd1270fd6d1fd659b9757a00e43573b3a4f3bd79c0d0a6a50ed1"
+      },
+      "a0240ffd8c50a1e0effbfcb816f5f60a40cde7aae2bf8ba14e1b8361586f1bbd": {
+        "activity_id": "a0240ffd8c50a1e0effbfcb816f5f60a40cde7aae2bf8ba14e1b8361586f1bbd",
+        "task_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a0240ffd8c50a1e0effbfcb816f5f60a40cde7aae2bf8ba14e1b8361586f1bbd"
+      },
+      "be553213ff067f90081314a25ba71d405d4e2d6099c155a7e47aabe7b718e649": {
+        "activity_id": "be553213ff067f90081314a25ba71d405d4e2d6099c155a7e47aabe7b718e649",
+        "task_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "be553213ff067f90081314a25ba71d405d4e2d6099c155a7e47aabe7b718e649"
+      }
+    }
+  }
+}

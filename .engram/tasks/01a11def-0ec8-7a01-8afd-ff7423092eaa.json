@@ -1,0 +1,29 @@
+{
+  "id": "01a11def-0ec8-7a01-8afd-ff7423092eaa",
+  "external_ref": null,
+  "title": "host-checklist.md uses \"pilot\" for the MADE integration, not Greg's colleague-install meaning",
+  "outcome": "host-checklist.md uses \"pilot\" for the MADE integration, not Greg's colleague-install meaning",
+  "acceptance": [
+    "docs/host-checklist.md no longer calls the MADE integration or the advisory tier a \"pilot\"; \"pilot\" means only installing Engram, or Engram + TermAl, for a colleague and observing real work, and agent-run qualification is called technical qualification",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "pilot",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,68 @@
+{
+  "id": "01a0e0d3-065c-73c1-a6bd-e2f6b6a503f8",
+  "external_ref": null,
+  "title": "Engram's test launcher cannot feed a host with test evidence: a stage passes on exit zero, with no kind and no executed-test count",
+  "outcome": "A run of Engram's launcher leaves, for each stage, a record a host can read to mint verification evidence: what kind of check the stage was, its state and its own exit status, and for a test stage whether tests were executed and how many passed, failed, were ignored and were filtered out. The record carries no source revision; the host measures its own.",
+  "acceptance": [
+    "A test stage records executed, passed, failed, ignored and filtered counts taken from the runner, and a stage that executed zero tests is not recorded as passed tests",
+    "Each stage record states its kind (test, lint, build, docs or other) and a stage that is not a test cannot be read as test evidence",
+    "Full and focused modes both produce the record, including for a run in a linked worktree and for a run that completes in the background",
+    "The record carries no source revision, and the launcher's own input fingerprint is never presented as the host's source revision",
+    "The shape of the per-stage record is agreed with the TermAl owner before implementation, and the agreement is recorded on this item",
+    "docs/development.md describes the record and who may treat it as evidence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "test-launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as a42abb1 (Engram::Fable rounds 1–9, Engram::Opus rounds 10–13). Every run of scripts/test-launcher.mjs that executed its stages now ends stdout with a test-launcher/v1 record: one line per stage with kind, state and exit, and for test stages executed/passed/failed/ignored counts, runners and filtered, or executed=unknown why=TOKEN; then an overall line. The launcher reads only runner summaries (libtest `test result:` checked against `running N`; the node --test summary block). A stage fails on its exit or on failed tests counted by complete summaries. A count is numeric only when every summary is complete and consistent. Focused mode counts only cargo test and node --test started by the launcher. Detached runs write the record to launcher.log; summary and notify print none. No source revision is recorded. An unreadable log gives an unknown count without failing the run, and a stage that breaks request.json cannot take the record away. The format is agreed with Termal::Opus (reader tm-t9op) and documented in docs/development.md, \"Record for the host\". Round 13 was clean from Codex and Claude; the landing gate test-e2b7721c passed and its nine stages are recorded; readiness was ready on both live stores. Independent evaluation delegation-bad330a0 passed all six criteria.",
+    "completed_at": "2026-09-27T06:04:03.681048Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7a3bf6c8aae240c1857e1bf5572c93e3": {
+        "activity_id": "7a3bf6c8aae240c1857e1bf5572c93e3",
+        "task_id": "01a0e0d3-065c-73c1-a6bd-e2f6b6a503f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "36d9cccfc74c493289414406abc852b2"
+      },
+      "a36c37e12e2d4e93867225839e83b409": {
+        "activity_id": "a36c37e12e2d4e93867225839e83b409",
+        "task_id": "01a0e0d3-065c-73c1-a6bd-e2f6b6a503f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "95659b1b0e5443e8877047f43d0f64fd"
+      }
+    }
+  }
+}

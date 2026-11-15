@@ -1,0 +1,28 @@
+{
+  "id": "01a1532c-3cf9-73e3-89c2-7e5d1f1a72e2",
+  "external_ref": null,
+  "title": "Decide whether a graph-snapshot load treats a store holding only a task-sync folder baseline as empty",
+  "outcome": "Decide whether a graph-snapshot load treats a store holding only a task-sync folder baseline as empty",
+  "acceptance": [
+    "A graph-snapshot load into a store whose only shared state is a task-sync folder import baseline either refuses as non-empty, or the docs state the ordering and a test pins that a later folder import then refuses (divergent planning or native state) instead of silently succeeding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

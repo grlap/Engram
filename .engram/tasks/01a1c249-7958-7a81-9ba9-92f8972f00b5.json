@@ -1,0 +1,65 @@
+{
+  "id": "01a1c249-7958-7a81-9ba9-92f8972f00b5",
+  "external_ref": null,
+  "title": "Let one review round on a large input be split by module family across up to three parallel Codex and Claude pairs",
+  "outcome": "Let one review round on a large input be split by module family across up to three parallel Codex and Claude pairs",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md, identically, carry the family-split sentence in the standing approval's review condition and the two pointers in Review Cadence 2 and the /review-changes line, in the wording both coordinators concurred on",
+    "Greg's verbatim word approving the widening is recorded on this item with its source before the change lands",
+    "The final-diff audit /review-changes requires is recorded on this item as passed before the landing on the audited candidate. For the landed carry 885c032e, the carry identity audit that /review-changes requires was done only after landing; the item records that deviation openly, the after-landing carry identity audit by the auditing coordinator as passed with the holder's in-root identity boundary, and Greg's verbatim word approving closure on that basis"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "authority-text",
+    "greg-directed",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 885c032e (tree 3c010cb4) on master and origin/master: one review round on a large input may be split by module family across up to three Codex and Claude pairs. The governing text is byte-identical to audited a5326a04. The carry audit before landing was missed; it was done after landing by Termal::Fable2 and passed, with an in-root identity check. Greg approved closure on that basis („tak”, Asistant #854). Post-landing independent evaluation (Codex 17233) passed 3/3 after the doc-link check on the named root (test-252c8eeb).",
+    "completed_at": "2026-11-10T15:55:02.876705600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "13794d0068ef4e9ba656e72faaf05909": {
+        "activity_id": "13794d0068ef4e9ba656e72faaf05909",
+        "task_id": "01a1c249-7958-7a81-9ba9-92f8972f00b5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "13794d0068ef4e9ba656e72faaf05909"
+      },
+      "fc48c059056d45e480dbe7a68f9816d0": {
+        "activity_id": "fc48c059056d45e480dbe7a68f9816d0",
+        "task_id": "01a1c249-7958-7a81-9ba9-92f8972f00b5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1eea237952e645f6be600560c221aea4"
+      }
+    }
+  }
+}

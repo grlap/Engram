@@ -1,0 +1,65 @@
+{
+  "id": "01a0f2f2-285c-7a71-a686-a098a9152a58",
+  "external_ref": null,
+  "title": "Use one phase-aware named-root assessment with explicit read horizons",
+  "outcome": "Use one phase-aware named-root assessment with explicit read horizons",
+  "acceptance": [
+    "A source A-to-B-to-A report and a foreign known root sighting keep existing movement outcomes; no redundant declared_not_contradicted branch is removed without a regression proving the earlier movement owner covers the same transition",
+    "Admission and consumption use one source assessment owner whose explicit phase retains initial-sighting-through-cut admission and declared-source confirmation-through-head consumption",
+    "Tests cover initial old sighting then a new uncontradicted declaration (records but blocks done until confirmed), contradicted declaration (refused/void), never-sighted declaration (blocks newest record until replaced), and undeclared judgment using its evaluated cut"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A named root's binding and source are assessed by one owner each (assess_named_root_binding, assess_named_root_source) with an explicit RootPhase: admission reads the declared workspace, then the binding at head lazily, then the sighting through the cut with the open-declaration check kept; consumption reads the stored binding and confirms a declared revision through the head and an undeclared one at its cut. Reasons, causes and guard order unchanged. A 212-cell characterization table measured on the pre-move code passes unchanged, with a row-uniqueness check and a removal-evidence probe for the kept declaration check. Landed b4c0896 after two rounds (round 1 void: Codex blocked by TermAl w-27f08e988f1e; Claude's Notes fixed), full gate test-d23eb69d 9/9, independent evaluation passed 3/3.",
+    "completed_at": "2026-10-01T00:06:37.351920200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "649e7d2b641c4b199202920226450abc": {
+        "activity_id": "649e7d2b641c4b199202920226450abc",
+        "task_id": "01a0f2f2-285c-7a71-a686-a098a9152a58",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "89037a40d2f8472586f4dcea226b4b9a"
+      },
+      "baed1c7724d6414d86abf3f7879b425f": {
+        "activity_id": "baed1c7724d6414d86abf3f7879b425f",
+        "task_id": "01a0f2f2-285c-7a71-a686-a098a9152a58",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8d0a901eca1444168e1b6f9f6f71661d"
+      }
+    }
+  }
+}

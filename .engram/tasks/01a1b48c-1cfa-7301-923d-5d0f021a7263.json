@@ -1,0 +1,29 @@
+{
+  "id": "01a1b48c-1cfa-7301-923d-5d0f021a7263",
+  "external_ref": null,
+  "title": "Use the canonical committed-input shape when the source owner is unavailable",
+  "outcome": "A post-run source-owner refusal remains readable as unavailable committed input by TermAl and preserves actual stage results.",
+  "acceptance": [
+    "The committed sourceRefusal path records eligible:false and unavailableReason with after/outcome absent, matching the existing canonical unavailable shape",
+    "Behavioral coverage checks a post-run owner refusal, unchanged actual stage facts, and the shared reader's unavailable rendering without fabricated after observation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "launcher",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

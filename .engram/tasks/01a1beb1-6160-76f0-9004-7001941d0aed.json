@@ -1,0 +1,63 @@
+{
+  "id": "01a1beb1-6160-76f0-9004-7001941d0aed",
+  "external_ref": null,
+  "title": "Catalog search also matches a full work UUID and the assignee",
+  "outcome": "Catalog search also matches a full work UUID and the assignee",
+  "acceptance": [
+    "`work ls --search` with a complete work UUID, in any accepted case, returns that item, and search text matching an item's assignee returns it; behavior tests through the CLI or host path show both alongside existing metadata and note matches, with paging and the exact `total` still correct.",
+    "No projection, FTS or schema change, no projection repair, and no regression in the search budget; existing matches stay as they were."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "catalog-search"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`work ls --search` and MCP search now also find an item by its complete work UUID, in any spelling the parser accepts, and by a substring of its stored assignee, with existing matches kept and paging and the exact total correct. One IN over a UNION ALL keeps an indexed search a seek. No schema, projection or FTS change; six live Central stores ready. Search budget measured: steps rose except on note hits, which got cheaper; worst case 1.5% of the budget on 4000 items; no limit moved. Tests: storage test and CLI parity test. Evaluation c5b13677 passed both criteria. Filed: w-c2d759bdf124.",
+    "completed_at": "2026-11-09T12:05:29.172939200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1b52d9568f2c4e7aacd6562c6764048a": {
+        "activity_id": "1b52d9568f2c4e7aacd6562c6764048a",
+        "task_id": "01a1beb1-6160-76f0-9004-7001941d0aed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1211f4fb78634fceb56ad74a17c8416d"
+      },
+      "d48a960844d847cfad78e540d0a9bc78": {
+        "activity_id": "d48a960844d847cfad78e540d0a9bc78",
+        "task_id": "01a1beb1-6160-76f0-9004-7001941d0aed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "80f137ee67614a5ba74ff991c1052d0a"
+      }
+    }
+  }
+}

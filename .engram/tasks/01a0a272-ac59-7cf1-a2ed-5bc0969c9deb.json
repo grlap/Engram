@@ -1,0 +1,85 @@
+{
+  "id": "01a0a272-ac59-7cf1-a2ed-5bc0969c9deb",
+  "external_ref": null,
+  "title": "Document coordinated-downtime offline upgrade",
+  "outcome": "Document coordinated-downtime offline upgrade",
+  "acceptance": [
+    "Contract describes operator-maintained downtime without admission locks or TermAl changes, accepted import status, retained originals and executable, crash recovery and rollback boundary; affected standing instructions remain identical."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered work reconciled against retained evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:46:07.910107300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "54d895a46bce45e8b1b66bd4fcd4bdb127141874cd50262173b9fee8ac5d59bd": {
+        "activity_id": "54d895a46bce45e8b1b66bd4fcd4bdb127141874cd50262173b9fee8ac5d59bd",
+        "task_id": "01a0a272-ac59-7cf1-a2ed-5bc0969c9deb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "54d895a46bce45e8b1b66bd4fcd4bdb127141874cd50262173b9fee8ac5d59bd"
+      },
+      "652faf722dfcb3ed11f07c71ceb7474c63486857c21db359af14da35d741cd43": {
+        "activity_id": "652faf722dfcb3ed11f07c71ceb7474c63486857c21db359af14da35d741cd43",
+        "task_id": "01a0a272-ac59-7cf1-a2ed-5bc0969c9deb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a478fc5451747160c059b135994b11d53961cdbf0429136c9f49e8bc6e9f2b79"
+      },
+      "81abe7540b7054044fdb5c704391a4aa5b20747c7113060bcd5309eac2a14263": {
+        "activity_id": "81abe7540b7054044fdb5c704391a4aa5b20747c7113060bcd5309eac2a14263",
+        "task_id": "01a0a272-ac59-7cf1-a2ed-5bc0969c9deb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "81abe7540b7054044fdb5c704391a4aa5b20747c7113060bcd5309eac2a14263"
+      },
+      "d4496bf0be343c44c52ffe68969cf95bba5b1ea48322572e3d39fb635fd9fd1f": {
+        "activity_id": "d4496bf0be343c44c52ffe68969cf95bba5b1ea48322572e3d39fb635fd9fd1f",
+        "task_id": "01a0a272-ac59-7cf1-a2ed-5bc0969c9deb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d4496bf0be343c44c52ffe68969cf95bba5b1ea48322572e3d39fb635fd9fd1f"
+      }
+    }
+  }
+}

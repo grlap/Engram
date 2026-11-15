@@ -1,0 +1,54 @@
+{
+  "id": "01a0775d-7936-7342-b9cb-b0fc0dc6b75d",
+  "external_ref": null,
+  "title": "Coordination status capture and resume: note --status as the item's current status, shown first by next and show; external reference on items; fresh-process resume scenario for both roles",
+  "outcome": "Coordination status capture and resume: note --status as the item's current status, shown first by next and show; external reference on items; fresh-process resume scenario for both roles",
+  "acceptance": [
+    "add --external REF and update REF --external REF (MCP external) record one opaque external reference as an audited item field in item_json with no SQLite schema change and unchanged canonical identity for items without it; next rows, ls rows and show print it; ls --search REF finds it; JSON external_ref; graph snapshot save and load round-trip it; the reference is linkage only — the example records the relevant source criteria and context through existing acceptance and notes, and nothing claims immutable source intake from the reference alone",
+    "docs and the engram-repo skill state the practice in one paragraph: record duties, waits, decisions and the next permitted action as a status note on the item you hold or are assigned whenever they change; a coordinator without code work keeps one assigned or held coordination item so next finds it; next is the resume read; a conversation summary is never the only place these exist",
+    "engram work note REF --status TEXT (MCP note with status: true) records a note of kind status; the item's current status is the newest status-kind note written by an accountable owner (the holder, or the assignee when unclaimed) and survives later ordinary notes and gates; a non-holder's status-kind note is a marked peer observation shown separately, never presented as the owner's commitment; older statuses stay in --notes history and are never advertised as pending; no second ledger, no keyword inference",
+    "next prints the current status for every held and assigned item with its recorded time: a complete body up to a bounded size, otherwise its first line plus an explicit omission and the note-detail command, never a silently trimmed waiting condition; show REF prints status: directly after the title line; JSON carries status {body_or_first_line, complete, recorded_at, locator}; terminal escaping and CLI/MCP parity covered; own-actor session detail follows the existing privacy rule",
+    "resume scenario in Rust and as a real CLI/MCP process test with both roles: a no-code coordinator assigned to X (not holding it) with an external reference and a status naming wait, review packet and next permitted action; an implementer holding Y with a status naming freeze and awaited go; (a) same-session compaction = fresh process with the same session id, (b) session replacement = new session id for the same actor: in both cases next per role shows its own held or assigned item, external reference and current status, selects the correct own duty without hiding legitimate peer context, and grants no execution authority (the coordinator still cannot mutate the implementer's item); a newer status after the wait resolves is the only current one while show --notes keeps both; superseded and resolved waits both covered"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "phoenix",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered status capture and resume for both roles, audited external linkage, safe bounded projections and regression coverage; accepted full-delta/correction reviews and all gates green; landed and installed by coordinator.",
+    "completed_at": "2026-09-06T19:16:59.743133200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6bfc245cff2fde9586b16a29a54a0c94f96f88e15d8a4f1a884b1a9c3834b3e5": {
+        "activity_id": "6bfc245cff2fde9586b16a29a54a0c94f96f88e15d8a4f1a884b1a9c3834b3e5",
+        "task_id": "01a0775d-7936-7342-b9cb-b0fc0dc6b75d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d456a7ae68f2dff7593734499d27cdfe89c08078b311d3395102f9350e8c5ec3"
+      }
+    }
+  }
+}

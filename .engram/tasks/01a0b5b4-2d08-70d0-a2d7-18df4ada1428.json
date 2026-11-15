@@ -1,0 +1,63 @@
+{
+  "id": "01a0b5b4-2d08-70d0-a2d7-18df4ada1428",
+  "external_ref": null,
+  "title": "A store that requires turn_gated accepts work from sessions no host mediates",
+  "outcome": "Greg has decided what a project's required assurance means for the work words, and the code or the docs say exactly that.",
+  "acceptance": [
+    "The 2026-09-27 consultation decision is recorded: the host is responsible for enforcing declared mediation; ordinary CLI/MCP work words remain usable without a control grant.",
+    "behavioral-control-plane.md and cli-and-mcp.md document that required_assurance constrains turn decisions for bound control sessions, and their doctor scope statements distinguish recorded-state audit from proof that every caller is mediated."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered assurance boundary documentation in497e81b. Independent Codex evaluation632db411ab184cba8b42855086c9aa5c passed both criteria with current holder evidence a122420a2fdf41fcb27b1a665b5abad1: recorded consultation, bound-session turn floor, host responsibility, grant-free work words, doctor audit limits. Shared final full gate and clean Codex/Claude reviews preserved.",
+    "completed_at": "2026-09-27T20:25:06.717314200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2a6aa1330ff844f49c5beafb41305228": {
+        "activity_id": "2a6aa1330ff844f49c5beafb41305228",
+        "task_id": "01a0b5b4-2d08-70d0-a2d7-18df4ada1428",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2a6aa1330ff844f49c5beafb41305228"
+      },
+      "f2eb552e1f68445eac5c15fce35a046b": {
+        "activity_id": "f2eb552e1f68445eac5c15fce35a046b",
+        "task_id": "01a0b5b4-2d08-70d0-a2d7-18df4ada1428",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9c492b9cb70042bd8a5aecc768f32575"
+      }
+    }
+  }
+}

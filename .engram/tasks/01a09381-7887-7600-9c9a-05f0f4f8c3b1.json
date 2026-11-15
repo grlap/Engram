@@ -1,0 +1,49 @@
+{
+  "id": "01a09381-7887-7600-9c9a-05f0f4f8c3b1",
+  "external_ref": null,
+  "title": "Verify Grok test batch with fresh parent gates and dual review",
+  "outcome": "Verify Grok test batch with fresh parent gates and dual review",
+  "acceptance": [
+    "Record fresh final-input gate evidence and authoritative Codex plus Claude findings with historical evidence limitations preserved"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered fresh nine-gate evidence and independent Codex plus Claude reviews; no actionable code findings, historical sensitivity and seal-link gaps preserved.",
+    "completed_at": "2026-09-12T03:07:07.387271100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ce3ee6ecbc71db871e63d304c7a069f975933f8edaaee81f42cea24ecf23f060": {
+        "activity_id": "ce3ee6ecbc71db871e63d304c7a069f975933f8edaaee81f42cea24ecf23f060",
+        "task_id": "01a09381-7887-7600-9c9a-05f0f4f8c3b1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bcde5fad50ba58dea2b38a4b46bc9ae21e4059facebdd614a66d0547744b1a9c"
+      }
+    }
+  }
+}

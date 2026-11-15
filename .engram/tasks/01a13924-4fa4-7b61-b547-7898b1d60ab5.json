@@ -1,0 +1,33 @@
+{
+  "id": "01a13924-4fa4-7b61-b547-7898b1d60ab5",
+  "external_ref": null,
+  "title": "Prepare external-agent task merge handoff and admit resolved bytes",
+  "outcome": "Prepare external-agent task merge handoff and admit resolved bytes",
+  "acceptance": [
+    "An explicit retained exchange operation supplies complete base/local/incoming documents, changed IDs and relevant dependency closure without a model call or semantic last-writer-wins; mechanically carried disjoint changes and unresolved same-task/lifecycle/graph conflicts remain visible and preserve every captured side.",
+    "Pre-commit admission binds an uncommitted resolved candidate to exact operation and both sides, validates complete IDs/schema/reference closure/cycles/no unexplained deletions and note/activity invariants, preserves original note bytes/IDs and only known captured or imported additions, and explicitly refuses edited originals, arbitrary ID-bearing drafts and unsupported replacement-note creation.",
+    "Owned tests prove same-operation exact retry, preservation on branch/task-basis drift and invalid/conflicted resolution, distinct and overlapping task edits, terminal/open conflicts, graph cycles and note identity/collision boundaries; admission never claims fetched means merged, committed or imported.",
+    "No commit/push, divergent SQLite application or canonical imported-commit receipt, new note-origin durable representation, TermAl relay or authority expansion is introduced; any contrary durable requirement goes to Greg before coding."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13924-4f0f-7321-8421-5cf7f8443c69"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

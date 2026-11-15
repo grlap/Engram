@@ -1,0 +1,28 @@
+{
+  "id": "01a1b56b-5b60-7792-88f5-8c1664702144",
+  "external_ref": null,
+  "title": "Assert focused stage on repeated remote verification receipts",
+  "outcome": "Assert focused stage on repeated remote verification receipts",
+  "acceptance": [
+    "Repeated delivery of a focused remote verification preserves the focused stage in the returned receipt."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "remote-verification",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

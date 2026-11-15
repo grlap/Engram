@@ -1,0 +1,64 @@
+{
+  "id": "01a150c9-ffa5-7f80-a35b-1d0d806e829a",
+  "external_ref": null,
+  "title": "Git-folder sync S2.1: apply scalar edits to execution-free Open restored tasks with explicit conflict refusals",
+  "outcome": "Git-folder sync S2.1: apply scalar edits to execution-free Open restored tasks with explicit conflict refusals",
+  "acceptance": [
+    "On the S1 two-input contract (resolved folder R plus the destination's own export basis E), changes to title, outcome and priority of execution-free Open restored tasks apply atomically through the existing Revised { authority: Project } event, with correct replay and result-graph integrity; original origins, seals and history are retained, never erased; restored Completed items stay unchanged and event-free; every other delta in this slice (an add, a delete, a prerequisite or blocker change, any other field or a lifecycle change) refuses explicitly with a named reason and is never silently dropped or partially applied",
+    "Any blocked task refuses the whole selected diff with a per-task reason naming the actual conflict (live claim, active run or admission basis, sealed or restored completion, root or parent move, unsupported delta in this slice), judged on the actual mutation and influence closure rather than a blanket refusal for an unrelated claimed task; zero changes are committed and runtime state is unchanged",
+    "Doctor verifies canonical replay of the new Revised events; repair rebuilds only declared disposable projections and preserves all durable rows and old results"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14c4e-c8ba-7922-8cdf-a7d90d9445f8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Git-folder sync S2.1 is landed and installed. On an enrolled destination, a resolved folder is classified task by task by the pure planner (src/task_sync/folder_plan.rs). Title, outcome and priority edits of run-free, Open, restored tasks apply as ordinary Revised{Project} planning revisions, atomically and with exact replay. Every other delta (added, deleted or unsupported fields), and every edit its task cannot take (unsupported_origin, restored_completion, lifecycle, active_run, execution_history, planning_history), refuses the whole folder with task_sync_import_conflict. That refusal names each refused task in task-id order and writes nothing. Host-local tasks the folder omits stay; the baseline records inventory changes. Doctor and repair stay healthy. There is no schema change.\nLanded as 54cb8b1 (tree ab7478a9 = the reviewed freeze 4dfdca17). Gate: Batch E test-b6e9b661, 12/12. Review r2 is clean at Medium+; its Lows went to w-8559a51c20d7. Fresh post-landing evaluation bec719437c6443539cf2f80d23386cf3 passed all 3 criteria, on the landed root batch-e-6a291a8-11859 at gen 1526, after TermAl w-33f4cde5413c refused attempts 1 and 2.",
+    "completed_at": "2026-10-19T15:25:04.722075600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b119c2752b79413fa0374c5974450594": {
+        "activity_id": "b119c2752b79413fa0374c5974450594",
+        "task_id": "01a150c9-ffa5-7f80-a35b-1d0d806e829a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b119c2752b79413fa0374c5974450594"
+      },
+      "b7cb749b4d434660b219cf30b14a2883": {
+        "activity_id": "b7cb749b4d434660b219cf30b14a2883",
+        "task_id": "01a150c9-ffa5-7f80-a35b-1d0d806e829a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f0b6b97373d243baa2cfc3120f1ef949"
+      }
+    }
+  }
+}

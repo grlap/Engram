@@ -1,0 +1,27 @@
+{
+  "id": "01a1bf5d-0354-7422-9872-f3e79811ffe0",
+  "external_ref": null,
+  "title": "Say in the registered-input docs that a check can also name a source_id, and drop or use recordCheck's input override",
+  "outcome": "Say in the registered-input docs that a check can also name a source_id, and drop or use recordCheck's input override",
+  "acceptance": [
+    "docs/features/acceptance-evaluation.md's registered-input section says a check names a complete source_id or, for a committed input, a git-commit revision",
+    "scripts/work-session-fixture.mjs recordCheck has no parameter that no caller passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

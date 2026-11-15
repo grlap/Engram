@@ -1,0 +1,50 @@
+{
+  "id": "01a06dac-32a1-7650-a657-e80d07f89a85",
+  "external_ref": null,
+  "title": "Fingerprint restored-record serialized schema",
+  "outcome": "Fingerprint restored-record serialized schema",
+  "acceptance": [
+    "a RestoredRecord representation change changes the runtime-derived snapshot format fingerprint"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The runtime fingerprint now embeds the annotation-stripped RestoredRecord schema including item and relation shapes.",
+    "completed_at": "2026-09-04T18:49:58.987221100Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7c46ab893f29fee1776f5548daa69f60fd2893af1a5b97aa03da914f62384b50": {
+        "activity_id": "7c46ab893f29fee1776f5548daa69f60fd2893af1a5b97aa03da914f62384b50",
+        "task_id": "01a06dac-32a1-7650-a657-e80d07f89a85",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "793fd6756345852d84521341e00a6e817af95708dc4098cb054f13f2ac3fa18d"
+      }
+    }
+  }
+}

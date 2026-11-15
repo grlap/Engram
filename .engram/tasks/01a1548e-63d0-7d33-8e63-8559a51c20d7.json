@@ -1,0 +1,53 @@
+{
+  "id": "01a1548e-63d0-7d33-8e63-8559a51c20d7",
+  "external_ref": null,
+  "title": "Tighten S2.1 folder-edit follow-ups: exhaustive planning classification, bounded conflict message, import doc placement",
+  "outcome": "Tighten S2.1 folder-edit follow-ups: exhaustive planning classification, bounded conflict message, import doc placement",
+  "acceptance": [
+    "is_planning in src/storage/work/task_sync/folder_scalar.rs classifies every WorkTransition variant in an exhaustive match with no wildcard arm, so adding a variant requires a classification decision",
+    "the task_sync_import_conflict refusal names at most a documented number of tasks in task-id order and then states the exact count of the remaining refused tasks; a test covers a refusal larger than the bound",
+    "docs/features/task-planning-text.md keeps the general folder-import admission paragraph outside the enrolled-destination subsection, and states that a missing task file refuses as a deletion only for tasks of the last applied exchange while host-local non-members are retained"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review-low",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The S2.1 folder-edit follow-ups are landed and installed. is_planning is an exhaustive match over all 22 WorkTransition variants, with no wildcard; RequiredChildWaived is classified as execution. A task_sync_import_conflict refusal names at most 20 task conflicts (NAMED_CONFLICT_LIMIT) in task-id order, with project entries outside the bound, and then the exact count of the rest. Tests cover 20, 21, project plus 23, a 25-root empty-folder refusal (dry run equal to real, state unchanged) and the waiver classification. The general folder-import paragraphs moved above the enrolled-destination subsection, and the omitted-file deletion now applies only to members of the last applied exchange. Commit 3100171 FF-pushed at 17:08:20Z. Gate test-000695b1 passed 12/12 on carried freeze 90b5231c. Review rounds r1 (Lows fixed), r2 and r3 were clean. Readiness is ready on all 6 stores before and after the commit. The installed build is 5cd385cd. Fresh evaluation ba45b7ed passed all 3 criteria.",
+    "completed_at": "2026-10-19T17:48:01.570149500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0701f26d2a764c9b80aecb9ad194aebc": {
+        "activity_id": "0701f26d2a764c9b80aecb9ad194aebc",
+        "task_id": "01a1548e-63d0-7d33-8e63-8559a51c20d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9bddf95fa4494b6c9e8c806bd3712b23"
+      }
+    }
+  }
+}

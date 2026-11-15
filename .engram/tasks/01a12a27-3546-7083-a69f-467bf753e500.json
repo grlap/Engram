@@ -1,0 +1,28 @@
+{
+  "id": "01a12a27-3546-7083-a69f-467bf753e500",
+  "external_ref": null,
+  "title": "Give safe actionable guidance when the launcher cannot locate its Git run directory",
+  "outcome": "Give safe actionable guidance when the launcher cannot locate its Git run directory",
+  "acceptance": [
+    "Launching where Git cannot locate the review-runs directory reports safe guidance to run from a repository worktree without copying raw Git stderr into normal completion output.",
+    "A public CLI regression verifies the safe guidance for a non-repository launch with no run directory."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a13325-593c-7913-8dfc-8e9188754f26",
+  "disposal_reason": "Fable ruling e07a4663: share the same launcher implementation file and one changeset; preserve both original criteria verbatim in the replacement bundle.",
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1319d-8417-7781-b8f1-fde7532d4233",
+  "external_ref": null,
+  "title": "Validate the task-sync CLI fixtures' host path policy on macOS",
+  "outcome": "Validate the task-sync CLI fixtures' host path policy on macOS",
+  "acceptance": [
+    "On a Mac, `cargo test --test task_sync_activity_cli` and `cargo test --test task_sync_cli` pass on a build that includes the fixture change deriving their host path policy from HostPathPolicy::host_default(), with the run's OS, commit and results recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "macos",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Duplicate of w-6224586d6418 (filed by Engram::Fable at 19:35Z and already given to Greg via Engram::Advisor as the macOS validation item for w-c53639903542's fixture fix).",
+  "completion": null
+}

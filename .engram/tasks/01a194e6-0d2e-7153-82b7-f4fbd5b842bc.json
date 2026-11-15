@@ -1,0 +1,65 @@
+{
+  "id": "01a194e6-0d2e-7153-82b7-f4fbd5b842bc",
+  "external_ref": null,
+  "title": "Fix the macOS root-probe watcher calibration timeout that fails the parity suite before any assertion runs",
+  "outcome": "Fix the macOS root-probe watcher calibration timeout that fails the parity suite before any assertion runs",
+  "acceptance": [
+    "On macOS (Mac runner, darwin arm64), the parity test \"host commands resolve identity without a probe marker; agent and MCP emit none\" passes in a full gate, with its RootJournal fs.watch calibration barrier observed",
+    "The root cause of the missing calibration event (watcher startup or delivery on Darwin) is identified and fixed in scripts/root-probe-harness.mjs or its caller, without raising the timeout, skipping the test, or retrying until green",
+    "The parity suite passes in full gates on both macOS and Windows after the fix"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "gate",
+    "macos",
+    "test-harness"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed after fresh post-landing independent acceptance evaluation 414716abafa6460ea8286c65613496ea passed all 3 criteria. Landed and pushed origin/master at ca55989c4e7270ed7b7ba2943a347ad07c9c4aa8; installed build fingerprint 74febcaa45d6a759a6f7a48deafe22c4111348f16cf3b3775b4b51b1f7dd76e. No TermAl restart performed. Shared worktree retained while related phase-trace item w-7473fbd40913 remains open.",
+    "completed_at": "2026-11-01T04:29:20.530339100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "191b4cc8e5e84290a4324d5cd9a02e10": {
+        "activity_id": "191b4cc8e5e84290a4324d5cd9a02e10",
+        "task_id": "01a194e6-0d2e-7153-82b7-f4fbd5b842bc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f790732bc3dc4c9088ef472ee1b52000"
+      },
+      "f790732bc3dc4c9088ef472ee1b52000": {
+        "activity_id": "f790732bc3dc4c9088ef472ee1b52000",
+        "task_id": "01a194e6-0d2e-7153-82b7-f4fbd5b842bc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "39e41a073ee34cdd9be6bffe1398dedf"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1d7b9-11ab-72f2-98c2-710ef837c24b",
+  "external_ref": null,
+  "title": "Stop task-sync lib tests from flooding stderr with \"source observation is still running\" warnings and find the long-running source observation behind them",
+  "outcome": "Stop task-sync lib tests from flooding stderr with \"source observation is still running\" warnings and find the long-running source observation behind them",
+  "acceptance": [
+    "The test(s) that trigger the repeated 'source observation is still running after 10 seconds' and 'local Git query is still running after 10 seconds' warnings during `cargo test --lib storage::work::task_sync::` are identified by name",
+    "The cause is classified (a test holding a source observation or Git query open, a fixture waiting on a condition that never arrives, or a real product slow path) and fixed at that cause, with no warning suppression or longer timeout used only to hide it",
+    "A focused run of the task_sync lib selector on Windows emits none of those warnings, or only the bounded number a named test intends"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "task-sync",
+    "tests",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a06dac-23de-7222-8c2d-0ab80ac1822e",
+  "external_ref": null,
+  "title": "Align graph-load hierarchy limits with live planning",
+  "outcome": "Align graph-load hierarchy limits with live planning",
+  "acceptance": [
+    "a legal graph with more than 128 terminal direct children saves and loads successfully"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Load enforces live depth and open-descendant limits without rejecting terminal direct-child history; 144-child round trip passes.",
+    "completed_at": "2026-09-04T18:49:57.146755200Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "910bba4975f6dbf2d87af77403b4aec089753b17f7aba3257fbe5faf7e1221b9": {
+        "activity_id": "910bba4975f6dbf2d87af77403b4aec089753b17f7aba3257fbe5faf7e1221b9",
+        "task_id": "01a06dac-23de-7222-8c2d-0ab80ac1822e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "081d3a2a022149a9a98791e95d8207d46ae8abeaba426e71f006814242403d5c"
+      }
+    }
+  }
+}

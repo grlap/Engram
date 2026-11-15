@@ -1,0 +1,28 @@
+{
+  "id": "01a0faa9-7935-7cd0-9d93-db47d30f2251",
+  "external_ref": null,
+  "title": "After a store rollback, the host routes consumers back to the retained old executable",
+  "outcome": "After a store rollback, the host routes consumers back to the retained old executable",
+  "acceptance": [
+    "The host cutover checklist states that restoring a pre-repair backup returns that store to not-yet-cut-over state, restarts its consumers on the retained old executable, and reapplies interim old-build routing or refusal until the next coordinated cutover."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,77 @@
+{
+  "id": "01a17e4b-053b-7032-84ae-690911b15a13",
+  "external_ref": null,
+  "title": "Align the projection-cutover authority text with Greg's direction that agents install and convert, with a plain TermAl restart as Greg's only act",
+  "outcome": "Align the projection-cutover authority text with Greg's direction that agents install and convert, with a plain TermAl restart as Greg's only act",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md describe a projection_repair_required cutover in which the Merger installs the new build immediately before the agreed plain TermAl restart, and an agent converts the stores after it once no engram process older than the install is alive; the text no longer says the new build is installed only while consumers are stopped",
+    "The change lands under the authority-text procedure: (a) concurrence of both coordinators, (b) wording sent to Greg, (c) final-diff audit, quoting Greg's 2026-10-27 word verbatim with its source (Engram::Advisor #2134; Fable2 cites Advisor #2196)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "agent-instructions",
+    "authority",
+    "delivered",
+    "evaluation-pending"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "AGENTS.md and CLAUDE.md now describe the agent-run projection cutover: the Merger installs immediately before Greg's plain TermAl restart (only when the build was verified to refuse unconverted stores without writing), and converts after it once no older engram process runs. The old build is reinstalled if the restart is put off. Landed under (a)(b)(c) with Greg's widening word quoted. Independent evaluation 26ae634f9eab4524a38cf20a2059e334 (Codex session 14927) passed both criteria under Greg's hybrid model, with remote observation from the Windows B full gate test-fdd408e3 on master e7426a6.",
+    "completed_at": "2026-10-28T01:15:29.706924400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "11cd9f7b246e4dfb8626b9aeda5c73f1": {
+        "activity_id": "11cd9f7b246e4dfb8626b9aeda5c73f1",
+        "task_id": "01a17e4b-053b-7032-84ae-690911b15a13",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ba021c31a4d448f3b3a833918895517c"
+      },
+      "1c14d28c35d04c88888c72f7bbfe1aa9": {
+        "activity_id": "1c14d28c35d04c88888c72f7bbfe1aa9",
+        "task_id": "01a17e4b-053b-7032-84ae-690911b15a13",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0acc377134184ba0b14560f09e28769d"
+      },
+      "82a10bb8c3a841a8b7b72c3dc81c4dd8": {
+        "activity_id": "82a10bb8c3a841a8b7b72c3dc81c4dd8",
+        "task_id": "01a17e4b-053b-7032-84ae-690911b15a13",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "11cd9f7b246e4dfb8626b9aeda5c73f1"
+      }
+    }
+  }
+}

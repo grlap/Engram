@@ -1,0 +1,64 @@
+{
+  "id": "01a0c076-b51e-7360-b6f9-ab70e0740226",
+  "external_ref": null,
+  "title": "Update assembled work-catalog SQL fragments for renamed checkpoint column",
+  "outcome": "Update assembled work-catalog SQL fragments for renamed checkpoint column",
+  "acceptance": [
+    "storage::migration::tests::a_staged_delivery_page_survives_the_transfer_and_replays_at_its_confirmed_cursor and all nine affected migration tests pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "gate",
+    "identity",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0b239-8e44-7b81-ae1c-1628cce3cbc6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Assembled catalog SQL uses last_checkpoint_id. Named staged-delivery regression and all migration tests pass in retained final gates; independent Claude7172 accepted unchanged criterion.",
+    "completed_at": "2026-09-21T03:24:37.483144900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4f1a1b084c054be89ada8fa420ee6cd5": {
+        "activity_id": "4f1a1b084c054be89ada8fa420ee6cd5",
+        "task_id": "01a0c076-b51e-7360-b6f9-ab70e0740226",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4f1a1b084c054be89ada8fa420ee6cd5"
+      },
+      "8aa6abe887b049a5b1b03c178e058b2c": {
+        "activity_id": "8aa6abe887b049a5b1b03c178e058b2c",
+        "task_id": "01a0c076-b51e-7360-b6f9-ab70e0740226",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dc5125d79884420e8d1fe372b2b5a302"
+      }
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "id": "01a06335-2a61-7453-a5d5-336db6d54b81",
+  "external_ref": null,
+  "title": "Keep project-memory unique-index refusals typed",
+  "outcome": "Keep project-memory unique-index refusals typed",
+  "acceptance": [
+    "unique-index violations on project memories surface as typed refusals, never raw SQLite errors"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Project-memory unique-index collisions now resolve through the verified durable head, return typed active or retired refusals, and fail closed on corrupt or missing bindings.",
+    "completed_at": "2026-09-03T21:25:21.938802300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a384beb86bd74a05a3a09636a55b59029f9d41b677d3a0d2348dfcaecf14f121": {
+        "activity_id": "a384beb86bd74a05a3a09636a55b59029f9d41b677d3a0d2348dfcaecf14f121",
+        "task_id": "01a06335-2a61-7453-a5d5-336db6d54b81",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dba60bf5262cd608e486bb9fbfe6f52b46d84064a5448312c7e90d56f6652dee"
+      }
+    }
+  }
+}

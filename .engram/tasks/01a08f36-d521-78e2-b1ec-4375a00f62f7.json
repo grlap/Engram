@@ -1,0 +1,56 @@
+{
+  "id": "01a08f36-d521-78e2-b1ec-4375a00f62f7",
+  "external_ref": null,
+  "title": "Classify undeclared prefixed FTS objects as different-build schema",
+  "outcome": "Classify undeclared prefixed FTS objects as different-build schema",
+  "acceptance": [
+    "orphan_fts_schema_shadows_refuse_on_open_and_repair passes",
+    "orphan_fts_schema_shadows_refuse_through_cli passes",
+    "prefixed_unknown_schema_objects_refuse_before_projection_repair passes",
+    "rebuildable_schema_classification_requires_the_declared_object_type passes",
+    "schema_object_namespace_collisions_refuse_on_open_and_repair passes",
+    "schema_object_namespace_collisions_refuse_through_cli passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered exact typed declarations, FTS table-only suffix matching and runtime-reference owner guard. All six named acceptance tests passed full block8, plus32orphan native4mode,8CLI cases,6non-table cases and6repair positives. Migration4case characterization passed before/after and is not RED proof. Round5 clean.",
+    "completed_at": "2026-09-11T10:10:38.544414200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "65c38586c2d48d6f9736e35592c2cd79436defa7c6e274a1401bf9fe344205ca": {
+        "activity_id": "65c38586c2d48d6f9736e35592c2cd79436defa7c6e274a1401bf9fe344205ca",
+        "task_id": "01a08f36-d521-78e2-b1ec-4375a00f62f7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7a238966e84f52afac8dd3dc7ae0c8d4992ec3ad05e0ae7d66758efe4e8f644a"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a0f8e6-7a9f-7c50-961d-703eee782072",
+  "external_ref": null,
+  "title": "Decide whether done's success receipt carries the open parent's title-placeholder status",
+  "outcome": "Decide whether done's success receipt carries the open parent's title-placeholder status",
+  "acceptance": [
+    "When done completes a child whose open parent's only criterion is still its title placeholder, the success receipt either carries the parent's placeholder status, documented and tested, or omits it, tested"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Kept, per Fable's decision. When done completes a child whose open parent's only criterion is still its title placeholder, the success receipt carries the parent's line once, prefixed with the parent's ref. That behavior already existed. It is now tested, including that a real-criteria parent adds none while its guidance still runs, mutation-checked against removing the prefix. It is documented in cli-and-mcp.md, local-work-system.md and shipped.md. 2 review rounds (round 2 clean), gate 9/9, and the evaluation passed. Landed as 0b2de35 and installed as build a3ff1fa0.",
+    "completed_at": "2026-10-01T23:43:10.801742300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ac00a59d1ef74a20b2ddb528680864cb": {
+        "activity_id": "ac00a59d1ef74a20b2ddb528680864cb",
+        "task_id": "01a0f8e6-7a9f-7c50-961d-703eee782072",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "acf86e0f08ec489c8c736891e2061a0d"
+      }
+    }
+  }
+}

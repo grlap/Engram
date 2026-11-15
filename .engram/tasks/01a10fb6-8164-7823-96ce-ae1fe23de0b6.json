@@ -1,0 +1,51 @@
+{
+  "id": "01a10fb6-8164-7823-96ce-ae1fe23de0b6",
+  "external_ref": null,
+  "title": "Two docs say graph restore checks the depth and open-descendant bounds in one pass; only the descendant count is one pass",
+  "outcome": "Two docs say graph restore checks the depth and open-descendant bounds in one pass; only the descendant count is one pass",
+  "acceptance": [
+    "docs/features/work-graph-snapshot.md and docs/shipped.md describe graph restore's depth check as a bounded walk up each item's parent chain and the open-descendant check as one pass over the snapshot's items, with no claim that both are one pass",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "docs/features/work-graph-snapshot.md and docs/shipped.md now describe graph restore's depth check as a bounded walk up each item's parent chain and only the open-descendant check as one pass over the snapshot's items, with no claim that both are one pass, and say how each item's relation basis is used (built once to mint the native record and to check the newest record, carried records keeping their recorded relations). Landed in the shared changeset with w-82135a26c39a as 6eff0959c70ed36d12f8458c04b87560405ef1fe on origin master (fast-forward from 5a47e9d, pushed 2026-10-06T07:21:33Z); round-2 pair on freeze 39e54b42… with no findings from either reviewer; full gate test-5dcfda5c 9/9 with the doc link check; evaluation 80a155c92e8644f48b0d9691f2e36ed2 passed both criteria; readiness ready on all four live stores with the build from the commit; installed build c1344e2d47a7 (exe 303d8c74fc6d…), previous exe backed up as engram-20261006T072119Z-69053c38355f.exe.",
+    "completed_at": "2026-10-06T07:21:42.336186300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "28b014e1609541c48fb0781f66a41d1a": {
+        "activity_id": "28b014e1609541c48fb0781f66a41d1a",
+        "task_id": "01a10fb6-8164-7823-96ce-ae1fe23de0b6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "630e122f99dc4859a6d439b6b103fd2b"
+      }
+    }
+  }
+}

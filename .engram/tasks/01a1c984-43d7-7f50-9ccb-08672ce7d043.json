@@ -1,0 +1,53 @@
+{
+  "id": "01a1c984-43d7-7f50-9ccb-08672ce7d043",
+  "external_ref": null,
+  "title": "Reject onward seals backed by newly conflicted imported obligation verification",
+  "outcome": "New onward acceptance use rejects a native seal whose source-change obligation relied on imported verification with a currently conflicting terminal union, without rewriting its historical consumption.",
+  "acceptance": [
+    "Onward seal assessment resolves the original execution of imported verification used to satisfy a source-change obligation and refuses current terminal conflicts even when that check is not separately required by an acceptance binding.",
+    "Behavioral coverage demonstrates initial valid onward use then refusal after a later conflicting terminal for the same imported execution; frozen consumption and doctor semantics remain historical and unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Reject onward native-seal reuse when consumed imported source-change verification now has a conflicting original execution terminal. Preserve frozen consumption and doctor history. Candidate7488fde16d3d412652d43a227a017ba92113b599/treee287f6e1c467d3134cb6f6bdc76b33e7cea105b7 on8f559256. ExactRED reproduced; fmt,strictClippy,GREENregression1/1 andacceptance40/40passed. Independent evaluation6426be15cf2e4d6f85e3363a00ce6352 passed2/2. Parentownscoalescedreview/FULL/landing; no landing claimed.",
+    "completed_at": "2026-11-11T09:27:24.342722900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b2e159a64ae34b9cbff0c4911d393eb3": {
+        "activity_id": "b2e159a64ae34b9cbff0c4911d393eb3",
+        "task_id": "01a1c984-43d7-7f50-9ccb-08672ce7d043",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2b5abc1ffbc543459ccf1c428ce1c1f8"
+      }
+    }
+  }
+}

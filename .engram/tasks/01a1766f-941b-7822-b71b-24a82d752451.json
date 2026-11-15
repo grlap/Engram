@@ -1,0 +1,30 @@
+{
+  "id": "01a1766f-941b-7822-b71b-24a82d752451",
+  "external_ref": null,
+  "title": "Exercise recorded-operation receipt identity and begin-shape refusals with valid producer fixtures",
+  "outcome": "Exercise recorded-operation receipt identity and begin-shape refusals with valid producer fixtures",
+  "acceptance": [
+    "Producer-derived begin-result fixtures change only receipt grant, session or task identity to another valid value; each whole inspection refuses without echoing keys or payloads.",
+    "A producer-derived checkpoint result with a different valid receipt grant refuses, and begin intents carrying next_intent or missing delivery_tokens reach the corresponding shape refusal.",
+    "The focused recorded-operation inspection tests pass with the guards present and detect removal of each receipt-identity or begin-shape guard."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

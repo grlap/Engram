@@ -1,0 +1,28 @@
+{
+  "id": "01a1b71b-b716-72e3-9102-050771b4df11",
+  "external_ref": null,
+  "title": "Describe payload-free host parse refusals accurately in the spec",
+  "outcome": "The host protocol spec describes structural parse-error diagnostics without promising caller field or operation echoes",
+  "acceptance": [
+    "docs/spec.md describes invalid_request parse refusals as category and position, consistent with parse_host_control_request; post-decode field-label diagnostics remain accurately distinguished"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "low",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a101ca-8d33-7351-8a6f-9dac96785c28",
+  "external_ref": null,
+  "title": "Expose the shared reroll assessment in typed status and admission causes",
+  "outcome": "Expose the shared reroll assessment in typed status and admission causes",
+  "acceptance": [
+    "One core reroll assessment is used by show/next status and the authoritative record-time guard. A standing refusal exposes reroll with kind reroll, mismatch blocking_evaluation_stands, the evaluation record id, typed run-feed identity, exclusive after_position and inclusive through_position, the first blocking criterion/verdict, and remedy record_new_evidence_then_evaluate. The admission error carries the same deciding context as a typed cause distinct from other acceptance_evaluation_refused causes; hosts branch on fields, not prose.",
+    "Core and transport tests preserve existing reroll semantics: fail/insufficient_evidence/needs_human block without qualifying evidence; no evaluation/current passing evaluation permits this guard; evidence is assessed only on the selected run in (after_position, through_position]. Contract/binding changes preserve carried-failure rules. Tests distinguish qualifying notes/gates/host evidence and changed or accounted source observations from bookkeeping, same-source/quiet/off-root/unaccounted observations. The record transaction repeats the assessment, so an earlier permissive status is never an admission token. A regression reads a standing refusal, appends qualifying evidence, then records successfully; a complementary race may read permit before a newer blocking evaluation and must refuse at record time against the new cut."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "design",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0f117-3c93-7093-b03e-d09de674c389",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "One re-roll assessment (reroll_assessment) now serves the record transaction at the submitted basis and the evaluation status at the active run's head. A standing blocking evaluation is the typed cause {kind: reroll, mismatch: blocking_evaluation_stands, evaluation, feed: run_execution, after_position (exclusive), through_position (inclusive), criterion (one-based), verdict, remedy: record_new_evidence_then_evaluate}. It is raised as AcceptanceEvaluationAdmissionRefused with unchanged words and codes (CLI/MCP and host-private acceptance_evaluation_refused). show, show --full and next carry it as acceptance_evaluation.reroll, work.evaluation.reroll and focus.evaluation.reroll; the shape is documented in docs/features/cli-and-mcp.md. A parity wrapper checks every record in the reroll tests against the status at the head. New tests cover exact fields, release/re-claim, both races, the verbs JSON across the three reads, the next budget, MCP error details and the host code.\nLanded as 6cfe62c on master after:\n- full gate test-93e8d49d passed, before and after equal to freeze 0c5cc6ff…2a73;\n- Codex and Claude pair clean (Notes only);\n- independent Codex evaluation 2/2 (216872433ec8487bbbd369209b5aea31);\n- readiness ready on Engram, PhoenixCodeNav, TermAl and CV.\nInstalled build 299298abf52d527071ed50e3b674b1ce8a72a7e1c92451c335d5692432b6c6b0, exe sha256 bfc14956a8ae3232fd90b50ea466b58519eca71aa286f1efeeda408fe7aa7984; the previous binary is backed up to C:\\Users\\grzeg\\.engram\\backups\\engram-20261003T164011Z-823523e47945.exe. The parent stays open for TermAl's host evidence.",
+    "completed_at": "2026-10-03T16:40:26.842952100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c7e0259499224a0c9dd4b2eed4bcc629": {
+        "activity_id": "c7e0259499224a0c9dd4b2eed4bcc629",
+        "task_id": "01a101ca-8d33-7351-8a6f-9dac96785c28",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a261865045e241cc938899ec3f56ae9b"
+      }
+    }
+  }
+}

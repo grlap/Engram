@@ -1,0 +1,53 @@
+{
+  "id": "01a1120e-fec0-7dd3-9135-b404230f0459",
+  "external_ref": null,
+  "title": "Reduce recovery packets to current work and relevant context",
+  "outcome": "A resumed agent receives compact current-work context with exact locators for historical details instead of repeated conversation history.",
+  "acceptance": [
+    "Document the baseline recovery packet and identify duplicated historical notifications, completed exchanges and unrelated work.",
+    "Deliver a bounded packet containing current objective, next action, applicable constraints, unresolved dependencies and exact evidence locators, with explicit indication of omitted detail.",
+    "Compare representative source-backed before/after recovery payloads demonstrating less redundant context while the agent correctly recovers scope, STOP conditions and the next authorized action; optional byte counts may support the comparison."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Compact recovery shows current objective, duties, next actions, constraints and dependencies with exact detail routes and explicit omissions; pending handoffs remain visible. Full gate and required Codex/Kimi reviews passed; independent evaluation 3/3, acceptance unchanged.",
+    "completed_at": "2026-10-06T20:21:29.802403700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e134bcf8f5c94d89bddedc952e260905": {
+        "activity_id": "e134bcf8f5c94d89bddedc952e260905",
+        "task_id": "01a1120e-fec0-7dd3-9135-b404230f0459",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3254f76e8e014283b825996315934f69"
+      }
+    }
+  }
+}

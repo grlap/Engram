@@ -1,0 +1,52 @@
+{
+  "id": "01a0df8d-4927-7d30-9d41-b5e2d69150f2",
+  "external_ref": null,
+  "title": "Rust test gate: compile bundled SQLite optimized and set thread and fd defaults from measurement",
+  "outcome": "Rust test gate: compile bundled SQLite optimized and set thread and fd defaults from measurement",
+  "acceptance": [
+    "The Unix fd soft-limit target is raised as Greg instructed on 2026-09-26, and a host that refuses the target is left with a limit no lower than the previous target of 4096 would have given it",
+    "The bundled SQLite C library and sha2 are compiled with optimization in the dev/test profile through Cargo.toml profile overrides, and the full Rust gate passes on that build",
+    "The default test-thread count in scripts/test-rust.sh and scripts/test-rust.ps1 is chosen from wall-time measurements recorded in this item's notes",
+    "docs/development.md states the profile overrides, the new defaults, what was measured and what was not, and how to override them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "test-infra"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 1789bad on origin/master (fast-forward from 3c61054) on Greg's word \"commit\", 2026-09-26. The dev profile builds sha2 and the bundled SQLite optimized; the Rust gate defaults to eight test threads, or the available processors on a host with fewer, or four where none is reported; the Unix fd soft-limit target is 16384 at Greg's instruction, with a step-down that never leaves a host below what 4096 gave it. Both host functions live in scripts/test-rust-host.sh and are tested against stubbed hosts in scripts/test-launcher.test.mjs; docs/development.md gives the defaults, the measurements and what was not measured. Full gate passed on the committed tree's fingerprint bdc038784b9dac7a474e459bdc5551ee8d487ea993e90147bec7efd59eace403 (run test-c9712474, 652s) and both reviewers returned no findings on it in round 7; every finding of rounds 1 to 5 was fixed and reviewed again. Independent acceptance evaluation recorded 17:29:37 local, all four criteria passed (Codex session-7896). Not installed: the release binary is built from unchanged source. Left for other items: the root-delta scale phase, 64% of the gate; how the bundled SQLite is compiled.",
+    "completed_at": "2026-09-27T00:30:01.437218400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f3a4808f82b44603bf820887cb871ec5": {
+        "activity_id": "f3a4808f82b44603bf820887cb871ec5",
+        "task_id": "01a0df8d-4927-7d30-9d41-b5e2d69150f2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0cbc7b62dec240f79dd7cdab5c956e3e"
+      }
+    }
+  }
+}

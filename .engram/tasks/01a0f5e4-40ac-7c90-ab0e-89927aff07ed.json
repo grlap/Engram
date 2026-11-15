@@ -1,0 +1,51 @@
+{
+  "id": "01a0f5e4-40ac-7c90-ab0e-89927aff07ed",
+  "external_ref": null,
+  "title": "A note without a work ref, right after add, lands on the new unclaimed item instead of the held focus",
+  "outcome": "A note without a work ref, right after add, lands on the new unclaimed item instead of the held focus",
+  "acceptance": [
+    "A test covers add followed by a bare note and a bare gate",
+    "After a holder adds an independent root while holding another item, a note or gate without a work ref still targets the held item, or is refused naming both items; it never records silently on the new item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "agent-surface",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A bare note, gate, evaluate, update or done now acts on the ambient focus only when this session holds it or holds nothing else. Otherwise it is refused with work_implicit_target_conflict and nothing is recorded. The refusal names the focus (with its state) and up to 3 held items, with explicit commands. add keeps focusing what it creates, and bare handoff is unguarded by design. Landed as e78ef5e and installed (build f4b40c7a…). Independent evaluation passed both criteria.",
+    "completed_at": "2026-10-01T06:11:59.770690500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ef5741db00c84f53829ae30a35cea57f": {
+        "activity_id": "ef5741db00c84f53829ae30a35cea57f",
+        "task_id": "01a0f5e4-40ac-7c90-ab0e-89927aff07ed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0e3426ba62e6470aba6b09aeca0f0935"
+      }
+    }
+  }
+}

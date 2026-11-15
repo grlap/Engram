@@ -1,0 +1,29 @@
+{
+  "id": "01a1b623-1e52-7640-8161-269eb2ad0179",
+  "external_ref": null,
+  "title": "Retire explicit review-freeze identity in favor of the shared source_id",
+  "outcome": "Complete the deferred E2 increment 2: use the shared SourceId owner for explicit review-freeze and review identity, and update the related test-ref naming, trailer and review instructions under the existing governance process.",
+  "acceptance": [
+    "The explicit review-freeze helper and CLI use the complete shared source_id instead of their separate schema-1 fingerprint and Git administrative/file inventories",
+    "Test-ref naming, Review-Freeze trailer and review-changes section 3 instructions are aligned with that shared identity under the existing governed-text process"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "greg-directed",
+    "review",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

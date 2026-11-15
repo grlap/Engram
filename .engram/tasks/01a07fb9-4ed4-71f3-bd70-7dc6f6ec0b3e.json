@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-4ed4-71f3-bd70-7dc6f6ec0b3e",
+  "external_ref": null,
+  "title": "Define MADE at first use on the neutral host contract page",
+  "outcome": "Define MADE at first use on the neutral host contract page",
+  "acceptance": [
+    "Host checklist defines MADE before later uses or uses neutral wording"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Host checklist defines MADE at first use and keeps runtime acceptance separate from the recipe. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:47.191076300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f792941d9d9042045a982c9c393476624a4fd8d0f1130d197662b81df5cbe4c1": {
+        "activity_id": "f792941d9d9042045a982c9c393476624a4fd8d0f1130d197662b81df5cbe4c1",
+        "task_id": "01a07fb9-4ed4-71f3-bd70-7dc6f6ec0b3e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "75656f4ae5e3286194e01da0bcf82919e646238bf546607b9add00c26c40bd69"
+      }
+    }
+  }
+}

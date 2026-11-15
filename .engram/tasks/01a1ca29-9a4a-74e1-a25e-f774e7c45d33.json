@@ -1,0 +1,54 @@
+{
+  "id": "01a1ca29-9a4a-74e1-a25e-f774e7c45d33",
+  "external_ref": null,
+  "title": "Reuse Judgment evaluations that cite imported evidence consumption",
+  "outcome": "Valid native Judgment citations remain reusable after evidence exchange with their qualified provenance intact.",
+  "acceptance": [
+    "A native passing unbound Judgment evaluation citing imported_evidence_consumption can be retained, associated and consumed after exchange when its full qualified history and governing/source requirements hold.",
+    "A behavioral round-trip test covers that citation and preserves refusal for missing or invalid provenance, closure or run membership; original records remain unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "greg-directed",
+    "review-follow-up",
+    "sync"
+  ],
+  "assigned_to": "session-12329",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A native passing unbound Judgment evaluation that cites imported_evidence_consumption is now reusable after exchange. assess_citations routes it to imported::judgment, which checks the record's schema, identity, project, run and work membership, source, governing fingerprint and same_governing. It also checks provenance by proof kind: candidate_in_context for Verification, and a retained, unrefused, matching use decision for Acceptance. Test consumption::judgment::a_judged_pass_citing_an_imported_consumption_is_reused_after_exchange covers four cases: valid (associated, eligible, then consumed, store healthy); missing provenance; another run; and a cut from another origin. Each refused case records ineligible with CitationIneligible, or refuses and leaves the store unchanged. The consumption bytes stay unchanged. Candidate a4d31245dfc158af9a2296b282c945c788f3446a, packaged with w-8fb0c128e033. DL560 GO-S4-8FB0-2: red 9dcb3428 failed at the valid case as expected; clippy, task_sync::evidence 116/116 and acceptance_evaluation 257/257 passed. The independent evaluation (attempt 2) passed 2/2. Not landed yet: it is in 12325's coalesced sync candidate.",
+    "completed_at": "2026-11-11T11:28:13.147996600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "99d8befe6e9c4ca5846d10b6f080d394": {
+        "activity_id": "99d8befe6e9c4ca5846d10b6f080d394",
+        "task_id": "01a1ca29-9a4a-74e1-a25e-f774e7c45d33",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a6367f200fde4f3a85f1ca6007ed9278"
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "id": "01a0cb25-c9e1-7d60-803d-ca00eb5157be",
+  "external_ref": null,
+  "title": "Rename object_hash wire fields to object_id",
+  "outcome": "Fields that carry record ids are named as ids in the host protocol and the graph snapshot format.",
+  "acceptance": [
+    "No serde rename to a *_hash name remains on a field that holds a record id",
+    "The full quality gates pass",
+    "The graph snapshot format uses object_id, and its format identity changes accordingly",
+    "The host protocol's execution observation reference uses object_id, and TermAl's adapter is updated in the same window if it sends that reference"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shipped record-id wire naming as object_id, removed *_hash serde aliases, updated graph snapshot format identity and confirmed no matching TermAl reference consumer. Approved stored copies converted with ids/links preserved. Independent acceptance: 4/4 judgment passes; existing Windows gate artifacts inspected.",
+    "completed_at": "2026-09-23T19:37:26.599344300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "951163391f054b329515810dc2fcc2e3": {
+        "activity_id": "951163391f054b329515810dc2fcc2e3",
+        "task_id": "01a0cb25-c9e1-7d60-803d-ca00eb5157be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "951163391f054b329515810dc2fcc2e3"
+      },
+      "a1a21a27c9964b13a6c77da5645ff1bc": {
+        "activity_id": "a1a21a27c9964b13a6c77da5645ff1bc",
+        "task_id": "01a0cb25-c9e1-7d60-803d-ca00eb5157be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a1a21a27c9964b13a6c77da5645ff1bc"
+      },
+      "b69857a893a64bee802e8e9113914e20": {
+        "activity_id": "b69857a893a64bee802e8e9113914e20",
+        "task_id": "01a0cb25-c9e1-7d60-803d-ca00eb5157be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0fbbfd266630443fb092cf386657fa3b"
+      }
+    }
+  }
+}

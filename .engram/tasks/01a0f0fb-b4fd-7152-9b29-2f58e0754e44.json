@@ -1,0 +1,54 @@
+{
+  "id": "01a0f0fb-b4fd-7152-9b29-2f58e0754e44",
+  "external_ref": null,
+  "title": "Independent-evaluation remedies: pinned sub_agent refusal advice, the policy-stale cause, and the structured stale remedy",
+  "outcome": "Independent-evaluation remedies: pinned sub_agent refusal advice, the policy-stale cause, and the structured stale remedy",
+  "acceptance": [
+    "A sub_agent evaluation refused because it comes from the holder's own session, on a task marked sub_agent, advises recording it from the sub-agent's own child session or requesting a sub-agent evaluation, never a mode the mark refuses; a test covers a sub_agent-marked task",
+    "Refusal remedies for a mark naming an unadmitted mode say that only a change to same_session needs a session that never held or executed the run",
+    "The stale (policy) reminder names each of its causes correctly, including a mechanical basis that became observed while the record holds an asserted pass, rather than always calling it a mode or session problem",
+    "The tests proving boundary rows B59 to B64 cite the row ids in a nearby comment",
+    "done's structured remedy for an evaluation stale with reason policy is chosen from the task's mark and the admitted modes, as the word's reminder is, or the docs no longer promise that; value.remedy is asserted in a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 0d6eb26: sub_agent-pinned advice, policy-stale causes, the mark-author remedy and done's structured remedy follow the mark and admitted modes.",
+    "completed_at": "2026-10-03T08:03:24.680192200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a6b346d5724b45a091fddeed6741b635": {
+        "activity_id": "a6b346d5724b45a091fddeed6741b635",
+        "task_id": "01a0f0fb-b4fd-7152-9b29-2f58e0754e44",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ddb98a1e87b340dd9516214fdb7bd14b"
+      }
+    }
+  }
+}

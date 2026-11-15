@@ -1,0 +1,50 @@
+{
+  "id": "01a07f06-8c56-7852-a40e-1e3a86a4c3df",
+  "external_ref": null,
+  "title": "Build peer claim refusal guidance at one formatting site",
+  "outcome": "Build peer claim refusal guidance at one formatting site",
+  "acceptance": [
+    "Claim error and reminder share exact holder label and human expiry, and discovery derives labels from service project"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "security"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06811-cfb3-71d2-b0cf-b79cb404da22",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Claim refusals format holder guidance once, share human expiry with the message, and use service-project identity for discovery. Formatting and test-style failures corrected without weakening assertions; all nine final gates pass. Installed build 6cd83bdf7600 from working tree, not committed to master; existing MCP servers retain their original build.",
+    "completed_at": "2026-09-08T03:44:26.226148700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4e731350a2d65d08ec6fa0c1289589129b66492888ad2443abf63debd1340e21": {
+        "activity_id": "4e731350a2d65d08ec6fa0c1289589129b66492888ad2443abf63debd1340e21",
+        "task_id": "01a07f06-8c56-7852-a40e-1e3a86a4c3df",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "99247461cec806e63c654d94aa1ccc3731d3660dbd3da776620259effe6766a2"
+      }
+    }
+  }
+}

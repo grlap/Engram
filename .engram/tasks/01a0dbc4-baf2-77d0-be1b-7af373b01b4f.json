@@ -1,0 +1,51 @@
+{
+  "id": "01a0dbc4-baf2-77d0-be1b-7af373b01b4f",
+  "external_ref": null,
+  "title": "The turn-gate pages list `authority revoke`, which the engram binary does not have",
+  "outcome": "The turn-gate pages list `authority revoke`, which the engram binary does not have",
+  "acceptance": [
+    "No other doc presents `engram authority revoke` or `authority grant` as an existing command",
+    "docs/features/turn-gate-assessment.md and docs/features/turn-gate-evidence.md name only settings commands the installed engram offers; `authority revoke` is gone from both lists"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`authority revoke` is removed from docs/features/turn-gate-assessment.md and docs/features/turn-gate-evidence.md, which now name only readiness, doctor, control-session-inspect and control-policy show. No other doc presents authority revoke or grant as an existing command. Landed as 24634aa (pushed). Independent evaluation passed both criteria.",
+    "completed_at": "2026-09-26T06:25:17.338077200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "79d1aee60cc6438c9497e8567670ec42": {
+        "activity_id": "79d1aee60cc6438c9497e8567670ec42",
+        "task_id": "01a0dbc4-baf2-77d0-be1b-7af373b01b4f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cb68b17033074c7785557385a4bab982"
+      }
+    }
+  }
+}

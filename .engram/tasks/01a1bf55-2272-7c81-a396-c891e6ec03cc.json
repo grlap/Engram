@@ -1,0 +1,27 @@
+{
+  "id": "01a1bf55-2272-7c81-a396-c891e6ec03cc",
+  "external_ref": null,
+  "title": "Remote delivery after a kept-root recovery is uncredited as \"the named root moved\" though the root did not move",
+  "outcome": "Remote delivery after a kept-root recovery is uncredited as \"the named root moved\" though the root did not move",
+  "acceptance": [
+    "After a kept-root recovery or handoff, a remote verification delivery either earns credit under the same rule as verification_record, or the intended difference is documented with its reason; a behavior test shows the chosen result."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

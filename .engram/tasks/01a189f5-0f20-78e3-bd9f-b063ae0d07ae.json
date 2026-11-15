@@ -1,0 +1,29 @@
+{
+  "id": "01a189f5-0f20-78e3-bd9f-b063ae0d07ae",
+  "external_ref": null,
+  "title": "Give no-write redaction and validation refusals on the host wire a distinct error code instead of storage_error",
+  "outcome": "TermAl can tell a definitive no-write refusal (for example a secret-bearing turn_checkpoint argument) from a real storage failure, and stops replaying it",
+  "acceptance": [
+    "On the host wire, StoreError::RedactionRefused answers with a distinct documented code (not storage_error); any other refusal that provably happens before any write is either given a distinct code under the same rule or listed as deliberately left as storage_error, with the reason",
+    "A test drives a turn_checkpoint carrying a secret-bearing argument through the host server and asserts the distinct code and that nothing was written (store unchanged)",
+    "The host protocol documentation lists the new code(s) as definitive no-write refusals, and TermAl is told the exact code(s) for its default-closed allowlist"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "control-plane",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

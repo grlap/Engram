@@ -1,0 +1,28 @@
+{
+  "id": "01a1a840-f638-7c03-a7f1-82365874aee3",
+  "external_ref": null,
+  "title": "Clarify that candidate worktree cleanup follows item closure",
+  "outcome": "Clarify the cleanup rule so a candidate worktree is retained through post-landing evaluation and removed only after its item closes.",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md state that the Merger removes a landed candidate worktree only after its item has closed and required run evidence is retained.",
+    "The clarification preserves the agreed cleanup rule and existing path, evidence-retention, and authority constraints."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

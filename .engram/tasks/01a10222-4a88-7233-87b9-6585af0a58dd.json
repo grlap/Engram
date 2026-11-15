@@ -1,0 +1,141 @@
+{
+  "id": "01a10222-4a88-7233-87b9-6585af0a58dd",
+  "external_ref": null,
+  "title": "Show later host source discrepancies against sealed evaluated work",
+  "outcome": "A completed item's bounded agent views expose a later matching host source sighting that differs from its sealed evaluated source. The diagnostic is derived from existing immutable records: completion remains final, with no reopening, seal rewrite, new obligation, durable record, field or index derivation. Queue: Opus after bundle 9. TermAl's re-scoped flag-on/unknown-policy diagnostics proceed independently.",
+  "acceptance": [
+    "The diagnostic derives from existing seal, bound evaluation and source-observation records, comparing only the same run, workspace/root generation and original seal claim/fence. It reports the compared source basis and seal/evaluation/observation record ids. No new durable record, field or index derivation is introduced; any need for one is classified before coding proceeds.",
+    "For opening source A, an evaluation of A and immediate done sealing that evaluation, a later matching closing sighting of B visibly reports 'later source sighting differs from sealed evaluated source' even when source_changed is false. Completion remains sealed, with no reopen, rewrite or new obligation; the diagnostic does not assert that the write occurred after the seal.",
+    "A later equal sighting of A is described only as reported endpoint agreement, never as proof of source at done, absence of intermediate writes or boundary certification. It does not erase a previously recorded discrepancy.",
+    "Missing closing evidence or judged basis, an unreadable or unrelated sighting, and a wrong workspace, root generation or claim/fence never become a confirmation. Unadmitted/audit-only facts retain their status and scope. Exact done-turn attribution is shown only when retained host turn/grant correlation establishes it; timestamps alone do not.",
+    "Duplicate delivery reuses the original immutable observation locator without creating a duplicate durable diagnostic. Reopened generations and historical observations keep their original run association; completed child and parent seals, selected evidence lists, acceptance and accounting remain unchanged.",
+    "Completed show and next, through both CLI and MCP, expose the same bounded diagnostic with recoverable observation detail and exact continuation for omitted facts. Run-feed ordering against the seal's completion cut supplies recorded-before/after; no hot-path whole-root scan or hashing is added.",
+    "Tests demonstrate the preceding positive, equal, missing, mismatched, duplicate, unadmitted and reopened/child/historical cases. Contract prose states the observation interval and immediate finality explicitly, and retains the current done fingerprint/policy behavior."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 2,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 3,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 4,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 5,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 6,
+      "requirement": {
+        "check_kind": "test"
+      }
+    },
+    {
+      "criterion": 7,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ux"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shipped bounded sealed-source diagnostics for completed show and next across CLI/MCP, with historical observation navigation, scoped comparisons and explicit interval/finality limits. Completion, seals, acceptance and accounting remain unchanged. Landed in Batch D; exact full gate and independent review pair passed. Independent acceptance 3b7938a73d3843f794c69bebff8a4dcd passed all seven criteria, with current-generation test verification 2d251d7ecd6e4f458439470e715acef7 for criteria 2–7. Review Lows tracked separately on w-261f59ec1f44; host attribution/naming incidents tracked by TermAl.",
+    "completed_at": "2026-10-19T22:08:24.033439800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "77ab2c1ea0254e0683e763b3be57d523": {
+        "activity_id": "77ab2c1ea0254e0683e763b3be57d523",
+        "task_id": "01a10222-4a88-7233-87b9-6585af0a58dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "77ab2c1ea0254e0683e763b3be57d523"
+      },
+      "7a7d1d1ad3b44762bc408f447c280d96": {
+        "activity_id": "7a7d1d1ad3b44762bc408f447c280d96",
+        "task_id": "01a10222-4a88-7233-87b9-6585af0a58dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7a7d1d1ad3b44762bc408f447c280d96"
+      },
+      "906ffdf994f1409d9a086d6cdfadc235": {
+        "activity_id": "906ffdf994f1409d9a086d6cdfadc235",
+        "task_id": "01a10222-4a88-7233-87b9-6585af0a58dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "906ffdf994f1409d9a086d6cdfadc235"
+      },
+      "ba2425952fa04f03915ffe4c4ecea618": {
+        "activity_id": "ba2425952fa04f03915ffe4c4ecea618",
+        "task_id": "01a10222-4a88-7233-87b9-6585af0a58dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "470296f731a5408d995b82c864a22e35"
+      },
+      "cf86137af0c84d31bd14ebe722f0d5f6": {
+        "activity_id": "cf86137af0c84d31bd14ebe722f0d5f6",
+        "task_id": "01a10222-4a88-7233-87b9-6585af0a58dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cf86137af0c84d31bd14ebe722f0d5f6"
+      }
+    }
+  }
+}

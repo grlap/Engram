@@ -1,0 +1,150 @@
+{
+  "id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+  "external_ref": null,
+  "title": "Publish one Engram–TermAl identifier contract for the host boundary and test it on both sides",
+  "outcome": "Publish one Engram–TermAl identifier contract for the host boundary and test it on both sides",
+  "acceptance": [
+    "The host-protocol documentation has one table listing every identifier and fingerprint that crosses the Engram–TermAl host boundary. For each it gives the format, who mints it, how it is compared, and its project and host scope. Record ids are lowercase hex of length 32 or 64 and opaque; fingerprints are never used as ids.",
+    "Engram tests, built from real producers at test time with no pinned values, assert that every id and fingerprint field in host receipts matches its documented class.",
+    "The matching TermAl conformance work (settling a real Engram-shaped receipt that carries 32-hex ids; one validator per class) is filed in TermAl and linked here.",
+    "An inventory of other hidden format or length assumptions across the boundary is recorded, and each defect found is filed as its own root."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the Engram–TermAl identifier contract and host-boundary inventory. Independent post-restart evaluation a04fc0eb3d3b40b09d6f32f87ea446ac passed all four criteria on landed commit 0e52e6fd.",
+    "completed_at": "2026-10-31T22:22:56.591733900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "28626a0c39c6415291e0a8764fe38221": {
+        "activity_id": "28626a0c39c6415291e0a8764fe38221",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "28626a0c39c6415291e0a8764fe38221"
+      },
+      "71108a3496424080b2ab1724a6fa13e2": {
+        "activity_id": "71108a3496424080b2ab1724a6fa13e2",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "71108a3496424080b2ab1724a6fa13e2"
+      },
+      "78695c840ef047fbb3d2e958c55bba7f": {
+        "activity_id": "78695c840ef047fbb3d2e958c55bba7f",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "79faf59c092240998e49784db91f6968"
+      },
+      "79faf59c092240998e49784db91f6968": {
+        "activity_id": "79faf59c092240998e49784db91f6968",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "79faf59c092240998e49784db91f6968"
+      },
+      "af1df2c007614a8e9b33662ccb2ef543": {
+        "activity_id": "af1df2c007614a8e9b33662ccb2ef543",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "76b35e81b4594c2d8fc74f9943c92ce9"
+      },
+      "c118c5caa2594558a536c004d1d48897": {
+        "activity_id": "c118c5caa2594558a536c004d1d48897",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c118c5caa2594558a536c004d1d48897"
+      },
+      "d3a59ba8244648acb2a1fd9312e15a1f": {
+        "activity_id": "d3a59ba8244648acb2a1fd9312e15a1f",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d3a59ba8244648acb2a1fd9312e15a1f"
+      },
+      "dd6b578445534abf85cf5121ae26c809": {
+        "activity_id": "dd6b578445534abf85cf5121ae26c809",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dd6b578445534abf85cf5121ae26c809"
+      },
+      "f8fb03e2e16f455180acb9da5cfdb419": {
+        "activity_id": "f8fb03e2e16f455180acb9da5cfdb419",
+        "task_id": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "78695c840ef047fbb3d2e958c55bba7f"
+      }
+    }
+  }
+}

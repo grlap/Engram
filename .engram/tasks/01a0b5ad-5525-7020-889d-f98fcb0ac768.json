@@ -1,0 +1,53 @@
+{
+  "id": "01a0b5ad-5525-7020-889d-f98fcb0ac768",
+  "external_ref": null,
+  "title": "Find out whether turn-gated control works end to end and what a host can configure",
+  "outcome": "Greg knows, from evidence in the code and the live stores, which control assurance modes Engram defines, which of them TermAl can select or only match, whether a turn-gated session actually mediates turns today, and what is missing or broken, with each gap filed as its own item.",
+  "acceptance": [
+    "every gap found is filed as its own item with its evidence; nothing is changed without Greg's decision",
+    "the modes Engram defines (required assurance, mechanical basis, evaluation modes) and the command that sets each are listed from the code, not from memory",
+    "what TermAl can configure for Engram, and what it can only match against the store's policy, is listed from TermAl's code",
+    "whether turn-gated control mediates a real turn is established from the live stores' control records and an exercised path, with the evidence cited"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": "independent_session",
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Established from code and both live stores: the modes Engram defines and the operator commands that set them; what TermAl configures (machine-scoped developer name, binary, home, boot budget; per project only enabled and the turn-gated toggle), matches (required assurance), displays (required assurance after Verify) and cannot change (any store policy); and that turn-gated control has mediated no turn since 2026-09-03 because engram control refused the --actor-context TermAl passes. Seven gaps filed with evidence. Closed on an independent-session evaluation produced by TermAl (third attempt; the first two failed criterion 3 and the record was corrected each time).",
+    "completed_at": "2026-09-18T21:58:59.648145700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e4f759c3f3534152bf325044efc7289d": {
+        "activity_id": "e4f759c3f3534152bf325044efc7289d",
+        "task_id": "01a0b5ad-5525-7020-889d-f98fcb0ac768",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2afd5a47a5b042ac89e862a2b4c4c39e"
+      }
+    }
+  }
+}

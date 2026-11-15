@@ -1,0 +1,28 @@
+{
+  "id": "01a10006-18f1-7990-bd0b-ad1d7800ffe4",
+  "external_ref": null,
+  "title": "Backup push docs say a failed push leaves the previous receipt as it was, but resolving a pending attempt can first record a new newest receipt",
+  "outcome": "Backup push docs say a failed push leaves the previous receipt as it was, but resolving a pending attempt can first record a new newest receipt",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md's push paragraph and docs/shipped.md's Backup push row no longer say that every failed push leaves the previous receipt as it was and advances no time. They say that a push which first resolves an earlier pending attempt as confirmed records that copy as the newest receipt before a later step fails, and the rest of the claim holds otherwise."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

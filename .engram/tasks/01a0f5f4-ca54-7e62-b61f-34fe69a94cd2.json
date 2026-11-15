@@ -1,0 +1,29 @@
+{
+  "id": "01a0f5f4-ca54-7e62-b61f-34fe69a94cd2",
+  "external_ref": null,
+  "title": "A non-holder's observation note is told to claim the item before execution",
+  "outcome": "A non-holder's observation note is told to claim the item before execution",
+  "acceptance": [
+    "A holder's own note and a bare show of an unclaimed item keep their existing claim guidance",
+    "Tests cover the observation receipt over the CLI and MCP",
+    "The receipt of a non-holder observation note on an unclaimed item does not lead with claim or say 'claim it before execution'; it says the note was recorded as an observation with no execution credit, and its next commands fit an observer"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-surface",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a0f5f4-c262-7a02-9e18-87cda65df79e",
+  "disposal_reason": "Duplicate filing of the same CV2 request (session-9302 mailbox #3, relayed by Engram::Advisor to both Engram::Opus and Engram::Fable). Canonical item: w-87cda65df79e, which carries the CV2 provenance. Reconciled by Engram::Fable at the Advisor's request (mailbox-74a6af16 #790).",
+  "completion": null
+}

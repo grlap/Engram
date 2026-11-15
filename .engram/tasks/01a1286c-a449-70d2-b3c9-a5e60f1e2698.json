@@ -1,0 +1,28 @@
+{
+  "id": "01a1286c-a449-70d2-b3c9-a5e60f1e2698",
+  "external_ref": null,
+  "title": "Diagnose backup capture deadline overrun in the locked-store gate test",
+  "outcome": "Diagnose backup capture deadline overrun in the locked-store gate test",
+  "acceptance": [
+    "The cause of the 12.4507132-second locked-store capture deadline overrun is identified and corrected; capture_deadline_bounds_a_wait_for_a_locked_store passes with its existing return-bound and deadline-error assertions, with evidence distinguishing the delayed phase."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Duplicate concurrently filed w-56f74bbbf0a5 by Fable for the exact same e4815929 locked-store deadline overrun. Read canonical root full acceptance/notes, transferred actual phase/uncertainty and verified archive evidence there. This cancellation asserts no fix.",
+  "completion": null
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0df94-e6a1-7ba0-a547-8d66987fd73a",
+  "external_ref": null,
+  "title": "Tests keep their fixture folders under the repository's target/ instead of the system temp folder",
+  "outcome": "Tests keep their fixture folders under the repository's target/ instead of the system temp folder",
+  "acceptance": [
+    "Every recursive delete in test support resolves its target and refuses one outside the repository's target/ directory, and a test proves the refusal",
+    "The full gate passes with no new folder left under the system temp folder's engram/ directory",
+    "scripts/test-temp.mjs and src/test_support.rs create and delete fixture folders only under the repository's target/ directory, never under the system temp folder"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 3c61054 on origin/master and installed as build d131df37.\n- Rust and Node test fixtures live in this checkout's target/tmp/engram, one run-<pid>-<random> directory per run, never in the system Temp.\n- Every recursive delete in test support goes through one guard per runtime, anchored to target/tmp/engram. It refuses paths outside the root, roots outside the anchor, and any symlink or junction from target/ down, and it re-checks before each attempt. A refusal is never retried. The empty-run removal is non-recursive and guarded, and Rust skips it after a refusal.\n- Setup refuses a linked target/ or target/tmp before creating anything, and Git in a fixture stops at the run root. Test junctions are created by Node with no shell.\n- The root-probe DACL restore check ignores only the auto-inherited flag, which differs between the checkout and the Temp chain.\n- Round-9 full gate passed; the Codex and Claude reviews were clean after nine rounds.\n- The system Temp\\engram gained nothing across the gate.\n- Independent Codex evaluation: 3/3 criteria pass.",
+    "completed_at": "2026-09-26T23:53:07.367621200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "be73795d63f9415383d350569cff6025": {
+        "activity_id": "be73795d63f9415383d350569cff6025",
+        "task_id": "01a0df94-e6a1-7ba0-a547-8d66987fd73a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "63f2a28fb1154771a10f85720338063f"
+      }
+    }
+  }
+}

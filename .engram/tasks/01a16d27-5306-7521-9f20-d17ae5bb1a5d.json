@@ -1,0 +1,102 @@
+{
+  "id": "01a16d27-5306-7521-9f20-d17ae5bb1a5d",
+  "external_ref": null,
+  "title": "MCP diagnostics log a refused verb with the control-surface code (storage_error) instead of the code the client received (work_invalid)",
+  "outcome": "MCP diagnostics log a refused verb with the control-surface code (storage_error) instead of the code the client received (work_invalid)",
+  "acceptance": [
+    "An MCP verb refusal is recorded in the diagnostics ring with the same error code the MCP client received (for example work_invalid for a live-handoff-offer refusal), not the control surface's store_error_code mapping",
+    "Control-surface diagnostics keep their existing codes",
+    "A test covers an MCP work_invalid refusal and asserts the recorded diagnostics code"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "delivered",
+    "diagnostics",
+    "evaluation-pending",
+    "mcp"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "MCP diagnostics now log a refused verb with the code the client received (work_invalid) rather than the control-surface code; landed (in the ancestry of e7426a6) and verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed all 3 criteria (record 6fa76bee47254b1a8db267816858e6b3).",
+    "completed_at": "2026-10-28T01:29:46.233715900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "39de233f19574bc4b9c5a3f9936ce7f3": {
+        "activity_id": "39de233f19574bc4b9c5a3f9936ce7f3",
+        "task_id": "01a16d27-5306-7521-9f20-d17ae5bb1a5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "39de233f19574bc4b9c5a3f9936ce7f3"
+      },
+      "4702d44724cf46b18f5dfae93c16dad2": {
+        "activity_id": "4702d44724cf46b18f5dfae93c16dad2",
+        "task_id": "01a16d27-5306-7521-9f20-d17ae5bb1a5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "fcd9f2d5b05c403ab661fde5ebc78991"
+      },
+      "49b1d0d46a5d4ea882aa690922859c1e": {
+        "activity_id": "49b1d0d46a5d4ea882aa690922859c1e",
+        "task_id": "01a16d27-5306-7521-9f20-d17ae5bb1a5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "39de233f19574bc4b9c5a3f9936ce7f3"
+      },
+      "9ea486f195ee488dab914c3858485ed4": {
+        "activity_id": "9ea486f195ee488dab914c3858485ed4",
+        "task_id": "01a16d27-5306-7521-9f20-d17ae5bb1a5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4702d44724cf46b18f5dfae93c16dad2"
+      },
+      "fea771c5727546b1b06d41888bec091a": {
+        "activity_id": "fea771c5727546b1b06d41888bec091a",
+        "task_id": "01a16d27-5306-7521-9f20-d17ae5bb1a5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "319c666e27e545ad8184662153a9b00b"
+      }
+    }
+  }
+}

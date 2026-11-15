@@ -1,0 +1,29 @@
+{
+  "id": "01a14fec-8375-7e53-9a27-81446fe6ac46",
+  "external_ref": null,
+  "title": "Qualify control_request_expired retry-key guidance for keyless requests",
+  "outcome": "The control_request_expired wire message and behavioral-control contract explain exact retry without requiring an idempotency key on operations that have none.",
+  "acceptance": [
+    "The ControlRequestExpired error message and behavioral-control-plane expiry guidance require reusing the original idempotency key only when the request carries one, matching cli-and-mcp.md.",
+    "Existing expiry semantics, exact retained request/payload and same-connection guidance, and uncertainty about prior operations remain unchanged; relevant message tests and documentation checks pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

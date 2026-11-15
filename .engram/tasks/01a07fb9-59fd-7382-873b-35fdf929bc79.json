@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-59fd-7382-873b-35fdf929bc79",
+  "external_ref": null,
+  "title": "Restrict nested notice actor fallback to source proposals",
+  "outcome": "Restrict nested notice actor fallback to source proposals",
+  "acceptance": [
+    "Only work_source_proposal uses notice.actor for actor attribution fallback"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Nested notice actor fallback is restricted to work_source_proposal objects. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:50.036257200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3601263ced7afe58935d7d3faaed5dfcac22626ae13cb91961463f86e22f5d12": {
+        "activity_id": "3601263ced7afe58935d7d3faaed5dfcac22626ae13cb91961463f86e22f5d12",
+        "task_id": "01a07fb9-59fd-7382-873b-35fdf929bc79",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ab4a1598d437632e1f6169631b69fa4d5f74c0b2153ef31505236b46ce89e424"
+      }
+    }
+  }
+}

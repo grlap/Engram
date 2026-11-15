@@ -1,0 +1,75 @@
+{
+  "id": "01a0b5b4-5d56-7c71-b571-7654d56893ed",
+  "external_ref": null,
+  "title": "Nothing shows whether a project's turns are actually being mediated",
+  "outcome": "doctor and the host make it visible when a store that requires mediation has had none, so silence cannot pass for enforcement.",
+  "acceptance": [
+    "a store whose policy requires turn_gated and that has had work mutations but no control turn since a stated time says so as a warning",
+    "doctor reports when the control plane last had session activity (labelled as such, from the recorded session update time), last began a turn, last settled a turn and last recorded a turn evaluation, beside the counts it already prints, without adding a new write on the session-bind path"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "control-plane",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Doctor now warns about work without recent mediation and reports recent session/turn activity. Landed and installed clean fd6a6f9f8dd1d18d4dc671913f25f542e9cc39cf; all six stores ready. Independent Claude evaluation3547f7c5427f4130a75548816bba6a57 passed both criteria at revision2/evidence224; full result/output read. Most-recent-work/turn masking limitation remains disclosed; no acceptance failure.",
+    "completed_at": "2026-10-30T15:43:18.517270300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "090a05d3ceeb4e52aed7deb9b4455fc0": {
+        "activity_id": "090a05d3ceeb4e52aed7deb9b4455fc0",
+        "task_id": "01a0b5b4-5d56-7c71-b571-7654d56893ed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e867e74631364a6e98b55ed488c14751"
+      },
+      "a8288faa9bdb45dd9a54571ff7113dda": {
+        "activity_id": "a8288faa9bdb45dd9a54571ff7113dda",
+        "task_id": "01a0b5b4-5d56-7c71-b571-7654d56893ed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "cbbbe298e23e4fa9be1150dd8eaefdd8"
+      },
+      "cbbbe298e23e4fa9be1150dd8eaefdd8": {
+        "activity_id": "cbbbe298e23e4fa9be1150dd8eaefdd8",
+        "task_id": "01a0b5b4-5d56-7c71-b571-7654d56893ed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d4b6c9c76b3f4e0993409010f92e4cd8"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a0b5b4-48f7-7823-88a4-e30b20a197b2",
+  "external_ref": null,
+  "title": "TermAl shows only the store's required assurance and cannot show the evaluation policy or set any store policy",
+  "outcome": "An operator can see, from TermAl, which control and acceptance modes a project's store is in, and can change them with attribution, or is told the exact command that does.",
+  "acceptance": [
+    "Greg's decision is recorded on whether TermAl may run the control-policy commands itself, and with what operator attribution",
+    "TermAl shows the store's required assurance, acceptance-evaluation modes, mechanical basis and source-fingerprint requirement for an Engram-enabled project",
+    "a mismatch between TermAl's toggle and the store's policy names the operator command that resolves it instead of only refusing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

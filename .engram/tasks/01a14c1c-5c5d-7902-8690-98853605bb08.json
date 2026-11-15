@@ -1,0 +1,32 @@
+{
+  "id": "01a14c1c-5c5d-7902-8690-98853605bb08",
+  "external_ref": null,
+  "title": "Apply explicitly human-resolved planning prose to imported tasks without local execution history",
+  "outcome": "A human can apply merged title, outcome and plain acceptance text repeatedly to persistent execution-free imported planning stores using ordinary Git, without model A or store migration.",
+  "acceptance": [
+    "An explicit preview/apply path accepts only title, outcome and plain acceptance edits to existing open/proposed task-sync-imported tasks in an execution-free project; same task set and all other shared fields remain unchanged. Complete canonical/history and projection checks reject native-created tasks, any past/local execution, unsupported changes and unknown/inconsistent state with visible structured reasons and zero batch effects.",
+    "Apply binds exact selected candidate and fresh local basis, atomically appends ordinary existing-shape Revised events and updates existing projections through shared planning logic. Original ImportOrigin, restored records, IDs, links and historical bytes remain unchanged; no new durable kind, shape, table, column, index, projection derivation or migration is introduced. If that requires widening the boundary, report the concrete reason and use the documented fallback rather than implement model A.",
+    "Repeated human merges into the same populated store and already-current retries produce the selected normalized shared text without duplicate history, timestamps or revisions on a no-op. Stale local basis, a local claim/revision race, unsupported fields and a mixed eligible/ineligible batch refuse atomically. Lost response after commit is handled by explicit inspection/retry, without promising an exact batch ImportReceipt.",
+    "Focused regressions cover canonical admission and history preservation, rollback around each write, post-commit lost response, no feedback export, native/unknown/unsupported refusal and existing-store compatibility; applicable full gate and independent review pair pass on the frozen changeset before landing.",
+    "Documentation and CLI output identify the restricted planning-only scope, preserved manual Git workflow and zero-code fresh-import/manual-planning fallback. No live opt-in, remote provisioning, automatic fetch/convergence, model A, G1/G2/G3 or migration is performed; actual multi-host proof remains separate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "minimum-pilot",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Greg superseded the special minimal-apply path via Advisor mailbox1a68a293 #28/message d501c43f-13be-4ab3-ae5d-7c6933824be2 at2026-10-17T23:05:46Z: no automatic merger, special human-resolved apply, modelA or task-status merge engine. Designated Merger handles Git merge and case-by-case task reconciliation through existing operations. STOP sent to proposed executor12325; no implementation effect confirmed. Preserve any existing evidence; do not reactivate without new scope.",
+  "completion": null
+}

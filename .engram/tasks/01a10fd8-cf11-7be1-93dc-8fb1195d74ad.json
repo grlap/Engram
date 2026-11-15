@@ -1,0 +1,27 @@
+{
+  "id": "01a10fd8-cf11-7be1-93dc-8fb1195d74ad",
+  "external_ref": null,
+  "title": "Make scoped child-waiver corruption coverage assert the intended refusal",
+  "outcome": "Make scoped child-waiver corruption coverage assert the intended refusal",
+  "acceptance": [
+    "The scoped child-waiver regression identifies the exact full-state or semantic waiver refusal and proves invalid data outside the result prefix is validated."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

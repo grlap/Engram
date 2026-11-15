@@ -1,0 +1,54 @@
+{
+  "id": "01a1c164-cc0f-7352-837c-9f7fb6a5c136",
+  "external_ref": null,
+  "title": "Align the remaining Git-authority lists with the test-ref rules and keep author-test runs out of the landing-gate lane",
+  "outcome": "Align the remaining Git-authority lists with the test-ref rules and keep author-test runs out of the landing-gate lane",
+  "acceptance": [
+    "docs/development.md's Git policy list and .claude/commands/fix-bug.md's authority sentence name the test-ref bullets, matching the engram-repo skill.",
+    "An author-test run can't be recorded through the `authorized_test_ref` remote-verification lane, either because that lane accepts only refs/heads/test/ names or because the rule and review-changes.md say author-test runs are delivered as `committed_input`; a test shows the chosen behaviour if it's code.",
+    "The author test refs rule says the ref is deleted once the evidence of every run requested on it is recorded, and the decision to add no orphaned-ref clause, with its reason, is recorded on the item.",
+    "review-changes.md has the comma in \"never on master, and pushed only…\", and the coder skill's step 3 says the push follows the project rule's conditions.",
+    "The coder-test-execution skill's step 2 carries the sentence shared with TermAl, word for word: \"Run the project's formatter before freezing a candidate.\""
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A new authorized_test_ref remote-verification report must name a refs/heads/test/ ref. An author's own refs/heads/author-test/ ref is refused naming association.use.ref_name, so it can't count as a landing gate. The check runs only on new writes; stored rows stay readable. The authority lists in docs/development.md and fix-bug.md now name the test-ref bullets, review-changes.md gained its comma, and AGENTS/CLAUDE delete an author test ref once the evidence of every run requested on it is recorded. No orphaned-ref clause was added, per Fable's decision. The coder skill gained the shared formatter sentence, and its push now follows the project rule's conditions. Landed as ea5252a1 after (a) Fable and Fable2, (b) Greg via Asistant #815, (c) Fable2 audit #7349, a clean round-2 pair, FULL test-00ac22c2 and evaluation 95d3f9e9 PASS 5/5. The review-changes top-list Low is filed as w-f8a687fbd42c.",
+    "completed_at": "2026-11-09T23:47:17.220998100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b17dee6ffdff4ce6858eeb6d1e8b3a9e": {
+        "activity_id": "b17dee6ffdff4ce6858eeb6d1e8b3a9e",
+        "task_id": "01a1c164-cc0f-7352-837c-9f7fb6a5c136",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d34feb494856469b964ff88f0c308621"
+      }
+    }
+  }
+}

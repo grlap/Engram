@@ -1,0 +1,29 @@
+{
+  "id": "01a1c2ba-7f6f-7f31-977c-455488482234",
+  "external_ref": null,
+  "title": "Close the remaining family-split wording gaps in /review-changes",
+  "outcome": "Close the remaining family-split wording gaps in /review-changes",
+  "acceptance": [
+    "/review-changes says a delegation-cap refusal of one reviewer is not unavailability, never triggers a Kimi stand-in, and that reviewer starts when a slot frees in the same round.",
+    "/review-changes says which scope 'spawns no further reviewer' takes under a family split.",
+    "The reading that 'running in parallel' is met by one round on one verified freeze is either recorded on the item as the basis, or aligned in AGENTS.md and CLAUDE.md through (a), (b) and (c)."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority-text",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

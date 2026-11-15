@@ -1,0 +1,63 @@
+{
+  "id": "01a082cb-3516-7662-9ee0-aea5ae674202",
+  "external_ref": null,
+  "title": "Decide whether the root-state format change owes a docs/shipped.md row",
+  "outcome": "Decide whether the root-state format change owes a docs/shipped.md row",
+  "acceptance": [
+    "Either a row is added or the decision that none is owed is recorded with its reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Decided: no new inventory row. The durable root-state shape is how state is stored rather than something an agent can do, so the page gained one clarification instead.",
+    "completed_at": "2026-09-09T06:10:08.631550500Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "207093faeb0b129f6bdd89874f214013f9ae38124230af7b0b2672675ae0947f": {
+        "activity_id": "207093faeb0b129f6bdd89874f214013f9ae38124230af7b0b2672675ae0947f",
+        "task_id": "01a082cb-3516-7662-9ee0-aea5ae674202",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "207093faeb0b129f6bdd89874f214013f9ae38124230af7b0b2672675ae0947f"
+      },
+      "2776c1e67bf25e199cddab38b2e245c3a58eb3c167c3598fd5163a13e51527be": {
+        "activity_id": "2776c1e67bf25e199cddab38b2e245c3a58eb3c167c3598fd5163a13e51527be",
+        "task_id": "01a082cb-3516-7662-9ee0-aea5ae674202",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7446c4cf8e3cddba11cee1017642b00dabcfdf1e710fbfde08eacef4379391c3"
+      }
+    }
+  }
+}

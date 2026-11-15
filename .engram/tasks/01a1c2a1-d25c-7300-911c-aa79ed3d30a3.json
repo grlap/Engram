@@ -1,0 +1,54 @@
+{
+  "id": "01a1c2a1-d25c-7300-911c-aa79ed3d30a3",
+  "external_ref": null,
+  "title": "Preserve known push rejection across publication replay",
+  "outcome": "Preserve known push rejection across publication replay",
+  "acceptance": [
+    "A completed exact non-fast-forward rejection remains recoverable after a lost response, restart, ordinary repeated publish call or failed follow-up fetch across legacy, delta and delta-retry publication owners.",
+    "Known rejection and genuine uncertain publication remain distinct; recovery preserves the exact retained push-start and commit identities, does not redispatch a started push, and permits only the already allowed single reconciliation retry.",
+    "Behavior regressions exercise rejected push then repeat/reopen and fetch failure, followed by supported reconciliation or explicit safe settlement; genuine Unknown still grants no publication credit or automatic retry."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "An exact non-fast-forward push refusal is now recorded durably as PushRejected{push_started}, before the replacement fetch, in all three publication owners: legacy exchange/attempt.rs, delta/attempt.rs and delta/retry.rs. A lost response, a restart, an ordinary repeat or a failed fetch then resumes only tip+fetch, never a second push and never Unknown, and returns the same ReconciliationRequired (original) or records the single retry's Stop. The reducer accepts the refusal only at stage Pushing, naming the current start, once, and admits no later observation. Writers, request reconstruction, the delta publication admission and the confirmed-retry adjacency proof are updated. This is additive vocabulary: existing rows are read as stored and need no conversion. Genuine Unknown is unchanged. Regressions cover a lost fetch with reopen and repeats, a crash before the fetch, refused misuse, identical repair rows for old and new histories, and delta and delta-retry lost fetches. Delivered in candidate bba11aca (on master 0bd70a30 plus the 98c1 carry). DL560 author batch PASS 4/4 (lib task_sync 800/800); Windows B task_sync::exchange::tests::windows 22/22 including the real HTTPS strict delta case. Independent evaluation 7d152bd36b3045468124bb1e450709c1 passed all 3 criteria. Landing belongs to parent 12325 with the combined freeze.",
+    "completed_at": "2026-11-10T03:27:28.171734Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9177a85f1f444d0db3b5ca35bb1d1c84": {
+        "activity_id": "9177a85f1f444d0db3b5ca35bb1d1c84",
+        "task_id": "01a1c2a1-d25c-7300-911c-aa79ed3d30a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8d6317189d07474eb15ab7939e65bdf8"
+      }
+    }
+  }
+}

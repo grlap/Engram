@@ -1,0 +1,50 @@
+{
+  "id": "01a07350-eb06-7610-b5d0-5aaa8c726f7d",
+  "external_ref": null,
+  "title": "Repair full contract detail documentation prose",
+  "outcome": "Repair full contract detail documentation prose",
+  "acceptance": [
+    "Documentation links pass and detach prose has complete wrapped sentences"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a070b3-9c16-7663-be40-cb3fbfe0dff4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Clarify full contract detail and conditional child advisory prose",
+    "completed_at": "2026-09-05T21:10:10.370797900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a25ed2df69f80439b102a797d8666e1f8ec8f9782c7c786e59f7789f91a7b750": {
+        "activity_id": "a25ed2df69f80439b102a797d8666e1f8ec8f9782c7c786e59f7789f91a7b750",
+        "task_id": "01a07350-eb06-7610-b5d0-5aaa8c726f7d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8eee6d79f02655651d2805b1d1e7bce47dfca7d8e58bf844a06f63ff4b099d4b"
+      }
+    }
+  }
+}

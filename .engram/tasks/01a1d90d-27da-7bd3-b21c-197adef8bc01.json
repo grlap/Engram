@@ -1,0 +1,28 @@
+{
+  "id": "01a1d90d-27da-7bd3-b21c-197adef8bc01",
+  "external_ref": null,
+  "title": "Keep bounded Git diagnostics when a batch read refuses stderr",
+  "outcome": "A failing strict batch read preserves a bounded first diagnostic chunk while still refusing any stderr promptly.",
+  "acceptance": [
+    "A strict Git batch read still fails promptly on diagnostic output and includes bounded useful diagnostic context through the existing stderr_failure formatter.",
+    "Behavioral coverage distinguishes bounded diagnostic preservation from successful empty-stderr reads without exposing object payloads or allowing unbounded buffering."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

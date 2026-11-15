@@ -1,0 +1,78 @@
+{
+  "id": "01a19100-6cc3-7b93-aa07-e96f37a1f665",
+  "external_ref": null,
+  "title": "Add the fail-closed control_connection_read contract (always identity_unavailable until a sound handle-level proof exists)",
+  "outcome": "TermAl can call control_connection_read on the original or resumed control child and get either control_connection_superseded or control_connection_identity_unavailable, never a possibly wrong path. Unknown recovery stays GAP until w-952b4211be2d proves the held file.",
+  "acceptance": [
+    "A read-only control_connection_read on the same HostControlServer and SqliteStore, on a current serving connection (original or resumed), returns the actual opened SQLite main database's canonical database_path plus the fixed project_id and session_id only on a platform where the opened file can be proven to be the one at that path; no platform qualifies today. Until one does, and whenever that proof fails, it refuses with control_connection_identity_unavailable and never returns a possibly different file. It first verifies the current connection with the existing storage check, and reuses or extracts readiness's canonical path formatting.",
+    "It adds no token, grant, bind, schema change or new registry, and it is answered by the serving child itself. A separate readiness process or the child's config, home or marker never stands in for it.",
+    "Tests cover: on every platform the read refuses with control_connection_identity_unavailable on a current original or resumed connection and never returns a path; a superseded connection is refused with control_connection_superseded first; and the read changes no state and needs no grant.",
+    "The host protocol docs describe the read and its fail-closed use; existing fencing behavior (an old bind before resume is still allowed, never after) is unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "gated-control"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the fail-closed serving-connection read, preserving current-connection fencing and returning no unproven database path. Landed exact gated candidate, installed its clean Windows build, all six live stores ready. Independent postlanding Claude15690 evaluation121f2a69eb054bb8aa10d51c3bb01e19 passes all4 currentrevision4 criteria; complete original result/full2723B output and all native verdicts recovered. No action-required obligations; native done accounts for remaining no-action historical source obligations. Test ref already deleted after full evidence. No TermAl restart or process kill.",
+    "completed_at": "2026-10-31T16:57:46.763354300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "02b80f413bb84744b9bf7f5c0792ad7d": {
+        "activity_id": "02b80f413bb84744b9bf7f5c0792ad7d",
+        "task_id": "01a19100-6cc3-7b93-aa07-e96f37a1f665",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4a2d04037e9e4c649841d2ab1f9b9e56"
+      },
+      "623aaf18c3704d1f8bac08f279e8668d": {
+        "activity_id": "623aaf18c3704d1f8bac08f279e8668d",
+        "task_id": "01a19100-6cc3-7b93-aa07-e96f37a1f665",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "623aaf18c3704d1f8bac08f279e8668d"
+      },
+      "bc209112608c431192e9cf94a2359fd6": {
+        "activity_id": "bc209112608c431192e9cf94a2359fd6",
+        "task_id": "01a19100-6cc3-7b93-aa07-e96f37a1f665",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "02b80f413bb84744b9bf7f5c0792ad7d"
+      }
+    }
+  }
+}

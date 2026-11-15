@@ -1,0 +1,52 @@
+{
+  "id": "01a06d73-8150-7ed3-903c-6d6239aeb4c1",
+  "external_ref": null,
+  "title": "doctor --json emits a typed refusal instead of prose when ordinary open refuses a store",
+  "outcome": "doctor --json emits a typed refusal instead of prose when ordinary open refuses a store",
+  "acceptance": [
+    "on a store missing rebuildable projections, engram doctor --json prints JSON with healthy false, code projection_repair_required, the exact remedy command, and the safe scope (indexes, triggers, fts), exits non-zero, and performs no DDL; the different-build refusal and corrupt-store refusals get their own codes the same way"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "integration",
+    "made"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-3b3f-7332-8345-4557c3a9cc0d",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a06d75-a23b-71b3-b02a-d8975df03b00"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered typed nonzero doctor refusals, canonical path identity, phase and operational remedies, consistent corruption findings, and preservation of already-proven corruption when control diagnostics also fail. Validated by all required gates and two-reviewer code closure.",
+    "completed_at": "2026-09-05T10:41:42.931266800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "80041cef96ff1000575fc8997e188b63f4cdbeffafed320613697b8f83f739b3": {
+        "activity_id": "80041cef96ff1000575fc8997e188b63f4cdbeffafed320613697b8f83f739b3",
+        "task_id": "01a06d73-8150-7ed3-903c-6d6239aeb4c1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f5e07adb4f1e5c4f11da7c929d6184eda5e94f97419a4c3420ea2f3349b18c0d"
+      }
+    }
+  }
+}

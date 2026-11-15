@@ -1,0 +1,61 @@
+{
+  "id": "01a0632f-0102-7af2-b2ef-cd0d624decc4",
+  "external_ref": null,
+  "title": "Share the exact project-memory full response envelope contract",
+  "outcome": "Share the exact project-memory full response envelope contract",
+  "acceptance": [
+    "Admission and rendering use one typed envelope and the maximum full response fits the agent limit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Admission and rendering share the bounded typed full-memory response envelope.",
+    "completed_at": "2026-09-02T17:37:49.148635700Z",
+    "actor": {
+      "actor_id": "codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6c6e3a2f1230d33d14cdcd64215c1dd5e624786ee16ef36198d2aebed97c1375": {
+        "activity_id": "6c6e3a2f1230d33d14cdcd64215c1dd5e624786ee16ef36198d2aebed97c1375",
+        "task_id": "01a0632f-0102-7af2-b2ef-cd0d624decc4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "fb9671bdf5b360f754b53644938bdc5151bf296521991365f4c5178fff4ebac0"
+      },
+      "b5ddc268651eb821ef983e8d1b469b5c65847ceaac2c45eaa5d6746703253ec0": {
+        "activity_id": "b5ddc268651eb821ef983e8d1b469b5c65847ceaac2c45eaa5d6746703253ec0",
+        "task_id": "01a0632f-0102-7af2-b2ef-cd0d624decc4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9991ffb346954cf6d54c19156040a4c86e83e3efeb3e06049dab5a4d26451755"
+      }
+    }
+  }
+}

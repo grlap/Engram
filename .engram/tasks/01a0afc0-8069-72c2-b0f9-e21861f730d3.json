@@ -1,0 +1,52 @@
+{
+  "id": "01a0afc0-8069-72c2-b0f9-e21861f730d3",
+  "external_ref": null,
+  "title": "Peer next and history disclose an evaluation-mode pin or clear as a planning revision",
+  "outcome": "The project_work_event revised-field comparison includes evaluation_mode, so pin and clear revisions are disclosed to peers and in history instead of reading as no planning change",
+  "acceptance": [
+    "evaluation_mode_revisions_are_disclosed_in_history_and_peer_next passes: pinning and clearing the mode each appear as a revised event naming the evaluation mode field in show history and in a peer's next changes, while a revision that changes nothing still reads as no planning change"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round8"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The project_work_event revised-field comparison includes evaluation_mode, so pinning or clearing the mode is disclosed by name in show history and in peers' next deltas, while clearing an already unpinned item still reads as no planning change. Pinned by evaluation_mode_revisions_are_disclosed_in_history_and_peer_next (RED logs/30, GREEN logs/31). Final sequence logs/34 on the settled input: fmt-check, check, clippy, lib 1109 passed / 4 ignored, bin 43, parity 31, mcp-dogfood 45, doc links (34b) — all pass; eight gates recorded here once. Documented in the agent surface and matrix row B44.",
+    "completed_at": "2026-09-17T14:45:43.162190800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "376938a96f4da864a2604f23c443879fc65f09ab3a2339010e9dda97a19160c7": {
+        "activity_id": "376938a96f4da864a2604f23c443879fc65f09ab3a2339010e9dda97a19160c7",
+        "task_id": "01a0afc0-8069-72c2-b0f9-e21861f730d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bcda57410082b5bda2c696c3be3d43d108ec78643095bbfb5979f53dc0884677"
+      }
+    }
+  }
+}

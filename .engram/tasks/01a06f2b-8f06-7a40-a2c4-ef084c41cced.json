@@ -1,0 +1,49 @@
+{
+  "id": "01a06f2b-8f06-7a40-a2c4-ef084c41cced",
+  "external_ref": null,
+  "title": "Update the pair workflow proposal for shipped participant notes",
+  "outcome": "The proposal accurately describes the current participant-note and claim-renewal behavior while retaining remaining product gaps.",
+  "acceptance": [
+    "Proposal describes shipped non-holder notes with their attribution and completion-evidence limits; documentation links pass; Fable receives the updated path."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Updated the delivered pair workflow proposal for shipped non-holder observations and explicit claim renewal, preserved the remaining review-resume gap and backlinks, passed documentation checks, and returned the revised artifact to Engram::Fable.",
+    "completed_at": "2026-09-05T01:27:14.796921300Z",
+    "actor": {
+      "actor_id": "advisor",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fd876ef00b4d754518e9ae216cb5cdeb511322cdc3b9995ed86bd0ef552d3dcf": {
+        "activity_id": "fd876ef00b4d754518e9ae216cb5cdeb511322cdc3b9995ed86bd0ef552d3dcf",
+        "task_id": "01a06f2b-8f06-7a40-a2c4-ef084c41cced",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "advisor",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "07b3b4ea9a9af733b284b955154a5f81853e40ab94939cfe3f4ab57b44ba6924"
+      }
+    }
+  }
+}

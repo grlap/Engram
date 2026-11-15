@@ -1,0 +1,50 @@
+{
+  "id": "01a06dac-100a-72b2-a00c-56a6d239d0f8",
+  "external_ref": null,
+  "title": "Preserve restored completion proof across late-finding re-snapshots",
+  "outcome": "Preserve restored completion proof across late-finding re-snapshots",
+  "acceptance": [
+    "save -> load -> late note or gate -> save -> load succeeds and retains completed lifecycle"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completion proof is inherited into late-finding native layers and survives save-load-save-load.",
+    "completed_at": "2026-09-04T18:49:53.547096900Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "65e26fa5fa615bb433d736c6ab4bad2d599948a5a7709c6caf2c15daaef68254": {
+        "activity_id": "65e26fa5fa615bb433d736c6ab4bad2d599948a5a7709c6caf2c15daaef68254",
+        "task_id": "01a06dac-100a-72b2-a00c-56a6d239d0f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d882dd0de58ef449d9f15b5c8a102980ccba8f24eb5d08d92c6c7f25b054bf94"
+      }
+    }
+  }
+}

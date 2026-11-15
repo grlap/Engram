@@ -1,0 +1,53 @@
+{
+  "id": "01a1c74f-bf8d-7133-a23b-ce0d08184461",
+  "external_ref": null,
+  "title": "Account for stale retained exchange constructions through an explicit custody audit",
+  "outcome": "A provably never-canonical retained exchange construction can be explicitly retired without deleting its evidence, allowing a fresh current request while preserving canonical progress and unknown-custody refusal.",
+  "acceptance": [
+    "An explicit supported audit operation accounts for selected retained delta, evidence or successor construction only when its exact retained identity and bytes, actor/project/origin/store scope and absence of canonical progress are proven under existing reservation and writer rules; canonical or uncertain operations refuse, and the retired operation cannot later apply.",
+    "Real-owner behavior covers incoming retention followed by a native edit without a live claim and retained successor followed by native movement: stale apply refuses without canonical mutation, explicit audit preserves and accounts original artifacts, then a fresh request succeeds. Mismatched selection, changed bytes, committed or foreign/uncertain operations refuse atomically.",
+    "The author delivers a complete exact-source focused-check package with shared-file dependency accounting and durable-schema/import/projection/cutover impact assessment; no private artifact deletion, history rewrite, Git authority expansion, or change to live-claim deferral is introduced."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit custody retirement of provably never-canonical retained delta, evidence and successor constructions while preserving original bytes, holds and execution history. Exact-scope and canonical/uncertain refusal remain enforced; fresh supported requests can proceed. Final candidate f6cdf834 passed Windows strict Clippy and all ten behavior tests; neutral checks passed with the recorded unchanged Windows-only contribution map. Fresh independent evaluation 87342c3b080b48099cc6b61852865c44 passed 3/3. Implementation is handed to the integration parent; no landing or installation claimed.",
+    "completed_at": "2026-11-11T06:58:37.148667800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8a73e3397c3e4ec6b0ae9c23f1cd543a": {
+        "activity_id": "8a73e3397c3e4ec6b0ae9c23f1cd543a",
+        "task_id": "01a1c74f-bf8d-7133-a23b-ce0d08184461",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d33719ed3b994c8caa9fb171e75c5444"
+      }
+    }
+  }
+}

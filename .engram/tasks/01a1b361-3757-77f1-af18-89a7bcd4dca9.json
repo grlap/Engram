@@ -1,0 +1,55 @@
+{
+  "id": "01a1b361-3757-77f1-af18-89a7bcd4dca9",
+  "external_ref": null,
+  "title": "Native verification credit admits the shared source_id (E3 increment 1)",
+  "outcome": "Native registered verification accepts the complete shared source_id, compares equal endpoints and live state with local changes allowed, and preserves stored history",
+  "acceptance": [
+    "Native registered verification input and post_run accept and retain the complete source_id object returned by the shared source owner, using the agreed closed TermAl wire.",
+    "Native verification matching and live currency compare the whole source_id: equal before and after endpoints qualify with local changes allowed; a changed identity does not qualify.",
+    "Validation of new shared verification submissions is separate from validation of stored records; unsupported string declarations and shared cross-item binding are refused explicitly.",
+    "Historical verification records keep their canonical byte shape, identifiers, links and interpretation; import preserves them without a durable-row conversion.",
+    "Focused tests cover equal clean and dirty shared identities, changed identities, closed wire and malformed submissions, historical byte and import preservation, late-registration chronology, explicit unsupported routes and bounded agent receipts; the exact reviewed candidate passes the required FULL gate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b1c6-cbb1-7a10-9f81-5d25ef9fa4ed",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed native shared-source verification: full closed input/post_run identity, equality and live currency including equal dirty states, separate new-write and stored validation, unchanged historical canonical bytes and links, explicit unsupported declarations/binding, bounded agent receipts. Exact candidate passed focused99/0, strict Clippy, R2 Codex/Claude clean Medium+, and FULL12/12+3/3. Installed manifest recorded; broader E3 remains open.",
+    "completed_at": "2026-11-07T00:40:06.999282300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f20439611cb94a0f8a3f3ef012db1f4e": {
+        "activity_id": "f20439611cb94a0f8a3f3ef012db1f4e",
+        "task_id": "01a1b361-3757-77f1-af18-89a7bcd4dca9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "32daa5a64a6d4b59ae6a64809a594f5f"
+      }
+    }
+  }
+}

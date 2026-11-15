@@ -1,0 +1,65 @@
+{
+  "id": "01a19eed-998d-7680-a5a0-681522d368c2",
+  "external_ref": null,
+  "title": "Expose the evaluated source at completion and remove unused historical evidence writers",
+  "outcome": "Expose the evaluated source at completion and remove unused historical evidence writers",
+  "acceptance": [
+    "Completion preflight and refusal or receipt expose the newest evaluation's exact required source fingerprint for both registered Git and content lanes, with regression tests",
+    "Unused production writers for historical control execution and environment evidence are removed after caller inspection; historical data remains readable and tests use explicit historical fixtures",
+    "Acceptance evaluation documentation names current Execution Observability producers and the separate registered Git lane; no record type, migration or policy re-enabling is introduced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed w-681522d368c2. The source-exposure change and documentation landed as fe9a86545d674318506a252b4ca8a24c1a8242f2. The candidate's accepted Codex/Claude review pair and matching DL560 full gate passed; the build then passed readiness on all six live stores and was installed at C:\\Users\\grzeg\\.cargo\\bin\\engram.exe with build fingerprint ce2d32143c7fe035f1cfa9f5664e8afe095cb539c7b1dac37278d713e9134c8c. No TermAl restart or policy change was performed.",
+    "completed_at": "2026-11-03T03:23:23.176293Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a123274bc22649418f3250351eee5f98": {
+        "activity_id": "a123274bc22649418f3250351eee5f98",
+        "task_id": "01a19eed-998d-7680-a5a0-681522d368c2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "a7f5125a3a1342b1a6c7dc115d2a7cdf"
+      },
+      "a7f5125a3a1342b1a6c7dc115d2a7cdf": {
+        "activity_id": "a7f5125a3a1342b1a6c7dc115d2a7cdf",
+        "task_id": "01a19eed-998d-7680-a5a0-681522d368c2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c6c7b329e5b94b95a6f78d320830fc23"
+      }
+    }
+  }
+}

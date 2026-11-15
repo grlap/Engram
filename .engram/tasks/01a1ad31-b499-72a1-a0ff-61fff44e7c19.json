@@ -1,0 +1,29 @@
+{
+  "id": "01a1ad31-b499-72a1-a0ff-61fff44e7c19",
+  "external_ref": null,
+  "title": "Make the committed-input reader's Git test fixtures ignore the machine's system Git config, so they pass on Windows",
+  "outcome": "Make the committed-input reader's Git test fixtures ignore the machine's system Git config, so they pass on Windows",
+  "acceptance": [
+    "committed_input::tests::live_commit_distinguishes_dirty_reverted_and_equal_tree_commits and the registered_verification git_input currency tests pass on Windows on a machine whose system Git config sets core.autocrlf=true, with the reader's runtime predicate unchanged",
+    "The test fixtures' Git calls use the same isolated configuration as the reader (no system or global config), so the result doesn't depend on the host's Git settings"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "test-fixture",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

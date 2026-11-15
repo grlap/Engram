@@ -1,0 +1,30 @@
+{
+  "id": "01a1d139-407c-7843-a460-0df4f54f219d",
+  "external_ref": null,
+  "title": "Route the 'restart now' request to Greg through Engram::Asistant in AGENTS.md and CLAUDE.md",
+  "outcome": "Route the 'restart now' request to Greg through Engram::Asistant in AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (identical) say that the TermAl coordinator sends Greg 'restart now' through Engram::Asistant, his direct channel, with Engram::Advisor receiving a copy at most, and that the request counts as delivered only when Greg replies",
+    "The change follows the instruction-file procedure: both coordinators' concurrence on the exact wording recorded here, the wording sent to Greg through Asistant before landing, and the final-diff audit recorded as passed",
+    "The Markdown-only landing validation (link check plus the review pair) passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "coordination",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

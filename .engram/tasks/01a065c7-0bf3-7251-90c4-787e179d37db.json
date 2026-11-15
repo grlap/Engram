@@ -1,0 +1,46 @@
+{
+  "id": "01a065c7-0bf3-7251-90c4-787e179d37db",
+  "external_ref": null,
+  "title": "Document and pin the compact row state and optional-label contract",
+  "outcome": "Compact row consumers have an explicit, tested contract for hybrid state values, absent empty labels, and UTF-8 title truncation.",
+  "acceptance": [
+    "Contract comments record the lifecycle/availability invariant that makes the projection lossless.",
+    "Documentation defines state as open-item availability or non-open lifecycle and states that empty labels are omitted.",
+    "Parity coverage pins blocked JSON state, exact multibyte truncation behavior, and a label-free row shape."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "review",
+    "testing",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a06499-36e4-7e13-bd8b-671b1bb1ff31",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "review follow-up filed under the reviewed item became a required child by default; re-filed under the root so the shipped slice can close",
+  "completion": null,
+  "activity": {
+    "central": {
+      "70fd875bcebc39bfcea050548f23f6b18464398dd79b9ee58db66b9eb0c97b42": {
+        "activity_id": "70fd875bcebc39bfcea050548f23f6b18464398dd79b9ee58db66b9eb0c97b42",
+        "task_id": "01a065c7-0bf3-7251-90c4-787e179d37db",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "1f6f4e221b3be0b42090cd2c31b7c0c4775addd9fd17f5ae63c022988934af0c"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a18a27-2dc1-7be3-9c53-d16f67db00dc",
+  "external_ref": null,
+  "title": "Qualify DL560 as Engram's preferred test runner: measure full and focused run times on master and confirm which platform tests must stay on Windows",
+  "outcome": "Engram knows its real build and test times on DL560 and uses DL560 as its preferred runner, with Windows-only coverage kept on Windows",
+  "acceptance": [
+    "A full launcher run (`node scripts/test-launcher.mjs full`) of clean master on DL560 in ~/github/Engram-runner records per-stage times, total time, pass/fail counts and an equal before/after fingerprint, compared against the same commit's or a recent full gate's time on Central",
+    "At least one focused run time on DL560 is recorded (cold and warm build where measured), with the job concurrency that was used",
+    "Any Linux-only failure is filed as its own Engram item; the list of Windows-only tests and checks that must stay on a Windows host is written down",
+    "The result and the runner split (DL560 preferred for Engram, Mac preferred for TermAl) are reported to Greg"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "runner"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

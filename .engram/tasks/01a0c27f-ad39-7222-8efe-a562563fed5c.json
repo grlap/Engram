@@ -1,0 +1,53 @@
+{
+  "id": "01a0c27f-ad39-7222-8efe-a562563fed5c",
+  "external_ref": null,
+  "title": "Remove mandatory policy-change justification end to end",
+  "outcome": "Policy settings change without a human-authored reason or synthetic replacement; remove the associated reason contract rather than retain a legacy path.",
+  "acceptance": [
+    "Policy-change reason is removed from the applicable Engram domain/storage/API/CLI and TermAl settings/request paths, with no hidden automatic reason, deprecated alias, compatibility shim, or fallback.",
+    "Required gates and independent reviews cover changed inputs, with host integration coordinated at explicit source-freeze boundaries; no live-store mutation, install, restart or Git publication is implied.",
+    "Tests and documentation match the reason-free contract while preserving actual completion-policy enforcement, concurrency guards and exact retry behavior; unrelated evaluation rationales and operational refusal reasons remain intact."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-control-plane",
+    "area-host-integration",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed mandatory policy-change justification end to end in Engram and coordinated TermAl source changes, without aliases, autofill or compatibility adapters. Reason-free CLI/docs/website, preserved policy/CAS/replay invariants and historical canonical bytes. Required gates and independent reviews passed; final independent acceptance passed all three criteria. Implementation complete; not committed, installed or live-deployed.",
+    "completed_at": "2026-09-21T07:32:33.851229700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9cbf98f26f3e463da456a9fd197cfbb3": {
+        "activity_id": "9cbf98f26f3e463da456a9fd197cfbb3",
+        "task_id": "01a0c27f-ad39-7222-8efe-a562563fed5c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a44fba7bbdc44b89bb3f3e1cd2e43051"
+      }
+    }
+  }
+}

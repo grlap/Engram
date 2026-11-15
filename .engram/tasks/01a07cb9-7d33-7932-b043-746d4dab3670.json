@@ -1,0 +1,63 @@
+{
+  "id": "01a07cb9-7d33-7932-b043-746d4dab3670",
+  "external_ref": null,
+  "title": "The show window budget charges readers for pretty-printed JSON nobody receives",
+  "outcome": "A record window fits as many rows as the reader will actually be sent, so paging a long history costs the round trips the delivered bytes justify rather than the bytes of a rendering no consumer sees",
+  "acceptance": [
+    "A fixture with realistic multi-kilobyte note bodies shows more rows per page after the change than before, with the page boundary still identical between the JSON and text surfaces",
+    "The fit decision measures the bytes each surface actually delivers: compact structured JSON for MCP callers and rendered text for text mode; pretty-printed JSON is never the measure unless it is what the caller receives"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Show windows fit compact JSON and rendered text, never pretty JSON, and keep identical row counts across surfaces.",
+    "completed_at": "2026-09-14T03:07:01.537372900Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9f47fc796e2853387a312da0e320e8b841de11a3d306e498e14c80b8f1926389": {
+        "activity_id": "9f47fc796e2853387a312da0e320e8b841de11a3d306e498e14c80b8f1926389",
+        "task_id": "01a07cb9-7d33-7932-b043-746d4dab3670",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e36aa9139d64ce008ce1eedea7c4ecd162dfc8b42ecd81cf7df020be4c47164a"
+      },
+      "9f9ae16b1421eb23251d2be093e4a04a125d5f2260f859eff6eebe1f9cd21049": {
+        "activity_id": "9f9ae16b1421eb23251d2be093e4a04a125d5f2260f859eff6eebe1f9cd21049",
+        "task_id": "01a07cb9-7d33-7932-b043-746d4dab3670",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9f9ae16b1421eb23251d2be093e4a04a125d5f2260f859eff6eebe1f9cd21049"
+      }
+    }
+  }
+}

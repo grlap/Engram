@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-4d0a-7121-b372-d9002e6a76cb",
+  "external_ref": null,
+  "title": "Preserve import replay identity when printed session attribution becomes explicit",
+  "outcome": "Preserve import replay identity when printed session attribution becomes explicit",
+  "acceptance": [
+    "Default-session create and notify shell retries with the printed session id return their original receipts and retain original attribution"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Default-to-explicit import retries recover the original create and notify receipts while preserving captured attribution. Rust and real CLI/MCP regressions passed; accepted in correction freeze539037a9 by Fable1563.",
+    "completed_at": "2026-09-08T07:57:17.176751400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "887b7e897bcb342bf1febfa8b4867304a6d92e3ffaa04156cb66016aba03fbbe": {
+        "activity_id": "887b7e897bcb342bf1febfa8b4867304a6d92e3ffaa04156cb66016aba03fbbe",
+        "task_id": "01a07fb9-4d0a-7121-b372-d9002e6a76cb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "99d8d63d70de017d78293a24d5a132d07067a1bcc1702a674ec91cfe66eacb43"
+      }
+    }
+  }
+}

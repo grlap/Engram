@@ -1,0 +1,29 @@
+{
+  "id": "01a18be3-985d-7850-b0ee-c32404f3eb6d",
+  "external_ref": null,
+  "title": "Let the host settle a begun turn whose session it can no longer authenticate (orphaned begun grant)",
+  "outcome": "A begun-but-unsettled turn grant can always be settled through a supported, audited host path, even when the host has lost the session's routing credentials, so no store needs a manual edit and doctor's open-turn warning can clear.",
+  "acceptance": [
+    "A host-only operation, given a session id, a grant id, a reason and an idempotency key but no routing or connection token, settles a grant in state begun: the grant becomes completed, the session exits, and one turn checkpoint event attributed to the host actor records it with no execution evidence; an exact repeat replays, and a grant in any other state is refused with its current state",
+    "The settlement reuses existing record kinds, grant states and control operation names, so a store holding one passes doctor on the build before this change",
+    "The settlement grants no authority: it issues no grant, changes no claim or work binding, records no evidence, and the next turn in any session is evaluated against fresh epochs and fences"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "control-plane",
+    "stability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete on Greg's word (Asistant #239): turn grants are gone, w-5b17f50b5079 sealed 9a697f91, so no begun grant can need settling.",
+  "completion": null
+}

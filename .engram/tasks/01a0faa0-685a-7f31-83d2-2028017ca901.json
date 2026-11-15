@@ -1,0 +1,34 @@
+{
+  "id": "01a0faa0-685a-7f31-83d2-2028017ca901",
+  "external_ref": null,
+  "title": "Portable handoff, stage 1: Git push, clean release and returning pull",
+  "outcome": "Deferred runtime delivery of the first Git handoff proposal after final design concurrence and coordinator scheduling: one project moves A-to-B-to-A with one active writer, native shared history and frozen old stores. User resumed design work, not live-store cutover. Required format conversion and migration go to Greg before live installation.",
+  "acceptance": [
+    "A representative project in disposable repository homes executes manual push, release A, pull B, mutate shared work/memory, release B, and returning pull A. Exactly one writer can mutate throughout, both prior released stores remain preserved, imported full/closure checks pass, and native completed items retain original seals/evidence/ids rather than graph-import completions.",
+    "Two homes that acquire the same released head end with exactly one `active` store, and the other is refused with `portable_diverged` and has enabled nothing; a test in the repository shows it",
+    "A portable store restored from a backup copy is frozen with `portable_instance_missing`, and a `local` project's words behave as before with no target configured; tests in the repository show both",
+    "docs/shipped.md has a row for each shipped portable word, docs/features/portable-handoff.md marks stage 1 as shipped, and the changeset that adds the writer record teaches `migration import` the conversion and names it in its report",
+    "The complete first-version contract includes exact-head Git conformance, useful payload closure, Windows installation crash/namespace durability evidence and demonstrated host admission/drain/identity behavior. No first-version takeover, detach, automatic scheduling or simultaneous cross-host writers; no real deployment claim without the separately approved live-store conversion and actual two-machine exercise."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fa87-21a0-7a71-96de-5627a19713d8"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Portable handoff was replaced before any of it shipped: docs/features/git-task-sync.md says the previous portable writer-epoch and release/acquire design is gone, AGENTS.md says the selected sync uses no global writer lock, writer epochs or release/acquire protocol, and master has no portable code or brief. Its six children are rejected. Cancelled under Greg's word, 43498a6e #683. Nothing here was built or tested.",
+  "completion": null
+}

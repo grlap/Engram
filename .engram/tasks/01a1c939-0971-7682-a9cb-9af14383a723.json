@@ -1,0 +1,66 @@
+{
+  "id": "01a1c939-0971-7682-a9cb-9af14383a723",
+  "external_ref": null,
+  "title": "Re-signal Git's Unix process group before reaping the root, so a process forked while the kill lands is not left running; fail closed when waitid errors",
+  "outcome": "Re-signal Git's Unix process group before reaping the root, so a process forked while the kill lands is not left running; fail closed when waitid errors",
+  "acceptance": [
+    "On every exit path, the Unix runner signals Git's process group again after the first SIGKILL and before it reaps the root, so a process that was mid-fork when the first signal landed is also killed; or the shipped text discloses the remaining macOS gap beside the escape disclosure",
+    "When waitid fails, the runner stops tracking the group before returning the error, so its Drop guard never signals a group id that is no longer reserved",
+    "The task-planning-text disclosure says a GCM cache daemon started in its own session is left running, not only bounded by the deadline, and the Cargo.toml comment names the process group and the root, not the session"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1c8ae-b4d7-7522-8a6c-6bbabe3a062b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The Unix runner now re-signals Git's process group after the first SIGKILL, with a 5 ms pause, and before Tokio reaps the root, on every exit path. Any waitid failure, ECHILD above all, sets group = None before returning, so neither the Drop guard nor root_exited ever signals an unproven group id; this is the fail-closed fix. The docs (session.rs module doc, docs/features/task-planning-text.md) and the Cargo.toml comment disclose the remaining gaps: a member that escapes its session, and members left when the group is not signalled again. New behavior tests are task_exchange_unix_a_failed_observation_never_signals_the_group and the reaped-root escapee test. Candidate 2839f80e258035f0381979ab8b96edfe4a67e9f9 (tree 102fe67e, parent master 9b9a2564) passed a clean review round (Codex 17692 + Claude 17693, freeze 2ad74582); Mac clippy+exchange; DL560 fmt, clippy, exchange, build and FULL test-f82e7072; and the Windows credited run test-e0fb4586. Independent evaluation (delegation b2a15980, Codex session-17711) passed 3/3. Not yet landed; the Merger lands the w-6bba package.",
+    "completed_at": "2026-11-13T01:22:11.039770500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a117135d82a049419660cb513af84b3e": {
+        "activity_id": "a117135d82a049419660cb513af84b3e",
+        "task_id": "01a1c939-0971-7682-a9cb-9af14383a723",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ede87b225413455c9c4c0808d98c5fa8"
+      },
+      "e0855f2f18a24c55b6e3b468cf3af31a": {
+        "activity_id": "e0855f2f18a24c55b6e3b468cf3af31a",
+        "task_id": "01a1c939-0971-7682-a9cb-9af14383a723",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e0855f2f18a24c55b6e3b468cf3af31a"
+      }
+    }
+  }
+}

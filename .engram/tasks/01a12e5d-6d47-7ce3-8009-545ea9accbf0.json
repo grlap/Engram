@@ -1,0 +1,69 @@
+{
+  "id": "01a12e5d-6d47-7ce3-8009-545ea9accbf0",
+  "external_ref": null,
+  "title": "Enable prepared task materialization with owned publication and recovery",
+  "outcome": "Enable prepared task materialization with owned publication and recovery",
+  "acceptance": [
+    "Explicit main-checkout materialization (`engram task-sync setup-materialize`, distinct from the opt-in `enable` setter) consumes the immutable setup intent and B1 selected raw candidate without reserialization or recapture, verifies repository/branch/marker/relevant index/setup/task basis, reports no-op redactor and note/activity/worktree omissions, and refuses restricted, secret or secret-ref task fields with bounded IDs/count/reason and no values before any new state or write.",
+    "It publishes only the declared setup edits and canonical .engram shared paths using retained operation-owned sources and no-clobber file-identity proof, preserves unowned equal or divergent state, supports exact repeat and interruption recovery at every publication boundary including setup replacement, and preserves unrelated private/index/branch/config/SQLite state; owned Windows tests verify concurrent lock loser zero writes, store-write independence, linked refusal and LF/index byte identity under autocrlf/global eol.",
+    "No disable/retire/replace command, sparse enrollment, Git commit/index/network/branch-policy mutation, TermAl relay or durable SQLite/projection change is introduced; replacement primitive obtains Fable/design concurrence before code and any durable-store change is presented to Greg before coding.",
+    "Task sync is optional and off by default for each project: before any new state or write, prepare, materialization, export and import read the Engram-owned per-project opt-in setting (w-4df5868f905a) and refuse for every caller with no write unless it is explicitly enabled; every caller means the supported CLI commands and the shared LocalWorkService preparation, export, import and materialization entrypoints, while pure format readers, B1's inert read, backup and migration stay independent; an absent, invalid or unreadable setting means not enabled; an operation already admitted under its journal finishes or recovers, but a new materialization from a completed setup intent needs current opt-in (Greg's correction relayed by Engram::Advisor, 2026-10-12 #1280)."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a12302-8b0e-7ba1-a0be-79022fc49394",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a12e5d-6c42-7ac0-b7c6-9b4a350c4629",
+    "01a13175-b981-7ee1-9c2d-4df5868f905a"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit setup-materialize from selected immutable setup intent and raw prepared candidate, operation-owned no-clobber publication, exact repeat and admitted process-exit recovery after opt-out. Shared CLI/service opt-in guards fail closed before new state. Full gate PASS, complete Codex/Claude pair noMedium+, independent acceptance4/4pass. All4live storesready; clean release installed and master pushed. Three Low follow-ups filed. Logs-only evidence retention and worktree cleanup follow.",
+    "completed_at": "2026-10-14T05:44:26.604091400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1abe3bc3dc09423895247d8aaaf23e66": {
+        "activity_id": "1abe3bc3dc09423895247d8aaaf23e66",
+        "task_id": "01a12e5d-6d47-7ce3-8009-545ea9accbf0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2ff9088011fd4a0aa5ebb355b9d45b74"
+      },
+      "f77a4b6aeccf4f08886e20d09b940d0a": {
+        "activity_id": "f77a4b6aeccf4f08886e20d09b940d0a",
+        "task_id": "01a12e5d-6d47-7ce3-8009-545ea9accbf0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f77a4b6aeccf4f08886e20d09b940d0a"
+      }
+    }
+  }
+}

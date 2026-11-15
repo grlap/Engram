@@ -1,0 +1,65 @@
+{
+  "id": "01a0fd4c-6e48-7a21-b0c0-4203865d1308",
+  "external_ref": null,
+  "title": "Check-target follow-ups: a timed-out test independent of scheduling, and a zero check deadline reported accurately",
+  "outcome": "Check-target follow-ups: a timed-out test independent of scheduling, and a zero check deadline reported accurately",
+  "acceptance": [
+    "A test covers the outer-deadline branch that classifies a worker which never reached the target as backup_target_unreachable",
+    "The test of a check that reached the target and passed its deadline gives backup_check_timed_out regardless of how long the worker takes to set its reachability milestone, for example because the test waits for the milestone before the deadline can matter, or uses a margin of seconds",
+    "`engram backup status --check-target --check-deadline-secs 0` is refused before any work, or reports that no check was started, rather than backup_target_unreachable for a target it never contacted; a test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The check-target timeout test is now deterministic. A test-only before_classify hook waits for the worker's milestone, and push's Transport is unchanged. A new before_reach test shows that a worker which never reached the target reads backup_target_unreachable. `--check-deadline-secs 0` is now a usage error (exit 2) refused before resolution; a direct caller passing zero gets backup_target_unconfirmed with \"no request was started\". Docs in cli-and-mcp.md and shipped.md. Landed as fa4ade3 on 38a387d: gate test-0f42e1dd passed, the round-3 pair was clean (Codex 10044, Claude 10045), and independent evaluation passed 3/3. Readiness was ready on all 4 stores; build 2b324924a97a is installed.",
+    "completed_at": "2026-10-03T03:09:47.302302800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2598804013c446068c5a359e391dcdf1": {
+        "activity_id": "2598804013c446068c5a359e391dcdf1",
+        "task_id": "01a0fd4c-6e48-7a21-b0c0-4203865d1308",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "20224a38a0b94d9f97848029d866dcd2"
+      },
+      "525ac82a3e6b4a0f9bc850a8f5e3f0b2": {
+        "activity_id": "525ac82a3e6b4a0f9bc850a8f5e3f0b2",
+        "task_id": "01a0fd4c-6e48-7a21-b0c0-4203865d1308",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cb2cf82b0f2a4c879fb0664cdaec67ed"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1a799-d632-7103-a540-6c3df624d817",
+  "external_ref": null,
+  "title": "Refuse contradictory quiet Git sightings for new citation-selected evaluations",
+  "outcome": "Refuse contradictory quiet Git sightings for new citation-selected evaluations",
+  "acceptance": [
+    "A registered check on git-commit:X followed by an accounted same-root quiet sighting of git-commit:Y cannot let a new citation-selected evaluation declare X and seal; pre-cut and post-cut regressions name the actual source refusal.",
+    "The prospective correction preserves the recorded interpretation, canonical bytes and exact replay of all existing evaluations and completed seals; quiet content-v1 sightings remain distinct from Git identity.",
+    "Positive controls accept unchanged exact Git input and retain existing source-change, root, run, claim and evidence-cut protections."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

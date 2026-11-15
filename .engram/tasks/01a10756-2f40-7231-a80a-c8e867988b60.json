@@ -1,0 +1,51 @@
+{
+  "id": "01a10756-2f40-7231-a80a-c8e867988b60",
+  "external_ref": null,
+  "title": "MCP schema-rejected arguments from a wrong type or an unknown action name the field they concern",
+  "outcome": "MCP schema-rejected arguments from a wrong type or an unknown action name the field they concern",
+  "acceptance": [
+    "In ordinary engram mcp, a tool call whose argument has the wrong type (for example next with peek set to a string) or an action word that does not exist is refused with text that names the offending field (for example `peek` or `action`), not only the bad value or the expected type; a real-stdio test pins the field name for both cases",
+    "The rejection still reaches no word and keeps isError true; the docs, MCP instructions and engram-use skill describe the delivered wording without promising more"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "In ordinary engram mcp, an argument refused for a wrong type, an unknown action or an undeclared field now names its field (a nested one by path) after the unchanged \"failed to deserialize parameters:\" prefix, still an isError text result before any word runs; an Engram-local Parameters extractor uses serde_path_to_error 0.1.20 and keeps tools/list byte-identical. Landed in ca558a5.",
+    "completed_at": "2026-10-04T19:24:33.703143500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4d10e34e88114bea89f35b94da1afe6e": {
+        "activity_id": "4d10e34e88114bea89f35b94da1afe6e",
+        "task_id": "01a10756-2f40-7231-a80a-c8e867988b60",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5a0f6ec6ee0340b793ef2524afd2d8a5"
+      }
+    }
+  }
+}

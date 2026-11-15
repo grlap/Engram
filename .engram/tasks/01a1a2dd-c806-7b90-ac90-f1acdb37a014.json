@@ -1,0 +1,31 @@
+{
+  "id": "01a1a2dd-c806-7b90-ac90-f1acdb37a014",
+  "external_ref": null,
+  "title": "Accept test results from a remote runner through a host-qualified admission contract",
+  "outcome": "Accept test results from a remote runner through a host-qualified admission contract",
+  "acceptance": [
+    "A remote test result is admitted only as TermAl's K3 remote_verification_record_v1 completion: admission checks the coordinating store's current claim, fence and named root for the item and the exact commit and tree, keeps committed_input and landing_gate uses distinct, and refuses on any mismatch",
+    "Remote results stay distinct from local ones in the stored record and in show output: the evidence is attributed to the executing host, nothing implies the coordinating host ran the checks, and no local registered host run is fabricated for it",
+    "A remote result whose claim, fence, root, commit or tree doesn't match the current association is refused by name with no write, and an unadmitted remote run remains observable without credit",
+    "Existing local registered verification, its tests and its stored records are unchanged",
+    "The contract is agreed with TermAl's coordinator against K3's final contract and TermAl w-5e2f3fba987a's reconciled design, and the shipped docs describe it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a18a37-54d7-7bb0-af92-180d6f507470",
+  "disposal_reason": "Duplicate, filed by me on 11-03 without checking. w-180d6f507470 (rev 7, ready, prerequisite B w-da8c79e5d5ab completed) already holds the agreed remote_verification_record_v1 contract, and its acceptance covers everything here: origin kept distinct, no fabricated local run, named reasons with no write, local behaviour unchanged. The live admission work continues there.",
+  "completion": null
+}

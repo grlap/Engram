@@ -1,0 +1,55 @@
+{
+  "id": "01a0fae1-43c1-7680-85d6-6438e003e085",
+  "external_ref": null,
+  "title": "execution_observe landing A: record and audit, accounting refused",
+  "outcome": "The host-private execution_observe operation records an unadmitted turn, an inter-turn workspace change or an observed check as an attributed, audit-only fact that never reads as authority or credit; accounting requests are refused until the accounting landing.",
+  "acceptance": [
+    "A policy_basis of account_if_eligible is refused with the typed execution_observation_accounting_unavailable error and no effects; malformed or oversized requests and bases the store does not hold are refused whole with typed errors and no effects (storage::work::unadmitted and host tests)",
+    "Doctor and migration export/import accept the new record kind and its receipt, and doctor refuses a forged receipt or record (tests in storage::work::unadmitted::tests::doctor)",
+    "No such record creates or implies a grant, a begin transition, a successful turn status, a claim renewal, a session phase change or an obligation. Every check in it is uncredited, and it cannot be cited as evaluation evidence or linked at completion. Every reader that shows it (next deltas, show --observations) marks it unadmitted, with causality unknown unless the host asserted it (tests in storage::work::unadmitted)",
+    "The host-private protocol has an execution_observe operation recording an observed-but-unadmitted turn, an inter-turn workspace change or an observed check with no grant. It names the observing host session separately from any actor claimed to have caused the effects, and carries an explicit observed interval or baseline and the exact run, claim and named-root basis, checked against the store's history at the capture cut (tests in storage::work::unadmitted)",
+    "The operation is idempotent under a host-supplied key: an identical retry, including after reconnection by the same session, returns the same receipt, and a changed payload under the same key is a typed conflict with nothing recorded (tests in storage::work::unadmitted)",
+    "behavioral-control-plane.md and cli-and-mcp.md document the operation's wire shape, including that accounting is refused in this build"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa18-803f-77e2-bd4c-deb297425d29",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "execution_observe landing A, audit only. The host-private operation records an unadmitted turn, an inter-turn change or an observed check against an exact claim binding and the root basis at a run-feed cut, checked against history at that cut whoever held the claim. It never creates a grant, begin, turn status, claim renewal, phase change or obligation, and its checks are uncredited and uncitable. Decoding is strict at every depth; inputs are bounded (64 KiB) and receipts (16 KiB); idempotent replay; account_if_eligible is refused with a typed error. Doctor, integrity and migration know the kind; next and show --observations label it unadmitted with cause and uncredited checks, under an escape-aware display bound. Four review rounds; round 4 is clean from both reviewers. Gate test-52da237d passed; the independent evaluation passed 6/6; readiness is ready on all 4 stores.",
+    "completed_at": "2026-10-02T05:24:33.000432600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "605047bac5ea4c4788d0b9552304c901": {
+        "activity_id": "605047bac5ea4c4788d0b9552304c901",
+        "task_id": "01a0fae1-43c1-7680-85d6-6438e003e085",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "67dbe4531217450795e3a6c6ee21bcce"
+      }
+    }
+  }
+}

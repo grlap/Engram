@@ -1,0 +1,27 @@
+{
+  "id": "01a122fa-f985-7362-b8d8-50ddae54ce34",
+  "external_ref": null,
+  "title": "Align diagnostic uncorrelated reasons with quarantine behavior",
+  "outcome": "Align diagnostic uncorrelated reasons with quarantine behavior",
+  "acceptance": [
+    "Documentation accurately describes the reasons emitted for capacity-dropped keys and handler starts whose cancellation token is already cancelled."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

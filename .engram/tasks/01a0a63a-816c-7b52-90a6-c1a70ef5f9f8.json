@@ -1,0 +1,41 @@
+{
+  "id": "01a0a63a-816c-7b52-90a6-c1a70ef5f9f8",
+  "external_ref": null,
+  "title": "Document per-import completion reexpression report count",
+  "outcome": "Explain the distinction between new completion rewrites and preserved historical completion audits in migration import reports.",
+  "acceptance": [
+    "The migration brief explicitly states reexpressed_completion_results counts rewrites performed by this import; Current may report zero while prior audits remain preserved in migration_reexpressed_results."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "deferred",
+    "docs",
+    "review",
+    "stream-upgrade-closure"
+  ],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-242d-7c20-a86e-4d65a5faf8a2",
+      "kind": "manual",
+      "detail": "Greg explicitly deferred this documentation follow-up for later. Awaiting scheduling/reactivation; cleanup does not assert the missing explanation is written.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:05.473852400Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete: neither reexpressed_completion_results nor migration_reexpressed_results exists in the current migration implementation or brief (src/storage/migration.rs, docs/features/full-store-migration.md); documenting the removed counters would misdescribe the shipped format. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null
+}

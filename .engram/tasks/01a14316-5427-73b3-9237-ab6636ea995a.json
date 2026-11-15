@@ -1,0 +1,63 @@
+{
+  "id": "01a14316-5427-73b3-9237-ab6636ea995a",
+  "external_ref": null,
+  "title": "Windows exchange config-capture fixture hits Err(Deadline) under load in the full lib suite",
+  "outcome": "Windows exchange config-capture fixture hits Err(Deadline) under load in the full lib suite",
+  "acceptance": [
+    "The Err(Deadline) of task_exchange_windows_config_capture_and_drift_never_run_unsupported_helpers (src/task_sync/exchange/tests/windows.rs:330, phase 'URL rewrite') is diagnosed with the evidence available: the number of sequential Git launches configuration_fixture runs under its single RunLimits::default() 30 s supervisor, and their measured quiet timing, recorded against the failing run's load.",
+    "The fixture passes reliably in full gates under the project's normal concurrent workload without loosening what it proves (owned configuration capture and drift never run unsupported helpers), e.g. by bounding its launch workload as the policy groups were bounded; no retry-until-green and no skip."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bound the Windows configuration-capture fixture into two fresh sequential groups of 25 and 27 Git launches under unchanged default supervisors, retaining all owned-configuration, helper-sentinel, drift, snapshot and refusal assertions. Diagnosed original aggregate deadline failure with the retained failure and one coordinated unchanged-fixture baseline. Full gate passed on exact reviewed tree; independent evaluation passed both criteria; all five live stores ready with installed clean release.",
+    "completed_at": "2026-10-16T18:22:15.545383400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8ddd64c8a49d4e60b250d4505c2ffd81": {
+        "activity_id": "8ddd64c8a49d4e60b250d4505c2ffd81",
+        "task_id": "01a14316-5427-73b3-9237-ab6636ea995a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8ddd64c8a49d4e60b250d4505c2ffd81"
+      },
+      "efaddd2d9f55458ab9a9189b5b5bb93b": {
+        "activity_id": "efaddd2d9f55458ab9a9189b5b5bb93b",
+        "task_id": "01a14316-5427-73b3-9237-ab6636ea995a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e3e893b204e9486495277eeb7bd7936c"
+      }
+    }
+  }
+}

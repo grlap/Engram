@@ -1,0 +1,28 @@
+{
+  "id": "01a1c9e4-10e2-7bb2-8d1d-4134d5a2882b",
+  "external_ref": null,
+  "title": "Preserve search readability when applying planning successors",
+  "outcome": "Successor revisions and blockers preserve the supported search-readability contract, or have an explicitly documented and behavior-tested exemption.",
+  "acceptance": [
+    "Oversized incoming successor revisions and blocker details either refuse with a supported typed result before mutation or remain readable by search under a documented supported contract.",
+    "Behavioral coverage exercises both oversized paths and ordinary valid successors without bypassing native admission semantics."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

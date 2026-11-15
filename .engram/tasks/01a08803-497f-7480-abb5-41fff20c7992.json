@@ -1,0 +1,52 @@
+{
+  "id": "01a08803-497f-7480-abb5-41fff20c7992",
+  "external_ref": null,
+  "title": "Admit a complete 256-task plan beneath one root",
+  "outcome": "Admit a complete 256-task plan beneath one root",
+  "acceptance": [
+    "A flat and nested 256-task single-root plan commits atomically and exact retry after restart returns its complete mapping",
+    "Documentation and surfaces state the new shared limit; quality gates and review pass before authorized commit push and sync",
+    "Large single-root admission retains measured decode bounds, bounded ordinary receipts and canonical graph health",
+    "Shared live planning and graph restore enforce 255 open descendants at the exact boundary and reject one more without writes; terminal descendants do not consume the open budget"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered atomic plans up to256tasks including one complete root tree,1024edges,1MiB typed input and64KiB complete mapping with2MiB raw CLI bound. Shared255open-descendant boundary is enforced by live planning and graph restore; ordinary decomposition16anddepth4 remain unchanged. Flat/nested admission, restart replay, boundary refusals, canonical health and decode budgets tested. Both reviewers completed; all eight findings closed with four intentional negative controls. All nine final gates passed. Plan-only Git commit/push/sync is next under existing user authority; bootstrap docs excluded and no installation.",
+    "completed_at": "2026-09-09T23:14:11.978588900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "de9640fbb163bcd93fda535636ca2ebcd9842e2376dfa41f0c0fec111ec9e5ce": {
+        "activity_id": "de9640fbb163bcd93fda535636ca2ebcd9842e2376dfa41f0c0fec111ec9e5ce",
+        "task_id": "01a08803-497f-7480-abb5-41fff20c7992",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4032be7d6ab66965176e7e2e329c015ec8f48e49edc5a914669bda852200eddb"
+      }
+    }
+  }
+}

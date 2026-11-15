@@ -1,0 +1,28 @@
+{
+  "id": "01a10d48-90e5-7d11-b0c1-1fa9411b022a",
+  "external_ref": null,
+  "title": "Narrow or reword the check_predates_unadmitted_change bind refusal, and test a bind beside an unadmitted change the check follows",
+  "outcome": "Narrow or reword the check_predates_unadmitted_change bind refusal, and test a bind beside an unadmitted change the check follows",
+  "acceptance": [
+    "The acceptance-evaluation doc and the enum doc state exactly when check_predates_unadmitted_change refuses: it refuses a target where the check could satisfy no bound criterion and would stand as the run's newest check of its kind, and a watcher-only unadmitted change with no located source always counts. Alternatively, the refusal is narrowed to targets that have a criterion bound to that check kind, and the docs say so.",
+    "A test binds a target whose run holds an accounted unadmitted change recorded before the original check completed and asserts it binds and satisfies that change's obligation; a second case with the change outside the target's named root also binds."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete: it asked to narrow or reword the check_predates_unadmitted_change refusal on verification bind. Bind writes were retired in 3f76e392, and that refusal no longer appears in non-test src on master 7921ea87 (read-only triage by Engram::Fable, 2026-11-09). Closed under Greg's rule on senseless tasks (rules-greg-close-senseless-tasks-2026-11-08).",
+  "completion": null
+}

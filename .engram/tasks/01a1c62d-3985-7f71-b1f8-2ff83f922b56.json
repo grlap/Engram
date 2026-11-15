@@ -1,0 +1,28 @@
+{
+  "id": "01a1c62d-3985-7f71-b1f8-2ff83f922b56",
+  "external_ref": null,
+  "title": "Keep echoed native originals qualified by their native producing origin",
+  "outcome": "Keep echoed native originals qualified by their native producing origin",
+  "acceptance": [
+    "Identical native originals admitted through foreign packs cannot replace native export origin qualification; conflicting origins refuse or remain inert with accurate native precedence.",
+    "Cross-store echo-and-onward-capture regression preserves original IDs/bytes and foreign-only partition behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

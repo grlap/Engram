@@ -1,0 +1,76 @@
+{
+  "id": "01a110a1-92d3-77d3-ada2-fbc931f1b6ac",
+  "external_ref": null,
+  "title": "A stale-evaluation refusal decided by an accounted unadmitted change at the declared revision reads as if the content changed",
+  "outcome": "When an accounted unadmitted change after the evaluated cut decides that an evaluation is stale, the refusal names that cause, the deciding observation, both revisions whether equal or not, and the remedy of a fresh evaluation, instead of reporting a mutation as if the content had changed; the unadmitted barrier itself is unchanged",
+  "acceptance": [
+    "When the deciding finding for a stale acceptance evaluation is an accounted unadmitted source change after the evaluated cut, the done refusal and the evaluation status name that cause (an unadmitted source change after the evaluation's cut, not a content mutation), the deciding observation, the observation's revision and the evaluation's declared revision whether they are equal or differ, and the remedy of requesting a fresh evaluation; a test covers the equal-revision case and the differing-revision case",
+    "The unadmitted barrier is unchanged: an accounted unadmitted change after the cut still voids the evaluation even at the declared revision, and every existing freshness, reroll, citation and named-root test stays green"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "evidence"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "An acceptance evaluation voided by an accounted source change the host observed without admission now reads stale with reason unadmitted_change instead of mutation; the barrier is unchanged (such a change still voids the evaluation whatever revision it reports, the declared one included). The deciding observation carries whether a turn admitted it; the status and done sentence name the cause, the observation, both revisions (saying whether they are the same) and the fresh-evaluation remedy; the show/next/evaluations/record-detail line ends with that remedy; the admission refusal for a resubmission at the old cut says the same; the docs list the new reason with its recovery and split B20 into the admitted and the unadmitted case. Tests cover the equal and the differing revision on the status, the refusal, done and every show surface, the whole-value revision comparison, and the refusal bound with the longer wording; reroll and citation floors unchanged and still asserted. Two review rounds on ab55fda (22185d29 with one Medium fixed, a9fe87cd clean at Medium+, one Low filed as w-1334bf37d97e); full gate test-dfb40cc6 passed on a9fe87cd; evaluation a4870beb4bd24db78748e2be2a765b22 passed 2/2; readiness x4 ready; installed build 2440dc17cd2d8b3a832eb36e7c255ac1cb79ca2152838734281133d5e1e520f2 (backup engram-20261006T150643Z-245439738e5f.exe); landed as 3f3f24b. The barrier-narrowing design question is the deferred item w-95ecd29ce300.",
+    "completed_at": "2026-10-06T15:07:20.495205600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7172519351f04c0ea621e1be8c71a263": {
+        "activity_id": "7172519351f04c0ea621e1be8c71a263",
+        "task_id": "01a110a1-92d3-77d3-ada2-fbc931f1b6ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7172519351f04c0ea621e1be8c71a263"
+      },
+      "c0940fe10a5c42369de945c75e025412": {
+        "activity_id": "c0940fe10a5c42369de945c75e025412",
+        "task_id": "01a110a1-92d3-77d3-ada2-fbc931f1b6ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "61523a58914e4f04ab5ab8f1a5471222"
+      },
+      "e7df72b95a3e42648569b8aeb8ed767f": {
+        "activity_id": "e7df72b95a3e42648569b8aeb8ed767f",
+        "task_id": "01a110a1-92d3-77d3-ada2-fbc931f1b6ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e7df72b95a3e42648569b8aeb8ed767f"
+      }
+    }
+  }
+}

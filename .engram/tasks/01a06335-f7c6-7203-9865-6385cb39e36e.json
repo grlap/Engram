@@ -1,0 +1,49 @@
+{
+  "id": "01a06335-f7c6-7203-9865-6385cb39e36e",
+  "external_ref": null,
+  "title": "done calls a cancelled required child Open and suggests claiming it",
+  "outcome": "The completion reminder names the child's real lifecycle (cancelled or superseded) and the exact waiver command",
+  "acceptance": [
+    "a test proves that done on a parent with a cancelled required child prints the cancelled lifecycle and a runnable waiver command instead of 'Open' and 'claim'"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completion refusal now names the disposed child's actual lifecycle and supplies the exact runnable agent waiver command.",
+    "completed_at": "2026-09-03T17:01:08.456155400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "426184f67b2324a181e5310c7f846cafb164710b655b6fe61c2b17aebccdcc43": {
+        "activity_id": "426184f67b2324a181e5310c7f846cafb164710b655b6fe61c2b17aebccdcc43",
+        "task_id": "01a06335-f7c6-7203-9865-6385cb39e36e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ee08a11413f14f30288efba82011d5a32e25fb599279710628a3f9cb47992446"
+      }
+    }
+  }
+}

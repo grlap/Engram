@@ -1,0 +1,29 @@
+{
+  "id": "01a13455-3729-7982-8463-4e116b8d2a6d",
+  "external_ref": null,
+  "title": "Assert relative Git-directory output in the outside-directory setup regression",
+  "outcome": "Assert relative Git-directory output in the outside-directory setup regression",
+  "acceptance": [
+    "The ordinary-Git-directory regression asserts raw rev-parse --git-dir and --git-common-dir outputs are relative before setup runs from an outside directory, so an absolute-output fixture change cannot silently remove relative-join coverage.",
+    "The strengthened regression and required repository checks pass on its reviewed input."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "git-task-sync",
+    "review",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

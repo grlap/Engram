@@ -1,0 +1,57 @@
+{
+  "id": "01a14a8a-478b-7c32-a351-781d92d4682f",
+  "external_ref": null,
+  "title": "Attribute and correct the original backup Copy deadline overrun",
+  "outcome": "Attribute and correct the original backup Copy deadline overrun",
+  "acceptance": [
+    "An attributed recurrence trace or deterministic reproduction identifies the blocking Copy substep and the relevant SQLite or filesystem behavior behind the original 7.636021-second capture; separate measured evidence from hypotheses and the already corrected busy-handler overshoot.",
+    "Correct the demonstrated cause and verify backup::tests::capture_deadline_bounds_a_wait_for_a_locked_store with its existing 1500 ms deadline and unchanged less-than-five-second assertion, without skipping or loosening it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "backup",
+    "gate"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "5e35ab54868b4cbeafe4d9fd5cc4a846": {
+        "activity_id": "5e35ab54868b4cbeafe4d9fd5cc4a846",
+        "task_id": "01a14a8a-478b-7c32-a351-781d92d4682f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "3474ea0ee91c482bb47b3d0163b25dbd"
+      },
+      "da9c862f5df74ab289deb0839ac243c9": {
+        "activity_id": "da9c862f5df74ab289deb0839ac243c9",
+        "task_id": "01a14a8a-478b-7c32-a351-781d92d4682f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "940c726aabd641e6960be64eb66ee17b"
+      }
+    }
+  }
+}

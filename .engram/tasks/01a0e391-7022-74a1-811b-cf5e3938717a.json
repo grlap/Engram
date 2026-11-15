@@ -1,0 +1,72 @@
+{
+  "id": "01a0e391-7022-74a1-811b-cf5e3938717a",
+  "external_ref": null,
+  "title": "Remove the environment pin from verification requirements until a consumer needs one",
+  "outcome": "Verification requirements no longer carry an environment pin. Every decoder refuses the member by name, and environment evidence stays recorded and linked from verifications.",
+  "acceptance": [
+    "A read-only structural scan, repeated at landing, of every durable payload that can hold a requirement (bindings, obligations, policy rule sets, seals, replay and receipt payloads) in all three live stores (Engram, Phoenix and TermAl) shows that none carries the member, so no migration is needed; readiness with the new build reports each store ready. Before EnvironmentMismatch is deleted, retained history is shown never to carry it. The docs that described environment pins are updated.",
+    "Environment evidence stays recorded and linked from verifications, with the same-run and same-revision checks unchanged. check_fingerprint pins behave as before, and a test shows that detach keeps them on the successor. Removed with the field: the detach environment refusal, its advisory, and the environment-pin prioritisation in focus and evidence selection. The verification-to-environment evidence closure is kept.",
+    "The required gates and both reviews pass.",
+    "VerificationRequirement has no required_environment. Every decoder of a requirement refuses a `required_environment` member, both with a value and as explicit null, and none drops it silently. Core root, decompose and update JSON, the operator rule-set JSON (whose member and conversion are removed), policy admission of a stored rule set, and a stored durable object such as a WorkObligation each refuse it naming the member. Migration import refuses the whole store without publishing it when a record the doctor verifies carries the member (an obligation, a work event, a work item, or a rule set a policy selects); its refusal names both that record and the member, and never repeats a cell value. A replay receipt, which the doctor does not decode (tracked separately), refuses the member when it is replayed. There is one test per entry point, covering absent, null and value. Graph snapshots carry no requirement at all (a test shows the snapshot format names none), so snapshot load decodes none and its format is unchanged."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 2,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Verification requirements no longer carry an environment pin.\n- c17c9a6 removed required_environment and EnvironmentMismatch. Every requirement decoder refuses the member by name. Environment evidence stays recorded and linked from verifications, and detach keeps check pins on the successor.\n- 481e5ce added the replay tests: each stored receipt or protocol result that carries a requirement refuses the member when replayed.\n- Round 6 passed the full gate test-c8053513, with both reviews clean. Readiness was ready on all three stores. Structural scans found no stored environment pin, before the deletion and at both landings.\n- Independent evaluation bb92f6b3 at basis 372 passed all four criteria.\n- Three obligations were waived by attributed reason on Engram::Fable's decisions, each disclosing a host recording mismatch:\n  - pos 2 (the criterion-2 binding) and pos 106: the foreign-workspace sighting, w-3b387b7ae50f;\n  - pos 235: edits in turns TermAl never recorded, PI-31 / w-df1ef323efe9.\n- Follow-ups: w-e5903e0a3246 (name the member on completion replay) and w-dd9586892254 (import and the doctor decode replay receipts).",
+    "completed_at": "2026-09-28T07:01:37.182709900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "82ce28a866cc4bdebc8488bce0abb54b": {
+        "activity_id": "82ce28a866cc4bdebc8488bce0abb54b",
+        "task_id": "01a0e391-7022-74a1-811b-cf5e3938717a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "33d7aebdd4cd479fa2716f4b862baa72"
+      },
+      "9b17b815ae3e45ae825507f3ccb1e2c8": {
+        "activity_id": "9b17b815ae3e45ae825507f3ccb1e2c8",
+        "task_id": "01a0e391-7022-74a1-811b-cf5e3938717a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f8db276d8b1742109852caed17e85475"
+      }
+    }
+  }
+}

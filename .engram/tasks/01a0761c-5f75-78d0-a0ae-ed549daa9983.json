@@ -1,0 +1,51 @@
+{
+  "id": "01a0761c-5f75-78d0-a0ae-ed549daa9983",
+  "external_ref": null,
+  "title": "One-word rejection of a required child: update CHILD --reject REASON cancels it and records the parent's waiver atomically; done shows its acceptance assertion",
+  "outcome": "One-word rejection of a required child: update CHILD --reject REASON cancels it and records the parent's waiver atomically; done shows its acceptance assertion",
+  "acceptance": [
+    "a successful done receipt states in text and JSON how many current acceptance criteria the completion asserted as satisfied and that no criterion was changed by the completion; the skills document reject beside cancel and waive",
+    "update CHILD --reject REASON (MCP update action reject) performs, in one audited write, the child's cancel with that reason and — when the child is required under an Open parent the caller may waive for — the parent's required-child waiver carrying the same reason; optional or unwaivable shapes refuse with the typed remedy naming the two-word path; existing transitions, authority checks, seals and evidence untouched; the receipt names both effects"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "pilot",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed atomic required-child rejection and seal-bound done acceptance disclosure. Both Medium corrections and narrow folds accepted by the pair; parent and independent coordinator gates passed. Coordinator installed and smoke-tested the landed build. Keyless retry and carried docs clarification remain separately owned.",
+    "completed_at": "2026-09-06T20:31:26.856749300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a61b7e9f45ebc7ce5843639905b28efa12c1a6902f95c2b1001bd2307de3595a": {
+        "activity_id": "a61b7e9f45ebc7ce5843639905b28efa12c1a6902f95c2b1001bd2307de3595a",
+        "task_id": "01a0761c-5f75-78d0-a0ae-ed549daa9983",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2b5c7c0a52caa7673d311d66dbefbb842249d4afa2dea8b10d382c047f80f46e"
+      }
+    }
+  }
+}

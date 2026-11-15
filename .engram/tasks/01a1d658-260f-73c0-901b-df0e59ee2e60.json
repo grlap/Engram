@@ -1,0 +1,29 @@
+{
+  "id": "01a1d658-260f-73c0-901b-df0e59ee2e60",
+  "external_ref": null,
+  "title": "Refuse a work handoff offer whose target the intended session cannot accept, instead of leaving a visible but unacceptable offer",
+  "outcome": "Refuse a work handoff offer whose target the intended session cannot accept, instead of leaving a visible but unacceptable offer",
+  "acceptance": [
+    "An offer addressed to a target that does not resolve to an Engram session principal able to accept it is refused at offer time with a message naming the expected target form",
+    "When an offer is visible to a session, accept from that session either succeeds or names exactly why that session is not the offer's target",
+    "A test reproduces the 2026-11-13 case (offer addressed to a TermAl host-qualified session id) and proves both behaviours"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-surface",
+    "handoff"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

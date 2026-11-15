@@ -1,0 +1,51 @@
+{
+  "id": "01a07010-171f-7392-b411-0cd01caf5942",
+  "external_ref": null,
+  "title": "Preserve initial-note feed order through graph snapshot round trips",
+  "outcome": "Preserve initial-note feed order through graph snapshot round trips",
+  "acceptance": [
+    "Distinct same-timestamp initial notes with runtime-derived hash order opposite to input retain their dense root-feed order after save, load, and full-note show; existing inherited generation ordering stays intact."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06f14-bcc9-73d3-b295-c22bea35567e",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved project-feed note order across save/load with a passing same-timestamp regression.",
+    "completed_at": "2026-09-05T05:48:24.511146100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8fd4892c3354c4252044b657f99ec6be7010a114da5be1b23cd1f6a1ac6e75ad": {
+        "activity_id": "8fd4892c3354c4252044b657f99ec6be7010a114da5be1b23cd1f6a1ac6e75ad",
+        "task_id": "01a07010-171f-7392-b411-0cd01caf5942",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "44f02aad6187c147cdce1f66b8754a7f58ce966edd1bab22a2968df50bd2e559"
+      }
+    }
+  }
+}

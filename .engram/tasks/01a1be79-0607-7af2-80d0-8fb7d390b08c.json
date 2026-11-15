@@ -1,0 +1,30 @@
+{
+  "id": "01a1be79-0607-7af2-80d0-8fb7d390b08c",
+  "external_ref": null,
+  "title": "Accept remote verification on an unchanged named root after claim recovery or handoff",
+  "outcome": "Accept remote verification on an unchanged named root after claim recovery or handoff",
+  "acceptance": [
+    "A remote result associated with the current claim after same-holder or successor recovery, renewal or handoff accepts the unchanged named root using the existing release-aware lookup.",
+    "Moved, ended, wrong workspace/generation, stale binding and released-without-re-name associations remain refused; explicit clear authority is unchanged.",
+    "Focused remote-verification regressions cover current-fence success and preserved refusals."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "remote-verification",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

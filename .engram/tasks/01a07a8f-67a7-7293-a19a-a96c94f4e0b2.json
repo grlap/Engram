@@ -1,0 +1,52 @@
+{
+  "id": "01a07a8f-67a7-7293-a19a-a96c94f4e0b2",
+  "external_ref": null,
+  "title": "Explicit reads do not require focus or session writes",
+  "outcome": "Explicit reads do not require focus or session writes",
+  "acceptance": [
+    "read_contention_explicit_reads_preserve_focus_and_staged_delivery_under_writer passes",
+    "read_contention_fresh_process_read_defers_session_registration passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07a21-e397-7ed1-b935-a7a498504052",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed: targeted reads use one committed read snapshot without focus or registration writes. Real held-writer tests cover all read modes, catalog and project memories; full database rows, session staging and claims stay unchanged. First later stateful operation still registers.",
+    "completed_at": "2026-09-07T08:12:20.789594600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4e2c72e630aee4529453c1a5cfbaef734373cec3da2ced220dc1ba9d77984302": {
+        "activity_id": "4e2c72e630aee4529453c1a5cfbaef734373cec3da2ced220dc1ba9d77984302",
+        "task_id": "01a07a8f-67a7-7293-a19a-a96c94f4e0b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7e3bd6b53b8d20fecc3cd582ebfcd195fffcac2db6daf4baa25d882bca4a7dc2"
+      }
+    }
+  }
+}

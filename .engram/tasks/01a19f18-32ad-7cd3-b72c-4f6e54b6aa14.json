@@ -1,0 +1,52 @@
+{
+  "id": "01a19f18-32ad-7cd3-b72c-4f6e54b6aa14",
+  "external_ref": null,
+  "title": "Find why rustc crashed with STATUS_ACCESS_VIOLATION on the Windows B runner, so its gates are trustworthy again",
+  "outcome": "Find why rustc crashed with STATUS_ACCESS_VIOLATION on the Windows B runner, so its gates are trustworthy again",
+  "acceptance": [
+    "The cause of the rustc 0xc0000005 crash in focused run test-216cbdca-f465-4d96-b28c-5e40dfab5e9b on Windows B is classified with evidence (memory, disk, antivirus or file locking, toolchain corruption, concurrent build, or other)",
+    "Windows B completes one fresh focused compile-and-test of a known-good input without a compiler crash, or the runner is taken out of the rotation with the reason recorded",
+    "No toolchain or global configuration is changed on Windows B without Greg's explicit word"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "environment",
+    "remote-runner"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Classified with evidence: one unreproduced rustc 0xc0000005 crash, cause unknown. Windows B's event logs (Application, WER, WHEA, disk, Defender) for 01:30–02:00Z hold nothing, there was enough memory and disk, there was no concurrent build, and the toolchain is rustc 1.99.1. A fresh compile-only canary of the same lib-test target on 204398e passed (test-46ed860a, 148.5 s, input unchanged), so Windows B is back in the rotation. No toolchain or global change was made. Greg's consent (Asistant #127) is held for a toolchain reinstall if the crash recurs, under a standing instruction to the runner.",
+    "completed_at": "2026-11-03T07:34:39.987287Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "48a3d0e5cf3c4931940f6438154216cd": {
+        "activity_id": "48a3d0e5cf3c4931940f6438154216cd",
+        "task_id": "01a19f18-32ad-7cd3-b72c-4f6e54b6aa14",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "818ce9aa3aa64cdaac9b138fa8805c97"
+      }
+    }
+  }
+}

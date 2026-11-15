@@ -1,0 +1,53 @@
+{
+  "id": "01a1cab9-6f4b-71b1-936d-47774f72d995",
+  "external_ref": null,
+  "title": "Keep custody-audit Git queries within the sixty-second minimum",
+  "outcome": "New task-sync custody audit paths honor the shared minimum abort allowance and bounded warning policy without changing custody or recovery semantics.",
+  "acceptance": [
+    "Every new custody-audit Git query reachable through task-sync custody-audit, including audit.rs, audit/data.rs and audit/orphan.rs, uses an allowance of at least sixty seconds for a fresh operation, preserves any already-admitted absolute remaining deadline, and retains the bounded non-interrupting ten-second warning.",
+    "Behavioral regression evidence exercises the affected audit-query path beyond the old thirty-second boundary and verifies the applicable deadline plus unchanged custody refusal, rollback and exact retry behavior; the focused checks and independent acceptance evaluation pass on the delivered clean candidate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review-follow-up",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Changed the three fresh custody-audit Git query allowances from 30 seconds to the shared 60-second minimum, preserving the existing single non-interrupting 10-second warning and admitted internal deadlines. Delivered clean candidate dc3ba34319d1e44d04386b6537a2d7d7e5820d6f, tree 723b80f86ae069be8f14854bfb75dddbbe442714, on AF74. Real-query RED/GREEN exercises incoming canonical Prepared, incoming data bootstrap and abandoned-carrier Git selections with controlled pending polls: 31 seconds succeeds, 61 seconds refuses without changing canonical state, private witness or retention inventory, and exact retry returns the original acknowledged checkpoint. All seven focused Windows checks passed: 144 tests, 0 failures or ignored, plus strict Clippy and formatting. Full independent Claude Opus acceptance da161541501648f2a8e6df8613039c49 passed both criteria on the same clean source; newest and fresh, judgment basis with independently inspected code and archived runs. Full 2682-byte result and native evaluation retained unchanged under .evidence/provisional/4777-green-dc3ba343/. Parent owns combined reviews and landing gate.",
+    "completed_at": "2026-11-11T13:49:38.866443500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "40915a2df13f43398ccbda83a2860b16": {
+        "activity_id": "40915a2df13f43398ccbda83a2860b16",
+        "task_id": "01a1cab9-6f4b-71b1-936d-47774f72d995",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "423ec32544b94c33a68b9034fc0180f3"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a0fb9c-ce99-77a3-b33c-87aee9cd5440",
+  "external_ref": null,
+  "title": "Say --link applies only under a self-asserted policy in the static help, MCP done descriptions and cli-and-mcp",
+  "outcome": "Say --link applies only under a self-asserted policy in the static help, MCP done descriptions and cli-and-mcp",
+  "acceptance": [
+    "the CLI help for done (src/main.rs around line 811), the MCP done tool descriptions (src/mcp.rs around lines 486 and 875) and docs/features/cli-and-mcp.md around line 825 say that explicit --link with --link-basis applies only under a self-asserted acceptance policy, and that under an evaluated policy done takes no links and seals the evaluation's citations",
+    "the repository skill text that names --link-basis (.agents/skills/engram-repo/SKILL.md around line 460) says the same, and the doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

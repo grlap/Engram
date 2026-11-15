@@ -1,0 +1,50 @@
+{
+  "id": "01a0f918-c081-76a2-b44c-8d240f1158f7",
+  "external_ref": null,
+  "title": "next_commands keeps its own doc comment, separate from observation_guidance",
+  "outcome": "next_commands keeps its own doc comment, separate from observation_guidance",
+  "acceptance": [
+    "In src/verbs/handlers.rs the 'Fixed table from allowed_next tags to literal commands' doc block sits directly on next_commands again, and observation_guidance carries only its own doc"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "observation_guidance now sits above next_commands' \"Fixed table from `allowed_next` tags to literal commands\" doc block, which again documents next_commands; observation_guidance carries only its own doc. A pure move with no code change. Landed with w-307731e5f1d2 in one commit; evaluation passed 1/1.",
+    "completed_at": "2026-10-01T21:39:04.968091100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "130c6774b53d4c24b85584dc40cbc452": {
+        "activity_id": "130c6774b53d4c24b85584dc40cbc452",
+        "task_id": "01a0f918-c081-76a2-b44c-8d240f1158f7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dd4969852fcf46769393f01ed4b70c4c"
+      }
+    }
+  }
+}

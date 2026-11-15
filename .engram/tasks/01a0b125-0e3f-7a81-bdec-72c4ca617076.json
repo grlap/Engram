@@ -1,0 +1,57 @@
+{
+  "id": "01a0b125-0e3f-7a81-bdec-72c4ca617076",
+  "external_ref": null,
+  "title": "Review the requested staged UUID identity and plain-JSON migration changes",
+  "outcome": "Review the requested staged UUID identity and plain-JSON migration changes",
+  "acceptance": [
+    "Actionable findings deduplicated and handed to the implementer; no Git or deployment action.",
+    "All nine required parent gates run on the frozen current input with every failure classified and recorded.",
+    "Exactly one Codex and one Claude read-only TermAl review attempted; freeze verified at fan-in and authoritative results consolidated with gaps disclosed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Superseded: this was a historical review packet from 2026-09-18 for the staged UUID identity and plain-JSON migration changes. That work was delivered and reviewed under w-2cd1372b3329 (completed, with its own review rounds and gates). Re-running the obsolete freeze would review nothing current. Decided by Engram::Fable on Engram::Coder's read-only triage (note 03671b243ee54b7b854dfbba4afc0b2f).",
+  "completion": null,
+  "activity": {
+    "central": {
+      "0a069b01085c47aba657f5bd9b569237": {
+        "activity_id": "0a069b01085c47aba657f5bd9b569237",
+        "task_id": "01a0b125-0e3f-7a81-bdec-72c4ca617076",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "acef175f48494790bf2aee638ed15892"
+      },
+      "2b59d91dd6724c718944e1b120725ef3": {
+        "activity_id": "2b59d91dd6724c718944e1b120725ef3",
+        "task_id": "01a0b125-0e3f-7a81-bdec-72c4ca617076",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2b59d91dd6724c718944e1b120725ef3"
+      }
+    }
+  }
+}

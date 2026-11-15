@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-5091-7923-a503-ff28dfac4dd1",
+  "external_ref": null,
+  "title": "Refuse incompatible restored-record shapes with the generic different-build error",
+  "outcome": "Refuse incompatible restored-record shapes with the generic different-build error",
+  "acceptance": [
+    "Stores containing restored records without source_notices return the single different-build refusal without writes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Required restored source_notices shape is checked at selected use and before repair writes, with the generic different-build refusal and unchanged-store regressions. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:47.679131100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b6de1de5011452436b35d636dcb43e1865bcb36a7750c1dd720da0ad9646eb59": {
+        "activity_id": "b6de1de5011452436b35d636dcb43e1865bcb36a7750c1dd720da0ad9646eb59",
+        "task_id": "01a07fb9-5091-7923-a503-ff28dfac4dd1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8315718cfcd731259937dd5d60b0ed61510a539d443dec2cd56a6ea18b3d2c2f"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a193b9-2806-70b0-b38a-c56b771095ff",
+  "external_ref": null,
+  "title": "Let an outgoing exchange record its publication observation after unrelated local drift",
+  "outcome": "Let an outgoing exchange record its publication observation after unrelated local drift",
+  "acceptance": [
+    "An exact retry of an already recorded outgoing step returns its original event id before any local planning or branch-head check",
+    "After PushStarted, an exact PushObserved (Confirmed or Unknown) is recordable when local planning or the local branch head moved for unrelated reasons; checks that protect what is published (binding, intent, retained commit artifacts and pins) still refuse a mismatch",
+    "Tests cover a note or claim added after PushStarted and a later local branch commit, then Confirmed recorded and exact retry returning the same id"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

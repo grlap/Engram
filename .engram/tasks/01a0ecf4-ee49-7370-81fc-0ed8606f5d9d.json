@@ -1,0 +1,28 @@
+{
+  "id": "01a0ecf4-ee49-7370-81fc-0ed8606f5d9d",
+  "external_ref": null,
+  "title": "Decide whether a carried acceptance failure follows the item that supersedes the failed one",
+  "outcome": "Decide whether a carried acceptance failure follows the item that supersedes the failed one",
+  "acceptance": [
+    "If it should follow, a test shows the replacement's show and evaluate carry it; either way docs/features/acceptance-evaluation.md R11 states the behaviour",
+    "The decision on whether a failure carried on a superseded item's run is shown to, or must be named by, the replacement item's next evaluation is recorded with its reasons"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,67 @@
+{
+  "id": "01a1456f-3105-7172-850e-8b2d98ea0134",
+  "external_ref": null,
+  "title": "Prepare the Git-sync S1 decision package for Greg (read-only)",
+  "outcome": "Prepare the Git-sync S1 decision package for Greg (read-only)",
+  "acceptance": [
+    "A holder note gives Greg concrete STORE-FORMAT options for S1's local progress, receipt and import-mapping storage: exact tables and columns, durable vs rebuildable, and whether each option needs full-store migration across the live stores, with counts and costs. It cites docs/features/git-task-sync.md and the current src/storage schema.",
+    "A holder note gives concrete options for the separate DATA-ONLY commit validation path (git-task-sync.md, 'Data commits and source landing policy'), including the no-exception option, and names the exact authority-text passages any option would change and the approval route each needs.",
+    "A holder note splits S1 exchange (w-42885a9ab4f4), and its follow-on w-65fb79ead0c3, into evaluator-checkable slices with criteria, and maps the brief's required implementation cases ('Implementation and validation boundary') to a slice-by-slice test matrix.",
+    "A holder note inventories the local and remote setup Greg needs to observe the workflow on a second machine (remote, branch, credentials boundary, per-host Engram home, TermAl and agent topology), stating what is shipped versus required, and records TermAl's design input (main-checkout serialization with gated roots and live turns, and the notification route) attributed to its TermAl source.",
+    "No S1 or S1-follow-on implementation item is claimed, no exchange or reconciliation code is written, no durable store format is changed, no remote is enabled and no agents are connected; the deferral stands until Greg's explicit go."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "design",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Git-sync S1 decision package delivered to Greg (read-only research). Storage options A/B/C with tables, columns, migration consequences and store sizes; data-only validation P0/P1/P2 with exact authority passages and approval route; S1/follow-on slices E1-E4, R1/R2, H1/H2 with the 23-case matrix; second-machine setup inventory with TermAl's attributed H1/H2 input. Recommendation B + P0, E1-E4/H1 then R1/R2, 12-20 engineer-days. Evidence: SyncArchitect notes c8fc74e6, f23d9cb8, 5b42894c, 9d0b1829, fdb06d3d, 86daf267, 203d4b8f; coordinator consolidations 80b30097, 1c94d252, 522d2a22, c8f7e125; independent evaluation 90d231e8 passed 5/5. No implementation claimed, no code, store, remote or agent change; the S1 deferral stands until Greg's go.",
+    "completed_at": "2026-10-16T17:39:42.761903600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "dc77957fe4ac406ba3768d0d4ea25804": {
+        "activity_id": "dc77957fe4ac406ba3768d0d4ea25804",
+        "task_id": "01a1456f-3105-7172-850e-8b2d98ea0134",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5df153103e914ba6bedafc080cea47c2"
+      },
+      "ff0bf289a16d4244840fb016a36bbd55": {
+        "activity_id": "ff0bf289a16d4244840fb016a36bbd55",
+        "task_id": "01a1456f-3105-7172-850e-8b2d98ea0134",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d85aac8e530549b69a51978e468310b9"
+      }
+    }
+  }
+}

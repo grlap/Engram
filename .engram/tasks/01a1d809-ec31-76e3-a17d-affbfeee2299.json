@@ -1,0 +1,29 @@
+{
+  "id": "01a1d809-ec31-76e3-a17d-affbfeee2299",
+  "external_ref": null,
+  "title": "Make author test batches cover every test target that touches the changed modules, with a Windows leg when fixtures or ordering are involved",
+  "outcome": "Make author test batches cover every test target that touches the changed modules, with a Windows leg when fixtures or ordering are involved",
+  "acceptance": [
+    "The existing coder-test-execution skill tells authors that a READY's focused batch runs every test target (lib modules and integration binaries) that exercises the changed modules, with --no-fail-fast, and adds one Windows leg when fixtures, ordering or paths are involved; it adds no new gate and no new item type",
+    "The edit goes through the normal .md review and link-check landing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "process",
+    "skills",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

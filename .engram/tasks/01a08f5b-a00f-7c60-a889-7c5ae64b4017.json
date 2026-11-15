@@ -1,0 +1,49 @@
+{
+  "id": "01a08f5b-a00f-7c60-a889-7c5ae64b4017",
+  "external_ref": null,
+  "title": "Store open's host path policy refusal advises re-initializing and an ineffective flag, contradicting the doctor remedy",
+  "outcome": "Store open's host path policy refusal advises re-initializing and an ineffective flag, contradicting the doctor remedy",
+  "acceptance": [
+    "host_path_policy_open_refusal_never_advises_reinitializing_in_place passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Two-branch path-policy open advice; named test covers both case directions and alias; no re-initialize.",
+    "completed_at": "2026-09-12T07:49:41.506142500Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a50d68f0cb3bd08be03fea77c2b3721c4d40e9e1ee63006191a8ab24339b1c43": {
+        "activity_id": "a50d68f0cb3bd08be03fea77c2b3721c4d40e9e1ee63006191a8ab24339b1c43",
+        "task_id": "01a08f5b-a00f-7c60-a889-7c5ae64b4017",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "85494abb629103346cd66e063747856692ef502ded7f3814ea1a553bf811ff5f"
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "id": "01a0fe8a-ebdd-7a42-a1f8-9e95e510f9e4",
+  "external_ref": null,
+  "title": "A cheap, exact \"store changed since the newest copy\" signal a host can read before pushing",
+  "outcome": "A cheap, exact \"store changed since the newest copy\" signal a host can read before pushing",
+  "acceptance": [
+    "A host can tell, without a full capture, whether the store changed since the newest copy. The signal is exact for everything a copy restores: every table a restore brings back, including claims, control rows and delivery state, not only the work cut. It is reported in `backup status --json`, in the receipt table and its test, or used by `backup push` to skip a capture. A test shows a change in each kind of restored row flips it. If an exact store-wide marker cannot be made cheap, the design record says so, and nothing approximate ships described as exact.",
+    "Skipping a capture never on its own refreshes qualification: `local_backed_up` still requires a verified copy within the window. Whether an unchanged marker may extend an existing copy's observed-equal time is decided in a design review with Engram::Fable and a read-only Codex explorer before any code, and recorded on this item.",
+    "docs/host-checklist.md tells the host how to use the signal with the push cadence, and the change is sent to TermAl's coordinator, with the mailbox sequence and TermAl's answer recorded here."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered exact settled-byte same-build backup check/compression reuse with mandatory target confirmation, full fallback and missing-copy replacement checks; reports capture_check and honest no-cheap-marker/cost/cadence docs. Full gate, Codex/Claude pair, independent acceptance3/3 passed; committed, pushed and installed, four live stores ready, no restart.",
+    "completed_at": "2026-10-03T01:13:17.761791100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "53ff80879312470f965b42114525b1bf": {
+        "activity_id": "53ff80879312470f965b42114525b1bf",
+        "task_id": "01a0fe8a-ebdd-7a42-a1f8-9e95e510f9e4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7559b0a4095749c9a3ab7ebbfe96a09b"
+      },
+      "a7a0f4335f1e4da5ad20908ba81456fb": {
+        "activity_id": "a7a0f4335f1e4da5ad20908ba81456fb",
+        "task_id": "01a0fe8a-ebdd-7a42-a1f8-9e95e510f9e4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a7a0f4335f1e4da5ad20908ba81456fb"
+      }
+    }
+  }
+}

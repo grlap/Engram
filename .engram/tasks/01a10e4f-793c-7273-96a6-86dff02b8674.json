@@ -1,0 +1,50 @@
+{
+  "id": "01a10e4f-793c-7273-96a6-86dff02b8674",
+  "external_ref": null,
+  "title": "Restore the doc comments of the verification assessment's --after refusal test and the bound-branch test",
+  "outcome": "Restore the doc comments of the verification assessment's --after refusal test and the bound-branch test",
+  "acceptance": [
+    "after_refuses_on_a_note_without_an_assessment keeps its own doc comment, and a_bound_record_shows_where_its_check_ran_in_both_views has only its own, in src/verbs/tests/customer_workflow/verification_assessment.rs",
+    "The bound test's comment matches what it checks for the native original: either both views are checked, or the comment names only the summary"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 73c0f8d on master: each verification assessment test now has its own doc comment.\n- The stranded --after comment is back on after_refuses_on_a_note_without_an_assessment.\n- The bound test's comment on the native original names only the summary, which is the view it checks.\n- Evidence: full gate test-fc1e58fd 9/9, credited (e80e6af4); round-1 pair clean; evaluation 465351c8 2/2; readiness ready on 4 stores.\n- Installed build ca8a5687.",
+    "completed_at": "2026-10-06T05:30:27.876595900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ff1131b6e8f0474abfec5d29dbf38315": {
+        "activity_id": "ff1131b6e8f0474abfec5d29dbf38315",
+        "task_id": "01a10e4f-793c-7273-96a6-86dff02b8674",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9f6434d003ec4c1fa51d7c34fe720d70"
+      }
+    }
+  }
+}

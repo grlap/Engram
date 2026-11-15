@@ -1,0 +1,27 @@
+{
+  "id": "01a1c293-b93c-7340-98d9-854d64670ad1",
+  "external_ref": null,
+  "title": "Replace the ledger recovery serde round-trip assertion with behavioral evidence",
+  "outcome": "Replace the ledger recovery serde round-trip assertion with behavioral evidence",
+  "acceptance": [
+    "The replay-each-cut test either removes the unrelated serde round-trip or verifies the actual stored canonical bytes and original IDs consumed by recovery, retaining keyed/full reducer equivalence checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

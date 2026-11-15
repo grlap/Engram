@@ -1,0 +1,54 @@
+{
+  "id": "01a14bbb-637f-7780-a3ef-9d20f9d5c10c",
+  "external_ref": null,
+  "title": "Land the cross-host task sync design briefs (D2.4) as reviewed documentation",
+  "outcome": "Land the cross-host task sync design briefs (D2.4) as reviewed documentation",
+  "acceptance": [
+    "docs/features/cross-host-task-sync.md and the matching docs/features/git-task-sync.md update land with exactly the jointly concurred D2.4 text (hashes recorded in the joint round), after both projects' hash concurrence",
+    "The Markdown-only landing passes the link check and the AGENTS/CLAUDE identity check through the focused launcher, plus a clean Codex and Claude review pair on the frozen tree",
+    "No source, configuration or test changes ride along"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "design",
+    "docs",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the exact jointly concurred D2.4 task-sync briefs and aligned the normative mailbox boundary; pushed and installed the clean commit with all six live stores ready.",
+    "completed_at": "2026-10-17T22:23:10.952616400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "279196a766654611a3f2ac445a5d1eee": {
+        "activity_id": "279196a766654611a3f2ac445a5d1eee",
+        "task_id": "01a14bbb-637f-7780-a3ef-9d20f9d5c10c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4925524011b14d24ae7c640eae5565a9"
+      }
+    }
+  }
+}

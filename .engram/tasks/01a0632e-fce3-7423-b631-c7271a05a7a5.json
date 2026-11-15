@@ -1,0 +1,87 @@
+{
+  "id": "01a0632e-fce3-7423-b631-c7271a05a7a5",
+  "external_ref": null,
+  "title": "Bound gate-heavy run-evidence cuts through CompletionSeal",
+  "outcome": "Note, checkpoint, and CompletionSeal materialization remain bounded or explicitly aggregated as gate transitions accumulate.",
+  "acceptance": [
+    "A scale regression covers many gate transitions before note, checkpoint, and completion materialize the run evidence cut."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a06912-3bc5-7c01-a90f-8acda1f3f3ff"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added a 128-transition scale regression and bounded note, checkpoint, and CompletionSeal run-evidence membership without per-object decoding.",
+    "completed_at": "2026-09-03T21:58:10.366317300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "138ee45cf61850472da82a5727a8a5fbbcee4c51f52098b013c5b7c9e694b43f": {
+        "activity_id": "138ee45cf61850472da82a5727a8a5fbbcee4c51f52098b013c5b7c9e694b43f",
+        "task_id": "01a0632e-fce3-7423-b631-c7271a05a7a5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "fab4997bd087e10140787753ef75457f234bbde6b90d8e79939f815a9ae7a54c"
+      },
+      "34f1af2f5286a2bcf502c14bef0446f327c8653cb6a46f70b3291454b1a2e817": {
+        "activity_id": "34f1af2f5286a2bcf502c14bef0446f327c8653cb6a46f70b3291454b1a2e817",
+        "task_id": "01a0632e-fce3-7423-b631-c7271a05a7a5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d37965634d7d9c78c02c23f830699e1795858de7595f355a32c87612e9a6cd49"
+      },
+      "8e254c4e6a4d4956186e477af7e501a68e368623e49f7bb8443f89d864454711": {
+        "activity_id": "8e254c4e6a4d4956186e477af7e501a68e368623e49f7bb8443f89d864454711",
+        "task_id": "01a0632e-fce3-7423-b631-c7271a05a7a5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7ea544280b4fd94ad2da6ba1d2e89d3045e4938657b1a4026a81ef038f8b5725"
+      },
+      "b793816fb6abfd3486ae5f655558c43dbcd8ce9937c8d66119c14791dafb9bba": {
+        "activity_id": "b793816fb6abfd3486ae5f655558c43dbcd8ce9937c8d66119c14791dafb9bba",
+        "task_id": "01a0632e-fce3-7423-b631-c7271a05a7a5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "5cf5a656fec791d7f01e6568b64ae5e2669d57cd0e4a690e562a3c4b07cd4f77"
+      }
+    }
+  }
+}

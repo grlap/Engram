@@ -1,0 +1,50 @@
+{
+  "id": "01a07f06-8464-70c2-8be8-5b70088e36b3",
+  "external_ref": null,
+  "title": "Pin pairwise distinct status attribution labels",
+  "outcome": "Pin pairwise distinct status attribution labels",
+  "acceptance": [
+    "Hygiene regression explicitly asserts self and both peers pairwise distinct and same-actor peer not you"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06811-d07a-73a0-91b7-84ea6b071c41",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Status hygiene now asserts self and both peers pairwise distinct, including same-actor peer not you. Focused and full gates pass; coordinator independently inspected discriminating assertions. Installed build 6cd83bdf7600 from working tree, not committed to master; existing MCP servers retain their original build.",
+    "completed_at": "2026-09-08T03:43:57.085249600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "01b2b91ee86ec87cfe4cfdc9cf8b379f087def1438d5cbc03b904efbc65fc3f4": {
+        "activity_id": "01b2b91ee86ec87cfe4cfdc9cf8b379f087def1438d5cbc03b904efbc65fc3f4",
+        "task_id": "01a07f06-8464-70c2-8be8-5b70088e36b3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "056530af2e32b8037fa4d43473e02f98fd643f2d3a06fe8aaa4e0bc946c4c919"
+      }
+    }
+  }
+}

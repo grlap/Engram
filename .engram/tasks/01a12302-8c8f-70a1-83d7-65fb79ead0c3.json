@@ -1,0 +1,30 @@
+{
+  "id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "external_ref": null,
+  "title": "Task sync divergent import and lifecycle reconciliation",
+  "outcome": "Task sync divergent import and lifecycle reconciliation",
+  "acceptance": [
+    "A resolved merged graph applies atomically against a fresh local basis; active work is explicitly reconciled and reopening preserves native completion history, with tests",
+    "No TermAl remote relay is introduced, and any durable-store change is presented to Greg before coding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a12302-8b92-7eb1-9512-42885a9ab4f4"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

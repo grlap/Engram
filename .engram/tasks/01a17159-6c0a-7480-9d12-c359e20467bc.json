@@ -1,0 +1,30 @@
+{
+  "id": "01a17159-6c0a-7480-9d12-c359e20467bc",
+  "external_ref": null,
+  "title": "Align TermAl completion policy with Greg's stopped acceptance evaluations",
+  "outcome": "Align TermAl completion policy with Greg's stopped acceptance evaluations",
+  "acceptance": [
+    "The TermAl project policy and Greg's current no-evaluation workflow are reconciled through a supported audited operator route, with the source instruction and actual policy transition recorded.",
+    "The delivered startup-reclamation fix can be closed through native done with truthful provenance, without fabricated evaluation, identity/store bypass, cancellation/recreation, or additional product tests/reviews.",
+    "Record the actual closure result and any remaining blocker; preserve evidence needed by open tasks and do not block unrelated authorized merge packages."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "coordination",
+    "policy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

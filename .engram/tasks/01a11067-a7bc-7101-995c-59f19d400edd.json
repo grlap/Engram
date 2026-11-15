@@ -1,0 +1,51 @@
+{
+  "id": "01a11067-a7bc-7101-995c-59f19d400edd",
+  "external_ref": null,
+  "title": "Landing evidence archived under the main checkout's target/ is deleted by cargo clean there; decide where archives that open items cite should live",
+  "outcome": "Landing evidence archived under the main checkout's target/ is deleted by cargo clean there; decide where archives that open items cite should live",
+  "acceptance": [
+    "A recorded decision on where cited landing and gate evidence is archived (for example a non-Cargo directory under the repository that Git ignores), and the engram-repo skill's worktree-removal step updated to match",
+    "The doc link check and the AGENTS/CLAUDE identity check pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "evidence",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Decision recorded and delivered in the engram-repo skill: cited landing and gate evidence is archived in the main checkout's target/evidence/<full landed commit>/<worktree name>/ (review-runs/, engram-review-freeze.json, target-tmp/, other cited paths), resolved explicitly, never the worktree's own target/; the archive is never a build target or profile output; never clean or recursively remove the main checkout's target directory or any ancestor of target/evidence — an unqualified cargo clean removes whichever target directory Cargo selects (--target-dir, CARGO_TARGET_DIR, build.target-dir), so resolve it first, and any git clean reaching ignored files (-x or -X with -d or a pathspec) is the same hazard — reclaim space only from explicitly selected build-output subdirectories; a procedural exclusion, not filesystem protection. A top-level evidence/ was considered and left as an option for Greg because it would change his \"logs under target/\" rule text. The freeze manifest is named in the preservation step. Delivered in one changeset with w-954e2d30bf4d; three review rounds on 43f5cd8, round 3 clean; link and identity checks passed on a516589a; evaluation cf6c339be891415baecd01cf7aca7162 passed 2/2; readiness x4 ready; landed as 144a44d, Markdown only, nothing installed.",
+    "completed_at": "2026-10-06T09:52:06.619049200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0c0f5e71220b418eac2004c9681f8d43": {
+        "activity_id": "0c0f5e71220b418eac2004c9681f8d43",
+        "task_id": "01a11067-a7bc-7101-995c-59f19d400edd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b9b198107fa041018f99e61f45a5e4aa"
+      }
+    }
+  }
+}

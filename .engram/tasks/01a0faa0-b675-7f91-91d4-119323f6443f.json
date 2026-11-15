@@ -1,0 +1,33 @@
+{
+  "id": "01a0faa0-b675-7f91-91d4-119323f6443f",
+  "external_ref": null,
+  "title": "Portable export profile: the closed payload and its import",
+  "outcome": "Portable export profile: the closed payload and its import",
+  "acceptance": [
+    "Portable export uses migration JSON row encoding under a distinct strict portable profile. A source registry classifies every durable table/column, canonical kind, nested variant and reference role; tests compare it with actual schema and durable variants, and unknown names or nested fields refuse without disclosure. Ordinary migration still exports/imports every promised row.",
+    "A representative released source with shared and private memory, mediated turns, planning, named roots, verification reuse, environment evidence, failing/superseding evaluations, obligations, native child/root seals and inherited graph history round-trips through staged import and both ordinary full check and portable closure check. Original ids/canonical bytes and dense feed order survive, native completion remains by seal, inherited history stays inherited.",
+    "Every private memory version, assertion and head and all live authority, session/connection/grant, delivery/focus/advertisement, retry/result and host-path-policy rows are absent; compare every included/excluded table family. Historical session/grant attribution confers no authority. Receiving-clock live claim or executable offer refuses without rewriting it.",
+    "Each executable link and retained feed target resolves to its original included record. Removing any required evidence, policy, producer, root history or feed target produces a named refusal. Excluded feed targets refuse rather than creating placeholders, changing links or dropping dense positions.",
+    "Provenance-only exclusions use separately minted stub and field-specific resolution records with the referring canonical bytes unchanged, only for explicitly registered historical readers. A profile with no admitted paths refuses those links. Tests reject unused/mismatched mappings and prove executable lookup never uses them; unknown reader roles refuse.",
+    "Mixed-project or unclassified state is refused before host interruption/disclosure and rechecked at the frozen cut. A non-work-item second-project fixture is detected. Payload size/part/traversal bounds refuse instead of truncate, and split payloads reassemble and import. Failure of representative ordinary-history eligibility remains a blocker, not a refusal-only completion."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0faa0-685a-7f31-83d2-2028017ca901",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Portable handoff was replaced before any of it shipped: docs/features/git-task-sync.md says the previous portable writer-epoch and release/acquire design is gone, AGENTS.md says the selected sync uses no global writer lock, writer epochs or release/acquire protocol, and master has no portable code or brief. Cancelled under Greg's word, 43498a6e #683. Nothing here was built or tested.",
+  "completion": null
+}

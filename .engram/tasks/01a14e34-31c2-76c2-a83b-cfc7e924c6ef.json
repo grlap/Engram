@@ -1,0 +1,52 @@
+{
+  "id": "01a14e34-31c2-76c2-a83b-cfc7e924c6ef",
+  "external_ref": null,
+  "title": "Make the doc-link checker's .logs/.evidence exclusion root-anchored",
+  "outcome": "Make the doc-link checker's .logs/.evidence exclusion root-anchored",
+  "acceptance": [
+    "scripts/check-doc-links.mjs skips only the root-level .logs and .evidence folders, matching the root-anchored ignore rule",
+    "A negative fixture shows a nested folder such as docs/.evidence/x.md is still link-checked"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "evidence-retention",
+    "review-low",
+    "tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed root-only .logs/.evidence exclusions with six real-checker fixtures. Nested archive-named documentation remains checked. Both unchanged criteria passed fresh independent evaluation 6b25ce129df74a01882d0cff97addbbb; full gate and Codex/Claude pair passed on the matching input. Installed release readiness passed for all six live stores.",
+    "completed_at": "2026-10-18T19:55:23.016894200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f32760bacc984de8953939ac8100c532": {
+        "activity_id": "f32760bacc984de8953939ac8100c532",
+        "task_id": "01a14e34-31c2-76c2-a83b-cfc7e924c6ef",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "58d604f3bca44e0d9b28481f32720132"
+      }
+    }
+  }
+}

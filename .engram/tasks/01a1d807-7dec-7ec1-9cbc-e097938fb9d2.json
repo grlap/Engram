@@ -1,0 +1,29 @@
+{
+  "id": "01a1d807-7dec-7ec1-9cbc-e097938fb9d2",
+  "external_ref": null,
+  "title": "Bound task-sync execution-hold checks without scanning dormant-run histories",
+  "outcome": "Folder import decides live execution holds from indexed run authority and avoids reading every dormant child's entire event history.",
+  "acceptance": [
+    "Import under a root with many dormant child runs avoids per-child full canonical history decoding for authority that indexed claim and handoff rows can determine.",
+    "Live claims, live handoffs and any supported claim-less execution fallback retain their existing hold behavior, with behavioral and work-count coverage."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "performance",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

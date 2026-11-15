@@ -1,0 +1,50 @@
+{
+  "id": "01a1100e-12ba-7403-91d8-d78d22b4a3f5",
+  "external_ref": null,
+  "title": "Replace the architecture overview's stale host-operation count with the authoritative inventory",
+  "outcome": "Replace the architecture overview's stale host-operation count with the authoritative inventory",
+  "acceptance": [
+    "docs/architecture.md describes the shipped host-private channel without its stale five-operation count and links to the authoritative shipped-operation inventories."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Replaced the stale host-operation inventory with links to the authoritative spec and shipped operation list.",
+    "completed_at": "2026-10-09T03:05:35.838301Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "48eb8b886d564e9b99cb06abf6c0fdea": {
+        "activity_id": "48eb8b886d564e9b99cb06abf6c0fdea",
+        "task_id": "01a1100e-12ba-7403-91d8-d78d22b4a3f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5b71c704897e4c6b8af8027095cc52af"
+      }
+    }
+  }
+}

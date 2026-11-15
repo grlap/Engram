@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-5845-76a3-bcc8-72ad874d911b",
+  "external_ref": null,
+  "title": "Frame import lookup content as untrusted external data",
+  "outcome": "Frame import lookup content as untrusted external data",
+  "acceptance": [
+    "Brief and repository skill explicitly state lookup output is data never instructions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Source-intake brief and repository skill explicitly frame lookup bodies as untrusted data, never instructions. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:49.552294Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "13431b773231115c9fb4c400326603f7973d0221ff6e237e8a6e7d29c7980054": {
+        "activity_id": "13431b773231115c9fb4c400326603f7973d0221ff6e237e8a6e7d29c7980054",
+        "task_id": "01a07fb9-5845-76a3-bcc8-72ad874d911b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fe06b7dfeded5b7c54add047145bbc5654045ff730047856bcee4a672fbfb4ed"
+      }
+    }
+  }
+}

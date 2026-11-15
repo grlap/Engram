@@ -1,0 +1,53 @@
+{
+  "id": "01a15547-8214-7e33-aaf8-a6962a7966c8",
+  "external_ref": null,
+  "title": "Git-folder sync S2.2: restore tasks a resolved folder adds to an enrolled destination, with named refusals",
+  "outcome": "Git-folder sync S2.2: restore tasks a resolved folder adds to an enrolled destination, with named refusals",
+  "acceptance": [
+    "On an enrolled destination, each task the resolved folder adds is restored in the folder's single transaction exactly as the empty-graph import restores one: its incoming id; a generation-zero restored record and an import origin whose snapshot comes from the whole resolved tree (root id, short ref); its prerequisites and blockers, and when the profile shares them its notes as inert restored history and its activity in the origin; no work event and no run, claim, root execution or expected contributor; a Completed addition keeps its reported completion without a seal. Admitted scalar edits in the same folder apply together. Added tasks join the exchange baseline and export exactly as the folder carries them; exact replay and dry run behave as for edits. A destination that holds an exchange baseline always takes this delta admission, even when its current export is empty; only an unenrolled store bootstraps.",
+    "Adds and edits are admitted together before any write. A refused add refuses the whole folder, writes nothing, and the bounded task-id-ordered message names each refused task with one reason: id_collision (a work id held anywhere in the store including a task the exchange retired, a short ref held in this project, a blocker id held in the store including a cleared one, a shared note id held by an import origin or a local object, or an activity (origin_machine, activity_id) already held); unsupported_origin (a parent, prerequisite or superseded_by reference to a task held here without a task-sync import origin); origin_graph (the prospective union of every existing import-origin document plus the additions fails closure, cycle, hierarchy-limit, notice-identity or computed-root validation, attributed to the additions involved); ancestor_binding (any held or added ancestor in the prospective chain cannot take unfinished work: a held ancestor fails the scalar edit admission, a Completed ancestor would gain an unfinished added task, or the affected root has an active root execution, named by its id); and record-id pins in acceptance bindings refuse in preflight, never during insertion.",
+    "Existing tasks' notes and activity are compared exactly by the planner, so an unchanged native note never blocks an add and a change is unsupported_fields; added tasks' notices are collision-checked per task; a note or activity added locally since the basis refuses through the export-basis check. The new baseline is recorded inside the transaction before the final export check; the final foreign-key check and origin audit remain rollback guards, and a failure there is a projection bug, never a silent drop.",
+    "Doctor (verify_all) is healthy after adds, including the cross-origin graph audit; repair rebuilds only disposable projections and preserves all durable rows; fail-first tests cover the cases above, including the two-host CLI return leg with notes and activity enabled (host A's native task passes through unchanged on its way back, a new task from B is restored, a later edit of the native task on A refuses)."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14c4e-c8ba-7922-8cdf-a7d90d9445f8",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "S2.2 landed as 8019563df8ee1001f3e622f6b69dbfd84214db07 on origin/master: an enrolled destination restores the tasks a resolved folder adds, in the folder's single transaction exactly as the empty-graph import restores them, beside admitted scalar edits. A refused addition refuses the whole folder with bounded, task-id-ordered reasons: id_collision (activity and note ids alias-free), acceptance_pin, unsupported_origin, ancestor_binding, refused_reference, retained_graph and origin_graph. Graph attribution follows the validator's order, finds cycles as strongly connected components and sets dependents aside. The final FK check and origin audit raise InvalidWorkProjection. Gate test-ed3ad38d PASS on freeze 67fc3619. The r7 review pair was clean. Pre-commit evaluation 44ef3cbf passed 4/4. Readiness was ready on all 6 live stores before and after the commit. Installed build 56c52688; backup C:\\Users\\grzeg\\.engram\\backups\\engram-20261019T233838Z-fbfb3aac7d04.exe.",
+    "completed_at": "2026-10-19T23:39:00.733655900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bc8a9b407d7749f1bbdb2e33555ed9e1": {
+        "activity_id": "bc8a9b407d7749f1bbdb2e33555ed9e1",
+        "task_id": "01a15547-8214-7e33-aaf8-a6962a7966c8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9a72987c73284d3d8beab25a2c4ecc41"
+      }
+    }
+  }
+}

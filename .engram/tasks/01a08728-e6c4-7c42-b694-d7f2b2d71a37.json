@@ -1,0 +1,64 @@
+{
+  "id": "01a08728-e6c4-7c42-b694-d7f2b2d71a37",
+  "external_ref": null,
+  "title": "Admit larger host-authored plans atomically without the agent receipt ceiling",
+  "outcome": "Admit larger host-authored plans atomically without the agent receipt ceiling",
+  "acceptance": [
+    "A host plan substantially larger than 16 tasks commits its complete graph and key mapping atomically under explicit independent operator limits",
+    "Boundary and oversized requests refuse without a partial graph; exact retry after restart returns the original complete mapping without new writes",
+    "CLI process coverage and documentation agree on input, receipt, and graph limits",
+    "Large-plan validation has measured cost and regression coverage, and ordinary agent response budgets stay unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered atomic host plans up to256 tasks and1024 edges with1MiB typed input,2MiB raw reader and complete64KiB result, preserving129-task per-tree and agent limits. Exact restart retry, whole-store refusal rollback and bounded validation cost covered. All nine corrected gates pass; pair and scoped corrections accepted with independently matching final freeze. Source ready; not committed or installed.",
+    "completed_at": "2026-09-09T20:55:27.737066Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "79f5efd9e727c6a8b80e5754a4ea68d89b686d38a0417d35eaecaf8db6594e31": {
+        "activity_id": "79f5efd9e727c6a8b80e5754a4ea68d89b686d38a0417d35eaecaf8db6594e31",
+        "task_id": "01a08728-e6c4-7c42-b694-d7f2b2d71a37",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "79f5efd9e727c6a8b80e5754a4ea68d89b686d38a0417d35eaecaf8db6594e31"
+      },
+      "edc423c5697ff9dc89b557cc8f23abbae4965b3c8342094a8651b8a13fba9d9e": {
+        "activity_id": "edc423c5697ff9dc89b557cc8f23abbae4965b3c8342094a8651b8a13fba9d9e",
+        "task_id": "01a08728-e6c4-7c42-b694-d7f2b2d71a37",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cae8ea0f4c6e410a50bab47db26797cc716b6f0cb5c702b2b4eae4b0b22074fe"
+      }
+    }
+  }
+}

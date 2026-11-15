@@ -1,0 +1,28 @@
+{
+  "id": "01a154ba-dcce-7393-9bef-95f20d580a8e",
+  "external_ref": null,
+  "title": "Make the catalog projection mode decisions exhaustive and word the Create refusal as creation",
+  "outcome": "Make the catalog projection mode decisions exhaustive and word the Create refusal as creation",
+  "acceptance": [
+    "Each CatalogProjectionMode decision in src/storage/work/planning.rs (label deletion, prior FTS removal, refusal wording) is an exhaustive match or an enum method without a wildcard, so a new mode must be classified",
+    "Create mode's lost-item refusal names creation rather than refresh, with a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "note",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

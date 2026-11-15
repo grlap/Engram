@@ -1,0 +1,50 @@
+{
+  "id": "01a1073f-b61c-7c11-939e-f83bed18946d",
+  "external_ref": null,
+  "title": "Test that typed gates survive note-window body placeholders",
+  "outcome": "Test that typed gates survive note-window body placeholders",
+  "acceptance": [
+    "A gate whose oversized failure list forces a body_omitted placeholder retains gate {name, passed} beside body_omitted:true."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Test a_gate_shown_as_a_body_placeholder_keeps_its_typed_gate pins that a gate whose failure list forces a body placeholder keeps gate {name, passed} beside body_omitted:true, through fit_window with a shrinking budget. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T15:36:40.760080100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a7a6dae11dff46f2a0f3fdb7bdf19c17": {
+        "activity_id": "a7a6dae11dff46f2a0f3fdb7bdf19c17",
+        "task_id": "01a1073f-b61c-7c11-939e-f83bed18946d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8c833ab5136e4baa8a54556541a7d823"
+      }
+    }
+  }
+}

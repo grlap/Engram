@@ -1,0 +1,30 @@
+{
+  "id": "01a1d8d8-cca0-7d41-8f03-1273ba1e0056",
+  "external_ref": null,
+  "title": "Update the README to describe the delivered unified Execution Observability, its limits and how to use it",
+  "outcome": "Update the README to describe the delivered unified Execution Observability, its limits and how to use it",
+  "acceptance": [
+    "README.md describes Execution Observability as actually delivered at the closing landing: host-recorded checks, remote test results (DL560, Mac) counting as verification evidence, source identity, and independent acceptance evaluation, each with its real limits, and links to docs/features/execution-observability.md and docs/shipped.md.",
+    "README.md announces nothing that is not landed and installed; every claim it makes matches docs/shipped.md, and roadmap items stay out of it or are marked as not yet delivered.",
+    "Written after the epic's other criteria have landed (or updated again at the last of them), passes the link check through the focused launcher, and is reviewed by the Codex and Claude pair like any Markdown-only change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "docs",
+    "execution-observability",
+    "greg-directed"
+  ],
+  "assigned_to": "Engram::Opus",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1d5a8-54e4-7371-b870-06f2c1b2b856",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

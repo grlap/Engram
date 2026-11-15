@@ -1,0 +1,52 @@
+{
+  "id": "01a079e2-afa1-7072-8c32-e35292234420",
+  "external_ref": null,
+  "title": "Injected work context shows one status per item and tells a resuming agent to read a clipped status before acting",
+  "outcome": "Injected work context shows one status per item and tells a resuming agent to read a clipped status before acting",
+  "acceptance": [
+    "A work item's status body and latest note head appear at most once in one next response; an item that is both held by and assigned to the caller renders once, and any further discovery row for it (assigned, participated, changed) carries a reference, not a second body or note head",
+    "Regression: a status over the preview bound whose STOP condition sits in its tail renders in next with the omission, the locator and the read-first guidance, and the response carries the status bytes once, for the held-and-assigned case and the unclaimed-assigned case",
+    "When a status is clipped, the row keeps the explicit omission and detail locator and the response's guidance says to read the full status before acting on any approval or STOP condition; nothing about permissions is inferred from a clipped prefix"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "pilot",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered identity-qualified compact status/note context with full status read-before-approval/STOP guidance, genuine session markers, actor-preserving references and explicit note navigation. Four required implementation children sealed; parent and independent coordinator nine gates green, both reviewer closures accepted. Landed1a8eee0 on master/origin, installed d5720902bd4f, coordinator doctor0 and smokes. Four deferred reviewer Notes remain on independent p3 follow-up, outside this completion.",
+    "completed_at": "2026-09-07T06:20:46.322052200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "383d7777bfbc865ed75458aa3baea92814b26e8ff10586871d7f3c6de4fb44a3": {
+        "activity_id": "383d7777bfbc865ed75458aa3baea92814b26e8ff10586871d7f3c6de4fb44a3",
+        "task_id": "01a079e2-afa1-7072-8c32-e35292234420",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3f6366dd69076075e027fa91f3eacf839e1f8caf319e3cfa1642480180a6927f"
+      }
+    }
+  }
+}

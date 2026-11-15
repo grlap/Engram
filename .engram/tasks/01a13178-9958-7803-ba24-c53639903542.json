@@ -1,0 +1,50 @@
+{
+  "id": "01a13178-9958-7803-ba24-c53639903542",
+  "external_ref": null,
+  "title": "Fix the task-sync activity CLI test's host path policy mismatch on non-Windows",
+  "outcome": "Fix the task-sync activity CLI test's host path policy mismatch on non-Windows",
+  "acceptance": [
+    "The fixtures of tests/task_sync_activity_cli.rs task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authority and tests/task_sync_cli.rs derive their host path policy from HostPathPolicy::host_default(), so each matches the default store opener on every target; both tests pass on Windows, and no assertion is weakened.",
+    "The diagnosis records whether the mismatch is a fixture defect or a product defect in how the CLI chooses its default host path policy, and a product defect is fixed in the product."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed the task-sync CLI test fixtures that failed on macOS.\n- Cause: both fixtures chose their init host path policy with cfg!(windows), then opened the store with SqliteStore::open, which checks it against HostPathPolicy::host_default(). That default folds case on macOS too, so on macOS the stored case_sensitive policy was refused. This was a fixture defect, not a product defect: the opener's strict check and its remedy are intended. Greg confirmed the failing run was on macOS.\n- Fix: tests/task_sync_activity_cli.rs and tests/task_sync_cli.rs now take the init flag from host_default().case_fold_paths, so the stored policy equals the opener's on Windows, macOS and Linux. +6/-2, no assertion changed.\n- Validation:\n  - Reviews: two clean rounds (Codex 12282/12284, Claude 12283/12285) and a clean design review (Codex 12281).\n  - Gates: the first gate test-0da1ad32 died of environment memory exhaustion (recorded); the rerun test-5ede38e3 passed 12/12 on freeze 92a4c3c2. TermAl refused its credit over cargo's target sibling (TermAl w-a7bbdea31231, a host false positive).\n  - Evaluation: 4574018f passed 2/2.\n  - Readiness: ready on all 4 live stores.\n- Landed 22a0335; installed build 811df7ff998a, sha256 f27b67bf; backup engram-20261012T212745Z-4fccb29fb3b7.exe.\n- macOS run: follow-up w-6224586d6418.",
+    "completed_at": "2026-10-12T21:27:57.650771400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0d5758cc7d664b5dbceb31ed39e32315": {
+        "activity_id": "0d5758cc7d664b5dbceb31ed39e32315",
+        "task_id": "01a13178-9958-7803-ba24-c53639903542",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "40e4c29906ad4a6ab439c873dca86827"
+      }
+    }
+  }
+}

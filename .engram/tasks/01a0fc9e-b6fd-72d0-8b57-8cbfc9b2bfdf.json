@@ -1,0 +1,53 @@
+{
+  "id": "01a0fc9e-b6fd-72d0-8b57-8cbfc9b2bfdf",
+  "external_ref": null,
+  "title": "Backup state records: receipts, pending attempt and last attempt in the state file, kept across target set",
+  "outcome": "Backup state records: receipts, pending attempt and last attempt in the state file, kept across target set",
+  "acceptance": [
+    "A state file whose own target identity differs from the configured target's is still refused with `backup_record_unreadable`, while receipts and a pending attempt inside it that name an earlier target identity are accepted; a test covers both",
+    "The library's functions that read and write a kind's state for a push take the held push lock as an argument, and write the state whole by writing a new file and renaming it into place; a test shows a write followed by a read returning the written state",
+    "The receipt, stored-manifest and attempt record types are defined in the library (under `engram::backup`) and the directory adapter uses them from there; the library's state record (`TargetState`) holds the newest receipt, the time the store's content was last observed in that receipt's copy, a pending attempt with its complete manifest and target identity, the last attempt with its time, outcome, typed code and message, and an append-ordered list of the receipts this home recorded, each naming its target identity; a unit test writes a state carrying every one of these fields and reads it back equal",
+    "`engram backup target set` on a kind whose state file is readable keeps that state's newest receipt, its list of recorded receipts and its pending attempt under their earlier target identities, and records the new target identity as the state's own; a test shows a receipt and a pending attempt still present after `target set` changed the disclosure authorization; when the earlier state file's content cannot be used (it does not parse, names a format version this build does not know, or its fields do not match), `target set` starts the state anew, and when the file cannot be read at all `target set` refuses with `backup_io` and changes nothing; a test covers each"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-bba2-79c1-b3c9-f69a56c4af36",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Backup state records are in place:\n- Record types live in engram::backup::record. Attempt records its data-file names, and the adapter refuses an attempt naming other files in put, reconcile and remove.\n- TargetState holds the newest receipt, observed_equal_at, pending, last_attempt, the receipt ledger and set-aside attempts. Every key is required.\n- target set keeps a readable earlier state under the new identity. Unusable content starts anew, and a file that cannot be read refuses with backup_io.\n- read_for_push and write_state require the kind's held lock.\n\nLanded as 8835600. The installed build is 33ee21a6fa79 and reports rev 8835600f538a.",
+    "completed_at": "2026-10-02T13:15:42.590449400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "89012aed314f45a791cf37561d54812e": {
+        "activity_id": "89012aed314f45a791cf37561d54812e",
+        "task_id": "01a0fc9e-b6fd-72d0-8b57-8cbfc9b2bfdf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "362bf5b253894c05bbe0ca03ccc82db8"
+      }
+    }
+  }
+}

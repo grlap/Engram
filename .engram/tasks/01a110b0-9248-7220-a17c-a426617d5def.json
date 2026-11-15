@@ -1,0 +1,75 @@
+{
+  "id": "01a110b0-9248-7220-a17c-a426617d5def",
+  "external_ref": null,
+  "title": "IntegrityReport::is_healthy rustdoc claims canonicalization and digest checks that verify_all does not perform",
+  "outcome": "IntegrityReport::is_healthy rustdoc claims canonicalization and digest checks that verify_all does not perform",
+  "acceptance": [
+    "The rustdoc of IntegrityReport::is_healthy (src/storage/mod.rs) describes healthy as the absence of integrity findings, without claiming canonicalization or digest checks that verify_all does not perform"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "doctor",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The IntegrityReport::is_healthy rustdoc now says only that every finding list in the report is empty, and that verification parses stored record ids but never re-derives one from stored bytes. It no longer claims canonicalization or digest checks that verify_all does not perform. A round-1 Medium (wording that denied the fingerprints verify_all does recompute) was fixed and reviewed again. Landed in ce32318 with w-e736c419c503: full gate test-296baf89 passed, the round-2 Codex+Claude pair was clean, and the evaluation passed 1/1 (ce647c5a…).",
+    "completed_at": "2026-10-09T01:18:35.065149200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5167ec57ab184fcba514fef676b18ce2": {
+        "activity_id": "5167ec57ab184fcba514fef676b18ce2",
+        "task_id": "01a110b0-9248-7220-a17c-a426617d5def",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5167ec57ab184fcba514fef676b18ce2"
+      },
+      "5a9f4bf25d26491895a8dec093cf0a23": {
+        "activity_id": "5a9f4bf25d26491895a8dec093cf0a23",
+        "task_id": "01a110b0-9248-7220-a17c-a426617d5def",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c0ae553d3d6c48f88e740ad92efcc438"
+      },
+      "5ac9d859618948348e46c2cdfedf00dc": {
+        "activity_id": "5ac9d859618948348e46c2cdfedf00dc",
+        "task_id": "01a110b0-9248-7220-a17c-a426617d5def",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5ac9d859618948348e46c2cdfedf00dc"
+      }
+    }
+  }
+}

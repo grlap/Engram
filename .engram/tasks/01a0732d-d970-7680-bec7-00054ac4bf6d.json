@@ -1,0 +1,51 @@
+{
+  "id": "01a0732d-d970-7680-bec7-00054ac4bf6d",
+  "external_ref": null,
+  "title": "Review and refine website copy against shipped Engram behavior",
+  "outcome": "Review and refine website copy against shipped Engram behavior",
+  "acceptance": [
+    "Copy changes preserve the layout and pass required validation",
+    "Illustrative commands use the current agent vocabulary and setup instructions are internally consistent",
+    "Website text is grammatically clear and accurately separates shipped behavior from planned features"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Proofread page copy, metadata, captions, demo states, setup text, and navigation labels against the README, shipped inventory, host checklist, roadmap, and implementation. Clarified the coding-agent audience, claims, recorded work history, setup prerequisites and target directory, and planned report publication. Preserved the headings, artwork, and layout. All seven linked repository documents exist. Fixed and closed the tablet wrapping regression; the final browser suite passes at eleven viewport sizes. All nine required repository gates, accessibility scans, syntax, and diff checks passed.",
+    "completed_at": "2026-09-05T20:18:12.545156800Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a8f09759900350b9af57e5c96948674beb4574f1116ef0eba2b3496920b6ef69": {
+        "activity_id": "a8f09759900350b9af57e5c96948674beb4574f1116ef0eba2b3496920b6ef69",
+        "task_id": "01a0732d-d970-7680-bec7-00054ac4bf6d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bb519b452dc1cd2ea5cbebec41438b3ea0f360492c88407d62d8bfff3f7122c5"
+      }
+    }
+  }
+}

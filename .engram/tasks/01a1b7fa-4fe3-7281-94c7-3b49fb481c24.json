@@ -1,0 +1,28 @@
+{
+  "id": "01a1b7fa-4fe3-7281-94c7-3b49fb481c24",
+  "external_ref": null,
+  "title": "Keep a shared measured source from falling back to another workspace in acceptance reads",
+  "outcome": "A shared newest measured sighting yields no legacy revision instead of a cross-workspace legacy fallback",
+  "acceptance": [
+    "A mixed-producer unnamed-run behavioral test shows a shared latest unadmitted change in workspace A and later legacy record in workspace B do not select B as the judged legacy source"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "low",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,56 @@
+{
+  "id": "01a0c1cd-8f90-7b30-a905-9c3a18f5e218",
+  "external_ref": null,
+  "title": "Make offline migration preflight sidecars before moves and recover failed activation safely",
+  "outcome": "Make offline migration preflight sidecars before moves and recover failed activation safely",
+  "acceptance": [
+    "A converted SQLite database with WAL/SHM produced by read-only comparison is safely checkpointed or refused before any live file moves; a regression reproduces this failure.",
+    "A disposable cutover exercises success and preflight failure, preserving originals and leaving live paths unchanged on preflight refusal.",
+    "Recover the failed Phoenix activation without overwriting either the original pre-cutover data or the newly created post-restart database; inspect recovery receipts before retrying installation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "gate",
+    "identity",
+    "legacy",
+    "migration",
+    "operations"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0b239-6590-75b3-bb52-04199ab5f6e4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed converted-sidecar preflight ordering and SQLite finalization; disposable failure/success and recovery replay tests passed. Operator recovered Phoenix without losing either dataset and installed both converted stores; parent post-install readback passed. Independent Claude7170 accepted all3 unchanged criteria (asserted), not host-attested execution.",
+    "completed_at": "2026-09-21T03:24:37.172474200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fd9333ff2a644ae1be3b6ef1c1a59f48": {
+        "activity_id": "fd9333ff2a644ae1be3b6ef1c1a59f48",
+        "task_id": "01a0c1cd-8f90-7b30-a905-9c3a18f5e218",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "13a0db11b09d4ba69ad5ee9b8c664ba2"
+      }
+    }
+  }
+}

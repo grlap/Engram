@@ -1,0 +1,51 @@
+{
+  "id": "01a0f600-8fd2-70c2-a54f-119ff1ac7715",
+  "external_ref": null,
+  "title": "Host-only work core operations still act on an unheld focus when the session holds other work",
+  "outcome": "Host-only work core operations still act on an unheld focus when the session holds other work",
+  "acceptance": [
+    "Tests cover each ambient core form after add while another item is held",
+    "The ambient forms of the host-only work core operations (decompose under focus, checkpoint and evidence capture, update) apply the same implicit-target rule as the agent words: when the focus is not held by the session while it holds other live claims, they refuse with work_implicit_target_conflict and record nothing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-surface",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in ee20fd7: ambient core operations (decompose with no named parent, every work core update form with no named item) refuse with work_implicit_target_conflict and record nothing when the focus is unheld while other work is held; admitted retries (same key and intent, finished or core-committed) still replay or recover.",
+    "completed_at": "2026-10-03T11:43:18.257317Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8f4c32133fa94d348f994c671ef610e5": {
+        "activity_id": "8f4c32133fa94d348f994c671ef610e5",
+        "task_id": "01a0f600-8fd2-70c2-a54f-119ff1ac7715",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d6ad9fe9f6644699a075591282cb5bd5"
+      }
+    }
+  }
+}

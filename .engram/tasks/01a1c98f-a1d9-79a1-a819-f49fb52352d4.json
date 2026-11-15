@@ -1,0 +1,29 @@
+{
+  "id": "01a1c98f-a1d9-79a1-a819-f49fb52352d4",
+  "external_ref": null,
+  "title": "Check incoming-delta holds for unfinished runs after claim expiry",
+  "outcome": "Incoming planning changes honor the documented active-local-run hold rule when a run's execution claim has expired.",
+  "acceptance": [
+    "Trace the full incoming apply path and record whether an unfinished run without a live claim is protected by the active-run hold contract; if unprotected, correct admission or deferral without transferring live authority.",
+    "Behavioral coverage distinguishes expired claims on unfinished runs from normally ended runs and confirms incoming planning has the documented deferred or refused outcome."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Original reviewer withdrew the defect independently in FAMILY2 Claude17367 attempt5 on unchanged8f559256 after tracing the full apply path. Current SQL active_run_id/run-bound-history admission refuses scalar/relation/deletion changes before mutation and outer transaction rolls back DeltaPrepared, even when the claim expired. Parent source assessment e9cadf566cbb426696e429e97c7f901b agrees. Immutable review-result-86744c4e53482da69bc555b656b246de52140eae69d5a17a135cd2a3ef9e2153, archived f2a-attempt-5.json, preserves originalLow and withdrawal. Residual manual retry versus automatic deferral is informational Note, no remaining repair required for reported overwrite premise. No product change or executed test claimed.",
+  "completion": null
+}

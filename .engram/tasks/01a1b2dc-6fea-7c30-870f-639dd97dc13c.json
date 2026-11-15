@@ -1,0 +1,52 @@
+{
+  "id": "01a1b2dc-6fea-7c30-870f-639dd97dc13c",
+  "external_ref": null,
+  "title": "Refresh Windows B and Mac source-owner pins to the landed E1 build",
+  "outcome": "Windows B and Mac repo-local pins use exact890ecb6f with measured host identities; DL560 release install is handed to the Merger per corrected coordinator scope.",
+  "acceptance": [
+    "Withdraw the held DL560 debug-install request without installation/live-store/build effects and hand the release-build installation/readiness scope to the Merger under Fable's corrected instruction.",
+    "Refresh Windows B then Mac repo-local source-owner pins to exact890ecb6f one runner job at a time, recording actual host-specific path/bytes/SHA/build/source JSON while retaining old pins and protected d6 consumer inputs.",
+    "Report actual refreshed identities to Engram::Fable for rules-remote-test-runs memory and to consumers, preserving distinct historical author/FULL evidence and cleaning finished owned scratch."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Refreshed and verified immutable890ecb6f repo-local source-owner pins on WindowsB thenMac serially; old44/2d03pins andd6M1inputs unchanged. Actualnativepath/bytes/SHA/version/8fieldsourceJSON recordedandreportedtoFable/E3/M1. DL560debuginstallwithdrawnwithoutsideeffects, releaseinstallhandedMergerpercorrectedscope. Newownbuildworktrees/scratchremoved, Centraltransferbundledeleted; no source/install/globalconfig/EOcredit.",
+    "completed_at": "2026-11-06T22:17:59.020624100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9dc2138180254818940569c199d4c702": {
+        "activity_id": "9dc2138180254818940569c199d4c702",
+        "task_id": "01a1b2dc-6fea-7c30-870f-639dd97dc13c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2465dc1a0eea4af2a9102971f6f98fa2"
+      }
+    }
+  }
+}

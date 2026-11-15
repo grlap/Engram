@@ -1,0 +1,117 @@
+{
+  "id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+  "external_ref": null,
+  "title": "Task sync stage 1: model-A durable rows and invariants",
+  "outcome": "Task sync stage 1: model-A durable rows and invariants",
+  "acceptance": [
+    "The store holds the approved model-A records: immutable SharedImportVersion per changed task retaining shared baseline/origin; immutable ImportReceipt bound to operation key, candidate fingerprint, binding, base, resolved commit/tree, readset and result; immutable candidate-bound ReconciliationHold; audited WorkTransition with non-success SupersededByImport retirement that never creates a CompletionSeal; durable imported-baseline heads and holds",
+    "Existing canonical bytes, record ids, links and history are unchanged; holds deny new affected claim/handoff/evaluation/admission but permit settlement/checkpoint/evidence and holder-only release, freeze no files and impersonate no owner; reopening starts a new execution generation with no automatic claim",
+    "Tests prove retained original ImportOrigin links, current shared version/head, preserved native seals and evidence, holds surviving restart under the same candidate, malformed or cross-candidate links failing closed, and SupersededByImport carrying no completion or host-verification credit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "0030e3c2a2b941a38a6c498554dc2f14": {
+        "activity_id": "0030e3c2a2b941a38a6c498554dc2f14",
+        "task_id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0030e3c2a2b941a38a6c498554dc2f14"
+      },
+      "13cd13f62f354a07a8b1b31df9c8cd27": {
+        "activity_id": "13cd13f62f354a07a8b1b31df9c8cd27",
+        "task_id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "13cd13f62f354a07a8b1b31df9c8cd27"
+      },
+      "335b6f116eca47cdb0570acd8a9e07e0": {
+        "activity_id": "335b6f116eca47cdb0570acd8a9e07e0",
+        "task_id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "13cd13f62f354a07a8b1b31df9c8cd27"
+      },
+      "4db36e2ce7ae4c2f8a45a0d8613db644": {
+        "activity_id": "4db36e2ce7ae4c2f8a45a0d8613db644",
+        "task_id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "79bb60998ffa4a8a9aa2f626511d2c04"
+      },
+      "c3bbf0c1ae2747b09078247e9064b799": {
+        "activity_id": "c3bbf0c1ae2747b09078247e9064b799",
+        "task_id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c3bbf0c1ae2747b09078247e9064b799"
+      },
+      "e2e8ca93a60843d8aba19601e9e9c0fc": {
+        "activity_id": "e2e8ca93a60843d8aba19601e9e9c0fc",
+        "task_id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "335b6f116eca47cdb0570acd8a9e07e0"
+      },
+      "f4fac6c1cde5471996812144de1c52ed": {
+        "activity_id": "f4fac6c1cde5471996812144de1c52ed",
+        "task_id": "01a13605-a966-7c50-b8e9-4111b50b57de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f4fac6c1cde5471996812144de1c52ed"
+      }
+    }
+  }
+}

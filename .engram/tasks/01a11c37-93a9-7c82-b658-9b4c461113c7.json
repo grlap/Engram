@@ -1,0 +1,66 @@
+{
+  "id": "01a11c37-93a9-7c82-b658-9b4c461113c7",
+  "external_ref": null,
+  "title": "The MCP dogfood close check fails when the engram mcp server takes over 10s to exit under host load",
+  "outcome": "The MCP dogfood close check fails when the engram mcp server takes over 10s to exit under host load",
+  "acceptance": [
+    "Retained bounded trace-on/off baseline/load measurements distinguish what was observed from unmeasured shutdown stages; the original post-deadline sampler contribution is measured and removed; no causal attribution is made without evidence; and the close check now records the shutdown-stage milestones and pre-EOF load needed to attribute the next occurrence.",
+    "Then either shutdown is made bounded, or the close check distinguishes a late clean exit under measured host saturation from a hung server, without loosening the budget for a hung server",
+    "The MCP dogfood suite passes in the full gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "gate",
+    "mcp",
+    "performance"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered strict absolute10s MCP close checks distinguishing late clean exit, stalled stdio, failed exit and never-closed outcomes; bounded interval CPU/milestone diagnostics and six fixed content-free opt-in Rust shutdown stages. Removed blocking post-deadline sampler. Historical measurements retained with causal limits; original stage/cause remains unknown. Full exact-tree gate9stages passed/MCP91, independentCodex+Claude round6 clean, independent acceptance3/3 fresh. Installed clean release/readiness4/4, backed up old binary, verified fast-forward origin/master landing.",
+    "completed_at": "2026-10-09T18:32:44.814907700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7c6e14c7ad0c43969b5fe614d27c45a3": {
+        "activity_id": "7c6e14c7ad0c43969b5fe614d27c45a3",
+        "task_id": "01a11c37-93a9-7c82-b658-9b4c461113c7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7c6e14c7ad0c43969b5fe614d27c45a3"
+      },
+      "d896af900045453694586c8ee7e5fbe2": {
+        "activity_id": "d896af900045453694586c8ee7e5fbe2",
+        "task_id": "01a11c37-93a9-7c82-b658-9b4c461113c7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "00d4304df7b047aeb415e66de79b5e6d"
+      }
+    }
+  }
+}

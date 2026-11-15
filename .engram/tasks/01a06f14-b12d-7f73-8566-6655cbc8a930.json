@@ -1,0 +1,50 @@
+{
+  "id": "01a06f14-b12d-7f73-8566-6655cbc8a930",
+  "external_ref": null,
+  "title": "Build identity visible to sessions: engram --version and the next receipt carry the runtime build fingerprint",
+  "outcome": "Build identity visible to sessions: engram --version and the next receipt carry the runtime build fingerprint",
+  "acceptance": [
+    "engram --version prints the package version plus the runtime-derived build fingerprint; next (CLI and MCP) carries the same fingerprint once per receipt so a session can tell its MCP child is stale after an install; no build.rs, no git plumbing; complements the doctor build_fingerprint item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered runtime-derived process/schema identity on version and CLI/MCP next, lazy for short-lived CLI diagnostics and captured at MCP startup, with bounded receipts and explicit unavailable values. Validated by all required gates and two-reviewer code closure.",
+    "completed_at": "2026-09-05T10:41:35.414517300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8b9949bf85e7ee5ee9195dcf2718d9a611c2ef48cdd67e9cbbdb08f1fe9d38bc": {
+        "activity_id": "8b9949bf85e7ee5ee9195dcf2718d9a611c2ef48cdd67e9cbbdb08f1fe9d38bc",
+        "task_id": "01a06f14-b12d-7f73-8566-6655cbc8a930",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b3dd2efb24af6392a4922a0ebfc8d2f7666b94858d40ae7db4a55aa757f29fc8"
+      }
+    }
+  }
+}

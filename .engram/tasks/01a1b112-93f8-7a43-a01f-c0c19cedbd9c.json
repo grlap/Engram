@@ -1,0 +1,47 @@
+{
+  "id": "01a1b112-93f8-7a43-a01f-c0c19cedbd9c",
+  "external_ref": "termal#diagnostic-bd32fe12",
+  "title": "Cut the Windows startup cost of the committed-input reader's recursive submodule status without weakening its checks",
+  "outcome": "Cut the Windows startup cost of the committed-input reader's recursive submodule status without weakening its checks",
+  "acceptance": [
+    "A recorded per-call timing on Windows Central shows where the reader's time goes, before and after, on a no-submodule fixture and on a repository with initialized nested submodules",
+    "The reader's verdicts are unchanged across the shared fixture table, including a gitlink without a .gitmodules mapping (still refused), off-pin, uninitialized and nested children, and no full file or index listing is added",
+    "If no safe faster route exists, the item records that measured conclusion and the existing recursive call stays"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "performance",
+    "source-identity",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "05e7d8bb73864e2cae60ffb0db3112c0": {
+        "activity_id": "05e7d8bb73864e2cae60ffb0db3112c0",
+        "task_id": "01a1b112-93f8-7a43-a01f-c0c19cedbd9c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "05e7d8bb73864e2cae60ffb0db3112c0"
+      }
+    }
+  }
+}

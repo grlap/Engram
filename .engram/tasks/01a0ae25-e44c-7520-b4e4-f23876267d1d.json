@@ -1,0 +1,53 @@
+{
+  "id": "01a0ae25-e44c-7520-b4e4-f23876267d1d",
+  "external_ref": null,
+  "title": "Surface: the evaluate word in CLI and MCP with receipts, guidance, and updated contracts",
+  "outcome": "Agents record acceptance evaluations through one explicit evaluate word in CLI and MCP; done, show and next receipts disclose evaluation state and the single recovery command; the word vocabulary, parity and dogfood contracts and the identical instruction files are updated consistently.",
+  "acceptance": [
+    "done refusals under an evaluated policy name the exact cause and one recovery command; show and next disclose the newest evaluation state per criterion",
+    "engram work evaluate and the MCP evaluate tool record an evaluation with explicit idempotency, mode, per-criterion verdict, basis, rationale and evidence citations, and refuse with actionable guidance on stale basis, mode or basis violations",
+    "node --test scripts/parity.test.mjs, scripts/mcp-dogfood.test.mjs and scripts/control-dogfood.test.mjs pass with the new word covered"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Surface delivered: service work_evaluate_on with WorkEvaluateInput/WorkCriterionVerdictInput/WorkEvaluateResult; the evaluate word on CLI (--mode, --acceptance-basis, --evidence-basis, repeatable --verdict/--rationale/--evidence keyed by position, --attempt, --source-fingerprint, --model, --execution-identity/--parent-session) and MCP (evaluate tool, fifteen tools, instructions string names fourteen words); operator control-policy set-acceptance-evaluation; update --evaluation-mode/--clear-evaluation-mode (MCP action evaluation_mode); show discloses the pinned mode always and, under an evaluated policy, the evidence basis plus the newest per-criterion verdicts with freshness (text and JSON); next projects evaluated changes; done refusals carry the new causes with evaluate guidance. Every fourteen-word count and enumeration site updated (AGENTS/CLAUDE/SKILL/spec/shipped/roadmap/host-checklist/snapshot/development/cli-and-mcp/main/verbs/mcp-dogfood/parity). Service and verbs tests cover the word, show, update, done, and peer next. Gates recorded on the core sibling for the whole changeset; add --evaluation-mode and snapshot carry of the pinned mode filed as optional follow-ups under the root.",
+    "completed_at": "2026-09-17T08:17:46.690585300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8b4565f945ee8bb4407c2a6e44c9d4989f184a7c8e95d92a63c99ab871d80602": {
+        "activity_id": "8b4565f945ee8bb4407c2a6e44c9d4989f184a7c8e95d92a63c99ab871d80602",
+        "task_id": "01a0ae25-e44c-7520-b4e4-f23876267d1d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "61db84727274255af5e4aae13bfd283f13be9f2dd4ede5d68465557b2ee21208"
+      }
+    }
+  }
+}

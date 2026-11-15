@@ -1,0 +1,51 @@
+{
+  "id": "01a10dc0-e9c8-7b52-aa2e-228b9d786330",
+  "external_ref": null,
+  "title": "Bare `core complete` is unguarded while the session holds more than one claim",
+  "outcome": "Bare `core complete` is unguarded while the session holds more than one claim",
+  "acceptance": [
+    "`engram work core complete` without --work-ref, from a session holding more than one live claim or whose focus it does not hold while it holds other work, is refused the way the agent words are, recording nothing, or the docs state that core complete is exempt and why",
+    "A test covers the chosen behavior"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 7306ac3 on master. A bare `engram work core complete` (no --work-ref) now follows the bare `done` rule:\n- It is refused before any attempt is written when the session holds other work and the focus is not held (work_implicit_target_conflict), or when another live claim stands beside the held focus (work_bare_target_ambiguous).\n- An exact-intent repeat of an admitted completion on the focus still replays.\n- Completion's replay target rule is unchanged, and core update and propose are unchanged.\n- Docs are in cli-and-mcp.md.\n- Tests: a new completion/tests/implicit_target.rs (6 tests) and a CLI test in bare_target_cli.rs. Five existing tests that completed bare while holding several claims now name their target.\n- Evidence: full gate test-49030b22 9/9; credited lib run 0f4955d4 (1899 passed); round-2 pair clean; evaluation 4373c6a9 passed 2/2; readiness ready on 4 stores.\n- Installed build 1588ee00.",
+    "completed_at": "2026-10-06T05:03:30.914652300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e050df828cb546a4ad295092eb185ec0": {
+        "activity_id": "e050df828cb546a4ad295092eb185ec0",
+        "task_id": "01a10dc0-e9c8-7b52-aa2e-228b9d786330",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "00143e0e2c3e4ff6a55c4c9eeb643697"
+      }
+    }
+  }
+}

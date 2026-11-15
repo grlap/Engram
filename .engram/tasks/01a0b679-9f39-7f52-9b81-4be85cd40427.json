@@ -1,0 +1,89 @@
+{
+  "id": "01a0b679-9f39-7f52-9b81-4be85cd40427",
+  "external_ref": null,
+  "title": "engram control refuses the --actor-context its host passes, so no turn has been mediated since 2026-09-03",
+  "outcome": "A host that passes one execution context to every Engram channel of a session can start the control connection: engram control accepts --actor-context (and ENGRAM_ACTOR_CONTEXT), records it on its attribution as the work words do, and turn-gated mediation works again once that build is installed.",
+  "acceptance": [
+    "after the fixed build is installed and TermAl restarted, a turn-gated project's store shows a new control session and turn grant",
+    "engram control started with TermAl's exact argument order (--actor-id, --actor-context, --session-id) serves instead of exiting 2; the control dogfood spawns it that way and passes",
+    "the control connection's records carry the normalized actor context as provenance; host_control_attributes_its_records_to_the_supplied_actor_context passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Verified the installed --actor-context fix end to end in live Engram control state. Parent read-only census2026-09-20T18:49:31.599Z found sessions7135/7136/7139 turn_gated/ready with new granted, begun and completed turns plus matching turn_begin/turn_checkpoint records, after the installed-build boundary. Retained regression evidence confirms exact host argv and normalized actor provenance test passes; no gates rerun or live policy/reset mutations. Independent Claude7140 evaluation05c1d2ae86f94a6199d415170235a3d5 recorded3/3 passes, criterion1 judgment and2/3 asserted, not host-minted observed verification. Parent read back verdicts; packet .git/control-live-acceptance-20260920.json; census/script .git/control-live-verification-20260920.{md,mjs}. All3authored criteria unchanged. Postcommit tree clean at0de7067; new completion snapshot printed7e424b6203f0b3d42f797457980b339d1942a6db4377e9ccba3c57e08b55a658, historical reviewedinput693f... preserved. Separate observed-build/E2E acceptance not claimed.",
+    "completed_at": "2026-09-20T18:53:50.285332700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1c5e345b1ef64224b7a381a9bad59e91": {
+        "activity_id": "1c5e345b1ef64224b7a381a9bad59e91",
+        "task_id": "01a0b679-9f39-7f52-9b81-4be85cd40427",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "111ffe50f61344ab8d83b2dabff98e59"
+      },
+      "436c10e7b88a4f51a93fb3f384c4feca": {
+        "activity_id": "436c10e7b88a4f51a93fb3f384c4feca",
+        "task_id": "01a0b679-9f39-7f52-9b81-4be85cd40427",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "436c10e7b88a4f51a93fb3f384c4feca"
+      },
+      "8abb3e8e2d7f490a82f5a71476e9df00": {
+        "activity_id": "8abb3e8e2d7f490a82f5a71476e9df00",
+        "task_id": "01a0b679-9f39-7f52-9b81-4be85cd40427",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8abb3e8e2d7f490a82f5a71476e9df00"
+      },
+      "fda0b84cf5c14d488e9349c2c45fc159": {
+        "activity_id": "fda0b84cf5c14d488e9349c2c45fc159",
+        "task_id": "01a0b679-9f39-7f52-9b81-4be85cd40427",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8abb3e8e2d7f490a82f5a71476e9df00"
+      }
+    }
+  }
+}

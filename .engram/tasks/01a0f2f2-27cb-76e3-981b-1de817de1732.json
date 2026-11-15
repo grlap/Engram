@@ -1,0 +1,52 @@
+{
+  "id": "01a0f2f2-27cb-76e3-981b-1de817de1732",
+  "external_ref": null,
+  "title": "Use one evaluation policy and task-pin predicate at admission and consumption",
+  "outcome": "Use one evaluation policy and task-pin predicate at admission and consumption",
+  "acceptance": [
+    "A test shows a switch from asserted to observed mechanical basis retires an asserted pass, preserving the distinct admission-only refusal when evaluation is disabled; no existing mode/mark behavior is widened",
+    "Admission and freshness call one owner for allowed mode and task-pin agreement; a test records a passing evaluation, strengthens the effective policy or changes the pin, and proves done becomes stale policy while admission of the now-disallowed mode refuses"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Admission and consumption now share one private mode-policy/task-pin predicate, preserving existing refusals, phase differences and mechanical-basis retirement. Added exhaustive 96-cell assessment/admission/freshness matrix and disallowed-mode admission transition regression; updated lifecycle owner documentation.",
+    "completed_at": "2026-09-30T17:41:29.258966500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c695713bae574a24b7620a3cbc75cd0a": {
+        "activity_id": "c695713bae574a24b7620a3cbc75cd0a",
+        "task_id": "01a0f2f2-27cb-76e3-981b-1de817de1732",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "778aea0734664055975a835df42212fd"
+      }
+    }
+  }
+}

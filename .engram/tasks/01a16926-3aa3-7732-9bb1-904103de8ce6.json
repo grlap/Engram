@@ -1,0 +1,28 @@
+{
+  "id": "01a16926-3aa3-7732-9bb1-904103de8ce6",
+  "external_ref": null,
+  "title": "Warn in the update receipt when a revise drops or changes a binding that a carried failing evaluation judged",
+  "outcome": "Warn in the update receipt when a revise drops or changes a binding that a carried failing evaluation judged",
+  "acceptance": [
+    "When `update` drops or changes a criterion's binding that the newest or carried failing evaluation judged, the receipt names that evaluation record and states that the failure stays carried and a host may refuse or fail the next evaluation",
+    "No such notice appears when the revise leaves every judged binding unchanged",
+    "Tests cover an explicit binding drop, a binding change, and an unchanged binding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

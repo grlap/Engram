@@ -1,0 +1,62 @@
+{
+  "id": "01a1565c-036c-7d90-8db5-f02e99f3582c",
+  "external_ref": null,
+  "title": "Correct the final-origin-audit test comment: admission decodes every origin but leaves binding checks to the final audit",
+  "outcome": "Correct the final-origin-audit test comment: admission decodes every origin but leaves binding checks to the final audit",
+  "acceptance": [
+    "The comment on the folder-apply test for the final origin audit after admission states that admission decodes every stored import origin but leaves origin-to-work binding checks to the final store-wide audit, instead of saying admission does not read the other project"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in de18e4ee on origin/master. The comment on a_failed_final_origin_audit_after_admission_is_a_projection_bug now states that admission decodes every stored import origin but leaves origin-to-work binding checks to the final store-wide audit. Full gate test-7421dc84 PASS on freeze 4fad3ca4. The r3 review pair was clean. Pre-commit evaluation dbcaf84a passed 1/1. Installed build 47ade72d.",
+    "completed_at": "2026-10-20T06:35:28.628344100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2d67f809151c44029d2dadc56a65896d": {
+        "activity_id": "2d67f809151c44029d2dadc56a65896d",
+        "task_id": "01a1565c-036c-7d90-8db5-f02e99f3582c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2d67f809151c44029d2dadc56a65896d"
+      },
+      "5961862d1848452f9e88c73caf7e0d27": {
+        "activity_id": "5961862d1848452f9e88c73caf7e0d27",
+        "task_id": "01a1565c-036c-7d90-8db5-f02e99f3582c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "957c895ff4564692a2a4c94e850d77c1"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a15272-dd66-7ce3-bec1-d16bc05348e8",
+  "external_ref": null,
+  "title": "Run the opt-in Nmax quiet test to completion in a release-profile quiet slot (terminal-fanout, chained and blocker families)",
+  "outcome": "Run the opt-in Nmax quiet test to completion in a release-profile quiet slot (terminal-fanout, chained and blocker families)",
+  "acceptance": [
+    "The opt-in test graph_snapshot_nmax_validation_quiet_slot runs to completion on the landed Batch A code in a quiet slot agreed with TermAl's coordinator, preferably in the release profile (or a documented profile), and its full planning_scale output for every family (independent, mixed-forest, terminal-fanout, chained, 4-blockers) is recorded verbatim",
+    "Every family's validation stays within the 120-second budget, or a failure is classified and filed as a product defect"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "quiet-slot",
+    "scale",
+    "test-infra"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

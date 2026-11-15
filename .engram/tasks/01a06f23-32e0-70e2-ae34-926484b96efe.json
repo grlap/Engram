@@ -1,0 +1,27 @@
+{
+  "id": "01a06f23-32e0-70e2-ae34-926484b96efe",
+  "external_ref": null,
+  "title": "Proposal: agent pair workflow — Fable coordinator, Codex implementer, independent reviewers (docs/agent-pair-workflow.md)",
+  "outcome": "Proposal: agent pair workflow — Fable coordinator, Codex implementer, independent reviewers (docs/agent-pair-workflow.md)",
+  "acceptance": [
+    "docs/agent-pair-workflow.md describes the coordinator/implementer/reviewer workflow as a proposal, not changed standing instructions; docs/development.md links it; check-doc-links passes; Greg accepts or rejects the proposal on the item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a06f27-8d42-7a02-8c01-fd7604840b42",
+  "disposal_reason": "acceptance separated proposal delivery from Greg's adoption decision",
+  "completion": null
+}

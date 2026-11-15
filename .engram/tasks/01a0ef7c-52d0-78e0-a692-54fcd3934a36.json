@@ -1,0 +1,54 @@
+{
+  "id": "01a0ef7c-52d0-78e0-a692-54fcd3934a36",
+  "external_ref": null,
+  "title": "Engram's final-diff audit text takes up three findings from TermAl's review of the same rule",
+  "outcome": "Engram's final-diff audit text takes up three findings from TermAl's review of the same rule",
+  "acceptance": [
+    "Condition (c) of the authority-text rule in AGENTS.md and CLAUDE.md names the audit without the words 'the coordinator's', which stand beside two named coordinators, and is met only by an audit recorded as passed",
+    "The audit paragraph of .claude/commands/review-changes.md requires, besides the reading, the comparison of each changed passage with its recorded sentence as an exact string after whitespace normalisation and a word-level diff, says what a passage without a recorded concurrence requires when the audit finds it after the freeze, and binds the audit to the input fingerprint the gate's run recorded",
+    "The change shortens or replaces text where it can and restates no rule that another passage defines; both coordinators' concurrence on the exact wording, Greg's notice and the final-diff audit are recorded on this item before the landing; the link check and the AGENTS/CLAUDE identity check pass and the review pair is clean on the frozen tree",
+    "The paragraph says who sends the frozen diff to the auditing coordinator and that the change does not land before the audit is recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Engram's final-diff audit text took up the findings from TermAl's nine review rounds of the same rule: the audit is bound to the input fingerprint the checks recorded, the changed-passage unit is defined (word-level diff against the base commit, whitespace-only excluded, untracked authority files counted as added), the comparison is script-assisted exact-string matching beside the line-by-line read, removals need a concurrence naming them, the after-the-freeze remedy is stated, other files stay with the gate and the pair, and condition (c) requires the audit recorded as passed — with the defective whole-file parenthesis replaced by a reference to the Authority and Git conditions. Landed as f42ccca on master after both coordinators' concurrence, Greg's notice, the pair clean of Medium-or-higher, and Termal::Fable2's script-assisted audit recorded as passed. All four acceptance criteria passed on evaluation 94def613 (independent_session Claude). The one source-change obligation is docs-only and recorded as untested by done.",
+    "completed_at": "2026-09-30T04:39:18.146787600Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6433419e37104902a32887cfc070c8f7": {
+        "activity_id": "6433419e37104902a32887cfc070c8f7",
+        "task_id": "01a0ef7c-52d0-78e0-a692-54fcd3934a36",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a2c468c102b2421b9424a6453d0f0975"
+      }
+    }
+  }
+}

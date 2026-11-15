@@ -1,0 +1,101 @@
+{
+  "id": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+  "external_ref": null,
+  "title": "Move retained raw artifacts to Git-ignored .logs/ and .evidence/ with removal on task close",
+  "outcome": "Move retained raw artifacts to Git-ignored .logs/ and .evidence/ with removal on task close",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md are byte-identical and, in the section 'Work only in the repository folder', the old first bullet is replaced by two bullets: the first bullet verbatim as v3 quoted it in holder note 1c78529799bc46e4973344e6c488cb49, and the second bullet verbatim as the v4 wording quoted in holder note 0328491294f54b95bbd1569f6b913741, concurred by Engram's covering coordinator (note 9c36812eba9740e6a4bf967e8fa4ac6a) and Termal::Fable2 (note 2209427043c44b44a626b99819431ed1); v4 differs from v3 only by moving the attribution lead-in into the item's notes",
+    ".gitignore ignores /.logs/ and /.evidence/, and scripts/check-doc-links.mjs skips the .logs and .evidence directories, shown by a check that a Markdown file holding a dead link under .evidence/ does not fail the link check",
+    "The engram-repo skill and docs/development.md direct evidence archiving into the main checkout's .evidence/ and no longer name target/evidence/; their cargo-clean and git-clean hazard text about target/evidence is retired",
+    "The full gate passes on the landed tree, and the item's holder notes record the authority-text procedure: both coordinators' concurrence, the exact text sent to Greg before landing, and Termal::Fable2's final-diff audit passed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "evidence",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed root .logs/.evidence retention rules, matching AGENTS/CLAUDE, archive documentation, ignore/checker changes and fixtures. Full gate passed exact landed content, independent Codex/Claude whole-input reviews completed, both authority concurrences/Greg notice/final audit recorded. Installed release from clean e3a25f93; all six live stores ready. Fresh post-crash independent evaluation0f18010331f346838f731bd83fa6977f passes all4 criteria. Legacy raw archives preserved safely for separately tracked retention sweep; Low follow-ups independently filed.",
+    "completed_at": "2026-10-18T15:32:51.450450700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "20178ff7096b477a99fb28ecfa4cf353": {
+        "activity_id": "20178ff7096b477a99fb28ecfa4cf353",
+        "task_id": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "20178ff7096b477a99fb28ecfa4cf353"
+      },
+      "9742e5c6ada64cc6b0948b805db4881a": {
+        "activity_id": "9742e5c6ada64cc6b0948b805db4881a",
+        "task_id": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9742e5c6ada64cc6b0948b805db4881a"
+      },
+      "bb73881e7acf4fed87aedde409d54864": {
+        "activity_id": "bb73881e7acf4fed87aedde409d54864",
+        "task_id": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "79269a7cf23a449c9f59840613f93646"
+      },
+      "c08e22d45f9049948130b8f29d719ff5": {
+        "activity_id": "c08e22d45f9049948130b8f29d719ff5",
+        "task_id": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "18e2a189108c4dfba9cba4d1375f7a90"
+      },
+      "f7d8661641164c4aa34ba0081592d3c3": {
+        "activity_id": "f7d8661641164c4aa34ba0081592d3c3",
+        "task_id": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f7d8661641164c4aa34ba0081592d3c3"
+      }
+    }
+  }
+}

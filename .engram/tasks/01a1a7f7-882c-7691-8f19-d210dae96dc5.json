@@ -1,0 +1,31 @@
+{
+  "id": "01a1a7f7-882c-7691-8f19-d210dae96dc5",
+  "external_ref": null,
+  "title": "Have Engram's test launcher report a passing run's completion to the host, so a correct check on an Engram project isn't refused",
+  "outcome": "Engram's own scripts/test-launcher.mjs carries TermAl's agreed completion handshake, so a passed, clean registered run in an Engram checkout gives the host its run-end measurement instead of leaving a later close to assume a source change",
+  "acceptance": [
+    "Engram's launcher performs the handshake agreed on TermAl's w-d6b6165a6661, in both foreground and detached paths, once that protocol is fixed in TermAl's source",
+    "A host that lacks the handshake, an unavailable host and a standalone run all keep today's behaviour and result: the handshake never turns a passing run into a failure and never adds a retry",
+    "A real-host run in an Engram checkout using Engram's own launcher shows a passed clean run followed by an unchanged close accepted and done, and a real edit refused",
+    "No Engram storage, evaluation or barrier code changes under this item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1a82a-2463-7141-b385-633b5cacc42a",
+  "disposal_reason": "Greg approved the one-check model („tak”, Asistant #279): no completion handshake is built, and the launcher's default selection is now part of w-633b5cacc42a.",
+  "completion": null
+}

@@ -1,0 +1,58 @@
+{
+  "id": "01a1db75-74af-7671-926d-5e0e8165b7c0",
+  "external_ref": null,
+  "title": "Preserve split UTF-8 characters in the MCP dogfood client",
+  "outcome": "Decode MCP stdout and stderr incrementally so pipe chunk boundaries cannot corrupt valid UTF-8 or cause false full-contract parity failures.",
+  "acceptance": [
+    "A deterministic regression splits multibyte UTF-8 across pipe/data chunks and exercises the actual MCP client framing; content text and structuredContent remain exact and equal after JSON parsing.",
+    "Stdout and diagnostic stderr preserve multibyte characters across chunk boundaries without weakening JSON framing, parity assertions or diagnostic handling.",
+    "The focused harness checks pass and the affected full authored-contract scenario passes on a scheduled qualified candidate; normal review and gate rules apply."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "test-infrastructure",
+    "utf8"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "25e4c06bc1394bbdbddbe75af64348b6": {
+        "activity_id": "25e4c06bc1394bbdbddbe75af64348b6",
+        "task_id": "01a1db75-74af-7671-926d-5e0e8165b7c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "25e4c06bc1394bbdbddbe75af64348b6"
+      },
+      "5e141aaa15bd47a69b80bbaf6bd848d0": {
+        "activity_id": "5e141aaa15bd47a69b80bbaf6bd848d0",
+        "task_id": "01a1db75-74af-7671-926d-5e0e8165b7c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "25e4c06bc1394bbdbddbe75af64348b6"
+      }
+    }
+  }
+}

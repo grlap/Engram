@@ -1,0 +1,52 @@
+{
+  "id": "01a0afc0-a840-7722-b90e-ebc27184c00b",
+  "external_ref": null,
+  "title": "Round-8 notes: recovery template against the runnable-next contract; evidence-basis, replay, and read-cost notes dispositioned",
+  "outcome": "Round-8 notes: recovery template against the runnable-next contract; evidence-basis, replay, and read-cost notes dispositioned",
+  "acceptance": [
+    "the placeholder pass-prefilled evaluate recovery command is dispositioned against the runnable-next contract with a recorded reason and, if changed, a test pinning the new shape, without claiming a measured rubber-stamping effect; the evidence-basis size, historical replay, and read-cost notes are dispositioned as no speculative architecture or performance change with reasons recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round8"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The missing/stale-evaluation recovery command is runnable navigation (engram work show REF --full --notes --gates) instead of an evaluate template with a pre-filled pass verdict, pinned in the extended evaluate_records_under_policy_and_completion_consumes_it (RED logs/30, GREEN logs/31) and documented in the recovery section; no rubber-stamping effect is claimed. Evidence-basis size, older-receipt replay, and run-history read cost are dispositioned as no change with reasons recorded on the item.",
+    "completed_at": "2026-09-17T14:45:30.154598800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9f127d078ada058b4c4e89dbd14d568467c9e85051674e77694d421e827e7a59": {
+        "activity_id": "9f127d078ada058b4c4e89dbd14d568467c9e85051674e77694d421e827e7a59",
+        "task_id": "01a0afc0-a840-7722-b90e-ebc27184c00b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8a2db43cbd3576e42deb95a32138e157481a9b0162adee755940b4e85ea1b2af"
+      }
+    }
+  }
+}

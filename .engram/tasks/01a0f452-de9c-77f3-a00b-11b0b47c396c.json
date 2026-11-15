@@ -1,0 +1,52 @@
+{
+  "id": "01a0f452-de9c-77f3-a00b-11b0b47c396c",
+  "external_ref": null,
+  "title": "Pin remaining evaluation admission mismatch and remedy pairs in regression tests",
+  "outcome": "Pin remaining evaluation admission mismatch and remedy pairs in regression tests",
+  "acceptance": [
+    "Existing admission guard histories assert their typed mismatch and remedy for the remaining eligibility, source-root and citation cases while retaining original reason and refusal assertions",
+    "The coverage includes executor/parent/affiliation/provenance mismatches, workspace/judged-source mismatches, mechanical-basis/check/gate mismatches, and moved or unverifiable citation source"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review",
+    "test-coverage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 0d6eb26: existing admission guard histories pin their typed mismatch and remedy for all 14 remaining pairs.",
+    "completed_at": "2026-10-03T08:03:24.506267600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4817a97791344611b1b4af0fdfcf2a45": {
+        "activity_id": "4817a97791344611b1b4af0fdfcf2a45",
+        "task_id": "01a0f452-de9c-77f3-a00b-11b0b47c396c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f85451067b9a47dba1af5024ecba3935"
+      }
+    }
+  }
+}

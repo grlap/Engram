@@ -1,0 +1,90 @@
+{
+  "id": "01a18536-09f8-7981-9cd9-cc414586615a",
+  "external_ref": null,
+  "title": "Make Git identity the default review freeze and drop mandatory raw review identity",
+  "outcome": "Make Git identity the default review freeze and drop mandatory raw review identity",
+  "acceptance": [
+    "/review-changes defines the review freeze as Git identity: a fully staged index, an empty git diff, no untracked files, and the git write-tree id that each reviewer reports at start and end; for committed inputs, the commit tree id plus a clean status.",
+    "The compiled host freeze checker and raw review identity are optional, limited to the listed raw-byte exceptions.",
+    "The launcher's automatic before/after fingerprint is unchanged.",
+    "AGENTS.md and CLAUDE.md stay identical."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "agent-instructions",
+    "authority",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The review freeze is now Git identity by default: a staged index, an empty git diff, no untracked files and the git write-tree id, checked by each reviewer at start and end, or for committed inputs the commit tree id plus a clean status. Raw review identity and the compiled freeze checker are optional, only for the listed raw-byte cases. The launcher fingerprint is unchanged, and AGENTS.md == CLAUDE.md. Landed in 0ec2e141, pushed and installed (build 4bc4a203). The independent evaluation 596b2748 passed 4/4.",
+    "completed_at": "2026-10-29T20:24:04.060386400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "189e245adc6943e694cf83dd739b9620": {
+        "activity_id": "189e245adc6943e694cf83dd739b9620",
+        "task_id": "01a18536-09f8-7981-9cd9-cc414586615a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "a9aff44937bd462cb5ef0c56b70d4e74"
+      },
+      "3ef4dd4e70184c3fb429749fb6372c53": {
+        "activity_id": "3ef4dd4e70184c3fb429749fb6372c53",
+        "task_id": "01a18536-09f8-7981-9cd9-cc414586615a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2598335d41dc4a09822762786f39456f"
+      },
+      "dca9f0c3cd4a4d4eb2e0791c9a202064": {
+        "activity_id": "dca9f0c3cd4a4d4eb2e0791c9a202064",
+        "task_id": "01a18536-09f8-7981-9cd9-cc414586615a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dca9f0c3cd4a4d4eb2e0791c9a202064"
+      },
+      "ee52d56fe5ab48fba517fb48353b822c": {
+        "activity_id": "ee52d56fe5ab48fba517fb48353b822c",
+        "task_id": "01a18536-09f8-7981-9cd9-cc414586615a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "dca9f0c3cd4a4d4eb2e0791c9a202064"
+      }
+    }
+  }
+}

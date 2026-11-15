@@ -1,0 +1,53 @@
+{
+  "id": "01a10e43-0b35-7721-be77-2ed9718bcd8f",
+  "external_ref": null,
+  "title": "A citation refused for coming from an earlier root naming says \"workspace X, not workspace X\"",
+  "outcome": "When `evaluate` refuses a bound criterion's citation because the cited check ran on the same revision and workspace, but under an earlier naming generation of the source root, or before the current naming, the refusal says which of those it is. It names the check's generation and position and the current naming's generation and position, and gives the remedy. It never prints two identical workspace paths as the difference.",
+  "acceptance": [
+    "The same-revision branch of the bound-citation refusal (src/storage/work/acceptance_evaluation/source.rs, around lines 438-459) distinguishes these causes and names the actual difference: a different workspace (both paths shown), a different naming generation (both generations shown), a root not in the named state, or a check or producer observation recorded before the current naming (the naming's feed position shown). A refusal never presents two identical values as the mismatch.",
+    "The typed cause carries enough to tell these apart (for example the check's and the root's generation), without changing the refusal code or remedy for existing readers.",
+    "Tests cover each cause, including the observed case: the same workspace path and revision, with the check recorded under an earlier claim's naming (generation N) while the current claim re-named the same root (generation N+1). The message names both generations."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-workflow",
+    "refusal-wording"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 86c82c8 on master, together with w-47f01b017cf0.\n- A refusal for a bound citation from another root naming now names the actual mismatch: the naming generation, the not-named state, run positions before the naming, the producer's workspace, or an unsourced producer. It never prints a workspace path against itself.\n- The typed cause stays WrongSource with the same remedy.\n- Evidence: full gate 0a79930a passed 9/9 (1aaf28bb); round-3 review was clean in scope; evaluation b0adddd2 passed 3/3. Readiness was ready on all 4 stores.\n- Installed build 277a5e49.",
+    "completed_at": "2026-10-06T01:12:10.001845200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "75a41d78ca0a4acc89accdffb007e946": {
+        "activity_id": "75a41d78ca0a4acc89accdffb007e946",
+        "task_id": "01a10e43-0b35-7721-be77-2ed9718bcd8f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bb3151592ff14c59bb28cba649374d0e"
+      }
+    }
+  }
+}

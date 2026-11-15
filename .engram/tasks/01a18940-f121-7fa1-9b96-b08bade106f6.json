@@ -1,0 +1,29 @@
+{
+  "id": "01a18940-f121-7fa1-9b96-b08bade106f6",
+  "external_ref": null,
+  "title": "Retire the backlog of inactive Engram worktrees under .worktrees (census of 2026-10-29: 131 folders, about 119.6 GB)",
+  "outcome": ".worktrees holds only active roots and roots with a recorded, still-active retention reason",
+  "acceptance": [
+    "Phase 1: the empty non-worktree folders and the build output (target) of inactive roots of landed work are removed, with the exact list and measured bytes freed recorded here, and no source, admin run record or active root touched",
+    "Phase 2: every remaining worktree is either removed with git worktree remove (no --force) after a check that no open item cites its run records, or kept with a recorded still-active reason, owner and end condition; dirty edits not already in master are listed for their owners, never discarded",
+    "The result (counts before and after, bytes freed, and what is retained and why) is reported to Greg, and the total of live worktrees is at most about 15"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "cleanup",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

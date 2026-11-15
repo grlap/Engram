@@ -1,0 +1,69 @@
+{
+  "id": "01a1a47b-da77-7c81-8f2e-e95c35f8ed70",
+  "external_ref": null,
+  "title": "Make doctor name a dangling remote verification origin instead of aborting, and correct three remote verification doc statements",
+  "outcome": "Make doctor name a dangling remote verification origin instead of aborting, and correct three remote verification doc statements",
+  "acceptance": [
+    "A delivery whose origin link is dangling or names another kind of record is reported by doctor as a finding rather than failing verify_all, with a tamper test using an authoritative completion whose origin id doesn't exist",
+    "docs/features/execution-observability.md states that evaluation compares the declared input exactly; a bound completion criterion selecting registered Git verification compares an explicitly declared input with that verification. Without the declaration, unevaluated completion uses the verification's own input rather than independently checking the checkout, while applicable time and position guards remain. A criterion without selected registered Git verification does not run that declared-Git-input check; non-registered verification, including a bound copy, retains source-revision matching against available sightings and source changes.",
+    "The same docs state the finish-time rule as no finish time ahead of this host's clock, note the debris exception in the reason order, and say the future-time answer applies after the earlier reasons"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "1026c55b4d1946d8aaa7741873dfd1a9": {
+        "activity_id": "1026c55b4d1946d8aaa7741873dfd1a9",
+        "task_id": "01a1a47b-da77-7c81-8f2e-e95c35f8ed70",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8a3ecd9aa4724e7d8f20241c8e073bff"
+      },
+      "5a4c87f9cabd4d8f9c6e94f2d15bac54": {
+        "activity_id": "5a4c87f9cabd4d8f9c6e94f2d15bac54",
+        "task_id": "01a1a47b-da77-7c81-8f2e-e95c35f8ed70",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5a4c87f9cabd4d8f9c6e94f2d15bac54"
+      },
+      "8a3ecd9aa4724e7d8f20241c8e073bff": {
+        "activity_id": "8a3ecd9aa4724e7d8f20241c8e073bff",
+        "task_id": "01a1a47b-da77-7c81-8f2e-e95c35f8ed70",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8a3ecd9aa4724e7d8f20241c8e073bff"
+      }
+    }
+  }
+}

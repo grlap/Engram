@@ -1,0 +1,51 @@
+{
+  "id": "01a06f60-8e05-7562-9014-2c0c9fb4eaec",
+  "external_ref": null,
+  "title": "Clarify ls guidance when byte fitting hides the first matching item",
+  "outcome": "The suggested show target is captured before byte fitting. If zero rows fit, the receipt suggests a ref absent from its items. Keep that useful navigation only with explicit first-match wording, or derive guidance from emitted rows.",
+  "acceptance": [
+    "A zero-row byte-fitting regression verifies that guidance does not imply an unlisted row was shown and remains actionable within the response budget."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-1251-7030-a930-bb92b6f88464",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A zero-row byte-fitted receipt names the first matching ref explicitly in both structured hint and text, with actionable show guidance. The boundary test uses the real bounded projection with a smaller test budget; production remains at the protocol budget. Receipt fitting now lives in its owning receipts module.",
+    "completed_at": "2026-09-05T02:53:56.430438200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c2181f0d56aeecffb238f8a90ffb3df336e31db6ff4af284ee515e0c6a206dae": {
+        "activity_id": "c2181f0d56aeecffb238f8a90ffb3df336e31db6ff4af284ee515e0c6a206dae",
+        "task_id": "01a06f60-8e05-7562-9014-2c0c9fb4eaec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9d681799e7b26494ebcbc6783ebeaad6495f2d5762946063ee9ab5d6864e6feb"
+      }
+    }
+  }
+}

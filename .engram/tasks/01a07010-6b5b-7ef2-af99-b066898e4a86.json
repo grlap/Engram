@@ -1,0 +1,51 @@
+{
+  "id": "01a07010-6b5b-7ef2-af99-b066898e4a86",
+  "external_ref": null,
+  "title": "Bound and prevalidate the complete initial-note creation batch",
+  "outcome": "Bound and prevalidate the complete initial-note creation batch",
+  "acceptance": [
+    "Root creation and multi-child decomposition enforce a documented total initial-note budget before writes; excess and blank entries name the invalid entry and leave the database unchanged. CLI and MCP reject blank notes consistently. Reuse invariant item, basis, and sequence preparation without dropping canonical validation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06f14-bcc9-73d3-b295-c22bea35567e",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bounded and prevalidated complete initial-note batches without dropping canonical validation; focused regressions pass.",
+    "completed_at": "2026-09-05T05:55:19.352863900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1e6baedced5b39034f25d30245cb4f3f42170e6cbcff29ee8daf9495dd71a2da": {
+        "activity_id": "1e6baedced5b39034f25d30245cb4f3f42170e6cbcff29ee8daf9495dd71a2da",
+        "task_id": "01a07010-6b5b-7ef2-af99-b066898e4a86",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1c31d3e2e91f4bfa71d5f567f9d91b377201bc754235c74f0577df63ea56aaa9"
+      }
+    }
+  }
+}

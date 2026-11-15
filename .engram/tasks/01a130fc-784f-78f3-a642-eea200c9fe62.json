@@ -1,0 +1,64 @@
+{
+  "id": "01a130fc-784f-78f3-a642-eea200c9fe62",
+  "external_ref": null,
+  "title": "Keep launcher negative-marker assertions independent of checkout paths",
+  "outcome": "Keep launcher negative-marker assertions independent of checkout paths",
+  "acceptance": [
+    "New launcher summary tests use unique diagnostic markers or constrain negative assertions to the relevant rendered fields, so a valid checkout/run path containing private, escape, injected or untrusted does not spuriously fail them.",
+    "Regression coverage still proves malicious stage names, saved log locators and diagnostic text cannot inject a results line or escape the metadata projection."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "review",
+    "testing"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Launcher regression assertions now accept real checkout/run paths containing private, escape, injected, untrusted and worker-diagnostics while preserving malicious metadata rejection and exact output/owner-byte coverage.",
+    "completed_at": "2026-10-13T20:54:22.697268400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "12d24ae7af1747c5aa0ae11c412dda00": {
+        "activity_id": "12d24ae7af1747c5aa0ae11c412dda00",
+        "task_id": "01a130fc-784f-78f3-a642-eea200c9fe62",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6051088900e647b2ba06ba1651b637da"
+      },
+      "3d2ed86274ef4409a5f27105640bf35e": {
+        "activity_id": "3d2ed86274ef4409a5f27105640bf35e",
+        "task_id": "01a130fc-784f-78f3-a642-eea200c9fe62",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3d2ed86274ef4409a5f27105640bf35e"
+      }
+    }
+  }
+}

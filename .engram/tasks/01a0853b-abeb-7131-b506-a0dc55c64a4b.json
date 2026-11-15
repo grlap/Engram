@@ -1,0 +1,51 @@
+{
+  "id": "01a0853b-abeb-7131-b506-a0dc55c64a4b",
+  "external_ref": null,
+  "title": "The plan variant keeps an unreachable second dispatch arm and repeats its protocol literal across modules",
+  "outcome": "The plan variant is dispatched twice and its advertised core operation key disagrees with the key storage actually uses",
+  "acceptance": [
+    "Plans dispatch from exactly one site and the advertised core operation matches the key storage writes, or the divergence is documented at both sites"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-work-lifecycle",
+    "review",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 6c81fdd on origin/master and installed as build 3dc907d4.\n- A plan is dispatched from one site: the opening match of work_propose_on, before ambient binding. propose_metadata and its dead Plan arm are gone, and the later match refuses a plan with InvalidWorkProjection instead of dispatching it.\n- PLAN_PROTOCOL_OPERATION (\"work_propose:plan\") and PLAN_CORE_OPERATION (\"propose_work_plan\") replace the repeated literals. Their values, the plan_operation_key tuple and every stored row are unchanged.\n- The divergence between the plan key and the generic core key is documented at both derivations.\n- A new test derives the plan key independently, finds each receipt under it, and checks it is scoped to the session. A mutation check confirmed it fails when either value or the tuple order changes.\n- Design reviewed first with Engram::Fable and a Codex explorer. The round-3 full gate passed on 1789bad plus this diff, and all three review rounds ended clean from Codex and Claude.\n- Independent Codex evaluation: 1/1 criterion passes.",
+    "completed_at": "2026-09-27T00:51:03.017950600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "42692f1e760a4fa1b3fea35dc36abb1b": {
+        "activity_id": "42692f1e760a4fa1b3fea35dc36abb1b",
+        "task_id": "01a0853b-abeb-7131-b506-a0dc55c64a4b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d321872f2f6a4732ab507dce7e171fc6"
+      }
+    }
+  }
+}

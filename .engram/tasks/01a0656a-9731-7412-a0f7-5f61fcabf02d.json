@@ -1,0 +1,51 @@
+{
+  "id": "01a0656a-9731-7412-a0f7-5f61fcabf02d",
+  "external_ref": null,
+  "title": "Expose defaulted effective session in structured mutation receipts",
+  "outcome": "Structured CLI consumers can recover and reuse a process-defaulted session without retaining stderr.",
+  "acceptance": [
+    "A mutating shell word that defaulted its session includes the effective session id in its structured JSON receipt.",
+    "Hosted or explicitly injected attribution remains byte-for-byte unchanged and CLI/MCP parity coverage passes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Exposed process-defaulted effective session ids on successful structured CLI mutation receipts while preserving every explicit, read, text, refusal, MCP, and host-core shape.",
+    "completed_at": "2026-09-03T20:10:58.020677500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5ef4009c091cf60df5de4a75a8193d2de42cc37779d3054abd1220e26a0d962d": {
+        "activity_id": "5ef4009c091cf60df5de4a75a8193d2de42cc37779d3054abd1220e26a0d962d",
+        "task_id": "01a0656a-9731-7412-a0f7-5f61fcabf02d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "19cb418034ffb8b4d386df5f52ba9962b8a3540a6e410c288df72515ce638e8c"
+      }
+    }
+  }
+}

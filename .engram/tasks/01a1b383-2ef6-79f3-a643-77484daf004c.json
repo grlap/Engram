@@ -1,0 +1,67 @@
+{
+  "id": "01a1b383-2ef6-79f3-a643-77484daf004c",
+  "external_ref": null,
+  "title": "Remote verification consumes two complete shared source endpoints",
+  "outcome": "Remote verification admits the agreed two-endpoint shared source_id wire and uses the common full-object matching and live-currency path while preserving historical records",
+  "acceptance": [
+    "The host-private remote completion input accepts the closed tagged source_id alternative with required nullable source_id_before and source_id_after full objects; missing, malformed, mixed or unknown-kind inputs refuse without writes.",
+    "For both verification and landing_gate uses, credit requires the existing full-mode authoritative terminal PASS, exit, time, association, root and custody guards plus available equal whole source_id endpoints; equal dirty states qualify and null/null does not; expected commit or tree association reads the before endpoint.",
+    "Credited remote evidence retains the complete shared source object with no source_revision surrogate or components_json substitution, and reuses the common matcher and live currency to accept equal dirty local state and refuse changed state.",
+    "New shared endpoint validation is separate from stored-record validation; legacy remote wire, canonical bytes, identifiers, links, decisions and import interpretation remain unchanged without a durable-row conversion.",
+    "Focused regressions cover the shared wire, full endpoint components, unavailable endpoints, preserved guards, real clean/dirty live currency, historical canonical import preservation and host-protocol round-trip, and the exact reviewed candidate passes the required FULL gate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b1c6-cbb1-7a10-9f81-5d25ef9fa4ed",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Remote shared-source verification delivered and landed as 0cfb23415577ac706f5586a3970118425e7bd112; exact carried candidate FULL passed and Central build installed. DL560 installation and process activation remain on the integration item.",
+    "completed_at": "2026-11-07T06:20:31.363658900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "80ba4109e28f4516a089023eb61604f2": {
+        "activity_id": "80ba4109e28f4516a089023eb61604f2",
+        "task_id": "01a1b383-2ef6-79f3-a643-77484daf004c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "80ba4109e28f4516a089023eb61604f2"
+      },
+      "da4ea8cf71654d90b789465344877db1": {
+        "activity_id": "da4ea8cf71654d90b789465344877db1",
+        "task_id": "01a1b383-2ef6-79f3-a643-77484daf004c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "588586023ad54bb8ad79a4379440189f"
+      }
+    }
+  }
+}

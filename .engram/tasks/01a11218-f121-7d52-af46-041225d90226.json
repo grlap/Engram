@@ -1,0 +1,54 @@
+{
+  "id": "01a11218-f121-7d52-af46-041225d90226",
+  "external_ref": null,
+  "title": "Start unrelated coding tasks with fresh session context",
+  "outcome": "Coders start unrelated work in a fresh session, or with a supported context reset, using a compact durable handoff instead of accumulating unrelated task history.",
+  "acceptance": [
+    "Define a practical task-boundary rule: unrelated work starts with fresh context; related implementation, fixes and review rounds retain the context they need. Do not reset merely because a turn ended.",
+    "Before switching, record the completed or paused task's outcome, source/worktree, unresolved dependencies and exact evidence locators. Resolve or explicitly hand off active claims, gates, reviews and notifications; never transfer live authority implicitly or abandon a carried operation.",
+    "Use the host's supported fresh-session or context-reset route and recover current instructions plus a minimal task-specific brief. If neither safe route is available, record the limitation rather than pretending context was cleared.",
+    "Demonstrate the boundary with representative related and unrelated task scenarios, including an outstanding gate/review. The new task receives necessary governing context and locators without replaying the prior task's full transcript; exact token counts are not required."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented unrelated-task fresh-context procedure, preserved related-task context and outstanding ownership/delivery, supported creation/recovery evidence, five representative scenarios; reviewed, validated, independently accepted, committed, pushed and installed.",
+    "completed_at": "2026-10-06T22:25:27.866175500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6f3ea66b33fc4d57a292102392e0265d": {
+        "activity_id": "6f3ea66b33fc4d57a292102392e0265d",
+        "task_id": "01a11218-f121-7d52-af46-041225d90226",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8fd4b85f57604829aa7b4e9c15c7c7b5"
+      }
+    }
+  }
+}

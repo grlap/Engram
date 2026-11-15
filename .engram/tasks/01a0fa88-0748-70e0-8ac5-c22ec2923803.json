@@ -1,0 +1,69 @@
+{
+  "id": "01a0fa88-0748-70e0-8ac5-c22ec2923803",
+  "external_ref": null,
+  "title": "Restore a store copy from a target onto a clean home",
+  "outcome": "Restore a store copy from a target onto a clean home",
+  "acceptance": [
+    "`engram backup list` prints the manifests of the copies at the configured target and `engram backup fetch COPY --out FILE` writes one, decompressed to no more than the length its manifest declares and checked against that manifest, after checking the local disk has room for the stored file and the uncompressed copy; a CLI test covers both from a clean home that has only configured the target, and a test with too little room shows a typed refusal that writes nothing",
+    "`engram backup restore COPY --origin-retired-by NAME` fetches the copy, checks it against its manifest, installs it without replacing anything and verifies the installed store; it refuses without `--origin-retired-by`, refuses when a store already exists, and refuses while a push holds the lock; tests cover the three refusals",
+    "The store-equality test: export the rows of a quiescent source with `engram migration export`, push a store copy, change the source, restore into a second clean home; the restored file's SHA-256 equals the manifest's, `engram doctor` reports it healthy, and its exported rows equal the rows exported before the push and differ from the changed source's",
+    "Restore prints how many claims and grants in the copy are unexpired by the local clock and when the last one expires, changes no row of the restored store, and writes the operator's statement with the copy's SHA-256 and origin host name to the home's restore record (backup-records/<digest>/store.restore.json, kept apart from the target's state file), which `backup status` then shows; a test asserts the output, the unchanged rows and the status line, and that a new session's `claim` of an item still held in the copy is refused until that claim's expiry",
+    "When the running build does not accept the copy's schema reference, or its full check of the copy fails, `backup restore` refuses, leaves the fetched file in place and names both ways on (the build at the manifest's source revision, or `migration export` and `migration import`); a test with a manifest of another format identity asserts the refusal text",
+    "docs/features/off-host-backup.md's restore steps match the shipped words, and docs/shipped.md and docs/features/cli-and-mcp.md describe `backup list`, `backup fetch` and `backup restore`"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fa87-e4c5-7d10-bd31-8f5379e3c9c7"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Restore of a store copy onto a clean home is complete. Its three required children are landed and evaluated:\n- A w-11fc801f286e: `backup list` and `backup fetch`, ba2e919;\n- B w-38c7d38def0c: `backup restore`, c562a70;\n- C w-f577d840f311: the store-equality test and the restore runbook, ad70ec6.\n\nCriterion 4 now names the home's restore record (revision 7, with Fable's concurrence). The independent evaluation ab073df2 passed all 6 criteria at ad70ec6.\n\nFollow-ups filed: w-5802e83ecf11, w-77c083e18e44, w-d5245036da8d.",
+    "completed_at": "2026-10-02T20:59:03.352635800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0250be9bcadc4b6fada94e243f3eba13": {
+        "activity_id": "0250be9bcadc4b6fada94e243f3eba13",
+        "task_id": "01a0fa88-0748-70e0-8ac5-c22ec2923803",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d7128bcf72d74c1d971759d5a3de53d5"
+      },
+      "6eec9b85dc5a4eab9d038f4fc6abc867": {
+        "activity_id": "6eec9b85dc5a4eab9d038f4fc6abc867",
+        "task_id": "01a0fa88-0748-70e0-8ac5-c22ec2923803",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6eec9b85dc5a4eab9d038f4fc6abc867"
+      }
+    }
+  }
+}

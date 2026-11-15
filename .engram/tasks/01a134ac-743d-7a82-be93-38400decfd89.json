@@ -1,0 +1,63 @@
+{
+  "id": "01a134ac-743d-7a82-be93-38400decfd89",
+  "external_ref": null,
+  "title": "Document detached launcher worker diagnostic artifacts and fixed failure tokens",
+  "outcome": "Document detached launcher worker diagnostic artifacts and fixed failure tokens",
+  "acceptance": [
+    "The launcher usage section documents worker-error-<UUID>.log, the worker-diagnostics: PATH|unavailable stderr locator, and the execution-lock-held, execution-admission-failed, worker-runtime-failed and git-run-directory-unavailable failure tokens, consistent with shipped behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented shipped detached launcher failure tokens, exclusive worker diagnostics and their locators, caller/log behavior, foreground scope and conditional executor recovery.",
+    "completed_at": "2026-10-13T16:38:59.810215600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2b25b6d9cedd4bf1871048c8f3cef279": {
+        "activity_id": "2b25b6d9cedd4bf1871048c8f3cef279",
+        "task_id": "01a134ac-743d-7a82-be93-38400decfd89",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5442ecf5695440e684d1659550886c89"
+      },
+      "d408e2d00c734c159cc44434f3f4c4e3": {
+        "activity_id": "d408e2d00c734c159cc44434f3f4c4e3",
+        "task_id": "01a134ac-743d-7a82-be93-38400decfd89",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d408e2d00c734c159cc44434f3f4c4e3"
+      }
+    }
+  }
+}

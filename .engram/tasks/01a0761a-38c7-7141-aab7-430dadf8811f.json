@@ -1,0 +1,51 @@
+{
+  "id": "01a0761a-38c7-7141-aab7-430dadf8811f",
+  "external_ref": null,
+  "title": "show CHILD names its parent and requirement: parent_ref, required|optional, parent lifecycle, one human parent line and show PARENT navigation",
+  "outcome": "show CHILD names its parent and requirement: parent_ref, required|optional, parent lifecycle, one human parent line and show PARENT navigation",
+  "acceptance": [
+    "a test asserts a required child, an optional child, and a root each show the right relationship in text and JSON, and that the parent line is retained when acceptance and notes are trimmed",
+    "show CHILD (text, --json, MCP) carries parent_ref, the child's own child_requirement as required or optional for every child (never suppressed for required), the parent's lifecycle, and a human line 'parent: REF \"title\" (lifecycle), required|optional' plus 'engram work show PARENT' in next; a root says root; the parent line survives output trimming; existing canonical parent and requirement data only, no extra projection read beyond the parent row already loaded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "pilot",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Safe show exposes direct parent context and own child requirement in text, CLI JSON and MCP with retained navigation and bounded trimming.",
+    "completed_at": "2026-09-06T17:18:58.695518Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6b96a700567496873becdfb0d17c60c9a05b9c1884d84eb6722a46da498fbcb3": {
+        "activity_id": "6b96a700567496873becdfb0d17c60c9a05b9c1884d84eb6722a46da498fbcb3",
+        "task_id": "01a0761a-38c7-7141-aab7-430dadf8811f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e145e884bbbe1b1428ba4c515281c37f4639a1f6a880479ec1aca766b26d3211"
+      }
+    }
+  }
+}

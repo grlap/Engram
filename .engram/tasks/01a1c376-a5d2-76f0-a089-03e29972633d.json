@@ -1,0 +1,27 @@
+{
+  "id": "01a1c376-a5d2-76f0-a089-03e29972633d",
+  "external_ref": null,
+  "title": "Remove the retained Windows B job directory s9-bba11-native once its junction is unlinked and a permitted session can delete it",
+  "outcome": "Remove the retained Windows B job directory s9-bba11-native once its junction is unlinked and a permitted session can delete it",
+  "acceptance": [
+    "On Windows B, the Engram runner clone's target/jobs/s9-bba11-native (about 1.37 GB) and worktree .worktrees/bba11-native-s9 are gone, removed after an absolute-path check inside the clone and after its Content.IE5 junction was unlinked non-recursively, with the removal recorded here"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "cleanup",
+    "windows-b"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

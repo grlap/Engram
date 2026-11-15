@@ -1,0 +1,26 @@
+{
+  "id": "01a1beca-7534-7ad1-9df0-fca04d14be33",
+  "external_ref": null,
+  "title": "Coordinator's current queue: order of work, state and next steps across Engram",
+  "outcome": "Coordinator's current queue: order of work, state and next steps across Engram",
+  "acceptance": [
+    "Stays open while Engram has a coordinator; its latest status note is the current queue. Close or replace it only when the coordinator role changes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "coordinator-queue"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

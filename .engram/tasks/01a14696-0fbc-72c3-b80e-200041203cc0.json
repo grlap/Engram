@@ -1,0 +1,40 @@
+{
+  "id": "01a14696-0fbc-72c3-b80e-200041203cc0",
+  "external_ref": null,
+  "title": "Identify the slow phase of a >20 s control call from recorded phase capture",
+  "outcome": "Identify the slow phase of a >20 s control call from recorded phase capture",
+  "acceptance": [
+    "The phase that consumed the time in a turn_begin, turn_checkpoint or admission bind past the host deadline is identified from recorded evidence (durable diagnostics from a real occurrence or existing traces), with no synthetic load test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "reliability",
+    "telemetry-decision"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a14696-0fd9-7c61-a727-aec2a9163e21",
+      "kind": "manual",
+      "detail": "Blocked on Greg's decision to enable bounded host control-phase capture (TermAl w-43aea73d0c17, presently parked), then an actual naturally occurring slow request; no retained correlated producer-phase spans currently exist. Engram::Fable/session5135 routes decision via Advisor. No synthetic load or telemetry activation authorized.",
+      "created_by": {
+        "actor_id": "greg/codex",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-16T21:20:02.005455800Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

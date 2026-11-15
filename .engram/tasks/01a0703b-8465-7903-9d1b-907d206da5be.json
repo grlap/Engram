@@ -1,0 +1,64 @@
+{
+  "id": "01a0703b-8465-7903-9d1b-907d206da5be",
+  "external_ref": null,
+  "title": "Lost-response replay for decomposition after its own parent revision advance: revision-independent auto key with a guarded pending-attempt refresh",
+  "outcome": "Lost-response replay for decomposition after its own parent revision advance: revision-independent auto key with a guarded pending-attempt refresh",
+  "acceptance": [
+    "a keyless ordinary child add whose response is lost replays after rereading the advanced parent, with no duplicate child and no second event",
+    "a pending attempt that lost a concurrent parent-revision race is refreshed by the identical reread retry under CAS, expected-revision, and authority guards instead of a permanent idempotency conflict",
+    "a runless restored parent's run bootstrap does not change the auto key, so its lost-response retry replays"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Lost-response decomposition replay is revision-independent, strictly basis-guarded, CAS-safe and agent-actionable; retained-basis health and regression coverage landed.",
+    "completed_at": "2026-09-06T16:19:36.824727900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "205000341816c2c40e109b02ccb2970923b5d99cc69d13d1009b9be4c079ed41": {
+        "activity_id": "205000341816c2c40e109b02ccb2970923b5d99cc69d13d1009b9be4c079ed41",
+        "task_id": "01a0703b-8465-7903-9d1b-907d206da5be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "806165f78f4a9846f1f3356c5e5e12c016223e9dd2d4cc2c16d0a098722a7893"
+      },
+      "87bef3ab1a282513d19f5b5cd6420c60961e9df0638db6da211c983b01f3a768": {
+        "activity_id": "87bef3ab1a282513d19f5b5cd6420c60961e9df0638db6da211c983b01f3a768",
+        "task_id": "01a0703b-8465-7903-9d1b-907d206da5be",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "87bef3ab1a282513d19f5b5cd6420c60961e9df0638db6da211c983b01f3a768"
+      }
+    }
+  }
+}

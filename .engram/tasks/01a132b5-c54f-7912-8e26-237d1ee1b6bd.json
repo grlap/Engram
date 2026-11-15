@@ -1,0 +1,29 @@
+{
+  "id": "01a132b5-c54f-7912-8e26-237d1ee1b6bd",
+  "external_ref": null,
+  "title": "Preserve settings filesystem failure cause and distinguish write refusals",
+  "outcome": "Preserve settings filesystem failure cause and distinguish write refusals",
+  "acceptance": [
+    "Task-sync filesystem refusals retain a bounded useful cause and distinguish read/admission failures from create/write/sync/rename failures; write-stage refusals use setting_write_failed or an explicit equivalent.",
+    "A non-standard project-store location has a distinct clear refusal; tests pin a real write/rename failure code and confirm no loss of prior settings bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

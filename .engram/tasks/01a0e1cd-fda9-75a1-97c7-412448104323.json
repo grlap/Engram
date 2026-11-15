@@ -1,0 +1,66 @@
+{
+  "id": "01a0e1cd-fda9-75a1-97c7-412448104323",
+  "external_ref": null,
+  "title": "Preserve root acceptance bindings during atomic work-plan admission",
+  "outcome": "Preserve root acceptance bindings during atomic work-plan admission",
+  "acceptance": [
+    "An atomic work plan with a root criterion bound to test preserves that exact normalized binding through admission, idempotent replay and readback; unbound roots and bound children retain their intended bindings.",
+    "Regression tests cover root and child bindings including reordered/deduplicated acceptance, and demonstrate that a root created by a plan cannot satisfy a bound criterion without the required host-observed evidence.",
+    "Required gates and independent reviews pass; existing imported rehearsal roots with omitted bindings are explicitly repaired through an audited revision or recreated in scratch, never silently assumed correct."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "coordination",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0e191-f792-76b3-adb1-07a21c46534c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as ae425e1 and installed as build 9503287d8a34 (sha256 2a5df60c…1b60). An atomic plan root now keeps its validated, normalized acceptance bindings and evaluation mode, and owes each bound verification on its own run from admission. The whole plan refuses a root binding that cannot be admitted, and a keyed replay changes nothing. Review also brought in the detach path: a successor keeps the child's bindings (child w-0af02eb04f08), detach refuses an environment-pinned binding with a rebind remedy, and its advisory agrees. Four review rounds, the last clean from Codex and Claude, and gate test-e41f5f9a passed on the committed tree. The live-store audits found no plan admission and no bound detach source, so nothing needed repair. The TermAl rehearsal roots were recreated with their bindings in scratch home8 (rehearsal: 0 differences). Independent evaluation b0cb880c passed all three criteria. Follow-ups filed: w-71a1a29cdda2 (reopen keeps an old run's environment pin) and w-cf5e3938717a (creation admits such a pin).",
+    "completed_at": "2026-09-27T16:21:05.090608500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "78a0a22856814eb484e6925c4b1343ca": {
+        "activity_id": "78a0a22856814eb484e6925c4b1343ca",
+        "task_id": "01a0e1cd-fda9-75a1-97c7-412448104323",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9aaa05951e814f3cae144d651610495a"
+      },
+      "db5d579a4c2d4f69a50665dbee216634": {
+        "activity_id": "db5d579a4c2d4f69a50665dbee216634",
+        "task_id": "01a0e1cd-fda9-75a1-97c7-412448104323",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "db5d579a4c2d4f69a50665dbee216634"
+      }
+    }
+  }
+}

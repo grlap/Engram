@@ -1,0 +1,50 @@
+{
+  "id": "01a0e6df-d91e-72b0-b1f8-1901af6c6f7e",
+  "external_ref": null,
+  "title": "The doctor's memory search probe splits text differently from the FTS5 tokenizer for combining marks and private-use characters",
+  "outcome": "Memory search builds its query terms the way the unicode61 tokenizer split the indexed text, so a correctly indexed memory holding combining marks or private-use characters is found by its own words, and doctor keeps passing it.",
+  "acceptance": [
+    "Doctor regression guard: a correctly indexed project memory whose text holds a standalone combining mark (U+0345, U+05B0 or U+093E), a decomposed accent inside a word (a U+0301 b), a private-use character inside a word (a U+E000 b), or a mark after a letter (U+0915 U+093E) passes doctor, and removing that memory's genuine object_fts row is still reported as damage; a test covers each case.",
+    "A memory search for a correctly indexed memory's own words holding each of those characters finds the memory: the standalone marks U+0345, U+05B0 and U+093E between words, a U+0301 b, and a U+E000 b; the test fails before the fix (the letter-or-digit split misses all five) and passes after it, and the mark after a letter keeps being found."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "doctor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Memory search now splits its query where SQLite's unicode61 tokenizer split the indexed text: it classifies non-ASCII characters in a private in-memory FTS5 table per query. Words with a decomposed accent or a private-use character are searched whole, and lone marks are dropped. So a correctly indexed memory is found by its own words. Doctor keeps passing such memories and still reports a removed index row. The persisted index is unchanged, so no repair is needed. Landed as 6441d43.",
+    "completed_at": "2026-10-03T23:58:29.711565500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8f061da825aa4b5081f091c5d4d1c2fc": {
+        "activity_id": "8f061da825aa4b5081f091c5d4d1c2fc",
+        "task_id": "01a0e6df-d91e-72b0-b1f8-1901af6c6f7e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c18b89e7de1c4ee4a0dfa5d2292462a6"
+      }
+    }
+  }
+}

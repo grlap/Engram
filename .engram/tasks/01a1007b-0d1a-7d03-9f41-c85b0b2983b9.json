@@ -1,0 +1,54 @@
+{
+  "id": "01a1007b-0d1a-7d03-9f41-c85b0b2983b9",
+  "external_ref": null,
+  "title": "Ship a concise Engram usage skill for other projects",
+  "outcome": "Ship a concise Engram usage skill for other projects",
+  "acceptance": [
+    "docs/skills/engram-use/SKILL.md is one project-independent Markdown skill of at most 160 lines and 12 KiB, names its own repository path, and its frontmatter description triggers on using Engram to track, claim, record and complete work in any project. Its sections cover in order operator onboarding (integration, confirmed absolute home, stable project binding and distinct logical sessions), session-start and post-compaction recovery (next peek, unfiltered memories carrying a printed context generation, relevant full reads), inspecting and claiming work, evidence/gates/project-defined review/evaluation/done, handoff and blockers, and boundaries. The recovery bootstrap may appear in its consuming-project pointer rather than be duplicated.",
+    "Each topic section links to the authoritative Engram README or docs; the new skill quotes no words of Greg and contains none of the strings standing approval, review-changes, termal_name_source_root, --detach or restart now. It includes exactly the sentence: Authority to commit, push, install or restart comes from the consuming project's own instructions, never from this skill. It grants or limits no commit, push, tracker or approval authority.",
+    "Against the declared base 023a2204599375cd0f1d5bab0157469586244999, the changeset changes neither AGENTS.md nor CLAUDE.md and adds no skill under Engram's normal agent skill path. The Using Engram as an agent section of .agents/skills/engram-repo/SKILL.md is at most 25 lines and opens with a link to the new skill. Outside its unchanged contributor and Verification sections, the repository skill keeps only repository status and assignment discipline, a pointer to the session-and-intent retry rule, and one link to the CLI/MCP word contract. The review-findings standing rule, commit/push/sync authority sentence and landing-record rule remain verbatim in Verification. Every removed rule sentence has its authoritative surviving home mapped in this item's holder notes (AGENTS.md section or CLI/MCP contract anchor); a rule with no such home remains verbatim. Before landing, the item's own notes record both coordinators' concurrence on the exact word-diff, delivery of its wording and consequence to Greg, and a passed final-diff audit.",
+    "The new skill contains the exact heading Pointer for a consuming project and a fenced block of at most two sentences containing the session-start/post-compaction recovery bootstrap and the skill's local path, with consuming-project authority preserved. The skill also gives its repository-relative path and GitHub source link, says another machine substitutes its confirmed checkout path, and requires no edits in consuming projects for this item. The focused Markdown link check passes on the frozen tree."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "agent-experience",
+    "coordination",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shipped the 149-line project-independent Engram usage skill and reduced the repository skill to 240 lines, preserving contributor and Verification text and mapping every removed rule to its surviving home. Includes consuming-project startup pointer, setup, recovery, claims, evidence/evaluation, completion and handoff guidance. Four independent acceptance criteria pass; Markdown checks and Codex/Claude whole-input review passed.",
+    "completed_at": "2026-10-03T08:28:19.274689700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "90810aa02a7e47cd986fa4ad1be5aacd": {
+        "activity_id": "90810aa02a7e47cd986fa4ad1be5aacd",
+        "task_id": "01a1007b-0d1a-7d03-9f41-c85b0b2983b9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "459cc4d1ed854a8bb6480945a853d466"
+      }
+    }
+  }
+}

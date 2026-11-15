@@ -1,0 +1,51 @@
+{
+  "id": "01a0b527-b693-7360-9511-d983aeb85c0b",
+  "external_ref": null,
+  "title": "A review freeze written for a linked worktree is refused by the host's compiled checker",
+  "outcome": "A parent can freeze a review input in a linked worktree and both reviewers can verify it with the host's compiled checker, so a committed input reviewed away from the main checkout is attested.",
+  "acceptance": [
+    "a reviewer working in a linked worktree verifies the parent's freeze with the host checker (verified true, exact stdout), or the review-changes workflow names a manifest location that checker accepts and that stays outside the fingerprinted input",
+    "the review-changes and review-code instructions and the host checker agree on where a linked worktree's manifest lives"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed on retained real-use evidence per Fable378: both independent round-4 reviewers verified the linked-worktree Git-directory manifest with the compiled host checker before/after, and current parent/reviewer workflow agrees on that location. Fresh independent Claude9610 evaluation5899ce411bc84db7a2fe7611cc572037 passed2/2 judgment, stale:null, revision1; verdicts cite full closure note eb7dc923e1b64076a98b2b7edc4cc5e5. No new source/index changes, tests, commit or installation; original host-fix commit is not asserted.",
+    "completed_at": "2026-10-02T04:03:33.923959600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "790aa75d1495453bbe1919c3b1c64f28": {
+        "activity_id": "790aa75d1495453bbe1919c3b1c64f28",
+        "task_id": "01a0b527-b693-7360-9511-d983aeb85c0b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8606076cfc5c43f08960683ca46c2ddf"
+      }
+    }
+  }
+}

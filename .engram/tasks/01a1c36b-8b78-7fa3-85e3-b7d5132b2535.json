@@ -1,0 +1,28 @@
+{
+  "id": "01a1c36b-8b78-7fa3-85e3-b7d5132b2535",
+  "external_ref": null,
+  "title": "Have the test-run registration adapter request TermAl's bounded registration view, once TermAl serves one",
+  "outcome": "Have the test-run registration adapter request TermAl's bounded registration view, once TermAl serves one",
+  "acceptance": [
+    "scripts/test-run-registration.mjs confirms a run's registration through TermAl's bounded registration view (only the run and source fields it uses), so a run with a large uncommitted delta registers instead of being refused as invalid-response",
+    "The adapter's 64 KiB response bound stays in place, and a test exercises a registration whose full TermAl detail would exceed it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "test-launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

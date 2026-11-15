@@ -1,0 +1,29 @@
+{
+  "id": "01a1b3d7-be47-7941-8f38-dfc9909b9a0c",
+  "external_ref": null,
+  "title": "Remove stale claims that tests enforce Markdown receipt tables",
+  "outcome": "Documentation no longer claims the deleted Markdown table-reading tests enforce receipts, and orphaned test-reader markers are removed.",
+  "acceptance": [
+    "Remove the stale test-reading/comparison sentences from cli-and-mcp.md and cli-host-and-operator.md, keeping the actual receipt documentation",
+    "Remove the four orphaned table-reader begin/end comments in cli-and-mcp.md and execution-observability.md",
+    "Validate the Markdown-only change through the link-check lane and required review; add no wording-pin test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a10e4d-1a6f-7bb0-a267-47f01b017cf0",
+  "external_ref": null,
+  "title": "The control-plane doc promises an expired_request tombstone and result pruning that the code does not implement",
+  "outcome": "docs/features/behavioral-control-plane.md's \"Crash, restart, and replay\" section matches the shipped control runtime: what an exact retry returns, what happens with no stored result (ControlTurnGrantNotFound), which refusal codes an expired unbegun grant can produce, what a new host connection invalidates, and that no request-key tombstone or result pruning exists today (or it is marked as designed, not built). A host implementer reading it can't rely on behaviour that isn't there.",
+  "acceptance": [
+    "behavioral-control-plane.md:1262-1281 states only shipped behaviour, with any designed-but-unbuilt part (the expired_request tombstone, grant and result pruning) explicitly marked as not built, consistent with docs/shipped.md.",
+    "The section states that an expired unbegun grant is refused with grant_scope_mismatch or grant_expired depending on whether it was already expired by a status read or resume, that a new HostControlServer connection expires all issued grants for the session while begun turns survive, and that session_status lazily expires issued grants.",
+    "The doc link check passes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 86c82c8 on master, together with w-2ed9718bcd8f.\n- docs/features/behavioral-control-plane.md \"Crash, restart, and replay\" now states only shipped behaviour:\n  - grant expiry by a new connection, a rebind or a status read, with its conditional reset;\n  - the ordered begin checks and their refusal codes;\n  - exact retry replay, and turn_grant_not_found;\n  - recovery from durable rows.\n- The tombstone and pruning are marked as designed, not built.\n- Evidence: full gate 0a79930a passed 9/9 (the docs stage passed); cargo test --lib credit 07ce3766; round-3 review was clean in scope; evaluation 99c423e3 passed 3/3.\n- Installed build 277a5e49.",
+    "completed_at": "2026-10-06T01:12:13.638347800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "53d65364f5224280a603ce1890fdd1a1": {
+        "activity_id": "53d65364f5224280a603ce1890fdd1a1",
+        "task_id": "01a10e4d-1a6f-7bb0-a267-47f01b017cf0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9f90beebb4e7462ebab61f1aa2214673"
+      }
+    }
+  }
+}

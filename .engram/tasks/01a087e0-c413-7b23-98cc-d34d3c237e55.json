@@ -1,0 +1,50 @@
+{
+  "id": "01a087e0-c413-7b23-98cc-d34d3c237e55",
+  "external_ref": null,
+  "title": "Return a typed projection error for a missing plan root mapping",
+  "outcome": "Return a typed projection error for a missing plan root mapping",
+  "acceptance": [
+    "Final root validation uses checked receipt access rather than panicking indexing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08728-e6c4-7c42-b694-d7f2b2d71a37",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Final plan root lookup uses checked receipt access with typed InvalidWorkProjection. Coordinator source review accepted; final nine gates pass.",
+    "completed_at": "2026-09-09T20:54:59.244092Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e3937beff34567ba01426b5eb6f89b0454258f8f7c4cf77ab8b49bbddcda463f": {
+        "activity_id": "e3937beff34567ba01426b5eb6f89b0454258f8f7c4cf77ab8b49bbddcda463f",
+        "task_id": "01a087e0-c413-7b23-98cc-d34d3c237e55",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "79b86dfbf3c70dde206fd508a5418fcaebb0c0179a6683b67f6eaae6b6dd6efe"
+      }
+    }
+  }
+}

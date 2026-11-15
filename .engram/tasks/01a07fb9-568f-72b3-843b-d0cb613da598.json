@@ -1,0 +1,50 @@
+{
+  "id": "01a07fb9-568f-72b3-843b-d0cb613da598",
+  "external_ref": null,
+  "title": "Follow feature brief conventions for source intake",
+  "outcome": "Follow feature brief conventions for source intake",
+  "acceptance": [
+    "Source intake is indexed in features README and has the normative reference and title-case heading"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Source intake brief has its feature index entry, normative reference and title-case heading. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:49.083682900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8e5359876db8b2b0e520080aab54883d711789fb443e9f7dce42a3cc8c6b1163": {
+        "activity_id": "8e5359876db8b2b0e520080aab54883d711789fb443e9f7dce42a3cc8c6b1163",
+        "task_id": "01a07fb9-568f-72b3-843b-d0cb613da598",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d6ee3ee92fe7037bff8cbd464cef56fb8dfecf5b485fb3b630802bc071b2c45a"
+      }
+    }
+  }
+}

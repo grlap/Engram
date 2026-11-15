@@ -1,0 +1,27 @@
+{
+  "id": "01a0fc76-bad4-72b3-83fd-ef69a5eaebeb",
+  "external_ref": null,
+  "title": "Directory backup adapter: report a temporary file left behind when the no-replace move fails",
+  "outcome": "Directory backup adapter: report a temporary file left behind when the no-replace move fails",
+  "acceptance": [
+    "When persist_noclobber fails in the directory adapter's publish (an existing final name, a non-retryable error, or sharing violations past the retries), the temporary file is removed with the bounded retry, and a removal that fails is reported as backup Leftover beside the primary error with its code kept; a test in the repository covers a failed move followed by a failed removal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

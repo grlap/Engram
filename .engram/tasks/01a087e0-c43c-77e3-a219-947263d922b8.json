@@ -1,0 +1,50 @@
+{
+  "id": "01a087e0-c43c-77e3-a219-947263d922b8",
+  "external_ref": null,
+  "title": "Name the payload root and observed count in atomic plan descendant refusals",
+  "outcome": "Name the payload root and observed count in atomic plan descendant refusals",
+  "acceptance": [
+    "Overfull first and later roots name the exact payload key and descendant count without changing immediate decomposition wording"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08728-e6c4-7c42-b694-d7f2b2d71a37",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Plan root-size refusal names its payload key and observed count. First and later root regressions assert exact129-descendant messages and rollback. Immediate wording preserved; final nine gates pass.",
+    "completed_at": "2026-09-09T20:54:59.296913500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "95f6e0e84b04862a3003a9836218bcbbb599e897e4328be5d3fa5bd70c97ba38": {
+        "activity_id": "95f6e0e84b04862a3003a9836218bcbbb599e897e4328be5d3fa5bd70c97ba38",
+        "task_id": "01a087e0-c43c-77e3-a219-947263d922b8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a174c92ce4ee3eb031d37b664651d3810c92932bc21a34a12acaaa55d5a6abf6"
+      }
+    }
+  }
+}

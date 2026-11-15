@@ -1,0 +1,44 @@
+{
+  "id": "01a10d4d-b5f5-7392-88d0-4e75a5319cde",
+  "external_ref": null,
+  "title": "A turn ends on a known dependency only with a registered wait that is guaranteed to wake its owner",
+  "outcome": "An agent that ends a turn because it is waiting on a named dependency (a gate or test result, a review or evaluation result, a mailbox reply, a focus or naming binding, a control transition, a prerequisite or handoff) first registers a durable wait condition for it. The system guarantees exactly one wake to the owner when that condition resolves, fails, expires or becomes impossible, including across restarts. A turn that tries to end with an unresolved named dependency and no registered wake is refused, or takes an explicit, recorded fallback. A periodic silent-holder scan (w-3123ce57e780) is only a safety net.",
+  "acceptance": [
+    "CONDITION IDENTITY. A wait condition has a durable identity: its kind (from an enumerated set covering at least gate/test-run result, delegation/review/evaluation result, mailbox reply, focus/naming binding, Engram control transition, prerequisite completion, and handoff acceptance), its subject (the run, delegation, test run, mailbox and correlation, or work and claim), the expected producer or result correlation, the owner session, and a deadline. Registration is idempotent on a caller key. The same intent returns the same condition; a different intent under the same key is refused.",
+    "REGISTRATION POINT AND OWNERSHIP SPLIT. The split is recorded on this item with both coordinators' concurrence, naming which project registers, stores and resolves each condition kind. The host (TermAl) owns turn ending and the wake delivery. Engram provides, for each Engram-owned kind (evaluation recorded, control transition, prerequisite completion, handoff accepted, claim naming acknowledged), a correlation identity and a readable terminal state of resolved, failed, expired or impossible. The terminal state is derived from canonical records, needs no scheduler in Engram, and Engram never calls a model.",
+    "RESOLUTION AND EXACTLY-ONCE WAKE. For every registered condition, exactly one durable wake reaches the owner, keyed by the condition identity, on each terminal outcome: resolved, failed, expired at its deadline, or impossible. Impossible covers, for example, a cancelled delegation, a deleted session, a cancelled or completed item, or a lapsed claim. The wake names the condition and outcome. A wake is never counted as progress, test or completion.",
+    "TURN-END GUARD. When an agent ends a turn while its own last message or status names an unresolved dependency and it has no registered condition for it, the host refuses the end, or applies an explicit, recorded fallback (registering the condition on its behalf, or alerting the coordinator) per the agreed design. It never ends silently. The guard's detection rule and its false-positive handling are part of the recorded design.",
+    "RECOVERY AND PROOF. Tests cover, for each kind: registration idempotency; each terminal outcome producing exactly one wake; restart between registration and resolution, and between resolution and wake delivery, with the wake still delivered once; and the turn-end guard. An attributed end-to-end note reproduces the 2026-10-05 incident: an agent waiting on a host credit line after a passed gate, with a registered condition and no manual nudge, is woken once when it resolves. A second case shows the guard catching an unregistered wait. The safety-net scan (w-3123ce57e780) is secondary coverage and not the proof of this item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "agent-workflow",
+    "area-host-integration",
+    "reliability",
+    "stall"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a10d51-22b1-71d0-9c0b-45c110054666",
+      "kind": "manual",
+      "detail": "PARKED by Greg's scope correction (Advisor mailbox-74a6af16 #1009, 18:25:21Z), verbatim: \"do NOT implement a watchdog now, including the timer-based P2. He wants the working procedure made explicit first: for every handoff/wait, who owns it, what starts next, the named dependency/result, where it is recorded, who/what sends the wake, and the recovery route if delivery fails. Reframe/park automation work accordingly. Produce and dogfood the minimal procedure, including the Opus landing case; return only when it is concrete and unambiguous. Do not start automated enforcement beyond what is necessary to document/observe the procedure.\" Unblock only on Greg's word, after he has seen the dogfooded procedure (memory rules-waits-and-wakes).",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-05T18:26:23.530615500Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

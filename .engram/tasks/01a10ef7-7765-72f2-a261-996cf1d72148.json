@@ -1,0 +1,27 @@
+{
+  "id": "01a10ef7-7765-72f2-a261-996cf1d72148",
+  "external_ref": null,
+  "title": "Select the Windows long-path VFS for backups from an in-memory store",
+  "outcome": "Select the Windows long-path VFS for backups from an in-memory store",
+  "acceptance": [
+    "A Windows in-memory store can back up to a valid filename beyond the default win32 VFS capacity while remaining in memory and preserving ordinary locking."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

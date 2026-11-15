@@ -1,0 +1,53 @@
+{
+  "id": "01a0fbd0-c8da-7863-9b95-970e35908d47",
+  "external_ref": null,
+  "title": "Tighten the listing continuation basis: one scan, cut fields only for next, and a ProjectCut boundary test",
+  "outcome": "Tighten the listing continuation basis: one scan, cut fields only for next, and a ProjectCut boundary test",
+  "acceptance": [
+    "a membership-basis listing token carries only the observed time beside its fingerprint; project_position and valid_until_ms live only in the project-cut basis that compact next mints, and catalog_cut's project-wide expiry query runs only for that basis",
+    "a test shows a compact-next-minted ready continuation is refused by a note on an unrelated item and inside the boundary millisecond of a sub-millisecond claim expiry",
+    "an ls page evaluates the classified catalog CTE at most twice: total, preceding and anchor come from the ordered membership pass, which streams rows into the fingerprint rather than building one string (test or measured count of catalog queries)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 501127f: ls continuation tokens carry only observed_at and the membership fingerprint; the project cut (position, observed time, expiry) lives only in compact next's ProjectCut basis, and ls checks read no project-wide expiry. One streaming membership pass yields fingerprint, total, preceding and anchor; an ls page runs the classified catalog query twice. Tests in listing/basis.rs cover the unrelated-note refusal, the sub-millisecond boundary, the query counts and the fingerprint bytes. Readiness ready on all 4 stores; installed build 797ac9c27cf6, exe sha256 a01bb029…7b9.",
+    "completed_at": "2026-10-03T12:14:12.146823100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "04aca945097442d985a71aae73ef9a4e": {
+        "activity_id": "04aca945097442d985a71aae73ef9a4e",
+        "task_id": "01a0fbd0-c8da-7863-9b95-970e35908d47",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8e6c190e4e5b4de9819a27ce59e20013"
+      }
+    }
+  }
+}

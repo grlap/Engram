@@ -1,0 +1,51 @@
+{
+  "id": "01a073ff-4091-7941-bc6c-f12c36eb9844",
+  "external_ref": null,
+  "title": "Same-parent supersession of a required child: when the successor is a required child of the same parent and is completed, completion validation and the obligations summary recognize that audited resolution as satisfying the original requirement; otherwise show states why a waiver is still owed and shows the successor's state",
+  "outcome": "Same-parent supersession of a required child: when the successor is a required child of the same parent and is completed, completion validation and the obligations summary recognize that audited resolution as satisfying the original requirement; otherwise show states why a waiver is still owed and shows the successor's state",
+  "acceptance": [
+    "canonical supersession and requirement links are inspected at completion: a required child superseded by a completed required sibling under the same parent and generation counts as resolved for the seal and is not listed as owed; completion validation and show agree, never show alone",
+    "where supersession does not transfer the requirement, the owed row displays the successor ref and lifecycle and a one-line reason the waiver is still owed, with the existing waiver remedy; no seal credit is granted from an unrelated completed item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered audited one-hop required-successor seal accounting and matching safe show/list summaries; landed and independently verified.",
+    "completed_at": "2026-09-06T04:39:53.779437600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a89bd67d3769e1f2e2a7da0a27a32ce978a976e2f06c6f5ade5dfca9aa568200": {
+        "activity_id": "a89bd67d3769e1f2e2a7da0a27a32ce978a976e2f06c6f5ade5dfca9aa568200",
+        "task_id": "01a073ff-4091-7941-bc6c-f12c36eb9844",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6189a4a79a63da67bb0617e3a9b1184705c8d764d8f127535dadf0ff22ade3b0"
+      }
+    }
+  }
+}

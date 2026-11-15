@@ -1,0 +1,28 @@
+{
+  "id": "01a18da2-ee9a-7551-8c5a-47e44c71d843",
+  "external_ref": null,
+  "title": "Release task-sync file locks explicitly when scoped recovery and setup guards finish",
+  "outcome": "Release task-sync file locks explicitly when scoped recovery and setup guards finish",
+  "acceptance": [
+    "Diagnose the drop-only file-lock paths in setup intent and opt-out resume, including inherited or duplicated descriptors, and document their ownership lifetimes",
+    "Correct any confirmed lock-lifetime defect with deterministic coverage while retaining task-sync admission and recovery semantics"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "reliability",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

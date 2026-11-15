@@ -1,0 +1,65 @@
+{
+  "id": "01a19fb9-1cc2-7c71-adae-add6a37e98d0",
+  "external_ref": null,
+  "title": "Split scripts/test-launcher.test.mjs by responsibility so launcher tests are navigable and conflict less",
+  "outcome": "Split scripts/test-launcher.test.mjs by responsibility so launcher tests are navigable and conflict less",
+  "acceptance": [
+    "The tests move into modules under scripts/test-launcher-tests/ (registration, execution, lifecycle, completion, counts, recovery, stop, and a shared support module), registered from the unchanged entry point after environment setup, and the launcher and CI lists stay unchanged",
+    "The same registered tests, assertions, platform guards and outcome counts run through the unchanged entry point, shown by the test count before and after",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "file-split",
+    "greg-directed",
+    "test-tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split the launcher tests by responsibility while preserving registration, assertions and counts. The exact aggregate full gate passed; the candidate is on master, pushed and installed.",
+    "completed_at": "2026-11-03T08:51:57.100286Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "90756ba43f0046d49870a163fe972c89": {
+        "activity_id": "90756ba43f0046d49870a163fe972c89",
+        "task_id": "01a19fb9-1cc2-7c71-adae-add6a37e98d0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ae6bd372998143679d59d58b60202f13"
+      },
+      "ae6bd372998143679d59d58b60202f13": {
+        "activity_id": "ae6bd372998143679d59d58b60202f13",
+        "task_id": "01a19fb9-1cc2-7c71-adae-add6a37e98d0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2677ce46637d486bb2ffbb08bd535b84"
+      }
+    }
+  }
+}

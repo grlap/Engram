@@ -1,0 +1,28 @@
+{
+  "id": "01a14d7a-cfba-7d03-80a5-a015a4d0702c",
+  "external_ref": null,
+  "title": "Make MCP shutdown trace distinguish owner release from final store closure",
+  "outcome": "Make MCP shutdown trace distinguish owner release from final store closure",
+  "acceptance": [
+    "When request handlers may still retain the MCP work service after the response drain, the shutdown trace distinguishes release of the retained owner from final SQLite connection closure, or its wording explicitly limits the event to retained-owner release."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "mcp",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

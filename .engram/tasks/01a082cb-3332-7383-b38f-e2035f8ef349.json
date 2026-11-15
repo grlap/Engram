@@ -1,0 +1,63 @@
+{
+  "id": "01a082cb-3332-7383-b38f-e2035f8ef349",
+  "external_ref": null,
+  "title": "State the expected wall clock of the root-delta scale gate phase",
+  "outcome": "State the expected wall clock of the root-delta scale gate phase",
+  "acceptance": [
+    "A contributor reading the scale phase can tell a long run from a hang without killing the gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The development guide states the observed duration of the root-delta scale phase as an observation of recent Windows debug runs, not a limit or timeout, and says the harness long-running notice is not evidence of a hang.",
+    "completed_at": "2026-09-09T06:10:08.544314500Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0d5ef59f1e640936963888d431e5aca241f25a9627d894d8ba79fde2eaf57eb0": {
+        "activity_id": "0d5ef59f1e640936963888d431e5aca241f25a9627d894d8ba79fde2eaf57eb0",
+        "task_id": "01a082cb-3332-7383-b38f-e2035f8ef349",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "282fb6ce906e134ae1d7416694164e3ac818c89ab61cf06549ce83cc3cb1cc3b"
+      },
+      "a803702e6d0c63cdfcb344c40fe0ad0665e1b823dbaaf260e99e396306902ee8": {
+        "activity_id": "a803702e6d0c63cdfcb344c40fe0ad0665e1b823dbaaf260e99e396306902ee8",
+        "task_id": "01a082cb-3332-7383-b38f-e2035f8ef349",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a803702e6d0c63cdfcb344c40fe0ad0665e1b823dbaaf260e99e396306902ee8"
+      }
+    }
+  }
+}

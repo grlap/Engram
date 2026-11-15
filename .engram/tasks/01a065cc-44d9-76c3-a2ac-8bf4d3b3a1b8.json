@@ -1,0 +1,51 @@
+{
+  "id": "01a065cc-44d9-76c3-a2ac-8bf4d3b3a1b8",
+  "external_ref": null,
+  "title": "Document and test the compact-row hybrid state, omitted empty labels, and exact UTF-8 truncation",
+  "outcome": "Document and test the compact-row hybrid state, omitted empty labels, and exact UTF-8 truncation",
+  "acceptance": [
+    "the CLI brief states the hybrid compact-row state and tests cover omitted empty labels and UTF-8 boundary truncation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "stream-agent-receipts"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented hybrid compact state, empty-label omission and UTF-8 boundary truncation, with regressions; landed and installed bundle8A.",
+    "completed_at": "2026-10-03T22:45:00.368289700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "82ae2c6d42434b2d8a26cae60eb48e36": {
+        "activity_id": "82ae2c6d42434b2d8a26cae60eb48e36",
+        "task_id": "01a065cc-44d9-76c3-a2ac-8bf4d3b3a1b8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6364605f18bc448dbf92c8ca468b92a9"
+      }
+    }
+  }
+}

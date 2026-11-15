@@ -1,0 +1,45 @@
+{
+  "id": "01a1320d-c3cf-7fa3-9421-5ea95e0fcbd7",
+  "external_ref": null,
+  "title": "Task preparation cannot publish directories on WSL when no-replace rename is unsupported",
+  "outcome": "Task preparation cannot publish directories on WSL when no-replace rename is unsupported",
+  "acceptance": [
+    "Task preparation and the existing task_prepared regression suite succeed on the WSL repository filesystem without hard-linking directories, skipping tests, or loosening their assertions.",
+    "Directory publication preserves the no-overwrite contract and existing destination bytes on collision or interruption, with Windows and Linux coverage."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-tooling",
+    "portability",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "c8b1a524c7964ce7b5bece5eea4c0dec": {
+        "activity_id": "c8b1a524c7964ce7b5bece5eea4c0dec",
+        "task_id": "01a1320d-c3cf-7fa3-9421-5ea95e0fcbd7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b38413ac2e0d4bd9a93eba0cda145a50"
+      }
+    }
+  }
+}

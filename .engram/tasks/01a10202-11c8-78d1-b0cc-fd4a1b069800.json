@@ -1,0 +1,27 @@
+{
+  "id": "01a10202-11c8-78d1-b0cc-fd4a1b069800",
+  "external_ref": null,
+  "title": "One damaged canonical completion seal is reported twice in doctor's invalid work records",
+  "outcome": "One damaged canonical completion seal is reported twice in doctor's invalid work records",
+  "acceptance": [
+    "A canonical completion seal whose representation is lost yields completion_seal:ID:canonical_representation exactly once in invalid_work_records (doctor JSON, repair refusal labels and invalid-record counts), with a test asserting the count; projection damage beside it is still reported"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "CLOSED AS DELIVERED in Greg's backlog hygiene sweep (Advisor #1072; Engram::Fable, 2026-10-09 ~00:05Z). Delivered by ab55fda ('Report a seal's canonical representation loss once', Opus, landed 2026-10-06). The shared verifier removes duplicates, so a lost seal representation yields completion_seal:ID:canonical_representation once in doctor JSON, repair refusal labels and counts. Test src/storage/work/completion/projections/tests.rs:919-967 and 1023-1061 asserts the count and that projection damage is still reported. Nothing remains.",
+  "completion": null
+}

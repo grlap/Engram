@@ -1,0 +1,50 @@
+{
+  "id": "01a06522-04cd-7aa3-b314-0b1b79b7ea88",
+  "external_ref": null,
+  "title": "Bind completion recovery page to its deciding snapshot",
+  "outcome": "Completion refusal cause, affected item, and obligation page come from one coherent storage snapshot or exact feed cut.",
+  "acceptance": [
+    "A two-connection regression cannot combine one recovery cause with an obligation page from another state."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bound completion recovery guidance and its obligation page to one storage snapshot.",
+    "completed_at": "2026-09-03T03:16:02.246914500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a5adac9522a2ae57b40e6d6e70a3a76d1e90dc91f3b69a0861e0cd3aa57f3531": {
+        "activity_id": "a5adac9522a2ae57b40e6d6e70a3a76d1e90dc91f3b69a0861e0cd3aa57f3531",
+        "task_id": "01a06522-04cd-7aa3-b314-0b1b79b7ea88",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c2a41aebbf8f408d26cd11f6343657917ce14c91e49be97331955b6b82b7ca0e"
+      }
+    }
+  }
+}

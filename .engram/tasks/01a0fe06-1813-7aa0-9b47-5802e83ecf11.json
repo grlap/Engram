@@ -1,0 +1,53 @@
+{
+  "id": "01a0fe06-1813-7aa0-9b47-5802e83ecf11",
+  "external_ref": null,
+  "title": "Backup fetch follow-ups: the cli-and-mcp fetch paragraph, a no-replace move that keeps its source when the destination cannot be resolved, and the Unix hard-link fallback",
+  "outcome": "Backup fetch follow-ups: the cli-and-mcp fetch paragraph, a no-replace move that keeps its source when the destination cannot be resolved, and the Unix hard-link fallback",
+  "acceptance": [
+    "The `backup fetch` paragraph in docs/features/cli-and-mcp.md says the checked copy is renamed to FILE without replacing anything and needs no hard links on Windows. It also says the hidden staging file is left only by a process that ends in the middle or by a removal that fails, and that the refusal then names that file.",
+    "directory::move_without_replacing leaves `from` in place when `to` cannot be resolved to its long-path form. Either the destination is computed before the TempPath is built, or cleanup is disabled on that path. A unit test, or a reasoned code-order argument recorded on the item, shows `from` survives that error.",
+    "The doc comment of move_without_replacing states the Unix fallback: tempfile can use a hard link followed by an unlink whose error it ignores. It no longer claims the move works without hard links on every platform. The wrapper checks whether the staging source remains after persistence; a remaining file is named in a warning on success or in the refusal on failure, and the fetch prose explains that detection. Regression coverage shows the named-leftover behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 6f78592:\n- move_without_replacing now resolves its destination before it takes the staging file as a temporary path, so an unresolvable destination no longer deletes the file. A test pins this.\n- The move returns Moved { leftover }, set when the source still stands after a successful persist. backup fetch names that file in a new `warnings` list (JSON) or in `warning:` lines (text).\n- The doc comment, the help, and the cli-and-mcp and shipped prose now say the rename needs no hard links on Windows, describe the fallback elsewhere, and list the three ways the staging file can stay.\n- A cfg(test) seam lets a push-then-fetch test pin the warning in the result, the JSON and the text.\n- Restore's install and the directory target's publish are tracked as w-9fae8dcdc5a6.\nEvidence: gate test-7e54c1eb passed on freeze 638c7691; review round 2 was clean; independent evaluation 950063e0 passed 3/3; readiness reported ready on all 4 stores.",
+    "completed_at": "2026-10-03T05:22:45.689168700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7c49b0a286824b5ab45604e1bd0aee46": {
+        "activity_id": "7c49b0a286824b5ab45604e1bd0aee46",
+        "task_id": "01a0fe06-1813-7aa0-9b47-5802e83ecf11",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ace86bf522ec424d9c911c47d698a41f"
+      }
+    }
+  }
+}

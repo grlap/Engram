@@ -1,0 +1,51 @@
+{
+  "id": "01a0db27-d09a-77c2-9806-ab22491d7cf6",
+  "external_ref": null,
+  "title": "Keep historical lease_required refusals readable after the never-used code removal",
+  "outcome": "Keep historical lease_required refusals readable after the never-used code removal",
+  "acceptance": [
+    "storage::migration::tests::historical::historical_lease_refusal_imports_and_replays_without_lease_authority passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0d957-e61d-7911-9d31-b7190f794266",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Restored ControlRefusalCode::LeaseRequired as a historical, decode-only code: domain spelling \"lease_required\", Host arm of directive_shape, with a doc comment. Stored lease refusals now import and replay again, as the pre-release rule and full-store-migration.md require. The docs list it as historical: behavioral-control-plane.md and turn-gate-evidence.md. The named test passes in full gate runs test-95dc803b and test-3fc4050b. Independent evaluation delegation-e8650c1e passed 1/1.",
+    "completed_at": "2026-09-26T01:11:42.795764500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "40e67f85ad3a4b09a811887e99958417": {
+        "activity_id": "40e67f85ad3a4b09a811887e99958417",
+        "task_id": "01a0db27-d09a-77c2-9806-ab22491d7cf6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "156f41da329443c79b9a1257b9f2deb2"
+      }
+    }
+  }
+}

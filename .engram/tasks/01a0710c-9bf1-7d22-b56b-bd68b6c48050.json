@@ -1,0 +1,51 @@
+{
+  "id": "01a0710c-9bf1-7d22-b56b-bd68b6c48050",
+  "external_ref": null,
+  "title": "doctor refusal identifies the same canonical database path as healthy reports",
+  "outcome": "doctor refusal identifies the same canonical database path as healthy reports",
+  "acceptance": [
+    "doctor_cli_refusals_are_json_and_leave_the_store_unchanged asserts database identity"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "made",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06d73-8150-7ed3-903c-6d6239aeb4c1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "doctor refusal identifies the same canonical database path as healthy reports; verified by targeted regressions, final gates and two-reviewer closure.",
+    "completed_at": "2026-09-05T10:40:43.056192500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8717d2ace8e8331982798c2427f265079636eda94c1bcc195c59d9544fee9db3": {
+        "activity_id": "8717d2ace8e8331982798c2427f265079636eda94c1bcc195c59d9544fee9db3",
+        "task_id": "01a0710c-9bf1-7d22-b56b-bd68b6c48050",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dafd16302cc4078d36a087cf7c53b0d987a4c2c63ec69b667e95e54f0c3b2401"
+      }
+    }
+  }
+}

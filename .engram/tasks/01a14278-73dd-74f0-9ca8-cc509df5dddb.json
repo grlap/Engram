@@ -1,0 +1,28 @@
+{
+  "id": "01a14278-73dd-74f0-9ca8-cc509df5dddb",
+  "external_ref": null,
+  "title": "Expose a typed per-obligation checkability advisory in work core inspect",
+  "outcome": "Expose a typed per-obligation checkability advisory in work core inspect",
+  "acceptance": [
+    "`work core inspect` reports, for each open obligation in its bounded page, a typed advisory derived from the existing completion classifier at the current claim/root cut that distinguishes checkable, not-checkable (displaced or waiver-only) and unknown, without a history scan.",
+    "The advisory grants no waiver authority and changes no satisfaction rule; existing fields and guidance are unchanged for consumers that ignore it, and a test covers a checkable open source-change obligation, a displaced one and a waiver-only one."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "agent-ux",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

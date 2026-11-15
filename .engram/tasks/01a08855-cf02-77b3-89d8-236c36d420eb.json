@@ -1,0 +1,50 @@
+{
+  "id": "01a08855-cf02-77b3-89d8-236c36d420eb",
+  "external_ref": null,
+  "title": "Tighten deterministic single-root decode regression guard",
+  "outcome": "Tighten deterministic single-root decode regression guard",
+  "acceptance": [
+    "A 7000 calibrated decode ceiling catches an added per-edge decode pass and documentation distinguishes both fixtures"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08803-497f-7480-abb5-41fff20c7992",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Tightened deterministic single-root decode bound to7000 after measured flat6430 and nested6861, documenting calibration and extra-edge-pass sensitivity. Final full gates passed.",
+    "completed_at": "2026-09-09T23:14:00.661271800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "01b60328806564e18518f718376144b5a05b3787e976d4a37d450dd005c353e8": {
+        "activity_id": "01b60328806564e18518f718376144b5a05b3787e976d4a37d450dd005c353e8",
+        "task_id": "01a08855-cf02-77b3-89d8-236c36d420eb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5b76c109fb87c6a39b2947de1cbd5c8b993e29982a55a50d9730dbc3fd534382"
+      }
+    }
+  }
+}

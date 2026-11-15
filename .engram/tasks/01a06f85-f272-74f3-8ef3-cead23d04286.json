@@ -1,0 +1,25 @@
+{
+  "id": "01a06f85-f272-74f3-8ef3-cead23d04286",
+  "external_ref": null,
+  "title": "Smoke: acceptance replacement after installing slice 2",
+  "outcome": "Smoke: acceptance replacement after installing slice 2",
+  "acceptance": [
+    "show prints the replaced criteria",
+    "the receipt names acceptance as the revised field"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke item, cancelled after verification",
+  "completion": null
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a1073f-b5ba-76d1-b1a7-a3ce763164f4",
+  "external_ref": null,
+  "title": "Update the acceptance contract's recording identity wording",
+  "outcome": "Update the acceptance contract's recording identity wording",
+  "acceptance": [
+    "The done/completed-show acceptance line and B03/B43/B61 examples use recorded under <assurance> identity; JSON provenance fields are documented unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "acceptance-evaluation.md step 5 and the B03/B43/B61 examples now read \"evaluated (<mode>; recorded under <assurance> identity)\", matching the runtime acceptance_provenance_line; the JSON provenance field list is unchanged. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T15:36:37.511604900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "acdbe4c78ec64b9db4e9fd8dbceb5793": {
+        "activity_id": "acdbe4c78ec64b9db4e9fd8dbceb5793",
+        "task_id": "01a1073f-b5ba-76d1-b1a7-a3ce763164f4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ccea40cabc6342a28eb6c5bf576e26fd"
+      }
+    }
+  }
+}

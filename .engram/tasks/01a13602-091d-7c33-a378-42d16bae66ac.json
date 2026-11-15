@@ -1,0 +1,46 @@
+{
+  "id": "01a13602-091d-7c33-a378-42d16bae66ac",
+  "external_ref": null,
+  "title": "Serialize task-sync retirement and outcome settlement against the original Begin/Evaluate operation (G3, Engram side)",
+  "outcome": "Serialize task-sync retirement and outcome settlement against the original Begin/Evaluate operation (G3, Engram side)",
+  "acceptance": [
+    "Retirement or outcome reconciliation of a run with TermAl responsibility is serialized against the ORIGINAL Begin/Evaluate operation; a missing or not-found stored Begin outcome never retires it, proven by tests",
+    "Positively unsent intent can be retired only by its exact owner under the host fence; possibly-sent intent without server-side serialization or authoritative terminal settlement is retained and returned as pending, proven by tests",
+    "No elapsed time, crash, restart or Engram-only query is treated as proof of settlement, and recovery never dispatches a first execution"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "f9dcd9a7517d4e69811ccd75e40e8c27": {
+        "activity_id": "f9dcd9a7517d4e69811ccd75e40e8c27",
+        "task_id": "01a13602-091d-7c33-a378-42d16bae66ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f9dcd9a7517d4e69811ccd75e40e8c27"
+      }
+    }
+  }
+}

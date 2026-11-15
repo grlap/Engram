@@ -1,0 +1,27 @@
+{
+  "id": "01a1bd6e-892d-7fc2-861b-ed4e64dd3348",
+  "external_ref": null,
+  "title": "Let an obsolete parent be disposed of while its meaningful open children live on",
+  "outcome": "Let an obsolete parent be disposed of while its meaningful open children live on",
+  "acceptance": [
+    "A parent whose own work is obsolete, with open children that still matter, can be cancelled or superseded through one supported route that keeps those children open as independent roots, with no child cancelled and no required-child obligation silently dropped; a test shows it",
+    "The refusal text for the old dead end names that route"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a19ef4-b9a5-7671-b386-af605bdc2e66",
+  "external_ref": null,
+  "title": "Retire completed one-time cutover commands and the offline cutover toolchain once their duties end",
+  "outcome": "Retire completed one-time cutover commands and the offline cutover toolchain once their duties end",
+  "acceptance": [
+    "After the owner confirms their cutover duty is finished, --build-note-search-index (main.rs:133, open_schema/note_search_index.rs, doctor.rs:372) and the applicability-barrier cutover operation (main.rs:136, open_schema/verification_applicability.rs:51) are removed with their tests and docs, keeping normal projection repair and schema enforcement",
+    "After the restart #2 backups (C:\\Users\\grzeg\\.engram\\backups\\eo-9420b4fa-...) are retired, scripts/eo-cutover.ps1, eo-cutover.mjs, eo-cutover-values.mjs, eo-cutover-host.ps1, their two test suites, the launcher entries and docs/features/offline-store-cutover.md are removed together",
+    "The full gate passes after each removal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "legacy-cleanup",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

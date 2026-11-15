@@ -1,0 +1,51 @@
+{
+  "id": "01a072d2-441a-7493-bcd6-efc54a3812df",
+  "external_ref": null,
+  "title": "Combine terminal omission totals across reasons",
+  "outcome": "Combine terminal omission totals across reasons",
+  "acceptance": [
+    "compact_omission_reasons_share_one_terminal_total passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a072a6-7488-76a1-ab0b-9032f25d9ff4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Combined terminal omission totals while preserving typed JSON reasons; conservation regression and clean review landed.",
+    "completed_at": "2026-09-05T19:35:15.082390100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5747862498958c6d6e24493d00e7618bc5ae105f4974a7995f605ca5f526e917": {
+        "activity_id": "5747862498958c6d6e24493d00e7618bc5ae105f4974a7995f605ca5f526e917",
+        "task_id": "01a072d2-441a-7493-bcd6-efc54a3812df",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "42c9920d60ada8313e3f0aabe8a473767b5137826737f853b3f132f9e858cdb0"
+      }
+    }
+  }
+}

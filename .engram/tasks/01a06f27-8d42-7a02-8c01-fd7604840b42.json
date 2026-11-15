@@ -1,0 +1,50 @@
+{
+  "id": "01a06f27-8d42-7a02-8c01-fd7604840b42",
+  "external_ref": null,
+  "title": "Proposal: agent pair workflow — Fable coordinator, Codex implementer, independent reviewers (docs/agent-pair-workflow.md)",
+  "outcome": "Proposal: agent pair workflow — Fable coordinator, Codex implementer, independent reviewers (docs/agent-pair-workflow.md)",
+  "acceptance": [
+    "docs/agent-pair-workflow.md exists in the advisor's worktree as a proposal, explicitly not a change to standing instructions; docs/development.md and docs/features/local-work-system.md link it; node scripts/check-doc-links.mjs passes; Greg's adoption decision is a separate later item, not part of this acceptance"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the Fable and Codex workflow proposal with independent review, durable resumption, concrete Engram improvements, documentation backlinks, and passing documentation checks; provided the artifact and findings to Engram::Fable.",
+    "completed_at": "2026-09-05T01:23:32.378084600Z",
+    "actor": {
+      "actor_id": "advisor",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d2612e842383f847afc3f900ce8f8051acd8b0ff7ca3e5f73ae7732b893900d3": {
+        "activity_id": "d2612e842383f847afc3f900ce8f8051acd8b0ff7ca3e5f73ae7732b893900d3",
+        "task_id": "01a06f27-8d42-7a02-8c01-fd7604840b42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "advisor",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ffc3d95cd50237153a151cbc07ef12f96cb521e788bb111a784941ead7876c70"
+      }
+    }
+  }
+}

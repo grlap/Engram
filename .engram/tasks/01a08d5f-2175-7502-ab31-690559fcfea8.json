@@ -1,0 +1,52 @@
+{
+  "id": "01a08d5f-2175-7502-ab31-690559fcfea8",
+  "external_ref": null,
+  "title": "Correct compact orientation limits and continuation contract after review",
+  "outcome": "Correct compact orientation limits and continuation contract after review",
+  "acceptance": [
+    "Continuation filters are normalized once and docs preserve discovery paragraph scope and disclose catalog ordering",
+    "Ready continuation and stale-cursor recovery use one command builder without service-to-verbs coupling",
+    "Receipt reports the effective requested ready limit and only prints cap guidance when candidates remain"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08d1a-acec-7b93-b207-ffed9e4cefeb",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the accepted source corrections: effective query limit retained after byte fitting, cap guidance only when candidates remain, typed continuation intent rendered through the shared listing builder, one filter normalization per owner, and corrected discovery and ordering documentation. Focused orientation4/4 and listing11/11 plus final nine gates passed. Coordinator accepted all six checks in message2175 on independently matching freeze bdb3608c; our closing check still matches. Tests establish the exercised cases, not universal correctness. No commit, push, installation or host-delivery claim.",
+    "completed_at": "2026-09-10T22:33:08.461462600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "72853e2c86b5e32c515fa6f71fe797a937525cbff7438bc95a94c9d53d0f7258": {
+        "activity_id": "72853e2c86b5e32c515fa6f71fe797a937525cbff7438bc95a94c9d53d0f7258",
+        "task_id": "01a08d5f-2175-7502-ab31-690559fcfea8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2fa93297625f325a13dde6d77d122a95c29b50de3bab1c4b418f64d8b12c13ba"
+      }
+    }
+  }
+}

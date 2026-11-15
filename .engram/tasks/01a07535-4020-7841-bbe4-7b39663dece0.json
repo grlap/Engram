@@ -1,0 +1,52 @@
+{
+  "id": "01a07535-4020-7841-bbe4-7b39663dece0",
+  "external_ref": null,
+  "title": "Preserve refused-child navigation in compact done receipts",
+  "outcome": "Preserve refused-child navigation in compact done receipts",
+  "acceptance": [
+    "done_refusal_keeps_the_show_successor_reason_and_core_shape passes with recovery.item.ref retained"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "gate",
+    "phoenix",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0729e-2371-76c0-94df-31fef89664ba",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved refused-child navigation in the compact envelope and verified the focused regression",
+    "completed_at": "2026-09-06T05:38:20.032992200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "10a4669f657340619e96f158db546fe5bf92a5cddfa39bd9063088639019b367": {
+        "activity_id": "10a4669f657340619e96f158db546fe5bf92a5cddfa39bd9063088639019b367",
+        "task_id": "01a07535-4020-7841-bbe4-7b39663dece0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "59476e93f4ab70e6be9a7ede81041ea3a2cb1da643ff5c6e47ed01efbb9eab8a"
+      }
+    }
+  }
+}

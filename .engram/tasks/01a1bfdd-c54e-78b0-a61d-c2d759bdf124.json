@@ -1,0 +1,50 @@
+{
+  "id": "01a1bfdd-c54e-78b0-a61d-c2d759bdf124",
+  "external_ref": null,
+  "title": "An oversized assignee or title could fail every catalog search in its project",
+  "outcome": "An oversized assignee or title could fail every catalog search in its project",
+  "acceptance": [
+    "A focused test shows whether one item with planning text over the catalog's 1 MiB unit limit fails searches that wouldn't select it; if it does, the text is bounded at write or the search no longer reads it, and such searches succeed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "catalog-search",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 6dd431e3 and installed (build 7854af2c). A catalog search no longer fails because of one item it doesn't return whose text is over the 1 MiB unit limit. Search skips over-limit values: octet_length guards on keys, assignee and availability, the FTS id read from the content table, TOOBIG caught for successor details, `--under` resolved by id. Agent writes refuse new text whose stored form or blocker a returning search couldn't read; task-sync writes are never refused. Evidence: a probe showed the failure, a 16-row read-path table was checked by both final reviewers, focused tests run such searches and assert success, FULL test-bfe45da8 passed all 12 stages, and independent evaluation eb495117 passed. Follow-ups: w-d08bea7b4df5 (note refs), w-f2aeddce2070 (label test).",
+    "completed_at": "2026-11-09T19:46:47.773085600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "076ab879f3ab400f8bc20f51d17eefeb": {
+        "activity_id": "076ab879f3ab400f8bc20f51d17eefeb",
+        "task_id": "01a1bfdd-c54e-78b0-a61d-c2d759bdf124",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "540bdcd84471416cb5f4fd0b4e9ca53b"
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "id": "01a0bb66-601b-7833-a2af-068ee0375f05",
+  "external_ref": null,
+  "title": "Preserve projection-repair diagnostic scope in readiness refusals",
+  "outcome": "Preserve projection-repair diagnostic scope in readiness refusals",
+  "acceptance": [
+    "readiness_preserves_schema_policy_and_projection_refusals passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "dogfood",
+    "gate",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved projection-repair scope under readiness detail; the named regression passes and independent acceptance evaluation recorded criterion 1 pass.",
+    "completed_at": "2026-09-19T22:59:15.681090100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9cec716790494a13820efc8ae19c2ea2": {
+        "activity_id": "9cec716790494a13820efc8ae19c2ea2",
+        "task_id": "01a0bb66-601b-7833-a2af-068ee0375f05",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9cec716790494a13820efc8ae19c2ea2"
+      },
+      "d763b871fb7543eeb2adcc797cbbaaf9": {
+        "activity_id": "d763b871fb7543eeb2adcc797cbbaaf9",
+        "task_id": "01a0bb66-601b-7833-a2af-068ee0375f05",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a4010a27b1fb45f1a271c52705be9f66"
+      }
+    }
+  }
+}

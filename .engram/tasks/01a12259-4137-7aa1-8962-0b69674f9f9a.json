@@ -1,0 +1,99 @@
+{
+  "id": "01a12259-4137-7aa1-8962-0b69674f9f9a",
+  "external_ref": null,
+  "title": "Engram control calls exceed the host's 20 s deadline under build load and park TermAl sessions in an unknown state",
+  "outcome": "Engram control calls exceed the host's 20 s deadline under build load and park TermAl sessions in an unknown state",
+  "acceptance": [
+    "A control call that cannot finish within a bound below the host deadline returns a definite typed retryable refusal with remote not started (or a settled result) instead of leaving the outcome unknown, covered by a deterministic test that injects the slow phase"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed the cooperative 15-second control-frame allowance, phase-safe typed expiry with successful rollback certification, settled late-COMMIT results and exact-key reconciliation. Full gate12/12, independent Codex/Claude pair and fresh post-landing acceptance1/1 passed; criterion count1 and acceptance revision2 unchanged. Clean release installed with backup; readiness6/6 before and after installation. Existing processes retain their prior build until a supported restart. External TermAl bounded-retry conformance remains unproved and independently tracked; Low coverage and unrelated load failure remain separate roots.",
+    "completed_at": "2026-10-18T02:30:22.256366500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "35482e99cad541a6b4271f06ac2a6c39": {
+        "activity_id": "35482e99cad541a6b4271f06ac2a6c39",
+        "task_id": "01a12259-4137-7aa1-8962-0b69674f9f9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "35482e99cad541a6b4271f06ac2a6c39"
+      },
+      "a853e1ad622d450b89a73f46dd254e2d": {
+        "activity_id": "a853e1ad622d450b89a73f46dd254e2d",
+        "task_id": "01a12259-4137-7aa1-8962-0b69674f9f9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f5298d8f00164640a2b87096890e84a3"
+      },
+      "c7d644a7adb142c8b24654440f02543d": {
+        "activity_id": "c7d644a7adb142c8b24654440f02543d",
+        "task_id": "01a12259-4137-7aa1-8962-0b69674f9f9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c7d644a7adb142c8b24654440f02543d"
+      },
+      "d2fe451d688a4e108455a1effeb329ca": {
+        "activity_id": "d2fe451d688a4e108455a1effeb329ca",
+        "task_id": "01a12259-4137-7aa1-8962-0b69674f9f9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d2fe451d688a4e108455a1effeb329ca"
+      },
+      "f4e0f0e723f64ff29019455b9e0d2340": {
+        "activity_id": "f4e0f0e723f64ff29019455b9e0d2340",
+        "task_id": "01a12259-4137-7aa1-8962-0b69674f9f9a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "12f7db29261c4da4a976b7f06a9669be"
+      }
+    }
+  }
+}

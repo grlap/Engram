@@ -1,0 +1,28 @@
+{
+  "id": "01a1d89b-6ef0-7df1-8d1c-b668d14a100e",
+  "external_ref": null,
+  "title": "Let the caller own the time limit and the 10-second warning: Engram honours the caller's budget, stops cooperatively with its Git children, and writes no warning in --json",
+  "outcome": "Leave the 10-second slow-operation warning to the caller: Engram stops writing it to stderr once TermAl's launcher warns itself",
+  "acceptance": [
+    "`engram source --timeout-ms N` uses exactly N as its deadline: no internal 60 s floor raises it (source.rs MIN_PUBLIC_BUDGET_MS / public_budget removed), and the upper cap is wide enough for a launcher's choice; Greg's 60 s minimum applies to what the launcher chooses, and TermAl's and Engram's launchers pass at least 60 s",
+    "At the deadline Engram stops cooperatively: it ends its running Git child together with that child's own children, and exits with the typed `deadline` refusal in its JSON; a test shows no Git process of the observation survives the refusal",
+    "Engram's Git children run in a Windows Job Object that kills them when its handle closes, the pattern task_sync/exchange/process.rs already uses, so killing engram.exe from outside also ends its Git children instead of orphaning them; shown by a Windows test",
+    "In --json output Engram writes no slow-operation warning to stderr; the caller logs its own one bounded warning at 10 s (TermAl's warnSlowEngramOperation already does; Engram's scripts/review-freeze-fingerprint.mjs captureCommitInputStatus gains one, through an async spawn, in this change or before it, after w-05e65b3717a0)",
+    "Without a caller budget, the CLI keeps a 60 s default deadline, and a human can opt into the 10 s stderr warning through one documented switch"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

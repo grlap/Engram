@@ -1,0 +1,62 @@
+{
+  "id": "01a07f46-7b75-7993-aea0-0e5665e1fbf0",
+  "external_ref": null,
+  "title": "Keep strict intake parsing scoped to import without changing graph refusal semantics",
+  "outcome": "Keep strict intake parsing scoped to import without changing graph refusal semantics",
+  "acceptance": [
+    "load_uses_body_semantics_and_exact_typed_source_bytes passes unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Strict duplicate-key parsing stays scoped to intake; existing graph body-semantics and exact typed-source tests pass unchanged. Final gates passed; accepted freeze539037a9. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:59:03.080313500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a5ab39e1e02d7fe27f10e3d63fc9db169fc2fe78dc15f2b70c112bcfcb70a397": {
+        "activity_id": "a5ab39e1e02d7fe27f10e3d63fc9db169fc2fe78dc15f2b70c112bcfcb70a397",
+        "task_id": "01a07f46-7b75-7993-aea0-0e5665e1fbf0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7bbca4168278bbfd2e824dd080693ea06d15a50277aafa690c6a7fa02496e7ea"
+      },
+      "aa594a3c723a1b290370071764d1b8ab27f5b28f72d6d7b6d25f2f2c7205440f": {
+        "activity_id": "aa594a3c723a1b290370071764d1b8ab27f5b28f72d6d7b6d25f2f2c7205440f",
+        "task_id": "01a07f46-7b75-7993-aea0-0e5665e1fbf0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "aa594a3c723a1b290370071764d1b8ab27f5b28f72d6d7b6d25f2f2c7205440f"
+      }
+    }
+  }
+}

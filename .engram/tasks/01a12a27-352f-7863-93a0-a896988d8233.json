@@ -1,0 +1,28 @@
+{
+  "id": "01a12a27-352f-7863-93a0-a896988d8233",
+  "external_ref": null,
+  "title": "Retain detached launcher worker failure diagnostics in its run artifacts",
+  "outcome": "Retain detached launcher worker failure diagnostics in its run artifacts",
+  "acceptance": [
+    "Detached _run failures preserve actionable diagnostics for execution.lock refusal and unexpected exceptions in saved artifacts, while ordinary completion output remains metadata-only and a duplicate executor never overwrites the admitted owner's results.",
+    "Regression coverage demonstrates both the duplicate-admission failure and an unexpected worker exception without diagnostic prose entering normal stdout or notification bodies."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a13325-593c-7913-8dfc-8e9188754f26",
+  "disposal_reason": "Fable ruling e07a4663: share the same launcher implementation file and one changeset; preserve both original criteria verbatim in the replacement bundle.",
+  "completion": null
+}

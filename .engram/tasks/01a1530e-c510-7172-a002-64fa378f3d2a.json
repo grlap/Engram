@@ -1,0 +1,30 @@
+{
+  "id": "01a1530e-c510-7172-a002-64fa378f3d2a",
+  "external_ref": null,
+  "title": "Test the baseline include_notes refusals in task-sync folder import and export",
+  "outcome": "Test the baseline include_notes refusals in task-sync folder import and export",
+  "acceptance": [
+    "Storage tests show that after a planning-only baseline, a folder export with include_notes true refuses with DivergentPlanning, and a folder import with a notes profile and tree refuses with DivergentPlanning",
+    "A positive storage test shows that after a baseline, an export under a different origin_machine alias succeeds with an unchanged export_basis for planning-only data",
+    "An --empty-basis import either records origin_machine None in the baseline profile, or the docs state that the baseline's alias is not authoritative"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "task-sync",
+    "test-coverage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

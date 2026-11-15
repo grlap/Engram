@@ -1,0 +1,48 @@
+{
+  "id": "01a09cfd-d42c-7d62-a0f8-d4385ad6c9c9",
+  "external_ref": null,
+  "title": "Document and distribute the approved review simplification",
+  "outcome": "Document and distribute the approved review simplification",
+  "acceptance": [
+    "Every discovered root session in Engram and TermAl is notified and its durable recovery readback or concrete gap is recorded in one aggregate report",
+    "Existing workflow document and entry-point instructions reflect Greg decision of 2026-09-13 without weakening required review or crossing frozen source boundaries"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented adopted revision1, coordinated two-path handoff, distributed to all12 peers, recorded9 durable readbacks and3 concrete missing confirmations; final combined review remains with Codex, no Git performed.",
+    "completed_at": "2026-09-13T23:07:48.489609Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "63153939919ead5d6449ee479f23f9853c7c9f421b448d140b6d0c861c0e5161": {
+        "activity_id": "63153939919ead5d6449ee479f23f9853c7c9f421b448d140b6d0c861c0e5161",
+        "task_id": "01a09cfd-d42c-7d62-a0f8-d4385ad6c9c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6533d5ea4da7cd137adcb073ade64ca7802b7581e0520eb16beecd67ae96b18d"
+      }
+    }
+  }
+}

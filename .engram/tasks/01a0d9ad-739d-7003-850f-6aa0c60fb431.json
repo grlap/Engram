@@ -1,0 +1,52 @@
+{
+  "id": "01a0d9ad-739d-7003-850f-6aa0c60fb431",
+  "external_ref": null,
+  "title": "Decide whether task-scoped memory capture and context packets stay, since neither ever reached production",
+  "outcome": "Greg decides whether task-scoped memory capture, task-memory search and the context-packet design stay (with a production surface) or are removed. Project memory (remember, memories, forget) is the live use of the same memory model and is not in question.",
+  "acceptance": [
+    "Greg's keep-or-remove decision is recorded on this item, covering task-scoped capture (capture_note), task-memory search (search_memories, show_memory) and the context-packet design (spec §4, context-packets.md)",
+    "If removal is chosen, the removal separates task memories from project memories by scope, never by object kind: both share the memory_assertion_event kind, which doctor, the memory projection rebuild and graph-snapshot load all handle",
+    "Spec §4, context-packets.md, typed-memory-model.md, vision.md and roadmap.md match the decision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "area-memory",
+    "decision"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed the never-shipped generic task-memory capture/search/show APIs and obsolete packet-construction design. Historical construction/inspection is explicitly cfg(test); scope-aware historical readers, live project/work memory, serialization, schemas, rows, IDs and links remain. Updated the criterion-named documents and corrected reviewed omissions. Full gate9stages pass on exact final input; independent Codex/Kimi pair has no Medium+ after correction; independent acceptance3/3pass with unchanged criteria; all4 live stores ready. Landed and installed clean commit; Low documentation follow-up recorded separately.",
+    "completed_at": "2026-10-07T03:09:31.488228800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c4e8487d8bcb44aca9db0e54114a17fd": {
+        "activity_id": "c4e8487d8bcb44aca9db0e54114a17fd",
+        "task_id": "01a0d9ad-739d-7003-850f-6aa0c60fb431",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "842a8af730394674bfa10f87868fe7fa"
+      }
+    }
+  }
+}

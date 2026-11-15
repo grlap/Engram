@@ -1,0 +1,51 @@
+{
+  "id": "01a1487f-ada7-7643-8575-0adc8ad86b30",
+  "external_ref": null,
+  "title": "Document control request expiry in the host protocol reference",
+  "outcome": "Document control request expiry in the host protocol reference",
+  "acceptance": [
+    "The host protocol reference defines control_request_expired, its operation coverage, current-attempt-only guarantee, exact retained-request retry rules and timeout uncertainty, and links to the control request allowance contract."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the control_request_expired host protocol reference in commit1d0ea887: all operations and predispatch reads, current-invocation no-change guarantee, exact retained request/key-if-any retry, preserved authority/report and prior uncertainty, timeout unknown, and allowance cross-link. Independent evaluation d7c72055 passes1/1; criterion count1 and revision1 unchanged. The paragraph was included in the parent's full gated/reviewed/installed changeset; no new source edits or separate tests executed in this closeout root.",
+    "completed_at": "2026-10-18T02:35:19.535243700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fb4367d084644fc8b376eefbbc9f0e4b": {
+        "activity_id": "fb4367d084644fc8b376eefbbc9f0e4b",
+        "task_id": "01a1487f-ada7-7643-8575-0adc8ad86b30",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d24e20f01ca34caeb5ece267cc05ac96"
+      }
+    }
+  }
+}

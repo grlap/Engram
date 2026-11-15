@@ -1,0 +1,51 @@
+{
+  "id": "01a0710c-a743-7282-81d5-2d631d4c5abe",
+  "external_ref": null,
+  "title": "doctor explicitly reports unavailable stored schema identity",
+  "outcome": "doctor explicitly reports unavailable stored schema identity",
+  "acceptance": [
+    "unavailable_store_schema_is_explicit_and_does_not_create_a_file passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "made",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06d73-8150-7ed3-903c-6d6239aeb4c1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "doctor explicitly reports unavailable stored schema identity; verified by targeted regressions, final gates and two-reviewer closure.",
+    "completed_at": "2026-09-05T10:40:54.389643500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1ea1ab0c6e6dd6ed7f77ad940ea681fdd07732ffea2cacb2430c04e43ea9ffac": {
+        "activity_id": "1ea1ab0c6e6dd6ed7f77ad940ea681fdd07732ffea2cacb2430c04e43ea9ffac",
+        "task_id": "01a0710c-a743-7282-81d5-2d631d4c5abe",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ebc853fa5e3a8b53a68b21c507ec12d3181c66f6278c4f8efca75d8d85264ac4"
+      }
+    }
+  }
+}

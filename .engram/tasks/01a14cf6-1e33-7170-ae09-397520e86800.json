@@ -1,0 +1,63 @@
+{
+  "id": "01a14cf6-1e33-7170-ae09-397520e86800",
+  "external_ref": null,
+  "title": "Test the post-open settle deadline boundary deterministically",
+  "outcome": "Test the post-open settle deadline boundary deterministically",
+  "acceptance": [
+    "A deterministic probe fires immediately after settle_store_copy opens its connection, proves the existing Verify-phase typed deadline refusal, prevents later admission, and verifies connection/wait-scope release and stage cleanup; the test fails if that expiry check is removed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Deterministic post-open settle deadline probe and regression test delivered in the combined seven-path changeset. Full gate passed on frozen input 8f3724b9; Codex and Claude independent reviews reported no findings; fresh independent closure evaluation 1aa2ae2678754b9a83c0915029633c2b passed criterion 1/1. Commit 684cbe0aed1474219d73627e5536a460041814ac was pushed to origin/master and verified; release build 7f7a850a0c67514f3c8119a0c6d5b0888f0b4f93df2b9fbd4ddfb92cfb62cfb7 is installed with the prior binary retained as backup.",
+    "completed_at": "2026-10-18T18:27:55.767117200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d36be2e420054210805c620cf0e4ab7a": {
+        "activity_id": "d36be2e420054210805c620cf0e4ab7a",
+        "task_id": "01a14cf6-1e33-7170-ae09-397520e86800",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9c2b54a4aa22458ab70cbb5bc010a3b0"
+      },
+      "dd8ebdb586c64a8fbf9e65577f57a014": {
+        "activity_id": "dd8ebdb586c64a8fbf9e65577f57a014",
+        "task_id": "01a14cf6-1e33-7170-ae09-397520e86800",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dd8ebdb586c64a8fbf9e65577f57a014"
+      }
+    }
+  }
+}

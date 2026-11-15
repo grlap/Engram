@@ -1,0 +1,74 @@
+{
+  "id": "01a06336-c086-7852-959e-0eab264bb1a9",
+  "external_ref": null,
+  "title": "Parent done still reports a cancelled and waived required child as Open",
+  "outcome": "After update --cancel on a required child and a recorded waive_required_child, the parent's done succeeds; the completion preflight and its reminder read the child's real lifecycle and the root execution's waivers",
+  "acceptance": [
+    "reproduction: carry-style parent with a required child, cancel the child, record waive_required_child (core refuses a second one as duplicate), then done on the parent succeeds instead of naming the child Open without a completion seal or waiver",
+    "show on the parent surfaces waived required children and never omits an open or cancelled required child behind the display cap"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the parent required-child waiver recovery fix and hardened completion retry freshness with compact audited barrier revisions, cumulative-breadth scale coverage, and grouped doctor replay.",
+    "completed_at": "2026-09-03T01:13:39.029881400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "40f687e54fded3740e20f2bc5902d5fdc152effd3c5eaa6d8ddfd2530fc26233": {
+        "activity_id": "40f687e54fded3740e20f2bc5902d5fdc152effd3c5eaa6d8ddfd2530fc26233",
+        "task_id": "01a06336-c086-7852-959e-0eab264bb1a9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "40f687e54fded3740e20f2bc5902d5fdc152effd3c5eaa6d8ddfd2530fc26233"
+      },
+      "a6ee5ae370e4ca2fc4b534951fc6912b88425b691b6870e873789a3a39cf89ba": {
+        "activity_id": "a6ee5ae370e4ca2fc4b534951fc6912b88425b691b6870e873789a3a39cf89ba",
+        "task_id": "01a06336-c086-7852-959e-0eab264bb1a9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ac73defb2fb6c3f799fb245ff581bbb85576de6277bcc9f899248f8ed0a9b186"
+      },
+      "e1ae30391ce3bdbf4798d86e6f41687acc78543cbeff8bf1b73908a15bea917f": {
+        "activity_id": "e1ae30391ce3bdbf4798d86e6f41687acc78543cbeff8bf1b73908a15bea917f",
+        "task_id": "01a06336-c086-7852-959e-0eab264bb1a9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e1ae30391ce3bdbf4798d86e6f41687acc78543cbeff8bf1b73908a15bea917f"
+      }
+    }
+  }
+}

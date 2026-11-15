@@ -1,0 +1,66 @@
+{
+  "id": "01a0c0ab-fd78-7122-97dd-e89694041785",
+  "external_ref": null,
+  "title": "Avoid computing retired control payload checksums",
+  "outcome": "Avoid computing retired control payload checksums",
+  "acceptance": [
+    "Control observation, grant, lease, supersession, operation and policy-operation payload writers use bytes-only canonicalization where no fingerprint consumer remains.",
+    "Regression tests compare canonical bytes at runtime and preserve replay, intent and replacement-decision fingerprint comparisons.",
+    "Required gates and paired review pass; any performance claim is supported by measurement."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "identity",
+    "legacy",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed retired control-payload checksum computation by centralizing bytes-only canonicalization, preserved all compared fingerprints and canonical stored bytes, added runtime-derived regression coverage, passed all nine required gates on the exact frozen input, completed paired review with no findings above Low, and recorded the four Low follow-ups requested by Greg.",
+    "completed_at": "2026-09-22T05:07:13.397370300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2233f9a28b92445e9e733a1a0f5a53b9": {
+        "activity_id": "2233f9a28b92445e9e733a1a0f5a53b9",
+        "task_id": "01a0c0ab-fd78-7122-97dd-e89694041785",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2233f9a28b92445e9e733a1a0f5a53b9"
+      },
+      "cdecddf18d73428eaeb7cd2fa92bbc24": {
+        "activity_id": "cdecddf18d73428eaeb7cd2fa92bbc24",
+        "task_id": "01a0c0ab-fd78-7122-97dd-e89694041785",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9b8c4d8e2aa9420e94c34e6c0eb01484"
+      }
+    }
+  }
+}

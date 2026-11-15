@@ -1,0 +1,27 @@
+{
+  "id": "01a1c297-006e-7330-bb5f-2d44f618076f",
+  "external_ref": null,
+  "title": "Design bounded retention for settled exchange custody artifacts",
+  "outcome": "Design bounded retention for settled exchange custody artifacts",
+  "acceptance": [
+    "A concrete retention or archival design bounds custody enumeration and retained-file growth for settled operations while preserving canonical history, retry witnesses and unresolved uncertainty; any history-rewrite action retains its separate authority requirement."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a0f82c-cb07-71a1-9ee6-c7f228fac946",
+  "external_ref": null,
+  "title": "Open obligations on a run ended by cancel, supersede or detach are not offered as owed work",
+  "outcome": "Open obligations on a run ended by cancel, supersede or detach are not offered as owed work",
+  "acceptance": [
+    "A test shows that show, next and core inspect on an item whose run was ended by cancel, supersede or detach, while that run held an open obligation, give no owed-work guidance, reminder or open count for it, while the row stays readable as stored",
+    "The decision of which ended runs' obligations are history is made in the one place that decides it for completed and sealed runs, and is documented beside that rule"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

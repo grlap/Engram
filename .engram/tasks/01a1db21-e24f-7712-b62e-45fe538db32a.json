@@ -1,0 +1,61 @@
+{
+  "id": "01a1db21-e24f-7712-b62e-45fe538db32a",
+  "external_ref": null,
+  "title": "Route ordinary task-sync export and import through the proportional delta path, with Git-side reads by diff",
+  "outcome": "Route ordinary task-sync export and import through the proportional delta path, with Git-side reads by diff",
+  "acceptance": [
+    "An ordinary export after a recorded exchange finds the changed tasks from the indexed project-feed interval since that exchange, using a rebuildable affected-ids projection that includes tombstones for changes the feed doesn't attribute to a work item. It reads, decodes, writes or removes only those tasks' documents; unchanged task files are not read, rewritten or touched. project.json records the feed cut.",
+    "An ordinary incremental import goes through the Git commit path. The changed paths come from the diff of .engram/ between the last-applied source commit and the incoming commit, and only those blobs are read and decoded, plus project.json and any document a change references. Unchanged task documents are not opened or parsed, and deletions are applied. A plain directory import without that commit context is either bootstrap (empty basis) or an explicit, named rebuild.",
+    "A full scan happens only at bootstrap or in an explicit, named rebuild. A missing, gapped, stale or inconsistent cursor or basis is refused with a named reason, never answered with a silent full scan.",
+    "Incoming delta retention, outgoing export-commit recording and delta conflict resolution no longer read the whole task snapshot at a commit. Each starts from the recorded basis inventory root, takes the Git diff to the selected commit, and computes the new root additively from the old and new blobs of the changed paths. It requires the set of changed paths to equal the payload keys exactly, and is sound by induction from the one full check at bootstrap.",
+    "The proportionality harness on a fixture of at least 2,000 tasks counts Git-side blob reads and decodes, as well as store decodes, for export, import, repeat and the reverse direction. Each count scales with the change set, not the project size, and the numbers are recorded on the parent item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "381b584a632c48b1b3249c57340a4096": {
+        "activity_id": "381b584a632c48b1b3249c57340a4096",
+        "task_id": "01a1db21-e24f-7712-b62e-45fe538db32a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "381b584a632c48b1b3249c57340a4096"
+      },
+      "7e3046da2a6b442d806c30792197bfbc": {
+        "activity_id": "7e3046da2a6b442d806c30792197bfbc",
+        "task_id": "01a1db21-e24f-7712-b62e-45fe538db32a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7e3046da2a6b442d806c30792197bfbc"
+      }
+    }
+  }
+}

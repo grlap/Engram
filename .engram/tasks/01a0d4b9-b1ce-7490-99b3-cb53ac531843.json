@@ -1,0 +1,30 @@
+{
+  "id": "01a0d4b9-b1ce-7490-99b3-cb53ac531843",
+  "external_ref": null,
+  "title": "Store when a session acquired a claim, so `work core held` reads claim time without scanning the claim's events",
+  "outcome": "Store when a session acquired a claim, so `work core held` reads claim time without scanning the claim's events",
+  "acceptance": [
+    "A regression test shows the SQLite VM steps of a held read stay the same after many non-acquisition events on the held item",
+    "The change follows the pre-release migration rules: import maps the new field from existing rows with counts reported, and every live store is migrated before install; the full quality gates pass and a Codex and a Claude review are clean",
+    "The claim projection carries the time (or feed position) at which its holder acquired the claim, set by the claim and handoff-acceptance paths and kept by renewals and the holder's revisions, and `work core held` reads claimed_at from it without scanning work events"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "performance",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

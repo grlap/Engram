@@ -1,0 +1,89 @@
+{
+  "id": "01a19159-7545-7fd2-aaa5-18af443a443f",
+  "external_ref": null,
+  "title": "A Windows full gate leaves PowerShell's ModuleAnalysisCache in the run root, failing the gate as input-changed",
+  "outcome": "A Windows full gate leaves PowerShell's ModuleAnalysisCache in the run root, failing the gate as input-changed",
+  "acceptance": [
+    "A regression reproduces it: a Windows gate stage that launches PowerShell leaves no untracked file in the run root.",
+    "The isolation is fixed at its cause (for example, every PowerShell child gets an absolute per-run LOCALAPPDATA/APPDATA, or the remote job environment no longer strips them), with no ignore entry and no cleanup step.",
+    "A Windows full gate passes with matching before and after fingerprints."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "test-launcher",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pinned every Windows PowerShell launcher child to an absolute per-run cache path while preserving saved startup outcomes. Landed and installed the reviewed cache contribution in the combined exact candidate 3430eadd48314a972f502e46d4c2c539adeef742. Genuine final Windows full passed12/12stages+3/3preflight with expected/before/after52f5402c equal and cleanGit; four real Windows regressions passed. Recovered independentClaude15731 complete structured result and full2621-byte nonfallback output; native evaluationa848f840783b47bfb6355f2af9986bca is newest/fresh,cut378,3/3judgmentPASS onrevision1. Historicaltriggerremainsunknown; approvedpinningcondition72b1/c577 isexplicit, no manufacturedRED/nativehostcreditclaim. ALL6newbuildreadiness passed, installbackup precededmasterFF/push, actualremoteverified. Retention continues only for openlockacceptance and ICE8794 uses, with scopedcleanup assessed next.",
+    "completed_at": "2026-10-31T20:40:56.030315800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "538aa5d05dab47c38098fdbf7a53f925": {
+        "activity_id": "538aa5d05dab47c38098fdbf7a53f925",
+        "task_id": "01a19159-7545-7fd2-aaa5-18af443a443f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "538aa5d05dab47c38098fdbf7a53f925"
+      },
+      "6c4eeb67586b4d198a74726da0685c46": {
+        "activity_id": "6c4eeb67586b4d198a74726da0685c46",
+        "task_id": "01a19159-7545-7fd2-aaa5-18af443a443f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e0e01b94dc814ec7b92d9b188381771f"
+      },
+      "c8c1e51e454942a9844802043a6c3d19": {
+        "activity_id": "c8c1e51e454942a9844802043a6c3d19",
+        "task_id": "01a19159-7545-7fd2-aaa5-18af443a443f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "6c4eeb67586b4d198a74726da0685c46"
+      },
+      "e0e01b94dc814ec7b92d9b188381771f": {
+        "activity_id": "e0e01b94dc814ec7b92d9b188381771f",
+        "task_id": "01a19159-7545-7fd2-aaa5-18af443a443f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "001f2b8d848a47b88aff3742bf8f7435"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a07c78-c3a0-70c0-9685-7f7f52e07fa7",
+  "external_ref": null,
+  "title": "A working session learns its own claim lapsed before a write refuses",
+  "outcome": "A working session learns its own claim lapsed before a write refuses",
+  "acceptance": [
+    "Regression: a session holds an item, its claim expires while the session keeps reading, and the next read carries the lapse reminder; a session that never held it sees no such reminder",
+    "The reminder appears for the session that held the claim, is bounded like every other reminder, and grants nothing: it states the lapse and the renewal, and does not renew, reclaim or change authority",
+    "When the caller's own claim on the item they are working has expired, the next ordinary read they take says so in its reminders, naming the item and the renewal command, instead of the session discovering it from a refused write"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "dogfood",
+    "stream-recovery-continuity",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Every agent read now names this session's own lapsed claim and the renewal command (\"your claim on REF lapsed; reads never renew it; renew it with engram work claim REF\"), read in the same snapshot on one read-only connection and changing nothing; new memory versions reserve room for it and stored versions keep their bound. Landed in 3abe2b2 (bundle 10 changeset 3).",
+    "completed_at": "2026-10-05T03:39:22.167937600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "955e2cf4328d49c3b0909ba349ef6284": {
+        "activity_id": "955e2cf4328d49c3b0909ba349ef6284",
+        "task_id": "01a07c78-c3a0-70c0-9685-7f7f52e07fa7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1a76961da3364c9486e5339821d01c49"
+      }
+    }
+  }
+}

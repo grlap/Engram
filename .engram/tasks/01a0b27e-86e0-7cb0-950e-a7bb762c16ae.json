@@ -1,0 +1,69 @@
+{
+  "id": "01a0b27e-86e0-7cb0-950e-a7bb762c16ae",
+  "external_ref": null,
+  "title": "Bind authored acceptance criteria to typed host verification obligations",
+  "outcome": "An authored acceptance criterion can be declared as bound to a typed verification obligation; completion of a bound criterion is decided by observed verification evidence that the core enforces, never by judgment or asserted evidence, while free-text judgment criteria keep working as today. No parallel evidence or completion-gate subsystem: the existing VerificationEvidence, EnvironmentEvidence, source fingerprints, evaluated acceptance, typed work obligations and waiver authority carry it.",
+  "acceptance": [
+    "an acceptance criterion can be declared bound to a typed verification obligation when the item is authored or revised, through the existing words and the atomic authored-plan facility (no second plan-application command); show reports the binding by one-based criterion position",
+    "contradictory observed evidence does not pass: when the newest host verification of the bound kind did not pass, or does not verify the run's latest observed source change, completion refuses and names the criterion and the evidence; a bound criterion cannot rest on a gate receipt at all, and an obligation still open is refused by its id, definition and required check",
+    "docs (local-work-system, acceptance-evaluation, cli-and-mcp, shipped) describe the binding; all nine gates pass",
+    "done refuses while a bound criterion has no positive observed VerificationEvidence for its obligation on the current run; an evaluate verdict or an author-asserted link does not satisfy a bound criterion",
+    "enforcement is completion-only and needs no turn-gated hosting: done refuses with no grant or control session involved, and Engram runs no build, command or model; the verification evidence that satisfies a binding is host-minted through the existing control turn checkpoint, so a host that runs no control plane can only revise or waive a bound requirement",
+    "free-text judgment criteria complete exactly as before; revision (update --accept) and an attributed, audited waiver remain the only ways to change or exempt a bound requirement",
+    "the fourteen-word agent surface is unchanged; the binding reuses existing VerificationEvidence, EnvironmentEvidence, source fingerprints, evaluated acceptance, typed work obligations and waiver authority, with no parallel evidence or completion-gate subsystem"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-work-lifecycle",
+    "gates"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "An acceptance criterion can be bound to a typed verification requirement (kind test, build, lint, review or acceptance; optionally one check pinned by its command fingerprint) with `add`/`update --bind POSITION=KIND[:FINGERPRINT]`, the MCP `bindings` argument, or a plan task's `bindings`; `show` marks bound criteria by position and counts those behind a clipped list. Enforcement reuses the existing typed obligations: creation, decomposition, claim and revision open one obligation per binding on the run; host-minted passing verification of the bound kind satisfies it with or without a source mutation; `done` refuses while it is open, when the newest verification of the kind failed, or when it does not verify the run's latest observed source change under the existing verification-match rule; an evaluated pass needs an observed basis citing that evidence and seals with exactly the citations it was judged on; a binding that is new, added back, or rewritten owes its verification from that revision, a dropped one is waived in the revising actor's name, and `--accept` without `--bind` drops every binding and says so. A pin that names a stored record is refused where it is authored. Free-text criteria are unchanged and no word was added. Delivered in ba7091a with review fixes in 3bf3305, 4ead3ce and f76b60a and a docs statement of the host limit in 7e3a874. Reviewed in rounds 9 (Claude; Codex unavailable for a host freeze-checker path gap, tracked separately), 10 and 11 (both reviewers, freeze attested before and after; round 11 had no finding above Low). f76b60a and 7e3a874 were gated but not re-reviewed. Nine gates passed on every commit (runs 09, 12, 13, 14, 15).",
+    "completed_at": "2026-09-18T17:40:52.665265800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "da991ca3fb54411982e236229f3f7207": {
+        "activity_id": "da991ca3fb54411982e236229f3f7207",
+        "task_id": "01a0b27e-86e0-7cb0-950e-a7bb762c16ae",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "05502bedf0fb48d49ded09e0443d676e"
+      },
+      "fe4ba102ab7946b6972efd1b56be9070": {
+        "activity_id": "fe4ba102ab7946b6972efd1b56be9070",
+        "task_id": "01a0b27e-86e0-7cb0-950e-a7bb762c16ae",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fe4ba102ab7946b6972efd1b56be9070"
+      }
+    }
+  }
+}

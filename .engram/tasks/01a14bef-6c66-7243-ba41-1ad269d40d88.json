@@ -1,0 +1,42 @@
+{
+  "id": "01a14bef-6c66-7243-ba41-1ad269d40d88",
+  "external_ref": null,
+  "title": "Bounded receive slice 3: bounded pack, delta and object-id decoder (SHA-1 PACKv2 under 2 GiB)",
+  "outcome": "Bounded receive slice 3: bounded pack, delta and object-id decoder (SHA-1 PACKv2 under 2 GiB)",
+  "acceptance": [
+    "Initial profile is SHA-1 PACKv2 with pack length below 2 GiB; a locally selected SHA-256 repository is refused before network and a mismatching remote advertisement before fetch; a typed object id carries its algorithm",
+    "Decoding uses the original pack plus two bounded append-only scratch spools and bounded in-memory tables; OFS deltas refer only to valid earlier entries, REF deltas resolve only in-pack bases, no implicit base fetch or unbounded cache",
+    "Inflate runs through caller-owned bounded slices; each result's declared size and copy/work counters are accounted before allocation; a reviewed collision-detecting SHA-1 library is used, with no home-grown crypto",
+    "Duplicate supplied object ids are rejected, all received entries are counted before refusal, and malformed/oversized entries yield bounded refusals"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "resource-limits",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a14bc4-fa6d-7101-90c3-8538455dd83d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a14bf1-da27-7833-8ddc-202cdb8dedca",
+      "kind": "manual",
+      "detail": "GREG STOP on all w-8538 slices (Advisor #1639, 22:18Z): \"Nie nie. Nie róbcie tego. Nie teraz. Po prostu git fetch.\" Deferred; unblock only on Greg's word.",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-17T22:18:23.651224100Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0af86-9388-7031-a7ff-ae291507d782",
+  "external_ref": null,
+  "title": "Evaluated done preflights acceptance readiness before any capture and keeps the transactional final recheck",
+  "outcome": "Evaluated done preflights acceptance readiness before any capture and keeps the transactional final recheck",
+  "acceptance": [
+    "a done on a fresh passing evaluation still records its capture evidence and checkpoint and seals, and the recovery receipts keep their typed causes and remedies",
+    "under an evaluated policy, a done with a nonempty summary and no evaluation is refused MissingAcceptanceEvaluation with the run evidence set, the latest checkpoint, and the run feed head unchanged apart from the pending protocol attempt; a done on a failing evaluation is refused AcceptanceFailed the same way; the preflight uses the shared readiness assessment and the storage completion keeps its transactional final recheck"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The service completion preflights acceptance readiness before prepare_completion_evidence through acceptance_evaluation_recovery_cause (shared assess_on + blocking_cause) and returns the same typed recovery result the storage path returns via work_completion_recovery, whose guard now admits the acceptance causes with the bound-revision criterion check; the storage completion keeps its transactional recheck. Pinned by evaluate_records_under_policy_and_completion_consumes_it with state snapshots around both refusals and the unchanged fresh-pass control (RED logs/25, GREEN logs/26). Final sequence logs/27: fmt-check, check, clippy, lib 1106 passed / 4 ignored, bin 43, parity, mcp-dogfood, doc links — all pass; eight gates recorded here once.",
+    "completed_at": "2026-09-17T13:39:37.478157900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d2fb6d03305a92bb40f5c46a2ba95e5a8eb97109601a0e41a2f60241521a5531": {
+        "activity_id": "d2fb6d03305a92bb40f5c46a2ba95e5a8eb97109601a0e41a2f60241521a5531",
+        "task_id": "01a0af86-9388-7031-a7ff-ae291507d782",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "aeace63c82ebd848c38e0e4969f227a155ca972878439f4218e42628ee27fd58"
+      }
+    }
+  }
+}

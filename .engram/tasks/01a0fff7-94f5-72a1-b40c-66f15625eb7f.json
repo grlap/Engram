@@ -1,0 +1,30 @@
+{
+  "id": "01a0fff7-94f5-72a1-b40c-66f15625eb7f",
+  "external_ref": null,
+  "title": "Say exactly what an absent initial sighting predicts when the sighting read is taken before the run-feed head",
+  "outcome": "Say exactly what an absent initial sighting predicts when the sighting read is taken before the run-feed head",
+  "acceptance": [
+    "behavioral-control-plane.md says a bound root with an absent sighting predicts the no_initial_sighting refusal only when read_cut equals head_cut, or when nothing recorded after the cut moves the basis. For an earlier cut, recording can first refuse as basis moved (a check recorded or a source change after the cut).",
+    "A test records an evaluation at an earlier cut after a later host check and asserts the basis-moved refusal, while the read at that cut reads absent.",
+    "The docs say that a finished run can read bound here while named_root_read and session status report none for it, because the read uses recording's selection and recording evaluates only the item's active run."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

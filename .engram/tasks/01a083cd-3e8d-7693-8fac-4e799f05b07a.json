@@ -1,0 +1,116 @@
+{
+  "id": "01a083cd-3e8d-7693-8fac-4e799f05b07a",
+  "external_ref": null,
+  "title": "An agent recovers its governing rules after compaction without a peer telling it what they are",
+  "outcome": "An agent recovers its governing rules after compaction without a peer telling it what they are",
+  "acceptance": [
+    "A natural first post-compaction recovery follows that bootstrap and reads the relevant current guidance without a peer prompt; implementation tests and source inspection are reported separately from this observation.",
+    "Before work resumes after compaction, a bootstrap outside stored memories gives a bounded path through existing reads to current attributed project guidance without requiring a known key; pagination and full reads preserve attribution and do not promote notes or override current user instructions.",
+    "Recovery evidence distinguishes newly delivered startup or resume instructions from content carried only by a summary; context-generation labels alone are not proof of compaction or injection.",
+    "When the host's context generation for the session differs from the one recorded for it, or none is recorded, next with peek puts first in its reminders a directive to read memories through the continuation, and the relevant entries in full, before acting, worded as the host's report; the directive stays until that session has listed memories for that generation; tests cover a changed generation, an unchanged one, a session with no record, and the acknowledgement."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "dogfood",
+    "phoenix",
+    "stream-recovery-continuity",
+    "verification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Verified natural post-compaction recovery before substantive work; all four unchanged acceptance criteria independently pass.",
+    "completed_at": "2026-10-18T03:24:15.885701600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "08aa6a1abc4a496a87972cb9fbc6177e": {
+        "activity_id": "08aa6a1abc4a496a87972cb9fbc6177e",
+        "task_id": "01a083cd-3e8d-7693-8fac-4e799f05b07a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dbe272d5bdcb4235af1c7a16237c4a82"
+      },
+      "2bd8c5ef1cacbe2cdfd2c6a538877b7fc43e8c5624b0ad610d5952c43a23560b": {
+        "activity_id": "2bd8c5ef1cacbe2cdfd2c6a538877b7fc43e8c5624b0ad610d5952c43a23560b",
+        "task_id": "01a083cd-3e8d-7693-8fac-4e799f05b07a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "bb262a323c7700c2dfa4ea1070b8a6b691c7966504454a82b66df49dc7421b7e"
+      },
+      "4fb694eab462082b153fa4ed53a80ae761ee784864ad550be5e6e462e69dc3de": {
+        "activity_id": "4fb694eab462082b153fa4ed53a80ae761ee784864ad550be5e6e462e69dc3de",
+        "task_id": "01a083cd-3e8d-7693-8fac-4e799f05b07a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4fb694eab462082b153fa4ed53a80ae761ee784864ad550be5e6e462e69dc3de"
+      },
+      "5bce9598b6054e3b995ab6b0d12ba545": {
+        "activity_id": "5bce9598b6054e3b995ab6b0d12ba545",
+        "task_id": "01a083cd-3e8d-7693-8fac-4e799f05b07a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1970ba2c15924f5a833b1e75707ae4d4"
+      },
+      "b3dae522bdd84b0eadc83860939591ad": {
+        "activity_id": "b3dae522bdd84b0eadc83860939591ad",
+        "task_id": "01a083cd-3e8d-7693-8fac-4e799f05b07a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "897b0078e52b42f6a15d05a51d469fd7"
+      },
+      "ca84550f8a944828b5bbf7206e60fb8a": {
+        "activity_id": "ca84550f8a944828b5bbf7206e60fb8a",
+        "task_id": "01a083cd-3e8d-7693-8fac-4e799f05b07a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ca84550f8a944828b5bbf7206e60fb8a"
+      }
+    }
+  }
+}

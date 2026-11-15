@@ -1,0 +1,64 @@
+{
+  "id": "01a0c075-677f-7231-8c26-7f4d6a4918a0",
+  "external_ref": null,
+  "title": "Align strict control-policy admission with renamed record-id column",
+  "outcome": "Align strict control-policy admission with renamed record-id column",
+  "acceptance": [
+    "storage::migration::tests::a_store_round_trips_row_for_row_and_is_healthy passes and the 15 migration tests blocked by stale policy_hash admission pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "gate",
+    "identity",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0b239-8e44-7b81-ae1c-1628cce3cbc6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Strict control-policy admission now requires policy_id and still refuses absence. Migration tests pass in retained final nine-gate run; independent Claude7171 accepted unchanged criterion.",
+    "completed_at": "2026-09-21T03:24:37.346855300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1c437bc39fa34a35a6054011ff428d13": {
+        "activity_id": "1c437bc39fa34a35a6054011ff428d13",
+        "task_id": "01a0c075-677f-7231-8c26-7f4d6a4918a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7bd2bac6134d40cb8687edd88bc8a347"
+      },
+      "ca237ae0be74459b9d4bfb7087836c3b": {
+        "activity_id": "ca237ae0be74459b9d4bfb7087836c3b",
+        "task_id": "01a0c075-677f-7231-8c26-7f4d6a4918a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ca237ae0be74459b9d4bfb7087836c3b"
+      }
+    }
+  }
+}

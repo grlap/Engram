@@ -1,0 +1,53 @@
+{
+  "id": "01a07498-d460-7702-ad0d-5dc7beb80e3e",
+  "external_ref": null,
+  "title": "Note rows carry a typed family marker: gate evidence, observation, and note rows are distinguishable in text and JSON by a field derived from the stored evidence kind, not by matching body text",
+  "outcome": "Note rows carry a typed family marker: gate evidence, observation, and note rows are distinguishable in text and JSON by a field derived from the stored evidence kind, not by matching body text",
+  "acceptance": [
+    "Each row in show --notes and --history carries its existing JSON family (notes, observations, gates, history) and a short text marker (note, observation, gate, history), derived from the stored record kind, gate structure and observation provenance; single-row --note LOCATOR detail uses the same marker; note bodies are unchanged; per-row markers agree with each family's shown count on a mixed fixture."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "dogfood",
+    "phoenix",
+    "stream-agent-receipts",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added typed text family markers to note/history rows and detail while preserving JSON families and bodies; mixed, paged, history, placeholder and CLI/MCP coverage passes. R3 full Windows gate and Codex/Claude reviews clean; independent acceptance 1/1 pass; all three live stores ready with new build.",
+    "completed_at": "2026-09-28T06:19:28.496755200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4c0776da94f24216b17432d4b20221b1": {
+        "activity_id": "4c0776da94f24216b17432d4b20221b1",
+        "task_id": "01a07498-d460-7702-ad0d-5dc7beb80e3e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b95ddd2f48a244d18c146d0a32953a1b"
+      }
+    }
+  }
+}

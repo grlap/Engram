@@ -1,0 +1,51 @@
+{
+  "id": "01a072d2-4127-7dc2-8c22-407d82ac64c3",
+  "external_ref": null,
+  "title": "Preserve blocker details when fitting safe show",
+  "outcome": "Preserve blocker details when fitting safe show",
+  "acceptance": [
+    "show_pressure_preserves_blockers_and_counts_only_removed_rows passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a072a6-7488-76a1-ab0b-9032f25d9ff4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved bounded blocker detail and exact removed-row omission counts; regression verified and clean review landed.",
+    "completed_at": "2026-09-05T19:34:58.657775200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "145cee2c4c3f1ef7fd31036b1e804a9dd82a4a798882abebad2a0c0fad1dd6d9": {
+        "activity_id": "145cee2c4c3f1ef7fd31036b1e804a9dd82a4a798882abebad2a0c0fad1dd6d9",
+        "task_id": "01a072d2-4127-7dc2-8c22-407d82ac64c3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4016ae288cfed75457daf56f1bd92da9f6a93a624f7b9b028f60217436e2e259"
+      }
+    }
+  }
+}

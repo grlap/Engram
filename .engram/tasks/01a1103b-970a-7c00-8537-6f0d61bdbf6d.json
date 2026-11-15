@@ -1,0 +1,55 @@
+{
+  "id": "01a1103b-970a-7c00-8537-6f0d61bdbf6d",
+  "external_ref": null,
+  "title": "Two control-plane doc sentences overstate a reconnect's reset and a grant's claim fence",
+  "outcome": "Two control-plane doc sentences overstate a reconnect's reset and a grant's claim fence",
+  "acceptance": [
+    "behavioral-control-plane.md (around :259-260 and :1578-1579) and the host-control paragraph of cli-and-mcp.md (\"a newly opened control connection invalidates unbegun grants…\") say reopening the connection returns a turn_open session with no begun turn to ready, as \"Crash, restart, and replay\" does; an exited session stays exited",
+    "The grant paragraph in \"Evaluate a turn\" (around :274) says a grant carries a claim fence only when the session is bound to a work claim",
+    "Optionally: spec §2.7/§3.1 say \"turn grants in every state\", architecture.md's operational list names grant supersessions, and the HandoffOffer bullet names the shipped WorkHandoffOffer type",
+    "The doc link check passes",
+    "In the same two paragraphs: cli-and-mcp.md says a new bind leaves the session ready so it may request a turn, which turn_evaluate still admits or refuses, while an exact retry of the latest bind key returns the current status with its phase unchanged (not that its first turn is granted at once), and the same correction is made where host-checklist.md and cli-and-mcp.md's session_bind row repeat that bind claim; cli-and-mcp.md calls exact retry results operational records, not canonical; bcp (around :269) and cli-and-mcp.md say a begun grant's session is refused with turn_already_open only once the earlier checks of the fixed evaluation order pass, until the host checkpoints the turn; and bcp puts turn_open on the session with an uncertain begun grant, not on the grant"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The control-plane docs now state only shipped behaviour:\n- Reconnect: a reopened connection returns a turn_open session with no begun turn to ready only when it expired an issued grant; an exited session stays exited (bcp, cli-and-mcp.md).\n- Grant fence: a grant binds a claim fence only for a work-bound session.\n- Bind: a new bind that succeeds leaves the session ready, though turn_evaluate still decides the turn; an exact bind retry returns the current status unchanged (cli-and-mcp.md, its session_bind row, host-checklist.md).\n- Retry results are operational records.\n- turn_already_open comes only after the earlier evaluation checks, until the host checkpoints the turn.\n- spec and architecture name turn grants in every state, grant supersessions and WorkHandoffOffer.\nThree review rounds; round 3 had nothing at Medium or above. Two Lows are filed as w-299df04ac3b3. Evaluation 8adab3f5 passed 5 of 5. Landed as 1727621 (Markdown only, no install).",
+    "completed_at": "2026-10-06T08:59:29.260783Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f71456f4e74e448394e885f39154d7c4": {
+        "activity_id": "f71456f4e74e448394e885f39154d7c4",
+        "task_id": "01a1103b-970a-7c00-8537-6f0d61bdbf6d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3877c4fb9f4a4bd185dafe42ab2c0143"
+      }
+    }
+  }
+}

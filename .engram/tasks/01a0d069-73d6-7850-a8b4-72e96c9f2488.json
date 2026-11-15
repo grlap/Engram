@@ -1,0 +1,54 @@
+{
+  "id": "01a0d069-73d6-7850-a8b4-72e96c9f2488",
+  "external_ref": null,
+  "title": "Align every statement of projection-repair scope with what repair rebuilds",
+  "outcome": "Align the projection-repair scope in spec, shipped and sqlite-store docs with the code",
+  "acceptance": [
+    "The `scope` field of the projection_repair_required refusal (src/bin_support/doctor/refusals.rs ~52, readiness fixture in src/bin_support/readiness.rs ~149) names the derived tables too, or the decision to keep it unchanged is recorded with its reason (it is emitted to hosts, so check TermAl's use of it first)",
+    "The doc comment on SqliteStore::repair_rebuildable_projections (src/storage/open_schema.rs ~227) and the storage reviewer lens (.claude/reviewers/storage.md ~31) state the same scope",
+    "docs/spec.md, docs/shipped.md and docs/features/sqlite-store.md describe `engram doctor --repair-projections` as rebuilding the declared indexes, triggers and search indexes and also the derived tables it drops and recreates (project-memory state, delivery bookkeeping, and the rebuilt work projection tables), matching src/storage/open_schema.rs and full-store-migration.md",
+    "node scripts/check-doc-links.mjs passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Aligned every statement of projection repair scope with the declared repair boundary; emitted derived_tables diagnostic token, accurate rebuild-versus-empty-advertisement-reset docs/help/reviewer lens, and real damaged-store assertions. Fixed/re-reviewed stale integration expectations. Full nine-stage gate and latest Codex/Kimi required pair on exact source passed; independent acceptance passed all four unchanged criteria; all four live stores ready. Pushed and installed committed build with verified backup. Evidence archival and clean completed worktree removal follow.",
+    "completed_at": "2026-10-07T08:04:21.080888200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c98b04dceb2e4eae88baab73c68de9c2": {
+        "activity_id": "c98b04dceb2e4eae88baab73c68de9c2",
+        "task_id": "01a0d069-73d6-7850-a8b4-72e96c9f2488",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "946028624d7048999bcac86836cac96e"
+      }
+    }
+  }
+}

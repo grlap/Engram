@@ -1,0 +1,28 @@
+{
+  "id": "01a10073-464a-7c90-b1ae-dcaa74469919",
+  "external_ref": null,
+  "title": "The network-home staging removal test passes silently where the administrative share is unreachable",
+  "outcome": "The network-home staging removal test passes silently where the administrative share is unreachable",
+  "acceptance": [
+    "When \\\\localhost\\<drive>$ is unreachable, the Windows test of staging removal under a network home does not report a silent pass. It is either an explicit opt-in or ignored test, or it reports its skip in a form the gate shows."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

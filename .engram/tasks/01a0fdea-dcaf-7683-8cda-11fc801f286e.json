@@ -1,0 +1,52 @@
+{
+  "id": "01a0fdea-dcaf-7683-8cda-11fc801f286e",
+  "external_ref": null,
+  "title": "`engram backup list` and `engram backup fetch` from the configured target",
+  "outcome": "`engram backup list` and `engram backup fetch` from the configured target",
+  "acceptance": [
+    "`engram backup list` prints the manifests of the copies at the configured target, and `engram backup fetch COPY --out FILE` writes one decompressed to no more than the length its manifest declares and checked against that manifest's SHA-256, without initializing a store; a CLI test covers both from a home that has only configured the target",
+    "Before creating any output, fetch checks that the local disk has room for the stored file and the uncompressed copy (manifest stored_bytes plus capture bytes, with checked addition) and that the stored file's length equals stored_bytes; too little room gives a typed refusal (backup_local_no_space, or backup_local_space_unknown when it cannot be measured) that writes nothing, and a test shows it",
+    "docs/shipped.md and docs/features/cli-and-mcp.md describe `backup list` and `backup fetch`, with `backup restore` still described as not yet shipped"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa88-0748-70e0-8ac5-c22ec2923803",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`engram backup list` and `engram backup fetch` landed as ba2e919 on origin/master. Fetch never initializes a store. Before writing anything it checks local room for stored plus uncompressed bytes (with checked addition) and checks that the stored file has the length its manifest declares. It decodes no more than the declared length and checks the result against the manifest's SHA-256. The copy goes through a hidden staging file that is renamed into place without replacing anything and without hard links; a staging file left by a failed removal or a deadline is named in the refusal. The --json receipts and refusals carry schema_version 1. The round-3 gate test-b942aeb2 passed. Codex and Claude reviewed freeze 2f65fc30 with nothing Medium or higher, and the Lows are filed as w-5802e83ecf11. The independent evaluation de81e174 passed all 3 criteria. All 4 stores are ready on the installed build 49ab2de9….",
+    "completed_at": "2026-10-02T19:18:14.189185400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "87e87b4d1da248d8a83b4d0a4988898a": {
+        "activity_id": "87e87b4d1da248d8a83b4d0a4988898a",
+        "task_id": "01a0fdea-dcaf-7683-8cda-11fc801f286e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0aff4fd1325d4e7b9aef72dae0ed6645"
+      }
+    }
+  }
+}

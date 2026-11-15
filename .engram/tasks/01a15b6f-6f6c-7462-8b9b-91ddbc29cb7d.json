@@ -1,0 +1,30 @@
+{
+  "id": "01a15b6f-6f6c-7462-8b9b-91ddbc29cb7d",
+  "external_ref": null,
+  "title": "Team-coordination skill: keep the required pre-coding design review explicit",
+  "outcome": "Team-coordination skill: keep the required pre-coding design review explicit",
+  "acceptance": [
+    "The 'use architects sparingly' section of .agents/skills/team-coordination/SKILL.md says it does not replace a project's required pre-coding design review (in Engram, the one in AGENTS.md Review scheduling)",
+    "The optional r2 Notes are resolved or recorded as declined: test authoring within the build cap (:55), the route for a missed-dispatch follow-up (:25), the destination of the compact map (:48), and the ambiguous 'questions belong in design' wording and short lines (:129, :71, :78)",
+    "The Markdown-only checks pass, and a Codex and a Claude review find no in-scope Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review-followup",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

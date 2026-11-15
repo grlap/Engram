@@ -1,0 +1,52 @@
+{
+  "id": "01a13756-9bd0-7931-b537-c6df98916435",
+  "external_ref": null,
+  "title": "Recover interrupted task materialization private ownership markers",
+  "outcome": "Recover interrupted task materialization private ownership markers",
+  "acceptance": [
+    "A process interruption before the private materialization journal or a replacement plan is published has an explicit safe recovery path, with tests for private-created and replace-created-0/1 preserving all unrelated public and retained bytes.",
+    "Recovery never adopts an unowned attempt by name, age or equal bytes alone, and incomplete or mismatched artifacts remain preserved with actionable refusal."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "recovery",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved unowned pre-journal materialization attempts with an actionable manual recovery refusal, process coverage across all requested interruption boundaries, and matching shipped documentation. Full gate, independent review pair, and independent acceptance evaluation passed.",
+    "completed_at": "2026-10-16T23:33:45.744859600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a52b5dac056a4d6eaf6dc7608c831511": {
+        "activity_id": "a52b5dac056a4d6eaf6dc7608c831511",
+        "task_id": "01a13756-9bd0-7931-b537-c6df98916435",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5edda92b03e94fc69b693a17610b9050"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a087e0-c464-7a82-9b70-ca31d38d07f6",
+  "external_ref": null,
+  "title": "Document full admission cost before existing-cycle rollback",
+  "outcome": "Document full admission cost before existing-cycle rollback",
+  "acceptance": [
+    "Bounds and retries explains that an existing-cycle refusal follows plan writes under the writer lock and rolls them back"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08728-e6c4-7c42-b694-d7f2b2d71a37",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Bounds and retries documents full plan admission work under the writer lock before rollback for an unrelated pre-existing cycle. Coordinator delta review and docs gate pass.",
+    "completed_at": "2026-09-09T20:54:59.353786100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d2d9aee938d6663089269723ec76031977681bcfc5ca04e8a1f30dc856295e01": {
+        "activity_id": "d2d9aee938d6663089269723ec76031977681bcfc5ca04e8a1f30dc856295e01",
+        "task_id": "01a087e0-c464-7a82-9b70-ca31d38d07f6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "49821ace304fec524753cea8109ec469f00e91479c3f836c1459e60893cb140d"
+      }
+    }
+  }
+}

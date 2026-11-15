@@ -1,0 +1,30 @@
+{
+  "id": "01a19221-de53-7fc1-8427-f6d521d832c8",
+  "external_ref": null,
+  "title": "Reconcile the test-ref bullet's tree-identity rule with its candidate same-commit rule for other landing routes",
+  "outcome": "Reconcile the test-ref bullet's tree-identity rule with its candidate same-commit rule for other landing routes",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md say whether a test-ref full gate still covers a staged-tree-lane commit on master with the recorded tree, and limit the 'another commit with the same tree is gated afresh' sentence to candidate commits (for example 'another candidate commit with the same tree'), with an example that can actually occur",
+    "review-changes.md section 3 matches, and its 'never pushed' sentence names the test-ref exception so the file reads on its own",
+    "The change follows the authority-text process: both coordinators' concurrence, the wording sent to Greg, and the final-diff audit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "agent-instructions",
+    "authority-text",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

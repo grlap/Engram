@@ -1,0 +1,70 @@
+{
+  "id": "01a1800f-57c7-7a81-8558-4c5492b8e1f7",
+  "external_ref": null,
+  "title": "The parity stage times out at its calibration-ready barrier on macOS before any parity assertion runs",
+  "outcome": "The parity stage times out at its calibration-ready barrier on macOS before any parity assertion runs",
+  "acceptance": [
+    "The cause of the calibration-ready barrier timeout in scripts/parity.test.mjs on the Mac is identified and stated here, from the retained log of run test-efe66332",
+    "A standard full gate on the Mac passes the parity stage on a master containing the fix, without loosening any parity assertion or timeout budget merely to pass",
+    "The parity stage still passes on Windows"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "macos",
+    "parity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "1ad28487d88e4ba18ced373788c723c8": {
+        "activity_id": "1ad28487d88e4ba18ced373788c723c8",
+        "task_id": "01a1800f-57c7-7a81-8558-4c5492b8e1f7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "471b647258cf436089ac582377dedef5"
+      },
+      "1beb7b6c728f42689ba2251e6f4a6d9b": {
+        "activity_id": "1beb7b6c728f42689ba2251e6f4a6d9b",
+        "task_id": "01a1800f-57c7-7a81-8558-4c5492b8e1f7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1ad28487d88e4ba18ced373788c723c8"
+      },
+      "471b647258cf436089ac582377dedef5": {
+        "activity_id": "471b647258cf436089ac582377dedef5",
+        "task_id": "01a1800f-57c7-7a81-8558-4c5492b8e1f7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "166862e07a93495db544b9434e4d33a1"
+      }
+    }
+  }
+}

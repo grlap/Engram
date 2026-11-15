@@ -1,0 +1,30 @@
+{
+  "id": "01a1b330-17ca-7a12-9aac-69a9bdd52288",
+  "external_ref": null,
+  "title": "Document the shared source_basis wire in acceptance reads and keep an oversized source_id from hiding later candidates",
+  "outcome": "Document the shared source_basis wire in acceptance reads and keep an oversized source_id from hiding later candidates",
+  "acceptance": [
+    "The acceptance-evaluation and execution-observability docs state the exact shared source_basis wire (full VerificationSourceBasis object, no source_revision) returned by the host-private acceptance_binding_read / acceptance_verification_read rows, and the visible oversize refusal",
+    "Before shared evaluation is activated, an oversized shared candidate cannot permanently hide later candidates of the same criterion behind page_too_large; the whole source_id object is kept, with no digest surrogate, and historical rows are unchanged",
+    "A test covers a criterion with an oversized shared candidate followed by a normal-sized one"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

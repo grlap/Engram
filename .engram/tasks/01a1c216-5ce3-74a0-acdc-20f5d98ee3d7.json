@@ -1,0 +1,29 @@
+{
+  "id": "01a1c216-5ce3-74a0-acdc-20f5d98ee3d7",
+  "external_ref": null,
+  "title": "Tighten memory recovery previews and docs after the compact listing landed",
+  "outcome": "Tighten memory recovery previews and docs after the compact listing landed",
+  "acceptance": [
+    "A compact recovery preview does not end at an abbreviation such as \"e.g.\", \"i.e.\", \"etc.\" or \"vs.\" anywhere in the first line.",
+    "A test shows a graph snapshot load clearing every session's recorded memory position, and the docs and code comments name graph restore and projection repair, not replay, as the rebuilds that clear it.",
+    "docs/shipped.md says the compact recovery listing applies only to an unfiltered listing that carries the generation, and describes its pages as up to 64 rows fitted to the response budget."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "memories",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

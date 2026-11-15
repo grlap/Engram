@@ -1,0 +1,51 @@
+{
+  "id": "01a10de0-158a-7f32-97a3-529c2ef6e596",
+  "external_ref": null,
+  "title": "Test the verification assessment's bound branch through show --note and its counts for every left-out reason",
+  "outcome": "Test the verification assessment's bound branch through show --note and its counts for every left-out reason",
+  "acceptance": [
+    "A verbs or MCP test renders a bound verification record through show --note and asserts the assessment's `bound` branch and its text line in both the summary view and the first history page",
+    "A test builds a record whose candidates include foreign_or_displaced and other_run rows and asserts that the summary counts name each of those (status, reason) pairs with its exact count, with no other bucket"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The verification assessment's bound branch is now tested through show --note: a verbs test renders a bound record and checks the branch and its line in the summary and on the first history page, against a real stored bind.\n\nThe summary counts are tested for every left-out reason with no other bucket. A unit test over assessment_page uses rows of every reason, foreign_or_displaced and other_run included. The rows are synthetic because other_run cannot reach a record's assessment through the store.\n\nEvidence:\n- Gate fd003721: 9/9.\n- Own credit 6820f30e: cargo test --lib.\n- Pair: clean.\n- Evaluation c0d9b4b4: 2/2.\n\nLanding: in one changeset with w-daa03c4b5f88, as commit 496ab34. Installed build d070d707.\n\nThe cosmetic Low is filed as w-86dff02b8674.",
+    "completed_at": "2026-10-05T23:16:35.601763400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6c5ba4af04c54e36b14c8cfbba681962": {
+        "activity_id": "6c5ba4af04c54e36b14c8cfbba681962",
+        "task_id": "01a10de0-158a-7f32-97a3-529c2ef6e596",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a9a25e83249741218c97382e0cb97200"
+      }
+    }
+  }
+}

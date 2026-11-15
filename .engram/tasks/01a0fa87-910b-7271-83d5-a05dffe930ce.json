@@ -1,0 +1,58 @@
+{
+  "id": "01a0fa87-910b-7271-83d5-a05dffe930ce",
+  "external_ref": null,
+  "title": "Directory backup adapter with gzip storage: put, confirm, list, get",
+  "outcome": "Directory backup adapter with gzip storage: put, confirm, list, get",
+  "acceptance": [
+    "Before writing, the target is checked for free space against the compressed file's known size and its manifest and too little fails with `backup_target_no_space`, leaving no partial file; when space runs out after the check passed, `put` fails, and cleanup removes only this attempt's files; tests cover both",
+    "Decompression in `confirm` and `get` writes no more than the length the manifest declares and reads at most one byte beyond it in memory to detect excess: a test with a stored file that would decompress to more is refused, and nothing beyond the declared length is written to any output.",
+    "The `BackupAdapter` port of spec §9.2 exists outside the core library with its four requests, `put`, `confirm`, `list` and `get`, and the directory adapter implements them; `put` returns a receipt naming the artifact's SHA-256, the target identity, the time, the acknowledgement `read_back` and `off_host: asserted`",
+    "The adapter removes only files of attempts the caller names as its own and abandoned; a data file that was renamed into place by an attempt cut off before its manifest was written is completed with that manifest when its content matches, and removed when it does not; a test covers both cases, and a test puts an unrelated file and a manifest-less data file from another origin in the directory and shows both left alone",
+    "`confirm` answers confirmed, missing or unknown, and every confirmed answer comes from decompressing the stored file under a deadline and comparing length and SHA-256 with the manifest; names and sizes alone may answer missing but never confirmed; tests cover a deleted copy (missing), a stored file replaced by one of the same size with other content (not confirmed, through the ordinary confirm), and an unreachable directory (unknown)",
+    "`list` returns the manifests of the project's copies and `get` returns one copy, decompressed and checked against its manifest, after the caller's check that the local disk has room for it; a test covers both, and one test runs put, confirm and get against a path with a directory junction or symbolic link as an ancestor to show such paths are accepted",
+    "`put` stores the artifact gzip-compressed under the configured directory: it writes the stored file under a temporary name that carries the attempt id, renames it without replacing anything, reads it back, decompresses it and compares the length and SHA-256 of the result with the manifest's, and writes the manifest last; a test with a compressible fixture shows the stored file smaller than the artifact, a test with an incompressible artifact shows the round trip still succeed, a test shows that decompressing the stored file with a gzip implementation other than the adapter's own gives bytes with the manifest's SHA-256, and a test shows an existing file of the same name is never replaced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fa87-49d8-7b23-8cef-76e601495068"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The BackupAdapter port (put, confirm, list, get) and the directory adapter now live in the binary crate, outside the core library (src/bin_support/backup/).\n- Copies are stored with gzip from flate2, using the pure-Rust miniz_oxide backend.\n- put never replaces an existing file: the no-replace move uses tempfile persist_noclobber with long-path forms. put also reads every copy back in full, writes the manifest last, and refuses a configured directory that cannot be reached.\n- confirm reports Confirmed only after a full decompression under the deadline. Decoding is bounded: it reads at most one byte past the declared length and refuses any trailing input.\n- Every request is bound to the project. put, confirm and reconcile are also bound to the current target identity; get is not, so a restore can read copies made under an earlier identity.\n- reconcile and remove only ever touch the attempt's own files. list pages its results. Failures to clean up are reported.\n- 24 tests. One Low filed as w-ef69a5eaebeb.\n- Landed as 6d95554.",
+    "completed_at": "2026-10-02T11:59:52.695012700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09a0ec134df2487fa33756bdcccbec87": {
+        "activity_id": "09a0ec134df2487fa33756bdcccbec87",
+        "task_id": "01a0fa87-910b-7271-83d5-a05dffe930ce",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "91dd0d31acb4481c85100061fe125386"
+      }
+    }
+  }
+}

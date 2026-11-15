@@ -1,0 +1,67 @@
+{
+  "id": "01a0e494-d093-7c51-ad40-dd9586892254",
+  "external_ref": null,
+  "title": "Import and the doctor never decode replay receipts or protocol results, so a receipt this build cannot read is published",
+  "outcome": "A store whose replay receipts or ambient protocol results this build cannot decode is found by the doctor and refused by migration import, while receipts from operations that no longer exist keep being read as stored.",
+  "acceptance": [
+    "Migration import refuses, without publishing, an export whose receipt the build cannot decode, naming the receipt; a test covers a receipt whose stored work item names a member the current format has no place for, with a value and as null.",
+    "One registry maps each operation name to its decoder. It is the single source both for refusing to persist a receipt or protocol result under an unregistered name and for the doctor's scan, and a test shows every operation name the code persists is registered.",
+    "Receipts of operations this build no longer runs (such as historical lease or waiver receipts) keep being read as stored and are never reported, and a scan of all three live stores (Engram, Phoenix, TermAl) shows the new check reports none of them unhealthy.",
+    "The doctor decodes each work_operation_results.result_json row and each ambient work protocol result payload of an operation this build still runs, as that operation's result type, and reports one it cannot decode by operation and key with a shape-only reason that never repeats a cell value. work_complete protocol results are excluded by name: their historical shape, which lacks acceptance_criteria_asserted, is converted by a separate named import conversion."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "migration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0e6d5-b9f7-7290-907b-aef72187b008"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 7b16b73 (fast-forward 0a0de0d..7b16b73). One registry in src/storage/work/receipts.rs maps every operation that stores a replay receipt or ambient protocol result to its decoder. Persisting under an unregistered or retired name is refused. The doctor, and therefore migration import, decodes every stored core receipt and protocol result as its operation's type and reports one it cannot read by operation and key, with a shape-only reason. complete_work_recovery receipts are read as stored. work_complete results are registered but not decoded; their conversion is w-94f254463e2a. Evidence: full gate test-b3d243ee PASS on freeze eca31fce; round-3 Codex and Claude reviews clean; host verification 63ae3721; readiness ready and doctor clean on Engram, Phoenix and TermAl with build a2b7e985d75a, which is installed (backup of 1151a537 kept). Independent evaluation cd950a3d: all 4 criteria pass.",
+    "completed_at": "2026-09-28T16:57:04.856186700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1a6f4ff1e4a04ab59be9b7cd14cb3266": {
+        "activity_id": "1a6f4ff1e4a04ab59be9b7cd14cb3266",
+        "task_id": "01a0e494-d093-7c51-ad40-dd9586892254",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "474f5710bc904d1dbf7ab99f43b97187"
+      },
+      "d203110987e24d21ad19960a3fe464ed": {
+        "activity_id": "d203110987e24d21ad19960a3fe464ed",
+        "task_id": "01a0e494-d093-7c51-ad40-dd9586892254",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "af2a3befcc12413e8a1c13af86635488"
+      }
+    }
+  }
+}

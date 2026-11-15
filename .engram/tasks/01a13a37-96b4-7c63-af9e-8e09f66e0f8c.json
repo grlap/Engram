@@ -1,0 +1,64 @@
+{
+  "id": "01a13a37-96b4-7c63-af9e-8e09f66e0f8c",
+  "external_ref": null,
+  "title": "Make the oversized task-sync progress state refusal name an actionable next step",
+  "outcome": "Make the oversized task-sync progress state refusal name an actionable next step",
+  "acceptance": [
+    "The refusal journal::publish raises when serialized preparation metadata exceeds STATE_LIMIT states that preparation metadata exceeded its internal bound, that nothing was published and existing progress is unchanged, and asks the agent to report it with the byte count; it no longer tells the agent to shorten the capture reason or reduce the omitted entries, which no caller controls.",
+    "The state_limit regression tests assert the new wording through the error's Display."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 5a7415d on master. The oversized preparation-metadata refusal is now a plain error: \"task-sync preparation metadata is {N} bytes, over Engram's internal {STATE_LIMIT}-byte bound; nothing was published, and the existing progress generations and output are unchanged. This is an Engram defect: report it with this byte count.\" The uncontrollable remedy and the false \"local work input is invalid\" prefix are gone. The state_limit tests assert the exact Display and a single-cause chain, matching the one CLI \"error:\" line, and keep the whole-home equality that proves the preservation claim.\n- Full gate test-18072362 passed on freeze 3b1e7462.\n- Pair: Codex had no findings; Claude had 2 Notes, no action.\n- Evaluation 25715f5b passed 2/2.\n- Installed build e19f5cc5c5bd21603b385b21c5caa8b8890a22586717a6a34912ea5dac35e247 (exe 3ca40ca1850f). Backup engram-20261014T204743Z-99d7764c4a93.exe. All 4 live stores ready.",
+    "completed_at": "2026-10-14T20:48:00.017665500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "41d4bae7972f40dd9b126f69193a9c2b": {
+        "activity_id": "41d4bae7972f40dd9b126f69193a9c2b",
+        "task_id": "01a13a37-96b4-7c63-af9e-8e09f66e0f8c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "41d4bae7972f40dd9b126f69193a9c2b"
+      },
+      "bfa3e84dd18643a59de039986e663aaa": {
+        "activity_id": "bfa3e84dd18643a59de039986e663aaa",
+        "task_id": "01a13a37-96b4-7c63-af9e-8e09f66e0f8c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7b370d5cb6d24daa938898cd2a120276"
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "id": "01a06f2a-8057-7651-8b0e-3c25dfb27f0e",
+  "external_ref": null,
+  "title": "Receipts distinguish selected focus from execution ownership",
+  "outcome": "Receipts distinguish selected focus from execution ownership",
+  "acceptance": [
+    "a test issues two concurrent adds through one session followed by an implicit-target operation and proves the returned refs are independent of completion order and the implicit target is the documented one",
+    "A completed, cancelled, or superseded item may remain the selected navigation focus until an explicit focus-setting operation changes it; receipts name its terminal lifecycle separately from live execution ownership, no successor is selected automatically, and a terminal run never supplies a live control binding.",
+    "next, show, and refusal texts name the focused item and the claim holder as two distinct facts, so a session with a focus but no claim is never told it holds the work and a holder is never told it lacks focus",
+    "read words (show, ls, next, search, memories) never change the session focus; a mutation given an explicit ref never consults focus; add's receipt names the focus it set; docs state that implicit targets are unsafe under concurrent use of one session"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "advisor",
+    "area-agent-ux",
+    "dogfood",
+    "stream-recovery-continuity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Receipts keep selected focus apart from execution ownership: add discloses the focus it set (focus_change); agent show and its notes/history first page carry session_focus apart from the holder; a completed, cancelled or superseded focus stays selected without ownership, successor or control binding; concurrent adds each get their own result; docs say implicit targets follow the last committed focus-setting call. Landed in 3abe2b2 (bundle 10 changeset 3).",
+    "completed_at": "2026-10-05T03:39:01.008233Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2a6b44f79e9e4456b4ea6077ff9e9d1c": {
+        "activity_id": "2a6b44f79e9e4456b4ea6077ff9e9d1c",
+        "task_id": "01a06f2a-8057-7651-8b0e-3c25dfb27f0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6311e0946cc74735a8ad15765462fc4a"
+      }
+    }
+  }
+}

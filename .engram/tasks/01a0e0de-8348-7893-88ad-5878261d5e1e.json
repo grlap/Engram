@@ -1,0 +1,53 @@
+{
+  "id": "01a0e0de-8348-7893-88ad-5878261d5e1e",
+  "external_ref": null,
+  "title": "Run the root-delta scale phase at 500 steps with 1000 on demand",
+  "outcome": "Greg decided (2026-09-27 about 03:20Z, via Engram::Fable) to try the gate's root-delta scale phase at 500 steps: its waiver-history build is quadratic and takes 415 of the gate's 749 s at 1000. 1000 stays available on demand.",
+  "acceptance": [
+    "At the size it runs, each scale test still distinguishes growth that is linear in history from growth that is quadratic; the write-bytes test checks this itself by asserting that a full-root copy at that size would exceed each write budget.",
+    "The scale phase and the full gate at 500 are measured on the same host and compared with the baseline full gate test-67c5626f (749.0 s, scale phase 428.5 s).",
+    "The three root_delta_scale_ tests run their long fixtures at 500 steps by default, and an environment variable selects another size (1000 on demand); an unset variable means 500, and a value that is not a positive integer fails the test and names the variable.",
+    "docs/development.md and docs/features/sqlite-store.md describe the default size and how to run 1000."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-tooling",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0ccff-87ce-7262-9353-906ad8e3ad5d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 30ebfaf. The three root_delta_scale_ tests build 500 steps by default. ENGRAM_ROOT_DELTA_SCALE selects a size from 500 to 1000; any other value fails the test, naming the variable and the limit. Each test prints the size it built and its source. The write-bytes scale test asserts that a full-root copy at its size would exceed both write budgets. The waiver test runs 100 and the chosen size. Measured on this host: the scale phase took 114.19 s (428.49 s at 1000), and the full gate 304.0 s against the 749.0 s baseline (test-67c5626f; the baseline compiled cold). Docs updated: development.md, sqlite-store.md and local-work-system.md. Two review rounds; round 2 was clean from Codex and Claude. Readiness was ready on both live stores; build cb628fb668de is installed. Independent evaluation delegation-5e3022b9 passed all four criteria.",
+    "completed_at": "2026-09-27T04:51:00.366122400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "79e560a8c4c6429aa93018e5f9abfcaa": {
+        "activity_id": "79e560a8c4c6429aa93018e5f9abfcaa",
+        "task_id": "01a0e0de-8348-7893-88ad-5878261d5e1e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "99c10d59aaf143b1a088a6ae45d0bd81"
+      }
+    }
+  }
+}

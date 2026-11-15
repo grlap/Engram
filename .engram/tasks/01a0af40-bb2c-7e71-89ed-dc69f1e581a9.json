@@ -1,0 +1,53 @@
+{
+  "id": "01a0af40-bb2c-7e71-89ed-dc69f1e581a9",
+  "external_ref": null,
+  "title": "Attempt keys are scoped to the work item and run; sub-agent identity fields are bounded at the core write boundary",
+  "outcome": "Attempt keys are scoped to the work item and run; sub-agent identity fields are bounded at the core write boundary",
+  "acceptance": [
+    "explicit attempt keys are scoped explicit:<work_id>:<run_id>:<key>; a reopen test resends the same explicit key and payload on the new run and records fresh, while a same-run exact resend replays and a same-run contradicting payload conflicts; the brief's R8 documents the scope",
+    "parent_session is bounded by the live session-id rule and execution_identity by a documented 256-byte, no-control-character bound at validate_request_shape; direct-core tests show refusal with the run feed head unchanged and acceptance at the valid edge; R9 lists both bounds"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Explicit attempt keys are scoped explicit:<work_id>:<run_id>:<key>: the reopen test resends the same key on the new run and records fresh (RED logs/19: conflict), same-run exact resend replays and a contradicting same-run payload conflicts, R8 updated. validate_request_shape bounds execution_identity (256 bytes, no control characters) and parent_session (live session-id rule); the direct-core test proves refusal with the feed head unchanged and admission at both edges (RED logs/19: oversized identity admitted); R9 updated. GREEN logs/20 and /22.",
+    "completed_at": "2026-09-17T12:29:23.842187800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5e14c7f8fc32a736b52b51270e38b18713e204f93e6293e7fd94a11c28b8116f": {
+        "activity_id": "5e14c7f8fc32a736b52b51270e38b18713e204f93e6293e7fd94a11c28b8116f",
+        "task_id": "01a0af40-bb2c-7e71-89ed-dc69f1e581a9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "18d64b0324d180f8ad7c7e1d590af08e8812567dee6d5980349b5fc2f6ea6235"
+      }
+    }
+  }
+}

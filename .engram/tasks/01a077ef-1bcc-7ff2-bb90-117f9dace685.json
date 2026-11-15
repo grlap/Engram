@@ -1,0 +1,51 @@
+{
+  "id": "01a077ef-1bcc-7ff2-bb90-117f9dace685",
+  "external_ref": null,
+  "title": "Fit status previews before shedding primary resume context",
+  "outcome": "Fit status previews before shedding primary resume context",
+  "acceptance": [
+    "status_correction_escape_heavy_show_and_next_fit passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "phoenix",
+    "pilot",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0775d-7936-7342-b9cb-b0fc0dc6b75d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Escape-heavy owner and peer previews fit show and resume receipts with explicit detail navigation before primary row shedding.",
+    "completed_at": "2026-09-06T19:15:14.160092Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "009947b4e562ddc326bedc1c1e091d70ca7fe19cd648d8f10980b6e4bb464b6d": {
+        "activity_id": "009947b4e562ddc326bedc1c1e091d70ca7fe19cd648d8f10980b6e4bb464b6d",
+        "task_id": "01a077ef-1bcc-7ff2-bb90-117f9dace685",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b54850a8a8cbac181485ed22953044daf41ed3766d814dc4db1ccace6a381a6c"
+      }
+    }
+  }
+}

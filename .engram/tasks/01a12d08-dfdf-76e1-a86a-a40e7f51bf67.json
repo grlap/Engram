@@ -1,0 +1,29 @@
+{
+  "id": "01a12d08-dfdf-76e1-a86a-a40e7f51bf67",
+  "external_ref": null,
+  "title": "Reduce repeated complete candidate parsing in incremental task preparation",
+  "outcome": "Reduce repeated complete candidate parsing in incremental task preparation",
+  "acceptance": [
+    "Measure preparation and full export on the same representative task inventories and producer, recording validation/parse work and elapsed costs",
+    "Reuse already parsed and validated retained inventory where safe, while preserving exact prepared bytes, pending recovery, output refusal and structural validation boundaries"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "performance",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

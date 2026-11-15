@@ -1,0 +1,66 @@
+{
+  "id": "01a1c285-724f-7893-83bf-e796a32481a5",
+  "external_ref": null,
+  "title": "Recover retained exchange recipes after unrelated project-feed movement",
+  "outcome": "Recover retained exchange recipes after unrelated project-feed movement",
+  "acceptance": [
+    "An evidence import recipe, planning successor or incoming or outgoing delta candidate retained before its SQL commit can settle or complete safely after an unrelated local project-feed event, and does not permanently block later exchange, origin recovery or custody audit.",
+    "Relevant binding, tail, origin, restore, hold, baseline, affected-readset, native execution and exact retained-construction checks remain enforced; recovery preserves original IDs and uncertainty without deleting or reminting private retained artifacts.",
+    "Behavior regressions advance the project feed between retention and writer admission or retry for evidence recipes, planning successors and incoming deltas, plus outgoing preparation after SQL failure; prove supported completion or settlement and a subsequent different operation plus doctor or audit health."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Recovered evidence recipes, planning successors and incoming/outgoing deltas after unrelated project-feed movement while retaining historical anchors, original IDs, exact native readsets and all existing authority/custody guards. Accounted exact completed evidence-carrier commits in custody audit. Six focused author checks pass on frozen e3c92d33/tree203c including85 checkpoint tests/all7 regressions; independent Claude Opus evaluation4b13d5c9 attempt1/cut189 passed all3 criteria by judgment on exact source and recorded runs. Checked20-path patch delivered parent for combined review/FULL; no landing/install claimed.",
+    "completed_at": "2026-11-10T02:10:49.807983500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c3d3f9cd411a49ec86902a33e82aa914": {
+        "activity_id": "c3d3f9cd411a49ec86902a33e82aa914",
+        "task_id": "01a1c285-724f-7893-83bf-e796a32481a5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fd510987ef254e81b55fba9c1e07f33c"
+      },
+      "ea5fd2700aaf42ec9b7f119ac044fe67": {
+        "activity_id": "ea5fd2700aaf42ec9b7f119ac044fe67",
+        "task_id": "01a1c285-724f-7893-83bf-e796a32481a5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ea5fd2700aaf42ec9b7f119ac044fe67"
+      }
+    }
+  }
+}

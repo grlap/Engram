@@ -1,0 +1,29 @@
+{
+  "id": "01a1c228-7e08-77e0-b492-72dc36dc1a3c",
+  "external_ref": null,
+  "title": "Commit an oversized checked successor through the full writer, receipt, doctor, repair and replay in a test",
+  "outcome": "Commit an oversized checked successor through the full writer, receipt, doctor, repair and replay in a test",
+  "acceptance": [
+    "A behavior test commits an over-limit checked successor through the full writer and receipt and shows doctor, projection repair and replay all succeed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "sync",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

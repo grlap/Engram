@@ -1,0 +1,87 @@
+{
+  "id": "01a152e3-21b7-7512-bf35-d55eea251599",
+  "external_ref": null,
+  "title": "Name the stop-intent failure in launcher completion and retry removal of the stop temporary file",
+  "outcome": "Name the stop-intent failure in launcher completion and retry removal of the stop temporary file",
+  "acceptance": [
+    "A malformed or unreadable stop.request.json ends the run with a named completion reason (stop-refused or similar) that the summary and notification report, transient read errors are retried within a bound before the failure is latched, and a test covers it",
+    "requestStop removes its temporary file with bounded retries; a leftover temporary file after stop.request.json was published is reported as a warning, not as a failed stop, and a test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "launcher",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the Batch D launcher stop-intent remediation: named invalid or unreadable stop-request outcomes, bounded retry behavior for transient reads and final completion checks, and retried stop temporary-file removal with a successful-stop warning when cleanup remains blocked.",
+    "completed_at": "2026-10-19T21:35:57.815004800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "33063bd6e2564f7fafe9a59b95b308e5": {
+        "activity_id": "33063bd6e2564f7fafe9a59b95b308e5",
+        "task_id": "01a152e3-21b7-7512-bf35-d55eea251599",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "33063bd6e2564f7fafe9a59b95b308e5"
+      },
+      "7d88ba117025489b9e5cbf7b59e18ae7": {
+        "activity_id": "7d88ba117025489b9e5cbf7b59e18ae7",
+        "task_id": "01a152e3-21b7-7512-bf35-d55eea251599",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7d88ba117025489b9e5cbf7b59e18ae7"
+      },
+      "e3aac2df860d40ec9b0c28d35bd10cdd": {
+        "activity_id": "e3aac2df860d40ec9b0c28d35bd10cdd",
+        "task_id": "01a152e3-21b7-7512-bf35-d55eea251599",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d053e57130154ad68e5a2e61fb0fb30c"
+      },
+      "eb04724d72934b4399931024876925a5": {
+        "activity_id": "eb04724d72934b4399931024876925a5",
+        "task_id": "01a152e3-21b7-7512-bf35-d55eea251599",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "eb04724d72934b4399931024876925a5"
+      }
+    }
+  }
+}

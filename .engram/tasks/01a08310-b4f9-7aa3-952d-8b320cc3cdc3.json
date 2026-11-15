@@ -1,0 +1,49 @@
+{
+  "id": "01a08310-b4f9-7aa3-952d-8b320cc3cdc3",
+  "external_ref": null,
+  "title": "No lossless in-place path exists from a pre-root-state store to the current build",
+  "outcome": "No lossless in-place path exists from a pre-root-state store to the current build",
+  "acceptance": [
+    "A decision records which path is taken and what it costs, and the chosen path has a written procedure someone else could follow"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "architecture"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The question this item asked has been answered by events rather than by analysis, and the answer was a third path neither option here offered. The principal chose a complete logical export and import, that path was built, reviewed twice by two reviewers, and executed: fifty-four steps, both live stores converted from fresh cuts, both installed doctors passing, and the global build now 304edbce2b18. What this item asked for is therefore satisfied - a decision is recorded, its cost is measured rather than estimated, and the procedure exists as a runbook that was not merely written but followed. The analysis recorded here keeps its value where it was measured and loses it where I reasoned past the evidence: the different-build refusal, the affected object counts with their denominator, the six-day history of the store and the absence of any persistent consumer all stand. The conclusion that no lossless path existed does not, because it was scoped to converting objects in place while the store stayed usable, and a whole-graph rebuild into an empty store was never subject to the cascade objection I raised. Every byte was preserved in the end, which is what this item doubted was possible.",
+    "completed_at": "2026-09-09T04:29:15.748806100Z",
+    "actor": {
+      "actor_id": "fable",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "74fbedb88ca7647428454086bfe894bd9ffd18dfc76e0c854d860175d44f4ed8": {
+        "activity_id": "74fbedb88ca7647428454086bfe894bd9ffd18dfc76e0c854d860175d44f4ed8",
+        "task_id": "01a08310-b4f9-7aa3-952d-8b320cc3cdc3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cadbb975bb37c26c291cfb4863ae895bac9d65074c2c630b897a292dd624bc1f"
+      }
+    }
+  }
+}

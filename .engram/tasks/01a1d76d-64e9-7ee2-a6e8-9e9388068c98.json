@@ -1,0 +1,54 @@
+{
+  "id": "01a1d76d-64e9-7ee2-a6e8-9e9388068c98",
+  "external_ref": null,
+  "title": "Diagnose why two task-sync Git read tests exhaust their real-time budget on a loaded Windows host",
+  "outcome": "Diagnose why two task-sync Git read tests exhaust their real-time budget on a loaded Windows host",
+  "acceptance": [
+    "task_sync::git::delta::tests::snapshot::complete_cold_snapshot_reads_two_thousand_documents_and_keeps_unverified_envelope and task_sync::data_worktree::tests::evidence::selected_evidence_reads_large_raw_blob_without_changing_code_and_refuses_changed_selection pass in a Windows full gate under ordinary host load, with the cause of their deadline failure in run test-cee0cdbb diagnosed and fixed, never by loosening or skipping either test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "0b03d1d0744340779cfbdfa2c5e1db7e": {
+        "activity_id": "0b03d1d0744340779cfbdfa2c5e1db7e",
+        "task_id": "01a1d76d-64e9-7ee2-a6e8-9e9388068c98",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0b03d1d0744340779cfbdfa2c5e1db7e"
+      },
+      "a8ad2285bd7a4e23ba499e972366ec01": {
+        "activity_id": "a8ad2285bd7a4e23ba499e972366ec01",
+        "task_id": "01a1d76d-64e9-7ee2-a6e8-9e9388068c98",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a8ad2285bd7a4e23ba499e972366ec01"
+      }
+    }
+  }
+}

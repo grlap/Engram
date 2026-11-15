@@ -1,0 +1,54 @@
+{
+  "id": "01a1ca64-0218-7b60-8f26-a7fd62fe0eb6",
+  "external_ref": null,
+  "title": "Check aggregate ledger capacity before committing evidence imports",
+  "outcome": "Check aggregate ledger capacity before committing evidence imports",
+  "acceptance": [
+    "Evidence import admission accounts atomically for both prepared and terminal exchange events against the same aggregate count and byte bounds consumed by exhaustive ledger reads, preserving existing records and rollback on refusal.",
+    "Behavioral boundary tests prove supported near-capacity imports succeed, over-count and over-byte imports refuse without partial canonical/projection/payload effects, and exact completed replay remains valid."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "delta-ledger",
+    "greg-directed",
+    "review-finding",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Evidence imports now refuse aggregate ledger-capacity overflow atomically while preserving exact completed replay. Candidate 40a3bc0392c86e5320246ac83d5149dbe096bf47, tree dfd7a220c5161422911acc984c0774fe6eb49e8a, parent8f559256. One capacity predicate shared by loaded ledger and incremental SQL count/BLOB-byte admission; actual prepared and terminal events checked before insertion under existing outer transaction. Behavioral count/byte RED observed then both regressions pass; exact limits, applied/explicit-stop/payload-stop, whole-database rollback and public replay tested. DL560 fmt, strict Clippy and219/219 ledger tests pass; original records personally read and retained. Independent evaluator17448 recorded2/2PASS judgment ed6129a8332f46148168085909f7d377 on unchanged candidate. Remote focused runs give no indexed host credit; parent12325 owns combined family reviews, final full gate and any landing. No landing claimed.",
+    "completed_at": "2026-11-11T12:39:52.406432900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "db590b65659e460ba4926e65e7e55607": {
+        "activity_id": "db590b65659e460ba4926e65e7e55607",
+        "task_id": "01a1ca64-0218-7b60-8f26-a7fd62fe0eb6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8bf61971441f484381816d286f72baeb"
+      }
+    }
+  }
+}

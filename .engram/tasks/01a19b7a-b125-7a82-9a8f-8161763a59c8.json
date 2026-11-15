@@ -1,0 +1,30 @@
+{
+  "id": "01a19b7a-b125-7a82-9a8f-8161763a59c8",
+  "external_ref": null,
+  "title": "Scope cutover rehearsal engine census to its isolated target",
+  "outcome": "Keep rehearsal process checks confined to their isolated target so unrelated or concurrent Node engines do not spuriously refuse a rehearsal, while live cutover retains its conservative machine-wide consumer census.",
+  "acceptance": [
+    "A rehearsal does not refuse solely because another isolated rehearsal engine or unrelated Node process exists; ambiguous in-scope processes still fail closed.",
+    "The live Consumers census retains its conservative handling of other engines and unreadable process scope.",
+    "Regression coverage exercises isolated concurrent rehearsal targets and the public PowerShell rollback entry."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "cutover",
+    "review-followup",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

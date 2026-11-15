@@ -1,0 +1,53 @@
+{
+  "id": "01a06d47-1d28-7342-a340-63087701ca0b",
+  "external_ref": null,
+  "title": "Document the load-bearing schemars exact pin as the snapshot format identity in Cargo.toml and the brief",
+  "outcome": "Document the load-bearing schemars exact pin as the snapshot format identity in Cargo.toml and the brief",
+  "acceptance": [
+    "the pin carries a comment naming the snapshot format fingerprint and the brief states that a schemars change is a format change"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "docs",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered in substance: Cargo.toml:16 names the exact schemars pin as part of snapshot format identity, and docs/features/work-graph-snapshot.md:82-85 states that a schemars generator change is a deliberate format change. Verified in the triage consultation of 2026-09-27 (Fable, Termal::Fable, Coder) and by independent Codex evaluation.",
+    "completed_at": "2026-09-27T19:39:53.438645400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ca4ffcb9d3ec43aa828b4f7f5386dc40": {
+        "activity_id": "ca4ffcb9d3ec43aa828b4f7f5386dc40",
+        "task_id": "01a06d47-1d28-7342-a340-63087701ca0b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "730e233bc8034e2797926889cd9ad478"
+      }
+    }
+  }
+}

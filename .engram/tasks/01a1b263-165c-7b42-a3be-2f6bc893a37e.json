@@ -1,0 +1,28 @@
+{
+  "id": "01a1b263-165c-7b42-a3be-2f6bc893a37e",
+  "external_ref": null,
+  "title": "Restore worktree-lane new-untracked-only summary and capture assertions in launcher tests",
+  "outcome": "The plain/staged-tree debris tests assert their complete retained capture metadata and bounded summary alongside the source_id assertions.",
+  "acceptance": [
+    "Restore exact inputCheck counts and admitted/after capture references, verify retained fingerprint values and the two-path new-untracked-only summary in the worktree-lane test.",
+    "For the 201-path worktree debris case, assert total201/listed200/omitted1, first/last listed paths, complete after-capture untracked201 and the summary counts, retaining whole-source_id assertions.",
+    "Cover the restored assertions through the standard focused launcher on a clean candidate, without changing debris eligibility or source identity behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

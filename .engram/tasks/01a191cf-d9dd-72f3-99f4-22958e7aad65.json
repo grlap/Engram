@@ -1,0 +1,30 @@
+{
+  "id": "01a191cf-d9dd-72f3-99f4-22958e7aad65",
+  "external_ref": null,
+  "title": "Show the exact Git-input remedy when evaluated completion omits its declaration",
+  "outcome": "Make show and completion recovery explain that registered Git-input evaluation completion needs the exact declared git-commit:/git-tree: input even when freshness policy is off, preserving legacy measurement guidance.",
+  "acceptance": [
+    "For an evaluated registered Git-input pass with source freshness disabled, show exposes that done checks the declared source input.",
+    "When done omits --source-fingerprint in that lane, the remedy tells the caller to present the evaluation's exact Git declaration or re-evaluate the intended input; it does not require copying to masquerade as a host measurement.",
+    "Regression tests exercise omitted completion input and assert truthful guidance while legacy measurement refusals retain their existing safety meaning."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ergonomics",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

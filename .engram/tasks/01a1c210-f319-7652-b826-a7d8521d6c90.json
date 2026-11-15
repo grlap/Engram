@@ -1,0 +1,29 @@
+{
+  "id": "01a1c210-f319-7652-b826-a7d8521d6c90",
+  "external_ref": null,
+  "title": "Let read-only sessions read the compact memory recovery listing",
+  "outcome": "Let read-only sessions read the compact memory recovery listing",
+  "acceptance": [
+    "A read-only MCP session can page the compact recovery listing of project memories without recording anything.",
+    "A peek in a read-only session never prints a memories command that read-only mode refuses."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "memories",
+    "read-only",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

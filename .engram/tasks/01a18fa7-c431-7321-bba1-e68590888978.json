@@ -1,0 +1,102 @@
+{
+  "id": "01a18fa7-c431-7321-bba1-e68590888978",
+  "external_ref": null,
+  "title": "Let a full gate count when only new untracked debris appeared during the run (launcher outcome plus standing-approval wording)",
+  "outcome": "Let a full gate count when only new untracked debris appeared during the run (launcher outcome plus standing-approval wording)",
+  "acceptance": [
+    "When a run's after-fingerprint differs, the launcher reports a distinct outcome only if HEAD, the staged index and tracked content are exactly unchanged, the sole difference is newly created untracked non-ignored paths, and no pre-existing untracked path changed; it lists those paths (bounded) and keeps the actual stage results. Every other difference stays an input-changed failure. The original fingerprint is never reported as equal.",
+    "AGENTS.md and CLAUDE.md (byte-identical) replace the standing approval's gate clause with the agreed wording, and /review-changes matches it: the gate counts with that outcome only when the integration owner records on the item what the paths contain and why they are non-input debris, and the committed tree excludes them.",
+    "Landed under the authority-text process: (a) both coordinators' concurrence on the exact wording recorded on this item, (b) the exact wording and its consequence sent to Greg before landing, (c) the final-diff audit recorded as passed before landing. Greg's widening word is recorded verbatim with its source (see notes).",
+    "Launcher tests cover: unchanged input; only new untracked debris; a changed tracked file; a changed staged index; a changed pre-existing untracked file; ignored paths."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "authority-text",
+    "greg-directed",
+    "tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the conservative new-untracked-only classifier and matching authority exception. Required full gate and credited focused tests passed on the exact candidate; clean Coder review pair carried unchanged; authority concurrence, Greg notice/word and final audit recorded. Installed the gated build with backup, fast-forwarded/pushed master, verified readback and all six stores ready. Independent post-landing evaluation15457cc7b16d4ae4944e60cc3efa8808 freshly passes all4 criteria; no action-required obligations remain.",
+    "completed_at": "2026-10-31T14:38:37.466215300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "03e69a0c78c940e598c5a3179a76d70f": {
+        "activity_id": "03e69a0c78c940e598c5a3179a76d70f",
+        "task_id": "01a18fa7-c431-7321-bba1-e68590888978",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a228977aa6d34e95924686c8a8ef15fa"
+      },
+      "b1cf9a5aa47b4428ab6854eb591b201b": {
+        "activity_id": "b1cf9a5aa47b4428ab6854eb591b201b",
+        "task_id": "01a18fa7-c431-7321-bba1-e68590888978",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b1cf9a5aa47b4428ab6854eb591b201b"
+      },
+      "b5a28947f84d496d9b88a35836b670f4": {
+        "activity_id": "b5a28947f84d496d9b88a35836b670f4",
+        "task_id": "01a18fa7-c431-7321-bba1-e68590888978",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "03e69a0c78c940e598c5a3179a76d70f"
+      },
+      "ce8ce9974ab14bf6a41ceda098b7bb09": {
+        "activity_id": "ce8ce9974ab14bf6a41ceda098b7bb09",
+        "task_id": "01a18fa7-c431-7321-bba1-e68590888978",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d81d5653bb514305b6b9623b1ccce0cf"
+      },
+      "d81d5653bb514305b6b9623b1ccce0cf": {
+        "activity_id": "d81d5653bb514305b6b9623b1ccce0cf",
+        "task_id": "01a18fa7-c431-7321-bba1-e68590888978",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b5a28947f84d496d9b88a35836b670f4"
+      }
+    }
+  }
+}

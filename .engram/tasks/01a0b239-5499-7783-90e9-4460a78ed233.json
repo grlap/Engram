@@ -1,0 +1,54 @@
+{
+  "id": "01a0b239-5499-7783-90e9-4460a78ed233",
+  "external_ref": null,
+  "title": "Delete the previous migration's one-time cleanup from import",
+  "outcome": "Import knows nothing of the retired hash-identity design. It copies rows by column name, refuses an unknown table or column by name, keeps only the retired-column list as the schema-change mechanism, rebuilds the search indexes and runs the doctor. The build that can still convert the old-format backups is kept beside them.",
+  "acceptance": [
+    "RETIRED_TABLES, RETIRED_ID_MAP, RETIRED_OBJECT_KIND, the reference-slot replacement, admit_pending_deliveries' materialization and PendingDelivery::Materialized are removed with their tests; a store from the previous design is refused by name like any other unknown table, and a staged page that omits the attribution the source proves is refused by name instead of supplied",
+    "the last build that still converts the old-format backups is stored beside them under ~/.engram/backups with a one-line note saying which stores it converts (engram-converter-5963d4d9e63e.exe, built from commit 91fec6d, with CONVERTER.txt)",
+    "the migration brief, CLAUDE.md and AGENTS.md no longer describe the one-time cleanup; all nine gates pass",
+    "the retired-column list and its tests remain the only named exception"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "identity",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered in e073a12 (the deletion), with review follow-ups bc5aa00 and f35c207 on the same migration scope. Import knows nothing of the retired hash-identity design: RETIRED_TABLES, the old-id map, binding records, reference slots, per-row conversion and the pending-page materialization are gone; a table that design left behind is refused by name like any unknown table, and a staged page that disagrees with the source about the session's own changes is refused in either direction. The retired-column list is the only named exception. The last converting build (engram-converter-5963d4d9e63e.exe, from 91fec6d) sits beside the old-format backups with CONVERTER.txt. Migration brief, CLAUDE.md and AGENTS.md carry nothing of the cleanup. Nine gates green on every commit; reviewed in rounds 6 and 7 (both attested), findings fixed; Greg stopped the loop after round 7 and the last fixes landed as f35c207 (gates green, no further review by his decision).",
+    "completed_at": "2026-09-18T04:55:09.590069500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "00dca354d9d6447f9e9ad213fc57bb78": {
+        "activity_id": "00dca354d9d6447f9e9ad213fc57bb78",
+        "task_id": "01a0b239-5499-7783-90e9-4460a78ed233",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "02e83af561bc4e30903bba8361c08854"
+      }
+    }
+  }
+}

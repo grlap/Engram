@@ -1,0 +1,28 @@
+{
+  "id": "01a1c62b-4769-7201-95c3-8f2e0371c589",
+  "external_ref": null,
+  "title": "Align task-sync capability and projection documentation with explicit shipped operations",
+  "outcome": "Current capability prose consistently names shipped explicit task/evidence operations and the declared rebuildable projections.",
+  "acceptance": [
+    "Shipped inventory and task-sync/planning briefs describe actual explicit delta, retention, origin-recovery and evidence allow-list behavior, separate from deferred unattended orchestration and code/data separation.",
+    "SQLite/spec projection documentation names the full declared rebuildable set or points to its authoritative code declaration without implying new durable conversions or granting authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

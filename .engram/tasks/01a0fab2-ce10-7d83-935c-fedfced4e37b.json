@@ -1,0 +1,48 @@
+{
+  "id": "01a0fab2-ce10-7d83-935c-fedfced4e37b",
+  "external_ref": null,
+  "title": "Per-action gates: an Engram grant before each declared material action",
+  "outcome": "Deferred until Greg reverses the 2026-09-26 decision against host blocking of dangerous operations. Not scheduled, not enabled and not presented as planned before that. Then: a host can require an Engram action grant before each action in a declared material set and may claim `action_gated` for that set, as docs/features/action-gates.md describes.",
+  "acceptance": [
+    "The host channel accepts `action_authorize`, `action_begin`, `action_complete`, `action_reconcile` and `action_status`; a grant is single-use, replays exactly under its key, dispatches at most once, and keeps the states issued, begun and settled across a restart; tests in the repository cover a lost reply to begin, a crash just before and just after the launch, and a lost reply to complete",
+    "A begun grant with no report is recovered by a first `complete`, which a successor host session holding a current private connection bound to the grant's project may send; the reporter is recorded beside the original actor and basis; `action_reconcile` is refused for a grant with no report, and `complete` and `action_reconcile` are refused for a grant that was issued and never begun; a new authorize under a new key on an overlapping subject is refused while that action is unresolved; tests cover a crash before the first report and a lost reply to a committed begin",
+    "`action_begin` refuses a resolved scope outside the authorized scope; tests cover a link swapped between authorize and begin, a move whose destination resolves outside the scope, and a recursive delete with a descendant outside it",
+    "While an action is unresolved, a write on an overlapping subject is refused through the same tool, through another tool and as an ordinary edit, and completion of the work is refused from the run's recorded actions; an independent action and a diagnosis turn are admitted; tests cover each",
+    "`action_reconcile` is accepted only for a begun action that has a report and is unresolved; in one transaction it compares `follows` with the newest observation of the grant, appends a record linked to it under its own idempotency key and changes the state, never rewriting an earlier observation; an `observed` resolution with a settled outcome lifts this action's blocks on overlapping subjects and on completion and nothing else, one that still says `unknown` lifts nothing, and settlement is terminal; tests cover a lost reply, an exact repeat under the same key after later reports and after settlement (stored receipt), another payload under that key (conflict), two different reconciliations with different keys following one newest observation (one recorded, one refused), a new reconciliation of a settled action (refused), and a replay of the original `complete` (original receipt)",
+    "An `operator_decision` resolution is accepted only on the operator's route and refused on the host channel; it settles an action whose observed outcome stays `unknown`, records the decision, its reason and a durable reference as the operator's asserted authority, and leaves the observation unchanged; tests cover both routes",
+    "A late outcome that reports a source change accounts on the grant's original open run, also after the claim was handed off, under the obligation rule set frozen in the grant and against the named root in the grant's basis, as a barrier at its append position that a later check must follow in position and completion time; on a finished run it is audit only and the seal is unchanged; a reconciliation that repeats a change already reported for the grant opens nothing; tests cover the three cases",
+    "With an action unresolved, a revised work item, a moved fence and a changed policy epoch each leave the session able to bind again and be admitted a diagnosis turn, the block on overlapping subjects and on completion stays in force under the new binding, and the outcome reported afterwards is recorded against the action's original basis; tests cover the three changes",
+    "A host whose mediation map lists an unintercepted and unconfined shell, write route or network route cannot bind as `action_gated`, whatever else it gates; a non-cooperative test agent that calls a material tool directly, or replays another session's grant, is stopped before anything executes",
+    "A measured pilot on one declared material set reports the median, 95th and 99th percentile of the added delay, the count of false refusals, the time each repair took and the count of interruptions that needed a human, and meets the brief's targets: authorize and begin together at or under 20 ms at the 99th percentile, a total deadline of 250 ms before dispatch that includes the one bounded retry, and no routine prompt to a human; an authorize that misses the deadline is not dispatched and asking again takes a new key; when a target is not met the pilot's report says so and the gate is not activated; a turn with no material action makes exactly the calls it makes today",
+    "The changeset that adds the durable action grant and outcome rows teaches `migration import` the conversion and names it in its report, and docs/shipped.md and docs/features/behavioral-control-plane.md say what is shipped"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "deferred"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0fab2-e80c-7dd3-ba27-980ad53b9956",
+      "kind": "manual",
+      "detail": "Deferred, design only: not to be scheduled or claimed until Greg reverses his 2026-09-26 decision against host blocking of dangerous operations (Engram::Fable as coordinator, 2026-10-02).",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-02T03:40:23.942834700Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

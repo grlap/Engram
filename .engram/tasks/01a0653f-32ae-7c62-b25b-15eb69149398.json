@@ -1,0 +1,50 @@
+{
+  "id": "01a0653f-32ae-7c62-b25b-15eb69149398",
+  "external_ref": null,
+  "title": "Bind no-capture completion attempt identity to an atomic run-feed cut",
+  "outcome": "No-capture completion replay has an explicit atomic cut or documented seal-recovery contract under concurrent run-feed appends.",
+  "acceptance": [
+    "A concurrent run-feed append between no-capture attempt identity and completion cannot make a committed success unreachable"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a064d6-baad-7cc2-956f-7fcc3cfa7730",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered by 1d04b09: the no-capture completion attempt key is derived from the base key plus the run-feed cut (completion_attempt_key), cut selection and append hold the SQLite writer slot in one IMMEDIATE transaction (completion_checkpoint_holds_the_writer_slot_across_cut_selection_and_append), a committed success replays by target (ensure_completion_replay_target) and refusals are never replayed, so a run-feed append between identity and completion recomputes instead of stranding a committed seal (pending_completion_resumes_after_holder_evidence_and_seals_the_current_set, capture_completion_replays_after_evidence_or_checkpoint_commit).",
+    "completed_at": "2026-09-03T20:18:04.479201600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fa976772fb79993b5a47e18e1b428619ce9ab2186da66ab526841c43652f2f54": {
+        "activity_id": "fa976772fb79993b5a47e18e1b428619ce9ab2186da66ab526841c43652f2f54",
+        "task_id": "01a0653f-32ae-7c62-b25b-15eb69149398",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "44952fa63137f7ce8cf7b210dfc4f89a539bff1c04d6f0521021b7f51dd78475"
+      }
+    }
+  }
+}

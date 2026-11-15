@@ -1,0 +1,50 @@
+{
+  "id": "01a0f341-bbf2-7690-9241-43e24ab34f42",
+  "external_ref": null,
+  "title": "A plain memories listing answers in the project-memory state drift in which master answered",
+  "outcome": "A plain memories listing answers in the project-memory state drift in which master answered",
+  "acceptance": [
+    "In a store whose project_memory_state row for the project is missing while project memories exist, `engram work memories` and `engram work memories QUERY` without a context generation return their rows and record nothing, as before the memory-recovery direction landed; only the first unfiltered page that carries a context generation reads the memory position it records; a test lists memories in that drift state."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "memory",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A plain memories listing, a search and an --after page answer from the memory rows alone again while the project's recorded memory position is missing (the drift a projection repair rebuilds), as master did before the memory-recovery direction. Only the first unfiltered page carrying a context generation reads the position it records; there, a missing position leaves the listing delivered and unrecorded. Storage and word tests cover the drift state. Landed 16f07ce, full gate test-ac1440cf 9/9, round 1 clean, independent evaluation passed.",
+    "completed_at": "2026-09-30T22:26:44.377736600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c5f25f28876440b38389e68c2d00c2d5": {
+        "activity_id": "c5f25f28876440b38389e68c2d00c2d5",
+        "task_id": "01a0f341-bbf2-7690-9241-43e24ab34f42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d5b87d52e96b4bccb6530cc898c5fdc7"
+      }
+    }
+  }
+}

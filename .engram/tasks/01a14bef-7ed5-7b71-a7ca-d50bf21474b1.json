@@ -1,0 +1,33 @@
+{
+  "id": "01a14bef-7ed5-7b71-a7ca-d50bf21474b1",
+  "external_ref": null,
+  "title": "Bounded receive slice 4: graph closure validation and selected task-snapshot accounting",
+  "outcome": "Bounded receive slice 4: graph closure validation and selected task-snapshot accounting",
+  "acceptance": [
+    "Commit and tree structure is validated (header, parents, tree types, names, modes, order, duplicates, bounded optional headers and tree depth) with complete commit-parent/root-tree/blob closure",
+    "Ancestry depth is the longest DAG path; gitlinks stay opaque and never trigger a fetch; supplied tags are parsed and bounded without new network targets",
+    "Selected-task bytes are charged per document occurrence across the explicit incoming/common-base/local snapshot set, with per-document and aggregate limits; a shared blob cannot evade output limits",
+    "No task path is materialized before the snapshot set and profile are admitted"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "resource-limits",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a14bc4-fa6d-7101-90c3-8538455dd83d",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a14bef-6c66-7243-ba41-1ad269d40d88"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

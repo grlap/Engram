@@ -1,0 +1,58 @@
+{
+  "id": "01a0d957-d8b3-72a3-8600-106de4b03b57",
+  "external_ref": null,
+  "title": "Remove the grant's context page and recovery turns from the turn gate",
+  "outcome": "A turn grant no longer carries a context page, and recovery turns and recovery_required are gone. Permission, start and report remain. Agents get context only through next, as they already do. This implements Greg's 25 Sep turn-gate decisions for turn permission (simplify), turn start (keep, simplified), context delivery (remove) and recovery turns (remove).",
+  "acceptance": [
+    "A regression test shows no control operation moves work_session_state.project_cursor, and next's delivery is unchanged",
+    "Reader compatibility: control records already stored (grant basis with delivery_cursor and blocking_watermark, decisions in control_turn_results, checkpoint events) still decode. A test with pre-change JSON fixtures, matched by shape and never by pinned hashes, shows they decode and that verify_all stays healthy on such a store",
+    "Spec §2.7 (including grants with missing context or deltas inlined, the observe-only partial recovery page, and the blocking-watermark clause), behavioral-control-plane.md, the host checklist and the turn-gate assessment describe the grant with no page and no recovery turns. control_changes is described as a write-only audit index",
+    "TermAl, the live consumer of the host protocol, confirms the wire change before it is installed",
+    "TurnPurpose::Recovery, the RecoveryRequired, DeltaRequired and TurnPurposeMismatch refusals, the page backlog logic, the blocking-watermark check and the sync_required phase are removed. The live phases are ready, turn_open and exited, and a test shows an issued grant that expires while turn_open resets the session to ready",
+    "Wire transition, because host.rs denies unknown fields: turn_evaluate accepts purpose ordinary or absent and refuses recovery, and turn_begin accepts delivery_tokens [] or absent and refuses a non-empty list with GrantScopeMismatch. Tests cover each case. The two fields are removed only after TermAl's change ships",
+    "control_sessions.confirmed_cursor, tentative_cursor and blocking_watermark are kept, with the reason stated, until the next planned migration, so the schema is unchanged and install is a plain binary swap. control-session-inspect stops presenting them as meaningful",
+    "turn_begin still rechecks grant state and expiry, policy and admission epochs, capability map, work revision and claim fence; the token and feed/context-currency checks go with the page",
+    "turn_evaluate grants carry no delivery page, and a test shows that after session_bind, and after a rebind following a restart, the session is ready and its first ordinary turn is granted at once with no page"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Turn grants no longer carry a context page, and recovery turns and recovery_required are gone. Permission, start and report remain, and agents get context only from `next`. The live phases are ready, turn_open and exited; bind and rebind leave the session ready, so its first turn is granted at once. The host wire accepts purpose ordinary or absent and delivery_tokens [] or absent. Stored control records still decode and audit clean. The retained cursor columns and context-revision tables stay, written only by bind or not at all, until the next planned migration (filed separately). Spec §2.7, behavioral-control-plane, the host checklist, the turn-gate assessment and the related briefs describe the page-less grant. Commit 9eeb3cf, installed as build a05e556e311d after TermAl confirmed its 7f3c32c host (bd78e33) bound clean. A probe session on the new binary bound ready and was granted, begun and reported. A full doctor audit on the Engram store is healthy. Four review rounds; the independent evaluation passed all 9 criteria.",
+    "completed_at": "2026-09-25T21:45:17.569584400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "50e7636c2d1c4be898d797e0b1c5592b": {
+        "activity_id": "50e7636c2d1c4be898d797e0b1c5592b",
+        "task_id": "01a0d957-d8b3-72a3-8600-106de4b03b57",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "eff4aea80acf4747b734beacc2f5c82f"
+      }
+    }
+  }
+}

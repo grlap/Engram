@@ -1,0 +1,51 @@
+{
+  "id": "01a1487f-adcf-7271-a0c9-9902b9c21b7e",
+  "external_ref": null,
+  "title": "Document bounded escalation after repeated control request expiry",
+  "outcome": "Document bounded escalation after repeated control request expiry",
+  "acceptance": [
+    "The control request allowance documentation explains that repeated exact-request expiry can prevent progress, gives bounded escalation guidance instead of unbounded retries, preserves prior-attempt uncertainty, and does not infer a specific slow phase or authorize a changed payload or key."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered bounded escalation guidance for repeated exact-request expiry in the landed control producer: retries need not progress, hosts bound automatic retry and escalate, retain original request/key/report/prior uncertainty, and infer neither a slow phase nor fresh payload/key/grant/binding authority. Independent evaluation5a9cf361 passes1/1; criterion count1 and revision1 unchanged. The doc change was included in the parent's full gated/reviewed/installed changeset; no new source edit or separate check in this closeout root. External TermAl bound implementation remains unproved.",
+    "completed_at": "2026-10-18T02:38:19.595825900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c1732532f6b94ae88fbea8f6c688d8db": {
+        "activity_id": "c1732532f6b94ae88fbea8f6c688d8db",
+        "task_id": "01a1487f-adcf-7271-a0c9-9902b9c21b7e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a5b3bd5a17b34dc491dc84444694d8a3"
+      }
+    }
+  }
+}

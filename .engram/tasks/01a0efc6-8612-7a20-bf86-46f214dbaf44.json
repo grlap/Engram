@@ -1,0 +1,45 @@
+{
+  "id": "01a0efc6-8612-7a20-bf86-46f214dbaf44",
+  "external_ref": null,
+  "title": "The processes of a launcher's running stage end when the launcher ends",
+  "outcome": "The processes of a launcher's running stage end when the launcher ends",
+  "acceptance": [
+    "On Windows, when the launcher process is killed during a stage, every process that stage started ends without any cleanup by the test: a regression starts the real chain of the Rust stage (wrapper, cargo, a parked test binary with a child), kills only the launcher, and finds none of them alive, holding each by its process id and creation time",
+    "The containment is one kill-on-close job that the launcher process itself owns, set up once before the first stage; each stage process is created suspended by a small helper, assigned to that job and then resumed, so that everything the stage starts is inside the job from its first instruction; the helper holds no handle to the job while the stage runs; no command-line search, parent-id walk or process-tree kill takes its place",
+    "The host's credit is unchanged: a foreground full or focused run is started by the same command as before, and its record lines keep their grammar",
+    "When the job cannot be set up, the run continues, its result records containment as unavailable with the reason, and the summary prints it; it is never silent; and each stage's command line, working directory, environment, log bytes and exit code are the same as without the helper"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "bef86838d4b8448dbb64aa5e7d2b4c52": {
+        "activity_id": "bef86838d4b8448dbb64aa5e7d2b4c52",
+        "task_id": "01a0efc6-8612-7a20-bf86-46f214dbaf44",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b0a10875e50d499fa3690a915d23602a"
+      }
+    }
+  }
+}

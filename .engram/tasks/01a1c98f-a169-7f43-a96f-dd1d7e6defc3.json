@@ -1,0 +1,29 @@
+{
+  "id": "01a1c98f-a169-7f43-a96f-dd1d7e6defc3",
+  "external_ref": null,
+  "title": "Use normalized repository paths when auditing retired constructions",
+  "outcome": "Custody audit and retirement admission recognize equivalent supported repository path spellings consistently.",
+  "acceptance": [
+    "Retirement scope and admission use the same supported normalized repository comparison as sibling custody checks, preserving foreign-repository refusal.",
+    "A behavioral regression uses equivalent Windows repository spellings and confirms a canonical retirement remains visible and admitted without altering stored original path bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

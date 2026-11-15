@@ -1,0 +1,58 @@
+{
+  "id": "01a1d610-abda-7141-b1dd-a76fe0842d73",
+  "external_ref": null,
+  "title": "Pass Git a readable attributes path on Windows so task-sync materialization's staged attribute check stops refusing every tree",
+  "outcome": "Keep task-sync materialization's staged attribute check working on Windows when the repository path is long",
+  "acceptance": [
+    "On Windows, `task-sync setup-materialize` approves a policy-safe .engram tree and still refuses an unsafe one; the staged attributes file handed to Git via core.attributesFile is a path Git for Windows can open (no \\\\?\\ verbatim prefix), and a test proves both outcomes",
+    "`cargo test --test task_sync_materialize_cli` passes on Windows from any checkout or linked worktree",
+    "If Git cannot read the attributes file it is given, the check refuses with a named reason instead of reporting text unset"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "gate",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "0162b0328f584efeb65bfcf1bfe8d7d2": {
+        "activity_id": "0162b0328f584efeb65bfcf1bfe8d7d2",
+        "task_id": "01a1d610-abda-7141-b1dd-a76fe0842d73",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c5b8daa6f27b48d3832207b517e1ed0b"
+      },
+      "c5b8daa6f27b48d3832207b517e1ed0b": {
+        "activity_id": "c5b8daa6f27b48d3832207b517e1ed0b",
+        "task_id": "01a1d610-abda-7141-b1dd-a76fe0842d73",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c5b8daa6f27b48d3832207b517e1ed0b"
+      }
+    }
+  }
+}

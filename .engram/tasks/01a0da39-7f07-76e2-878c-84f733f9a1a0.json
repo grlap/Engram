@@ -1,0 +1,29 @@
+{
+  "id": "01a0da39-7f07-76e2-878c-84f733f9a1a0",
+  "external_ref": null,
+  "title": "Drop the turn gate's retained cursor columns and context-revision tables at the next planned migration",
+  "outcome": "Drop the turn gate's retained cursor columns and context-revision tables at the next planned migration",
+  "acceptance": [
+    "Import retires them by name and reports each with its counts, and keeps every record id and link unchanged, as the pre-release migration rule requires",
+    "The retention notes in the code, spec §2.7, behavioral-control-plane.md and sqlite-store.md are removed with them",
+    "When the next schema change that already needs migration export and import lands, the control_sessions columns confirmed_cursor, tentative_cursor and blocking_watermark and the tables project_context_revisions and agent_context_revisions are removed from the schema"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

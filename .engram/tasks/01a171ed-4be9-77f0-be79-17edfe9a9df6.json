@@ -1,0 +1,28 @@
+{
+  "id": "01a171ed-4be9-77f0-be79-17edfe9a9df6",
+  "external_ref": null,
+  "title": "Define Coder and complete READY package in governing instructions",
+  "outcome": "Define Coder and complete READY package in governing instructions",
+  "acceptance": [
+    "Governing Markdown defines Coder and complete READY handoff/package, or explicitly maps them to existing implementer and worker-delivered patch terminology, including the validation and complete review evidence required before handoff.",
+    "Any resulting authority text change follows the existing concurrence, Greg-notice, final-diff audit and applicable validation/review process."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority-text",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

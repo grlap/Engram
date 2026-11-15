@@ -1,0 +1,52 @@
+{
+  "id": "01a116fc-d841-7610-8455-4d45cf7709e8",
+  "external_ref": null,
+  "title": "Guard the note-search count-selection SQL rewrite",
+  "outcome": "A change to the catalog count selection cannot silently remove all note matches; the selection conversion fails clearly when its expected shape is absent.",
+  "acceptance": [
+    "The note-search selection conversion guards its expected count-selection shape or shares the existing guarded conversion, returning a named projection error on an unexpected shape.",
+    "Existing note-search eligibility, metadata OR matching, counts and continuation behavior remain correct."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "technical-debt"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Guarded note-search count-selection conversion with named InvalidWorkProjection refusal; retained eligibility, metadata OR matches, counts and continuation behavior.",
+    "completed_at": "2026-10-09T02:08:44.692200900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "13a531560e9c4949a41049a4fbdb756d": {
+        "activity_id": "13a531560e9c4949a41049a4fbdb756d",
+        "task_id": "01a116fc-d841-7610-8455-4d45cf7709e8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3428b7331e7d4b26932c1e7f085f1db4"
+      }
+    }
+  }
+}

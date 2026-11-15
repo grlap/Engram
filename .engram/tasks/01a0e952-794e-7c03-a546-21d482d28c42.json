@@ -1,0 +1,78 @@
+{
+  "id": "01a0e952-794e-7c03-a546-21d482d28c42",
+  "external_ref": null,
+  "title": "Memory lifecycle hygiene: a workaround memory names the item that retires it, and completing that item surfaces the memories citing it as forget candidates",
+  "outcome": "Memory lifecycle hygiene: a workaround memory names the item that retires it, and completing that item surfaces the memories citing it as forget candidates",
+  "acceptance": [
+    "docs/features/local-work-system.md (project memories) documents the target forms, current-version matching, the candidate surfacing, explicit forget and the external limit, using placeholders and no live work refs; the mcp-dogfood suite covers remember with a retiring target, a body revise that keeps it, done surfacing it beside an unrelated key and an external target that is displayed but not selected, and forget afterwards",
+    "done on an item that active memory heads cite as their retiring target lists those keys in the acting caller's receipt as forget candidates with the runnable forget commands, the total and the exact omitted count, also on an exact replay; nothing is forgotten automatically, the completion seal is untouched, attributed history is preserved, and a failed candidate lookup is disclosed without turning a sealed completion into a refusal",
+    "remember accepts an optional typed retiring target — a local item of the bound project, resolved to its work id when the memory is written, or an external tracker reference stored as asserted, bounded text and never validated against another store — kept with the immutable version; an ordinary revise preserves the current target; an explicit clear removes the current target, or acknowledges one a revision dropped, and is recorded on the version as a clear; a clear with neither a current nor a dropped target is refused; the target takes part in replay equality; memories (list row and full) shows the target, marks the version as a workaround when present, shows for a local target the cited item's state computed at read time, and, when the current version has no target and no recorded clear while an earlier version had one, says that the target was dropped and by which revision",
+    "superseding or cancelling an item that active memory heads cite lists those keys in the update receipt as a bounded advisory — revise the memory to the replacement, clear the target, or forget after checking — and never retargets or forgets by itself",
+    "the change adds no table or column: the target is an optional field of the stored memory version that is omitted when absent, historical versions read as stored, the graph snapshot round trip keeps it on every revision, and readiness reports every live store ready with the new build"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "project-memory"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A project memory can name the item that retires it: a local item of this project, resolved to its work id, or an external reference of shell-safe asserted text. An ordinary revise keeps the target; an explicit clear removes it, or acknowledges a dropped one, and is recorded on the version. A dropped target is disclosed with restore and clear commands. memories shows the target, the workaround mark and a local item's state at read time. done lists the current memories that cite the finished item as forget candidates, with the total and the omitted count. cancel, reject, supersede and detach give a bounded advisory. Doctor and import refuse a dangling local target, and the graph snapshot keeps the target and clear on every revision. No table or column was added. The final round was clean from Codex and Claude on freeze 16a6a215…28d6, and the full gate test-482e7cdc passed 9/9. Readiness with the new build reported all three live stores ready. Commit 26bdf08 was pushed to origin master, and build ea653aeee636 is installed with the old build backed up.",
+    "completed_at": "2026-09-29T20:31:19.258434500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "22373093e8c747a69ef6d070687691c5": {
+        "activity_id": "22373093e8c747a69ef6d070687691c5",
+        "task_id": "01a0e952-794e-7c03-a546-21d482d28c42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c51aee295fc04efb8cf3c0e082c52db1"
+      },
+      "a94ecd9fe20f46d8992ea597cdf67071": {
+        "activity_id": "a94ecd9fe20f46d8992ea597cdf67071",
+        "task_id": "01a0e952-794e-7c03-a546-21d482d28c42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "df40e1c5b9284ef6bbee942d87eab913"
+      },
+      "df40e1c5b9284ef6bbee942d87eab913": {
+        "activity_id": "df40e1c5b9284ef6bbee942d87eab913",
+        "task_id": "01a0e952-794e-7c03-a546-21d482d28c42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "df40e1c5b9284ef6bbee942d87eab913"
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "id": "01a1537c-618b-7303-b478-aa6164f9f131",
+  "external_ref": null,
+  "title": "Lock-free backup target readers misdiagnose an in-flight or just-completed target set as backup_record_unreadable",
+  "outcome": "Lock-free backup target readers misdiagnose an in-flight or just-completed target set as backup_record_unreadable",
+  "acceptance": [
+    "A target set that completed before the reader's retry configuration read (settled B/B, with no further mutation) is read correctly by the lock-free status readers. A set still in flight across both reads, or repeated changes, may still refuse; that refusal is documented as a bounded-reader limit and its message tells the operator a target set may be in progress and to retry.",
+    "A deterministic test reproduces the torn read for at least one of these callers"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed lock-free backup target readers by adding a bounded unlocked reread for identity mismatch, with a retry hint for persistent mismatch and documentation. Full gate passed all 12 stages on the frozen tree; the pre-commit evaluation passed 2/2, all six live stores were ready, and the change was fast-forward committed and pushed as e01a046 to origin/master. Installed the matching release build and confirmed installed readiness fingerprint 16ad5e1a4d074a7100b470857dc21f1f2b577fff7a47014270062e326fe154f2. The fresh post-landing evaluation passed 2/2. The prior binary is backed up. Running processes retain their old loaded build until restarted; no restart was performed.",
+    "completed_at": "2026-10-24T13:14:37.234373300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2cca56bec4c24860ba3b53535475e4e6": {
+        "activity_id": "2cca56bec4c24860ba3b53535475e4e6",
+        "task_id": "01a1537c-618b-7303-b478-aa6164f9f131",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "38f73d18984d41a388380c88cea288a2"
+      },
+      "38f73d18984d41a388380c88cea288a2": {
+        "activity_id": "38f73d18984d41a388380c88cea288a2",
+        "task_id": "01a1537c-618b-7303-b478-aa6164f9f131",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3590491e29674fc18c362755d791c319"
+      },
+      "a5eeb18a0ad74e9693360de38268477d": {
+        "activity_id": "a5eeb18a0ad74e9693360de38268477d",
+        "task_id": "01a1537c-618b-7303-b478-aa6164f9f131",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a5eeb18a0ad74e9693360de38268477d"
+      }
+    }
+  }
+}

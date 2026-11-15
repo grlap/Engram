@@ -1,0 +1,53 @@
+{
+  "id": "01a15b5a-063d-7d20-b7f6-4fde8c0a7ab3",
+  "external_ref": null,
+  "title": "Add the team-coordination project skill",
+  "outcome": "Add the team-coordination project skill (.agents/skills/team-coordination/SKILL.md) with the content Greg requested",
+  "acceptance": [
+    "The staged input holds `.agents/skills/team-coordination/SKILL.md` with the content Greg requested (recording coordination experience), carried from the main checkout's untracked file and changed only as review findings require, as the changeset's only path",
+    "The Markdown-only landing checks pass through the focused launcher: `node scripts/check-doc-links.mjs` and a byte comparison of AGENTS.md and CLAUDE.md, each with its input fingerprint checked at completion",
+    "A Codex and a Claude read-only review of the frozen input leave no in-scope finding of Medium or higher, and the skill grants or limits no commit, push, tracker or approval authority"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "coordination",
+    "docs",
+    "skills"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 509962e9 on origin/master, a fast-forward from b2f1f473, with tree 46c06524, the frozen input 8c06ae22. It adds .agents/skills/team-coordination/SKILL.md, the coordination skill Greg requested.\n- Carried from MAIN's untracked copy (sha256 55e5ff28) and changed only as the r1 review findings required (sha256 63fd6645, 7023 bytes).\n- Markdown-only checks on 8c06ae22: check-doc-links test-5657d9fd and the AGENTS/CLAUDE byte comparison test-81e8194f, both passing with the input matched.\n- Reviews: in r1 Codex found nothing and Claude raised 1 Medium and 5 Lows, all fixed. r2 is clean at Medium; its one new Low and the Notes are filed as w-91ddbc29cb7d, and discoverability as w-01077cd579b3.\n- The skill grants or limits no authority.\n- Evaluation 0899fb5c passed 3/3 on revision 3, which is the outcome and C1 reword Greg approved (Advisor #1884).\n- Readiness was ready on all 6 stores, both pre-commit (build 6e487290) and post-commit (build 8568ad82, clean 509962e9).\n- Installed 8568ad82; the backup is engram-20261020T230014Z-632989c90b78.exe.",
+    "completed_at": "2026-10-20T23:00:22.397134900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0591e72b44f5499c8a5d1c12c7640a50": {
+        "activity_id": "0591e72b44f5499c8a5d1c12c7640a50",
+        "task_id": "01a15b5a-063d-7d20-b7f6-4fde8c0a7ab3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "abd52901ab1249dd96a974b24fdca248"
+      }
+    }
+  }
+}

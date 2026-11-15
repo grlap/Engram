@@ -1,0 +1,51 @@
+{
+  "id": "01a07c7f-d623-7bf1-9252-fe389bd92db6",
+  "external_ref": null,
+  "title": "Reuse validated memory histories and bound per-operation revision decoding",
+  "outcome": "Reuse validated memory histories and bound per-operation revision decoding",
+  "acceptance": [
+    "Multi-revision decode-count regressions discriminate duplicate history walks in list full remember forget and measure rebuild/import; reuse remains transaction-scoped with full canonical validation and no durable cache"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "phoenix",
+    "pilot",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07879-5d33-7742-a3c9-e134d64087ed",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Validated history is reused within each operation without a durable cache.",
+    "completed_at": "2026-09-07T16:04:57.701949100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cdac8f192ffaefed34fcc5f641f8adee59dab1a1995dbac1408db4659752fbc9": {
+        "activity_id": "cdac8f192ffaefed34fcc5f641f8adee59dab1a1995dbac1408db4659752fbc9",
+        "task_id": "01a07c7f-d623-7bf1-9252-fe389bd92db6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a03318bb32c70d94941e8b72b9439a13c9692c0efc1062b67fb380af3009ce4a"
+      }
+    }
+  }
+}

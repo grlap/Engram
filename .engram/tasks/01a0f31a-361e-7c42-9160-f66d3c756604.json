@@ -1,0 +1,53 @@
+{
+  "id": "01a0f31a-361e-7c42-9160-f66d3c756604",
+  "external_ref": null,
+  "title": "Read words open the store read-only and never create one",
+  "outcome": "Read words open the store read-only and never create one",
+  "acceptance": [
+    "A test shows that each of those words succeeds on an established store, as a live store has it with its SQLite shared-memory file present, in a process that cannot open the database or its WAL file for writing, and leaves their bytes unchanged.",
+    "docs/features/cli-and-mcp.md lists which words are reads that record nothing, and names the one memories form that records",
+    "ls, search, show in every form, and memories in every form that records nothing open the store through the read-only open that next with peek, core held and core inspect already use, or an equivalent that cannot write database or WAL bytes; a test shows each refuses with store_not_initialized on a file with no schema instead of initializing a store"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "read-only"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "ls, search, show in every form and every memories form now open the existing store read-only for each call (a fresh open_existing_read_only, never a writable fallback): no database or WAL writes, no write access needed to those files, and store_not_initialized instead of creating or initializing a store. Only the first unfiltered memories page that carries a context generation records, through the cached writable connection without process-default registration. Tests cover every read form with the database and WAL unwritable (including real evaluation details and every window continuation), every form refusing on absent, zero-byte and schemaless stores, and the CLI/MCP cold-store path; docs/features/cli-and-mcp.md lists the reads that record nothing. Landed as 31fc438 after three rounds (last: gate test-43e8e050 passed, both reviewers clean), installed build 400dc5f7; independent evaluation eaeb9e89 passed all three criteria.",
+    "completed_at": "2026-09-30T18:01:49.413752400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4848033cd8ea450a9f238b78181d39be": {
+        "activity_id": "4848033cd8ea450a9f238b78181d39be",
+        "task_id": "01a0f31a-361e-7c42-9160-f66d3c756604",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "eedde2872dad42b698c44c79c0db728e"
+      }
+    }
+  }
+}

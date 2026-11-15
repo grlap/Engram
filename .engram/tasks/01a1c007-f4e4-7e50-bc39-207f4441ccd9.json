@@ -1,0 +1,66 @@
+{
+  "id": "01a1c007-f4e4-7e50-bc39-207f4441ccd9",
+  "external_ref": null,
+  "title": "Consume applicable imported evidence in native acceptance and completion",
+  "outcome": "Connect the existing imported verification and acceptance decisions to explicit ordinary local requirement, evaluation and completion selection, preserving original provenance and all current destination guards.",
+  "acceptance": [
+    "Explicit ordinary local requirement/completion selection consumes supported imported verification only through the existing common qualifier and a fresh destination source, governing, run, root and claim check; late terminal conflicts and missing required context prevent new use without rewriting old records or seals.",
+    "Explicit local acceptance and child/completion accounting can reference applicable imported evaluation or foreign native completion proof under existing policy and closure rules; it never installs a foreign seal as a completed local run or fabricates host observation, live authority or a model verdict.",
+    "Behavior tests exercise successful explicit native consumption, stale source/governing/generation, stricter policy, conflict-after-association, missing closure and atomic rollback; repeated/reverse import remains stable and complete original ids/bytes/times/provenance stay unchanged.",
+    "Deliver an exact author-checked patch/API package to the parent. Parent owns exchange family frontiers/status, final combined validation and the cross-host pilot; no background dispatch or authority widening is introduced."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit native imported-verification/acceptance consumption with fresh destination guards, immutable original provenance and atomic completion accounting. Exact46-path author-checked0686 package/API accepted by integration owner500; sole collector module context resolved by worker501 apply-check. Independent evaluation0579251df5a6485ab2adeebdc657e0c8 passed all4criteria; Low docs/coverage follow-ups filed independently. Parent retains combined validation, dual review, FULL, cutover/landing and cross-host pilot.",
+    "completed_at": "2026-11-09T15:48:00.375103800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "80df430752ff4e93883ab08f41ab237a": {
+        "activity_id": "80df430752ff4e93883ab08f41ab237a",
+        "task_id": "01a1c007-f4e4-7e50-bc39-207f4441ccd9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4a730c6ea78541d3ab327816cc107e50"
+      },
+      "8b66ee87f73c4b78b8ae6d6e9967e26e": {
+        "activity_id": "8b66ee87f73c4b78b8ae6d6e9967e26e",
+        "task_id": "01a1c007-f4e4-7e50-bc39-207f4441ccd9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8b66ee87f73c4b78b8ae6d6e9967e26e"
+      }
+    }
+  }
+}

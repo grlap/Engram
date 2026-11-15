@@ -1,0 +1,28 @@
+{
+  "id": "01a1406c-d57d-7e83-b5a4-3055af14a999",
+  "external_ref": null,
+  "title": "Reword the test launcher's app-alias comment to cover any link whose stat is refused",
+  "outcome": "Reword the test launcher's app-alias comment to cover any link whose stat is refused",
+  "acceptance": [
+    "The comment above isFile() in scripts/test-launcher.mjs matches its behaviour: on Windows, a candidate whose stat is refused with EACCES is accepted when lstat reports any link (an app execution alias, a symlink or a junction), not only an app execution alias, and the comment notes that such a link earlier on PATH is chosen and fails at spawn rather than being skipped. Comment-only; no behaviour change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "launcher",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

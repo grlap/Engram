@@ -1,0 +1,44 @@
+{
+  "id": "01a1c297-0041-76a3-943a-01cf214159d1",
+  "external_ref": null,
+  "title": "Preserve reconciliation after a known rejected push and failed fetch",
+  "outcome": "Preserve reconciliation after a known rejected push and failed fetch",
+  "acceptance": [
+    "A known non-fast-forward rejection followed by tip or fetch failure retains a supported path to later fetch and reconcile without redispatching an uncertain push or losing exact witness identity.",
+    "Behavior tests cover legacy, delta and delta-retry attempt owners and prove eventual reconciliation or an explicit terminal remedy."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1c2a1-d25c-7300-911c-aa79ed3d30a3",
+  "disposal_reason": "Same defect upgraded from Low to in-scope Medium by complete family2Claude attempt3 on actual repeat-publish test evidence. Required child w-aa79ed3d30a3 now owns the full known-rejection replay/fetch-failure repair; this prior optional-later root has no separate work or implementation.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "b2aa86c77a464272a711edaaeb4056a8": {
+        "activity_id": "b2aa86c77a464272a711edaaeb4056a8",
+        "task_id": "01a1c297-0041-76a3-943a-01cf214159d1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "e66825313bbe4dd1ac093a37cdecc5cc"
+      }
+    }
+  }
+}

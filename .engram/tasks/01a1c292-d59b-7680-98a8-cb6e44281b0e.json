@@ -1,0 +1,91 @@
+{
+  "id": "01a1c292-d59b-7680-98a8-cb6e44281b0e",
+  "external_ref": null,
+  "title": "Align governing task-sync layout and landing instructions with the data branch",
+  "outcome": "Align governing task-sync layout and landing instructions with the data branch",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md remain identical and describe the dedicated orphan task/evidence data branch and worktree, code source isolation and removal of the linked-code sparse-checkout contract; their quality-gate paragraph no longer requires exported data in code commits.",
+    "Before landing the exact authority wording has both project coordinators' concurrence, has been sent verbatim with its consequence to Greg, and passes the required final-diff authority audit on the final frozen integration input; any actual authority widening follows Greg's separately recorded word.",
+    "The correction preserves existing Git, data-branch publication, gate, review, installation and restart authority boundaries; it does not silently grant automatic data commit or push."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "authority-text",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Aligned AGENTS.md, identical CLAUDE.md and the Engram skill with the dedicated orphan task/evidence data branch and MAIN/.engram-data worktree; removed contradictory data-in-code and linked-code sparse-checkout instructions. Existing Git/publication/gate/review/install/restart authority is preserved. The exact final CC09 wording has both coordinator concurrences, Greg's verbatim A/B/C notice/consequence locators and actual auditing coordinator final-diff PASS. Fresh independent acceptance264177a7d8174b54bb053ecf0ebf869b passed all3 criteria on clean cc09052c7b5e3b92c90215818911a03c65f30367/tree0620c43f1fb0ea4c72ecf32321b4a4273d9a8a2f, revision1; full output and freshness recovered, no source/check change afterward.",
+    "completed_at": "2026-11-11T21:33:46.108921900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "23057ac45a2945d587711fbaf05ad274": {
+        "activity_id": "23057ac45a2945d587711fbaf05ad274",
+        "task_id": "01a1c292-d59b-7680-98a8-cb6e44281b0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "25b74d530c7947e399e0a2b22e3c043c"
+      },
+      "64fe34b203fe4224904b72f73132ca00": {
+        "activity_id": "64fe34b203fe4224904b72f73132ca00",
+        "task_id": "01a1c292-d59b-7680-98a8-cb6e44281b0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "64fe34b203fe4224904b72f73132ca00"
+      },
+      "b42922041c7d48b9b069d7299b5526f1": {
+        "activity_id": "b42922041c7d48b9b069d7299b5526f1",
+        "task_id": "01a1c292-d59b-7680-98a8-cb6e44281b0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b42922041c7d48b9b069d7299b5526f1"
+      },
+      "c7d4c1b2ba5842238e8fca2f3653ba3c": {
+        "activity_id": "c7d4c1b2ba5842238e8fca2f3653ba3c",
+        "task_id": "01a1c292-d59b-7680-98a8-cb6e44281b0e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c7d4c1b2ba5842238e8fca2f3653ba3c"
+      }
+    }
+  }
+}

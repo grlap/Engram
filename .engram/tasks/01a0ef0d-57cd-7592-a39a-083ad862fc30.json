@@ -1,0 +1,59 @@
+{
+  "id": "01a0ef0d-57cd-7592-a39a-083ad862fc30",
+  "external_ref": null,
+  "title": "A holder can read why a passed verification record did not close an open obligation",
+  "outcome": "A holder can read why a passed verification record did not close an open obligation",
+  "acceptance": [
+    "A regression stores a failed and a passed record of one check in one checkpoint, in both payload orders, under a named root, and asserts the assessment of each record, the recorded resolutions and done's answer; further cases cover an unknown producer outcome, a pinned fingerprint mismatch, a root generation or revision that moved, and ten candidate obligations",
+    "At most eight assessments are shown, with exact total, shown and omitted counts, and the rest is reached by a continuation bound to the item, run, record and position, which refuses when stale; ordinary next and show carry no such list",
+    "The assessment is computed when read, at the record's own run-feed position: root binding and generation, latest mutation, newest sighting and obligation state are those of that position, never today's; it is labelled as reconstructed at that position under the current matching rules, and a resolution that was actually recorded is shown apart from it as a stored fact",
+    "The case reported by TermAl (a passed focused test under a named root leaving three criterion-bound test obligations open) is diagnosed from its stored records, and the cause is recorded on this item as a product defect, a host defect or correct behaviour",
+    "The read and the satisfaction path share one eligibility decision and the typed matcher, and the set of obligations a record satisfies when stored is unchanged; satisfaction, the done recheck and the seal decide exactly as before, and the read leaves the store unchanged",
+    "show --note RECORD for a verification record lists, for the obligations of its check kind on the same run, whether the record matches each one and, where it does not, the first mismatch the matcher computes (check kind, wrong run, stale source revision, not after the mutation, fingerprint, result not passed, invalid time); an obligation left out before matching (not yet defined, already closed, foreign or displaced, no usable source context) is named as that and gets no matcher code"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-agent-ux",
+    "area-control",
+    "dogfood",
+    "termal-report"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0ef1e-d04e-75f1-9564-d75b3a58e739"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "show --note RECORD for a native verification record assesses it against each obligation of its check kind on its run, reconstructed at the record's own run-feed position under the current matching rules and labelled so: matching, the matcher's first mismatch, or left out before matching with its reason, beside the obligation's recorded end as stored. At most eight rows with exact counts; --note LOCATOR --after CURSOR continues it (CLI and MCP) and refuses once the run has moved or for another record. Satisfaction, the doctor replay and the read share one decision; satisfaction behaviour is unchanged. The TermAl case was diagnosed with this read from its stored records: a host defect (producer outcome recorded as unknown).",
+    "completed_at": "2026-09-30T00:35:14.520213500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2a9b784945fb4945ae26bffdafe785e7": {
+        "activity_id": "2a9b784945fb4945ae26bffdafe785e7",
+        "task_id": "01a0ef0d-57cd-7592-a39a-083ad862fc30",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bd37c1f8c1124828ae404fb03b4ba8d2"
+      }
+    }
+  }
+}

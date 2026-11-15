@@ -1,0 +1,50 @@
+{
+  "id": "01a064c4-81c7-7b50-aa6f-929343afacc1",
+  "external_ref": null,
+  "title": "Actor identity is dev or dev/agent; model and reasoning are attributed actor context, not part of the id",
+  "outcome": "ENGRAM_ACTOR_ID names the principal (greg, or greg/claude, greg/codex) and stays the target of assignment, handoff, and --mine; an optional ENGRAM_ACTOR_CONTEXT (for example model=opus-4.1;reasoning=high) is recorded as attribution on every event and shown by show, memories, and history without fragmenting actor equality",
+  "acceptance": [
+    "events, notes, memories, and evidence record the actor context when the host supplies it and omit it when absent; handoff --to greg/codex matches regardless of context",
+    "show and memories render actor plus context in one short line; no new refusal class and no change to claim or session semantics"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added bounded optional actor-context attribution across CLI, MCP, work events, evidence, memories, and agent projections without changing actor/session authority or persisted shapes; normalized unsafe input, kept agent protocol and gate/project-memory replay stable, and added typed non-mutation, parity, escaping, and replay regressions.",
+    "completed_at": "2026-09-03T19:25:05.146915600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b98d93446f0a1212d072597e1cf1b9dd6c2862018eff7efa5961f9f6295fd053": {
+        "activity_id": "b98d93446f0a1212d072597e1cf1b9dd6c2862018eff7efa5961f9f6295fd053",
+        "task_id": "01a064c4-81c7-7b50-aa6f-929343afacc1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "215796eb3b90f0c9e9efb1aab8b2227d44ab7cd0bc8b94eee33ccc7cbe07f224"
+      }
+    }
+  }
+}

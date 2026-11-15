@@ -1,0 +1,52 @@
+{
+  "id": "01a1bede-4b86-7832-b67a-2173d239775c",
+  "external_ref": null,
+  "title": "Clean Engram's project memories: retire spent entries, keep rules and Greg's words in force",
+  "outcome": "Clean Engram's project memories: retire spent entries, keep rules and Greg's words in force",
+  "acceptance": [
+    "Every Engram project memory read in full and judged: retained as a current rule or fact, revised to current content, or forgotten once spent, with anything still valid moved to its owning item or a keeper first.",
+    "Keys holding Greg's words are second-read in full by Engram::Fable before any is forgotten, and no word of his still in force is lost.",
+    "The pass reports its counts and exact keys retired on this item, without any store repair, filesystem write or change outside memories and work notes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "greg-directed",
+    "memory-cleanup"
+  ],
+  "assigned_to": "Termal::Sol-a7bb",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Read all 108 current heads; retire 19 spent memories, revise six keepers, retain 89 current entries with coordinator-reviewed Greg directions",
+    "completed_at": "2026-11-09T06:12:42.275002Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "774521978009400abc79c6662a515f35": {
+        "activity_id": "774521978009400abc79c6662a515f35",
+        "task_id": "01a1bede-4b86-7832-b67a-2173d239775c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "efa9972dfc6a412fbcbfd4d0b217fb7b"
+      }
+    }
+  }
+}

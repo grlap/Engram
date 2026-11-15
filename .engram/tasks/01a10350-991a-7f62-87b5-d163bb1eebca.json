@@ -1,0 +1,51 @@
+{
+  "id": "01a10350-991a-7f62-87b5-d163bb1eebca",
+  "external_ref": null,
+  "title": "Reject beneath a completed intermediate ancestor returns a typed actionable refusal",
+  "outcome": "Reject beneath a completed intermediate ancestor returns a typed actionable refusal",
+  "acceptance": [
+    "Rejecting an open required child below a completed intermediate ancestor while its root remains open returns work_reject_refused with supported inspection guidance, with no child cancellation or waiver persisted.",
+    "A regression covers that shape and admitted reject under open ancestry; CLI/MCP help and reject documentation state the ancestor admission condition."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Reject now refuses beneath a completed intermediate ancestor before any child disposal or waiver, with typed ancestor inspection guidance. Open-ancestry rejection remains admitted. Revision, closed-root, replay, authority and rollback regressions retained; Rust/native CLI/MCP tests and full gate passed, independent acceptance2/2PASS. Help and docs state ancestor admission. Landed and installed validated L-B changeset.",
+    "completed_at": "2026-10-04T17:40:45.478209900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "de7cd47aba034082a1cca3d86439162d": {
+        "activity_id": "de7cd47aba034082a1cca3d86439162d",
+        "task_id": "01a10350-991a-7f62-87b5-d163bb1eebca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "967c69a1cc084b26b5534c2e59769dc1"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a1b362-1cae-7360-ae55-5d82317ab449",
+  "external_ref": null,
+  "title": "Land and install the native E3 source_id increment",
+  "outcome": "Land the exact reviewed and FULL-gated native E3 increment, install its release build, and verify readiness on all live Central stores while leaving the broader E3 feature open.",
+  "acceptance": [
+    "The exact reviewed and DL560-FULL-gated candidate 54a5250a5f724657f46aed196fd9d7db69e2069e, tree 52ca66294c9b51960857b265cdbaf59adc30bade with sole parent current master 890ecb6f2566923536a85d3547fd1314847564fb, is fast-forwarded to master and pushed without source changes.",
+    "A release binary built from that exact landed tree is installed with the prior binary preserved as backup, and readiness with the installed binary reports every live Central store ready."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b1c6-cbb1-7a10-9f81-5d25ef9fa4ed",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the scoped E3 native increment integration. Fast-forwarded and pushed exact reviewed/FULL-gated candidate 54a5250a5f724657f46aed196fd9d7db69e2069e (tree 52ca66294c9b51960857b265cdbaf59adc30bade; parent 890ecb6f2566923536a85d3547fd1314847564fb) to origin/master. Installed the exact release build at C:\\Users\\grzeg\\.cargo\\bin\\engram.exe (SHA256 e303f96c46dbbde0bb5380fe941d3a17b4fabea562d0dded4972c5e36eb6e42e; build_fingerprint 7697a5bab8d99a1df358b5c4bc1172abea0d5e121a1a4e4774bb3de81c01527d) and preserved the prior binary at C:\\Users\\grzeg\\.engram\\backups\\engram-20261107T0035Z-890ecb6f-before-54a5250.exe. Pre/post-install readiness passed on all six live Central stores. No migration, projection repair, TermAl restart, or E2 activation. The required native child w-89a7bcd4dca9 scopes this increment; broader E3 parent w-5d25ef9fa4ed remains open. Candidate worktree and target/release remain retained while the required child still uses the shared root.",
+    "completed_at": "2026-11-07T00:39:44.295314500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bd8551688e0748ebb6c36e323b372211": {
+        "activity_id": "bd8551688e0748ebb6c36e323b372211",
+        "task_id": "01a1b362-1cae-7360-ae55-5d82317ab449",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1603949ae30646f3b59033c43ba07c9d"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a10dd2-53d3-7c01-a631-daa03c4b5f88",
+  "external_ref": null,
+  "title": "Bound the bare-target ambiguity refusal's held refs and next commands the way the implicit-target conflict bounds them",
+  "outcome": "Bound the bare-target ambiguity refusal's held refs and next commands the way the implicit-target conflict bounds them",
+  "acceptance": [
+    "The work_bare_target_ambiguous refusal lists at most as many held refs and next commands as the implicit-target conflict does, always including the focused item, with an exact count of the rest",
+    "A test holds more claims than the cap and checks the bounded list, the count and the focused item",
+    "The docs state the bound"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The bare done/evaluate ambiguity refusal is now bounded like the implicit-target conflict:\n- held_refs and next show at most three held items, in ref order;\n- the focus is always among them;\n- details.more counts the rest;\n- the message keeps the total (\"holds 5 live claims: a, b, c and 2 more\").\n\nTests: 5 claims on the verbs, MCP and CLI-binary surfaces, plus the 2-claim regressions with more = 0. The docs are updated.\n\nEvidence:\n- Gate fd003721: 9/9, credit 1c2f3317.\n- Pair: clean.\n- Evaluation 62f90626: 3/3.\n\nLanding: in one changeset with w-529c2ef6e596, as commit 496ab34. Installed build d070d707.",
+    "completed_at": "2026-10-05T23:16:31.298395Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a717b0d6583845e18e5a75aa68ee72b4": {
+        "activity_id": "a717b0d6583845e18e5a75aa68ee72b4",
+        "task_id": "01a10dd2-53d3-7c01-a631-daa03c4b5f88",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2ce9cbca986249059c5e72952755b256"
+      }
+    }
+  }
+}

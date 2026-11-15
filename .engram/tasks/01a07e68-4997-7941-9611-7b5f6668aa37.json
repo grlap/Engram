@@ -1,0 +1,50 @@
+{
+  "id": "01a07e68-4997-7941-9611-7b5f6668aa37",
+  "external_ref": null,
+  "title": "Peek query selection omits unrequested sections",
+  "outcome": "Peek query selection omits unrequested sections",
+  "acceptance": [
+    "peek respects Changes and Memories selection with no stored state changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cd6-59d0-7bd3-bd3e-5b77516d222b",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Peek section selection corrected and its whole-store equality regressions passed; all nine merged gates green. Installed build 6d8043d8e8b1 from merged working tree, NOT committed to master; Git landing requires explicit authority. Existing pre-swap MCP servers remain on 73401c0ab3cc. Fable independently verified healthy doctor and live nonadvancing peek.",
+    "completed_at": "2026-09-08T01:20:53.567914900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fd9ec058e438535426a879291c1c77962ee4c8daa6b1d2a75cfc5dd3bf421631": {
+        "activity_id": "fd9ec058e438535426a879291c1c77962ee4c8daa6b1d2a75cfc5dd3bf421631",
+        "task_id": "01a07e68-4997-7941-9611-7b5f6668aa37",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6a1ab23f28726270e88f490610e3e6ff89703d273299d9624d27b7105c2c3a7e"
+      }
+    }
+  }
+}

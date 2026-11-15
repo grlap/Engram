@@ -1,0 +1,66 @@
+{
+  "id": "01a0c059-fc7e-77a3-84e4-8d880aaf0164",
+  "external_ref": null,
+  "title": "Fix Windows short-path aliases in project-selection CLI regression fixtures",
+  "outcome": "Project-selection refusal tests compare the intended directory and preserve exact relative selector bytes without assuming Windows short and long path spellings are equal.",
+  "acceptance": [
+    "Required project gates and independent Codex/Claude review pass on the corrected input",
+    "every_word_refuses_missing_cwd_project_without_search_or_store_creation passes with Windows short-path cwd spelling while retaining typed refusal, no ancestor search and no store creation assertions",
+    "invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance passes with Windows short-path cwd spelling while preserving exact hostile selector data and safe terminal guidance"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-cli",
+    "ci",
+    "testing",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed Windows short/long cwd alias assumptions while preserving typed refusal, no ancestor search/store creation, exact hostile selector bytes and terminal safety. Actual 8.3 baseline reproduced both failures; corrected run passed 7 tests. Nine gates, paired review and independent acceptance passed all 3 unchanged criteria.",
+    "completed_at": "2026-09-20T21:52:32.213874700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4fbb3e8f2e454d2d9577534e7d30264a": {
+        "activity_id": "4fbb3e8f2e454d2d9577534e7d30264a",
+        "task_id": "01a0c059-fc7e-77a3-84e4-8d880aaf0164",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4fbb3e8f2e454d2d9577534e7d30264a"
+      },
+      "feed744a9c934b4688d3c6fbc8adf561": {
+        "activity_id": "feed744a9c934b4688d3c6fbc8adf561",
+        "task_id": "01a0c059-fc7e-77a3-84e4-8d880aaf0164",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6c89dd650f7d466895cfa89401582088"
+      }
+    }
+  }
+}

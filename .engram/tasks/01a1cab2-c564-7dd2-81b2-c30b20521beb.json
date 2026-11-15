@@ -1,0 +1,26 @@
+{
+  "id": "01a1cab2-c564-7dd2-81b2-c30b20521beb",
+  "external_ref": null,
+  "title": "Land the equal-source acceptance recovery fix (candidate b9dd2313) on master after the sync landing",
+  "outcome": "Land the equal-source acceptance recovery fix (candidate b9dd2313) on master after the sync landing",
+  "acceptance": [
+    "After the task-sync changeset lands, the reviewed change of candidate b9dd2313 (w-15932dbe53e2) is carried onto the then-current master as a fresh candidate, passes the full gate on that exact commit, and is fast-forwarded to master, pushed and installed under the standing approval; the retained worktree, evidence and Mac roots are then released and removed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "landing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

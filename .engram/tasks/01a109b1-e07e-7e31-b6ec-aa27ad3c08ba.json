@@ -1,0 +1,50 @@
+{
+  "id": "01a109b1-e07e-7e31-b6ec-aa27ad3c08ba",
+  "external_ref": null,
+  "title": "Concurrent first calls on a new store race its policy initialization and one fails",
+  "outcome": "Concurrent first calls on a new store race its policy initialization and one fails",
+  "acceptance": [
+    "Two or more concurrent first words on a store that has never been opened all succeed (or one waits for the other's initialization), with no UNIQUE constraint failure; a regression test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Concurrent first opens of a new store all succeed: open reads every probe in one snapshot; the core schema, initial policy and work schema commit in one transaction; under the cold write lock the open re-probes and restarts once if another opener initialized the store (a second time is a busy-typed refusal); the WAL switch is retried within the busy timeout outside any transaction. Regression tests stage 2 and 3 openers, three concurrent first `add` words, a commit between probes, a foreign table, and a pre-commit failure. Landed in bundle 11 as 92fc3d0 with w-0717569bf3df; gate test-87fa54f3 PASS 9/9 on freeze f4deb8f3…1041; review round 2 clean; independent evaluation passed 1/1.",
+    "completed_at": "2026-10-05T05:49:54.054333600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7d0338ba269a41d292246d8113d05e6a": {
+        "activity_id": "7d0338ba269a41d292246d8113d05e6a",
+        "task_id": "01a109b1-e07e-7e31-b6ec-aa27ad3c08ba",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "560e0eb6e05c4f8bb2d9e27b780c96ad"
+      }
+    }
+  }
+}

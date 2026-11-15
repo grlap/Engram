@@ -1,0 +1,30 @@
+{
+  "id": "01a191de-3e3f-7a93-bad8-14808716e95b",
+  "external_ref": null,
+  "title": "Prove which file a control connection's SQLite holds, so control_connection_read can answer",
+  "outcome": "Prove which file a control connection's SQLite holds, so control_connection_read can answer",
+  "acceptance": [
+    "On a platform where Engram can prove, from the handle SQLite itself holds, that the file at the reported canonical path is the store's main database, control_connection_read returns database_path, project_id and session_id; elsewhere it keeps refusing with control_connection_identity_unavailable",
+    "Tests swap, junction-redirect and restore the path around and after the open (including an ancestor turned into a junction) and the read never reports a path naming a file the connection does not hold",
+    "Any unsafe code is narrowly scoped and carries Greg's recorded approval"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "needs-greg"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a191de-a514-7de3-8d01-952b4211be2d",
+  "disposal_reason": "Duplicate follow-up filed in parallel. w-952b4211be2d (Fable, 12:10Z) has the same handle-level design, full acceptance criteria and P0, and it is the reference TermAl received as R4's single dependency (Architect3 #229). This item's design notes and the explorer's two quoted Highs remain readable here as history.",
+  "completion": null
+}

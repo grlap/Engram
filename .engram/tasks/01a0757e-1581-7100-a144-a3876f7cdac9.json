@@ -1,0 +1,52 @@
+{
+  "id": "01a0757e-1581-7100-a144-a3876f7cdac9",
+  "external_ref": null,
+  "title": "Economy receipts follow-ups: title-independent reminder test, independent MCP baseline, remedy title-elision, relative holder text, exhausted-page docs",
+  "outcome": "Economy receipts follow-ups: title-independent reminder test, independent MCP baseline, remedy title-elision, relative holder text, exhausted-page docs",
+  "acceptance": [
+    "mcp-dogfood builds the full-projection baseline independently from the core result plus a separate show/focus read, never by spreading the compact payload; per-operation and aggregate byte diagnostics stay, no pinned bytes",
+    "the compact done refusal remedy is derived by a bounded title-elision of the supplied core remedy with a preservation test; OpenObligation remedy exact; core results untouched",
+    "the held-by text for a foreign holder says another session, matching the JSON label; docs state that an exhausted continuation page may carry next=[] with full_detail as its single navigation; the flatten requirement on the envelope carries a comment",
+    "the hostile-title reminder tests in review.rs and parity are named and scoped as title-independent reminder coverage while exact JSON title evidence stays asserted; no text-safety check is retargeted"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed receipt follow-ups: supplied-remedy title elision, relative holder text, independent wire baseline, honest reminder tests and exhausted-page docs.",
+    "completed_at": "2026-09-06T07:35:10.992232200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1daaf8ba8c84065e0fe7b6d2bea360bb6e2829c6339f7b29f61dddc703959aed": {
+        "activity_id": "1daaf8ba8c84065e0fe7b6d2bea360bb6e2829c6339f7b29f61dddc703959aed",
+        "task_id": "01a0757e-1581-7100-a144-a3876f7cdac9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2364aaa1292c332ebf1f6649ca01548e2ab87ddb133483218ff412acb42e9c89"
+      }
+    }
+  }
+}

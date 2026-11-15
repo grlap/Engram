@@ -1,0 +1,63 @@
+{
+  "id": "01a08f0e-2b52-7b92-8f04-93dab5232905",
+  "external_ref": null,
+  "title": "Use safe different-build refusal on open and projection repair",
+  "outcome": "Use safe different-build refusal on open and projection repair",
+  "acceptance": [
+    "unrecognized_schema_and_corrupt_records_remain_distinct_on_open_and_repair passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered safe owning-build guidance for unknown schema on ordinary open and repair, distinct from real corrupt records. Native matrix criterion passed in full block8; round5 Codex/Claude clean.",
+    "completed_at": "2026-09-11T10:10:35.063922600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "096672d52246da963ea9c723add7119ff1f998992603a64e2b0aa4873727fd7e": {
+        "activity_id": "096672d52246da963ea9c723add7119ff1f998992603a64e2b0aa4873727fd7e",
+        "task_id": "01a08f0e-2b52-7b92-8f04-93dab5232905",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "096672d52246da963ea9c723add7119ff1f998992603a64e2b0aa4873727fd7e"
+      },
+      "b3f167f9a2413e90594656dcb2ef9e1e6122ceba707f4494ae419912178d5c76": {
+        "activity_id": "b3f167f9a2413e90594656dcb2ef9e1e6122ceba707f4494ae419912178d5c76",
+        "task_id": "01a08f0e-2b52-7b92-8f04-93dab5232905",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "236634d3656faf02ad8283525beda27c97543216530b23f5d5971d7fc9b3bc77"
+      }
+    }
+  }
+}

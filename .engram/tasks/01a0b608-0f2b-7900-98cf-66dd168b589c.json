@@ -1,0 +1,52 @@
+{
+  "id": "01a0b608-0f2b-7900-98cf-66dd168b589c",
+  "external_ref": null,
+  "title": "A holder who has not contributed cannot release its claim through any word",
+  "outcome": "An agent that claimed an item and then does no work on it can give the claim back with an attributed reason, through the word and the CLI, instead of waiting for the claim to expire.",
+  "acceptance": [
+    "a release that still cannot proceed names the input that is missing and the command that supplies it",
+    "the MCP update release action does the same",
+    "update REF --release with a reason succeeds for a holder that recorded no contribution, recording that reason as the attributed waiver of its missing contribution"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-work-lifecycle",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as ab89a34. A holder with neither a contribution nor a waiver under the item's root execution now releases with `update REF --release --reason \"why\"` (MCP action \"release\" with reason). The trimmed reason is recorded as its attributed participant waiver, and the next holder claims without --recover. Without a reason the release is the typed refusal work_release_waiver_required: it changes nothing and names the missing reason and the `--release --reason` command on the CLI and through MCP (host.rs keeps storage_error). release_work decides inside its transaction whether it recorded the waiver and stores WorkRelease {claim, waiver_recorded} as the operation result, so replay and a recovered receipt report the same decision. The docs, CLI help, MCP description, shipped inventory, skill and AGENTS/CLAUDE are updated. Two review rounds, with round 2 clean from Codex and Claude; full gate test-47e22c90 PASS; readiness ready on both live stores; installed build 58e40aeef217. Independent evaluation delegation-72a2a1b1 passed all three criteria.",
+    "completed_at": "2026-09-27T02:27:21.130681Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cb6323c5ac3045428165ae943bbbfa66": {
+        "activity_id": "cb6323c5ac3045428165ae943bbbfa66",
+        "task_id": "01a0b608-0f2b-7900-98cf-66dd168b589c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "53c4d3738ee14f9a9e713f349018dd75"
+      }
+    }
+  }
+}

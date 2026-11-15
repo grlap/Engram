@@ -1,0 +1,28 @@
+{
+  "id": "01a0fab1-4b08-7661-936d-0a9f0e18ce68",
+  "external_ref": null,
+  "title": "After a store cutover, the host keeps the retained old executable away from that store",
+  "outcome": "After a store cutover, the host keeps the retained old executable away from that store",
+  "acceptance": [
+    "The host cutover checklist states that after accepted cutover all launches and consumers of that store use the new build, the retained old executable is refused there, and the old executable remains only for stores not yet cut over or coordinated backup-restore rollback."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

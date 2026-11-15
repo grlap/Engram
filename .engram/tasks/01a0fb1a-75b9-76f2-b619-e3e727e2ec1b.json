@@ -1,0 +1,56 @@
+{
+  "id": "01a0fb1a-75b9-76f2-b619-e3e727e2ec1b",
+  "external_ref": null,
+  "title": "execution_observe landing B: account eligible source changes",
+  "outcome": "An execution_observe request under account_if_eligible enters source-change accounting exactly when an explicit, current policy basis selects it on an eligible unfinished run, and otherwise is kept as audit-only with a stated reason; the accounting-unavailable refusal is removed.",
+  "acceptance": [
+    "A late report after completion leaves the original seal bytes unchanged; doctor, integrity and migration accept the accounted kinds and their obligations (tests)",
+    "A newer claim or fence, or a released or superseded binding, gives audit_only historical_binding; a moved root basis gives root_basis_moved; a finished run gives finished_run; each opens nothing (tests)",
+    "An equal-revision report with no intervening different relevant revision in the same run/claim/workspace/root scope is a repeat linked to its anchor and opens nothing; A -> B -> A is a new change; watcher-only reports are never deduplicated (tests)",
+    "On an open run whose bound claim epoch is the run's latest (expired or not), with the captured root lifecycle still current, a reported source change accounts: it opens the selected rule set's obligations triggered by the record, advances source freshness and enters foreign-change classification, never renewing the claim or creating a grant (tests)",
+    "account_if_eligible names the project's current policy epoch, policy and rule set or is refused with execution_observation_policy_basis_mismatch and no effects (test)",
+    "behavioral-control-plane.md and cli-and-mcp.md document accounting and drop the accounting-unavailable refusal",
+    "source_change:null and a standalone observed_check give no_source_change, clear nothing and advance no freshness; nested check sources never count as source sightings (tests)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa18-803f-77e2-bd4c-deb297425d29",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "execution_observe under account_if_eligible enters source-change accounting: current-policy refusal, lifecycle audit reasons, workspace-scoped repeats, new changes that open obligations at their own position, the SourceObservation view across readers, and the architects' barrier rule (producer/evidence after P, completed_at floor, measured-sighting revision) in obligation satisfaction, bound-criterion freshness and evaluation F8; doctor re-decides at the position before each record. Landed as 02ce59f on origin master after six review rounds and a passing independent evaluation (45a2996d, 7/7).",
+    "completed_at": "2026-10-02T07:40:05.293859700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f96e564206ce4df1963f744d41b38eb9": {
+        "activity_id": "f96e564206ce4df1963f744d41b38eb9",
+        "task_id": "01a0fb1a-75b9-76f2-b619-e3e727e2ec1b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f56b759ac88e40a8b876b455954b7e52"
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "id": "01a09b6c-f55d-7991-b81e-0393874bb70e",
+  "external_ref": null,
+  "title": "Verbose next can exceed the application-receipt ceiling when the session handle is thousands of bytes",
+  "outcome": "Verbose next can exceed the application-receipt ceiling when the session handle is thousands of bytes",
+  "acceptance": [
+    "a live session id longer than 64 UTF-8 bytes is refused before store, session, focus, attempt, or offer effects"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a077f6-f0ee-79e3-8f3c-3302b14fee91",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Live session ids over 64 UTF-8 bytes are refused before store, session, focus, attempt, or offer effects.",
+    "completed_at": "2026-09-14T03:06:22.878795200Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7722093a853f310216a529a27dc9308b910fdbed5af17c0fc1a47ecdf91c66ea": {
+        "activity_id": "7722093a853f310216a529a27dc9308b910fdbed5af17c0fc1a47ecdf91c66ea",
+        "task_id": "01a09b6c-f55d-7991-b81e-0393874bb70e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7722093a853f310216a529a27dc9308b910fdbed5af17c0fc1a47ecdf91c66ea"
+      },
+      "8bfeb16720838bf7129ea2411f2d074630b44a58bb1196421bdf306707668a73": {
+        "activity_id": "8bfeb16720838bf7129ea2411f2d074630b44a58bb1196421bdf306707668a73",
+        "task_id": "01a09b6c-f55d-7991-b81e-0393874bb70e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "83c2faa97e9f2ced655e52c2f309a5142a384d795a772cfb8ae9035926723e25"
+      }
+    }
+  }
+}

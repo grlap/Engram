@@ -1,0 +1,29 @@
+{
+  "id": "01a13925-7ac0-7361-bc8c-d9d2c27e03de",
+  "external_ref": null,
+  "title": "Specify replacement-note provenance before task-sync note authoring",
+  "outcome": "Specify replacement-note provenance before task-sync note authoring",
+  "acceptance": [
+    "Greg's exact durable-store decision is recorded before any implementation of replacement-note provenance; the proposal identifies shared draft/prepared note shape, original note ID/machine linkage, immutable minted-ID retry, canonical import-origin conversion and any migration/repair impact.",
+    "The agreed future design preserves original note bytes/IDs, rejects arbitrary new ID-bearing drafts and wrong-kind/task/author/body collisions, distinguishes exact native-note self-echo, and includes a cross-machine stable provenance and disclosure/profile test plan without claiming authentication."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "needs-durable-decision",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

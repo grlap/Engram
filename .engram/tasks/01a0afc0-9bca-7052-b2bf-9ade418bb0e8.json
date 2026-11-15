@@ -1,0 +1,52 @@
+{
+  "id": "01a0afc0-9bca-7052-b2bf-9ade418bb0e8",
+  "external_ref": null,
+  "title": "Completed show discloses an unavailable evaluated provenance distinctly from legacy omission",
+  "outcome": "A completed item whose evaluated seal binding cannot be validated reads with an explicit unavailable provenance rather than the shape of an intentional legacy omission, while integrity and completion checks stay strict",
+  "acceptance": [
+    "a_broken_evaluated_seal_binding_is_disclosed_as_unavailable_provenance passes: on a reachable missing or forged evaluation binding of a completed evaluated seal, show text and JSON carry an explicit unavailable provenance with its error class instead of omitting the block; a legacy completed show keeps no acceptance key; doctor, completion, and open-item reads are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round8"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A completed item whose seal is readable but whose evaluation binding fails the shared check now reads with an explicit unavailable provenance: show text adds the diagnostic class under the unavailable line and JSON carries acceptance {provenance: unavailable, error_class}; a legacy seal keeps the pre-feature shape and an unreadable seal keeps the legacy read shape disclosed through the evidence read (the over-broad first cut was caught by the existing seal-failure invariance pin and narrowed in the same changeset). Pinned by a_broken_evaluated_seal_binding_is_disclosed_as_unavailable_provenance (RED logs/30, GREEN logs/31, narrowed logs/33; final sequence logs/34 all pass). Documented in step 5 and matrix row B46.",
+    "completed_at": "2026-09-17T14:45:27.025304100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c0cbc58defd2e0406708437a6bd3d5edee7323b38067cafceb6db9a1e318946b": {
+        "activity_id": "c0cbc58defd2e0406708437a6bd3d5edee7323b38067cafceb6db9a1e318946b",
+        "task_id": "01a0afc0-9bca-7052-b2bf-9ade418bb0e8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "796c4d36c0b0527ea11796d3d0dc7dda786e09a9ff3bd09a54a1830dce5d2699"
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "id": "01a0f0a9-be97-7c33-bc3c-efa2acf1f245",
+  "external_ref": null,
+  "title": "The final-diff audit checks that each changed passage's final wording was sent to Greg before the landing",
+  "outcome": "The final-diff audit checks that each changed passage's final wording was sent to Greg before the landing",
+  "acceptance": [
+    "The audit paragraphs in .claude/commands/review-changes.md require the auditing coordinator to note, for each changed passage of authority text, the recorded message that carried its final wording to Greg before the landing, and the audit fails when one is missing",
+    "The change passes the authority-text rule: both coordinators' concurrence on the exact wording, Greg's notice, and a passed final-diff audit on the item before the landing; the Markdown checks pass and the review pair has no outstanding finding of Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The final-diff audit now records, for each changed passage of authority text, the recorded message that carried its final wording to Greg before the landing, and fails when one is missing — closing the condition-(b) gap TermAl's nine-round landing exposed. Both coordinators concurred on the exact wording (#318, #320); Greg was sent it through Engram::Advisor (mailbox-74a6af16 #756, 16:52Z) before the landing; Termal::Fable2's final-diff audit passed (#337, #339), including the new clause's first live test against a verbatim copy of #756. Docs-only checks passed on the frozen tree (d64741a6); the review pair clean of Medium or higher in the latest round; readiness ready on all three live stores. Landed as 4a9eff2. The release binary built from the landed tree (sha256 04336e9c…) was NOT installed: it stays staged in .worktrees/audit-greg-notice/target/release per the coordinator's instruction, the install deferred to Greg's decision on w-d254fcdc3d22. Acceptance evaluation passed fresh on both criteria (independent_session Claude).",
+    "completed_at": "2026-09-30T23:37:07.394350300Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "04fd2996411e4917851a8e6c8fda5bec": {
+        "activity_id": "04fd2996411e4917851a8e6c8fda5bec",
+        "task_id": "01a0f0a9-be97-7c33-bc3c-efa2acf1f245",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "04fd2996411e4917851a8e6c8fda5bec"
+      },
+      "ea74c515cdd2408997c32543dddaf059": {
+        "activity_id": "ea74c515cdd2408997c32543dddaf059",
+        "task_id": "01a0f0a9-be97-7c33-bc3c-efa2acf1f245",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "421b348de4bd4f3d82abec2cedcc3d95"
+      }
+    }
+  }
+}

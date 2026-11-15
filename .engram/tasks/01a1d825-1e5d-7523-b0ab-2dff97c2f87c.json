@@ -1,0 +1,61 @@
+{
+  "id": "01a1d825-1e5d-7523-b0ab-2dff97c2f87c",
+  "external_ref": null,
+  "title": "Make engram source fast on Windows: skip the 5-second git submodule script when the index has no gitlinks and merge repeated rev-parse calls",
+  "outcome": "Make engram source fast on Windows: skip the 5-second git submodule script when the index has no gitlinks and merge repeated rev-parse calls",
+  "acceptance": [
+    "Per-step timings of `engram source --root <Engram main checkout> --json` on Central are recorded on this item before and after the change, with the same machine and repository state",
+    "When the index contains no gitlink (mode 160000), source observation does not run `git submodule status --recursive`; when gitlinks exist, submodule detection and the child filter, line-ending and dirt guards behave exactly as before, proven by tests with and without a submodule",
+    "Repeated Git queries in one observation are merged where Git can answer them in one invocation (for example rev-parse --show-toplevel, --absolute-git-dir and the HEAD and tree reads), without weakening the start and end equality checks that detect HEAD or worktree movement during the read",
+    "source_id output is byte-identical before and after for the same repository state; the 10-second warning and the 60-second minimum timeout are unchanged",
+    "On Central the observation of the Engram main checkout completes under the 10-second warning threshold, with the measured number recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "performance",
+    "source-identity",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "4bfb2fa4c0d146639f1bf5788f601ea2": {
+        "activity_id": "4bfb2fa4c0d146639f1bf5788f601ea2",
+        "task_id": "01a1d825-1e5d-7523-b0ab-2dff97c2f87c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4bfb2fa4c0d146639f1bf5788f601ea2"
+      },
+      "b5fd25943bbb4fb1af7c716cbc45e30a": {
+        "activity_id": "b5fd25943bbb4fb1af7c716cbc45e30a",
+        "task_id": "01a1d825-1e5d-7523-b0ab-2dff97c2f87c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4bfb2fa4c0d146639f1bf5788f601ea2"
+      }
+    }
+  }
+}

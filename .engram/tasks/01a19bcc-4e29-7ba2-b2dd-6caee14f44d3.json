@@ -1,0 +1,28 @@
+{
+  "id": "01a19bcc-4e29-7ba2-b2dd-6caee14f44d3",
+  "external_ref": null,
+  "title": "Update verification applicability documentation for surviving evidence routes",
+  "outcome": "Describe the current verification wire and applicability refusals after turn checkpoint removal.",
+  "acceptance": [
+    "verification-applicability.md removes current turn_checkpoint/checkpoint-observation minting claims and obsolete invalid_control_session code",
+    "Documentation accurately distinguishes surviving verification_bind reasons, verification_record behavior and passive historical applicability records using current source as reference"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a19ef4-9c77-7260-8388-6f9629e964a7",
+  "disposal_reason": "Both acceptance criteria copied verbatim into w-6f9629e964a7 (positions4/5) before supersession, per Fable620. Markdown-only part1 covers the complete applicability correction; supersession records consolidation, not delivered implementation or a pass.",
+  "completion": null
+}

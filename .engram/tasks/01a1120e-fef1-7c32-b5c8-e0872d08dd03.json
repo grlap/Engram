@@ -1,0 +1,65 @@
+{
+  "id": "01a1120e-fef1-7c32-b5c8-e0872d08dd03",
+  "external_ref": null,
+  "title": "Reduce unnecessary agent wakes and acknowledgement loops",
+  "outcome": "Actionable requests and awaited results wake agents reliably; informational traffic is batched without generating avoidable model turns.",
+  "acceptance": [
+    "Classify representative existing mailbox traffic into actionable requests, awaited results and informational updates, distinguishing message/delivery counts from actual model turns.",
+    "Deliver a concrete team practice for consolidating requests and replies and suppressing acknowledgement-only or informational messages while preserving immediate corrections, ordering, durable acknowledgement and named wake/recovery owners; host behavior changes remain separately owned by TermAl.",
+    "Use representative examples to demonstrate which unnecessary messages are avoided without losing actionable requests, terminal results or required acknowledgements. Exact token totals and new wake-count instrumentation are not prerequisites; host continuations are never dropped solely because the mail was acknowledged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered an evidence-based team practice that consolidates known requests and informational updates, removes conversational ACK loops, and preserves immediate corrections, terminal results, FIFO durable acknowledgements and explicitly owned recovery. Representative mailbox scenarios distinguish candidate message avoidance from unmeasured model turns; ACK never proves owed continuation fulfilled. No source edits, host suppression algorithm, timers or policy authority changes.",
+    "completed_at": "2026-10-07T01:00:08.604216500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "34d4cf74f4bc43d98f34e5ee7e753c04": {
+        "activity_id": "34d4cf74f4bc43d98f34e5ee7e753c04",
+        "task_id": "01a1120e-fef1-7c32-b5c8-e0872d08dd03",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "34d4cf74f4bc43d98f34e5ee7e753c04"
+      },
+      "3c57b382838f4530b0e3e872c7f50d96": {
+        "activity_id": "3c57b382838f4530b0e3e872c7f50d96",
+        "task_id": "01a1120e-fef1-7c32-b5c8-e0872d08dd03",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ceea123edd7f4cb6aeffbf4807106ff2"
+      }
+    }
+  }
+}

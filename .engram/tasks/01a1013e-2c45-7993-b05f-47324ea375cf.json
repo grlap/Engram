@@ -1,0 +1,50 @@
+{
+  "id": "01a1013e-2c45-7993-b05f-47324ea375cf",
+  "external_ref": null,
+  "title": "Resolution writers append a duplicate resolution when the projection lost a feed-recorded one",
+  "outcome": "Resolution writers append a duplicate resolution when the projection lost a feed-recorded one",
+  "acceptance": [
+    "satisfy_open_obligations_on, waive_work_obligation and waive_unbound_obligations_on refuse, or are shown not to append, a second resolution for an obligation whose feed-recorded resolution lost its projection row; a test covers each writer"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "All three obligation resolution writers now validate retained definitions and terminal resolutions before selecting Open obligations. Damaged projections refuse transactionally without a second resolution; committed replay and diagnostic reads are preserved. Actual Test/Build checkpoints, explicit waiver and revision regressions pass. Landed, pushed and installed the validated changeset.",
+    "completed_at": "2026-10-07T10:04:29.031525500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e92e0ed2edb2487c9429d4ba1e66d343": {
+        "activity_id": "e92e0ed2edb2487c9429d4ba1e66d343",
+        "task_id": "01a1013e-2c45-7993-b05f-47324ea375cf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7c76c4f57d51463ea077f03899513355"
+      }
+    }
+  }
+}

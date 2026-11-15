@@ -1,0 +1,52 @@
+{
+  "id": "01a11bed-daad-7241-a44d-bdcfe6cce369",
+  "external_ref": null,
+  "title": "Clarify broader portable targets in standing repository guidance",
+  "outcome": "Separate the first manual Git handoff profile from later scheduling and excluded-feed representation in governing guidance, without changing authority.",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md remain identical, and their Architecture Boundaries plus the repository skill (.agents/skills/engram-repo/SKILL.md) describe the selected optional Git task-text exchange (SQLite canonical on each host, explicit task-text export and import, no transfer of live claims, grants, delivery state or private scratch, no writer epochs) instead of portable writer-epoch handoff as the planned workflow, linking the Git task sync brief; no authority rule changes",
+    "The coordinating owner records whether the exact change touches authority under current governance; any required coordinator concurrence, notice and audit are obtained before landing, with Markdown gates and independent vendor review on the same frozen input."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "deferred",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Aligned identical AGENTS.md/CLAUDE.md and repository skill with the selected optional Git task-text exchange, preserving local authority and separate backup/migration contracts. Exact-wording concurrence, Greg notice, current final-diff audit, Markdown gates, independent Codex/Claude review and fresh 2/2 acceptance complete. Landed and installed exact reviewed three-file change.",
+    "completed_at": "2026-10-10T03:16:34.240017100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d09f7620caa64c048cc3527cc01ee781": {
+        "activity_id": "d09f7620caa64c048cc3527cc01ee781",
+        "task_id": "01a11bed-daad-7241-a44d-bdcfe6cce369",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5283397813df457db93fda6e6f26a4f3"
+      }
+    }
+  }
+}

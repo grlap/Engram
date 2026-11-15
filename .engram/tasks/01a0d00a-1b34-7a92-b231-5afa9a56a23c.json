@@ -1,0 +1,54 @@
+{
+  "id": "01a0d00a-1b34-7a92-b231-5afa9a56a23c",
+  "external_ref": null,
+  "title": "Launcher and temp-audit scripts silently exit 0 when invoked through a symlinked path (macOS CI)",
+  "outcome": "scripts/test-launcher.mjs and scripts/test-temp.mjs run their main path whenever they are the invoked entry point, including through a symlinked or junctioned path, so macOS CI runs the gates instead of skipping them and exiting 0.",
+  "acceptance": [
+    "A regression test invokes each script through a symlinked (or, on Windows, junctioned) directory and asserts that main ran and that the exit status is not a silent 0",
+    "The macOS CI failures from run 35909418385 at dcd034a (tests 27, 28, 30, 31, 42) pass, and Windows and Linux stay green",
+    "scripts/test-launcher.mjs compares a realpath-normalized process.argv[1] with its own module path, so invocation through a symlinked directory runs main",
+    "scripts/test-temp.mjs uses the same realpath-normalized entry-point comparison"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "ci",
+    "macos",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Independent acceptance evaluation (Codex session-7440, delegation-b2f9f60f-fff9-49d9-bd75-4311554b4124) recorded 4/4 criteria passed at 16:45 local. It checked the committed diff at 1c8537d and read the CI job logs itself via gh api for jobs 107426395883, 107426395630 and 107426396027, and for the original failing macOS job 107345186038. Ready to complete.",
+    "completed_at": "2026-09-24T00:17:17.770215300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "137d4101beaa459e952480ee25b3c712": {
+        "activity_id": "137d4101beaa459e952480ee25b3c712",
+        "task_id": "01a0d00a-1b34-7a92-b231-5afa9a56a23c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "031f6f8d5580420ba99536c69e8d1a8f"
+      }
+    }
+  }
+}

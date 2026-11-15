@@ -1,0 +1,29 @@
+{
+  "id": "01a12d08-dfc5-7ce3-9332-96061fff439e",
+  "external_ref": null,
+  "title": "Cover task preparation journal refusal and owned scratch cleanup branches",
+  "outcome": "Cover task preparation journal refusal and owned scratch cleanup branches",
+  "acceptance": [
+    "Tests cover unknown top-level entries, more than two generations and duplicate sequences, asserting refusal and preservation of unexpected content",
+    "Tests cover crash-left staging and completion temporary files and unknown generation entries, asserting the documented owned cleanup or fallback behavior"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

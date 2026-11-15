@@ -1,0 +1,51 @@
+{
+  "id": "01a07c7e-9133-7232-8d4f-95f04c9860b9",
+  "external_ref": null,
+  "title": "Repair missing rebuildable indexes with populated memory revision chains",
+  "outcome": "Repair missing rebuildable indexes with populated memory revision chains",
+  "acceptance": [
+    "Populated live and retired multi-revision memory stores repair each missing memory lookup index, preserve canonical history and reopen; invalid durable data rolls back repair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "phoenix",
+    "pilot",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07879-5d33-7742-a3c9-e134d64087ed",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Projection repair restores missing indexes before canonical head validation, atomically.",
+    "completed_at": "2026-09-07T16:04:29.890030800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4742873fff463edda5e9365297e7bf456bd6444e41e0e76ffa9e4ad5588fea9a": {
+        "activity_id": "4742873fff463edda5e9365297e7bf456bd6444e41e0e76ffa9e4ad5588fea9a",
+        "task_id": "01a07c7e-9133-7232-8d4f-95f04c9860b9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c4c21f1440baff37ff4d79888dc91e8be149df5d64572921419eb4f4ac044d30"
+      }
+    }
+  }
+}

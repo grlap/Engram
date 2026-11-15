@@ -1,0 +1,27 @@
+{
+  "id": "01a12e2e-9412-7712-bc45-cc7c5ea4bd23",
+  "external_ref": null,
+  "title": "Refuse ignored untracked task sync markers and setup files",
+  "outcome": "Refuse ignored untracked task sync markers and setup files",
+  "acceptance": [
+    "Owned fixtures prove setup preparation refuses an untracked selected marker or setup file hidden by info/exclude or core.excludesFile without changing source bytes, index, private intent or SQLite; reserved-path nonmutation remains intact"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

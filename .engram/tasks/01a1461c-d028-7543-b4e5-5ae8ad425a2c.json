@@ -1,0 +1,53 @@
+{
+  "id": "01a1461c-d028-7543-b4e5-5ae8ad425a2c",
+  "external_ref": null,
+  "title": "Test a gate on one item bound to another held item through a target sighting recorded during the gate",
+  "outcome": "Test a gate on one item bound to another held item through a target sighting recorded during the gate",
+  "acceptance": [
+    "A fixture holds two claims A and B in one session, each with a named root in the same workspace. A passed native check is recorded on A. Before that check completes, an execution_observe records B's sighting at the check's revision with B's explicit binding. verification_bind for target B then succeeds and writes a bound record on B's run.",
+    "The same fixture shows that an accounted source change recorded on B's run AFTER A's check completed refuses B's bind as check_predates_unadmitted_change, and that an exact retry of a committed bind with the same key and identical request bytes replays the stored receipt.",
+    "An evaluation of B whose evidence basis includes the bound record cites it for a criterion bound to its check kind and passes; the test asserts the evaluation is admitted and not stale."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added regression fixtures for explicit cross-item observation during a begun check, successful binding/replay and non-stale observed evaluation, plus rejection of observations recorded after check completion. Full gate12/12 passed; independent Codex/Claude review complete with Notes only; independent evaluation3/3 passed. Landed and installed tested commit; all five stores ready.",
+    "completed_at": "2026-10-16T21:30:06.891889200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cf14015deebf4cacadf9075bd9e359fa": {
+        "activity_id": "cf14015deebf4cacadf9075bd9e359fa",
+        "task_id": "01a1461c-d028-7543-b4e5-5ae8ad425a2c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a093aaabcd7d41af937b61dd3e3ed5a7"
+      }
+    }
+  }
+}

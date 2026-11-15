@@ -1,0 +1,54 @@
+{
+  "id": "01a1ad6e-1cc6-7241-b543-baaa7e91749a",
+  "external_ref": null,
+  "title": "Let a session that starts an Engram test run be resumed by that run's end, with no self-send, no relay and no polling",
+  "outcome": "When an Engram session starts a run with Engram's launcher, the launcher registers TermAl's host test-run wait for that session's own run, and the session ends its turn. TermAl resumes it when the run ends. No session mails itself, relays through another session or loops in the foreground. Engram's skills describe that one route.",
+  "acceptance": [
+    "Engram's launcher (scripts/test-launcher.mjs and scripts/test-run-registration.mjs), started by a TermAl session for its own run, registers the host's test-run wait for that run and session through TermAl's supported route (its test-run-waits API), instead of printing 'registered-but-not-indexed; native-wait=unavailable; use --notify'",
+    "When the run ends, the starting session is resumed by the host with the run's result. A real FULL or focused run on Central and one on DL560 show it, with no direct self-send, no relay through another session and no polling loop",
+    "A run the host can't index or register gets a named, visible outcome rather than a silent hang; the existing --notify route for a different session stays as it is",
+    "Engram's skills and commands (review-changes, run guidance) describe this route as the way to wait for one's own run, and the ban on direct self-send stays"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Own-run host waits are delivered on both Central and DL560: the launching session registers one supported host wait, ends its turn and resumes with its original run result. Named failure paths and the different-session notify route remain; skills and commands teach this route. The implementation landed earlier as d0c9fa01; the deferred known-build DL560 witness now passes, completing acceptance.",
+    "completed_at": "2026-11-06T17:47:15.133406800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "dbfdc24883d243e881a19ba5f462f068": {
+        "activity_id": "dbfdc24883d243e881a19ba5f462f068",
+        "task_id": "01a1ad6e-1cc6-7241-b543-baaa7e91749a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ef8181c6d4344ffdaa51b7b4279101e8"
+      }
+    }
+  }
+}

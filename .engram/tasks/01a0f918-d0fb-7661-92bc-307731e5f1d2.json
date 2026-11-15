@@ -1,0 +1,50 @@
+{
+  "id": "01a0f918-d0fb-7661-92bc-307731e5f1d2",
+  "external_ref": null,
+  "title": "Observation-note guidance is tested for a recover claim, a blocked item, a replay and the JSON reminders",
+  "outcome": "Observation-note guidance is tested for a recover claim, a blocked item, a replay and the JSON reminders",
+  "acceptance": [
+    "Tests show a non-holder note's receipt moving a claim --recover command last with the execution reminder; keeping the observation guidance on a blocked open item, on an exact replay of the same note, and on the same note repeated after another session claims the item (a keyless note's replay key includes its claim basis, so a replay never spans an ownership change); and carrying no nudge and the reminder in value.reminders with the claim as value.next's last entry"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A new test pins the observation-note guidance at its edges, in text and JSON:\n- A lapsed claim's --recover command moves last with the execution reminder.\n- A blocked open item keeps the guidance.\n- An exact replay returns the same evidence and guidance.\n- The same note after another session claims the item is a new note, with different evidence, still an observation with no claim to offer.\nThe criterion was revised by its author: a keyless note's replay key includes its claim basis. Landed with w-8d240f1158f7 in one commit; evaluation passed 1/1.",
+    "completed_at": "2026-10-01T21:39:07.558399Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "38ded388c58f4957a64058b5e38ed909": {
+        "activity_id": "38ded388c58f4957a64058b5e38ed909",
+        "task_id": "01a0f918-d0fb-7661-92bc-307731e5f1d2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "32531c7aa96745c28cf06bcc4db9c6c3"
+      }
+    }
+  }
+}

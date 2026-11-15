@@ -1,0 +1,27 @@
+{
+  "id": "01a128b4-5caf-7a62-aaed-fc5107fd7678",
+  "external_ref": null,
+  "title": "Retain slow send timing for untracked MCP responses",
+  "outcome": "Retain slow send timing for untracked MCP responses",
+  "acceptance": [
+    "A slow successful send for an untracked or quarantined MCP response records an uncorrelated slow_call with send duration without assigning another generation's request sequence; tracking overflow remains bounded and disclosed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

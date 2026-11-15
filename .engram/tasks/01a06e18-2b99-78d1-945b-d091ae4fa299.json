@@ -1,0 +1,52 @@
+{
+  "id": "01a06e18-2b99-78d1-945b-d091ae4fa299",
+  "external_ref": null,
+  "title": "Report unprojectable restored records as typed integrity findings during projection repair and name the rebuilt tables in shipped.md",
+  "outcome": "Report unprojectable restored records as typed integrity findings during projection repair and name the rebuilt tables in shipped.md",
+  "acceptance": [
+    "A work_restored_record whose work item is missing makes doctor --repair-projections report each malformed restored record as a typed integrity finding, continue checking the remaining rows so the report is complete, and refuse with a rollback, committing no partial repair, claiming no healthy result and deleting no data; docs/shipped.md names work_restored_records and work_restored_evidence as rebuilt projections."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed d9c250c (bundle 5C): projection repair names each restored record, restored evidence or observation it cannot project (decode, generation range, missing item, planning basis, constraint) as a typed finding, still rebuilds and verifies every other row, then refuses with the complete list and rolls back: no partial commit, no healthy result, no deletion. Operational failures remain errors, and valid stores rebuild exactly as before. shipped.md names work_observations, work_restored_records and work_restored_evidence.",
+    "completed_at": "2026-10-03T15:04:07.271104200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "450a0b17f2d24d60b2632437b405d111": {
+        "activity_id": "450a0b17f2d24d60b2632437b405d111",
+        "task_id": "01a06e18-2b99-78d1-945b-d091ae4fa299",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e1c7547f626a4dae9479d269336f4d65"
+      }
+    }
+  }
+}

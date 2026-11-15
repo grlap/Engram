@@ -1,0 +1,50 @@
+{
+  "id": "01a0ac9e-b1c5-7b42-a252-bc4128be0cca",
+  "external_ref": null,
+  "title": "Review the current combined worktree changes on explicit request",
+  "outcome": "Run the explicitly requested parent-owned review workflow on all current staged, unstaged and untracked changes without Git publication.",
+  "acceptance": [
+    "Required gates pass on the frozen current input; exactly one Codex and one Claude read-only review are collected and consolidated, with findings resolved or explicitly accounted for."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "coordination",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the explicitly requested fresh combined review: all nine gates passed; exact freeze verified at fan-in; one Codex and one Claude structured read-only review consolidated with no actionable findings. Informational notes and access/platform limits accounted for. Source preserved; no Git publication.",
+    "completed_at": "2026-09-17T00:14:10.844501700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7314a0851ee3461915d904609c85e9ba9587378c437619878024550f5afc1f2b": {
+        "activity_id": "7314a0851ee3461915d904609c85e9ba9587378c437619878024550f5afc1f2b",
+        "task_id": "01a0ac9e-b1c5-7b42-a252-bc4128be0cca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a35a9d82c1449f1486724169e8ffab0e436753fe2610db6cba0959178d03a588"
+      }
+    }
+  }
+}

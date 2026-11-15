@@ -1,0 +1,52 @@
+{
+  "id": "01a1cc77-7e7b-7a70-85b7-9f0f0191e44a",
+  "external_ref": null,
+  "title": "Handle restored child reopening after its root execution has ended",
+  "outcome": "Handle restored child reopening after its root execution has ended",
+  "acceptance": [
+    "Restored child reopening beneath a cancelled or superseded root, including an ended prior root execution, succeeds under documented lifecycle rules or returns a typed refusal without creating an active aggregate beneath a terminal root.",
+    "Behavioral tests cover both ordinary and checked-successor reopen, generation uniqueness, refusal atomicity and retained-identity retry."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Refuse restored child reopening beneath terminal ancestors before creating an execution generation.",
+    "completed_at": "2026-11-11T22:56:39.507090400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7a995878de9c438c91f3cd65456bb47b": {
+        "activity_id": "7a995878de9c438c91f3cd65456bb47b",
+        "task_id": "01a1cc77-7e7b-7a70-85b7-9f0f0191e44a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d7f2e9a84cdd4f4c940a169d31bc7589"
+      }
+    }
+  }
+}

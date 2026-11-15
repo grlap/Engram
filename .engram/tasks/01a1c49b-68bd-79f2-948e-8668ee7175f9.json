@@ -1,0 +1,76 @@
+{
+  "id": "01a1c49b-68bd-79f2-948e-8668ee7175f9",
+  "external_ref": null,
+  "title": "Reconcile the incoming delta and evidence Windows workflow dispatcher",
+  "outcome": "Reconcile the incoming delta and evidence Windows workflow dispatcher",
+  "acceptance": [
+    "The combined Windows data-branch dispatcher cleanly includes transport, outgoing recovery, captured-head drift, incoming public delta retention and public evidence apply workflows, preserving each existing timeout and assertion.",
+    "The delivered resolution is scoped to the actual combined conflict and passes the relevant source/format checks; the parent records the complete combined Windows validation afterward."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The combined Windows data-branch dispatcher conflict is resolved. The delivered resolution was a 3-hunk +8/-0 patch on stage 2, giving blob b6beac25, which the parent applied to clean candidate 294d9e95. It keeps the transport, outgoing recovery, captured-head drift, incoming delta and evidence workflows with every timeout and assertion. rustfmt --check and git diff --check pass. The parent recorded the complete combined Windows validation afterward: test-24258800, `cargo test --lib task_sync::exchange::tests::windows:: -- --test-threads=1` on clean combined candidate e139dbc3 (tree cab7da81), 33 passed, 0 failed, 5 ignored. The current dispatcher on e139 is blob 5cf73284, carrying the parent's later test expansions; a fresh independent evaluation judged it on the clean worktree .worktrees/dispatcher-8668-e139 and passed 2/2. Note: e139 itself will not land because of a separate completion.rs Medium (12325 #526); the dispatcher is unaffected.",
+    "completed_at": "2026-11-11T18:12:55.271282500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "820995a41b9446de89d9f78adc1e77b6": {
+        "activity_id": "820995a41b9446de89d9f78adc1e77b6",
+        "task_id": "01a1c49b-68bd-79f2-948e-8668ee7175f9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "820995a41b9446de89d9f78adc1e77b6"
+      },
+      "d88c84bff5e740dfba5c77a9abb016e0": {
+        "activity_id": "d88c84bff5e740dfba5c77a9abb016e0",
+        "task_id": "01a1c49b-68bd-79f2-948e-8668ee7175f9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d88c84bff5e740dfba5c77a9abb016e0"
+      },
+      "fd02c225754e4822914ce3ddc55163d1": {
+        "activity_id": "fd02c225754e4822914ce3ddc55163d1",
+        "task_id": "01a1c49b-68bd-79f2-948e-8668ee7175f9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a2b922637cd54a5489f2b18811b96281"
+      }
+    }
+  }
+}

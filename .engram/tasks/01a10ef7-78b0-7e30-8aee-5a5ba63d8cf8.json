@@ -1,0 +1,27 @@
+{
+  "id": "01a10ef7-78b0-7e30-8aee-5a5ba63d8cf8",
+  "external_ref": null,
+  "title": "Preserve non-access SQLite failures from VACUUM INTO",
+  "outcome": "Preserve non-access SQLite failures from VACUUM INTO",
+  "acceptance": [
+    "VACUUM INTO wraps only CannotOpen or SystemIoFailure as target-access errors and preserves busy, interrupted and other source errors and interruption recognition."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

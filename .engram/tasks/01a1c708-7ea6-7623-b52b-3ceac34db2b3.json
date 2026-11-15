@@ -1,0 +1,46 @@
+{
+  "id": "01a1c708-7ea6-7623-b52b-3ceac34db2b3",
+  "external_ref": null,
+  "title": "Restore the beyond-cut and wrong-source evaluation admission checks across service and MCP on source_id checks",
+  "outcome": "Restore the beyond-cut and wrong-source evaluation admission checks across service and MCP on source_id checks",
+  "acceptance": [
+    "The cross-transport admission test in src/mcp/tests.rs covers the beyond_cut and wrong_source citation causes again, built on checks installed with a source_id basis, and for wrong_source asserts that the service and MCP refusals name the same citable record in details.cause.citable_records and in the first 512 bytes of the message."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "cleanup",
+    "greg-directed",
+    "review",
+    "source-identity",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1c002-1d1c-71e2-9216-9fcb6cb2dd84",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "d9d6c7d7a55b47f3a8e963761d91d665": {
+        "activity_id": "d9d6c7d7a55b47f3a8e963761d91d665",
+        "task_id": "01a1c708-7ea6-7623-b52b-3ceac34db2b3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d9d6c7d7a55b47f3a8e963761d91d665"
+      }
+    }
+  }
+}

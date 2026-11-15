@@ -1,0 +1,56 @@
+{
+  "id": "01a0831f-20b6-73f3-a559-334d25f2a423",
+  "external_ref": null,
+  "title": "The shipped inventory does not say whether it describes the host's installed binary or this source tree",
+  "outcome": "The shipped inventory does not say whether it describes the host's installed binary or this source tree",
+  "acceptance": [
+    "Rows already present that describe behavior absent from the host's installed binary are either justified by that statement or removed",
+    "The completion accounting refusal is either present in the inventory or explicitly outside it by that statement",
+    "The page's opening paragraph states which of the two it inventories, without a reading that depends on which binary is on a particular host's PATH"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-docs-review",
+    "decision",
+    "docs",
+    "stream-review-docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0cb25-b105-7af3-8fb6-f90ed6511c57"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit source-tree inventory scope independent of installed host PATH, aligned inventory references, and completion-accounting refusal row in497e81b. Independent Codex evaluation08e7b491b5cf431a927e85a1f28698bb passed all3 criteria citing2ecda34a7c654a5e92ba66d1ba09ea66. Six-item documentation batch now individually evaluated and completed; final full gate and clean paired code reviews retained.",
+    "completed_at": "2026-09-27T20:34:24.868284200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f0ab997276f84708ad2513bfd54daca9": {
+        "activity_id": "f0ab997276f84708ad2513bfd54daca9",
+        "task_id": "01a0831f-20b6-73f3-a559-334d25f2a423",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "27d585fc15fe4598a0234a229e9a5b51"
+      }
+    }
+  }
+}

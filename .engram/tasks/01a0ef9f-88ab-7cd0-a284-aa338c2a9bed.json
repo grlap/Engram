@@ -1,0 +1,27 @@
+{
+  "id": "01a0ef9f-88ab-7cd0-a284-aa338c2a9bed",
+  "external_ref": null,
+  "title": "The website's gauge arc is hidden in print instead of pinned to the animation's end value",
+  "outcome": "The website's gauge arc is hidden in print instead of pinned to the animation's end value",
+  "acceptance": [
+    "In print the decorative gauge arc of the machine section is hidden by one rule, and no print rule or test repeats a number taken from the screen animation",
+    "The text and the caption that carry the gauge's meaning print legibly; a fresh-load print test covers it; the screen is unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Moot. The machine section landed as 5a02f2f with folios V to VIII left out of print by one rule, so the gauge arc is not printed and no print rule or test pins a value from the screen animation. The printable machine section is tracked by its own item.",
+  "completion": null
+}

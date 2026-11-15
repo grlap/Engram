@@ -1,0 +1,28 @@
+{
+  "id": "01a10c83-28b1-7782-933b-7817b59fc7ba",
+  "external_ref": null,
+  "title": "Doctor checks a bound verification's intended criteria against the target's acceptance at its recorded work revision",
+  "outcome": "Doctor checks a bound verification's intended criteria against the target's acceptance at its recorded work revision",
+  "acceptance": [
+    "doctor reports a bound verification record whose bound_from.criteria names a position greater than the number of acceptance criteria the target item had at the record's binding work_revision",
+    "a test forges such a record on an otherwise valid store and doctor reports it, while every record a valid bind writes still verifies"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

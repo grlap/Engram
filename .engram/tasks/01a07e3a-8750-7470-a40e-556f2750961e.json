@@ -1,0 +1,50 @@
+{
+  "id": "01a07e3a-8750-7470-a40e-556f2750961e",
+  "external_ref": null,
+  "title": "Avoid unused project-root filesystem probes on agent CLI paths",
+  "outcome": "Avoid unused project-root filesystem probes on agent CLI paths",
+  "acceptance": [
+    "Agent CLI paths that never use filesystem identity create no root probe marker, including MCP startup; path-bearing host commands still resolve identity correctly",
+    "Process regressions cover writable and unwritable project roots without bypass flags"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Agent CLI and MCP paths skip unused host-path identity probes via exhaustive command routing; path-bearing host commands still resolve identity. Process regressions cover writable and denied-create roots without bypass flags, registered under the existing parity gate. Graph, backup, and restore skip is unused-effect removal only. Source left unchanged after parent V5 acceptance.",
+    "completed_at": "2026-09-12T19:02:20.413127800Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0cbcc5ef8262c429405b1c1668780598cc8c59ce981a2ee3aa400901aa8bc817": {
+        "activity_id": "0cbcc5ef8262c429405b1c1668780598cc8c59ce981a2ee3aa400901aa8bc817",
+        "task_id": "01a07e3a-8750-7470-a40e-556f2750961e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4673fee304dcf303ad5273e1668331affe804ec917d734429f898dc25a0dc706"
+      }
+    }
+  }
+}

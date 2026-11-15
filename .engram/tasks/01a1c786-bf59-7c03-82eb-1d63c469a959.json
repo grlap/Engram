@@ -1,0 +1,28 @@
+{
+  "id": "01a1c786-bf59-7c03-82eb-1d63c469a959",
+  "external_ref": null,
+  "title": "Point a note on a detached child's old ref at its new ref instead of refusing with a misleading work_claim_mismatch",
+  "outcome": "Point a note on a detached child's old ref at its new ref instead of refusing with a misleading work_claim_mismatch",
+  "acceptance": [
+    "After an optional child is detached into a new independent item, a note (or other late write) aimed at the child's OLD ref is refused with a reason that names the detachment and the new ref (for example 'detached into w-NEW; write to that item'), not with work_claim_mismatch's 'claim authority … is stale or does not match the holder'",
+    "A behaviour test detaches a child, then notes the old ref, and checks the refusal names the new ref and that nothing was written to either item; ordinary claim-mismatch refusals on non-detached items are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "diagnostics"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

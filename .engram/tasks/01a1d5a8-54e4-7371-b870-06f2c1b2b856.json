@@ -1,0 +1,30 @@
+{
+  "id": "01a1d5a8-54e4-7371-b870-06f2c1b2b856",
+  "external_ref": null,
+  "title": "Close unified Execution Observability end to end (Greg P0, 2026-11-13)",
+  "outcome": "Close unified Execution Observability end to end (Greg P0, 2026-11-13)",
+  "acceptance": [
+    "Remote test results count as verification evidence end to end: Engram w-180d6f507470 is landed and installed, and TermAl K3 (w-48c4a207f226) sends remote_verification_record, so that a remote FULL or focused run on DL560 or the Mac credits a bound criterion without any manual workaround, shown on a real item",
+    "The EO verification across the six agent harnesses that both coordinators agree is required is done and recorded, with one owner per harness",
+    "The legacy source-identity removal finishes: w-9fcb6cb2dd84 is landed, w-a82d76013ff4 (B5) is landed after TermAl w-693034085dc9 runs on every host, and w-05a2b3141764 is resolved with its migration plan shown to Greg",
+    "Both coordinators record the closed state, and Greg is told plainly what is delivered"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 0,
+  "labels": [
+    "execution-observability",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

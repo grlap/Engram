@@ -1,0 +1,60 @@
+{
+  "id": "01a0fa87-bba2-79c1-b3c9-f69a56c4af36",
+  "external_ref": null,
+  "title": "`engram backup push` for the store kind",
+  "outcome": "`engram backup push` for the store kind",
+  "acceptance": [
+    "`engram backup push [--kind store]` takes the push lock, captures a store copy, puts it at the configured directory target and records the receipt with its manifest in the state file; with no target configured it says so and exits 0; a second push started while the first holds the lock exits 0 without capturing; a CLI test covers each",
+    "The attempt is recorded as pending, with its complete manifest, the target identity and the temporary and final names of its data file, before `put`; the next push resolves a pending attempt first as confirmed, missing or unknown; a test puts the copy, discards the receipt, changes the source and shows the next push record that copy as confirmed without uploading it again, and a test shows a pending attempt that never arrived dropped with only its own recorded files removed; a pending attempt recorded for another target identity is not resolved against the current target, leaves the pending record and is kept as history, with nothing at either target touched, and a test covers it",
+    "The upload is skipped only when the newest receipt names the configured target's identity and the capture's format identity and a fresh capture's SHA-256 equals that receipt's: when the target then confirms that copy, nothing is uploaded, the time the store's content was last observed in the copy becomes this capture's start, and the copy's manifest at the target is unchanged; when the target reports the copy missing a replacement is put; when the target cannot say, the push fails and no time advances; when the newest receipt names an earlier identity of the target, a test that changes the disclosure authorization with `target set` on an unchanged store shows the next push upload the copy again as a new copy and record a receipt for the current identity, after which the kind no longer reads `backup_target_changed`; tests cover the four outcomes",
+    "A push that fails at the capture, the space check, the put or the read-back exits 1 with a typed code in its JSON output, leaves the previous receipt and the previous copy at the target untouched, advances no time, and records the attempt's time, outcome, code and message; tests cover an unwritable target, an unreachable target and `backup_stage_no_space`",
+    "After a receipt, copies beyond the configured retention count are removed from the target, never the newest confirmed one; the count covers only copies whose receipts this home recorded for the current target identity, so a copy from another home or from an earlier identity of the target is never removed; a failed removal is a warning and a failed push removes nothing; a test covers the count, the newest copy, a foreign copy and the failed push",
+    "Capture and transport have separate deadlines; a test with a transport deadline shorter than the put shows the push exit 1 and the attempt left pending, and that a copy the target completed after the deadline is resolved as confirmed by the next push",
+    "docs/shipped.md and docs/features/cli-and-mcp.md describe the word, its exit codes and its typed failure codes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fa87-49d8-7b23-8cef-76e601495068",
+    "01a0fa87-6a1a-7cb2-8b39-d09eaa35f204",
+    "01a0fa87-910b-7271-83d5-a05dffe930ce"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "engram backup push for the store kind is delivered across three required children: state records (8835600), the push word with recovery, skip/confirm, failure handling and deadlines (8b59e80), and retention with the docs (0f2c633). The independent evaluation passed all 7 criteria. Installed build 2e0b8d5642aa (rev 0f2c633f0194).",
+    "completed_at": "2026-10-02T14:14:00.160028200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "55b8a4628ec741fe91d58bfca91753be": {
+        "activity_id": "55b8a4628ec741fe91d58bfca91753be",
+        "task_id": "01a0fa87-bba2-79c1-b3c9-f69a56c4af36",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "26e0f1f544514979928cab6cb3c5f312"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1937d-d97c-78a1-9fb1-af5e8c62fb09",
+  "external_ref": null,
+  "title": "Synchronize the startup write-lock trace test with actual BEGIN contention",
+  "outcome": "The startup phase-trace test establishes real writer contention even when schema startup exceeds its current one-second lock delay.",
+  "acceptance": [
+    "The startup contention fixture uses an observed synchronization point instead of assuming schema startup finishes within its one-second lock lifetime.",
+    "The focused test preserves meaningful BEGIN, connection-resume timing and in-flight statement assertions and passes with deliberately slow startup."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-diagnostics",
+    "test-robustness"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1937d-782d-79b0-b4f4-7473fbd40913",
+  "disposal_reason": "Duplicate filed within the same minute for the same DL560 G3-FOCUSED-3 failure (phase_trace a_contending_writer_raises_begin_immediate_at_startup). w-7473fbd40913 was filed first by the coordinator, and it is the one already cited to 12329 and Merger3. 12329's source finding (the sleep happens before the open, so the lock hold can end before the open contends) is preserved on this item and stands as part of the evidence.",
+  "completion": null
+}

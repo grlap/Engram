@@ -1,0 +1,101 @@
+{
+  "id": "01a13294-aab8-7830-9846-8cafff44ab27",
+  "external_ref": null,
+  "title": "Diagnose the recurring backup Copy-phase deadline overrun",
+  "outcome": "Diagnose the recurring backup Copy-phase deadline overrun",
+  "acceptance": [
+    "The test-only Copy recorder retains bounded busy-callback aggregates without per-callback log allocation, distinguishes admission failure from connection close and cleanup, and preserves the original SQLite primary and extended error codes; deterministic tests verify the recorder's bounds, thread isolation and event order.",
+    "Expiry immediately after opening the source or before admission/copy produces the existing typed Copy-phase deadline refusal, starts no later copy work, closes its connection and releases its wait scope, and removes only the attempt's stage; deterministic boundary tests verify these outcomes.",
+    "backup::tests::capture_deadline_bounds_a_wait_for_a_locked_store passes with its existing 1500 ms capture deadline and unchanged less-than-five-second assertion; the changes make no claim that the original 7.636-second stall has been attributed or corrected."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "backup",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed bounded test-only Copy diagnostics and deterministic expiry-boundary refusal/resource-cleanup coverage. Original 1500 ms / <5 s locked-store test passed unchanged; original 7.636-second cause remains separate and unattributed. Full exact-input gate passed 12/12, Codex+Claude whole-input review had no Medium+, two deferred Lows filed independently, fresh independent closure evaluation passed 3/3. One clean release built, all six stores ready before and after installation, fast-forward push verified; archived 384 byte-verified evidence files and mapped known citers.",
+    "completed_at": "2026-10-18T03:37:22.312208900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2a97b06fe0244e008f716f120cc98f50": {
+        "activity_id": "2a97b06fe0244e008f716f120cc98f50",
+        "task_id": "01a13294-aab8-7830-9846-8cafff44ab27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2a97b06fe0244e008f716f120cc98f50"
+      },
+      "57443c5fa4034c7685550ae89cc718f8": {
+        "activity_id": "57443c5fa4034c7685550ae89cc718f8",
+        "task_id": "01a13294-aab8-7830-9846-8cafff44ab27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "57443c5fa4034c7685550ae89cc718f8"
+      },
+      "5f32051c7bf6407bacfc4ef8aa3ade56": {
+        "activity_id": "5f32051c7bf6407bacfc4ef8aa3ade56",
+        "task_id": "01a13294-aab8-7830-9846-8cafff44ab27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5f32051c7bf6407bacfc4ef8aa3ade56"
+      },
+      "c3bc5c4d0d2e438da762a98911a0e48a": {
+        "activity_id": "c3bc5c4d0d2e438da762a98911a0e48a",
+        "task_id": "01a13294-aab8-7830-9846-8cafff44ab27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "9e8c8723cd084fecb55e34eb9ffe2182"
+      },
+      "dfedcce33cd64dc291e79c1b077f764d": {
+        "activity_id": "dfedcce33cd64dc291e79c1b077f764d",
+        "task_id": "01a13294-aab8-7830-9846-8cafff44ab27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "977b760ad2244713857d9e6fa3340d58"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a16619-00e9-79e2-bf1a-85fc8396e59c",
+  "external_ref": null,
+  "title": "Align launcher documentation with Merger-owned final validation",
+  "outcome": "Align launcher documentation with Merger-owned final validation",
+  "acceptance": [
+    "docs/development.md states that detached full validation is Merger's own run, not a worker gate on Merger's behalf.",
+    "The launcher and task-tracking prose aligns final fingerprints and changeset completion with Merger ownership."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "review-followup",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

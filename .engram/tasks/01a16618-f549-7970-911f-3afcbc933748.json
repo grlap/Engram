@@ -1,0 +1,28 @@
+{
+  "id": "01a16618-f549-7970-911f-3afcbc933748",
+  "external_ref": null,
+  "title": "Clarify Merger final-validation exceptions and Markdown path",
+  "outcome": "Clarify Merger final-validation exceptions and Markdown path",
+  "acceptance": [
+    "The current workflow states that a required Windows platform gate on an exact remote test-ref tree is part of that one final validation, not a forbidden duplicate.",
+    "Both project skills name the Markdown-only link and AGENTS/CLAUDE identity checks as the applicable final validation instead of requiring a full gate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "review-followup",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

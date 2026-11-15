@@ -1,0 +1,79 @@
+{
+  "id": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+  "external_ref": null,
+  "title": "Delete the turn-gating code from Engram entirely: evaluate/begin/grants, control-session turn admission and their settlement/recovery paths, with their tables retired by migration import",
+  "outcome": "Delete the turn-gating code from Engram entirely: evaluate/begin/grants, control-session turn admission and their settlement/recovery paths, with their tables retired by migration import",
+  "acceptance": [
+    "No turn-gating code remains in Engram: the Evaluate/Begin turn grants, control-session turn admission, the settlement/rebind/recovery paths that only served them, their CLI/MCP/host operations and their tests are deleted, not disabled",
+    "The work session route (`control --work-session`), claims, host observations, registered verification and acceptance evaluation keep working, with their existing tests passing",
+    "Tables and columns that only served turn gating are dropped from the schema. `migration import` retires them by name and reports counts, keeping every other record id and link unchanged. Every live store is converted by export and import at the agreed cutover",
+    "Docs, CLI/MCP help and skills describe turn gating as removed (one history note), matching the code",
+    "The full gate passes on the exact commit, with a clean review pair, and it lands only after TermAl stops calling the removed operations (TermAl w-3fe8f4472e5d installed), at the coordinated cutover"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed on Greg's word (Asistant #239): „chyba mozemy zamknac taki gated control, skoro nie mamy tego juz”. Turn gating is gone from Engram. Read today at master 2667355 and on the running hosts: removed_turn_operations_have_no_host_dispatch and removed_turn_gating_commands_and_bootstrap_flags_are_not_exposed exist; the only remaining turn_evaluate and turn_begin literals in src are that test, a doctor reader of stored history (storage/doctor.rs:590) and a test of a refused old call. readiness reports ready on the installed build, which excludes the four retired control tables by schema reference (12325's source reading, note 02b915e6); ready on Engram's store at 16:02Z, on all six at the 07:41Z landing. TermAl's non-test source uses those names only to read historical records (src/engram_session_obligations.rs). Live: since the 15:30Z restart on TermAl 24b42615, the Merger's real turns named a root, ran a check and got verification 37b75703 recorded with no grant; TermAl's holder did the same per Fable2. Limits, stated rather than papered over: the export and import receipts for the original store conversion weren't found, so criterion 3's conversion rests on present absence, not on a receipt; the full gate and review pair for the original deletion are in the item's history, not re-read; no per-harness census by me (TermAl's w-3fe8f4472e5d criterion 6 owns that). Self-asserted under the baseline policy, no evaluation.",
+    "completed_at": "2026-11-04T16:11:37.522922700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "04d0d672615d404da7339c4800fe32e5": {
+        "activity_id": "04d0d672615d404da7339c4800fe32e5",
+        "task_id": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "04d0d672615d404da7339c4800fe32e5"
+      },
+      "6421516f3da04c4cb0ea58739f0d54ef": {
+        "activity_id": "6421516f3da04c4cb0ea58739f0d54ef",
+        "task_id": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6421516f3da04c4cb0ea58739f0d54ef"
+      },
+      "dddfccbb4c174a4da6c46377535b281e": {
+        "activity_id": "dddfccbb4c174a4da6c46377535b281e",
+        "task_id": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0962a44adaa743edb8abae185fadb05c"
+      }
+    }
+  }
+}

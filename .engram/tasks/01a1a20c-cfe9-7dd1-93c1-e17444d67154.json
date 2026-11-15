@@ -1,0 +1,65 @@
+{
+  "id": "01a1a20c-cfe9-7dd1-93c1-e17444d67154",
+  "external_ref": null,
+  "title": "Split src/storage/work/integrity.rs by check family (evidence, obligations, feeds, projections) without changing integrity findings",
+  "outcome": "Split src/storage/work/integrity.rs by check family (evidence, obligations, feeds, projections) without changing integrity findings",
+  "acceptance": [
+    "src/storage/work/integrity.rs is split into child modules under src/storage/work/integrity/ (evidence, obligations, feeds, projections), with graph, JSON and relation checks kept in the parent, private decoding helpers moved beside their consumers, and sibling-facing helper paths preserved through narrow re-exports",
+    "Integrity findings, corruption refusals and the existing test inventory and results are identical before and after",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "file-split",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed, pushed to origin/master, and installed as 8b91bf6688942069bc7b700f3620d05f24af3c5b. Shared DL560 standard-launcher FULL passed with matched before/after fingerprints. Release binary fingerprint 2c060909696de9b2b50bd617c54e6f33ff8621118a9c0b4bfec8c9de95bfa1fc; all six live stores report ready. Previous binary backed up; no migration or TermAl restart.",
+    "completed_at": "2026-11-03T17:31:29.494528400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "55f7247c9a044d2db95a10b926bf96ad": {
+        "activity_id": "55f7247c9a044d2db95a10b926bf96ad",
+        "task_id": "01a1a20c-cfe9-7dd1-93c1-e17444d67154",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "9c6316a71aaf45c49c81533ee0f9f6a7"
+      },
+      "9c6316a71aaf45c49c81533ee0f9f6a7": {
+        "activity_id": "9c6316a71aaf45c49c81533ee0f9f6a7",
+        "task_id": "01a1a20c-cfe9-7dd1-93c1-e17444d67154",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d58af2fc3f9047b2b9747900e1e5555f"
+      }
+    }
+  }
+}

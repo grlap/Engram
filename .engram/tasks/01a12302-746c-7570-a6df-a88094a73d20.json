@@ -1,0 +1,67 @@
+{
+  "id": "01a12302-746c-7570-a6df-a88094a73d20",
+  "external_ref": null,
+  "title": "Task sync shared notes: opt-in note round-trip with stable note identity and origin-machine provenance",
+  "outcome": "Task sync shared notes: opt-in note round-trip with stable note identity and origin-machine provenance",
+  "acceptance": [
+    "Opt-in generic and status notes round-trip between two isolated stores with original note id, author, time and an operator-supplied origin-machine value unchanged, and re-export is byte-identical",
+    "Engram-stored gate, host verification, environment, evaluation, execution-observation and path-binding records, and notes containing locators or machine/user paths, are absent from the export, with visible omission counts and reasons proven by a test seeding each stored family. Export uses a typed allow-list admitting only shared note bodies, so host-only records such as retained prompts have no route into the export; no host-private counts are claimed",
+    "A legacy note without a note id is reported as excluded and never given a fresh id; an altered id/body pair on import is refused and leaves the target unchanged",
+    "No durable-store migration and no TermAl remote relay are introduced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a122fa-ddd4-7643-b37a-28c5e4faadc7"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered opt-in generic/status shared-note directory round-trip with stable original ids, author/time/asserted machine provenance, inert imported history, counted typed exclusions, legacy no-id omissions, atomic known-id drift refusals, and unchanged durable schema/projections. Exact-input full gate and complete Codex+Claude round8 passed; independent acceptance4/4; no acceptance criteria changed for completion. Two Low follow-ups independently filed. Installed clean landed build and all4 stores ready.",
+    "completed_at": "2026-10-11T08:31:25.435858500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b003f5c13e0e41e8b6e9b6c3294c6a86": {
+        "activity_id": "b003f5c13e0e41e8b6e9b6c3294c6a86",
+        "task_id": "01a12302-746c-7570-a6df-a88094a73d20",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b003f5c13e0e41e8b6e9b6c3294c6a86"
+      },
+      "dc9c03ce46024f6a8115317965f33fcb": {
+        "activity_id": "dc9c03ce46024f6a8115317965f33fcb",
+        "task_id": "01a12302-746c-7570-a6df-a88094a73d20",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5b015317a35e454e9847097f0b699885"
+      }
+    }
+  }
+}

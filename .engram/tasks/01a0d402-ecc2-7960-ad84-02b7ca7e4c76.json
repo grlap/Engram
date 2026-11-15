@@ -1,0 +1,54 @@
+{
+  "id": "01a0d402-ecc2-7960-ad84-02b7ca7e4c76",
+  "external_ref": null,
+  "title": "Split src/storage/work/execution.rs before it crosses 2,500 lines",
+  "outcome": "Split src/storage/work/execution.rs before it crosses 2,500 lines",
+  "acceptance": [
+    "Only whole responsibilities move: no behavior, signature, schema/SQL or public-path change, every test and assertion kept, no comments added or dropped beyond a module header",
+    "The execution family is guarded by tests/source_file_size.rs FAMILIES and that test passes",
+    "The full quality gates pass and a Codex and a Claude review of the change are clean",
+    "src/storage/work/execution.rs and every module under src/storage/work/execution/ are each at most 2,499 physical lines, with execution.rs reduced enough to leave headroom (about 2,200 or fewer)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "file-size",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split src/storage/work/execution.rs: the gate-evidence family moved into src/storage/work/execution/gate_evidence.rs (376 lines), and execution.rs went from 2,425 to 2,071 lines. Pure move, and the execution family is guarded in tests/source_file_size.rs. Full gates 9/9 (test-c32e5f55); the Codex and Claude reviews were clean. Committed as 5f51f85, pushed, and installed as build 4fc0a798d875; readiness was ready on both stores.",
+    "completed_at": "2026-09-24T16:37:57.604497800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2b456fc884f1496390d9172cd90f3274": {
+        "activity_id": "2b456fc884f1496390d9172cd90f3274",
+        "task_id": "01a0d402-ecc2-7960-ad84-02b7ca7e4c76",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c64d406a56904175bbd6b38c2f598f7d"
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "01a0d0c6-6d21-7b41-9612-eab27603936e",
+  "external_ref": null,
+  "title": "Investigate 10-second Engram authorization timeout pausing TermAl fan-in delivery",
+  "outcome": "Identify and fix the cause of the observed authorization timeout, with safe recovery of retained prompts and evidence distinguishing a slow response from an unknown committed outcome.",
+  "acceptance": [
+    "Add a regression for the identified cause proving retained fan-in and mailbox prompts are neither lost nor delivered twice, and that model dispatch still requires valid authorization.",
+    "Correlate the 2026-09-23 16:45:24 local incident with TermAl and Engram diagnostics, naming the affected session/build and the phase that exhausted the deadline; record unknowns rather than infer a cause from the screenshot.",
+    "Verify bounded, cancellable recovery after the cause is resolved; do not treat repeated manual retries or an increased timeout alone as a root-cause fix."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "coordination",
+    "timeout"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Carried in TermAl, not done here: the timeout lives in TermAl's host adapter, and TermAl w-e0f80b315a6d (P3, deferred to 2026-10-03) now holds this incident's provenance and asks for the same regression, correlation and recovery proof (Termal::Fable2 mailbox #53, relayed by Engram::Coder, note 45345db25c4f45b8a8ccc42e1ad83c1e on the parent). None of these three criteria was met; this cancellation is not completion. Decided by Engram::Fable, 2026-09-30.",
+  "completion": null
+}

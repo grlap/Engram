@@ -1,0 +1,51 @@
+{
+  "id": "01a0e4b0-cd0b-7d92-b4cc-fa8c00d51512",
+  "external_ref": null,
+  "title": "The default show evidence page keeps a random-id subset, not the newest records",
+  "outcome": "When an item has more evidence than the default page holds, the page keeps the newest execution records by dense run-feed position, with verification-to-environment closure and spare-slot observations kept.",
+  "acceptance": [
+    "A test with more candidates than the page holds asserts the exact retained membership, its order, the latest record and the omission counts, including a verification whose environment lies beyond the boundary; rich next shows the same selection.",
+    "The bounded selection behind the default show and rich next evidence page takes the newest execution records by dense run-feed position instead of descending random evidence id. A verification still brings its linked environment, even one beyond the boundary. Observations still fill only spare slots. The latest record stays independently included."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The bounded evidence page behind the default show and rich next now keeps the run's newest records by dense run-execution feed position instead of a random-id subset. Each selected verification keeps its linked environment, however old. A pair that does not fit is left out whole, environment included; a shared environment takes one slot. Observations fill spare slots and the latest record stays independent. A projected row with no run-feed entry is refused. The position is read-time only, so nothing stored changes. Landed as 4a4e3c4 on master after round 3: gate test-2b18313e PASS on freeze 8a720e82…, the pair clean of Medium+, independent evaluation 5b9b30be passing both criteria, and readiness ready on all 4 stores. Installed build 07720190…d8f1, exe sha256 f1452e0e…a13e.",
+    "completed_at": "2026-10-03T20:11:48.817461100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fb0869cec2da4b73b1b04c2b95bb808c": {
+        "activity_id": "fb0869cec2da4b73b1b04c2b95bb808c",
+        "task_id": "01a0e4b0-cd0b-7d92-b4cc-fa8c00d51512",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2fd1eeaa25e046658a3fe81c68038868"
+      }
+    }
+  }
+}

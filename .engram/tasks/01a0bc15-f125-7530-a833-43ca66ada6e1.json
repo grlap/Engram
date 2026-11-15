@@ -1,0 +1,55 @@
+{
+  "id": "01a0bc15-f125-7530-a833-43ca66ada6e1",
+  "external_ref": null,
+  "title": "Readiness and doctor human diagnostics escape unsafe Unicode while JSON stays exact",
+  "outcome": "Readiness and doctor human diagnostics escape unsafe Unicode while JSON stays exact",
+  "acceptance": [
+    "readiness_and_doctor_text_frame_unicode_without_changing_json passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "dogfood",
+    "gate",
+    "performance",
+    "review",
+    "terminal-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Human readiness/doctor diagnostic lines now escape unsafe Unicode through existing terminal policy, while structured JSON preserves source values. Real CLI regression reproduced the defect and passes after correction; independent evaluator recorded criterion1 pass. Whole-producer review and live host acceptance remain parent obligations.",
+    "completed_at": "2026-09-19T23:57:48.576212500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e0f5b31497b84da39c22cca06935e43a": {
+        "activity_id": "e0f5b31497b84da39c22cca06935e43a",
+        "task_id": "01a0bc15-f125-7530-a833-43ca66ada6e1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bb93e42e439d4b3dbcfc39a71bbd860a"
+      }
+    }
+  }
+}

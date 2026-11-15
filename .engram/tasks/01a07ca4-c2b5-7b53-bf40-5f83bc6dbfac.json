@@ -1,0 +1,65 @@
+{
+  "id": "01a07ca4-c2b5-7b53-bf40-5f83bc6dbfac",
+  "external_ref": null,
+  "title": "A word can link evidence to one acceptance criterion",
+  "outcome": "The unlinked-criterion disclosure is actionable from the thirteen words: an agent that does have evidence for a particular criterion can bind it while completing, so the label distinguishes work with per-criterion evidence from work without it instead of reading the same on every word-driven completion",
+  "acceptance": [
+    "A completion that binds evidence to some criteria discloses exactly the remaining ones as having no evidence linked to that criterion",
+    "The binding names existing recorded evidence by its own identity; no criterion text is interpreted and no new hash is manufactured to satisfy the input",
+    "done can bind evidence to a named criterion without a new obligation: completing without it stays admissible and unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a07a43-2c1c-7ba0-99b2-94041c67bee6"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered optional criterion evidence links, basis admission, exact replay and recovery, bounded inputs and safe disclosure. All eleven required corrections completed; all nine merged gates passed. Real installed-shell completions differed as predicted: without a link1of1 unlinked, with an existing note linked0of1; on the three-criterion resume item linking only criterion2 produced exactly2of3 unlinked at positions1and3. Existing current-run evidence reused; frozen show readback agrees. Author-linked evidence is not verification and no criterion changed. This completion supplies no individual links. Completed through new shell CLI build6d8043d8e8b1, installed from merged working tree, NOT committed to master; Git landing awaits explicit authority. Fable independently reports healthy doctor and accepted real-use verification. Pre-swap MCP processes remain on73401c0ab3cc; no host restart performed.",
+    "completed_at": "2026-09-08T01:29:38.897572200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "44f16cbf17ee3b9812b9524c1ca1671bb16667c6ad801920cda59b92484d906f": {
+        "activity_id": "44f16cbf17ee3b9812b9524c1ca1671bb16667c6ad801920cda59b92484d906f",
+        "task_id": "01a07ca4-c2b5-7b53-bf40-5f83bc6dbfac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fde0fd3e02ef28e43bbf8a8517b3ebcca7e24211dbc680c0a8da5ae8a39d1ae7"
+      },
+      "a73bc494acb756a652c2772146bf38f3d56e0f9aa16cecb7f810343df2e486db": {
+        "activity_id": "a73bc494acb756a652c2772146bf38f3d56e0f9aa16cecb7f810343df2e486db",
+        "task_id": "01a07ca4-c2b5-7b53-bf40-5f83bc6dbfac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a73bc494acb756a652c2772146bf38f3d56e0f9aa16cecb7f810343df2e486db"
+      }
+    }
+  }
+}

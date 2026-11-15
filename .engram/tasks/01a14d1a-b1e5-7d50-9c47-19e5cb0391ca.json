@@ -1,0 +1,52 @@
+{
+  "id": "01a14d1a-b1e5-7d50-9c47-19e5cb0391ca",
+  "external_ref": null,
+  "title": "Classify the legacy target/evidence archives and relocate still-needed evidence",
+  "outcome": "Classify the legacy target/evidence archives and relocate still-needed evidence",
+  "acceptance": [
+    "Every archive an open item cites or a recorded retention need names is moved to .evidence/ with per-file size and SHA-256 verification and relocation notes on its citing open items; every other target/evidence archive is classified, with its removal tracked by w-57f47bce6d63.",
+    "Each still-open citing work item has an attributed relocation note; a bounded inventory covers every original target/evidence archive path and records its classification basis, retained .evidence path and per-file size/SHA-256 verification for moved content, or the separate sweep reference and deferred-removal status for other content."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "evidence",
+    "process",
+    "retention"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the approved legacy evidence relocation and classification. Moved all 26 open-cited archives into .evidence/ and recorded relocation notes on all 30 still-open citing items. Preserved and classified the other 144 archive roots for w-57f47bce6d63. Independently verified 5,372 retained files (705,940,794 bytes) against per-file SHA-256 manifests; all matched and moved source paths are absent. Complete inventory: target/evidence-migration-w19e5/inventory.json. Independent Codex acceptance evaluation 8be2739bcad14d96887420556a1d382c passed both criteria on revision 2.",
+    "completed_at": "2026-10-18T04:23:55.030737300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "096d27886a3341ecacfe433a289268a2": {
+        "activity_id": "096d27886a3341ecacfe433a289268a2",
+        "task_id": "01a14d1a-b1e5-7d50-9c47-19e5cb0391ca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "02525d0adca04bad99b50c97127168ce"
+      }
+    }
+  }
+}

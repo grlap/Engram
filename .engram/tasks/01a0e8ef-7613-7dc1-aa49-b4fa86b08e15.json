@@ -1,0 +1,54 @@
+{
+  "id": "01a0e8ef-7613-7dc1-aa49-b4fa86b08e15",
+  "external_ref": null,
+  "title": "Record a landing (commit hash, remote ref, push time, installed build hash) as a typed field of the completion seal instead of prose only, additive and absent on historical seals",
+  "outcome": "Record a landing (commit hash, remote ref, push time, installed build hash) as a typed field of the completion seal instead of prose only, additive and absent on historical seals",
+  "acceptance": [
+    "A completion can carry one typed landing record — commit hash, remote and branch ref, push time, and the installed build hash when a binary was installed — supplied through the agent words at or before `done` (design review decides the exact word and shape), stored in the seal, and shown by `show` and the completed item's JSON as one field; a seal without it reads and shows \"no landing recorded\"",
+    "Historical seals are read as stored: no backfill, no migration, no import conversion; readiness stays ready on every live store and the change is additive to the seal's shape",
+    "The doctor can check, when a local repository is available and the check is requested, that a recorded landing commit exists on the named remote ref; it never fetches by itself and reports absence by name",
+    "docs/features/local-work-system.md and docs/shipped.md describe the landing record and the historical caveat; the prose practice (landing notes with commit, gate id and freeze fingerprint) stays valid alongside it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "completion",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Typed landing record on the completion seal (done --landed/--remote/--branch/--pushed-at/--installed-build, MCP landing, show field), doctor --check-landings, and docs; landed as 75b1884 and installed as build cc145be6c000",
+    "completed_at": "2026-09-29T10:06:40.761636700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "019a3f3d3469479cb1dc9bc4860553bc": {
+        "activity_id": "019a3f3d3469479cb1dc9bc4860553bc",
+        "task_id": "01a0e8ef-7613-7dc1-aa49-b4fa86b08e15",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7a90924bb6a648909e2ed0622e7d67c0"
+      }
+    }
+  }
+}

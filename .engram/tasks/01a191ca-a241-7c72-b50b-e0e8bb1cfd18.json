@@ -1,0 +1,39 @@
+{
+  "id": "01a191ca-a241-7c72-b50b-e0e8bb1cfd18",
+  "external_ref": null,
+  "title": "Admit host idempotency keys by one rule across control operations",
+  "outcome": "Admit host idempotency keys by one rule across control operations",
+  "acceptance": [
+    "Every control operation that takes an idempotency_key admits it by one documented rule (trimming, blank handling and byte bound), and a test per operation shows the same key is accepted or refused alike",
+    "The host protocol's identifier table states that one rule"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a19214-8aa7-78e2-a442-e9b14a9fc47d",
+      "kind": "manual",
+      "detail": "Blocked on TermAl w-12929170dd78 (Fable2 #409). TermAl needs a producer-side check of idempotency keys, where one function owns the charset and maximum byte length, plus a frozen replay contract under which a retained key is resent byte-identical. The audit (Architect2 #46; Fable2's source read at TermAl e746c156) found no producer check: TermAl keys are format! strings of ids plus sha256 suffixes. Engram keeps its current acceptance (non-blank) until then (Fable #3702).",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-31T13:09:42.179688800Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

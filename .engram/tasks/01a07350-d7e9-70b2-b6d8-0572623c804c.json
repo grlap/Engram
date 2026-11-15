@@ -1,0 +1,50 @@
+{
+  "id": "01a07350-d7e9-70b2-b6d8-0572623c804c",
+  "external_ref": null,
+  "title": "Fit the full-note envelope with whole contract text",
+  "outcome": "Fit the full-note envelope with whole contract text",
+  "acceptance": [
+    "show_notes_fits_the_final_envelope_at_the_contract_boundary passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a070b3-9c16-7663-be40-cb3fbfe0dff4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fit full contract text against the exact note envelope",
+    "completed_at": "2026-09-05T21:08:49.108561900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2442a11b250685bfa376ca0c5456be90d51058f0780ba4eb851780654a7347dd": {
+        "activity_id": "2442a11b250685bfa376ca0c5456be90d51058f0780ba4eb851780654a7347dd",
+        "task_id": "01a07350-d7e9-70b2-b6d8-0572623c804c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5cbee4f379c31310e9057b7aaa908adc01804d2f3128adf848db7717ea8f5b97"
+      }
+    }
+  }
+}

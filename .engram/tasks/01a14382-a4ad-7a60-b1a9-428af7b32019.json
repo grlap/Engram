@@ -1,0 +1,29 @@
+{
+  "id": "01a14382-a4ad-7a60-b1a9-428af7b32019",
+  "external_ref": null,
+  "title": "Setup attribution prevents Unicode format characters from spoofing rendered receipts",
+  "outcome": "Setup attribution prevents Unicode format characters from spoofing rendered receipts",
+  "acceptance": [
+    "Setup attribution has an explicit validation or rendering policy for Unicode format, separator and private-use characters that prevents misleading rendered receipts while preserving recorded attribution provenance.",
+    "Regression coverage includes bidi override U+202E, zero-width U+200B and line separator U+2028 alongside valid attribution; the policy covers actor context and the sibling setup attribution fields consistently."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "security",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

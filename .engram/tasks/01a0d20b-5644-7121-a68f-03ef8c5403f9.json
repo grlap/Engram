@@ -1,0 +1,51 @@
+{
+  "id": "01a0d20b-5644-7121-a68f-03ef8c5403f9",
+  "external_ref": null,
+  "title": "MCP add silently ignores unknown fields and its reminder names the CLI flag",
+  "outcome": "MCP add silently ignores unknown fields and its reminder names the CLI flag",
+  "acceptance": [
+    "An MCP word call with an unknown argument (for example `accept` on add) is refused naming the unknown field and the accepted ones, instead of being dropped silently",
+    "Tests cover both; the full quality gates pass",
+    "The defaulted-acceptance reminder on MCP names the MCP field (`acceptance`), not the CLI flag `--accept`"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "mcp"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "All 15 MCP argument structs deny unknown fields. A call with an unlisted argument, such as accept on add, is refused before any read or write, with rmcp relaying serde's \"unknown field `accept`, expected one of … `acceptance` …\", and each input schema carries additionalProperties: false. The defaulted-acceptance reminder names the MCP field (\"set acceptance\") on MCP, through a private ArgumentNames setting that McpServer selects, and keeps \"set --accept\" on the CLI. Covered by an mcp.rs unit test and a dogfood test across all 15 tools. Landed as a1e959f; installed as build a4c0b90d94ef; TermAl notified. Other MCP guidance strings that still name CLI flags are filed as w-5a66f5ebc5cd.",
+    "completed_at": "2026-09-25T04:42:18.201413800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2214e3a4b2f249b49b158116a0e1c9e5": {
+        "activity_id": "2214e3a4b2f249b49b158116a0e1c9e5",
+        "task_id": "01a0d20b-5644-7121-a68f-03ef8c5403f9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6fa8b249b69741bd995e3af1ade3b76d"
+      }
+    }
+  }
+}

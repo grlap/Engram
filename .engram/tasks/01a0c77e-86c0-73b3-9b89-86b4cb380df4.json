@@ -1,0 +1,52 @@
+{
+  "id": "01a0c77e-86c0-73b3-9b89-86b4cb380df4",
+  "external_ref": null,
+  "title": "Remove remaining freeze-for-size fingerprints outside control storage",
+  "outcome": "Remove remaining freeze-for-size fingerprints outside control storage",
+  "acceptance": [
+    "Compared fingerprints and record identities remain unchanged.",
+    "Project-memory attribution and work-source snapshot byte limits use canonical bytes without computing discarded SHA-256 fingerprints."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "identity",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed a584b90: attribution/snapshot size guards use canonical_bytes without discarded fingerprints; unchanged identities, compared fingerprints, canonical representation and inclusive limits. Independent evaluation309f9f3a passed2/2; exact-boundary regressions and round13 full/pair retained.",
+    "completed_at": "2026-09-27T23:11:58.363075900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c4e14908b90b4de6a00b51f4afaf92dc": {
+        "activity_id": "c4e14908b90b4de6a00b51f4afaf92dc",
+        "task_id": "01a0c77e-86c0-73b3-9b89-86b4cb380df4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9d71d38e6fa84d7f80397fa6356c05cb"
+      }
+    }
+  }
+}

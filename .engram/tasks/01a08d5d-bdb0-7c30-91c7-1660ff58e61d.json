@@ -1,0 +1,49 @@
+{
+  "id": "01a08d5d-bdb0-7c30-91c7-1660ff58e61d",
+  "external_ref": null,
+  "title": "No test pins the verbose delivery contract for ready candidates",
+  "outcome": "No test pins the verbose delivery contract for ready candidates",
+  "acceptance": [
+    "a test asserts that a verbose delivery returns the requested richer ready limit and omits the compact navigation fields, and fails if verbose begins capping or begins emitting them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Verbose next and peek keep the requested ready limit and omit compact navigation; clamping verbose to the compact cap or injecting ready_limit fails the test. Handler production path unchanged.",
+    "completed_at": "2026-09-12T02:26:02.800910500Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d0170ee640152245795cbe67a1b3c8abe88871864357611f1988ef1b8fcbd1e0": {
+        "activity_id": "d0170ee640152245795cbe67a1b3c8abe88871864357611f1988ef1b8fcbd1e0",
+        "task_id": "01a08d5d-bdb0-7c30-91c7-1660ff58e61d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a4826da6f5c0335f4173db53215d2a8fab18cc5753a92585c73f0e329f7324f0"
+      }
+    }
+  }
+}

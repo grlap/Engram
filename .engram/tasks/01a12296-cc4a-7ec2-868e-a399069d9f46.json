@@ -1,0 +1,28 @@
+{
+  "id": "01a12296-cc4a-7ec2-868e-a399069d9f46",
+  "external_ref": null,
+  "title": "Portable design: a bootstrap that loses its remote ref to another lineage stays frozen in configuring, and enrolling an existing local store has no specified route",
+  "outcome": "Portable design: a bootstrap that loses its remote ref to another lineage stays frozen in configuring, and enrolling an existing local store has no specified route",
+  "acceptance": [
+    "The portable-handoff design names the recovery for a dispatched bootstrap that lost its remote ref to another lineage (no silent local reset on an unknown outcome) and specifies how an existing local store enrolls in the exchange, with both choices recorded by the architects"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "design",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

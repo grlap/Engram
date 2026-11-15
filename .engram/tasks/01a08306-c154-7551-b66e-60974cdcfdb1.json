@@ -1,0 +1,28 @@
+{
+  "id": "01a08306-c154-7551-b66e-60974cdcfdb1",
+  "external_ref": null,
+  "title": "No move exists from a required child to an optional one",
+  "outcome": "No move exists from a required child to an optional one",
+  "acceptance": [
+    "A decision to keep a required child but stop it gating the parent is recordable without cancelling it, superseding it, or creating a duplicate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "area-work-lifecycle",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

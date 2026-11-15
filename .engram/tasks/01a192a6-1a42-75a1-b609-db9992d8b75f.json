@@ -1,0 +1,29 @@
+{
+  "id": "01a192a6-1a42-75a1-b609-db9992d8b75f",
+  "external_ref": null,
+  "title": "Scope unevaluated completion documentation to bound criteria",
+  "outcome": "Make the registered Git-input documentation accurately state when unevaluated completion checks a supplied source declaration, without promising checks for unbound criteria.",
+  "acceptance": [
+    "The registered Git-input section explicitly scopes optional recorded-input fallback and exact supplied-declaration matching at unevaluated completion to bound criteria.",
+    "Documentation no longer implies that an unevaluated completion with no acceptance binding rejects every mismatched Git declaration; runtime behavior and evaluated-completion safeguards remain unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

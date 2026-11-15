@@ -1,0 +1,28 @@
+{
+  "id": "01a082ba-6b51-7f33-962a-28b489d35a14",
+  "external_ref": null,
+  "title": "State the expected wall clock of the root-delta scale gate phase",
+  "outcome": "State the expected wall clock of the root-delta scale gate phase",
+  "acceptance": [
+    "A contributor reading the scale phase can tell a long run from a hang without killing the gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a082cb-3332-7383-b38f-e2035f8ef349",
+  "disposal_reason": "Continue as independent work: the scale phase runtime is undocumented regardless of which change introduced it",
+  "completion": null
+}

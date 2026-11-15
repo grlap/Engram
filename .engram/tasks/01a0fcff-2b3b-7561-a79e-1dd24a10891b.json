@@ -1,0 +1,53 @@
+{
+  "id": "01a0fcff-2b3b-7561-a79e-1dd24a10891b",
+  "external_ref": null,
+  "title": "Backup freshness rule: one pure function from records, formats, cut and clock to the mode and reasons",
+  "outcome": "Backup freshness rule: one pure function from records, formats, cut and clock to the mode and reasons",
+  "acceptance": [
+    "A library function collects a project's backup records and the store's current cut from local files and the store only, without contacting any target, and returns them in the form the rule takes; it reports a configuration or state file this build cannot use as `backup_record_unreadable` rather than failing; a test covers an absent, a usable and an unreadable record",
+    "One pure function takes the configuration, the recorded state, the running build's format identities and the clock and returns, per kind, either qualifying or exactly one reason, the first that applies in the order of the brief's table; a table test produces `local_backed_up` and each of `backup_record_unreadable`, `backup_not_configured`, `backup_never_confirmed`, `backup_target_changed`, `backup_other_format`, `backup_clock_invalid`, `backup_copy_missing`, `backup_confirmation_expired` and `backup_stale`, including a future timestamp, an old store copy on an unchanged store confirmed a minute ago (stale), and a copy whose confirmation and capture are both older than the window (confirmation expired)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-e4c5-7d10-bd31-8f5379e3c9c7",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fcff-1b06-7a20-be9f-cb8f64e04546"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The backup freshness rule is in engram::backup::freshness.\n- evaluate and kind_reason are pure, with `now` injected. Reasons follow the brief's table order with their codes, the window is inclusive, and content age counts from the capture start. Every recorded time is checked against the clock.\n- collect and kind_records read local records without a lock and report unusable ones as unreadable.\n- read_backup_cut reads the cut through the admitted read-only open, in one transaction.\nLanded as a38f658. The installed build is 4ea8e36352ae, rev a38f6583d95f.",
+    "completed_at": "2026-10-02T15:03:24.488662600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0db68e7d0294431f9026829d01976952": {
+        "activity_id": "0db68e7d0294431f9026829d01976952",
+        "task_id": "01a0fcff-2b3b-7561-a79e-1dd24a10891b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "797f17da070e46818c1cf4d941086d39"
+      }
+    }
+  }
+}

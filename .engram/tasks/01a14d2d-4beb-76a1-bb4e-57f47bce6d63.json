@@ -1,0 +1,54 @@
+{
+  "id": "01a14d2d-4beb-76a1-bb4e-57f47bce6d63",
+  "external_ref": null,
+  "title": "Sweep legacy target/evidence after the retention rule lands",
+  "outcome": "Remove the remaining legacy evidence archives only after the retained evidence rule lands and each candidate is rechecked",
+  "acceptance": [
+    "After w-99e9fb892fd0 lands, every remaining target/evidence archive is searched by archive name or run id against all work lifecycles and any archive with an open-item citation or recorded concrete retention need is kept.",
+    "Only confirmed closed-only or uncited archives are removed, with each resolved in-repository path, inventory decision, and removal outcome recorded; no still-needed evidence is removed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "evidence",
+    "retention"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a111bd-db80-7c23-9681-99e9fb892fd0"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Swept all 148 legacy archive units after the retention rule landed. Removed exactly 71 confirmed closed-only units (7,035 files; 288,351,068 bytes) after coordinator review and an immediate fresh citation check. Preserved all 77 open-cited or ambiguous units (6,479 files; 959,614,203 bytes), four newly discovered units included; 26 separately relocated archives remained untouched. Independent evaluation 2f54689832854747aa1e6d26492bf3f0 passed both criteria at cut 66. Exact path decisions and outcomes are durable notes. Operational cleanup only; no tracked source change or software test pass claimed.",
+    "completed_at": "2026-10-18T16:17:02.573831500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8fb8d5e59b294a179af29b6239c8f5c1": {
+        "activity_id": "8fb8d5e59b294a179af29b6239c8f5c1",
+        "task_id": "01a14d2d-4beb-76a1-bb4e-57f47bce6d63",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cf9d1938e5aa4c7a84d5ac83aecc624b"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a185e9-c8c9-77f0-82ee-e2827bbe638c",
+  "external_ref": null,
+  "title": "Document the gate regression's deliberate ordinary-timeout control",
+  "outcome": "Document the gate regression's deliberate ordinary-timeout control",
+  "acceptance": [
+    "The writer-admission test comments accurately identify both deliberate long controls, or an existing test seam bounds the gate wait without changing the real-writer contention and committed-receipt assertions."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "review-low",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

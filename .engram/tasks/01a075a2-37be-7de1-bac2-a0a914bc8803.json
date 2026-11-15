@@ -1,0 +1,24 @@
+{
+  "id": "01a075a2-37be-7de1-bac2-a0a914bc8803",
+  "external_ref": null,
+  "title": "Smoke hostile \u001b[31mred\u001b[0m title",
+  "outcome": "Smoke hostile \u001b[31mred\u001b[0m title",
+  "acceptance": [
+    "Smoke hostile \u001b[31mred\u001b[0m title is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke item, cancelled after verification",
+  "completion": null
+}

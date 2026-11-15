@@ -1,0 +1,53 @@
+{
+  "id": "01a15cc3-8706-7a62-812e-7f61d4dca731",
+  "external_ref": null,
+  "title": "Windows B runner proof: the complete Engram gate on master 7d6710cf",
+  "outcome": "Windows B runs Engram's complete standard full gate on published master 7d6710cfec40c98d68088c6dd0f38b84023b2a72 and returns verifiable evidence, proving it as a remote runner for Engram.",
+  "acceptance": [
+    "Windows B fetched origin master commit 7d6710cfec40c98d68088c6dd0f38b84023b2a72, tree 52f8f205d9e6b674ae1f552ff52d724dd39d2aed, into a fresh clone and worktree whose index and tracked files equal that commit, with no untracked files; the commit id, tree id and the review-freeze fingerprint before and after the run are recorded on this item",
+    "The standard launcher `node scripts/test-launcher.mjs full` ran there with cargo 1.98.1 (797e8a9bc) shown in its preflight log, and its results show expected = before = after; the result of every stage is recorded on this item, with bounded failure evidence for any stage that failed",
+    "The run is recorded as evidence only: it does not count as a landing gate, and nothing was pushed from Windows B"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "remote-runner",
+    "throughput",
+    "windows-b"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Windows B runner proof completed: standard full gate passed all 12 stages on published Engram 7d6710cfec40c98d68088c6dd0f38b84023b2a72 with Cargo 1.98.1, exact commit/tree and matching before/after freeze. The first run's 266-character fixture-path failure was diagnosed and corrected using a shorter fresh worktree without source or test changes. Evidence only; no push or landing credit. Independent evaluation f362f2ad43184cdc96d172c86ab20dd6 passed all 3 criteria.",
+    "completed_at": "2026-10-22T02:08:06.192037300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "55ca753297bc45fcbba43a6a67b5e305": {
+        "activity_id": "55ca753297bc45fcbba43a6a67b5e305",
+        "task_id": "01a15cc3-8706-7a62-812e-7f61d4dca731",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "01422588b84b4eeb8ed11fee71223d2a"
+      }
+    }
+  }
+}

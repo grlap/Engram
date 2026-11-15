@@ -1,0 +1,66 @@
+{
+  "id": "01a18faa-40fd-7aa2-8d76-5bcb05f3d7a0",
+  "external_ref": null,
+  "title": "Let agents commit on their own working branch before the gate and land by fast-forwarding master to that exact commit (Greg's option B)",
+  "outcome": "Let agents commit on their own working branch before the gate and land by fast-forwarding master to that exact commit (Greg's option B)",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (byte-identical) allow an agent to commit its own change on its working branch or a detached HEAD in its own worktree, never on master and never pushed, so that reviews and the full gate run on a clean commit; and the standing approval lands such a change by fast-forwarding master to exactly the gated commit and pushing it. Everything else (rebase, force-push, history rewrite, commits on master, pushes of working branches) stays forbidden without Greg's own word.",
+    "/review-changes and the merger procedure describe the committed-input flow: freeze identity is the commit plus an empty gitignore-respecting status; if master has moved, the integration owner carries the change onto current master as a new commit that is gated as its own input; several READY packages are integrated as one integration commit on the integration owner's own worktree.",
+    "Landed under the authority-text process: (a) both coordinators' concurrence on the exact wording recorded on this item, (b) the exact wording and its consequence sent to Greg before landing, (c) the final-diff audit recorded as passed. Greg's widening word is recorded verbatim with its source (see notes).",
+    "The existing staged-tree lane stays valid until this lands, and in-flight inputs frozen under it are not re-cut because of this change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "agent-instructions",
+    "authority-text",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered Greg's option B: identical AGENTS/CLAUDE and review/merger instructions allow local candidate commits, gate the final candidate and fast-forward master to that exact commit, preserving the staged lane and all other authority limits. Landed40ca0bd0b9c6ae9fa217d4112d9e9c948bc99258, audited treebdcd, installed cleanbuildf447 with all-six readiness and backup before verified push. Recovered full2888B independent15572attempt2 output and nativeevaluation88239911f8454e6bb363db5ed1b61b59: fresh4/4PASS, no outstanding findings. Cleanup/retention assessment follows closure.",
+    "completed_at": "2026-10-31T07:08:28.752795500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5a1925693b134561b195eb9a37300930": {
+        "activity_id": "5a1925693b134561b195eb9a37300930",
+        "task_id": "01a18faa-40fd-7aa2-8d76-5bcb05f3d7a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "758de666eee14e7a86426e42a8b663cc"
+      },
+      "758de666eee14e7a86426e42a8b663cc": {
+        "activity_id": "758de666eee14e7a86426e42a8b663cc",
+        "task_id": "01a18faa-40fd-7aa2-8d76-5bcb05f3d7a0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a9802c43e0d042f4a42b68a7c16f19f0"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a0e499-5bb9-74d0-8e70-c03b389f28c5",
+  "external_ref": null,
+  "title": "Control-policy recovery diagnostics print raw decode errors, which can repeat a stored value",
+  "outcome": "A control-policy recovery finding names the record and the shape of the problem, never a value the record holds.",
+  "acceptance": [
+    "Every detail the control-policy recovery report gives for a record that does not decode names the shape of the problem (an unknown or missing member by name, otherwise the category and position) and never repeats a value from the record; a test with a rule set holding an unknown check-kind value shows the value absent from the report and its text output."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 4e1b0e1 (bundle 5A): control-policy recovery details name the shape of a record that does not decode (member name, or category and position), an invalid stored id or a kind mismatch, and never a stored value. Text lines are framed. The CLI test plants a hostile check-kind value, member, authority id and object kind and finds none of them in the JSON or the text.",
+    "completed_at": "2026-10-03T13:54:10.363719200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3689700aa80e425a98d4cf18f9b45015": {
+        "activity_id": "3689700aa80e425a98d4cf18f9b45015",
+        "task_id": "01a0e499-5bb9-74d0-8e70-c03b389f28c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b96f47d01eed4206b229c3bf50c72d55"
+      }
+    }
+  }
+}

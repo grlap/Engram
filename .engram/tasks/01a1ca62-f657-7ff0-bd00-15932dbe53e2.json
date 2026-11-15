@@ -1,0 +1,63 @@
+{
+  "id": "01a1ca62-f657-7ff0-bd00-15932dbe53e2",
+  "external_ref": null,
+  "title": "Stop an unchanged-source turn-end capture from voiding a fresh acceptance evaluation, and correct the misleading retry remedy",
+  "outcome": "Stop an unchanged-source turn-end capture from voiding a fresh acceptance evaluation, and correct the misleading retry remedy",
+  "acceptance": [
+    "The remedy Engram reports for an unconfirmed evaluated revision (today the EndTurnReadAndRetry text in src/work_service/source_recovery.rs, forwarded by the completion remedy) names a recovery action that actually clears the condition. Following it no longer recreates the same barrier; a behavioural test drives that recovery to a successful done.",
+    "A source_changed record after the evaluation cut whose measured source equals the judged revision no longer bars completion, while a source change to a different revision still bars. Behavioural tests cover both cases. If review concludes the equal-revision record must still bar, the item records that reasoning and the remedy says exactly what to do instead."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented equal-complete-SourceId acceptance recovery on candidate b9dd231392ad91802565af6122e6e93eb6971100/tree375a46422f904ffe49e222033754a0401eff838f: accounted unchanged turn-end reports preserve the original evaluation for declared and inferred source; differing/unknown and earlier flagged changes still bar. Truthful recovery uses a verified existing sighting, new evaluation and successful done without promising a future report. All seven focused author checks pass, including 4 behavior regressions and whole21-test control dogfood; Codex+Claude round2 clean. Independent evaluation a82bda033e0845a6b582ff5aa4b29bf8 freshPASS2/2 on revision1. Acceptance criteria unchanged; completed implementation criteria count2. Finalintegration FULL/readiness/master landing/install aftersync remainpending and are notclaimed.",
+    "completed_at": "2026-11-11T13:00:15.403054400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8f6ddae430694492b730c675b9da32d0": {
+        "activity_id": "8f6ddae430694492b730c675b9da32d0",
+        "task_id": "01a1ca62-f657-7ff0-bd00-15932dbe53e2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "a150469c6d344bf6ac4be24d53872ba0"
+      },
+      "c2e8950e839b4584abe85f4bfaf81bc4": {
+        "activity_id": "c2e8950e839b4584abe85f4bfaf81bc4",
+        "task_id": "01a1ca62-f657-7ff0-bd00-15932dbe53e2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ee25ee61327a4d199429908d8ed9e99d"
+      }
+    }
+  }
+}

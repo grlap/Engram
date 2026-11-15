@@ -1,0 +1,28 @@
+{
+  "id": "01a0ff27-60cd-7652-b83a-85aa8c29bcea",
+  "external_ref": null,
+  "title": "Restart instructions overstate when a TermAl MCP server can pick up a new build",
+  "outcome": "Restart instructions overstate when a TermAl MCP server can pick up a new build",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md accurately distinguish recreation of an agent runtime or session from a full TermAl restart when describing how a fresh Engram MCP server loads the configured installed build, without granting agents a new restart or configuration act."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "authority-text",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

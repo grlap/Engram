@@ -1,0 +1,56 @@
+{
+  "id": "01a0cbd4-9dd8-71d2-a602-d5aa5056bbce",
+  "external_ref": null,
+  "title": "Explain in plain words what gated control does today and what it is worth",
+  "outcome": "Greg can see, in one short page, what gated control actually does for him today, which parts TermAl uses and which nothing uses, and whether it can carry the host evaluation request, so he can decide what to keep.",
+  "acceptance": [
+    "A short plain-language page lists every question TermAl asks Engram before, during and after an agent turn, what each answer allows or blocks, and one real example of each from a live store",
+    "Greg has read it and recorded a keep, simplify or remove decision for each part",
+    "It answers whether the turn gate is the right channel for Engram to ask its host for an acceptance evaluation, with the reason",
+    "It explains each refusal a user can see in TermAl, including recovery_required and 'Engram did not authorize this turn for runtime delivery': what causes it, and exactly how a session gets out of it",
+    "It says which control operations TermAl actually calls, and which no host calls, with the evidence (call sites in TermAl and counts from the live stores)",
+    "It states what gated control has prevented or recorded so far, from live-store counts, and what would be lost if it were switched off"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The short brief explains in plain words what gated control does today and what it is worth: docs/features/turn-gate-assessment.md (one-page summary) and docs/features/turn-gate-evidence.md (its evidence), committed as 7f3ae50. The independent evaluation (Codex, delegation-86d832d0, recorded 81070ec79a554472801600a57ad9b7f0) passed all 6 criteria, after a clean round-8 review and a 9/9 gate. Its Decisions rows were later marked done by 7af8e96, which removed the never-used parts.",
+    "completed_at": "2026-09-26T03:30:32.511073900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6d838d77855945848d8b25ab2c2f0148": {
+        "activity_id": "6d838d77855945848d8b25ab2c2f0148",
+        "task_id": "01a0cbd4-9dd8-71d2-a602-d5aa5056bbce",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "449b415bbe8a462daad353f1f2de3b54"
+      }
+    }
+  }
+}

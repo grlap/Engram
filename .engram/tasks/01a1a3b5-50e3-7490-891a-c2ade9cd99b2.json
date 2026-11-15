@@ -1,0 +1,77 @@
+{
+  "id": "01a1a3b5-50e3-7490-891a-c2ade9cd99b2",
+  "external_ref": null,
+  "title": "Split CLI/MCP and local-work documentation into topic pages with stable inbound anchors",
+  "outcome": "Replace the two largest feature documents with short topic indexes and cohesive sibling pages, moving existing content verbatim while preserving links and anchors.",
+  "acceptance": [
+    "CLI/MCP and local-work content moves verbatim into coherent sibling Markdown pages, with short index pages at the original paths and no behavioral/specification rewriting.",
+    "Existing inbound links and anchors from docs, website, source strings, skills and instructions remain usable; AGENTS.md and CLAUDE.md remain unchanged unless separately coordinated authority wording requires it, and task-sync's spec.md/sqlite-store.md stay untouched.",
+    "The Markdown-only link check and AGENTS/CLAUDE identity check pass through the standard focused launcher on the frozen candidate, with two required whole-input reviews and no unresolved findings under the standing rule."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "file-split",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Moved CLI/MCP and local-work documentation into topic pages with stable anchors; landed reviewed docs contribution alongside query and work_service at 582e736d297b8b91e284ccdfc1a05972027f6f7d.",
+    "completed_at": "2026-11-04T01:51:50.928465700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0490b59b78d44297a43a8caf09f60357": {
+        "activity_id": "0490b59b78d44297a43a8caf09f60357",
+        "task_id": "01a1a3b5-50e3-7490-891a-c2ade9cd99b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0490b59b78d44297a43a8caf09f60357"
+      },
+      "60597213dec34bb583951e283c60ba45": {
+        "activity_id": "60597213dec34bb583951e283c60ba45",
+        "task_id": "01a1a3b5-50e3-7490-891a-c2ade9cd99b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0490b59b78d44297a43a8caf09f60357"
+      },
+      "7e2e5f502cc7402a8eb4f61e9c26384e": {
+        "activity_id": "7e2e5f502cc7402a8eb4f61e9c26384e",
+        "task_id": "01a1a3b5-50e3-7490-891a-c2ade9cd99b2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "03f5a66765074f95880a991772c4b25d"
+      }
+    }
+  }
+}

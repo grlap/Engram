@@ -1,0 +1,28 @@
+{
+  "id": "01a16e44-484c-7263-b8ea-c03c8b10959d",
+  "external_ref": null,
+  "title": "State SQLite scale collector coverage limits in the developer guide",
+  "outcome": "State SQLite scale collector coverage limits in the developer guide",
+  "acceptance": [
+    "The developer guide explicitly states that the scale collector observes only executing-thread SQL through instrumented store openers whose trace callbacks remain installed, and that ad-hoc connections, replaced or cleared callbacks, and other threads can be omitted without refusal."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "performance",
+    "review-finding"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

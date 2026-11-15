@@ -1,0 +1,122 @@
+{
+  "id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+  "external_ref": null,
+  "title": "Maintain managed task-sync custody with write-ahead artifact reservations",
+  "outcome": "Extend the existing retention owner with exact write-ahead selected artifact custody and canonical delta dispatch, so ordinary managed operations avoid historical filesystem enumeration.",
+  "acceptance": [
+    "Managed artifact preparation, commit retention, import planning and publication use the existing custody reservation and exact durable write-ahead request before filesystem effects; partial or uncertain effects remain recoverable without deletion or reminting.",
+    "Managed continuity is activated only after a complete admitted cold checkpoint and all supported writers participate; ordinary reads validate selected records and references without enumerating disconnected historical artifacts.",
+    "Additive delta/checkpoint dispatch stays in the existing canonical ledger/reducer with atomic projection upkeep; incoming source, prepared export, confirmed publication and local destination bases remain distinct.",
+    "Behavioural tests prove exact retry, interrupted writer recovery, refusal on stale/divergent custody and work independent of unrelated history; bootstrap/named audit retains exhaustive validation.",
+    "Document managed-writer continuity and explicit cold-audit boundaries; no independent landing, ordinary sync wiring before atomic graph admission, or separate projection cutover."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "managed-retention",
+    "performance",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "0e174cb8a1194f3f916da7483f576afa": {
+        "activity_id": "0e174cb8a1194f3f916da7483f576afa",
+        "task_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0e174cb8a1194f3f916da7483f576afa"
+      },
+      "1dc5785aa4934e31adbd30a1a1ead0ee": {
+        "activity_id": "1dc5785aa4934e31adbd30a1a1ead0ee",
+        "task_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1dc5785aa4934e31adbd30a1a1ead0ee"
+      },
+      "8dc2524131044b6fbe6c4f485c935bdc": {
+        "activity_id": "8dc2524131044b6fbe6c4f485c935bdc",
+        "task_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8dc2524131044b6fbe6c4f485c935bdc"
+      },
+      "a9d10723252e44fd9e13cb9845814bd5": {
+        "activity_id": "a9d10723252e44fd9e13cb9845814bd5",
+        "task_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a9d10723252e44fd9e13cb9845814bd5"
+      },
+      "bf979273367f4be498b61bb46ce86a1a": {
+        "activity_id": "bf979273367f4be498b61bb46ce86a1a",
+        "task_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bf979273367f4be498b61bb46ce86a1a"
+      },
+      "ccb12f93a9c3416ba8664121860f9435": {
+        "activity_id": "ccb12f93a9c3416ba8664121860f9435",
+        "task_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ff4ba75fb7d547ada6f64cb539ac1d61"
+      },
+      "ff4ba75fb7d547ada6f64cb539ac1d61": {
+        "activity_id": "ff4ba75fb7d547ada6f64cb539ac1d61",
+        "task_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ff4ba75fb7d547ada6f64cb539ac1d61"
+      }
+    }
+  }
+}

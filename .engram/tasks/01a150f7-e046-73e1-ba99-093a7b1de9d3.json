@@ -1,0 +1,76 @@
+{
+  "id": "01a150f7-e046-73e1-ba99-093a7b1de9d3",
+  "external_ref": null,
+  "title": "Give the named-root read refusal a stable reason code for a claim that is no longer the run's claim",
+  "outcome": "Give the named-root read refusal a stable reason code for a claim that is no longer the run's claim",
+  "acceptance": [
+    "When a named-root read is refused because the root's claim no longer belongs to the run (a newer claim replaced it), the JSON error carries a stable code and reason (for example code named_root_read_refused with reason claim_not_current_for_run), distinct from the run-unknown and other-project refusals, so a host can match it without parsing message text.",
+    "The read's existing claim block {state, holder, expires_at, revision, fence} stays unchanged in shape and meaning, and a test pins each refusal's code and reason plus the unchanged claim block.",
+    "No store-format change; the existing message text stays for older readers."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "termal-request"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed stable named-root refusal reasons: claim_not_current_for_run, run_unknown and other_project under named_root_read_refused. Successful claim payload and existing messages remain unchanged; no store-format change.",
+    "completed_at": "2026-10-19T13:26:45.736030700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "31fd3a580771448082d5e8914ab7c944": {
+        "activity_id": "31fd3a580771448082d5e8914ab7c944",
+        "task_id": "01a150f7-e046-73e1-ba99-093a7b1de9d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "31fd3a580771448082d5e8914ab7c944"
+      },
+      "736b648be81942549b357655c82a45d5": {
+        "activity_id": "736b648be81942549b357655c82a45d5",
+        "task_id": "01a150f7-e046-73e1-ba99-093a7b1de9d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d5d22856810d4e58ae3c45e75f1d7538"
+      },
+      "950beffbd5704e02b58c356e7d949c49": {
+        "activity_id": "950beffbd5704e02b58c356e7d949c49",
+        "task_id": "01a150f7-e046-73e1-ba99-093a7b1de9d3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "950beffbd5704e02b58c356e7d949c49"
+      }
+    }
+  }
+}

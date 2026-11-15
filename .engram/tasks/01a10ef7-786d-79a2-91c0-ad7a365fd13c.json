@@ -1,0 +1,27 @@
+{
+  "id": "01a10ef7-786d-79a2-91c0-ad7a365fd13c",
+  "external_ref": null,
+  "title": "Preserve ordinary SQLite opens of non-UTF-8 paths on Unix",
+  "outcome": "Preserve ordinary SQLite opens of non-UTF-8 paths on Unix",
+  "acceptance": [
+    "Ordinary Unix Path opens retain raw OsStr filename support; URI and VACUUM text handling state their actual encoding requirements and regressions cover non-UTF-8 paths."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

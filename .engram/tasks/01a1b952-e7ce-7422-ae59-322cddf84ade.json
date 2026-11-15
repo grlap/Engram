@@ -1,0 +1,28 @@
+{
+  "id": "01a1b952-e7ce-7422-ae59-322cddf84ade",
+  "external_ref": null,
+  "title": "Name standalone observed-check refusals with the actual check field path",
+  "outcome": "Standalone observed_check diagnostics consistently identify check.* while turn diagnostics identify observed_checks[i].*, without echoing caller values.",
+  "acceptance": [
+    "For a standalone observed_check occurrence, shape, retired-source and root-basis refusals name the request's actual check.* path; unadmitted-turn refusals keep observed_checks[i].*. Behavioral tests distinguish both shapes, preserve refusal/no-write behavior and never echo host_check_id values."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

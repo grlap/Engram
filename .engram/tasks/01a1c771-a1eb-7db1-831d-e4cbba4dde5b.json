@@ -1,0 +1,28 @@
+{
+  "id": "01a1c771-a1eb-7db1-831d-e4cbba4dde5b",
+  "external_ref": null,
+  "title": "Remove or cover the retained materialization displaced-file recovery branch",
+  "outcome": "Remove or cover the retained materialization displaced-file recovery branch",
+  "acceptance": [
+    "Determine whether any supported retained intent can carry a setup edit with before:Some; preserve its explicit recovery contract if it can.",
+    "Remove unreachable displacement/restore scaffolding only if no supported retained intent needs it; otherwise restore behavioral coverage of displacement, compensation and restart while preserving both paths."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

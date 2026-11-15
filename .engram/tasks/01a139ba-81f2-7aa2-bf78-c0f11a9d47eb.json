@@ -1,0 +1,64 @@
+{
+  "id": "01a139ba-81f2-7aa2-bf78-c0f11a9d47eb",
+  "external_ref": null,
+  "title": "Test damaged handoff indexes in expiry sweeps and recipient discovery",
+  "outcome": "Test damaged handoff indexes in expiry sweeps and recipient discovery",
+  "acceptance": [
+    "A holder mutation that sweeps a cancelled offer whose index state was reset to offered after its expiry returns InvalidWorkProjection, leaves the database shape unchanged, and appends no expiry event.",
+    "A recipient peek over an offer whose indexed expiry millisecond disagrees with its canonical expiry refuses the recipient binding without mutation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added discriminating regressions for damaged handoff indexes in expiry sweeps and recipient discovery; both criteria delivered and independently passed 2/2 on unchanged acceptance revision 1. Full gate and Codex/Claude whole-input reviews passed; pushed and installed the exact tested tree.",
+    "completed_at": "2026-10-14T16:16:12.011962Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "348cafc3c14c473ea9b4c1d6024598ec": {
+        "activity_id": "348cafc3c14c473ea9b4c1d6024598ec",
+        "task_id": "01a139ba-81f2-7aa2-bf78-c0f11a9d47eb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "348cafc3c14c473ea9b4c1d6024598ec"
+      },
+      "41172c0dae854c1aa7c1235080cc0e10": {
+        "activity_id": "41172c0dae854c1aa7c1235080cc0e10",
+        "task_id": "01a139ba-81f2-7aa2-bf78-c0f11a9d47eb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "720382e1c0f74dcaa5d669397cdbfae1"
+      }
+    }
+  }
+}

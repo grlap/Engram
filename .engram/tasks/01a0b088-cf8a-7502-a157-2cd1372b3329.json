@@ -1,0 +1,104 @@
+{
+  "id": "01a0b088-cf8a-7502-a157-2cd1372b3329",
+  "external_ref": null,
+  "title": "Record identity is a UUID and migration is a plain JSON export and import",
+  "outcome": "Records are identified and linked by UUIDs that never change with the format; content hashing remains only where content is compared; a migration is a JSON export and a JSON import into the new schema with no rehashing and no link rewriting; a migrated store retains nothing of its source format",
+  "acceptance": [
+    "a record stored by this build has a UUID identity minted when it is stored, and links hold that id; records stored before this rule keep their 64-hex ids as opaque strings beside the minted ones; no identifier is derived from a record's bytes, so changing how a record is written never changes its identity or the links to it",
+    "both live stores (Engram, 2287 MiB before conversion, and PhoenixCodeNav) were converted once from the previous hash-identity design by an import that applied the old-id map to the reference slots that still named an old id and retained nothing of the source format; that one-time conversion was then deleted from import, and the last build that performs it is kept beside the old-format backups",
+    "content hashing survives only as an explicit fingerprint where content is compared (idempotent retry detection, attempt identity, state checksums), never as an identity or a link",
+    "migration export writes a store as JSON and migration import loads that JSON into a fresh current-schema store with identities unchanged, no rehashing, and no link rewriting; a round trip of a populated store is row-for-row equal and doctor-healthy",
+    "the architecture text in CLAUDE.md and AGENTS.md, the spec, the migration and SQLite briefs, and the shipped inventory describe UUID identity and JSON migration",
+    "the migration provenance tables, the old-address resolver, the provenance audit, the old-format converter, and the archive, verify, compare, and unpack machinery are deleted along with their commands and tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "identity",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered across 54285f2 (UUID identity and JSON export/import, 134 paths, −16.5k lines), 91fec6d, e073a12, bc5aa00 and f35c207. A record stored by this build gets a random UUID minted when it is stored and links hold that id; records from before keep their 64-hex ids as opaque strings; a hash is a content fingerprint only, used where content is compared. migration export writes every row as JSON Lines and migration import loads it into a fresh current-schema store with ids unchanged; refusals are by name and never print a cell or page value; the doctor gates publication. Both live stores were converted once at Greg's word (Engram 2287 MiB, PhoenixCodeNav), the one-time conversion was then deleted and its last build kept beside the backups. Docs, spec, skill, reviewer lens and shipped inventory describe the contract; the provenance tables, resolver, audit, converter and archive machinery are deleted with their commands and tests. Reviewed in rounds 4–7 (attested), every in-scope finding fixed; Greg stopped the loop after round 7. Acceptance criteria 2 and 4 were revised by the holder today to state what was delivered (old ids kept beside minted ones; the one-time conversion happened and was then removed), visible in this item's history.",
+    "completed_at": "2026-09-18T04:55:16.461508700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9724a8dbdb72c4d864700f43d89258047eb522b202f845b9f3447499e1c985c5": {
+        "activity_id": "9724a8dbdb72c4d864700f43d89258047eb522b202f845b9f3447499e1c985c5",
+        "task_id": "01a0b088-cf8a-7502-a157-2cd1372b3329",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9724a8dbdb72c4d864700f43d89258047eb522b202f845b9f3447499e1c985c5"
+      },
+      "a315736d295f4d2c91e6c763b1ad18a4": {
+        "activity_id": "a315736d295f4d2c91e6c763b1ad18a4",
+        "task_id": "01a0b088-cf8a-7502-a157-2cd1372b3329",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a315736d295f4d2c91e6c763b1ad18a4"
+      },
+      "b3e0356db25e4e559b1c405557b7b127": {
+        "activity_id": "b3e0356db25e4e559b1c405557b7b127",
+        "task_id": "01a0b088-cf8a-7502-a157-2cd1372b3329",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b3e0356db25e4e559b1c405557b7b127"
+      },
+      "ee39a037de24440b817d2dc6d3f0a244": {
+        "activity_id": "ee39a037de24440b817d2dc6d3f0a244",
+        "task_id": "01a0b088-cf8a-7502-a157-2cd1372b3329",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1cda20eeeb1d43119a97364c4e66fd0d"
+      },
+      "f0d8732116624f138a4d7345ccc7b2aa": {
+        "activity_id": "f0d8732116624f138a4d7345ccc7b2aa",
+        "task_id": "01a0b088-cf8a-7502-a157-2cd1372b3329",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f0d8732116624f138a4d7345ccc7b2aa"
+      }
+    }
+  }
+}

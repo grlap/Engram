@@ -1,0 +1,26 @@
+{
+  "id": "01a199eb-15d9-7512-bf28-2dcb59152502",
+  "external_ref": null,
+  "title": "Make remote test runs visible locally and support resume from another remote",
+  "outcome": "Operators can see remote test runs locally and resume coordination from another remote session without losing the run's identity or result.",
+  "acceptance": [
+    "A remote test run is visible from the local host with its identity, status, execution host and result when available.",
+    "A session on another remote host can resume coordination for an existing remote run and obtain its eventual result without starting a duplicate run.",
+    "The design states how unavailable hosts, permissions, stale status and delivery failures are reported, and tests cover the supported cross-host flow."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

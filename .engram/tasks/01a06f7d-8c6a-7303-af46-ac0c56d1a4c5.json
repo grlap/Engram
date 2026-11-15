@@ -1,0 +1,53 @@
+{
+  "id": "01a06f7d-8c6a-7303-af46-ac0c56d1a4c5",
+  "external_ref": null,
+  "title": "Verify and decide priority inheritance for add --under (children of a p1 parent appear as p1)",
+  "outcome": "Verify and decide priority inheritance for add --under (children of a p1 parent appear as p1)",
+  "acceptance": [
+    "When work is created through CLI/MCP add --under, core decompose or atomic plan, omitted priority makes a required child inherit its parent's priority and an optional child use the project default priority; an explicit priority wins. Existing items retain their stored priority. MCP description and schema, CLI help and docs describe the same rule, and tests cover each path (add, decompose, plan) with required inheritance, optional defaulting and explicit override using a parent priority different from the project default."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "dogfood",
+    "investigation",
+    "phoenix",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "One creation rule for an omitted child priority, shared by add --under (CLI/MCP), core decompose and atomic plans (domain::child_creation_priority, DEFAULT_WORK_PRIORITY = 1): a required child takes its parent's priority, an optional child the project default, and an explicit priority wins. Stored items keep theirs; nothing is converted. The MCP add description, CLI help, decomposition and plan schema docs, cli-and-mcp.md, atomic-work-plan.md and shipped.md state the same rule. Tests cover add, decompose and plan with parent 3 against default 1.\nLanded with w-a02ba05da858 and w-41c66f1ee59f as 396235d on master after:\n- round 2 full gate test-2c701ef4 passed, before/after equal to freeze b0e80dca…4649;\n- round 2 pair clean;\n- independent Codex evaluation 1/1;\n- readiness ready on Engram, PhoenixCodeNav, TermAl and CV.\nInstalled build e11fd465f0b6b4ae5787bcc399867d6de1cc61f9f12706592c0a0b40452f3255, exe sha256 8f132c735b0db953d8ffa3898a783b7cc059905e704d11ff6974d3737d8191cf; the previous binary is backed up to C:\\Users\\grzeg\\.engram\\backups\\engram-20261003T183033Z-b218865409ba.exe.",
+    "completed_at": "2026-10-03T18:30:46.174139400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b6c2e807c5664526833d85e043603dca": {
+        "activity_id": "b6c2e807c5664526833d85e043603dca",
+        "task_id": "01a06f7d-8c6a-7303-af46-ac0c56d1a4c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "92bb7dd62d664fa085cf49e5fd397e43"
+      }
+    }
+  }
+}

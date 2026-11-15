@@ -1,0 +1,53 @@
+{
+  "id": "01a06d47-4784-7223-91bf-6c1a683b5e71",
+  "external_ref": null,
+  "title": "Cover tampered and duplicate-attempt-id save audits, remember-forget-save tombstones, and every exporter branch end to end",
+  "outcome": "Cover tampered and duplicate-attempt-id save audits, remember-forget-save tombstones, and every exporter branch end to end",
+  "acceptance": [
+    "doctor reports a tampered and a duplicate audit; a forgotten key exports as a tombstone with unchanged active count; an end-to-end fixture asserts relationships, blockers, sources, evidence, terminal history, and audit persistence after a destination failure"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Graph-snapshot audit validation and end-to-end exporter regressions landed in cae372c/63da32f. Doctor detects tampered and duplicate audits; remember/forget/save yields tombstone without active-count drift; connected fixture covers relationships, blockers, sources, evidence, terminal history and audit persistence after destination refusal. Full gate and cross-platform CI passed; paired reviews clean.",
+    "completed_at": "2026-09-28T05:13:20.575110900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9fcbc9d398e54f8a9a3846985af0c77c": {
+        "activity_id": "9fcbc9d398e54f8a9a3846985af0c77c",
+        "task_id": "01a06d47-4784-7223-91bf-6c1a683b5e71",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3e7144865fec4df4a2c5cc96b451aa3f"
+      }
+    }
+  }
+}

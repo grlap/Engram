@@ -1,0 +1,64 @@
+{
+  "id": "01a138e1-d7e9-74d0-9fea-33af2ef52ecf",
+  "external_ref": null,
+  "title": "Preserve setup actor-context normalization provenance",
+  "outcome": "Preserve setup actor-context normalization provenance",
+  "acceptance": [
+    "Setup preparation and materialization preserve the raw asserted actor context under the existing validation contract, or explicitly record normalization provenance in the immutable intent, journal and receipt.",
+    "CLI regressions cover control characters and actor contexts longer than 256 bytes, with no silent alteration presented as the original assertion."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "provenance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved setup actor context verbatim before the existing validation boundary, with exactly-empty treated as absence. Both CLI routes, first-attribution retry, byte boundaries and no-state refusals are covered. Full gate12/12, independent pair noMedium+, independent acceptance2/2 and five-store readiness passed. Committed, pushed and installed ec4c299 with an atomic backup-preserving replacement.",
+    "completed_at": "2026-10-16T17:26:40.085635Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "00aaccb67f024759ae9daf637eff14b0": {
+        "activity_id": "00aaccb67f024759ae9daf637eff14b0",
+        "task_id": "01a138e1-d7e9-74d0-9fea-33af2ef52ecf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f828cc812f8346978e48aa0b2d1c09a3"
+      },
+      "fd573799fbe74847b54426c8ef4da9c3": {
+        "activity_id": "fd573799fbe74847b54426c8ef4da9c3",
+        "task_id": "01a138e1-d7e9-74d0-9fea-33af2ef52ecf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fd573799fbe74847b54426c8ef4da9c3"
+      }
+    }
+  }
+}

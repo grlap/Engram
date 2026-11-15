@@ -1,0 +1,57 @@
+{
+  "id": "01a0cb40-d713-7b01-bba5-e379c5a53498",
+  "external_ref": null,
+  "title": "Drop obsolete tables with one final conversion of both stores",
+  "outcome": "Tables with no live use are gone from the schema along with their code, and both current stores are converted once to that schema without losing any current data.",
+  "acceptance": [
+    "Each dropped table is shown to have no live use in code and 0 rows in both current stores before removal; the candidates are control_observations, memory_contradictions, memory_contradiction_edges and contradiction_intents",
+    "Every row of every kept table survives the conversion with its id and canonical bytes unchanged, checked by comparing copies before and after",
+    "Migration import lists the dropped tables as retired for this one conversion, and export/import of copies of both current stores succeeds with the new build",
+    "Tables with live use or pending contract decisions stay: the four task tables, control_work_leases, and the restored-history tables",
+    "The code that writes, reads, checks, snapshots or migrates the dropped tables is removed with them, including contradiction events in work-feed rendering",
+    "The converted copies pass readiness and doctor with the new build",
+    "The full quality gates pass",
+    "The live stores are converted only after Greg approves stopping their consumers and installing the new build"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Four empty tables are gone from the schema, together with their code: control_observations, memory_contradictions, memory_contradiction_edges and contradiction_intents. Migration import retires them for one final conversion. Tested on copies of both live stores, the conversion left out only those tables and kept every other row and id unchanged, and the converted copies pass readiness and doctor. Committed as 1ad8b2b and pushed. The live stores are not yet converted: that waits for Greg's approval under the root item.",
+    "completed_at": "2026-09-23T01:06:50.142482800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9da2fd9f62aa4c4e92eb41f1cae29c8a": {
+        "activity_id": "9da2fd9f62aa4c4e92eb41f1cae29c8a",
+        "task_id": "01a0cb40-d713-7b01-bba5-e379c5a53498",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d2e5e978a5b24754a71fc1d313214dc5"
+      }
+    }
+  }
+}

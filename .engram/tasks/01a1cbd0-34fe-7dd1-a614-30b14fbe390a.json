@@ -1,0 +1,60 @@
+{
+  "id": "01a1cbd0-34fe-7dd1-a614-30b14fbe390a",
+  "external_ref": null,
+  "title": "Recheck imported proof selection inside completion's writer transaction",
+  "outcome": "Recheck imported proof selection inside completion's writer transaction",
+  "acceptance": [
+    "Completion reselects and validates every imported satisfaction and citation at its writer-transaction cut, refusing or retrying a changed premeasured selection before it can grant implicit acceptance credit; conflicting terminal facts never seal a criterion, and source measurement remains outside the writer.",
+    "Deterministic behavioral coverage reproduces the second-connection consume-and-conflict interleaving between measurement and writer admission, demonstrates refusal without a seal or unintended durable mutation, and preserves ordinary completion, qualified imported proof, exact retry and existing retirement semantics."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 2,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": "independent_session",
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Reselect imported proof use at the admitted completion and evaluation writer cut, including initially empty selection, and refuse changed records before acceptance credit. Preserve source measurement outside the writer, existing qualification/retirement and historical exact replay. Deterministic two-connection regression reproduced the unsafe seal before the fix and passes unchanged afterwards; qualified retry/replay and evaluation interleaving controls pass with full rollback and clean fixture teardown. Final clean candidate 3ba7956f81195aacc1674a5987f02838a70b69b3, tree e1be52550cba43fe43f9d9734588853d890c5bee, parent e139dbc33de80d9ab833c96d5fa3ebf019ca8081. Final focused fmt, strict Clippy and three affected writer tests pass; broader 97 completion, 251 evaluation and 49 imported acceptance tests passed on identical production before two fixture handle-close lines. Independent Claude evaluation d68d6bdb0dd74c60995352e612831b56 freshly passed both criteria. Delivered to parent integration; combined reviews, final full gate and landing remain parent-owned. Source, original run artifacts and design output retained for open parent integration under note b25b85cbe393455bb60c6e314fb4a0b2; all author test refs deleted after outcomes recorded. No landing or install claimed.",
+    "completed_at": "2026-11-11T19:28:21.529382800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a52d697fc83e4a2ab59b41f9ce0bc9ce": {
+        "activity_id": "a52d697fc83e4a2ab59b41f9ce0bc9ce",
+        "task_id": "01a1cbd0-34fe-7dd1-a614-30b14fbe390a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a18303a6e8ab40dbbf727e7143d4e3e6"
+      }
+    }
+  }
+}

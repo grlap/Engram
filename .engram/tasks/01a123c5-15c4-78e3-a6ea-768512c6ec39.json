@@ -1,0 +1,27 @@
+{
+  "id": "01a123c5-15c4-78e3-a6ea-768512c6ec39",
+  "external_ref": null,
+  "title": "Use one Windows native-path strategy for backup abandonment without directory canonicalization",
+  "outcome": "Use one Windows native-path strategy for backup abandonment without directory canonicalization",
+  "acceptance": [
+    "The library abandonment path and CLI backup path share an explicitly justified Windows long-path conversion that does not require filesystem canonicalization solely for path spelling; deterministic relative, already-verbatim and long-path coverage preserves no-clobber publication and logical diagnostics."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

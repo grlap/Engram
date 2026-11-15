@@ -1,0 +1,63 @@
+{
+  "id": "01a0f73d-dd84-75f1-840a-53341b94036e",
+  "external_ref": null,
+  "title": "Readers do not offer owed-work guidance for an obligation on a completed run",
+  "outcome": "Readers do not offer owed-work guidance for an obligation on a completed run",
+  "acceptance": [
+    "A test covers the w-35d49919bc24 shape: a post-seal obligation row read after completion shows no owed-work guidance and no actionable count",
+    "core inspect, show and next report an open obligation on a completed or sealed run as historical (with its record, read as stored) and never with actionable guidance such as record_verification_then_checkpoint; the run's seal and the stored obligation rows are unchanged",
+    "done's sealed-page readback compares obligation rows at the seal's cut, so a test on the w-35d49919bc24 shape shows that reading that seal back after a post-seal obligation row succeeds and still binds exactly the obligations the seal froze"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "An obligation page for a completed or sealed run carries historical: true. Its rows are read as stored, but it owes nothing: open_total and action counts are 0, guidance is none, and there are no owed reminders, evaluation guidance or mutation counts. One predicate decides it, and show says \"historical (run completed)\". Inspect, show, next and core JSON read it so, and so do stored-receipt replays (update, gate, note, done, root proposal), which resolve their page's run from its own immutable obligation definitions. done's sealed readback compares rows at the seal's cut, so a post-seal row no longer breaks it, while a pre-cut omission is damage. Concurred by Termal::Codex and Termal::Fable2. Landed as 7a77810.",
+    "completed_at": "2026-10-01T17:02:00.775175800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9fa041d25dd140949c13a7edd04527f1": {
+        "activity_id": "9fa041d25dd140949c13a7edd04527f1",
+        "task_id": "01a0f73d-dd84-75f1-840a-53341b94036e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0869f269d4b7448b9d1a92beed42ee60"
+      },
+      "a388366bb90a45f7bf13c1bfb1c34955": {
+        "activity_id": "a388366bb90a45f7bf13c1bfb1c34955",
+        "task_id": "01a0f73d-dd84-75f1-840a-53341b94036e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a388366bb90a45f7bf13c1bfb1c34955"
+      }
+    }
+  }
+}

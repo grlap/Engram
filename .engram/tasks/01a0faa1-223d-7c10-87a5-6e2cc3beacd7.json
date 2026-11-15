@@ -1,0 +1,38 @@
+{
+  "id": "01a0faa1-223d-7c10-87a5-6e2cc3beacd7",
+  "external_ref": null,
+  "title": "`engram portable validate`, the validation rules and the host's duties",
+  "outcome": "`engram portable validate`, the validation rules and the host's duties",
+  "acceptance": [
+    "`engram portable validate [--json]` reads the head under a deadline and returns `valid`, `released`, `superseded` or `unknown` with the effect in the brief's table; `superseded` freezes the store at once, and a test covers each result",
+    "A validation is usable only while less than the maximum validation age has elapsed since the check was sent, measured on a clock of the running machine that does not move backwards and counts sleep; tests show that setting the wall clock back does not lengthen it, that an answer arriving later than the age is not usable, and that an answer arriving late within the age is usable only for what is left of it",
+    "A validation is not usable after a restart, or after a sleep and resume within one boot, on any path including the command line, until a new check succeeds; tests simulate both through an injectable clock source",
+    "A check records its result only if the validation count and the writer record's lineage, instance, epoch, head and state are unchanged since it was sent; tests show a `valid` answer returning after a committed release records nothing, and a slower `valid` returning after a faster `superseded` or after a mandatory `unknown` records nothing",
+    "An `unknown` result of a check marked as made at host start or after resume clears the earlier validation and closes mutation at once; an `unknown` result of a routine check leaves the earlier validation usable until its age ends; a write admitted before the age ran out completes; tests cover the three",
+    "The maximum routine validation age is a control-policy value whose first-version default is 24 hours with no forced takeover. docs/host-checklist.md states fresh startup/resume checks, bounded refresh, typed refusal instead of local fallback, and fresh execution identities only after acquisition; ordinary restart retains established mapping. Tests prove these distinctions and no fabricated backup-restore dependency.",
+    "Host integration evidence demonstrates admission hold persisted outside replaced stores across startup/reconnect/bind/dispatch/MCP/CLI/background paths, owner settlement of issued/begun/uncertain turns and actual actions before freeze, all consumers closed before installation, and serialized reopening only after journal/registration/identity/current ownership complete. Unknown external outcomes block release even after process exit. Cancellation alone never reopens admission. TermAl owns its actual host tests; narrow reset/Stop receipts are not substitutes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0faa0-685a-7f31-83d2-2028017ca901",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0faa0-8e8e-7b40-a67f-de00b37294fa",
+    "01a0faa0-cf24-7712-8da2-44604335b06c"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Portable handoff was replaced before any of it shipped: docs/features/git-task-sync.md says the previous portable writer-epoch and release/acquire design is gone, AGENTS.md says the selected sync uses no global writer lock, writer epochs or release/acquire protocol, and master has no portable code or brief. Cancelled under Greg's word, 43498a6e #683. Nothing here was built or tested.",
+  "completion": null
+}

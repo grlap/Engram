@@ -1,0 +1,54 @@
+{
+  "id": "01a1c1c1-fa64-7902-989b-949fbc2d3ee8",
+  "external_ref": null,
+  "title": "Exclude retained foreign originals from native planning and source lookups",
+  "outcome": "Exclude retained foreign originals from native planning and source lookups",
+  "acceptance": [
+    "Retaining a foreign WorkSourceProposal and its snapshots does not make local import treat an unseen source revision as already known or suppress its native notice; original retained IDs and bytes remain unchanged.",
+    "Native deferred-claim, named-root end and empty-project lookups ignore imported-only objects and preserve their existing native behavior; audit the reported scans for equivalent missing boundaries.",
+    "Behavior regressions reproduce reachable foreign-retention effects through the existing evidence retention owner and prove the corrected local behavior; record any reported path that is unreachable with precise evidence instead of adding a needless filter."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Exclude retained foreign originals from native source-known, deferred-claim, named-root end and empty-project lookups. Deliver eight-path scoped repair with four retention-driven regressions and complete remote author evidence.",
+    "completed_at": "2026-11-09T19:43:24.278758500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "128a1e2a47e5493fa793e13080958852": {
+        "activity_id": "128a1e2a47e5493fa793e13080958852",
+        "task_id": "01a1c1c1-fa64-7902-989b-949fbc2d3ee8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "52b3079a5f2c4dc5831d837ddccf0900"
+      }
+    }
+  }
+}

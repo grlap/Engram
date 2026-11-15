@@ -1,0 +1,28 @@
+{
+  "id": "01a14b4b-4eff-72a3-8821-e25ce89d12e2",
+  "external_ref": null,
+  "title": "Clarify export refusal precedence for a dangling final-component destination link",
+  "outcome": "Describe the export and retained-document writers' actual dangling destination-link behavior precisely without implying symmetric existence checks.",
+  "acceptance": [
+    "Task-sync export documentation distinguishes a dangling final-component destination link: write_with follows it during try_exists and can reach publication I/O, while write_documents inspects the entry with symlink_metadata and refuses the link before parent lookup; ordinary destination-before-parent wording is qualified without claiming data loss or changed production behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

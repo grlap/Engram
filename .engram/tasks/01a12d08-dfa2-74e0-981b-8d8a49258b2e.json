@@ -1,0 +1,76 @@
+{
+  "id": "01a12d08-dfa2-74e0-981b-8d8a49258b2e",
+  "external_ref": null,
+  "title": "Explain the original profile required to resume a pending task preparation",
+  "outcome": "Explain the original profile required to resume a pending task preparation",
+  "acceptance": [
+    "A pending preparation with profile or origin-machine drift refuses with guidance to resume its original profile and destination, and does not recommend rebaseline before completion",
+    "Tests cover pending profile and alias drift with and without rebaseline while retaining the same operation and cut"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pending preparation profile and origin drift now directs resumption with the original profile and destination, without recommending rebaseline before completion. Library, service and CLI regressions preserve the retained operation and cut. Landed in Batch AB; independent acceptance passed both criteria.",
+    "completed_at": "2026-10-19T07:58:48.819780800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5301926830464ed7b0c6e52989549811": {
+        "activity_id": "5301926830464ed7b0c6e52989549811",
+        "task_id": "01a12d08-dfa2-74e0-981b-8d8a49258b2e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5301926830464ed7b0c6e52989549811"
+      },
+      "962283e7c9e8444986937298ca2e4bc3": {
+        "activity_id": "962283e7c9e8444986937298ca2e4bc3",
+        "task_id": "01a12d08-dfa2-74e0-981b-8d8a49258b2e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b47e076e7f214f16bdff9afcfe87aed1"
+      },
+      "bb6be23536be4419895d7b0dba3fc2e8": {
+        "activity_id": "bb6be23536be4419895d7b0dba3fc2e8",
+        "task_id": "01a12d08-dfa2-74e0-981b-8d8a49258b2e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bb6be23536be4419895d7b0dba3fc2e8"
+      }
+    }
+  }
+}

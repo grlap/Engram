@@ -1,0 +1,63 @@
+{
+  "id": "01a0d6ab-051f-7263-ad79-f0ca1bb7ef80",
+  "external_ref": null,
+  "title": "Audit composite store reads outside a transaction so each compares rows from one commit",
+  "outcome": "Audit composite store reads outside a transaction so each compares rows from one commit",
+  "acceptance": [
+    "Each reader changed has a test that commits between its statements and shows it no longer reports a false inconsistency",
+    "Every store reader that runs in autocommit and compares rows loaded by more than one statement either reads on one snapshot or is shown not to need one, with the list of readers checked recorded on this item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Audited every store reader that runs in autocommit and compares rows loaded by more than one statement. Group A readers now read on one snapshot, each with a race test that commits from a second connection between its statements (commits 668e72b and 7c1ba5d, plus 86568be for completed_evidence_basis, which the first evaluation showed was wrongly exempted). Group B readers are shown not to need a snapshot. The inventory is recorded on this item in eight notes plus the correction. 86568be is pushed and installed as build 34d06cfacca2. The independent acceptance evaluation passed both criteria at 86568be.",
+    "completed_at": "2026-09-25T19:31:24.756300500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2c6cb60cace241fd95e2ca4902e325af": {
+        "activity_id": "2c6cb60cace241fd95e2ca4902e325af",
+        "task_id": "01a0d6ab-051f-7263-ad79-f0ca1bb7ef80",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "67fbca4f55d341ca9c14e3a43173e9e6"
+      },
+      "563f2303f62149f98a26ed434e847a6f": {
+        "activity_id": "563f2303f62149f98a26ed434e847a6f",
+        "task_id": "01a0d6ab-051f-7263-ad79-f0ca1bb7ef80",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "563f2303f62149f98a26ed434e847a6f"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a07eab-d56a-75c1-b306-3d5b50268a61",
+  "external_ref": null,
+  "title": "Rewrite README in plain technical English",
+  "outcome": "Rewrite README in plain technical English",
+  "acceptance": [
+    "Current features and limitations remain accurate and documentation links pass",
+    "README explains Engram purpose, setup and daily workflow in short technical English without internal protocol exposition"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Replaced the full README with plain technical English: product purpose, current capabilities, setup and command examples, short host integration, storage and trust limits, and documentation links. Retained the unseen-page warning and current links/peek semantics; removed internal protocol exposition from the entry point. Documentation links and standalone whitespace check pass. README only; no runtime code, build, installation, commit or push.",
+    "completed_at": "2026-09-08T01:43:05.724441800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "55852d68bff685cd9f55f3b7b038202cfac6d13b8f84962536c4c19b845cc936": {
+        "activity_id": "55852d68bff685cd9f55f3b7b038202cfac6d13b8f84962536c4c19b845cc936",
+        "task_id": "01a07eab-d56a-75c1-b306-3d5b50268a61",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ac3fa7b428f31c19a6c81045cc7ee7b680d971eb9ed2fcfdf5a42adc9c6de5b9"
+      }
+    }
+  }
+}

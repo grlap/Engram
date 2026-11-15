@@ -1,0 +1,55 @@
+{
+  "id": "01a1a74e-daae-79c2-9d9a-ac88a232578a",
+  "external_ref": null,
+  "title": "Stop evaluation refusing a correct check when nothing changed: ordinary turns during evaluation must not void it",
+  "outcome": "Stop evaluation refusing a correct check when nothing changed: ordinary turns during evaluation must not void it",
+  "acceptance": [
+    "The cause of the w-e95c35f8ed70 refusal (evidence basis 239, deciding sighting at position 243, content-v1 revision against a declared git-commit input, unchanged content) is classified from source and a reproducing test, and the side that owns it is named",
+    "A positive regression shows an evaluation of a clean registered Git-input check is accepted, and done completes, when the holder's ordinary turns close with unchanged content between the evidence basis and the submission",
+    "Negative regressions show a real edit after the check, and a real edit after the evidence basis, are still refused, and that a revert to equal content is handled as the design states",
+    "A real-host run against real Engram on a disposable store shows, on the reviewed candidate, an unchanged holder close between evidence basis and submission accepted and done, a first named close accepted on both bound and unbound criteria, and a real edit and a check on another commit refused. The full ordinary-work end-to-end on Linux and Windows is criterion 5 of TermAl's w-5f8e183e1f97, and it must pass before any new evaluation window.",
+    "No existing evaluation record is modified, recomputed or invalidated, and no protection against a real source change is removed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the registered-input witness fix at 740d4ce73ee782dc282eb297a61346719f06cd3f and installed build 0c55c89b2c23. Note-only evaluations can use a genuine registered check through quiet content reports; mutation, delayed sighting and historical-proof regressions pass. The reviewed import-only correction passed the Merger's exact-commit FULL; all six stores ready. Five scoped real-host rows passed on reviewed1ae under the recorded carry decision. Existing evaluation/seal bytes remain unchanged. Ordinary-work Linux/Windows proof and the newer live-Git currency policy remain separate.",
+    "completed_at": "2026-11-04T21:26:40.418724700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c61001ddf5ba4bffa275fac281f095ff": {
+        "activity_id": "c61001ddf5ba4bffa275fac281f095ff",
+        "task_id": "01a1a74e-daae-79c2-9d9a-ac88a232578a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "314f679971424d1aa56ae9a1a2dfad46"
+      }
+    }
+  }
+}

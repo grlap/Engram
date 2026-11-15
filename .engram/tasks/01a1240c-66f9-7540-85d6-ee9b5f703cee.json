@@ -1,0 +1,76 @@
+{
+  "id": "01a1240c-66f9-7540-85d6-ee9b5f703cee",
+  "external_ref": null,
+  "title": "Count sequential edition-2024 doctest runners under one Cargo Doc-tests section",
+  "outcome": "Cargo-framed count attribution handles legitimate merged and standalone rustdoc runners without concealing incomplete or nested output.",
+  "acceptance": [
+    "A real edition-2024 fixture containing one mergeable doctest and one compile_fail doctest yields truthful counts for its two sequential complete runners under one Doc-tests marker.",
+    "Nested, interleaved, malformed and incomplete summaries still fail closed, readable failures still fail the stage, and native exits remain unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Sequential complete edition-2024 Doc-tests runners now accumulate truthful counts; observable nested, interleaved, incomplete and malformed output discards the whole frame's numeric attribution. Readable failures and native exits remain preserved. Delivered four-file change, full exact-input gate PASS, clean independent Codex/Claude round3, independent acceptance 2/2 pass. No acceptance criterion changed.",
+    "completed_at": "2026-10-11T01:22:29.994398Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0f684765f8e14c06996f1039f48b293a": {
+        "activity_id": "0f684765f8e14c06996f1039f48b293a",
+        "task_id": "01a1240c-66f9-7540-85d6-ee9b5f703cee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0f684765f8e14c06996f1039f48b293a"
+      },
+      "349aeb976a5148d5b94ffd19b082084b": {
+        "activity_id": "349aeb976a5148d5b94ffd19b082084b",
+        "task_id": "01a1240c-66f9-7540-85d6-ee9b5f703cee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f2420b663899426ea3150ad247a96060"
+      },
+      "86d7aacf94ac43fab65848b4fcd2cf53": {
+        "activity_id": "86d7aacf94ac43fab65848b4fcd2cf53",
+        "task_id": "01a1240c-66f9-7540-85d6-ee9b5f703cee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "86d7aacf94ac43fab65848b4fcd2cf53"
+      }
+    }
+  }
+}

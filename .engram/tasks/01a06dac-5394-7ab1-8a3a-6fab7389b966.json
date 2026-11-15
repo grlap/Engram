@@ -1,0 +1,50 @@
+{
+  "id": "01a06dac-5394-7ab1-8a3a-6fab7389b966",
+  "external_ref": null,
+  "title": "Order and page restored evidence by durable append position",
+  "outcome": "Order and page restored evidence by durable append position",
+  "acceptance": [
+    "same-time restored gate transitions have a deterministic latest head and exact combined omission counts"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Restored evidence uses a dense canonical per-item sequence; latest and omission calculations follow authoritative combined order.",
+    "completed_at": "2026-09-04T18:50:04.464902900Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5daf0dd74d31f33f2c85416c1e2d8ef2c5e8d0b9cfeced64d4e2b13f51be812e": {
+        "activity_id": "5daf0dd74d31f33f2c85416c1e2d8ef2c5e8d0b9cfeced64d4e2b13f51be812e",
+        "task_id": "01a06dac-5394-7ab1-8a3a-6fab7389b966",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2ec4202a45588e42b6a640d74b19573eab91bcb73e355151aaf7d9de421563cb"
+      }
+    }
+  }
+}

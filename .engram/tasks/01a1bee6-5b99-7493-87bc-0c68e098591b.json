@@ -1,0 +1,26 @@
+{
+  "id": "01a1bee6-5b99-7493-87bc-0c68e098591b",
+  "external_ref": null,
+  "title": "Decide whether memory tidying should also forget entries that are true but no longer needed",
+  "outcome": "Decide whether memory tidying should also forget entries that are true but no longer needed",
+  "acceptance": [
+    "Both coordinators decide whether the memory-tidying text extends forget to entries still true but no longer needed, and any wording change follows the usual route."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "memory-cleanup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

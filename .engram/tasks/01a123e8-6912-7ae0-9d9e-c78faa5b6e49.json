@@ -1,0 +1,28 @@
+{
+  "id": "01a123e8-6912-7ae0-9d9e-c78faa5b6e49",
+  "external_ref": null,
+  "title": "Align Git task-sync brief with the selected enclosing code commit workflow",
+  "outcome": "Make the task-sync brief and standing task-data guidance agree on commit shape and where a combined frozen code/data tree is assembled, preserving exact-tree validation and main-checkout-only export.",
+  "acceptance": [
+    "The Git task-sync brief accurately distinguishes the selected enclosing code/data commit workflow, standalone data commits, and where export is assembled before the gate, consistently with current governing guidance; no gate, review, authority, or source-coverage exception is added."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Duplicate of w-4eabb205c7b2 criterion 4, which rewrites git-task-sync.md and the related docs for the data-branch design. That design replaces the \"enclosing code commit\" workflow this item wanted the brief aligned with. Closed by Engram::Fable after a read-only triage, under rules-greg-close-senseless-tasks-2026-11-08 and Greg's #803.",
+  "completion": null
+}

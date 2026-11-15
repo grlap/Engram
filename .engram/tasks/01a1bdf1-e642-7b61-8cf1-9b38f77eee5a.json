@@ -1,0 +1,55 @@
+{
+  "id": "01a1bdf1-e642-7b61-8cf1-9b38f77eee5a",
+  "external_ref": null,
+  "title": "Find why the Engram control process ended before replying to a named-root clear on TermAl's store",
+  "outcome": "Find why the Engram control process ended before replying to a named-root clear on TermAl's store",
+  "acceptance": [
+    "The cause of the EOF is named from evidence: why the control process ended before it replied to named_root_bind",
+    "A retried clear of a named root gets a definite reply, or the host gets a typed refusal instead of an EOF, verified by a test or a recorded live run"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a1be03-4abb-7323-ac0f-31c0b07c55cd",
+      "kind": "manual",
+      "detail": "Actual same-intent clear recovery is confirmed (criterion 2). Original EOF cause remains unknown (criterion 1): historical failed PID/exit/stderr were not retained and no producer crash diagnostic exists. Bounded investigation ended per Fable2 #491 after success. Await missing historical evidence or a future captured failure via TermAl w-a023081b50ea; do not rerun blindly or claim a diagnosed fix.",
+      "created_by": {
+        "actor_id": "greg/codex",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-11-09T01:54:09.205715800Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "e159c5d9c80849978a479c96ff5d7e72": {
+        "activity_id": "e159c5d9c80849978a479c96ff5d7e72",
+        "task_id": "01a1bdf1-e642-7b61-8cf1-9b38f77eee5a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "38a8f100c3db4817b3cc897e67a7df86"
+      }
+    }
+  }
+}

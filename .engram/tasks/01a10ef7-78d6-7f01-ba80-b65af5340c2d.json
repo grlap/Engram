@@ -1,0 +1,27 @@
+{
+  "id": "01a10ef7-78d6-7f01-ba80-b65af5340c2d",
+  "external_ref": null,
+  "title": "Test restore filename preflight refuses before fetching a copy",
+  "outcome": "Test restore filename preflight refuses before fetching a copy",
+  "acceptance": [
+    "A Windows invalid-Unicode or capacity-exceeding destination refuses with backup_restore_path_unopenable and no-copy-fetched wording before creating directories, staging files or restore records."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

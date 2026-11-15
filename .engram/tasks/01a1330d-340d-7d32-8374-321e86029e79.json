@@ -1,0 +1,54 @@
+{
+  "id": "01a1330d-340d-7d32-8374-321e86029e79",
+  "external_ref": null,
+  "title": "Test-only copy sub-step trace for the capture-deadline test",
+  "outcome": "Test-only copy sub-step trace for the capture-deadline test",
+  "acceptance": [
+    "Non-test builds are unchanged: the copy sub-step trace exists only under #[cfg(test)] and is inert unless a test starts it on its thread",
+    "backup::tests::capture_deadline_bounds_a_wait_for_a_locked_store keeps its 1500 ms capture deadline and its unchanged less-than-five-second assertion",
+    "The trace of the copy's sub-steps (open, admission internals, admission result, vacuum, close, store error before classification, attempt removal) is present in both of that test's failure messages"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "backup",
+    "gate",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a13294-aab8-7830-9846-8cafff44ab27",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "backup::tests::capture_deadline_bounds_a_wait_for_a_locked_store now carries a test-only trace of the copy's sub-steps, so a recurrence of the parent's Copy-phase overrun names the step that took the time.\n- The trace records: read-only open; admission's busy timeout, read transaction and first read; admission result including the close; VACUUM INTO; the store error before deadline classification; and the stage cleanup.\n- New src/storage/copy_trace.rs (#[cfg(test)] thread-local recorder, inert until started), with #[cfg(test)] marks in store_copy.rs, open_schema.rs and backup.rs. Non-test builds are unchanged.\n- The test keeps its 1500 ms deadline and its under-5 s assertion; both failure messages and a println carry the trace.\n- Validation:\n  - Round 1 clean (Codex 12320, Claude 12321).\n  - Full gate test-44e3dc0f 12/12 on freeze 139c4cbd (host verification e4d19d90); source_file_size 36/36.\n  - Evaluation 175c0e08 passed 3/3.\n  - Readiness: ready on all 4 live stores.\n- Landed 4027700; installed build 8bee061930b2, sha256 cf78b244; backup engram-20261013T031722Z-62c89c0f0172.exe.",
+    "completed_at": "2026-10-13T03:17:35.676657700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "450f84b7afd149199f10286cca0135c8": {
+        "activity_id": "450f84b7afd149199f10286cca0135c8",
+        "task_id": "01a1330d-340d-7d32-8374-321e86029e79",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a3923e61874c40c9b4ffad8ae1a0443e"
+      }
+    }
+  }
+}

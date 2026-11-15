@@ -1,0 +1,50 @@
+{
+  "id": "01a0faea-a4f1-73f3-a374-42019ea532de",
+  "external_ref": null,
+  "title": "NamedRootState accepts unknown fields wherever it is decoded",
+  "outcome": "NamedRootState accepts unknown fields wherever it is decoded",
+  "acceptance": [
+    "Decoding a NamedRootState with a field its variant does not name is refused rather than dropped, on every path that decodes it, with a test per variant (serde's deny_unknown_fields is not enforced on the unit variant of an internally tagged enum, so a variant-aware check is needed)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 7d43c42: NamedRootState has one variant-aware decoder (src/domain/control/named_root_state.rs); each state takes exactly its own fields, and unknown, cross-variant and repeated keys are refused on every decode path, while serialization stays derived. ObservationRootBasis drops its local strict decoder. Tests cover each variant, the nested containers and stored begin-receipt replay. The copy audit of all 4 live stores refused 0, the negative control caught 6/6, and readiness was ready on all 4. Installed build fa3879cba444, exe sha256 4004c5fa…09a8.",
+    "completed_at": "2026-10-03T12:53:51.710672400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "63c82620a1644dfcbe1a88526cc3b98b": {
+        "activity_id": "63c82620a1644dfcbe1a88526cc3b98b",
+        "task_id": "01a0faea-a4f1-73f3-a374-42019ea532de",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "629542f3dac94b5096a8db7e28484bf6"
+      }
+    }
+  }
+}

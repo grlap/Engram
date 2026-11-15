@@ -1,0 +1,47 @@
+{
+  "id": "01a1bdc2-0441-7f42-a09e-bd0b25dd4930",
+  "external_ref": null,
+  "title": "Evidence B core: terminal execution union and imported-verification applicability",
+  "outcome": "Evidence B core: terminal execution union and imported-verification applicability",
+  "acceptance": [
+    "A keyed execution union holds supported authoritative terminal bodies from both original terminal-origin and association request records, including ResultConflict and refused associations; behavior tests deliver equivalent different-id and conflicting same-store and cross-store records in both orders, and one execution is never counted twice.",
+    "A local applicability decision on an imported record has its own identity, distinguishes origin assurance from local observation, and qualifies only through the common qualifier with equal complete source identity; commit, tree, changes or submodule drift, an unmatched Git carrier commit and a failed aggregate don't qualify, and no new host, environment or rerun condition is added.",
+    "Reported gates, observation-embedded uncredited checks, unsupported or provisional bodies and malformed provenance never become observed verification; exact original bytes, results, times and host provenance stay unchanged, and a transaction rollback leaves no partial satisfaction.",
+    "Shared ledger, reducer, view, data-worktree and service wiring stay on w-365c2dad40cf, w-7413b4728667 and w-4eabb205c7b2; this item's part of them is an agreed seam only."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "execution-evidence",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "bd8b0ef23610452c9c35fef6c4f401fd": {
+        "activity_id": "bd8b0ef23610452c9c35fef6c4f401fd",
+        "task_id": "01a1bdc2-0441-7f42-a09e-bd0b25dd4930",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bd8b0ef23610452c9c35fef6c4f401fd"
+      }
+    }
+  }
+}

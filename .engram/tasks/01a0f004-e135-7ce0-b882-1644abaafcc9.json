@@ -1,0 +1,65 @@
+{
+  "id": "01a0f004-e135-7ce0-b882-1644abaafcc9",
+  "external_ref": null,
+  "title": "A Low or Note review finding no longer blocks a landing",
+  "outcome": "A Note-severity review finding no longer blocks a landing",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md, byte-identical, carry N1 and N2 of the wording recorded on this item on 2026-09-30 about 02:08Z, word for word; .agents/skills/engram-repo/SKILL.md carries S1 to S4, .claude/commands/review-changes.md R1 to R4, .claude/commands/fix-bug.md F1 and docs/agent-pair-workflow.md W1 of the same note, word for word; the only other changed sentences in those files are the M1 to M3 corrections recorded on this item (note ce695e13, 2026-09-30 about 02:19Z), which went through the same concurrence and notice to Greg, word for word; and no instruction or command file still says that a Low or a Note must be fixed before a change lands or closes",
+    "Both coordinators' concurrence on the exact wording, Greg's notice of the wording and its consequence, and the coordinator's final-diff audit recorded as passed are on this item before the landing; the link check and the AGENTS/CLAUDE identity check pass through the focused launcher and the review pair has no outstanding finding of Medium or higher on the frozen tree",
+    "The project memory carrying the standing commit approval states the landed rule: on 2026-10-03 the memory standing-commit-approval was consolidated into rules-authority-and-landing, whose current revision says Notes and Lows do not block a landing, quotes Greg's 2026-09-30 words, and says a Low left unfixed is filed as its own item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed as already landed, found in the backlog triage. Commit 4c792a0 (pushed 2026-09-30 02:40:22Z) makes Low and Note review findings non-blocking: N1-N2, S1-S4, R1-R4, F1, W1 and the concurred M1-M3. The rule now lives in memory rules-authority-and-landing. Criteria 1 and 3 were revised for the consolidated memory and for M1-M3 scope that was concurred before landing. Independent Codex evaluation dd3c44f4 passed all three, superseding failing records 3eff5e49 and 7c83664d.",
+    "completed_at": "2026-10-05T18:20:12.247464300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "667c1685f7754319a17d9e69c9a5ea29": {
+        "activity_id": "667c1685f7754319a17d9e69c9a5ea29",
+        "task_id": "01a0f004-e135-7ce0-b882-1644abaafcc9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d56ac987f5fd4382adba7026d826932a"
+      },
+      "e7a12a20483a44f39c28ab55a5493a0f": {
+        "activity_id": "e7a12a20483a44f39c28ab55a5493a0f",
+        "task_id": "01a0f004-e135-7ce0-b882-1644abaafcc9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ccd8b32b8b2b456ea189b1203ce80de5"
+      }
+    }
+  }
+}

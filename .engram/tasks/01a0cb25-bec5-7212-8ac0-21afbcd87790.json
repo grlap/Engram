@@ -1,0 +1,91 @@
+{
+  "id": "01a0cb25-bec5-7212-8ac0-21afbcd87790",
+  "external_ref": null,
+  "title": "Rename the legacy acceptance mode to self-asserted and give show --json one shape",
+  "outcome": "The default acceptance mode is called self-asserted everywhere, and completed items always report their acceptance provenance in one JSON shape.",
+  "acceptance": [
+    "No code identifier, receipt text or doc calls the default acceptance mode legacy",
+    "Stored policy records without an acceptance_evaluation field still read as the self-asserted default",
+    "TermAl needs no change, confirmed by a search of its Engram adapter for the acceptance field",
+    "The full quality gates pass",
+    "show --json on a completed item always includes acceptance, with provenance self_asserted or evaluated, or unavailable when its acceptance history is missing or unreadable. The unavailable acceptance block carries error_class when provenance validation supplies a failure class; otherwise it may omit error_class, preserving shipped behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed self-asserted naming/provenance cleanup. Final test-local legacy variable renamed self_asserted with unchanged assertions. Shipped completed-show behavior retained under Greg-approved criterion clarification, including unavailable and optional provenance error_class. All9 Windows gates passed on756b8583 input, Codex/Claude reviews clean, current source exact-check passed. Independent evaluation e3bf5313a6ec4ba082da36360a09d4af passes5/5 on revision5; recorded judgment basis, not host-minted verification. Test-only source change remains uncommitted pending Greg approval; no install or Git write performed.",
+    "completed_at": "2026-09-24T00:52:03.926473400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7b1f9d45bdfc4d088a9251e28747cfa7": {
+        "activity_id": "7b1f9d45bdfc4d088a9251e28747cfa7",
+        "task_id": "01a0cb25-bec5-7212-8ac0-21afbcd87790",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7b1f9d45bdfc4d088a9251e28747cfa7"
+      },
+      "d1eab40cceb6462daad582dbce49fd50": {
+        "activity_id": "d1eab40cceb6462daad582dbce49fd50",
+        "task_id": "01a0cb25-bec5-7212-8ac0-21afbcd87790",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "79df1786cef74f3a99b6a54faddae444"
+      },
+      "d7df8f1a5a6c4dc8a134b29e20d38657": {
+        "activity_id": "d7df8f1a5a6c4dc8a134b29e20d38657",
+        "task_id": "01a0cb25-bec5-7212-8ac0-21afbcd87790",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d7df8f1a5a6c4dc8a134b29e20d38657"
+      },
+      "fc1248d3de024133a1a09ea423b6eeb1": {
+        "activity_id": "fc1248d3de024133a1a09ea423b6eeb1",
+        "task_id": "01a0cb25-bec5-7212-8ac0-21afbcd87790",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fc1248d3de024133a1a09ea423b6eeb1"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a1c211-475f-7c01-ad30-4a9d13ca4f67",
+  "external_ref": null,
+  "title": "Origin enrollment stays refused after an unresolved binding recovery leaves a quarantined tail",
+  "outcome": "Origin enrollment stays refused after an unresolved binding recovery leaves a quarantined tail",
+  "acceptance": [
+    "After an unresolved binding-origin recovery leaves a quarantined binding, ordinary origin enrollment or fork either proceeds, because the settledness check excludes quarantined bindings while keeping their uncertainty visible, or is refused with a typed recovery remedy that names the quarantined binding.",
+    "A behavior test reproduces the quarantined-tail case and shows the chosen outcome."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

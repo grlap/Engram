@@ -1,0 +1,28 @@
+{
+  "id": "01a1536a-3046-7bc0-bec6-846c01ce6abe",
+  "external_ref": null,
+  "title": "Update the stale \"Task sync is planned, not shipped\" sentence in AGENTS.md and CLAUDE.md",
+  "outcome": "Update the stale \"Task sync is planned, not shipped\" sentence in AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "The Architecture Boundaries bullet in AGENTS.md and CLAUDE.md (currently line 309) states which task-sync surfaces ship (explicit export/import through the Git folder, opt-in, materialization) and which remain planned (automated exchange, reconciliation, remote relay), consistent with docs/shipped.md",
+    "AGENTS.md and CLAUDE.md stay byte-identical, and the change follows the instruction-file landing rules"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "agent-instructions",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

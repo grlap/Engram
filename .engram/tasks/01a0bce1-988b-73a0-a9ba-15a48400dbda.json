@@ -1,0 +1,52 @@
+{
+  "id": "01a0bce1-988b-73a0-a9ba-15a48400dbda",
+  "external_ref": null,
+  "title": "Avoid duplicate refusal prefix when validating omitted migration rows",
+  "outcome": "Avoid duplicate refusal prefix when validating omitted migration rows",
+  "acceptance": [
+    "retired_table_rows_are_validated_and_counted_before_publication and omitted_format_marker_rows_are_validated_and_counted pass with named single-prefix decode refusals, no cell-value leakage and no destination publication."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "cleanup",
+    "gate",
+    "migration",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0bcbb-7dc9-7410-9f96-f46439447d4a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed omitted-row decode error shaping; strengthened exact refusal and format-marker count/value tests pass. Independent evaluation recorded criterion1 pass.",
+    "completed_at": "2026-09-20T03:38:47.580748200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "180090ac228340fa8bacd8b9fc7f06c5": {
+        "activity_id": "180090ac228340fa8bacd8b9fc7f06c5",
+        "task_id": "01a0bce1-988b-73a0-a9ba-15a48400dbda",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2cf8bead2f494cd3972fa7d6f1f6ad3e"
+      }
+    }
+  }
+}

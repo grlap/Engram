@@ -1,0 +1,65 @@
+{
+  "id": "01a19e95-6d85-7e13-a631-d88477063171",
+  "external_ref": null,
+  "title": "Let Greg's word relayed verbatim by Engram::Asistant carry commit and push authority, in AGENTS.md and CLAUDE.md",
+  "outcome": "Let Greg's word relayed verbatim by Engram::Asistant carry commit and push authority, in AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md stay byte-identical and say that, outside the standing approval and the candidate-commits bullet, a commit or push needs Greg's word given in the acting session or relayed by Engram::Asistant, quoted verbatim with its source mailbox and sequence, naming the change or commit it covers and recorded on the item by the acting session; a word relayed by any other session still never carries a commit or push",
+    "Both coordinators (Engram::Fable and Termal::Fable2) record concurrence on the exact wording on this item, Greg is sent the exact wording and its consequence before landing, and the final-diff audit is recorded as passed before landing",
+    "The link check and the AGENTS/CLAUDE identity check pass through the focused launcher, and a Codex+Claude review pair on the frozen tree has no outstanding Medium-or-higher finding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "agent-instructions",
+    "authority-text",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "CENTRAL CARGO SLOT OVERLAP RECORDED — Fable notice #959. Fable reports the authorized release build began at 01:14Z while session-12325's focused batch was still running from 01:13Z to 01:19Z. No check failed, but this overlapped Engram cargo and violated the one-job Central rule. I had relied on a process census that showed no active Engram cargo; that did not establish a handoff. Fable's corrective procedure is adopted: the current cargo-slot holder must send `END, slot released to <next>`, and the next holder starts only after reading that explicit release. Fable's notice was forwarded to session-12329 as requested. The release build and six-store readiness were already completed; no further Central cargo work is planned in this turn.",
+    "completed_at": "2026-11-03T01:27:39.519629400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3b181bcc7e4c4c9f9b6b5ef661465697": {
+        "activity_id": "3b181bcc7e4c4c9f9b6b5ef661465697",
+        "task_id": "01a19e95-6d85-7e13-a631-d88477063171",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c4f5df455ad84c849c261c24ad3c0a04"
+      },
+      "fcb4b54557fa4e61a2376564a9580484": {
+        "activity_id": "fcb4b54557fa4e61a2376564a9580484",
+        "task_id": "01a19e95-6d85-7e13-a631-d88477063171",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "801e6bb814034f5280b0682a8b162ce8"
+      }
+    }
+  }
+}

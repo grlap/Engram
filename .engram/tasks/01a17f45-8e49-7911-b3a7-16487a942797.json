@@ -1,0 +1,102 @@
+{
+  "id": "01a17f45-8e49-7911-b3a7-16487a942797",
+  "external_ref": null,
+  "title": "Refuse undeclared top-level members on stored work obligations",
+  "outcome": "Refuse undeclared top-level members on stored work obligations",
+  "acceptance": [
+    "A stored WorkObligation with an undeclared top-level JSON member is refused by name by its strict reader and reported by doctor, without dropping the member silently.",
+    "Existing supported obligation records and nested-member refusal behavior remain valid, with focused regression coverage."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "canonical-decoding",
+    "delivered",
+    "evaluation-pending",
+    "integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Stored WorkObligation now refuses undeclared top-level members by name (serde deny_unknown_fields) and doctor reports them by name once per record, without dropping members or duplicating diagnostics; existing records and nested-member refusal unchanged. Landed at 8720d57e (R2 full gate test-ac1df9f1 PASS; all-6 live-store doctor+readiness census clean, zero unknown members), installed build a6bf976f. An independent acceptance evaluation passed both criteria (record 1a338d81d15c4276b1fc56a447474b52).",
+    "completed_at": "2026-10-28T06:29:51.332550300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "115997c48d58474a8261766a9eb9fef6": {
+        "activity_id": "115997c48d58474a8261766a9eb9fef6",
+        "task_id": "01a17f45-8e49-7911-b3a7-16487a942797",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d090e7b5a1cb40158211ae69c3758f66"
+      },
+      "1918b748df28408f941495eac39f7f5f": {
+        "activity_id": "1918b748df28408f941495eac39f7f5f",
+        "task_id": "01a17f45-8e49-7911-b3a7-16487a942797",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "5a832aa6203b4e5f88a6d0d2a17912a1"
+      },
+      "5a832aa6203b4e5f88a6d0d2a17912a1": {
+        "activity_id": "5a832aa6203b4e5f88a6d0d2a17912a1",
+        "task_id": "01a17f45-8e49-7911-b3a7-16487a942797",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "97051cd544c14070b0b498df2e552879"
+      },
+      "97051cd544c14070b0b498df2e552879": {
+        "activity_id": "97051cd544c14070b0b498df2e552879",
+        "task_id": "01a17f45-8e49-7911-b3a7-16487a942797",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "115997c48d58474a8261766a9eb9fef6"
+      },
+      "dbcc3b1e6ece418f90703c5c2e9397f1": {
+        "activity_id": "dbcc3b1e6ece418f90703c5c2e9397f1",
+        "task_id": "01a17f45-8e49-7911-b3a7-16487a942797",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "de5bc535d0d94254933d610b21bc71aa"
+      }
+    }
+  }
+}

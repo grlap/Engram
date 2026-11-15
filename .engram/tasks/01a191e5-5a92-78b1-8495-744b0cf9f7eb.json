@@ -1,0 +1,29 @@
+{
+  "id": "01a191e5-5a92-78b1-8495-744b0cf9f7eb",
+  "external_ref": null,
+  "title": "Distinguish scratch-directory refusals from invalid PowerShell cache files in docs",
+  "outcome": "Clarify the Windows cache startup refusal wording so it separately describes invalid scratch ancestors and a cache entry that is not a regular file.",
+  "acceptance": [
+    "The launcher documentation says that linked or non-directory scratch ancestors are refused, and separately says that an existing cache entry must be a regular file, including refusal when it is a directory.",
+    "The prose retains the documented startup reasons and preserved run metadata/stage behavior, with no runtime change, cache disabling, cleanup or ignore entry."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "test-launcher",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

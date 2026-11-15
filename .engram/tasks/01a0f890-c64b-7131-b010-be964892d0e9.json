@@ -1,0 +1,50 @@
+{
+  "id": "01a0f890-c64b-7131-b010-be964892d0e9",
+  "external_ref": null,
+  "title": "The doctor reads each finished run's seal once, not once per source change",
+  "outcome": "The doctor reads each finished run's seal once, not once per source change",
+  "acceptance": [
+    "The doctor's check of source-change obligations loads a finished run's completion cut at most once per run, and a test shows that its report on a store with late source changes is unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Doctor's source-change obligation check now reads each finished run's sealed cut once per run, through a per-run cache filled where it was read before. Errors and skip paths are unchanged. A test-only counter and a test show one read for a run with two late changes, with an unchanged clean report, mutation-checked (2 reads without the cache). Round 1 was clean, gate 9/9 with credit, and the evaluation passed. Landed as febe88c and installed as build 680052fd.",
+    "completed_at": "2026-10-02T00:07:14.959240600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8df3b5f57da74a3490fc1f1f5f865aef": {
+        "activity_id": "8df3b5f57da74a3490fc1f1f5f865aef",
+        "task_id": "01a0f890-c64b-7131-b010-be964892d0e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "91fa781962754b47b497b32c398bce2d"
+      }
+    }
+  }
+}

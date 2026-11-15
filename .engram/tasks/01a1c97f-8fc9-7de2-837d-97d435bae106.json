@@ -1,0 +1,29 @@
+{
+  "id": "01a1c97f-8fc9-7de2-837d-97d435bae106",
+  "external_ref": null,
+  "title": "Report source-membership derivation failures as labeled doctor findings",
+  "outcome": "Doctor reports an underivable task-sync source projection with a stable labeled finding, and projection repair refuses safely after collecting findings.",
+  "acceptance": [
+    "Non-SQLite source-membership derivation failures are reported as labeled findings by verify and rebuild, consistent with sibling graph/document projections; SQLite failures remain errors.",
+    "A behavioral check covers a malformed or underivable canonical source history, confirms the labeled doctor finding and safe repair refusal, and preserves valid projection rebuilding."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

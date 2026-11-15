@@ -1,0 +1,61 @@
+{
+  "id": "01a0cbd4-bdf2-7402-bb49-a5f404605e07",
+  "external_ref": null,
+  "title": "Independent acceptance evaluation by default; self-evaluation only for tasks explicitly marked for it",
+  "outcome": "An agent cannot close a task on its own evaluation by forgetting, by shortcut, or by re-rolling: a task without an evaluation mode set must be evaluated in a mode other than same-session whenever one is admitted; same-session stays available (Greg's decision) only when someone other than the task's executor marked the task for it; and a failing evaluation is superseded only after new evidence.",
+  "acceptance": [
+    "A later evaluation supersedes the newest blocking evaluation (fail, insufficient_evidence or needs_human) only if basis evidence of a qualifying kind was recorded after that evaluation's evidence cut and lies within the new evaluation's cut; qualifying kinds are notes, gates, host verification and environment evidence, and observations of a source change; evaluation records and claim, renewal, handoff and checkpoint bookkeeping do not qualify, and a repeat sighting of an unchanged source does not; this holds also when the blocking evaluation has become stale for a reason other than a change of the item's criteria or bindings, which the carried-failure rule governs; so a re-roll on the same evidence, or after an edit of the title, mode or policy, cannot replace a fail, while a correction note followed by a new evaluation still can",
+    "A sub_agent evaluation whose evaluator session is the run's current holder or executor, or any former holder of the run, is refused at evaluate and is not consumed at done, like an unmarked same_session evaluation; a sub_agent evaluation recorded from a distinct child session, with a holder or executor as its parent session, remains admissible where the policy admits sub_agent.",
+    "For a task with no evaluation mode set, a same-session evaluation is refused at evaluate whenever the policy admits another mode; the refusal says to record an independent evaluation from the host and that same-session needs the task marked by someone other than its executor; no new policy field is added, and a project that admits only same_session is unchanged",
+    "No self-waiver: a same-session evaluation is refused when the session that set the task's current same-session mark is the evaluating session or appears in the run's holder or executor history; this covers a mark set at creation by the later executor and a mark set to escape a failed independent evaluation, while a mark set by an operator or peer is accepted",
+    "Tests cover: an executor-set mark refused at evaluate, an operator-set mark accepted, a creation-time self-mark refused once the creator executes, a mark set to escape a fail refused, a same-cut re-roll, a re-roll whose cut advanced only by evaluation or bookkeeping entries and a re-roll after a title or mode edit not superseding a fail, a note-then-re-evaluate superseding it, and existing completion seals unchanged",
+    "The acceptance-evaluation design doc describes these rules and states the limit: identities are asserted, so this stops forgetting, shortcuts and re-rolls, not deliberate forgery",
+    "The full quality gates pass",
+    "done's missing-evaluation refusal points first at requesting an independent evaluation from the host, in host-neutral wording (no vendor tool names in the core); it mentions same-session only when the task is marked for it or the policy admits no other mode, and never asks for a mode the policy does not admit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0cb25-b105-7af3-8fb6-f90ed6511c57",
+    "01a0cbd4-9dd8-71d2-a602-d5aa5056bbce"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Independent acceptance evaluation by default, landed.\n- An unmarked task refuses same_session evaluation whenever another mode is admitted.\n- A same_session mark waives independence only when a session outside the run set it. The author comes from the Created or Revised event; a restored item's mark or a detach successor's mark has no author.\n- A sub_agent evaluation counts only from a distinct child session.\n- These rules are checked at evaluate and again when done consumes the record.\n- A blocking newest evaluation is replaced only on new evidence (a note, a gate, a host check, or a source change to another revision). Re-rolls on the same evidence, or after a title, mode or policy edit, are refused.\n- The missing-evaluation and policy-stale remedies follow the task's mark and the admitted modes.\n- Tests B59-B72; docs updated.\n- Seven review rounds; the final round is clean. Full gate on the landed tree: 1604 Rust tests.\n- Independent evaluation 9ecf80bfa94e4c569dafcc3da4588296 passed all 8 criteria.",
+    "completed_at": "2026-09-30T07:25:16.767575500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "49d9ff4eef3b433abfc79b4c47197ee0": {
+        "activity_id": "49d9ff4eef3b433abfc79b4c47197ee0",
+        "task_id": "01a0cbd4-bdf2-7402-bb49-a5f404605e07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a07ad519328f4492ac4795b89b6a72db"
+      }
+    }
+  }
+}

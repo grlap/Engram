@@ -1,0 +1,52 @@
+{
+  "id": "01a10788-9c31-7d50-a591-4d1062260ed2",
+  "external_ref": null,
+  "title": "Bound stranded-child discovery cost to open candidates and one attribution anchor",
+  "outcome": "Bound stranded-child discovery cost to open candidates and one attribution anchor",
+  "acceptance": [
+    "Stranded-child discovery starts from open children and short-circuits canonical participation probes after one matching anchor per completed parent",
+    "A VM-step or scale regression shows unrelated completed history does not increase stranded-child discovery work; documentation describes the actual query bound"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Stranded-child discovery now starts from indexed Open child candidates, groups siblings and stops canonical session-participation probing after the first matching anchor per Completed parent. A production VM-step regression proves unrelated Completed history adds no discovery work; docs state the actual Open-candidate and related-history bound.",
+    "completed_at": "2026-10-04T20:37:27.388580900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "177ef4a41b044fcab0ed6507d8b8d6ca": {
+        "activity_id": "177ef4a41b044fcab0ed6507d8b8d6ca",
+        "task_id": "01a10788-9c31-7d50-a591-4d1062260ed2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fb4f1eeb09d84ad18e70fdc5966322ca"
+      }
+    }
+  }
+}

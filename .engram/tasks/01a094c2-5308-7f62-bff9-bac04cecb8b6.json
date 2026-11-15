@@ -1,0 +1,47 @@
+{
+  "id": "01a094c2-5308-7f62-bff9-bac04cecb8b6",
+  "external_ref": null,
+  "title": "Install accepted Engram build locally",
+  "outcome": "Install accepted Engram build locally",
+  "acceptance": [
+    "Installed binary matches release build from e461e8e; both existing project stores pass doctor and installed peek reports the new build"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Installed ce19fe80e4f0 from e461e8e with preserved previous executable, healthy doctors for both active project stores, matching installed hashes and successful installed peek reads.",
+    "completed_at": "2026-09-12T08:40:05.509295100Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ed9668fc23e534595804c699f7627d6970deeaa84ca7b30039b2f743eea2d243": {
+        "activity_id": "ed9668fc23e534595804c699f7627d6970deeaa84ca7b30039b2f743eea2d243",
+        "task_id": "01a094c2-5308-7f62-bff9-bac04cecb8b6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c82743b856c1409ee4a7a0270bf71111784236569c2339756cf7a9a10f50e1f7"
+      }
+    }
+  }
+}

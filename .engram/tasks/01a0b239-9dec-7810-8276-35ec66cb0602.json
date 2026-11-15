@@ -1,0 +1,65 @@
+{
+  "id": "01a0b239-9dec-7810-8276-35ec66cb0602",
+  "external_ref": null,
+  "title": "Drop the checksum columns nothing compares",
+  "outcome": "No stored column is a checksum without a comparison. Candidates from a rough scan: grant_hash, lease_hash, input_hash, supersession_hash, offer_hash, decision_hash; each is confirmed by reading its writers and readers before it is removed.",
+  "acceptance": [
+    "each candidate column is classified from its code sites in a note: compared fingerprint (kept, site named) or dead checksum (removed)",
+    "every removed column is named in the retired-column list and import reports it under retired_fields with the values it carried",
+    "the pending-page, replay and idempotency tests still bind; all nine gates pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "identity",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0b239-6590-75b3-bb52-04199ab5f6e4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed seven uncompared checksum columns with explicit counted retirement, preserved record links and compared fingerprints, and converted both live stores. Independent Claude7177 accepted all3 unchanged criteria; criterion3 asserted from existing parent gate evidence, not evaluator-executed gates. Required decoder child completed. All-nine execution remains attributed to Coder7002 with retained logs, not host-attested verification.",
+    "completed_at": "2026-09-21T03:33:46.217273400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "83550da3beda4878b0d9328fc3c635ef": {
+        "activity_id": "83550da3beda4878b0d9328fc3c635ef",
+        "task_id": "01a0b239-9dec-7810-8276-35ec66cb0602",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9ff1a61e3ecb49f894a8d7e858733851"
+      },
+      "fb1d0689848a45de8cb33c5057b29b9c": {
+        "activity_id": "fb1d0689848a45de8cb33c5057b29b9c",
+        "task_id": "01a0b239-9dec-7810-8276-35ec66cb0602",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fb1d0689848a45de8cb33c5057b29b9c"
+      }
+    }
+  }
+}

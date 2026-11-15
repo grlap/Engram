@@ -1,0 +1,53 @@
+{
+  "id": "01a11bdf-c8f4-7461-b68a-0a80e2160f09",
+  "external_ref": null,
+  "title": "Assert canonical note-search scan costs and measure live-store search",
+  "outcome": "The eligible canonical note scan has executable cost regression assertions and an attributed measurement on a snapshot of a representative live store.",
+  "acceptance": [
+    "The existing note-search cost fixture asserts meaningful decode/query bounds derived from eligible item and note counts, detecting ineligible scans or repeated loads rather than merely printing cost.",
+    "Record reproducible search and continuation timing/cost on a supported snapshot copy of a live store, with workload counts, producer/source identity and command/result evidence; keep scratch inside the owning repository worktree and leave the live store unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "low",
+    "performance",
+    "review",
+    "technical-debt"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added executable eligible canonical decode/query regression bounds and reproducible supported live-store-copy search/continuation measurement with attributed producers and limits.",
+    "completed_at": "2026-10-09T02:08:44.849534500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "495c0724f333449089de7af7caf6e144": {
+        "activity_id": "495c0724f333449089de7af7caf6e144",
+        "task_id": "01a11bdf-c8f4-7461-b68a-0a80e2160f09",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0e417fa5f48b4ffcaa50254dd8a0bea3"
+      }
+    }
+  }
+}

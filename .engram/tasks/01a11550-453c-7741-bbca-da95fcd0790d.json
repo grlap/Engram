@@ -1,0 +1,52 @@
+{
+  "id": "01a11550-453c-7741-bbca-da95fcd0790d",
+  "external_ref": null,
+  "title": "Compact automatic test completion notifications without losing actionable evidence",
+  "outcome": "Reduce repeated routine test output entering coordinator context while keeping failure diagnostics, warnings, evidence identity and full results directly recoverable.",
+  "acceptance": [
+    "Automatic PASS, FAIL, interrupted and unknown summaries retain run identity, actual outcome and exit status, input-verification information or its exact locator, warnings, actionable failure diagnostics, explicit truncation and results/log locators; unrun stages are never presented as passed.",
+    "Collapse redundant successful-stage/preflight listings and unchanged explanatory boilerplate in automatic notifications; full stage-by-stage results remain available on demand, and notification retries reuse the frozen message and idempotency identity without rerunning tests.",
+    "Representative before/after fixtures cover success, failure with unrun stages, warnings, exceptions, interruption and truncation, demonstrating smaller automatic messages while preserving required evidence; compare a real retained failure notification and the corrected output without claiming measured provider-token savings."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-tooling",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Compact automatic test completion notifications preserve run outcome, input boundary caveats, warnings and actionable diagnostics while grouping clean successes; detailed CLI and immutable retry bodies remain available. Representative fixtures and exact full gate pass; required independent pair has Notes only; independent acceptance3/3 passed. Historical failure output27.2%smaller and live delivered completion26.2%smaller by UTF-8bytes, no provider-token claim. Landed/pushed/installed clean release with backup, all4live stores ready, no running-session restart needed.",
+    "completed_at": "2026-10-07T09:08:42.372491200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4cb67b4a6d2f432184068eafec1883bc": {
+        "activity_id": "4cb67b4a6d2f432184068eafec1883bc",
+        "task_id": "01a11550-453c-7741-bbca-da95fcd0790d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e1f0c76a9c264d0abdc18765657fc3ca"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a1c228-6aad-7193-a72d-e3c53c1df442",
+  "external_ref": null,
+  "title": "Incoming delta that touches a historical 64-character native claim records its hold instead of rolling back",
+  "outcome": "Incoming delta that touches a historical 64-character native claim records its hold instead of rolling back",
+  "acceptance": [
+    "An incoming task-sync delta that touches a task whose active native claim has a historical 64-character event id is deferred with that id stored unchanged, instead of rolling back the exchange; newly minted hold and exchange identities stay UUIDs.",
+    "A behavior test with a real historical 64-character claim id defers, replays exactly, survives projection rebuild and passes doctor, with no weakening of authority checks or foreign-record isolation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserve historical native claim IDs when incoming deltas defer, with unchanged hold/exchange UUID and authority guards. Added real claim deferral, replay, projection rebuild and doctor regression; checked exact clean candidate handed to parent for combined review and landing.",
+    "completed_at": "2026-11-09T21:47:26.724737200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09e555c5ba52443faebea8db8090bbad": {
+        "activity_id": "09e555c5ba52443faebea8db8090bbad",
+        "task_id": "01a1c228-6aad-7193-a72d-e3c53c1df442",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e6a195ebd46d450590d54c03fada3ac5"
+      }
+    }
+  }
+}

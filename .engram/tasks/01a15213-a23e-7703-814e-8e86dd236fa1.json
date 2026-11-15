@@ -1,0 +1,30 @@
+{
+  "id": "01a15213-a23e-7703-814e-8e86dd236fa1",
+  "external_ref": null,
+  "title": "Refuse a too-old Git in the test launcher with a typed message instead of building a run directory from echoed option text",
+  "outcome": "Refuse a too-old Git in the test launcher with a typed message instead of building a run directory from echoed option text",
+  "acceptance": [
+    "When `git rev-parse --path-format=absolute --git-path review-runs` returns output that is not an absolute path (as Git older than 2.31 does by echoing the option), scripts/test-launcher.mjs refuses before creating any run directory, with a typed message naming the minimum Git version and the resolved git executable path",
+    "A launcher test covers the refusal with a fake git that echoes the option text",
+    "No support for old Git is added; the review-freeze script's use of the same flag is checked and given the same refusal if it shares the failure mode"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "launcher",
+    "remote",
+    "test-infra"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

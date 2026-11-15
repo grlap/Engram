@@ -1,0 +1,62 @@
+{
+  "id": "01a1330d-49a4-7d41-818f-6657f2d17a4f",
+  "external_ref": null,
+  "title": "Bound the copy's lock wait by real elapsed time, not SQLite's requested sleeps",
+  "outcome": "Bound the copy's lock wait by real elapsed time, not SQLite's requested sleeps",
+  "acceptance": [
+    "A backup capture's lock wait for a locked store ends within a small measured margin of the time left, not about 14% past it, using a deadline-aware busy handler that measures real elapsed time in safe code; the existing capture-deadline assertions are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered: a backup copy's connections wait for a locked store through a deadline-aware busy handler that reads the clock after each sleep of at most 2 ms. Each wait ends at the copy's deadline, at most 5 s after it began. It is safe code: rusqlite's Connection::busy_handler, and an RAII thread-local scope that fails closed without a scope. Ordinary opens keep Timeout(5 s) unchanged; capture-deadline assertions are unchanged.\nEvidence:\n- 50 quiet runs: lock-wait overshoot past the 1500 ms budget is p95 +0.59 ms, max +0.65 ms, down from p95 +232 ms.\n- Full gate test-c185a0b5 PASS on freeze dcb097e4.\n- Two review rounds, Codex and Claude, with nothing Medium or higher. Round-1 Low fixed; round-2 doc-wording Low filed as w-a94fc5c15e58.\n- Evaluation f28fd640 passed.\nChangeset judgment: no durable row, schema, projection or strict TermAl reader field changes. readiness was ready on all 4 live stores, both with the new build and with the installed binary.\nLanded ff480a7 on origin/master, a fast-forward from 8d6062b. Installed build b6a6ffe26e6f (exe sha256 413d6aa3…3744); backup engram-20261013T161742Z-bae56bea50f5.exe (sha256 c7718f83…b325).\nRunning sessions do not need the new build: the change affects only backup capture's copy.",
+    "completed_at": "2026-10-13T16:18:13.658255Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8f7a7a4f5b724943937af76d3e463735": {
+        "activity_id": "8f7a7a4f5b724943937af76d3e463735",
+        "task_id": "01a1330d-49a4-7d41-818f-6657f2d17a4f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "43c698dc73fc47578ab334bf5a3558bb"
+      },
+      "a4b1fb23834e47a39d21086f7e34ccbd": {
+        "activity_id": "a4b1fb23834e47a39d21086f7e34ccbd",
+        "task_id": "01a1330d-49a4-7d41-818f-6657f2d17a4f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a4b1fb23834e47a39d21086f7e34ccbd"
+      }
+    }
+  }
+}

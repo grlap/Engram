@@ -1,0 +1,54 @@
+{
+  "id": "01a0faa7-eeac-7902-8d72-2e2c4dc65dde",
+  "external_ref": null,
+  "title": "Design per-action gates so a host can require an Engram grant before each declared material action",
+  "outcome": "Design per-action gates so a host can require an Engram grant before each declared material action",
+  "acceptance": [
+    "docs/features/ holds a per-action gate design brief that reconciles behavioral-control-plane.md's planned interfaces and action_gated assurance with what turn gating ships today, naming what it reuses and what it adds",
+    "the brief defines the declared material capability set, the action grant (request, begin, outcome), how execution-bound path resolution is kept, how an outcome is reconciled and what it blocks until then (overlapping writes and completion of the run), and what fails closed",
+    "the brief states the latency and interruption budget per action and how a refusal names a host-automatic repair, so agents are not stranded, and what TermAl must intercept to claim action_gated honestly",
+    "the brief states the honest value now: which real failures turn gating misses that action gating would stop, with evidence from this project's history, and recommends what to build now versus defer",
+    "the implementation is either decomposed into Engram items with criteria an independent evaluator can check, or, where the brief recommends building nothing, recorded as one deferred root whose outcome states the trigger and whose criteria an evaluator can check; both architects record concurrence on the final brief, and any choice beyond the brief is recorded with the council's decision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "design"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Per-action gates are designed, and the design is on master as a deferred brief: nothing is built, scheduled or presented as planned. docs/features/action-gates.md states the honest value from this project's incidents, what the design reuses from the shipped turn gate and what it adds, the mediation map and the material set defined by resolved effect, what a host may claim and what TermAl would have to close, the action grant (authorize, begin, complete, reconcile, status), path binding at the actuator, unresolved outcomes that block overlapping writes and completion of the run while a diagnosis turn goes on, what fails closed, the latency budget and the repair named by each refusal, the acceptance tests, and why it is not built now: the operator decided on 2026-09-26 that the host will not block dangerous operations. Nine companion documents were aligned. The implementation is one deferred, blocked root, w-fedfced4e37b, whose outcome states the trigger. Both architects concurred on the landed text and the coordinator approved it; the landing reviews by Engram::Opus found and I fixed every Medium, and the remaining Lows are filed as w-1893f0383e11. Criterion 2 was revised with the coordinator's concurrence, because the review moved the design from a per-turn rule to a per-subject and per-run rule. Landed by Engram::Opus as a Markdown-only changeset; nothing was built or installed. Independent evaluation 1c94c68382a3400ba6852492d93ab8f6 passed all five criteria.",
+    "completed_at": "2026-10-02T08:20:51.413596700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "82891cd81e5b41fdb510a3456f03a4bc": {
+        "activity_id": "82891cd81e5b41fdb510a3456f03a4bc",
+        "task_id": "01a0faa7-eeac-7902-8d72-2e2c4dc65dde",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e02dd110292441f79ab83bc7b2c8c3b1"
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "id": "01a0a06b-7a91-72b3-b8cc-a067c6bad784",
+  "external_ref": null,
+  "title": "Coordinate bounded mutation-title correction",
+  "outcome": "Coordinate bounded mutation-title correction",
+  "acceptance": [
+    "Oversized-title correction meets both existing implementation criteria with passing required gates and consolidated independent Codex and Claude review"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Coordinated and accepted full authored-contract repair: both unchanged implementation criteria satisfied, all nine Windows gates passed on frozen input, independent Codex and Claude reviews consolidated without actionable defects; implementer completion read back. No commit, push or installation.",
+    "completed_at": "2026-09-14T18:31:36.094935Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ea069f1adbcbcbb9b20b63f651473bd36f9e422424cd55f29748b9c497fe81c5": {
+        "activity_id": "ea069f1adbcbcbb9b20b63f651473bd36f9e422424cd55f29748b9c497fe81c5",
+        "task_id": "01a0a06b-7a91-72b3-b8cc-a067c6bad784",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b8532bcee661ba6c21fdac3c1fbe5f51b3c51d469ed38610597850595e268d0a"
+      }
+    }
+  }
+}

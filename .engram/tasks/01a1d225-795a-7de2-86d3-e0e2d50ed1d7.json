@@ -1,0 +1,60 @@
+{
+  "id": "01a1d225-795a-7de2-86d3-e0e2d50ed1d7",
+  "external_ref": null,
+  "title": "Sync task planning between hosts with one operator command on the folder route",
+  "outcome": "Sync task planning between hosts with one operator command on the folder route",
+  "acceptance": [
+    "One operator command on the folder route (scripts/task-sync-folder.mjs) exports this host's planning, fetches the data branch, three-way merges task files against the last imported or published commit, imports with a dry run first, commits a fast-forward and pushes the data branch, using only shipped engram commands and plain Git (no force, rebase, pull or merge commit)",
+    "It stops visibly with a non-zero exit on any import refusal (printing the refusal code and per-task reasons verbatim), any text conflict (writing base, local and incoming versions), a task-file removal, or a repeated non-fast-forward rejection, and never depends on any particular refusal code",
+    "It runs on Windows and macOS",
+    "A behavior test drives two homes against a local bare remote: adds in both directions, concurrent edits of different tasks merged to a fast-forward, a same-field conflict stop, a non-fast-forward retry and an import refusal stop",
+    "docs/features/git-task-sync.md and docs/shipped.md describe the command"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "66e635ea6f7f45c59b1b4d62d01b06a7": {
+        "activity_id": "66e635ea6f7f45c59b1b4d62d01b06a7",
+        "task_id": "01a1d225-795a-7de2-86d3-e0e2d50ed1d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4d8e4acb379849e28ddbfaa0f6262746"
+      },
+      "77ba8944786f412ab4d0ade5a323460a": {
+        "activity_id": "77ba8944786f412ab4d0ade5a323460a",
+        "task_id": "01a1d225-795a-7de2-86d3-e0e2d50ed1d7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "77ba8944786f412ab4d0ade5a323460a"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a073bf-7ccb-70e1-8efe-b576ce8ab167",
+  "external_ref": null,
+  "title": "Continuation invalidation basis: bind the cursor's read-cut to changes that can affect the selected membership or order, not every project write, without weakening project or filter binding; document the exact basis and the restart cost",
+  "outcome": "Continuation invalidation basis: bind the cursor's read-cut to changes that can affect the selected membership or order, not every project write, without weakening project or filter binding; document the exact basis and the restart cost",
+  "acceptance": [
+    "docs state exactly which changes invalidate a continuation and why; a test shows an unrelated write (a note on an item outside the filtered set) does not invalidate a page while a membership- or order-affecting change does, with the typed refusal unchanged",
+    "the refusal text states the reason once, not in both headline and bullet"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-agent-ux",
+    "dogfood",
+    "phoenix",
+    "stream-agent-receipts"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Continuations now bind to what can change their pages.\n- ls cursors carry a required tagged basis. A listing page has a membership fingerprint over the full filtered sequence and is refused only when membership or order changed, or the clock reversed. Compact next keeps project_cut. A token without a basis is refused.\n- Note and observation windows decide by total, boundary and clock. The evaluation window binds (run feed head, item revision).\n- A refusal states its reason once.\n- Docs and tests show that an unrelated note keeps the page, while a membership or order change refuses with the same typed error.\n- Landed as 959767d.",
+    "completed_at": "2026-10-02T09:02:40.610156800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7ab7bd73d71c49e39c274af7325a1b10": {
+        "activity_id": "7ab7bd73d71c49e39c274af7325a1b10",
+        "task_id": "01a073bf-7ccb-70e1-8efe-b576ce8ab167",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "eb3238f22ee244758425b279ed096988"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a06e94-08ae-7670-a743-edae30510dd6",
+  "external_ref": null,
+  "title": "Attributed notes from non-holders on open and blocked items, and notes on children of a completed parent (Greg's decision)",
+  "outcome": "Attributed notes from non-holders on open and blocked items, and notes on children of a completed parent (Greg's decision)",
+  "acceptance": [
+    "a project-bound session that holds no claim can note an open item and a blocked item without claim-note-release; a child fenced by a completed parent accepts a note; the note is attributed to the noting session and marked non-holder in provenance; done, update, and gate on open items still require the claim; Phoenix's refusal on a just-completed item is reproduced and either fixed or shown to be the gate-without-work-ref path with its remedy"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered attributed non-holder observations without run credit across open, blocked, expired, completed-parent and restored work; exact retry and feed/order integrity; immediate receipt marker and evidence priority; same-session peer delivery and transport regressions. All nine gates passed on stable freeze4a2525eb, including390 library tests,14 binary tests, CLI integration and scale. Review defects corrected; speculative fmt issue disproved; canonical read validation retained per Fable.",
+    "completed_at": "2026-09-05T01:18:11.820490800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "889331ba837a380742040f18aae3fcc8f4b5ec5dd515120dd5c3ffe7e2799e8c": {
+        "activity_id": "889331ba837a380742040f18aae3fcc8f4b5ec5dd515120dd5c3ffe7e2799e8c",
+        "task_id": "01a06e94-08ae-7670-a743-edae30510dd6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a1381ace3167d0e0915fa95ba6a8db4c5834ffe62f2e1d629162bdf6b6aa442e"
+      }
+    }
+  }
+}

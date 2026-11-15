@@ -1,0 +1,65 @@
+{
+  "id": "01a1c250-931f-7ec0-84ec-e2949a0aaf9b",
+  "external_ref": null,
+  "title": "Make /review-changes' round-keyed reviewer limits and fix-round scope match the family split",
+  "outcome": "Make /review-changes' round-keyed reviewer limits and fix-round scope match the family split",
+  "acceptance": [
+    "Under a family split, /review-changes applies its limits on a round's counting reviews and on the Kimi stand-in to each family's pair (today: 'a round never has more than two reviews that count', 'Kimi never stands in for both reviewers of the same round', 'if no stand-in has been spawned this round')",
+    "/review-changes section 4's fix-round paragraph says that under a family split each family's pair reviews its whole family, matching the AGENTS.md and CLAUDE.md Fix-rounds bullet",
+    "The seam family's brief names the cross-family interfaces it covers, and its pair may read any path to judge them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "authority-text",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 0bd70a30 (tree 276fa148) on master and origin/master: /review-changes' reviewer limits and fix-round scope now apply to each family's pair under a family split (C1-C4). Fable2's final-diff audit passed on that exact commit. Post-landing independent evaluation (Codex 17232) passed 3/3 after the doc-link check on the named root (test-d39e311c, exit 0) once TermAl's w-31d0 Lint admission was running.",
+    "completed_at": "2026-11-10T15:53:03.883631900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0b8bdacf1ef84bd9a93550df796ace25": {
+        "activity_id": "0b8bdacf1ef84bd9a93550df796ace25",
+        "task_id": "01a1c250-931f-7ec0-84ec-e2949a0aaf9b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0b8bdacf1ef84bd9a93550df796ace25"
+      },
+      "91fe1096e76c43aea2d5aaffef3cd04b": {
+        "activity_id": "91fe1096e76c43aea2d5aaffef3cd04b",
+        "task_id": "01a1c250-931f-7ec0-84ec-e2949a0aaf9b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cc7178d9798b43968f175e0cb4382a43"
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "id": "01a0f07d-e89f-7361-bf27-aa421c5f62da",
+  "external_ref": null,
+  "title": "Selected unblock follow-ups: selector wording for the several-blockers refusal, and a race-free retire of refused attempts",
+  "outcome": "Selected unblock follow-ups: selector wording for the several-blockers refusal, and a race-free retire of refused attempts",
+  "acceptance": [
+    "A bare unblock refused because several blockers are active names --blocker SELECTOR (MCP blocker) and gives engram work show REF as a runnable next command, on the CLI and MCP, and a test asserts the words and next",
+    "Retiring a refused selected-unblock attempt checks for a committed core result in the same transaction that deletes it and is bound to the refused attempt's recorded basis, with a deterministic interleaving test",
+    "The interrupted selected-unblock refusal and the unknown-blocker refusal give engram work show REF as a runnable next command and say selector where the words do"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Selected unblock now gives CLI/MCP selector and inspection guidance. Refused keyless attempts retire atomically only on their exact durable request and basis, preserving committed clears; a pending-attempt guard prevents stale clears after retirement. Deterministic interleaving regressions and the full nine-stage gate passed. Independent acceptance passed all three unchanged criteria; both whole-input reviews have no Medium or higher findings. Two Low wording follow-ups remain separately tracked.",
+    "completed_at": "2026-10-09T16:31:40.808962Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "33ad4a885524401d9057a417d580e492": {
+        "activity_id": "33ad4a885524401d9057a417d580e492",
+        "task_id": "01a0f07d-e89f-7361-bf27-aa421c5f62da",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "33ad4a885524401d9057a417d580e492"
+      },
+      "b79a293c6b964ca5bc438bfa4e55757a": {
+        "activity_id": "b79a293c6b964ca5bc438bfa4e55757a",
+        "task_id": "01a0f07d-e89f-7361-bf27-aa421c5f62da",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dca4f927652a4359b318b41cdf4c72ee"
+      }
+    }
+  }
+}

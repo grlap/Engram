@@ -1,0 +1,28 @@
+{
+  "id": "01a0b58f-02e5-7d33-8770-6769cf67440e",
+  "external_ref": null,
+  "title": "A bound criterion can be satisfied only by a host that runs the control turn checkpoint",
+  "outcome": "Greg has decided whether hosts without the control plane need a way to record host-minted verification evidence for a bound criterion, and the decision is either implemented or recorded as the intended limit.",
+  "acceptance": [
+    "Greg's decision is recorded: keep the control turn checkpoint as the only path that mints verification evidence, or add a host-private path that does not need a turn grant",
+    "whichever is chosen, docs/features/local-work-system.md and docs/shipped.md say which hosts can satisfy a bound criterion and what the others can do (revise or waive)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Decision NO (2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous): no host-private verification ingestion without control grants; TermAl hands evidence in under grants with the turn report, and a grant-less path would bypass producer/session/run/source attribution. A background-completion inability gets its own design if it materialises.",
+  "completion": null
+}

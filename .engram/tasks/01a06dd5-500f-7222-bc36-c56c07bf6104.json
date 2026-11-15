@@ -1,0 +1,51 @@
+{
+  "id": "01a06dd5-500f-7222-bc36-c56c07bf6104",
+  "external_ref": null,
+  "title": "Preflight snapshot build fingerprint before strict decoding",
+  "outcome": "Preflight snapshot build fingerprint before strict decoding",
+  "acceptance": [
+    "A future-format document with unknown fields and a different fingerprint returns the generic different-build refusal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "architecture",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-37c0-7550-b632-3a880beccfa3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preflight build/schema fingerprint before strict current-format decoding; a different build with future members receives the generic different-build refusal.",
+    "completed_at": "2026-09-04T20:00:23.695440800Z",
+    "actor": {
+      "actor_id": "dev/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "505c271b6a1539cb4ae81345e5471cf6cc5ef7f443a7602edd848aa31a4f38c4": {
+        "activity_id": "505c271b6a1539cb4ae81345e5471cf6cc5ef7f443a7602edd848aa31a4f38c4",
+        "task_id": "01a06dd5-500f-7222-bc36-c56c07bf6104",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "13d01ebecdfb106ab9513878a4ca83802334c5d0bc4d673386741d28ca0992b4"
+      }
+    }
+  }
+}

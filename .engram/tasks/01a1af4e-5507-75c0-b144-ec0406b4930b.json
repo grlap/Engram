@@ -1,0 +1,56 @@
+{
+  "id": "01a1af4e-5507-75c0-b144-ec0406b4930b",
+  "external_ref": null,
+  "title": "EO trial: a registered focused run completes bound work at done with evaluations off",
+  "outcome": "EO trial: a registered focused run completes bound work at done with evaluations off",
+  "acceptance": [
+    "A launcher focused run with --input commit, registered with the live TermAl host, on candidate a2316133 in a clean named root, yields a received test check bound to this item, and done accepts it with evaluations off"
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 1,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "eo-trial"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed the ordinary installed-build EO trial: a registered focused committed-input run produced a received test bound to this item; completion uses that evidence with evaluations off.",
+    "completed_at": "2026-11-06T05:41:04.522888900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a13cbf104cd74eeea609b0b761cb0c7c": {
+        "activity_id": "a13cbf104cd74eeea609b0b761cb0c7c",
+        "task_id": "01a1af4e-5507-75c0-b144-ec0406b4930b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ae5903bab5f74de49c2154aebb18a807"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "01a1c786-c3d6-7952-8fa0-c79a0fb534db",
+  "external_ref": null,
+  "title": "Measure publish_delta_outgoing on Windows and set its default deadline from that measurement or make it scale with the work",
+  "outcome": "Windows publication deadlines are justified by measured required work, with bounded uncertainty-preserving behavior.",
+  "acceptance": [
+    "Measure the real publish_delta_outgoing workflow on representative Windows inputs and record exact producer, clean input identity, environment and per-phase timings, distinguishing validation, push, fetch and ancestry work.",
+    "Use the measurements to decide whether to retain or change the default deadline or reduce/scale required work; any implementation preserves bounded operation deadlines, uncertainty, selected-input revalidation and single-dispatch guarantees.",
+    "Record the measured decision and focused validation for any resulting behavior change; a fixture-specific budget change alone is not evidence that the ordinary default serves real Windows use."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "performance",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

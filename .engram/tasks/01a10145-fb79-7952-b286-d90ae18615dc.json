@@ -1,0 +1,52 @@
+{
+  "id": "01a10145-fb79-7952-b286-d90ae18615dc",
+  "external_ref": null,
+  "title": "Waive on the largest live root exceeds the 1 s warm budget: attribute with a test-only count matrix, then fix format-preserving",
+  "outcome": "Waive on the largest live root exceeds the 1 s warm budget: attribute with a test-only count matrix, then fix format-preserving",
+  "acceptance": [
+    "A test-only per-operation count matrix for note, gate, decompose and waive at declared member compositions, using the existing root_state::Cost counters plus a member-row-read counter if needed, shows which structural work grows with members.",
+    "A format-preserving fix brings waive's warm MCP p95 within the fixed 1000 ms on a NEW declared synthetic benchmark, not a reproduction of the lost 2026-10-03 protocol: a retained manifest and harness at 6733 members and about 929647 bytes with its six member kinds declared; an unmodified baseline build and the candidate build run on the identical seed and protocol in a quiet slot; 20 warm full JSON-RPC round-trip samples per build with no retries or outlier removal and all errors kept; nearest-rank p95 reported with median and max; the historical 1032.6427 ms kept as a separate result.",
+    "Checksum semantics and the stored format remain unchanged; changing either requires a separately recorded store-format decision and migration."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered snapshot-local root materialization reuse and fallible exact-event writer reuse with complete validation and unchanged checksum/store semantics. Test-only count matrix attributes note/gate/decompose/waive; core waive reads3->1, word11->4. New paired synthetic6733member benchmark p95473.3176->179.1845ms (2.6415x); bothbaseline/candidateunder1s, historicalprotocolnotreproduced. Full9/9gate and Codex/Claude whole-inputpair passed samefreeze; fresh independent acceptance3/3; all4live storesready. TwoLowfollowups397b38e657d4 and8fb1195d74ad filed. Installedcleanrelease withUTCbackupbeforeverifiedFFpush; no migration/repair/restart required.",
+    "completed_at": "2026-10-06T06:25:00.367598200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c189be38066741c3a0835acb7f84840b": {
+        "activity_id": "c189be38066741c3a0835acb7f84840b",
+        "task_id": "01a10145-fb79-7952-b286-d90ae18615dc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6472a9c1d2194a4c94bb510eb035ee3c"
+      }
+    }
+  }
+}

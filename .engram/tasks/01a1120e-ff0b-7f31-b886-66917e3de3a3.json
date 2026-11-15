@@ -1,0 +1,53 @@
+{
+  "id": "01a1120e-ff0b-7f31-b886-66917e3de3a3",
+  "external_ref": null,
+  "title": "Reduce tool output duplication and retrieve source details selectively",
+  "outcome": "Agents receive one bounded useful representation of tool results and targeted source excerpts, with full detail available when needed.",
+  "acceptance": [
+    "Identify duplicate text/JSON renderings, oversized source reads and unnecessary routine output in representative traces.",
+    "Deliver compact single-representation results, targeted reads and bounded diffs; truncation remains explicit and exact detail locators are provided where applicable.",
+    "Demonstrate reduced known output duplication using representative source-backed before/after examples while retaining failures, warnings, refusal reasons, evidence identity and enough detail for correct review; required full evidence remains recoverable, and optional byte counts may support the comparison."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented conservative single-representation tool results, names-first discovery and selective source/diff reads with complete evidence recovery. Actual captured receipt shrank2018→1007bytes and structuredrefusal727→360; text-onlyerrors and independentcontent retained. Applicable .mdchecks, independentCodex+GregauthorizedKimi pair and independent3/3acceptance passed; committed/pushed/installed exactlandedbuild with all4storesready.",
+    "completed_at": "2026-10-06T21:13:39.108580700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "427a203e5a074cc58bf5478625bf4b61": {
+        "activity_id": "427a203e5a074cc58bf5478625bf4b61",
+        "task_id": "01a1120e-ff0b-7f31-b886-66917e3de3a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e26138ed36bc4290803f53c56b8d9f61"
+      }
+    }
+  }
+}

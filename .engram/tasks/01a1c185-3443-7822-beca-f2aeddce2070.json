@@ -1,0 +1,27 @@
+{
+  "id": "01a1c185-3443-7822-beca-f2aeddce2070",
+  "external_ref": null,
+  "title": "Test that an over-limit label fails no catalog search filtered by --label that wouldn't select its item",
+  "outcome": "Test that an over-limit label fails no catalog search filtered by --label that wouldn't select its item",
+  "acceptance": [
+    "A test gives one item a label whose case-folded key is over the catalog's unit limit (for example U+0130 repeated to 0.4 of the limit), and shows that `ls --label` with a search that doesn't select that item succeeds."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "catalog-search",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

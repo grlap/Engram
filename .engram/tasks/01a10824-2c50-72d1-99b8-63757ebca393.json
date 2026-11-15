@@ -1,0 +1,53 @@
+{
+  "id": "01a10824-2c50-72d1-99b8-63757ebca393",
+  "external_ref": null,
+  "title": "Split src/mcp.rs into owning modules and move the shared error rendering out of the MCP transport",
+  "outcome": "Split src/mcp.rs into owning modules and move the shared error rendering out of the MCP transport",
+  "acceptance": [
+    "src/mcp.rs is split into owning modules so it stays well under the source-file size limit, with the size test passing unchanged",
+    "The shared error rendering used by CLI JSON and MCP (store_error_value and the remedy twins) lives in a transport-neutral module, so the verbs layer no longer depends on crate::mcp outside tests",
+    "The tools/list schemas and every CLI and MCP output are unchanged, shown by the existing tests passing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "debt",
+    "mcp",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split MCP into owning arguments, tools and tests modules; moved shared error envelopes and remedy twins to transport-neutral rendering. Preserved all schemas and CLI/MCP outputs; size limit unchanged.",
+    "completed_at": "2026-10-05T06:26:57.887162900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4aaafee1245f4a4d8528df5b0225b054": {
+        "activity_id": "4aaafee1245f4a4d8528df5b0225b054",
+        "task_id": "01a10824-2c50-72d1-99b8-63757ebca393",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "db2dd076a30c4ee581c4aab32befd871"
+      }
+    }
+  }
+}

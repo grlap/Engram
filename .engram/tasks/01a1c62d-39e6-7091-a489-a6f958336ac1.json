@@ -1,0 +1,28 @@
+{
+  "id": "01a1c62d-39e6-7091-a489-a6f958336ac1",
+  "external_ref": null,
+  "title": "Check current task activity owners when admitting disconnected additions",
+  "outcome": "Check current task activity owners when admitting disconnected additions",
+  "acceptance": [
+    "New additions reject activity identities held in current destination documents even when absent from origin snapshots/local object store.",
+    "Regression introduces the holder through a non-origin shared version and checks atomic collision refusal for a disconnected addition."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

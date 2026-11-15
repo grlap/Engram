@@ -1,0 +1,52 @@
+{
+  "id": "01a1323a-f698-78c1-9b92-c43bfbff9833",
+  "external_ref": null,
+  "title": "Name the citable records in evaluate's off-source evidence refusal",
+  "outcome": "Name the citable records in evaluate's off-source evidence refusal",
+  "acceptance": [
+    "When evaluate refuses because a cited verification record for a bound criterion ran at another source revision or in another workspace, the refusal also lists, bounded, the ids of existing verification records of the bound kind for that criterion at the judged revision and workspace; when none exists it says so and keeps the current run-the-check guidance.",
+    "The refusal still fails closed: no submission that cites an off-source record for a bound criterion is accepted, and no invalid citation is silently dropped.",
+    "Fail-first tests cover the revision variant and the workspace variant, each with and without a valid same-source record present."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ergonomics"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Off-source evaluation refusals now list up to four admissible full verification ids with a more flag, or explicitly say none. Discovery uses the deciding transaction, run/cut, source/workspace, bound kind and pinned check; the original invalid citation still fails closed. Projection corruption propagates. Full exact-tree gate passed, whole-input Codex/Claude round2 has no Medium+, independent acceptance3/3 fresh. Two Low follow-ups filed separately. Clean committed build installed with verified backup and push.",
+    "completed_at": "2026-10-13T05:38:30.346456200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09cc2b3df65c4a9a828d4cb3b3b7b498": {
+        "activity_id": "09cc2b3df65c4a9a828d4cb3b3b7b498",
+        "task_id": "01a1323a-f698-78c1-9b92-c43bfbff9833",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e4fbae0e1cf0456f8590031dbdaa318e"
+      }
+    }
+  }
+}

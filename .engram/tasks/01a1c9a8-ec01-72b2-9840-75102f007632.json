@@ -1,0 +1,29 @@
+{
+  "id": "01a1c9a8-ec01-72b2-9840-75102f007632",
+  "external_ref": null,
+  "title": "Assert specific reasons in task-sync acceptance refusal tests",
+  "outcome": "Task-sync refusal tests distinguish the intended refusal from unrelated fixture, revision and missing-context failures.",
+  "acceptance": [
+    "The reported acceptance, movement, concurrency, closure and consumption fault cases assert their intended typed error or AcceptanceUseRefusal rather than accepting any error.",
+    "Each closure fault distinguishes a retained ineligible decision from a hard admission error while preserving meaningful rollback checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "test-quality"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,46 @@
+{
+  "id": "01a1999c-20b0-7e52-9a90-ff546a940de0",
+  "external_ref": null,
+  "title": "Replace the independent acceptance-evaluation mechanism: delete evaluator spawning, named-root sightings and evaluated-policy enforcement; the review pair judges acceptance per criterion",
+  "outcome": "Replace the independent acceptance-evaluation mechanism: delete evaluator spawning, named-root sightings and evaluated-policy enforcement; the review pair judges acceptance per criterion",
+  "acceptance": [
+    "Engram no longer enforces evaluated acceptance at done: the evaluation-policy enforcement, evaluator-binding and named-root-sighting requirements are deleted from the code, not disabled, and done completes on recorded criterion evidence",
+    "The review instructions (/review-code, /review-changes, AGENTS.md/CLAUDE.md standing approval) replace the separate evaluation with a per-criterion met/not-met verdict from each reviewer of the frozen tree, recorded by the parent. Authority-text edits follow the exact-wording process",
+    "TermAl's evaluator/sighting dependency is removed or tracked on a TermAl item, so no Engram or TermAl flow waits on an evaluation",
+    "The full gate and a clean review pair pass on the exact commit"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+  "disposal_reason": "Withdrawn on 2026-11-02 at 00:19Z as a misreading of Greg. Evaluation stays and is being repaired on Execution Observability under the P0 w-89f3b3eeb688. This proposal to delete it conflicts with that direction.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "eb2c0704a60b4bb7bc551d95bcd36db9": {
+        "activity_id": "eb2c0704a60b4bb7bc551d95bcd36db9",
+        "task_id": "01a1999c-20b0-7e52-9a90-ff546a940de0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7eea1dcf011b4d89b4f7820ad8b31a45"
+      }
+    }
+  }
+}

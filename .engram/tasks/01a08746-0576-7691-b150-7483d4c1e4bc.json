@@ -1,0 +1,28 @@
+{
+  "id": "01a08746-0576-7691-b150-7483d4c1e4bc",
+  "external_ref": null,
+  "title": "No stated bound exists on how long one write transaction may hold the exclusive writer lock",
+  "outcome": "Engram has no declared limit on the duration of a single write transaction, so nothing tells a future change how much writer-lock hold time is acceptable. Record a decision: either a declared bound with enforcement, or an explicit statement that none is intended and what callers may assume instead.",
+  "acceptance": [
+    "the decision is written into the architecture or feature docs and cross-linked from the work-plan brief, so a later change to any plan or decomposition limit has a stated criterion instead of an inherited number"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "area-performance",
+    "performance",
+    "stream-planning-safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Decision NO (2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous): no documented writer-lock wall-clock budget governing plan limits; bounded inputs, graph complexity and measured contention diagnostics remain the contract, and scheduling-dependent elapsed time is not a correctness promise.",
+  "completion": null
+}

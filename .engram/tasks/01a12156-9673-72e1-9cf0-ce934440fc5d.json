@@ -1,0 +1,51 @@
+{
+  "id": "01a12156-9673-72e1-9cf0-ce934440fc5d",
+  "external_ref": null,
+  "title": "Explain a selected unblock refused after a concurrent identical attempt retires",
+  "outcome": "Explain a selected unblock refused after a concurrent identical attempt retires",
+  "acceptance": [
+    "A stale selected unblock whose identical pending attempt was retired explains that no clear happened and offers a runnable show or retry route, with a deterministic service and agent-guidance test",
+    "True changed-intent idempotency conflicts retain their existing refusal semantics"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Stale selected unblock attempts truthfully report that this call cleared no blocker and offer runnable show guidance; genuine changed-intent conflicts remain unchanged.",
+    "completed_at": "2026-10-09T22:32:24.635324400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c4876c0d6b0d4ab8bb3159afa65116b1": {
+        "activity_id": "c4876c0d6b0d4ab8bb3159afa65116b1",
+        "task_id": "01a12156-9673-72e1-9cf0-ce934440fc5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7815377a0fe64eedb24aa40c54fb8f05"
+      }
+    }
+  }
+}

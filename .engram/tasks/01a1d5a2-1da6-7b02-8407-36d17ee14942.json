@@ -1,0 +1,30 @@
+{
+  "id": "01a1d5a2-1da6-7b02-8407-36d17ee14942",
+  "external_ref": null,
+  "title": "Give each Windows HTTPS data-branch test child at least a 4x margin under its 120 s supervisor deadline",
+  "outcome": "Give each Windows HTTPS data-branch test child at least a 4x margin under its 120 s supervisor deadline",
+  "acceptance": [
+    "Every Windows real-HTTPS data-branch workflow child, run uncontended in the isolated pass, finishes in at most 30 s against its 120 s supervisor deadline (>=4x), shown by the per-child elapsed_ms ... deadline_ms=120000 lines of a Windows gate log; the margin is reached structurally (smaller children, per-phase bounds or less fixture work), never by raising the deadline",
+    "A per-phase cost breakdown of each workflow child, from its phase trace, is recorded before the restructuring and names where the time goes",
+    "The restructured workflows keep every existing behavioural assertion"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "gate",
+    "test-robustness"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

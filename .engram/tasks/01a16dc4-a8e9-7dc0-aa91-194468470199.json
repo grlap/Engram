@@ -1,0 +1,28 @@
+{
+  "id": "01a16dc4-a8e9-7dc0-aa91-194468470199",
+  "external_ref": null,
+  "title": "Clarify how MCP dogfood indexes uncorrelated summaries by wire ID",
+  "outcome": "Clarify how MCP dogfood indexes uncorrelated summaries by wire ID",
+  "acceptance": [
+    "The MCP dogfood summary-indexing comment accurately describes the code's treatment of numeric uncorrelated summaries and the client's no-ID-reuse assumption, or indexing is restricted to safely correlated summaries with appropriate coverage."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

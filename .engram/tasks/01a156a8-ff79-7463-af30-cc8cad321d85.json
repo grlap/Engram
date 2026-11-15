@@ -1,0 +1,53 @@
+{
+  "id": "01a156a8-ff79-7463-af30-cc8cad321d85",
+  "external_ref": null,
+  "title": "Add the S3 pilot folder-exchange authority bullet to AGENTS.md and CLAUDE.md",
+  "outcome": "Add the S3 pilot folder-exchange authority bullet to AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md carry, byte-identically, the S3 pilot folder-exchange bullet in the exact wording both coordinators (Engram::Fable and Termal::Fable2) concurred on in this item's notes, limiting agent commits to fresh-pilot-store .engram task data in pilot clones under target/s3-pilot/ and pushes/fetches to the private bare repository target/s3-pilot/folder.git, with origin, master, other branches and remotes, non-task files, force-push, rebase and merge prohibited",
+    "Before landing: Greg was sent the exact wording and its consequence, Greg's recorded word on this widening is quoted verbatim with its source in this item's notes, and the final-diff audit /review-changes requires is recorded here as passed",
+    "The Markdown-only landing validation passes on the frozen tree (doc link check and AGENTS/CLAUDE byte identity through the focused launcher), with a clean Codex + Claude review pair on the same freeze"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "authority-text",
+    "pilot",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the exact approved S3 pilot folder-exchange authority bullet identically in AGENTS.md and CLAUDE.md; pushed origin/master and installed the clean committed build.",
+    "completed_at": "2026-10-20T01:16:47.551171500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5c097999b4404dff9033a3ec978f5aa9": {
+        "activity_id": "5c097999b4404dff9033a3ec978f5aa9",
+        "task_id": "01a156a8-ff79-7463-af30-cc8cad321d85",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "173878f546404344966b82d160258662"
+      }
+    }
+  }
+}

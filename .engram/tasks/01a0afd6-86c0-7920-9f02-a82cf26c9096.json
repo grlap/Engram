@@ -1,0 +1,52 @@
+{
+  "id": "01a0afd6-86c0-7920-9f02-a82cf26c9096",
+  "external_ref": null,
+  "title": "The evaluation recovery command is valid navigation that parses through the real CLI",
+  "outcome": "The recovery navigation emitted for a missing or stale evaluation is a command the CLI accepts, proven by parsing the emitted string rather than by substring checks",
+  "acceptance": [
+    "the emitted recovery command for MissingAcceptanceEvaluation and AcceptanceEvaluationStale is passed through the real CLI parser in a regression test and parses as a read-only show with notes and gates, with no --full alongside them, no pre-filled verdict, and the full/detail exclusivity unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round8"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The missing/stale evaluation recovery command is now \"engram work show REF --notes --gates\", valid under the CLI's full/detail exclusivity (unchanged), read-only, with no pre-filled verdict. Regression in the mcp-dogfood evaluated-policy test parses and runs the emitted command through the real CLI binary for both causes and asserts the item's revision unchanged; the unit test pins the exact string. RED logs/35 (CLI conflict) and 35b, GREEN logs/36 and 36b; final sequence logs/37 (fmt-check, check, clippy, lib 1109/4 ignored, bin 43, parity 31, mcp-dogfood 45, doc links) all pass; eight gates recorded here once. Docs updated in the recovery section.",
+    "completed_at": "2026-09-17T14:56:41.560371900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6dab92f6a0eb3a79d609d405c4fd9f9bdb8d26e3626508014ec2688edbda95d1": {
+        "activity_id": "6dab92f6a0eb3a79d609d405c4fd9f9bdb8d26e3626508014ec2688edbda95d1",
+        "task_id": "01a0afd6-86c0-7920-9f02-a82cf26c9096",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "14814e61f171780228670220e75cae709eb71320c78def7d43f172298a79f8f2"
+      }
+    }
+  }
+}

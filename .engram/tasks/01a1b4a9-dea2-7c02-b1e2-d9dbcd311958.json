@@ -1,0 +1,114 @@
+{
+  "id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+  "external_ref": null,
+  "title": "Retire legacy EO observation inputs in favour of the shared source_id",
+  "outcome": "New EO observation producers and admission use the shared source_id; new content-v1 and watcher_only inputs are retired while historical records remain readable as stored",
+  "acceptance": [
+    "Coordinate the observation wire and producer transition with TermAl, using the existing shared source_id owner and validation for new records.",
+    "Stop producing and admitting new legacy content-v1 and watcher_only source observations after the producer transition, while reading historical records, evaluations, decisions and seals unchanged.",
+    "Cover the transition and historical-record preservation with observable behavior tests and the applicable reviews and gate.",
+    "No automatic agent-facing surface (next, the work-context hook, feeds, MCP word outputs, notifications, compaction material) carries an execution_observe payload or a complete source_id; an explicit observation read shows only the one-line source_id summary; both reviewers check this on the frozen input."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed and installed shared-source observation cutoff: new legacy revision/watcher-only inputs refused unconditionally, historical records and exact retries preserved, check refusals avoid caller IDs; complete validation/reviews/census passed.",
+    "completed_at": "2026-11-08T07:47:04.257539Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "45f8f7eca06b4529a62f1bc8e1f0f026": {
+        "activity_id": "45f8f7eca06b4529a62f1bc8e1f0f026",
+        "task_id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "45f8f7eca06b4529a62f1bc8e1f0f026"
+      },
+      "686e1b87c0f845cfb70a0c0fb34c4f81": {
+        "activity_id": "686e1b87c0f845cfb70a0c0fb34c4f81",
+        "task_id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "02217b0801e6447aa7250823794be3be"
+      },
+      "956806f2b0c949dd8bd55ad2ac691064": {
+        "activity_id": "956806f2b0c949dd8bd55ad2ac691064",
+        "task_id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "956806f2b0c949dd8bd55ad2ac691064"
+      },
+      "a222ecb8eddd402fb256d089c57c01ec": {
+        "activity_id": "a222ecb8eddd402fb256d089c57c01ec",
+        "task_id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a222ecb8eddd402fb256d089c57c01ec"
+      },
+      "a4f26d21e7264cab85819cc133c7e4b0": {
+        "activity_id": "a4f26d21e7264cab85819cc133c7e4b0",
+        "task_id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a4f26d21e7264cab85819cc133c7e4b0"
+      },
+      "cf2b02dfdaef44af98d9baad2aa704cf": {
+        "activity_id": "cf2b02dfdaef44af98d9baad2aa704cf",
+        "task_id": "01a1b4a9-dea2-7c02-b1e2-d9dbcd311958",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cf2b02dfdaef44af98d9baad2aa704cf"
+      }
+    }
+  }
+}

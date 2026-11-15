@@ -1,0 +1,51 @@
+{
+  "id": "01a0bd45-994e-77c0-acea-716d3b650773",
+  "external_ref": null,
+  "title": "Document completion-driven test execution in the review workflow",
+  "outcome": "Document completion-driven test execution in the review workflow",
+  "acceptance": [
+    "The parent review command prescribes one logged test runner, completion-triggered waits or bounded worker execution, no model-level polling/status spam, recovery of existing runs, and failure inspection/classification without weakening gates.",
+    "The reviewer command remains read-only and does not execute tests; required validation and paired review cover the final documentation change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented completion-driven logged gate execution, completion waits, recovery-before-relaunch and failure classification while preserving all required gates and two read-only reviewer leaves. Final nine gates and combined pair consolidated; independent session-7130 evaluation records 2/2 pass on judgment evidence. No commit or installation.",
+    "completed_at": "2026-09-20T10:51:26.671755100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c3ee4d9bd6aa4ddf9772c7efccbe840d": {
+        "activity_id": "c3ee4d9bd6aa4ddf9772c7efccbe840d",
+        "task_id": "01a0bd45-994e-77c0-acea-716d3b650773",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c4317ae8bb4c4997a75bea2b01723c2f"
+      }
+    }
+  }
+}

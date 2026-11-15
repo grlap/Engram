@@ -1,0 +1,77 @@
+{
+  "id": "01a18979-0fb5-7280-a656-674c6ac49852",
+  "external_ref": null,
+  "title": "Register Engram test-launcher runs with the TermAl host so test-runs waits and host credit cover them",
+  "outcome": "An Engram gate or focused run started under TermAl appears in TermAl's test-runs index, so a session can wait on it with termal_resume_after_test_runs and the host can record its check, without an agent reading test output",
+  "acceptance": [
+    "When scripts/test-launcher.mjs runs under a TermAl host, it registers each run (full or focused, detached or foreground) through TermAl's supported test-run registration, so the run is indexed in the session's project",
+    "termal_resume_after_test_runs can wait on an Engram launcher run and resumes the session with bounded terminal metadata (run id, result, counts, fingerprint check), demonstrated on a real run",
+    "Outside TermAl, or when registration is unavailable, the launcher behaves exactly as today (its --notify completion route and saved results are unchanged), with a test covering that fallback",
+    "No model operator, stdout/stderr streaming or polling is introduced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "host-integration",
+    "tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Register launcher runs with the TermAl host before execution, demonstrate real native waits, preserve fallback/notify behavior and bounded registration without polling or model operators. Landed and installed dcbff8c7102efe1500b0a70d08f4ee9740a829a4 with full exact-tree gate, clean release, all-six readiness and fresh independent acceptance PASS.",
+    "completed_at": "2026-10-31T05:32:45.907620Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e6dc71fa9a5542489d695c8e206a1b2b": {
+        "activity_id": "e6dc71fa9a5542489d695c8e206a1b2b",
+        "task_id": "01a18979-0fb5-7280-a656-674c6ac49852",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4ab9c4bed4544d9eb6b2a82d927620f9"
+      },
+      "e8c6c707199342f6bb3fe6e4a2d0add3": {
+        "activity_id": "e8c6c707199342f6bb3fe6e4a2d0add3",
+        "task_id": "01a18979-0fb5-7280-a656-674c6ac49852",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e8c6c707199342f6bb3fe6e4a2d0add3"
+      },
+      "eebb0f034fd146208a752647ad98756c": {
+        "activity_id": "eebb0f034fd146208a752647ad98756c",
+        "task_id": "01a18979-0fb5-7280-a656-674c6ac49852",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e8c6c707199342f6bb3fe6e4a2d0add3"
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "01a1bfa0-23e5-7551-b70a-56677f498eb0",
+  "external_ref": null,
+  "title": "Carry import-custody WorkEvents as inert provenance in the evidence inventory",
+  "outcome": "Carry import-custody WorkEvents as inert provenance in the evidence inventory",
+  "acceptance": [
+    "The evidence inventory collects SupersededByImport and ReconciliationHoldAbandoned WorkEvents with their original ids, bytes and actual execution, root and evidence closure, and classifies their hold, prepared and receipt references as inert origin custody provenance that is not followed.",
+    "No stub, imported receipt or hold authority and no claim that foreign custody was revalidated; required evidence-object dependencies still close, and behaviour tests cover the carried events and the unchanged refusal for what must still refuse."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "execution-evidence",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1b8e9-3e93-7cc1-ba63-7413b4728667",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "27d3b2b20c8646b1a23021c2de185513": {
+        "activity_id": "27d3b2b20c8646b1a23021c2de185513",
+        "task_id": "01a1bfa0-23e5-7551-b70a-56677f498eb0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "27d3b2b20c8646b1a23021c2de185513"
+      }
+    }
+  }
+}

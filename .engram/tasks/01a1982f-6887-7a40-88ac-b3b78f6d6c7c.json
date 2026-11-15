@@ -1,0 +1,79 @@
+{
+  "id": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+  "external_ref": null,
+  "title": "Remove turn gating from Engram: no ordinary turn needs a grant, while host observations, claims and acceptance evaluation keep working",
+  "outcome": "Remove turn gating from Engram: no ordinary turn needs a grant, while host observations, claims and acceptance evaluation keep working",
+  "acceptance": [
+    "No ordinary operation in Engram requires a turn grant, turn_evaluate/turn_begin admission, or gated settlement/recovery; the host channel's turn admission operations are retired in step with TermAl (the live consumer), never removed while an installed TermAl still calls them",
+    "Worktree and evaluation association (named root) works through the ordinary session binding with no control-session phase, routing grant or turn requirement, proven with tests on a store that holds exited sessions and old grants",
+    "Host-observed execution, source and test-run evidence keeps being recorded without admission, and claims, notes, gates, acceptance evaluation and done keep working unchanged",
+    "Historical grants, turn decisions, checkpoints and unknown prior-operation records stay readable as stored; nothing is erased or replayed. Any schema change follows the pre-release migration rule (named retirement with counts via export/import) and its cutover is planned before landing",
+    "docs (behavioral control plane, turn gate assessment and evidence, shipped.md, host checklist) describe the shipped state with no gated-turn claims"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Closed on Greg's word (Asistant #239): „chyba mozemy zamknac taki gated control, skoro nie mamy tego juz”. No ordinary turn in Engram needs a grant: child w-5b17f50b5079 sealed 9a697f91 with the source and live facts and its limits. Named-root binding, host observations, registered verification and self-asserted done worked today on real turns after the 15:30Z restart, with no grant. Historical records stay readable (doctor reader, migration tests). Limits: an open question remains about evaluation refusing correct checks, which is not gating and is tracked on w-ac88a232578a, so this closure says nothing about evaluation working; docs criterion taken from 12325's note 0da6ed8a that EO docs describe the removal, not re-audited by me; TermAl's side stays on TermAl's own w-3fe8f4472e5d. Self-asserted under the baseline policy, no evaluation.",
+    "completed_at": "2026-11-04T16:11:45.489290700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1e98a830deac4391bd4e409b9cd2a732": {
+        "activity_id": "1e98a830deac4391bd4e409b9cd2a732",
+        "task_id": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b4f3399caa1648298fd26f5a35aa5bcd"
+      },
+      "5841cc6ef4b3435ba8eeb75ee0255ee0": {
+        "activity_id": "5841cc6ef4b3435ba8eeb75ee0255ee0",
+        "task_id": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5841cc6ef4b3435ba8eeb75ee0255ee0"
+      },
+      "fc6045ad8e7f45c1a40a73ddfb2f1af8": {
+        "activity_id": "fc6045ad8e7f45c1a40a73ddfb2f1af8",
+        "task_id": "01a1982f-6887-7a40-88ac-b3b78f6d6c7c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "aa7ac0c4622948b2a3ca877414d7477d"
+      }
+    }
+  }
+}

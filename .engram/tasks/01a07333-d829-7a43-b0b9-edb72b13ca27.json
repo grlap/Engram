@@ -1,0 +1,50 @@
+{
+  "id": "01a07333-d829-7a43-b0b9-edb72b13ca27",
+  "external_ref": null,
+  "title": "Keep the revised completion demo within its tablet folio",
+  "outcome": "Keep the revised completion demo within its tablet folio",
+  "acceptance": [
+    "folio-check.mjs: Folio height at 768x900 / complete passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0732d-d970-7680-bec7-00054ac4bf6d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shortened the completion demo to retain the recorded-evidence distinction while fitting the tablet page. The unchanged full browser suite now passes at eleven viewport sizes and all four demo states, including 768x900 completion. JavaScript syntax and diff checks also pass.",
+    "completed_at": "2026-09-05T20:15:26.732636500Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6237c6fd4670e8ac376df239407d1d78d93d9acf2ebddcb69f24e7516ebfa3ed": {
+        "activity_id": "6237c6fd4670e8ac376df239407d1d78d93d9acf2ebddcb69f24e7516ebfa3ed",
+        "task_id": "01a07333-d829-7a43-b0b9-edb72b13ca27",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e6997a50e74d967bc3428e9a73cc9f8e331bdcf454d1ec7c0e0b7cd939fe266a"
+      }
+    }
+  }
+}

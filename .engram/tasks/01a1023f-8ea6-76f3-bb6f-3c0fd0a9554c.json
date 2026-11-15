@@ -1,0 +1,50 @@
+{
+  "id": "01a1023f-8ea6-76f3-bb6f-3c0fd0a9554c",
+  "external_ref": null,
+  "title": "Test projection repair naming unprojectable restored evidence",
+  "outcome": "Test projection repair naming unprojectable restored evidence",
+  "acceptance": [
+    "A test restores a completed item with restored gate evidence, damages the evidence (bytes that do not decode, a missing item, a broken constraint), and shows doctor --repair-projections naming each as work_restored_evidence:ID:<finding> with no missing_projection echo, then rolling back"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A new test damages restored evidence on a restored completion (missing item, undecodable bytes, a broken sequence constraint). It shows projection repair naming each as work_restored_evidence:ID:<finding> with no missing_projection echo, then rolling back, and becoming healthy once the bytes are restored. Landed as 3d52ed6.",
+    "completed_at": "2026-10-04T06:14:23.740042900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "32b6cc68039041deb2ec4df9e9c8fa40": {
+        "activity_id": "32b6cc68039041deb2ec4df9e9c8fa40",
+        "task_id": "01a1023f-8ea6-76f3-bb6f-3c0fd0a9554c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e29d8939cd784b3d8aa4dbe1c550188d"
+      }
+    }
+  }
+}

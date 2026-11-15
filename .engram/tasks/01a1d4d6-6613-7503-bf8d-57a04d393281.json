@@ -1,0 +1,30 @@
+{
+  "id": "01a1d4d6-6613-7503-bf8d-57a04d393281",
+  "external_ref": null,
+  "title": "Correct the task-sync refusal table after per-task folder import",
+  "outcome": "The stable refusal-code table accurately distinguishes per-task folder outcomes from remaining whole-import conflicts and supported shared planning fields.",
+  "acceptance": [
+    "The task_sync_import_conflict row describes remaining whole-import/project or strict-delta cases and points to per-task receipts and exit status3",
+    "The row no longer says native references or supported acceptance, bindings, labels and assignment changes are refused",
+    "The documentation link check passes on the corrected documentation tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "docs",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

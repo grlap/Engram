@@ -1,0 +1,28 @@
+{
+  "id": "01a19f1d-7c02-7691-89db-5d9041d6bae4",
+  "external_ref": null,
+  "title": "Remove production timeout dependence from the control unwind diagnostic test",
+  "outcome": "The lost-reply diagnostic regression test verifies correlated queued and fatal records without depending on one-second production exit budgets.",
+  "acceptance": [
+    "Prime build identity and drain the diagnostic sink with the test RECORD_DRAIN before serving the injected unwind and before reading records.",
+    "Retain producer equality, terminal refusal, correlated fatal record and exact-key canonical-object replay assertions; focused coverage passes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

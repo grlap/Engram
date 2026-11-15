@@ -1,0 +1,103 @@
+{
+  "id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+  "external_ref": null,
+  "title": "Persist task-sync exchange progress and atomic initial-import receipts",
+  "outcome": "Persist task-sync exchange progress and atomic initial-import receipts",
+  "acceptance": [
+    "Existing objects stores typed binding and exchange events with a compact batch import receipt; no new SQL table, column or index and no rewriting of existing canonical records. Actor attribution, canonical request equality, competing binding activation and unresolved-operation refusal are tested.",
+    "Exchange-owned retention preserves admitted raw candidates across three or more preparation generations and retains exact Git commit bytes/OID under private refs before any later branch publication. Restart and missing-artifact tests preserve uncertainty; no recapture or replacement commit is silently substituted.",
+    "One SQLite transaction validates and imports an empty-target or exact-repeat graph and records provenance, exact source commit receipt and progress. Fault tests before/after commit prove atomicity and retry without duplicate history; dry-run creates no durable state. Existing divergent/native-target refusals remain.",
+    "Recovery detects mismatched binding, branch/profile/store basis, surviving Git state after database rewind, and unresolved publication; it preserves all sides for explicit reconciliation and never infers never-published from absence at the current remote head. Tests need only local fixtures, no network.",
+    "E1 remains an internal foundation: no user-visible fetch/merge/push workflow, shared-file or real branch/index integration, live remote enablement, relay, private/runtime-state transfer, P2 authority exception or migration. Required full gates and independent reviews cover the final tree; later slices retain their acceptance."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "recovery",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed after fresh independent Claude acceptance evaluation 13a9f5adb60f (5/5 pass). The Windows B standard full gate passed on exact candidate 5cd8a316f17f3b91cf2dbb11d8ac5a3b56d3a39c/tree 65e929f3c9cb692d3694b22171d755c0a8676b7e (run test-2e5bfa23-6023-468b-bfe4-99b43df4437a; input fingerprints matched before and after). No required children remain.",
+    "completed_at": "2026-10-31T23:17:14.620399400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "09a9be96b1094ba7bf022e76aed0fe0b": {
+        "activity_id": "09a9be96b1094ba7bf022e76aed0fe0b",
+        "task_id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "09a9be96b1094ba7bf022e76aed0fe0b"
+      },
+      "6f81b02d4abc450db962fedbef243a23": {
+        "activity_id": "6f81b02d4abc450db962fedbef243a23",
+        "task_id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6f81b02d4abc450db962fedbef243a23"
+      },
+      "afeb64eeb0df47f893d74134baf697e0": {
+        "activity_id": "afeb64eeb0df47f893d74134baf697e0",
+        "task_id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "afeb64eeb0df47f893d74134baf697e0"
+      },
+      "cf51973a29ce448694d7287bfb69baa9": {
+        "activity_id": "cf51973a29ce448694d7287bfb69baa9",
+        "task_id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b43dd986ee68413494414bef7c67cb9c"
+      },
+      "dc1dd318e89a45faae1c67819e4b18eb": {
+        "activity_id": "dc1dd318e89a45faae1c67819e4b18eb",
+        "task_id": "01a147b9-e19c-7541-a057-0ba5464d7ceb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "cf51973a29ce448694d7287bfb69baa9"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a0fad8-9eee-7cd1-9dee-dc893d038f08",
+  "external_ref": null,
+  "title": "cli-and-mcp.md still lists a recovery turn purpose the host no longer accepts",
+  "outcome": "cli-and-mcp.md still lists a recovery turn purpose the host no longer accepts",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md names only the turn purposes the host protocol accepts (ordinary, or absent), matching src/domain/control.rs"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+  "disposal_reason": "The targeted recovery-turn-purpose contract no longer exists: turn gating was physically removed (landed at 5e8). Verified at master fe9a: there are no recovery_turn or RecoveryPurpose hits in src. Found by the legacy-scan explorer session-15943.",
+  "completion": null
+}

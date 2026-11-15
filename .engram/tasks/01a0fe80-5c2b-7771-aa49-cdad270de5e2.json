@@ -1,0 +1,53 @@
+{
+  "id": "01a0fe80-5c2b-7771-aa49-cdad270de5e2",
+  "external_ref": null,
+  "title": "A stable restore-occurrence id in the restore record and status receipt, and a guard against a host binding between a restore's read and its completion",
+  "outcome": "Stable restore-occurrence identity in the host-local restore record and status receipts, plus a documented destination-quiescence and session-identity contract; host-enforced admission exclusion is separately tracked in TermAl and is not delivered by this producer changeset.",
+  "acceptance": [
+    "Each restore records a stable, opaque occurrence id that is distinct for repeated restores of the same copy. `backup status --json` (the receipt table and its test) and `doctor --json` carry it.",
+    "Destination quiescence is selected with both coordinators and documented in docs/host-checklist.md and docs/features/off-host-backup.md as a boundary the host must provide, not enforcement supplied by Engram. The boundary holds only when the operator or host actually excludes every opener of the physical destination, including independent CLI/library writers and aliases. Engram tests show its restore-record status and doctor readers take no restore-writer lock and do not mutate the restore record or store data, and pending/unreadable status remains fail-closed across tested restore failure windows. The item's notes cite TermAl w-4be3e96f76b8, which owns host-observed admission-exclusion evidence, with its actual state; that host enforcement remains open and is not claimed delivered by this producer change.",
+    "docs/host-checklist.md says to treat a pending or unreadable `restore` as: do not start consumers. It gives the per-restore-occurrence identity recipe TermAl accepted: a distinct asserted Engram identity mapping per store and per restore occurrence; existing sessions moved to it before reconnect or recovery; the same handled restore reused across a reboot.",
+    "The change is sent to TermAl's coordinator, and the item's notes record the mailbox sequence and TermAl's answer."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered producer restore-occurrence UUID preserved across refetch/retry/completion/archive, distinct for repeated same-copy restores; status and doctor expose it and missing/invalid/nil records fail closed. Documented conditional all-opener destination exclusion and reboot-stable per-occurrence identity mapping. TermAl admission enforcement w-4be3e96f76b8 remains OPEN, not delivered here. Same-tree full gate and Codex/Claude round2 passed, independent acceptance 4/4 recorded. Pushed clean commit and installed release; all4 live stores ready, UTC-Z executable backup retained, no running session restart required.",
+    "completed_at": "2026-10-06T09:31:50.307371900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b44b446488734fcbb2a30c43584d1d81": {
+        "activity_id": "b44b446488734fcbb2a30c43584d1d81",
+        "task_id": "01a0fe80-5c2b-7771-aa49-cdad270de5e2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5f5b2cc2554f4648b8844acfce9bc8db"
+      }
+    }
+  }
+}

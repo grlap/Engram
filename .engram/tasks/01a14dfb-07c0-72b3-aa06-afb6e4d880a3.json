@@ -1,0 +1,65 @@
+{
+  "id": "01a14dfb-07c0-72b3-aa06-afb6e4d880a3",
+  "external_ref": null,
+  "title": "Give the test launcher a supported way to stop a detached gate whose input is already superseded",
+  "outcome": "Give the test launcher a supported way to stop a detached gate whose input is already superseded",
+  "acceptance": [
+    "On Windows, `node scripts/test-launcher.mjs stop RUN_ID --reason TEXT --actor TEXT` supports stopping a new detached full gate with owned Job Object containment. After cleanup it records a nonpassing terminal result using the existing failed/interrupted classification, reason stopped and retained stop actor/reason; POSIX and unsupported legacy runs refuse unchanged.",
+    "A supported stopped run releases its contained process tree, including cargo/rustc descendants, before terminal publication and reports interruption through the existing completion notification path, never as a pass.",
+    "Tests cover stopping during compile, ordinary rust and scale stages, detached descendants and parent-exit cleanup, retained concurrent requests and completion races, completed-run no-op with a clear message, and refusal for a nonexistent or unsupported run id."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-tooling",
+    "gate",
+    "throughput"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shipped supported Windows detached-gate stop with owned Job Object cleanup before nonpassing interrupted terminal/notification publication; lifecycle and containment regression coverage delivered in Batch AB.",
+    "completed_at": "2026-10-19T07:57:41.083791700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "15b4eda946994008b7e5229e8c18e418": {
+        "activity_id": "15b4eda946994008b7e5229e8c18e418",
+        "task_id": "01a14dfb-07c0-72b3-aa06-afb6e4d880a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "15b4eda946994008b7e5229e8c18e418"
+      },
+      "722ab76c5adc418cbd49ba88e32759ad": {
+        "activity_id": "722ab76c5adc418cbd49ba88e32759ad",
+        "task_id": "01a14dfb-07c0-72b3-aa06-afb6e4d880a3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4a18df9b4e404eb1be27765f08178c67"
+      }
+    }
+  }
+}

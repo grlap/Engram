@@ -1,0 +1,27 @@
+{
+  "id": "01a10ef7-788a-7981-91d2-5e5c171d1fe5",
+  "external_ref": null,
+  "title": "Keep deterministic SQLite path refusal in read-only store opening",
+  "outcome": "Keep deterministic SQLite path refusal in read-only store opening",
+  "acceptance": [
+    "A missing invalid-Unicode Windows filename returns SqlitePath rather than StoreNotInitialized, with a regression asserting the correct refusal and remedy."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

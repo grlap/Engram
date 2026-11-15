@@ -1,0 +1,50 @@
+{
+  "id": "01a0f3c5-cf93-7391-b510-be01c8eb4e14",
+  "external_ref": null,
+  "title": "done's refusal names the source observation that voided the newest evaluation",
+  "outcome": "done's refusal names the source observation that voided the newest evaluation",
+  "acceptance": [
+    "When done is refused because the newest evaluation reads stale for a source move that a source observation after its cut decided, the refusal names that observation (run-feed position, workspace, revision, reporting session and time as recorded, beside the evaluated revision) on CLI text, CLI JSON and MCP, with the refusal's existing words and code unchanged; a refusal for another cause names none; tests cover both."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "diagnosability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "done's stale-evaluation refusal names the source observation that decided the move, beside the unchanged cause (a sibling StaleRecoveryContext through the preflight, the transactional recovery and the raw error; layout agreed with Engram::Coder for his later source context). Text: the reminder appends '. <sentence>'. JSON (CLI and MCP): recovery.deciding_observation, bounded as show bounds it. Raw error details: deciding_observation, whole. Other causes and reasons name none. The CLI JSON lock-phrase guard covers every receipt and this stderr error, and the budget measures the written form. Landed 7203a02b after three rounds (round 1 gate failed on the file-size guard; round 2 had Lows, fixed), full gate test-c70b05c4 9/9, independent evaluation passed.",
+    "completed_at": "2026-09-30T21:21:11.411907Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "38e52b214b274f82888f47abf779eff5": {
+        "activity_id": "38e52b214b274f82888f47abf779eff5",
+        "task_id": "01a0f3c5-cf93-7391-b510-be01c8eb4e14",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bc37bec29e38443d8a20f051e3a9f804"
+      }
+    }
+  }
+}

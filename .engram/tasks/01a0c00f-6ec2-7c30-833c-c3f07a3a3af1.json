@@ -1,0 +1,53 @@
+{
+  "id": "01a0c00f-6ec2-7c30-833c-c3f07a3a3af1",
+  "external_ref": null,
+  "title": "Review the full control inspection and workflow delta at Greg's request",
+  "outcome": "Consolidate the explicitly requested fresh Codex and Claude read-only review of all current staged, unstaged and untracked Engram changes using exact-input gate evidence, without Git or deployment actions.",
+  "acceptance": [
+    "Attempt exactly one Codex and one Claude TermAl read-only review; retain authoritative results, verify the parent freeze at fan-in, and report reviewer availability and deduplicated findings.",
+    "Record evidence-backed dispositions and any actionable follow-up in Engram; no in-scope actionable finding is silently deferred, and no completed implementation item is reopened for review bookkeeping.",
+    "Recover current-input nine-gate evidence with an independently saved literal and exact freeze check, or execute the required logged batch when recovery is invalid."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "control-plane",
+    "coordination",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered requested full-delta review coordination: exactly Codex7135 and Claude7136 read-only review packets retained, parent fan-in freeze exact, recovered all nine same-input worker gates without duplicate execution. Independently dispositioned all findings in .git/requested-review-20260920-consolidation.md with no substantiated actionable defect; no source/Git/deployment changes. Independent acceptance Claude7139 recorded a3d76287d7674d04abe530ac83faa131, all3/3 judgment passes; parent read back verdicts and retained .git/requested-review-20260920-acceptance.json. Completion-time freeze check again matched saved693f3cd8581ecb05de8d57497393104805edf90ba09cc8e278266c1f538fc29f+LF/status0. Evaluator's inability to rerun compiled freeze is disclosed; judgment is not host-observed verification. Windows untracked mode/symlink limitation remains. Existing completed implementation items were not reopened; no criteria changed.",
+    "completed_at": "2026-09-20T18:36:31.735236800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "158b9b16d5a94788898676b62bc5d233": {
+        "activity_id": "158b9b16d5a94788898676b62bc5d233",
+        "task_id": "01a0c00f-6ec2-7c30-833c-c3f07a3a3af1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "420b77b9535e4d7db75e701c4c1463ab"
+      }
+    }
+  }
+}

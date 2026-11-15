@@ -1,0 +1,51 @@
+{
+  "id": "01a0df8c-ab01-7c82-8549-11784c6627c9",
+  "external_ref": null,
+  "title": "The /review-code command sends Codex reviewers on Windows to a shell that fails",
+  "outcome": "The /review-code command sends Codex reviewers on Windows to a shell that fails",
+  "acceptance": [
+    ".claude/commands/review-code.md tells a Codex reviewer to run its read-only Git commands in its default exec_command shell, and keeps the Bash-tool wording only for Claude reviewers",
+    "A Codex /review-code reviewer spawned on this Windows host runs git status --short and git diff --cached successfully without a brief that overrides the shell"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 7424da9.\n- /review-code tells a Claude reviewer to use the Bash tool and a Codex reviewer to use its default exec_command shell, never \"bash\" or a Git Bash path, which resolve to a missing WSL on this host.\n- Lens discovery uses Glob or `rg --files .claude/reviewers -g '*.md'` instead of Unix find, and the helper bullet gives Codex Get-Content or rg.\n- Four Codex reviewers (sessions 7825, 7827, 7829, 7831) ran git status --short and git diff --cached in PowerShell with no shell advice in their brief.\n- Independent Codex evaluation: 2/2 pass.",
+    "completed_at": "2026-09-26T22:05:30.206211800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "69a38dfb065f4feca90aa71c2f12e107": {
+        "activity_id": "69a38dfb065f4feca90aa71c2f12e107",
+        "task_id": "01a0df8c-ab01-7c82-8549-11784c6627c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4657bb676a884d0881e94e5cda8d4e87"
+      }
+    }
+  }
+}

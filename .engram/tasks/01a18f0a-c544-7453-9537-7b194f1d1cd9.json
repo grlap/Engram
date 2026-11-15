@@ -1,0 +1,46 @@
+{
+  "id": "01a18f0a-c544-7453-9537-7b194f1d1cd9",
+  "external_ref": null,
+  "title": "Include the recorded revision's observation time in the measured-unchanged refusal so a host can send the content comparison",
+  "outcome": "Include the recorded revision's observation time in the measured-unchanged refusal so a host can send the content comparison",
+  "acceptance": [
+    "The execution_observation_unrecorded_change refusal details add the observed time of the recorded revision Engram compared against (recorded_observed_at), alongside the existing workspace_id, recorded_revision and reported_revision; the existing fields and code are unchanged.",
+    "When the recorded revision's record carries an observed time, a host can build the follow-up content_comparison from the refusal details alone (test: accepted with an honest interval including the baseline). When it carries none, recorded_observed_at is null and the docs say the host cannot build the comparison from this refusal.",
+    "The host-protocol documentation for the refusal names the new field and how a host uses it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a18fa7-a252-7653-9bd8-da8c79e5d5ab",
+  "disposal_reason": "Superseded by B (w-da8c79e5d5ab), landed as master 0e52e6fd on 2026-10-31. Commit-bound Git-input eligibility replaces the sighting-based mechanism this item addressed (rules-greg-commit-clean-identity rev 5).",
+  "completion": null,
+  "activity": {
+    "central": {
+      "a5533d361adb499497ae3821a1da06ca": {
+        "activity_id": "a5533d361adb499497ae3821a1da06ca",
+        "task_id": "01a18f0a-c544-7453-9537-7b194f1d1cd9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0dcbc75984e44ea599da33b77f8422fe"
+      }
+    }
+  }
+}

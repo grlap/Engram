@@ -1,0 +1,34 @@
+{
+  "id": "01a13924-5025-7b93-a319-12186715b794",
+  "external_ref": null,
+  "title": "Publish authorized task commits with exact retry and recoverable push",
+  "outcome": "Publish authorized task commits with exact retry and recoverable push",
+  "acceptance": [
+    "An immutable private publication intent retains exact resolved bytes, cut/profile/bases, configured target/ref, commit tree/parents/author/time and attribution before effects; only the ordinary approved source landing path or Greg's word authorizes commit/push, with explicit setup-path selection for the initial approved changeset and no implicit authority from opt-in, command flags or journal state.",
+    "Product-created task-only commits use an isolated commit tree plus short real-index lock, branch compare-and-swap and witnessed selected-entry before/after reconciliation preserving unrelated entries/flags/conflicts/worktree bytes; an authorized external merge commit can instead be adopted by exact tree/parents/operation without a second bookkeeping commit.",
+    "Retries reuse the same operation/candidate/recipe/commit across process exits before and after object/ref/index/progress steps; unchanged task output, renewals and import echoes create no empty data commit. Competing branch/index/worktree changes refuse with all retained material intact.",
+    "S0-backed non-force push targets the exact retained commit and configured ref; non-fast-forward retains its intent for a separately admitted successor, unknown push is confirmed only by exact configured-branch tip/verified ancestry, and owned local fixtures exercise credential failure, timeout, rejected/ambiguous push and restart without claiming real-remote proof.",
+    "Independent private Git-admin journal/local retention refs remain separate from B1/B2 and canonical SQLite import progress; no force-push, rebase, shared data branch, TermAl relay, SQLite/schema/projection mutation or authority-policy exemption is introduced."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13924-4fa4-7b61-b547-7898b1d60ab5"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a0632f-062b-7fb1-9e1d-e78c43e63c8e",
+  "external_ref": null,
+  "title": "Restore the current MCP word-count regression guard",
+  "outcome": "Restore the current MCP word-count regression guard",
+  "acceptance": [
+    "The negative MCP instruction assertion rejects the immediately previous ten-word surface"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "carried under the shipped memories item as a required child by mistake; Low follow-up re-filed under the root",
+  "completion": null,
+  "activity": {
+    "central": {
+      "87bda6b771c30845d803dce73cfdc65f42ecc1a59ac1c979d5915c6c8a603da8": {
+        "activity_id": "87bda6b771c30845d803dce73cfdc65f42ecc1a59ac1c979d5915c6c8a603da8",
+        "task_id": "01a0632f-062b-7fb1-9e1d-e78c43e63c8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7e6b8be51a77648b12a77ba2b06ce084d8c7ecdbc3eb468d4c7a283a7e9fcbe6"
+      },
+      "8c47c23339c85d078c653fcb25dfca860f8a6d773891943ee2cf5a117edf6854": {
+        "activity_id": "8c47c23339c85d078c653fcb25dfca860f8a6d773891943ee2cf5a117edf6854",
+        "task_id": "01a0632f-062b-7fb1-9e1d-e78c43e63c8e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "1c8d4db066db6d7ddd993ac71248bd09cc97c440701bbcf6816a1df15921dd24"
+      }
+    }
+  }
+}

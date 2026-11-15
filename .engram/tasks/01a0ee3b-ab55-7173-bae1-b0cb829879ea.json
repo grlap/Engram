@@ -1,0 +1,31 @@
+{
+  "id": "01a0ee3b-ab55-7173-bae1-b0cb829879ea",
+  "external_ref": null,
+  "title": "Demonstrate the simplified evaluation flow on a small and a substantive change once the host ships same-session re-evaluation",
+  "outcome": "Demonstrate the simplified evaluation flow on a small and a substantive change once the host ships same-session re-evaluation",
+  "acceptance": [
+    "both demonstrations keep criterion coverage, evaluator independence where the policy requires it, changed-input invalidation and honest evidence attribution, and their delegation records are cited on this item with the count of evaluator sessions each used",
+    "on a small correction, an insufficient_evidence verdict is answered by new evidence and the same evaluator session records a new whole passing record under a fresh attempt key, with no new evaluator session spawned; the item seals",
+    "on a substantive change, a fail is answered by a source correction and the re-evaluation makes a whole new inspection of the moved source, bound checks included; the item seals"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "simplification",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a0c298-1ad4-7101-906f-d353c681b9ac",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

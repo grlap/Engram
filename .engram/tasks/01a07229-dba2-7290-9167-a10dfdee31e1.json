@@ -1,0 +1,47 @@
+{
+  "id": "01a07229-dba2-7290-9167-a10dfdee31e1",
+  "external_ref": null,
+  "title": "Raise Clippy function-length threshold to 200",
+  "outcome": "Raise Clippy function-length threshold to 200",
+  "acceptance": [
+    "Clippy uses an explicit 200-line threshold with the lint enabled and unchanged test assertions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Set repository clippy.toml too-many-lines-threshold to 200 for test and production functions, keeping the lint enabled and all test assertions unchanged. All nine required quality gates passed, including ordinary and scale Rust phases. Configuration remains uncommitted for the next combined slice.",
+    "completed_at": "2026-09-05T15:27:32.696989800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f53c69b75c38cf294acb60fc1a9aff966d2cc3bbaf6216d27df464066f75a705": {
+        "activity_id": "f53c69b75c38cf294acb60fc1a9aff966d2cc3bbaf6216d27df464066f75a705",
+        "task_id": "01a07229-dba2-7290-9167-a10dfdee31e1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4bf6f34e19c2de0ebb475d923686d75085fdfbc6652c019d0bea36e6e96f5044"
+      }
+    }
+  }
+}

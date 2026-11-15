@@ -1,0 +1,29 @@
+{
+  "id": "01a1c790-3bec-7b20-a339-fa603145720d",
+  "external_ref": null,
+  "title": "Let a detached focused launcher run on Windows be stopped through the supported stop path",
+  "outcome": "Let a detached focused launcher run on Windows be stopped through the supported stop path",
+  "acceptance": [
+    "A `node scripts/test-launcher.mjs focused --detach --input commit -- …` run on Windows records a stoppable owned supervisor (the same Windows job protocol full runs use), and the launcher's supported stop request ends its whole process tree, leaving a terminal stopped result with the source-identity records intact",
+    "A behaviour test on Windows starts a detached focused run of a long command, requests stop, and checks the run reaches a terminal stopped state with no surviving child process; non-detached runs and POSIX behaviour are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "launcher-tests",
+    "scheduling",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,98 @@
+{
+  "id": "01a12235-7a04-74b1-9a8f-d929911a752d",
+  "external_ref": null,
+  "title": "A refused first stateful word still registers a process-default session",
+  "outcome": "A refused first stateful word still registers a process-default session",
+  "acceptance": [
+    "A request refused for request-only invalid input from a fresh process-default session leaves the database unchanged (no work_session_state row, no reclaim), with a test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A fresh process-default session now registers only on an admitted write.\n- Each stateful word opens with lock_store_at, runs its request-only checks, and registers just before its first write.\n- remember, forget and evaluate register INSIDE their own single write transaction (session.rs register_process_default_work_session_on; the *_registering storage writes). Any refusal there, request-only or state-dependent, rolls back the registration and reclaim by construction. Replays commit; the service flag is set only after Ok.\nTests (registration.rs and evaluate/tests.rs):\n- the refusal table, one fresh session per row, compares the whole DB snapshot and checks no reclaim;\n- positive registration tests for remember, its replay, a retired forget, and evaluate;\n- near-budget retry and trailing-CR regressions;\n- vacuity checks recorded on the item.\nSix review rounds: round 6 clean, two Notes recorded. Full gate test-30077fd7 passed on freeze bfb83d25. Independent evaluation 42e0d055 passed.\nLanded 73efde70 (fast-forward from 901111b5). Installed build a81bd98b67b8; readiness ready on all 4 live stores, before the commit and with the installed exe.",
+    "completed_at": "2026-10-11T17:28:21.684921600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "528fa2b579944a4fb3a08ebf46140942": {
+        "activity_id": "528fa2b579944a4fb3a08ebf46140942",
+        "task_id": "01a12235-7a04-74b1-9a8f-d929911a752d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "528fa2b579944a4fb3a08ebf46140942"
+      },
+      "62e2d2f33d444da0ba284538c143a784": {
+        "activity_id": "62e2d2f33d444da0ba284538c143a784",
+        "task_id": "01a12235-7a04-74b1-9a8f-d929911a752d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "62e2d2f33d444da0ba284538c143a784"
+      },
+      "67e57009ae66427fbbc92ea04d925a12": {
+        "activity_id": "67e57009ae66427fbbc92ea04d925a12",
+        "task_id": "01a12235-7a04-74b1-9a8f-d929911a752d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "67e57009ae66427fbbc92ea04d925a12"
+      },
+      "bf7d163e222f4d2eae81a086e09fa0f2": {
+        "activity_id": "bf7d163e222f4d2eae81a086e09fa0f2",
+        "task_id": "01a12235-7a04-74b1-9a8f-d929911a752d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dbbc2ca1588b4596a132a28fd3b4121e"
+      },
+      "f8a6636b3a254122802c04e4228393c0": {
+        "activity_id": "f8a6636b3a254122802c04e4228393c0",
+        "task_id": "01a12235-7a04-74b1-9a8f-d929911a752d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d2b9a9870bc74ceabf3eaf219acacf66"
+      }
+    }
+  }
+}

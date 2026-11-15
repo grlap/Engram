@@ -1,0 +1,29 @@
+{
+  "id": "01a198ea-d505-7531-b4b7-6bcb6a959dc2",
+  "external_ref": null,
+  "title": "Use indexed scope lookups in the active reconciliation hold delete guard",
+  "outcome": "Use indexed scope lookups in the active reconciliation hold delete guard",
+  "acceptance": [
+    "Confirm the active-hold delete trigger query plans and use keyed existing scope/work indexes without scanning unrelated work events.",
+    "Resolution and abandonment still require exact durable proof and refuse unproven deletion; focused regressions preserve that fence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

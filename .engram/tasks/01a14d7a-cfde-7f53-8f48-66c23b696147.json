@@ -1,0 +1,137 @@
+{
+  "id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+  "external_ref": null,
+  "title": "Remove the one-second scheduling assumption from the MCP shutdown trace test",
+  "outcome": "Remove the one-second scheduling assumption from the MCP shutdown trace test",
+  "acceptance": [
+    "The retained-store-owner shutdown trace test does not fail solely because thread scheduling takes longer than one second on a loaded host; any timeout is only a generous hang guard or the handshake is deterministic without a narrow wall-clock limit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "delivered",
+    "evaluation-pending",
+    "mcp",
+    "review",
+    "testing"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The MCP shutdown trace test no longer assumes a one-second scheduling window (landed b28a180643ad4359d1eccf393ed49deb4d978c22). Independent evaluation 1692dfe667ed4026bbb964c8bdbc18a5 (Codex, session 14929) passed the criterion under Greg's hybrid model, with remote observation from the Windows B full gate test-fdd408e3 on master e7426a6.",
+    "completed_at": "2026-10-28T01:23:25.553847800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0e9afc332cfe4ec79acdf01727cf7bdb": {
+        "activity_id": "0e9afc332cfe4ec79acdf01727cf7bdb",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0e9afc332cfe4ec79acdf01727cf7bdb"
+      },
+      "241a5a4200854c0e8cf3718feba05712": {
+        "activity_id": "241a5a4200854c0e8cf3718feba05712",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "241a5a4200854c0e8cf3718feba05712"
+      },
+      "6ceeb572fa534983baaefb51c6cf29c5": {
+        "activity_id": "6ceeb572fa534983baaefb51c6cf29c5",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0e9afc332cfe4ec79acdf01727cf7bdb"
+      },
+      "708b636ef28f438f8e32af404a4fb0d1": {
+        "activity_id": "708b636ef28f438f8e32af404a4fb0d1",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b42ab1edf88f475d932da19d76fa3199"
+      },
+      "d3ca563edfae4426a975d1275482b70c": {
+        "activity_id": "d3ca563edfae4426a975d1275482b70c",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d3ca563edfae4426a975d1275482b70c"
+      },
+      "e2816b1e21ea4ae5a7a281e402505d03": {
+        "activity_id": "e2816b1e21ea4ae5a7a281e402505d03",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "708b636ef28f438f8e32af404a4fb0d1"
+      },
+      "eb2eaac06db4430eb27610686e99077a": {
+        "activity_id": "eb2eaac06db4430eb27610686e99077a",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d3ca563edfae4426a975d1275482b70c"
+      },
+      "f647064aae5a406cb4e04e3c76586380": {
+        "activity_id": "f647064aae5a406cb4e04e3c76586380",
+        "task_id": "01a14d7a-cfde-7f53-8f48-66c23b696147",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "591e964223614a4c9e53ebec9568a175"
+      }
+    }
+  }
+}

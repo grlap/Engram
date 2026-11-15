@@ -1,0 +1,50 @@
+{
+  "id": "01a07fe9-9939-7b53-878d-ee260e25584e",
+  "external_ref": null,
+  "title": "Remove constant source notice field and zero-count noise",
+  "outcome": "Remove constant source notice field and zero-count noise",
+  "acceptance": [
+    "hosts branch on the source block and zero notices emit no notice clause"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed the constant source field and zero-notice clause; hosts use real source presence and notice counts. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:53.372674Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "39a0219003c44f061ec35ca1ef9a9834d5a3d9861f7af62525a6f51a494f399f": {
+        "activity_id": "39a0219003c44f061ec35ca1ef9a9834d5a3d9861f7af62525a6f51a494f399f",
+        "task_id": "01a07fe9-9939-7b53-878d-ee260e25584e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "205d4a688ca03ad7435893621f6c6f5d033d6a9e79492ed45f52bec0424cd88c"
+      }
+    }
+  }
+}

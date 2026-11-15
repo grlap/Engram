@@ -1,0 +1,29 @@
+{
+  "id": "01a19efd-9928-7162-80b0-c6cc9e9458aa",
+  "external_ref": null,
+  "title": "Clean up stale runner worktrees with leftover staged changes on the Mac and Windows B runners",
+  "outcome": "Clean up stale runner worktrees with leftover staged changes on the Mac and Windows B runners",
+  "acceptance": [
+    "Each stale worktree is listed with what its staged contents are and which closed item it served; worktrees whose items are closed and whose contents are not needed are removed by the runner through git worktree remove after a path check, with the list recorded",
+    "Mac: b-focused-{2e4cee6c,75e015ab,b2a34bd6}-6201 and host-contract-{60af5513,98579e95,c1732859,cb31c704}-6201; Windows B: target/jobs/we96f-5d2c, target/jobs/we96f-7336 (staged edits across 14 paths) and .worktrees/c-full-65d06ca-14575 (untracked PowerShell cache) are resolved",
+    "No worktree serving an open item or current candidate (full-5e8, full-9d003cf, the protected TermAl clone) is touched"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "legacy-cleanup",
+    "remote-runner"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

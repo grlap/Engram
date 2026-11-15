@@ -1,0 +1,34 @@
+{
+  "id": "01a0cbd6-aae0-7233-8232-42120c4f8e15",
+  "external_ref": null,
+  "title": "Expose recovery_required as a host-executable control directive",
+  "outcome": "A recovery_required refusal tells the host exactly how to recover and never assigns an impossible action to an agent that has not been admitted.",
+  "acceptance": [
+    "Protocol tests cover an ordinary turn refused while sync_required, a host-issued recovery turn accepted with a partial page, continued recovery until ready, and subsequent ordinary grant admission.",
+    "TermAl renders this directive as recovery in progress or actionable host failure, not as an agent policy denial.",
+    "The control directive for recovery_required targets the component that can legally submit the recovery turn; it does not require an ungranted agent to perform a recovery checkpoint.",
+    "The host-facing contract distinguishes automatic delivery-page recovery from agent checkpoint recovery and documents the required purpose, retry identity, paging, cancellation, and completion behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-control-plane",
+    "area-host-integration",
+    "control-plane",
+    "coordination",
+    "protocol",
+    "recovery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0c239-9b03-7b51-8fc7-3a736198442c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete: 9eeb3cf removed recovery turns and grant delivery pages, so the recovery_required admission path this item would expose no longer exists (docs/shipped.md:70); TermAl accepts grants without a delivery page today. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null
+}

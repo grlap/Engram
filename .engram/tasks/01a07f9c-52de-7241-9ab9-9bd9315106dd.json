@@ -1,0 +1,52 @@
+{
+  "id": "01a07f9c-52de-7241-9ab9-9bd9315106dd",
+  "external_ref": null,
+  "title": "Reconcile the spec import model with the shipped notice contract",
+  "outcome": "Reconcile the spec import model with the shipped notice contract",
+  "acceptance": [
+    "docs/spec.md 9.3 either states the notice contract or records the proposed-revision model as deliberately superseded, with the reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-docs-review",
+    "docs",
+    "review",
+    "stream-review-docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Reconciled spec9.3 with shipped authored-draft intake and immutable refresh notices; deliberately superseded proposed local revisions with the local ownership reason. Two Markdown gates and Codex/Claude whole-input pair passed on exact ab707423 freeze; independent evaluation fb493279 1/1 fresh pass before push; installed readiness all4 stores ready. Docs-only landing, nothing installed or restarted.",
+    "completed_at": "2026-10-02T03:12:18.638218200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "847e452b42bf41dabe5a75d916583278": {
+        "activity_id": "847e452b42bf41dabe5a75d916583278",
+        "task_id": "01a07f9c-52de-7241-9ab9-9bd9315106dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1ce6bef45205478da1eeb69d26dc5972"
+      }
+    }
+  }
+}

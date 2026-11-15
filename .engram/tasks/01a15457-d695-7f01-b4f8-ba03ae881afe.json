@@ -1,0 +1,78 @@
+{
+  "id": "01a15457-d695-7f01-b4f8-ba03ae881afe",
+  "external_ref": null,
+  "title": "Integrate Batch D (folder round-trip, launcher stop diagnostics, sealed-source discrepancy) on one combined freeze and land it",
+  "outcome": "Integrate Batch D on the current master and land it",
+  "acceptance": [
+    "The frozen changesets w-3cf6b9263a9a, w-d55eea251599 r2, w-6585af0a58dd r5b (full replacement patch sha256 9FB40A99…, which passed its owner's own warm) and w-b51781c0db35 r2 are applied unchanged onto the current master at integration time (3100171 after w-8559 landed) in one fresh worktree; any real overlap is resolved by the owners and recorded file by file; one combined freeze is exported",
+    "One full gate and one Codex plus Claude read-only review pair on that exact combined freeze pass with no outstanding in-scope Medium or higher finding",
+    "The combined tree lands under the standing approval, including pre-commit release build and readiness, commit and push, clean post-commit build and readiness, and install; each of the four constituent items is completed by its owner with an independent evaluation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "batch",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a15373-d2e3-7190-9978-5c3bd75945cc"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Batch D landed and installed: commit bf6772aded59561e95fd157ddbdb5b6e1dd8ecd5 is on origin/master; the full gate and clean r5b Codex/Claude review pair passed on freeze eb80f474; pre- and post-commit readiness passed on all six live stores; post-commit release build passed and its build fbfb3aac7d0454fe22a365cfec6d8181e4fb256c476bd815561b3ee9fac1fabf is installed with a backup; all four constituent items are completed under independent evaluations.",
+    "completed_at": "2026-10-19T22:28:44.387104500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2609c854aa5c4892a05fee5535e120cf": {
+        "activity_id": "2609c854aa5c4892a05fee5535e120cf",
+        "task_id": "01a15457-d695-7f01-b4f8-ba03ae881afe",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2609c854aa5c4892a05fee5535e120cf"
+      },
+      "545882ebf0ac473a87a6266226f90189": {
+        "activity_id": "545882ebf0ac473a87a6266226f90189",
+        "task_id": "01a15457-d695-7f01-b4f8-ba03ae881afe",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c189d913bbb646aeb4427514f46fa086"
+      },
+      "8cc1c5cb84c243beaa60fac437a9c6f3": {
+        "activity_id": "8cc1c5cb84c243beaa60fac437a9c6f3",
+        "task_id": "01a15457-d695-7f01-b4f8-ba03ae881afe",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8cc1c5cb84c243beaa60fac437a9c6f3"
+      }
+    }
+  }
+}

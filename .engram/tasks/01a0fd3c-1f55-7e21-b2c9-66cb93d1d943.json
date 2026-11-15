@@ -1,0 +1,81 @@
+{
+  "id": "01a0fd3c-1f55-7e21-b2c9-66cb93d1d943",
+  "external_ref": null,
+  "title": "A quiet observation at a revision different from the latest source change is accepted silently and leaves the item unable to complete",
+  "outcome": "A quiet observation at a revision different from the latest source change is accepted silently and leaves the item unable to complete",
+  "acceptance": [
+    "On an unfinished run with no active named root, judged from the recorded claim/run lifecycle, a new admitted observation with source_changed=false and a measured source basis is refused at checkpoint with the typed error execution_observation_source_revision_mismatch naming both revisions when the run's latest effective source-change record at the transactional cut is admitted, measured, in the same workspace and at a different revision. The guard does not compare across workspaces, skip beneath a newer unadmitted change, or invent a missing anchor or revision. The entire checkpoint rolls back; exact committed replay remains unchanged, changed committed intent still conflicts, and an uncommitted key may be retried with corrected input. Named-root behavior and the newest-measured-sighting rule for unadmitted triggers remain unchanged; historical records are read as stored without retrospective reclassification.",
+    "a test reproduces the TermAl w-805e92312e06 sequence (a change at revision A, then quiet observations and a passing check at revision B, no named root) and shows the quiet observation at B refused with execution_observation_source_revision_mismatch, with nothing from that checkpoint recorded",
+    "behavioral-control-plane.md states what source_changed=false asserts about the revision, so hosts know the contract"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "2b41aa7dbebd4fb8a7d352e7d842746a": {
+        "activity_id": "2b41aa7dbebd4fb8a7d352e7d842746a",
+        "task_id": "01a0fd3c-1f55-7e21-b2c9-66cb93d1d943",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2b41aa7dbebd4fb8a7d352e7d842746a"
+      },
+      "741ed08b2db641a6973be8db9a30035a": {
+        "activity_id": "741ed08b2db641a6973be8db9a30035a",
+        "task_id": "01a0fd3c-1f55-7e21-b2c9-66cb93d1d943",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "741ed08b2db641a6973be8db9a30035a"
+      },
+      "b7dac99d3cab4205a9d8408088c8477a": {
+        "activity_id": "b7dac99d3cab4205a9d8408088c8477a",
+        "task_id": "01a0fd3c-1f55-7e21-b2c9-66cb93d1d943",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b7dac99d3cab4205a9d8408088c8477a"
+      },
+      "f185e49078c14cca9cb1b41a886a09cd": {
+        "activity_id": "f185e49078c14cca9cb1b41a886a09cd",
+        "task_id": "01a0fd3c-1f55-7e21-b2c9-66cb93d1d943",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "bf188a4b0858439385ec9bde0598546c"
+      }
+    }
+  }
+}

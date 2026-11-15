@@ -1,0 +1,29 @@
+{
+  "id": "01a17e64-7b3c-7f30-aaf9-ab8538693ce7",
+  "external_ref": null,
+  "title": "Align operational projection-cutover docs with the agreed restart and conversion procedure",
+  "outcome": "Align operational projection-cutover docs with the agreed restart and conversion procedure",
+  "acceptance": [
+    "docs/host-checklist.md, docs/features/cli-and-mcp.md and docs/shipped.md describe the governing projection-cutover procedure without requiring all new-build consumers to be stopped: the verified-refusal route permits new-build consumers after the agreed restart, conversion waits until no pre-install engram process remains, and readiness is required on every live store.",
+    "The operational docs preserve the conditional refusal-without-writing prerequisite, the alternative coordinator-agreed plan, durable migration distinction, restart deferral rollback and no-kill limits; links and AGENTS/CLAUDE identity checks and required reviews pass for the documentation correction."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

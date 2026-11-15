@@ -1,0 +1,54 @@
+{
+  "id": "01a1ca29-4797-7ab1-81d2-8fb0c128e033",
+  "external_ref": null,
+  "title": "Invalidate retained evaluations when a cited gate is superseded",
+  "outcome": "Retained evaluation reuse follows native gate supersession semantics across the complete current origin feed.",
+  "acceptance": [
+    "A newer origin-feed record of a gate cited by a passing evaluation makes retained association and current consumption ineligible, including when an older requested cut omits that newer record.",
+    "Behavioral tests preserve the eligible control before supersession, refuse after a later failed same-name gate on unchanged source, and preserve unrelated gate behavior and original history."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "greg-directed",
+    "review-follow-up",
+    "sync"
+  ],
+  "assigned_to": "session-12329",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Retained evaluation reuse now follows native gate supersession. src/storage/work/task_sync/evidence/acceptance/evaluation.rs gains cited_gate_superseded(), which walks the complete current origin run feed: a newer record of a gate cited by a passing verdict yields EvaluationBasisMoved, even when the requested cut omits it. Test gate_supersession::a_newer_record_of_a_cited_gate_retires_a_retained_pass_that_an_older_cut_omits covers the eligible control, the refusal after a later failed same-name gate on unchanged source, an unrelated gate staying eligible, and unchanged original bytes. Candidate a4d31245dfc158af9a2296b282c945c788f3446a (tree f74ba2c1, parent bd5e5113). DL560 focused GO-S4-8FB0-2: red 9dcb3428 failed as expected; clippy, task_sync::evidence 116/116 and acceptance_evaluation 257/257 passed. Independent evaluation passed 2/2. Not landed yet: it is in 12325's coalesced sync candidate.",
+    "completed_at": "2026-11-11T11:25:52.963016Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f64206e20e244518a1208a822a783826": {
+        "activity_id": "f64206e20e244518a1208a822a783826",
+        "task_id": "01a1ca29-4797-7ab1-81d2-8fb0c128e033",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "15dbd1ce2acb4a45ad7e62e11ac6b878"
+      }
+    }
+  }
+}

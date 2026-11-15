@@ -1,0 +1,62 @@
+{
+  "id": "01a0787c-cd2a-7632-af30-058bd6902bb8",
+  "external_ref": null,
+  "title": "Make the hygiene retry module warning-clean",
+  "outcome": "Make the hygiene retry module warning-clean",
+  "acceptance": [
+    "cargo clippy --all-targets --all-features -- -D warnings passes without wildcard-import suppression"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07846-7b64-7783-b00a-7ed3dda5ba18",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Explicit retry-module imports pass Clippy -D warnings without wildcard suppression; final gates and pair closure accepted, landed fba7824.",
+    "completed_at": "2026-09-07T04:26:17.354160200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "af2ffe09028dc4cd79a074c09d23b1bdc9f69ec8eb1ac642d096b4ceb230708e": {
+        "activity_id": "af2ffe09028dc4cd79a074c09d23b1bdc9f69ec8eb1ac642d096b4ceb230708e",
+        "task_id": "01a0787c-cd2a-7632-af30-058bd6902bb8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d249806416b56b671af8b119832d226ad5c05e102ab2bdffa10b3f55a130d31a"
+      },
+      "cc3cf54b00f3e5d4022379b2f5f14dd7b01e0b4a08ef68dd0bf3145b26d877be": {
+        "activity_id": "cc3cf54b00f3e5d4022379b2f5f14dd7b01e0b4a08ef68dd0bf3145b26d877be",
+        "task_id": "01a0787c-cd2a-7632-af30-058bd6902bb8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cc3cf54b00f3e5d4022379b2f5f14dd7b01e0b4a08ef68dd0bf3145b26d877be"
+      }
+    }
+  }
+}

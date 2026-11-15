@@ -1,0 +1,52 @@
+{
+  "id": "01a08001-a712-7da0-a702-3def99edc69b",
+  "external_ref": null,
+  "title": "Make gate evidence independent of the response that reports it",
+  "outcome": "Make gate evidence independent of the response that reports it",
+  "acceptance": [
+    "a gate run leaves a durable record of its own completion and exit status that does not depend on the agent receiving the launcher final response",
+    "a launcher spanning several long phases is split so each phase yields its own terminal result"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "stream-review-docs",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split full Rust validation into four independently persisted terminal phases; preserve no-selector wrapper behavior and Cargo passthrough. Copied-wrapper, failure and interruption/recovery tests pass. Exact full gate all12 stages passed; final Codex/Claude pair no actionable findings; independent acceptance 2/2 observed passes. Installed clean committed release gap-free with backup; all four live stores ready; origin/master and clean main verified at landed commit. Unix runtime source-inspected only on Windows. Original failing run retained until TermAl w-cd57679e0bb6 closes; remaining evidence archive follows.",
+    "completed_at": "2026-10-09T19:40:09.922326600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d81b1aff2c4741d1b379f6e22a495fbb": {
+        "activity_id": "d81b1aff2c4741d1b379f6e22a495fbb",
+        "task_id": "01a08001-a712-7da0-a702-3def99edc69b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ccaa8c2a93a9487b8b33e3d079e5ae27"
+      }
+    }
+  }
+}

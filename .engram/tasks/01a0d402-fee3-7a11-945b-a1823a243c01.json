@@ -1,0 +1,54 @@
+{
+  "id": "01a0d402-fee3-7a11-945b-a1823a243c01",
+  "external_ref": null,
+  "title": "Split src/storage/graph_snapshot/tests.rs before it crosses 2,500 lines",
+  "outcome": "Split src/storage/graph_snapshot/tests.rs before it crosses 2,500 lines",
+  "acceptance": [
+    "Only whole groups of tests move into child test modules: every test and assertion kept unchanged, no behavior or public-path change, no comments added or dropped beyond a module header",
+    "The full quality gates pass with the same number of graph_snapshot tests before and after, and a Codex and a Claude review of the change are clean",
+    "The graph_snapshot tests family is guarded by tests/source_file_size.rs FAMILIES and that test passes",
+    "src/storage/graph_snapshot/tests.rs and every module under src/storage/graph_snapshot/tests/ are each at most 2,499 physical lines, with tests.rs reduced enough to leave headroom (about 2,200 or fewer)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "file-size",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split src/storage/graph_snapshot/tests.rs: eight redaction, widening and audit tests moved unchanged into src/storage/graph_snapshot/tests/redaction.rs (549 lines), and tests.rs went from 2,462 to 1,919 lines. The shared fixtures stay in tests.rs, and the family still has 35 tests. The family is guarded in tests/source_file_size.rs. Full gates 9/9 (test-c32e5f55); the Codex and Claude reviews were clean. Committed as 857e880, pushed, and installed as build 4fc0a798d875.",
+    "completed_at": "2026-09-24T16:49:41.504124300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7a1ccbda606e4186ba6a1b009990f227": {
+        "activity_id": "7a1ccbda606e4186ba6a1b009990f227",
+        "task_id": "01a0d402-fee3-7a11-945b-a1823a243c01",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "abdc3df908f14900976a428d3602c4b8"
+      }
+    }
+  }
+}

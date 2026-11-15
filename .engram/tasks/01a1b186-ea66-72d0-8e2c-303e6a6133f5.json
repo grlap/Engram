@@ -1,0 +1,49 @@
+{
+  "id": "01a1b186-ea66-72d0-8e2c-303e6a6133f5",
+  "external_ref": null,
+  "title": "Expose canonical source scopes in JSON v2 for shared watcher routing",
+  "outcome": "Serve scope roots from Engram's existing committed-input reader and switch the Engram launcher to the exact v2 contract in one coordinated cutover.",
+  "acceptance": [
+    "`engram source --root ABS --json` emits only the agreed JSON v2 envelope with exactly version,status,root,source,tree,entries,refusal,scopes; source observation remains store-independent and existing verdict/entry/refusal/exit semantics are preserved.",
+    "Supported clean/not_clean scopes contain the canonical root first and every descendant accepted from the same recursive submodule result, lossless UTF-8 and plain Windows paths, unique canonical directories with descendants sorted by serialized UTF-8 bytes; linked roots/children work without new Git queries, topology probes, traversal, or file/index census.",
+    "Unknown, malformed, ambiguous, duplicate, missing or unrepresentable scope resolution fails closed; unavailable carries source/tree null and empty entries/scopes. Scope construction and final serialization share the existing <=8s or caller-shorter deadline and 1MiB JSON bound, with no partial result.",
+    "The Engram launcher validates and consumes exactly v2 at every owner capture without v1 fallback, opt-in flag or copied predicate; it retains current binary selection, authority, artifact, registration and separate fingerprint behavior.",
+    "The shared 24 verdict fixtures and representative linked-root/child, canonical alias/duplicate, non-ASCII order, missing/non-UTF8 resolution, malformed/partial adapter, JSON overflow and deadline cases pass with the agreed scope shapes; applicable focused checks, required whole-input review pair and standard FULL pass on the exact candidate.",
+    "Landing is coordinated after TermAl stage 1 lands and Fable2 confirms stage 2 can consume v2, with Windows B and Mac pins refreshed at the atomic cutover; active consumers never encounter an unprepared owner version. Existing evaluations and durable records are unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a1ae64-05f4-7361-92f8-a6c91d6a7f27",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "v2 scopes dropped: Greg removed watcher events from EO credit (Asistant #390); TermAl no longer needs scopes and v1 stays. Both coordinators withdrew v2 (Engram Fable #1200, TermAl Fable2 #6745). Candidate a9019bdc remains unlanded. Cancellation resumed explicitly by Fable #1210 after the global pause.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "43c1410d4a7b4de6a22fe2a827f7e1b3": {
+        "activity_id": "43c1410d4a7b4de6a22fe2a827f7e1b3",
+        "task_id": "01a1b186-ea66-72d0-8e2c-303e6a6133f5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "677fc411e2f347a1a651809c68024a94"
+      }
+    }
+  }
+}

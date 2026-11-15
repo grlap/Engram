@@ -1,0 +1,78 @@
+{
+  "id": "01a1c14d-7993-7ff3-80dd-1fb89e8e7fbf",
+  "external_ref": null,
+  "title": "Let the session that wrote a candidate commit push it as a test ref so remote runners test that exact commit",
+  "outcome": "Let the session that wrote a candidate commit push it as a test ref so remote runners test that exact commit",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md carry, identically, an author test refs rule matching the wording Engram::Fable and Termal::Fable2 concur on in this item's notes: the session that wrote a candidate commit may push exactly that commit to origin as `refs/heads/author-test/<item>-<commit8>` with an explicit refspec, at any stage; never master or another branch, never a force-push, rebase or merge; a run on it counts exactly as the same run from a bundle of that commit would; the pusher deletes only that ref once the run evidence is recorded, at the latest when the item closes.",
+    "The candidate-commits wording and `.claude/commands/review-changes.md` no longer say a candidate is never pushed except as the Merger's merge-ready test ref, and the Merger's existing test-ref rule is otherwise unchanged.",
+    "The coder test-execution skill tells a coder to hand a remote runner its candidate through such a ref where the project's instructions allow it.",
+    "The change is on master."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "authority-text",
+    "greg-directed",
+    "procedure-cost"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The author test refs rule landed in c6a0784d, on master, together with w-f871 and w-83a7: a coder may push its own candidate as refs/heads/author-test/<item>-<commit8> so remote runners test that exact commit. The run counts as a bundle run, and the pusher deletes only its own ref. The candidate-commits wording, the review-changes command and the coder-test-execution skill point to it. It was later narrowed by ea5252a1 (w-9f7f). The post-landing independent evaluation 677b73c6 passed 4/4.",
+    "completed_at": "2026-11-10T01:25:12.500840900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "78365d530d474758b43c273136fec461": {
+        "activity_id": "78365d530d474758b43c273136fec461",
+        "task_id": "01a1c14d-7993-7ff3-80dd-1fb89e8e7fbf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "78365d530d474758b43c273136fec461"
+      },
+      "b8ec7622b89843668c7ba837bebe0a26": {
+        "activity_id": "b8ec7622b89843668c7ba837bebe0a26",
+        "task_id": "01a1c14d-7993-7ff3-80dd-1fb89e8e7fbf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6d4ce4d668e749b5901cc2a17cc31b84"
+      },
+      "c419807aac7a42c59e7d681339c00c09": {
+        "activity_id": "c419807aac7a42c59e7d681339c00c09",
+        "task_id": "01a1c14d-7993-7ff3-80dd-1fb89e8e7fbf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c419807aac7a42c59e7d681339c00c09"
+      }
+    }
+  }
+}

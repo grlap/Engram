@@ -1,0 +1,50 @@
+{
+  "id": "01a07ccd-dc9a-7cd3-b8b6-92f83373bcd2",
+  "external_ref": null,
+  "title": "Keep frozen criterion disclosure consistent across fitted record windows",
+  "outcome": "Keep frozen criterion disclosure consistent across fitted record windows",
+  "acceptance": [
+    "Large completed show notes and history retain matching text and JSON disclosure, merge omissions and omit zero criteria; advisory seal failure preserves intact item and audit reads with unavailable plus safe error class, while canonical item and run validation stays strict"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07a43-2c1c-7ba0-99b2-94041c67bee6",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered frozen criterion disclosure in fitted plain notes gates and history reads with matching JSON and text, bounded omissions and zero-criterion omission. Advisory seal failures preserve intact audit context with a safe class; item and run validation stays strict. Corrected acceptance to approved1292 contract before completion. Focused19 and final9 gates passed on landed change.",
+    "completed_at": "2026-09-07T20:34:17.491833200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "06f816ac0cc2d7b24029b3119342349679937d68713eb6a9d57d808b84e395ea": {
+        "activity_id": "06f816ac0cc2d7b24029b3119342349679937d68713eb6a9d57d808b84e395ea",
+        "task_id": "01a07ccd-dc9a-7cd3-b8b6-92f83373bcd2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9f057b0bf56d1106673bcbb0b75ce08db76e346b2c7e0267f69ed067ff17cdb1"
+      }
+    }
+  }
+}

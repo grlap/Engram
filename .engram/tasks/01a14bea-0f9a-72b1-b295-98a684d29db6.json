@@ -1,0 +1,51 @@
+{
+  "id": "01a14bea-0f9a-72b1-b295-98a684d29db6",
+  "external_ref": null,
+  "title": "Clarify that the central session and mailbox hub belongs to TermAl",
+  "outcome": "Clarify that the central session and mailbox hub belongs to TermAl",
+  "acceptance": [
+    "The cross-host task-sync brief states unambiguously that the central session/mailbox hub is TermAl's while Engram remains decentralized, with fresh joint concurrence on changed brief bytes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Clarified both briefs that TermAl owns the central session/mailbox hub while Engram stays decentralized and independently writable.",
+    "completed_at": "2026-10-17T23:04:19.976679800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bfce68a7666d4cdeb089849d8946b924": {
+        "activity_id": "bfce68a7666d4cdeb089849d8946b924",
+        "task_id": "01a14bea-0f9a-72b1-b295-98a684d29db6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "83fdfda45d6245dba12ecf4ba2775fd2"
+      }
+    }
+  }
+}

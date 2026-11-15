@@ -1,0 +1,77 @@
+{
+  "id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "external_ref": null,
+  "title": "Remove migration leftovers and dead pre-work-item code",
+  "outcome": "Engram carries no code, tests or docs that exist only for migrations from earlier formats or for the original task and typed-memory design, and both live stores keep opening without a store conversion unless one is explicitly approved.",
+  "acceptance": [
+    "Both live stores (Engram and PhoenixCodeNav) have been converted once to the final schema under Greg's authorization, and the final build passes readiness and doctor on copies of the converted stores",
+    "Every required child is completed",
+    "The full quality gates pass on the final changeset",
+    "Until that live conversion is done, the converter executable and its validated procedure are kept, and no build that cannot open the current stores is installed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Cleanup delivered: direct control binding, removed leases/host waiver/finalizer, record-id naming and self-asserted provenance, obsolete migration machinery retired after approved live conversion. All children completed; independent acceptance686e176de3b34db3ae0935e9d2af4d63 passes4/4. Nine final Windows gates and clean review pair, healthy converted-store copies, retained converter/backups. Current release byte-identical to installed final build; only reviewed diagnostics variable rename remains uncommitted, no commit/push performed.",
+    "completed_at": "2026-09-24T00:59:02.370379700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1824ecc27e3e4c66aa2650f2123f8efd": {
+        "activity_id": "1824ecc27e3e4c66aa2650f2123f8efd",
+        "task_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1824ecc27e3e4c66aa2650f2123f8efd"
+      },
+      "73bb6ce474084c0dbad8957307753230": {
+        "activity_id": "73bb6ce474084c0dbad8957307753230",
+        "task_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d82eea50034c48f2a99ff3f6bd9006e2"
+      },
+      "89c073406b9a481c83f4b9722af8418b": {
+        "activity_id": "89c073406b9a481c83f4b9722af8418b",
+        "task_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f6bc6e2b402041188e1b3cd7b8f8a2f9"
+      }
+    }
+  }
+}

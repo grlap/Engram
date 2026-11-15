@@ -1,0 +1,32 @@
+{
+  "id": "01a13605-e1cd-7863-826d-a5e3d46b3a90",
+  "external_ref": null,
+  "title": "Task sync stage 1: atomic host-independent admissible subset apply",
+  "outcome": "Task sync stage 1: atomic host-independent admissible subset apply",
+  "acceptance": [
+    "Only the stage-1-approved subset with no affected TermAl responsibility applies; the complete relevant local readset (union graph, lifecycle/run/claim bases, newly connected races) is compared inside the same writer transaction, and shared changes, heads and the exact ImportReceipt commit together with no partial final graph or receipt",
+    "An exact retry returns the exact receipt with no duplicate events or ids; a connected local race refuses while unrelated edits do not; reported planning or inert completion creates no live claim, grant, session or evaluation verification; the same native completed outcome keeps its seal and basis",
+    "Notes keep immutable ids with exact self-echo checks, activity updates keep original start/actor/origin binding and refuse rollback or equal-revision conflict, profile omission is not deletion, and re-export keeps unchanged committed bytes, proven by tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13605-bebe-76e2-a4d6-9bf54c91b725",
+    "01a13605-d19b-7552-babb-74c85d2ce78f"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

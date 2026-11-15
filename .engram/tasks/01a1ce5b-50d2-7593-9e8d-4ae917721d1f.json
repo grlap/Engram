@@ -1,0 +1,28 @@
+{
+  "id": "01a1ce5b-50d2-7593-9e8d-4ae917721d1f",
+  "external_ref": null,
+  "title": "Run the task-sync data-branch real-Git suite on macOS and Linux",
+  "outcome": "Run the task-sync data-branch real-Git suite on macOS and Linux",
+  "acceptance": [
+    "The task-sync data-branch real-Git exchange suite, now compiled only on Windows, compiles and runs on macOS and Linux through a shared module; only the genuinely Windows-specific fixture pieces (the openssl and git-http-backend executables of the HTTPS fixture) stay platform-gated or get a portable equivalent",
+    "The suite passes on macOS, Linux and Windows"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-tests",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

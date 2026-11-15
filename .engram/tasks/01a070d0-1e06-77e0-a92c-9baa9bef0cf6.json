@@ -1,0 +1,43 @@
+{
+  "id": "01a070d0-1e06-77e0-a92c-9baa9bef0cf6",
+  "external_ref": null,
+  "title": "Clarify extracted projection verification ownership",
+  "outcome": "Clarify extracted projection verification ownership",
+  "acceptance": [
+    "The extracted projection verifier documents its integrity role and imports observation directly, preserving resolved call target, SQL, public paths, and tests."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "refactor",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a06d75-a23b-71b3-b02a-d8975df03b00",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Coordinator withdrew optional clarity work from the mechanical split; the two-file tidy is carried to the next build-identity/doctor slice, with no extra review round.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "761982436724e4936a8324b1e79428b14632080436e69e9856464bc63d3324f9": {
+        "activity_id": "761982436724e4936a8324b1e79428b14632080436e69e9856464bc63d3324f9",
+        "task_id": "01a070d0-1e06-77e0-a92c-9baa9bef0cf6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "84f56e0215fc622881401cbb19201780a1182eab8fc9ede0e94908a5b6c4ff45"
+      }
+    }
+  }
+}

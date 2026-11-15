@@ -1,0 +1,52 @@
+{
+  "id": "01a09234-b960-7ea3-9280-ed997446f879",
+  "external_ref": null,
+  "title": "Preserve current authority guidance for pending keyless completion retries",
+  "outcome": "Preserve current authority guidance for pending keyless completion retries",
+  "acceptance": [
+    "keyless_completion_pending_attempt_does_not_refresh_to_a_foreign_holder passes",
+    "keyless_completion_pending_refusal_preserves_fresh_authority_guidance passes with unchanged pending state and fresh-intent refusal parity",
+    "keyless_completion_unclaimed_pending_cannot_refresh_to_a_peer_claim passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a09218-b1a5-79f2-9582-5825d50bef02",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pending keyless completion preserves fresh current-authority guidance and unchanged pending state; all named tests, nine gates and both authoritative reviews pass.",
+    "completed_at": "2026-09-11T21:24:06.326181500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6b74e639d2e3de2dd4a638a114cfc244dab3691e3eec0ddc4bfda3bb15331f41": {
+        "activity_id": "6b74e639d2e3de2dd4a638a114cfc244dab3691e3eec0ddc4bfda3bb15331f41",
+        "task_id": "01a09234-b960-7ea3-9280-ed997446f879",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "61911ce2866c5cd07f17b64b67974caac50b7e0c131b6fb7526c910578ead7cf"
+      }
+    }
+  }
+}

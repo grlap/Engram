@@ -1,0 +1,77 @@
+{
+  "id": "01a19eed-99be-7382-8778-46e8594c7e7e",
+  "external_ref": null,
+  "title": "Prove acceptance evaluation works on installed Execution Observability builds before policy re-enabling",
+  "outcome": "Prove acceptance evaluation works on installed Execution Observability builds before policy re-enabling",
+  "acceptance": [
+    "On installed builds, a real evaluation of a disposable task using the complete shared source_id records and passes, and done on the unchanged source with an explicit current SourceId consumes that evaluation and records a completion seal. Record the actual evidence and build identities, and label any asserted fixture inputs explicitly.",
+    "After an actual source change, evaluation of that disposable task is refused or voided. Missing verdicts or refused evidence never become passes. Record the actual source-change and refusal or voiding evidence.",
+    "Keep operational evaluation policy OFF; make no live policy change or alteration of existing evaluations as part of this proof."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Proved installed real independent SourceId evaluation, successful unchanged-source completion and seal, and changed-source completion refusal; operational evaluation remains OFF.",
+    "completed_at": "2026-11-09T06:54:44.437082400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7a87e56bb7ee43868a06e37f7fa3f685": {
+        "activity_id": "7a87e56bb7ee43868a06e37f7fa3f685",
+        "task_id": "01a19eed-99be-7382-8778-46e8594c7e7e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f388fbdfce9f416f9654c3e831059e4b"
+      },
+      "a19f118e50d742668ad0946d6b4d1727": {
+        "activity_id": "a19f118e50d742668ad0946d6b4d1727",
+        "task_id": "01a19eed-99be-7382-8778-46e8594c7e7e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c660f3e02d2542b8aa887f606726f9c1"
+      },
+      "a5b5fa54cc954591904c702a7eff2aa2": {
+        "activity_id": "a5b5fa54cc954591904c702a7eff2aa2",
+        "task_id": "01a19eed-99be-7382-8778-46e8594c7e7e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a5b5fa54cc954591904c702a7eff2aa2"
+      }
+    }
+  }
+}

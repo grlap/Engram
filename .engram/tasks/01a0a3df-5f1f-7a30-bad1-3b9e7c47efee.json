@@ -1,0 +1,74 @@
+{
+  "id": "01a0a3df-5f1f-7a30-bad1-3b9e7c47efee",
+  "external_ref": null,
+  "title": "Admit remaining Absent, artifact, SHM, and journal leaves without following aliases",
+  "outcome": "Admit remaining Absent, artifact, SHM, and journal leaves without following aliases",
+  "acceptance": [
+    "Focused units refuse RollingBack recorded-Absent dangling WAL, prepare SHM alias or directory before any operation effect, and candidate or journal record leaf aliases even when bytes match."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a1dd-4f2e-71c1-9316-85714c98709c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against accepted evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:45:08.152618900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2ed90f1053327b3f78a2de798b0cb43545ab7c4bd241d58f4f3c1e15debefd27": {
+        "activity_id": "2ed90f1053327b3f78a2de798b0cb43545ab7c4bd241d58f4f3c1e15debefd27",
+        "task_id": "01a0a3df-5f1f-7a30-bad1-3b9e7c47efee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "474f71e3fb28d13fd71c54691f06bcfe3855d1b4bae482c1612e2ecfaa398f38"
+      },
+      "3db0266d28876452a30d7b893afaba19c6eca02415930cdd8d3c60d41a71cd9b": {
+        "activity_id": "3db0266d28876452a30d7b893afaba19c6eca02415930cdd8d3c60d41a71cd9b",
+        "task_id": "01a0a3df-5f1f-7a30-bad1-3b9e7c47efee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3db0266d28876452a30d7b893afaba19c6eca02415930cdd8d3c60d41a71cd9b"
+      },
+      "718a81c49b6f3d94ca79e1ab3319d9956f3db1ae570caa5a0e3fe9bce008ba18": {
+        "activity_id": "718a81c49b6f3d94ca79e1ab3319d9956f3db1ae570caa5a0e3fe9bce008ba18",
+        "task_id": "01a0a3df-5f1f-7a30-bad1-3b9e7c47efee",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "718a81c49b6f3d94ca79e1ab3319d9956f3db1ae570caa5a0e3fe9bce008ba18"
+      }
+    }
+  }
+}

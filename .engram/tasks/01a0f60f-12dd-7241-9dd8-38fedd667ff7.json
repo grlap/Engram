@@ -1,0 +1,64 @@
+{
+  "id": "01a0f60f-12dd-7241-9dd8-38fedd667ff7",
+  "external_ref": null,
+  "title": "A refused bare word suggests a note or late gate on a cancelled or superseded focus, which the core refuses",
+  "outcome": "A refused bare word suggests a note or late gate on a cancelled or superseded focus, which the core refuses",
+  "acceptance": [
+    "A test routes an actual cancelled or superseded focus (hold X, add Y, cancel Y, then a bare note and a bare gate) and checks that every offered command for the focus is one the core admits",
+    "The implicit-target refusal tells a completed focus apart from cancelled, superseded and proposed ones: it offers the explicit note and the late gate --work-ref only where the core admits them (completed work, or open work as each word allows), and show otherwise",
+    "docs/features/cli-and-mcp.md says which focus states get which command"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-surface",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A refused bare word offers only commands its focus admits: note or late gate only on completed work, show for cancelled or superseded work; the implicit-target conflict carries the focus lifecycle, and a test checks every offered command is admitted. Landed in 99c249e (bundle 8C-1).",
+    "completed_at": "2026-10-04T17:03:04.972755100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "692f778892c44bd599d19eb366e7d5d0": {
+        "activity_id": "692f778892c44bd599d19eb366e7d5d0",
+        "task_id": "01a0f60f-12dd-7241-9dd8-38fedd667ff7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "692f778892c44bd599d19eb366e7d5d0"
+      },
+      "84162ac7ebcf4a13b6b3007007748bf2": {
+        "activity_id": "84162ac7ebcf4a13b6b3007007748bf2",
+        "task_id": "01a0f60f-12dd-7241-9dd8-38fedd667ff7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e70da485fa394ce68328f550f5c94ede"
+      }
+    }
+  }
+}

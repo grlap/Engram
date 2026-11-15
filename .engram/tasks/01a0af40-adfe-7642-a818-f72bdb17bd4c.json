@@ -1,0 +1,54 @@
+{
+  "id": "01a0af40-adfe-7642-a818-f72bdb17bd4c",
+  "external_ref": null,
+  "title": "Docs, help, and comments describe the delivered evaluate contract: legacy show exception, supplied cut, locators, tool counts, agent command blocks",
+  "outcome": "Docs, help, and comments describe the delivered evaluate contract: legacy show exception, supplied cut, locators, tool counts, agent command blocks",
+  "acceptance": [
+    "docs count fifteen MCP tools (fourteen words plus search) and describe evaluate as a separate service entry beside the unchanged six-operation core, without adding core or host protocol; AGENTS.md and CLAUDE.md stay identical and their Work Tracking command block lists evaluate, add/update --evaluation-mode, --clear-evaluation-mode, and done --source-fingerprint, as does the engram-repo skill's command block",
+    "evaluated_cut and evidence_basis field docs name the evaluator-supplied cut; the duplicated service comment is removed and the provenance comment sits on its block; CLI --evidence help and the MCP verdicts text describe POSITION=LOCATOR from show --notes --gates plus typed full hashes",
+    "the brief's completion step 5 and B43 document the legacy completed-show exception (text line only, JSON unchanged) and a test asserts the exact legacy completed-show JSON carries no acceptance key while done JSON and evaluated show JSON keep provenance, without breaking the seal-failure read-invariance test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Docs, help, and comments now match the delivered contract: legacy completed-show exception documented (text line only, JSON unchanged) with an exact-shape assertion beside the evaluated and done provenance; evaluated_cut/evidence_basis docs name the supplied cut; the duplicated service comment removed; CLI --evidence and MCP verdicts help say POSITION=LOCATOR plus typed full hashes; docs count fifteen MCP tools and describe evaluate as the separate service entry beside the unchanged six-operation core without new core or host protocol; AGENTS.md and CLAUDE.md identical (hash-checked) with evaluate, --evaluation-mode/--clear-evaluation-mode, and done --source-fingerprint in the command block; the skill's ownership lines and command block match. Doc links pass (logs/22).",
+    "completed_at": "2026-09-17T12:29:20.550101700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "278e3b84d8587e0aa9ce7a33a2398056c04f9c42fac2861b4b24b262614f620e": {
+        "activity_id": "278e3b84d8587e0aa9ce7a33a2398056c04f9c42fac2861b4b24b262614f620e",
+        "task_id": "01a0af40-adfe-7642-a818-f72bdb17bd4c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d28ecba9566ebee15d71627abe7557630107a7bd1516571108919d0a3f59ec89"
+      }
+    }
+  }
+}

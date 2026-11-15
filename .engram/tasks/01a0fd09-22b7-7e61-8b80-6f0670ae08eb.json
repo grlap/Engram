@@ -1,0 +1,28 @@
+{
+  "id": "01a0fd09-22b7-7e61-8b80-6f0670ae08eb",
+  "external_ref": null,
+  "title": "Backup evidence follow-ups: prove the early save of a missing finding, and describe the evidence in push step 6 and the shipped push row",
+  "outcome": "Backup evidence follow-ups: prove the early save of a missing finding, and describe the evidence in push step 6 and the shipped push row",
+  "acceptance": [
+    "A test fails if push's Missing branch stops saving the state before it prepares the replacement: for example, preparation fails and the later state write is suppressed, and the test asserts the missing finding is in the state file",
+    "docs/features/off-host-backup.md Push step 6 and the docs/shipped.md Backup push row say that a confirmed equal capture renews the copy's last confirmation and that a missing copy's finding is recorded before the replacement is prepared"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

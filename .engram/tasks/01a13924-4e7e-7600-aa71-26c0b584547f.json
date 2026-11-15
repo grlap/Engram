@@ -1,0 +1,54 @@
+{
+  "id": "01a13924-4e7e-7600-aa71-26c0b584547f",
+  "external_ref": null,
+  "title": "Bound explicit Git exchange subprocesses on Windows",
+  "outcome": "Bound explicit Git exchange subprocesses on Windows",
+  "acceptance": [
+    "A purpose-specific Git exchange runner accepts only a pinned configured HTTPS destination and exact ref/operation, preserves the existing offline Git builder, launches Git directly without caller shell or interpolation of Engram-supplied values, and creates no SQLite, task-file, index or branch mutation outside the explicitly selected Git operation; Git's own allowlisted credential-helper shell path is confined to the same job, while SSH and every unsupported transport refuse before launch.",
+    "Owned Windows tests prove the Git process and every credential/SSH/helper descendant are inside a kill-on-close Job Object before they can escape, with deadline, cancellation, output-limit and failure cleanup that cannot hang on inherited pipes or leave descendants alive; unsupported controller admission fails closed.",
+    "HTTPS uses the user's existing supported Git credential facility without storing credentials; terminal, askpass and interactive helper prompts are disabled, output and redacted diagnostics are bounded, and unsupported helper/configuration refuses explicitly. SSH support belongs to a separate required transport slice and is not claimed by S0. Local fake-process/bare-remote tests state exactly which process and policy behavior they prove, without claiming real-network or cross-machine authentication.",
+    "No unsafe Engram code, global installation/configuration, TermAl relay, canonical SQLite/schema/projection or authority expansion is introduced; a short concrete controller/dependency and supported-credential design obtains Fable concurrence before implementation, with required project gates and independent reviews."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered Windows-only bounded explicit HTTPS Git exchange infrastructure with configured target/helper admission, typed fixed operations, kill-on-close job ownership, bounded concurrent output/deadline/cancellation cleanup, shared service opt-in/read-only admission and owned real-process tests. All four unchanged acceptance criteria pass independent evaluation f1fbdc1544b4404580282b7dbb690672; full gate and current Codex/Claude pair cover the exact precommit source. Four Low roots remain, two block S1. No CLI/MCP exchange route or SSH/real-network authentication assurance.",
+    "completed_at": "2026-10-14T20:08:43.568065300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b5b278ed42f04b73add05ea171d56421": {
+        "activity_id": "b5b278ed42f04b73add05ea171d56421",
+        "task_id": "01a13924-4e7e-7600-aa71-26c0b584547f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1d1556b79039401787cd33cc81bce07d"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a0820d-76db-7dc2-acb9-99b2128b48f8",
+  "external_ref": null,
+  "title": "Use explicit state encoding for root projection writes",
+  "outcome": "Use explicit state encoding for root projection writes",
+  "acceptance": [
+    "Root initialize and persist use encode_state and all root lifecycle tests pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Root state INSERT and UPDATE use the explicit state encoder.",
+    "completed_at": "2026-09-08T17:58:53.843951700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "45d62aae51d0aadf74c8e9d0cce1b0461ac4be9eec7cd7c199d8fe7c15671181": {
+        "activity_id": "45d62aae51d0aadf74c8e9d0cce1b0461ac4be9eec7cd7c199d8fe7c15671181",
+        "task_id": "01a0820d-76db-7dc2-acb9-99b2128b48f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2d5c252dea8147f2e526eeff45dc7dab67520a603c61e3c7543e8df16d185001"
+      }
+    }
+  }
+}

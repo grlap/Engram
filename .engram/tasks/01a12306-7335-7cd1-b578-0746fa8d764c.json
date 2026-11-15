@@ -1,0 +1,29 @@
+{
+  "id": "01a12306-7335-7cd1-b578-0746fa8d764c",
+  "external_ref": null,
+  "title": "Pin logical paths in backup abandonment warning and failure diagnostics",
+  "outcome": "Pin logical paths in backup abandonment warning and failure diagnostics",
+  "acceptance": [
+    "Windows abandonment warning coverage asserts the complete logical temporary-path message and catches an accidental verbatim prefix.",
+    "A deterministic non-collision persist failure checks that diagnostics retain the logical temporary path while cleanup uses the native path."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

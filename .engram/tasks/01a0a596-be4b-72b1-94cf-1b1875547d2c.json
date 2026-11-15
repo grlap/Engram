@@ -1,0 +1,62 @@
+{
+  "id": "01a0a596-be4b-72b1-94cf-1b1875547d2c",
+  "external_ref": null,
+  "title": "Remove redundant Result wrapping in upgrade restore preflight",
+  "outcome": "Remove redundant Result wrapping in upgrade restore preflight",
+  "acceptance": [
+    "cargo clippy --all-targets --all-features -- -D warnings passes without allowing needless_question_mark"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a272-a5e6-75e3-9485-f771ace3fc1a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against accepted evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:45:09.516232Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0ab71119b4a056581c8a0c796c9d00ae825c9bb08d4d6b4a0a97f490dbc8df36": {
+        "activity_id": "0ab71119b4a056581c8a0c796c9d00ae825c9bb08d4d6b4a0a97f490dbc8df36",
+        "task_id": "01a0a596-be4b-72b1-94cf-1b1875547d2c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "345804ab9c2d31d38d0288e9695cf0adc69ea3f055864e14044f8b01ed1994fb"
+      },
+      "810fecf7195701004f53579450a85f6bae10a70ab15af75066c308fcbc93d647": {
+        "activity_id": "810fecf7195701004f53579450a85f6bae10a70ab15af75066c308fcbc93d647",
+        "task_id": "01a0a596-be4b-72b1-94cf-1b1875547d2c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "810fecf7195701004f53579450a85f6bae10a70ab15af75066c308fcbc93d647"
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "id": "01a13bce-e1af-7f91-8d57-785cc59f419a",
+  "external_ref": null,
+  "title": "Bound independent URL policy fixture groups by their Git launch workload",
+  "outcome": "Bound independent URL policy fixture groups by their Git launch workload",
+  "acceptance": [
+    "Each independent URL-policy fixture group has an explicit bounded launch workload separated from the product execution deadline, preserving every malformed-URL, encoded-URL, helper and TLS assertion.",
+    "The correction reduces cumulative unrelated case work within a single supervising deadline without increasing product deadlines, skipping assertions or retrying until green; owned Windows checks pass and report the fixture grouping/bounds."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split the URL-policy fixture into independent bounded launch workloads of 30, 30, 16 and 42 calls, with one owned supervisor each. Exact launch/case counts preserve all 14 malformed URLs plus encoded, fabricated sentinel, credential-helper, TLS, redirect and redaction assertions. Product deadlines remain 30 seconds; no production code or retry changed. Full round3 gate passed all12 stages on exact reviewed freeze, Codex/Claude whole-input pair has no actionable findings, and independent acceptance passed2/2.",
+    "completed_at": "2026-10-15T18:02:33.156352200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "42659cbd53dc45bfaef326558646e93f": {
+        "activity_id": "42659cbd53dc45bfaef326558646e93f",
+        "task_id": "01a13bce-e1af-7f91-8d57-785cc59f419a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "42659cbd53dc45bfaef326558646e93f"
+      },
+      "95d7361d3062497f8e0a773769137313": {
+        "activity_id": "95d7361d3062497f8e0a773769137313",
+        "task_id": "01a13bce-e1af-7f91-8d57-785cc59f419a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b14b1c079581425896f3dadd9ae206f3"
+      }
+    }
+  }
+}

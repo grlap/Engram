@@ -1,0 +1,44 @@
+{
+  "id": "01a1c9e1-47fb-7f20-9b0c-6ecc3eec6f85",
+  "external_ref": null,
+  "title": "Accept a 60 s source/committed-input budget: raise the source budget maximum and the CLI range to 60000 ms",
+  "outcome": "Accept a 60 s source/committed-input budget: raise the source budget maximum and the CLI range to 60000 ms",
+  "acceptance": [
+    "`engram source --timeout-ms` accepts 60000; the default is 60000; a requested public value below 60000 is raised to 60000, never refused and never shortening the abort; values above the maximum still refuse.",
+    "A behavioural test shows a 60000 ms request is accepted and honoured as one absolute budget, that a 30000 ms public override is raised to one 60000 ms absolute deadline, that `--timeout-ms 1` yields a clean observation rather than a deadline refusal, and that values above the maximum still refuse"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "96121730dda64bcb94cf393bf83f8e0f": {
+        "activity_id": "96121730dda64bcb94cf393bf83f8e0f",
+        "task_id": "01a1c9e1-47fb-7f20-9b0c-6ecc3eec6f85",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "96121730dda64bcb94cf393bf83f8e0f"
+      }
+    }
+  }
+}

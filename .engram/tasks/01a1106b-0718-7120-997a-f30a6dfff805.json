@@ -1,0 +1,88 @@
+{
+  "id": "01a1106b-0718-7120-997a-f30a6dfff805",
+  "external_ref": null,
+  "title": "No word searches note bodies: a path or run id cited only in an item's notes cannot be found across the project",
+  "outcome": "An agent can find every open item whose notes cite a given text, such as a worktree path or a launcher run id, without walking show --notes over every item",
+  "acceptance": [
+    "A search route (the search word, ls --search, or a new filter) matches case-insensitive text in note and gate bodies of open items, not only refs, titles, outcomes and labels, and says so in its description",
+    "A test covers a path-like citation such as .worktrees/NAME/target/tmp/file appearing only in a note body being found, and the CLI/MCP contract documents the widened scope"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "evidence",
+    "feature-gap",
+    "search"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "CLI ls and MCP search now find complete canonical note/gate text and refs, with deterministic bounded locator/family overlays, literal Unicode matching, eligible-scope isolation and shared snapshot/count/page membership. Full gate passed; required Codex+Claude reviews have no Medium-or-higher findings, all five Lows tracked; authority concurrence/notice/audit satisfied; independent acceptance d3a75831 passed both criteria. Exact clean release installed with backup, all four stores ready, remote master verified at landed commit.",
+    "completed_at": "2026-10-08T15:59:29.462748900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "621e6ecdf2854b86b30cf028cda46802": {
+        "activity_id": "621e6ecdf2854b86b30cf028cda46802",
+        "task_id": "01a1106b-0718-7120-997a-f30a6dfff805",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "621e6ecdf2854b86b30cf028cda46802"
+      },
+      "8a82604679324e698e108ca00318b46f": {
+        "activity_id": "8a82604679324e698e108ca00318b46f",
+        "task_id": "01a1106b-0718-7120-997a-f30a6dfff805",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "79d1d4b5834e420e81f3573af8535e0f"
+      },
+      "c6eb803ac27a4ba5beef97ba61840faf": {
+        "activity_id": "c6eb803ac27a4ba5beef97ba61840faf",
+        "task_id": "01a1106b-0718-7120-997a-f30a6dfff805",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c6eb803ac27a4ba5beef97ba61840faf"
+      },
+      "dc3d7611153d40fca601bb6e07a030ea": {
+        "activity_id": "dc3d7611153d40fca601bb6e07a030ea",
+        "task_id": "01a1106b-0718-7120-997a-f30a6dfff805",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dc3d7611153d40fca601bb6e07a030ea"
+      }
+    }
+  }
+}

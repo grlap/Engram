@@ -1,0 +1,29 @@
+{
+  "id": "01a1bcc5-57f8-76f2-99e6-b5a4a4684fb3",
+  "external_ref": null,
+  "title": "Show bounded shared source identity in evaluation recovery diagnostics",
+  "outcome": "Show bounded shared source identity in evaluation recovery diagnostics",
+  "acceptance": [
+    "Shared deciding-observation and source-recovery output describes the recorded source with a bounded SourceIdSummary instead of saying its revision is missing; existing legacy fields and decisions remain unchanged.",
+    "An existing behavioral deciding-observation or recovery test covers a shared evaluation displaced by a later shared source and confirms no complete SourceId or request body is emitted."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "diagnostics",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

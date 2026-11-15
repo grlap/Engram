@@ -1,0 +1,65 @@
+{
+  "id": "01a1a380-3333-7d41-8c76-70402c6ce30f",
+  "external_ref": null,
+  "title": "Split src/work_service/mod.rs into responsibility modules without changing the ambient work protocol",
+  "outcome": "Mechanically extract cohesive helper families from work_service/mod.rs while preserving protocol paths, results, receipts, snapshot/delivery ordering and task-sync boundaries.",
+  "acceptance": [
+    "Cohesive helpers move into private owning modules with narrow bridges preserving existing API/helper paths; existing operation modules and task-sync families remain in place.",
+    "Protocol behavior, refusals, serialized receipts, delivery/snapshot semantics, deterministic cost and response budgets, and selected test names/results remain unchanged against the retained pre-split baseline.",
+    "The final full landing gate passes on the integrated candidate."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-work-service",
+    "file-split",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Extracted cohesive private helpers from work_service while preserving protocol behavior and landed the reviewed contribution with query and docs at 582e736d297b8b91e284ccdfc1a05972027f6f7d.",
+    "completed_at": "2026-11-04T01:51:36.955370900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "07338c5ffa364d778f278a54a9f04e2f": {
+        "activity_id": "07338c5ffa364d778f278a54a9f04e2f",
+        "task_id": "01a1a380-3333-7d41-8c76-70402c6ce30f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3caa629b2f5940d98d3400d42936c5e1"
+      },
+      "cef1dc7d3fb64ef0a4dfe7cf0b721bd0": {
+        "activity_id": "cef1dc7d3fb64ef0a4dfe7cf0b721bd0",
+        "task_id": "01a1a380-3333-7d41-8c76-70402c6ce30f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "07338c5ffa364d778f278a54a9f04e2f"
+      }
+    }
+  }
+}

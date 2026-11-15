@@ -1,0 +1,51 @@
+{
+  "id": "01a06f60-7117-7560-8170-1530102a12ce",
+  "external_ref": null,
+  "title": "Preserve indexed catalog cursor paging independently of exact counts",
+  "outcome": "The continuation predicate moved outside the filtered CTE. Confirm the query plan and keep the page cursor index-seekable without relying on flattening; the count must exclude the cursor. This is a query-plan risk, not a measured slowdown.",
+  "acceptance": [
+    "An EXPLAIN or fullscan regression proves later catalog pages retain indexed continuation with availability filters while the exact total remains cursor-independent."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-1251-7030-a930-bb92b6f88464",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Page continuation is inside the candidate CTE; the count deliberately excludes it. The test-only EXPLAIN regression asserts work_items_catalog_after seeks project_id plus work_id range with availability filters and no temporary B-tree. No runtime plan machinery was added.",
+    "completed_at": "2026-09-05T02:53:31.155024Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "76cb9a97b67515620be820d1da5f57f5dee2c7c5b8be1c1bf76c1c074d196527": {
+        "activity_id": "76cb9a97b67515620be820d1da5f57f5dee2c7c5b8be1c1bf76c1c074d196527",
+        "task_id": "01a06f60-7117-7560-8170-1530102a12ce",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "db6fd078d39eddacb556f16cd29b946cd9e91a9060c31ab87504cb20e78f1a55"
+      }
+    }
+  }
+}

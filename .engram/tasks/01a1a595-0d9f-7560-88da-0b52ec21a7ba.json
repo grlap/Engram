@@ -1,0 +1,29 @@
+{
+  "id": "01a1a595-0d9f-7560-88da-0b52ec21a7ba",
+  "external_ref": null,
+  "title": "Find why rustc keeps crashing with STATUS_ACCESS_VIOLATION on Windows B, so its compile jobs can be trusted again",
+  "outcome": "Find why rustc keeps crashing with STATUS_ACCESS_VIOLATION on Windows B, so its compile jobs can be trusted again",
+  "acceptance": [
+    "The repeat crash is classified from evidence: event and WER records, toolchain hashes before and after the reinstall, and memory, disk and concurrent-build state at the crash",
+    "Windows B completes the re-sent N6e job without a compiler crash, or it leaves the rotation for Rust compile jobs with the reason recorded",
+    "Nothing beyond the Rust toolset is changed on Windows B without Greg's explicit word, and a hardware or memory check is put to him if the evidence points there"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "environment",
+    "remote-runner"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

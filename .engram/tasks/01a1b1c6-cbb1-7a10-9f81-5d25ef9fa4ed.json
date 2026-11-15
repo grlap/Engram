@@ -1,0 +1,66 @@
+{
+  "id": "01a1b1c6-cbb1-7a10-9f81-5d25ef9fa4ed",
+  "external_ref": null,
+  "title": "Execution Observability uses the shared source_id for native and remote registered verification",
+  "outcome": "Native and remote registered verification retain the complete shared source_id and compare it whole for matching and live currency, including equal dirty state, while historical records remain readable as stored",
+  "acceptance": [
+    "Native registered verification accepts and retains complete shared source_id input and post-run objects with separate new-write validation and historical stored-record validation.",
+    "Remote verification accepts the agreed closed two-endpoint source_id wire and qualifies available equal full objects for verification and landing_gate while retaining existing result, association and custody guards.",
+    "Native and remote matching and live currency compare the whole source_id, admit equal dirty state, refuse changed state, and require no source observation or watcher condition for registered shared credit.",
+    "Historical wire forms, canonical bytes, identifiers, links, decisions and import interpretation remain unchanged; meaningful clean, dirty, changed, malformed and historical-preservation regressions and the applicable reviews and exact FULL gates pass."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered native and remote shared-source registered verification, whole-object matching and live currency, with historical preservation. Legacy observation/content-v1/watcher retirement is independent follow-up w-d9dbcd311958 per Greg #508. Host installation and activation beyond Central remain separately tracked.",
+    "completed_at": "2026-11-07T06:21:30.625289700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c7621f16079944e7870a9a9d4a8ad23c": {
+        "activity_id": "c7621f16079944e7870a9a9d4a8ad23c",
+        "task_id": "01a1b1c6-cbb1-7a10-9f81-5d25ef9fa4ed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c7621f16079944e7870a9a9d4a8ad23c"
+      },
+      "e090037cf0e944218c2c4c7fe9d0e17d": {
+        "activity_id": "e090037cf0e944218c2c4c7fe9d0e17d",
+        "task_id": "01a1b1c6-cbb1-7a10-9f81-5d25ef9fa4ed",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7286905e53e142c2a658eb831ce6a670"
+      }
+    }
+  }
+}

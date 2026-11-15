@@ -1,0 +1,62 @@
+{
+  "id": "01a171dd-2be9-7bf0-9b02-d7d1e1100364",
+  "external_ref": null,
+  "title": "Align Engram clean-carry review rules with Greg's TermAl workflow",
+  "outcome": "Align Engram clean-carry review rules with Greg's TermAl workflow",
+  "acceptance": [
+    "Both coordinators record concurrence on the exact final AGENTS.md/CLAUDE.md and review-changes section6a wording; Greg's explicit widening instruction and exact wording/consequence are recorded with their sources.",
+    "The current canonical operating memory matches Greg's no-new-pair-for-clean-base-carry instruction; obsolete r9 guidance is superseded and affected actors receive the correction.",
+    "An authorized source owner reconciles governing instructions through the existing authority-change process, including final-diff audit and required validation/review before landing; Architect3 performs no code/gate/commit work.",
+    "The changes preserve complete pre-handoff reviews, actual unchanged-package carry proof, exact-final-tree gate, correction ownership and all unrelated authority limits."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "authority-text",
+    "coordination",
+    "delivered",
+    "evaluation-pending",
+    "greg-directed",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "2442b22233854ca9a6609c366c05f8cf": {
+        "activity_id": "2442b22233854ca9a6609c366c05f8cf",
+        "task_id": "01a171dd-2be9-7bf0-9b02-d7d1e1100364",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "696ad402f9ed4a17b607b97ad9b91bee"
+      },
+      "696ad402f9ed4a17b607b97ad9b91bee": {
+        "activity_id": "696ad402f9ed4a17b607b97ad9b91bee",
+        "task_id": "01a171dd-2be9-7bf0-9b02-d7d1e1100364",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "eaccdfd776e044dbbfbd1592158bda83"
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "01a1182d-ad9d-7360-8c6f-d9bba60d5794",
+  "external_ref": null,
+  "title": "Extract host transport tests into their existing module file",
+  "outcome": "Separate host transport production code from its tests without changing module paths, wire behavior or test coverage.",
+  "acceptance": [
+    "Move the existing cfg(test) host::tests body from src/host.rs into src/host/tests.rs, preserving test names, helpers, assertions, literals and host::tests paths; runtime code and public interfaces are unchanged.",
+    "Demonstrate a mechanical move with reviewed diff, preserved discovered host tests and passing affected host tests plus source-file-size guard; full gate and required independent review pair pass on the final frozen input."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "refactor",
+    "technical-debt"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Extracted all 27 host transport tests and helpers into src/host/tests.rs, preserving host::tests and production behavior; landed, pushed and installed the validated release.",
+    "completed_at": "2026-10-07T23:10:53.117524800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "56f697fea22c4165ab4ca5dbee1e859d": {
+        "activity_id": "56f697fea22c4165ab4ca5dbee1e859d",
+        "task_id": "01a1182d-ad9d-7360-8c6f-d9bba60d5794",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "56f697fea22c4165ab4ca5dbee1e859d"
+      },
+      "f2c0581b77a14d538682072f9c6bf2f5": {
+        "activity_id": "f2c0581b77a14d538682072f9c6bf2f5",
+        "task_id": "01a1182d-ad9d-7360-8c6f-d9bba60d5794",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b39a557ac93446e9abc7834a043bf08c"
+      }
+    }
+  }
+}

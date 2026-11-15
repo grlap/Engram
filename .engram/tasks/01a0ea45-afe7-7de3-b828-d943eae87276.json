@@ -1,0 +1,65 @@
+{
+  "id": "01a0ea45-afe7-7de3-b828-d943eae87276",
+  "external_ref": null,
+  "title": "Add the machine section (folios V-VIII, ultraviolet chrome theme) to the website",
+  "outcome": "Create a distinct robotic cyberpunk visual world for the agent half of the website, preserving the Da Vinci human half.",
+  "acceptance": [
+    "Accessibility parity: skip link, ARIA, keyboard navigability, prefers-reduced-motion and motion toggle respected, content visible without JavaScript",
+    "Full gate passes on the frozen tree",
+    "Manuscript folios stay visually untouched; machine styles live in a separate machine.css; pager, nav, page index and page count extend to all eight folios",
+    "The agent section has a distinct robotic futuristic cyberpunk art style, with original synthetic chrome portrait, cyan/magenta lighting, strong machine typography and coherent HUD composition; header, footer and grain change with the section",
+    "index.html gains a machine section after the four manuscript folios (folios V-VIII: Boot, Vocabulary, Wake up, Honest limits) addressed to agents, with the fourteen words, recovery after compaction, evidence-bound completion, and honest limits"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added four cyberpunk machine folios with original chrome portrait, cyan/magenta HUD styling and agent-focused content; preserved manuscript content and extended accessible navigation to all eight folios.",
+    "completed_at": "2026-09-30T00:50:19.561461100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "06bdd5e84d7a4dba8fd761f005866d34": {
+        "activity_id": "06bdd5e84d7a4dba8fd761f005866d34",
+        "task_id": "01a0ea45-afe7-7de3-b828-d943eae87276",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "06bdd5e84d7a4dba8fd761f005866d34"
+      },
+      "52051e2232ee4a239995594ba3c549d5": {
+        "activity_id": "52051e2232ee4a239995594ba3c549d5",
+        "task_id": "01a0ea45-afe7-7de3-b828-d943eae87276",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c62642a1283b44c0bf0fbebde2b14db9"
+      }
+    }
+  }
+}

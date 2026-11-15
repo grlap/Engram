@@ -1,0 +1,70 @@
+{
+  "id": "01a1940e-de34-7942-ba9b-5e5f93ab521e",
+  "external_ref": null,
+  "title": "Apply acceptance, label, kind and other planning-field edits in incremental task-folder imports",
+  "outcome": "Apply acceptance, label, kind and other planning-field edits in incremental task-folder imports",
+  "acceptance": [
+    "An incremental --basis import of a resolved task folder applies a changed acceptance list (added, removed and reordered criteria) to an existing task, in order, instead of refusing it as unsupported_fields; each other planning field the task document carries (acceptance_bindings, evaluation_mode, kind, labels, assigned_to, deferred_until, external_ref) is either applied the same way or refused by name with a documented reason, and the decision for each field is recorded in the git-task-sync brief",
+    "Host-local state never transfers: claims, runs, grants, completion seals and activity are untouched by an applied edit, and a field change on a task with live or historical execution is refused or reconciled under the model-A rules, not silently applied",
+    "Tests cover each applied field (with an exact replay that changes nothing) and each refused field (naming it); the S3 pilot's second Mac edit (task 3 gains a criterion) imports into the Windows replica"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "pilot-finding",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "7d5f052cc38c4faa96349920acf7942b": {
+        "activity_id": "7d5f052cc38c4faa96349920acf7942b",
+        "task_id": "01a1940e-de34-7942-ba9b-5e5f93ab521e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7d5f052cc38c4faa96349920acf7942b"
+      },
+      "b14bacbc348c459f9e55d8628fc03bea": {
+        "activity_id": "b14bacbc348c459f9e55d8628fc03bea",
+        "task_id": "01a1940e-de34-7942-ba9b-5e5f93ab521e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b14bacbc348c459f9e55d8628fc03bea"
+      },
+      "c922edc98b6743cfac372ce96fc996f3": {
+        "activity_id": "c922edc98b6743cfac372ce96fc996f3",
+        "task_id": "01a1940e-de34-7942-ba9b-5e5f93ab521e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7d5f052cc38c4faa96349920acf7942b"
+      }
+    }
+  }
+}

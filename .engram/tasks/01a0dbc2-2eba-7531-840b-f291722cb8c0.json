@@ -1,0 +1,51 @@
+{
+  "id": "01a0dbc2-2eba-7531-840b-f291722cb8c0",
+  "external_ref": null,
+  "title": "Decide whether the source-size guard covers files before they are split; seven unguarded files are over 1700 lines",
+  "outcome": "Either the source-size guard's policy stays \"guard a family when its file is brought under the limit\" and that policy is stated where the guard is defined, or the guard also covers the large unsplit files so none of them crosses 2499 lines without a failing test.",
+  "acceptance": [
+    "The header of tests/source_file_size.rs states the admission policy, explains exclusion of families not yet deliberately admitted, and makes clear that admission does not require splitting.",
+    "The retained policy decision is recorded: admit families when their files are brought under the limit, without blanket expansion to all large files."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "coordination",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed explicit family admission policy and split:false explanation in tests/source_file_size.rs header at497e81b. Independent Codex evaluation1c57836dfe7a4387af1850c81b34d146 passed both criteria with evidence7f21e4a85bca4b41b191c43bfc150fed. No blanket expansion or guard behavior change; full gate and paired reviews preserved.",
+    "completed_at": "2026-09-27T20:26:55.365772700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d3c2a3179ac846b99ee658b61f4aa561": {
+        "activity_id": "d3c2a3179ac846b99ee658b61f4aa561",
+        "task_id": "01a0dbc2-2eba-7531-840b-f291722cb8c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ff542508db0744deac0d21d07a62fe0c"
+      }
+    }
+  }
+}

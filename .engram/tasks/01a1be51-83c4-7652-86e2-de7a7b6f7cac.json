@@ -1,0 +1,47 @@
+{
+  "id": "01a1be51-83c4-7652-86e2-de7a7b6f7cac",
+  "external_ref": null,
+  "title": "Evidence C core: applicability of imported evaluations and foreign native completion proofs",
+  "outcome": "Evidence C core: applicability of imported evaluations and foreign native completion proofs",
+  "acceptance": [
+    "Imported evaluation reuse compares the retained governing content fingerprint with an exact independently identified snapshot and the actual destination criteria, bindings, policy, mode, source and eligible cited evidence; behavior tests distinguish fingerprints from object links, equal from changed governing content, unavailable snapshots, evaluator independence and superseded verdicts. Import alone creates no verdict and no model run.",
+    "A foreign native completion seal keeps its original ids, bytes, links and cuts, and a new local seal may reference an applicable one explicitly; it is never installed as a local run completion, and reported or restored prose is never treated as native proof. Tests cover valid reuse, mismatched governing, source or feed context, incomplete closure, reopened local generations and inert reported completion.",
+    "Failure leaves no partial local acceptance or seal, and exact repeat or reverse delivery is stable; no claim, report assembly or session delivery transfers, no evaluation is activated and no new gate is added.",
+    "Family, ledger, reducer and service wiring stay on w-597d71ccfdb3, w-7413b4728667 and w-4eabb205c7b2; this item's part of them is an agreed seam only."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "execution-evidence",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "44d542eb8ad74ad693d765a8781667d3": {
+        "activity_id": "44d542eb8ad74ad693d765a8781667d3",
+        "task_id": "01a1be51-83c4-7652-86e2-de7a7b6f7cac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "44d542eb8ad74ad693d765a8781667d3"
+      }
+    }
+  }
+}

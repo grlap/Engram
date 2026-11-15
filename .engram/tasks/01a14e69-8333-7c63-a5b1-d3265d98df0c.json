@@ -1,0 +1,62 @@
+{
+  "id": "01a14e69-8333-7c63-a5b1-d3265d98df0c",
+  "external_ref": null,
+  "title": "Cover clean MCP exit after the close budget with stalled stdio",
+  "outcome": "Cover clean MCP exit after the close budget with stalled stdio",
+  "acceptance": [
+    "MCP close dogfood retains a case where a clean exit occurs after CLOSE_BUDGET_MS while stdio stays open; it records clean_exit_stdio_open, observes exit after the budget, and sends exactly one kill"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed the late clean-exit stalled-stdio regression: simulated clean exit at 31 seconds after the 30-second close budget records clean_exit_stdio_open, an after-budget exit timestamp, no close, and exactly one kill request. Combined full gate passed; fresh independent acceptance 3f5ceb1f95ac4093857219900ba3b92c passed 1/1, citing the gate and criterion/landing notes. This tests callback ordering and the kill request, not real OS pipes or successful process termination.",
+    "completed_at": "2026-10-19T07:55:47.095514200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a4db1ab02c794ca89321e9ccf846bf1d": {
+        "activity_id": "a4db1ab02c794ca89321e9ccf846bf1d",
+        "task_id": "01a14e69-8333-7c63-a5b1-d3265d98df0c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a4db1ab02c794ca89321e9ccf846bf1d"
+      },
+      "c4e5474227d04665b6e6037bf7a90c93": {
+        "activity_id": "c4e5474227d04665b6e6037bf7a90c93",
+        "task_id": "01a14e69-8333-7c63-a5b1-d3265d98df0c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e30881b364934a67ab78ddc71b7542b1"
+      }
+    }
+  }
+}

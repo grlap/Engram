@@ -1,0 +1,30 @@
+{
+  "id": "01a1b911-9b6d-71e0-844e-1e5c302b2d8d",
+  "external_ref": null,
+  "title": "Prepare the AGENTS grant for task-sync data-branch commits and pushes",
+  "outcome": "Prepare the AGENTS grant for task-sync data-branch commits and pushes",
+  "acceptance": [
+    "The exact AGENTS.md/CLAUDE.md wording for data-branch commit and push, with its consequences, is recorded on this item, has both coordinators' concurrence (Engram::Fable and Termal::Fable2), and was sent to Greg with the ready implementation.",
+    "Greg's recorded word on this widening is quoted verbatim with its source before the text lands, and the final-diff audit /review-changes requires is recorded as passed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "authority-text",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

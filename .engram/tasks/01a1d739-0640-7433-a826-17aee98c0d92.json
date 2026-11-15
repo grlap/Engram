@@ -1,0 +1,29 @@
+{
+  "id": "01a1d739-0640-7433-a826-17aee98c0d92",
+  "external_ref": null,
+  "title": "Round-trip activity notices advanced by a reported completion",
+  "outcome": "A completion report that closes an expired native activity episode can be exported and imported by the counterpart without a permanent unsupported_fields(activity) refusal.",
+  "acceptance": [
+    "A real A→B→A→B round-trip with origin-machine activity and an expired unreleased claim converges on a documented supported result",
+    "Monotonic activity updates preserve provenance and never transfer live claim authority, including for terminal tasks"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

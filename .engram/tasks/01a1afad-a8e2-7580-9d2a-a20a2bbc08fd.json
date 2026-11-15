@@ -1,0 +1,29 @@
+{
+  "id": "01a1afad-a8e2-7580-9d2a-a20a2bbc08fd",
+  "external_ref": null,
+  "title": "Determine whether a child's submodule ignore setting hides grandchild dirt from committed-input admission",
+  "outcome": "A real-Git probe establishes whether nested submodule ignore settings can hide changed grandchild input, and both projects receive the same supported conclusion.",
+  "acceptance": [
+    "One real-Git fixture root -> child -> grandchild, with the child's committed .gitmodules setting submodule.<grandchild>.ignore=all and the grandchild edited, records what the existing rev 5 reader reports for root cleanliness, with a clean control. Include the child-local configuration variant if needed to distinguish Git precedence.",
+    "Record exact Git/input identities and command results. If dirt is hidden, file the follow-up remedy or explicit design decision within Greg's no-file-list rule and share the outcome with TermAl; do not silently declare the limitation accepted or bolt a new guard onto another changeset."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review-low",
+    "security"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

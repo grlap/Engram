@@ -1,0 +1,52 @@
+{
+  "id": "01a074d2-8e58-76d1-a6d8-48e42fa28d6b",
+  "external_ref": null,
+  "title": "project_resolution_failed: actionable kind taxonomy and readable text-mode paths",
+  "outcome": "project_resolution_failed: actionable kind taxonomy and readable text-mode paths",
+  "acceptance": [
+    "kind distinguishes a missing project file (missing), an I/O failure (unreadable), non-UTF-8 content (undecodable) and blank content (empty), each with a boundary test in tests/project_selection_cli.rs, and docs/features/cli-and-mcp.md names the four kinds once",
+    "text-mode project_resolution_failed renders the attempted path with single backslashes on Windows while keeping control, bidi and non-ASCII escaping; JSON details.project_file unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "pilot",
+    "stream-host-admission"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 4e1b0e1 (bundle 5A): project_resolution_failed details.kind is missing, unreadable, undecodable or empty, with boundary tests and docs. Text mode prints string details as written, single backslashes included, and escapes controls and non-ASCII as \\uXXXX. The JSON details are unchanged.",
+    "completed_at": "2026-10-03T13:54:12.108078800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "03ee6ba5080542168074b624da7b0972": {
+        "activity_id": "03ee6ba5080542168074b624da7b0972",
+        "task_id": "01a074d2-8e58-76d1-a6d8-48e42fa28d6b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bfb136ff2c2545f6991cbbec44c0b36d"
+      }
+    }
+  }
+}

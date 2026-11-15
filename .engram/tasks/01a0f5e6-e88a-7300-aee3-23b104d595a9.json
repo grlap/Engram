@@ -1,0 +1,29 @@
+{
+  "id": "01a0f5e6-e88a-7300-aee3-23b104d595a9",
+  "external_ref": null,
+  "title": "The binding read's docs say an unchanged binding keeps its obligation, but a waived one reopens at the next revision",
+  "outcome": "The binding read's docs say an unchanged binding keeps its obligation, but a waived one reopens at the next revision",
+  "acceptance": [
+    "A decision is recorded on whether an operator waiver should survive a revision that leaves the criterion and binding unchanged; if not, that behaviour change is filed and tested separately",
+    "The 'Reading what satisfied a bound criterion' section of acceptance-evaluation.md and the doc comment on AcceptanceBindingObligation.work_revision say that a revision keeps the older obligation for an unchanged binding unless it was waived, and that a waived one reopens at the next revision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1c62b-4788-7721-acc8-8f54ac19e0a1",
+  "external_ref": null,
+  "title": "Enforce task-sync opt-in at imported-evidence service mutation boundaries",
+  "outcome": "Enforce task-sync opt-in at imported-evidence service mutation boundaries",
+  "acceptance": [
+    "Imported-evidence qualification and consumption service methods check explicit host-local opt-in themselves or document and validate deliberately supported post-opt-out behavior; current writer/project/actor checks remain.",
+    "Direct service behavior with opt-in disabled is covered without depending on driver checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

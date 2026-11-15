@@ -1,0 +1,76 @@
+{
+  "id": "01a1935c-689f-7c00-abf4-9b3fc6abe44b",
+  "external_ref": null,
+  "title": "Diagnose the retained prepare-lock refusal during opt-out profile recovery",
+  "outcome": "Diagnose the retained prepare-lock refusal during opt-out profile recovery",
+  "acceptance": [
+    "Explain and correct the prepare.lock contention that caused task_prepare_pending_profile_drift_guides_without_changing_retained_operation to fail, while preserving immediate refusal for a genuinely held lock and the existing-only opt-out path",
+    "Add a deterministic regression for the identified lock lifetime or competing holder; unchanged pending-profile attempts retain their metadata and filesystem state without sleeps, skipped checks or retries until green"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "locking",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Diagnosed and fixed the intermittent 'pending preparation busy' refusal. Task-sync's prepare.lock (progress/resume.rs) and the setup preparation lock (setup/intent.rs) were released only by closing the file. On Unix an flock belongs to the open file description, and a child forked by another thread shares that description until exec, so the lock could stay held with no holder. A new HeldLock (src/task_sync/file_lock.rs) releases by an explicit unlock on drop. Immediate refusal, the error texts and the existing-only opt-out open are unchanged. Two deterministic cfg(unix) regressions use a child holding a duplicated descriptor, with no sleeps or retries. Reviewed in 2 rounds (round 2 clean). Focused runs on DL560: FOCUSED-2 passed all 5 runs, including the originally failing pending-profile test. Landed by Termal::Merger3 with the cache fix as master 3430eadd: pushed, installed build 63d907d1, Windows and DL560 final gates PASS, all stores ready. The post-landing independent evaluation d8e069331716453c9872954a5c4dd7ac passed both criteria.",
+    "completed_at": "2026-10-31T20:51:25.248451300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "30559fe169c54308a3738bb5d6c80a98": {
+        "activity_id": "30559fe169c54308a3738bb5d6c80a98",
+        "task_id": "01a1935c-689f-7c00-abf4-9b3fc6abe44b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "676483b50a334de4a47e79795d6970dd"
+      },
+      "483154b60a4e4ee6b280a0e6adfe7bbd": {
+        "activity_id": "483154b60a4e4ee6b280a0e6adfe7bbd",
+        "task_id": "01a1935c-689f-7c00-abf4-9b3fc6abe44b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "5081c8a8bd144e4393b2308634e4c9b9"
+      },
+      "5081c8a8bd144e4393b2308634e4c9b9": {
+        "activity_id": "5081c8a8bd144e4393b2308634e4c9b9",
+        "task_id": "01a1935c-689f-7c00-abf4-9b3fc6abe44b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "30559fe169c54308a3738bb5d6c80a98"
+      }
+    }
+  }
+}

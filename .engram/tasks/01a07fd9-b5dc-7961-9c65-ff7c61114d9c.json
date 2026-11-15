@@ -1,0 +1,50 @@
+{
+  "id": "01a07fd9-b5dc-7961-9c65-ff7c61114d9c",
+  "external_ref": null,
+  "title": "Freeze fingerprint properties for exec mode and symlinks are untested on the only platform we run",
+  "outcome": "Freeze fingerprint properties for exec mode and symlinks are untested on the only platform we run",
+  "acceptance": [
+    "executable-mode and symlink identity are verified on win32, or the checker states in its own text that those properties are unverified there"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Checker discloses unverified Windows filesystem properties on stderr and preserves exact fingerprint stdout; portable Git-index mode and symlink identity regressions pass, with documented filesystem skips retained.",
+    "completed_at": "2026-09-11T05:54:11.599250Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fd2e57607de43f9779d4203fab409785016934793a0606913ce874122bc266f7": {
+        "activity_id": "fd2e57607de43f9779d4203fab409785016934793a0606913ce874122bc266f7",
+        "task_id": "01a07fd9-b5dc-7961-9c65-ff7c61114d9c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "77307d56fe71528a15e5a23d0f059474730caa7fee844150815ee702fe9a8525"
+      }
+    }
+  }
+}

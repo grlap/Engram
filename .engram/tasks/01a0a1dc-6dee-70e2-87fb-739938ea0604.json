@@ -1,0 +1,59 @@
+{
+  "id": "01a0a1dc-6dee-70e2-87fb-739938ea0604",
+  "external_ref": null,
+  "title": "Document supported full-store profiles and offline upgrade contract",
+  "outcome": "Document supported full-store profiles and offline upgrade contract",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md retain full parity and an explicit bounded migration exception; full-store contract separates current behavior from approved target, accounts all data and provenance, requires continuous host exclusion and crash-safe switch with bounded rollback"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Supported-profile and offline-upgrade documentation accepted in V4; identical standalone agent instructions, scoped current implementation and explicit target boundaries.",
+    "completed_at": "2026-09-15T00:02:06.606980400Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1fca433f2c25b7f31803e3aa7233f31e0795f656cf95f8684e1febd616555916": {
+        "activity_id": "1fca433f2c25b7f31803e3aa7233f31e0795f656cf95f8684e1febd616555916",
+        "task_id": "01a0a1dc-6dee-70e2-87fb-739938ea0604",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d448d72540042034a24fe32429552921583d2716e4fcf6b1752b7c7d7b4d0848"
+      },
+      "8177b7e655a44424a5d47ae2bbf2e566857dabae776da30ee069ad3e330b9e54": {
+        "activity_id": "8177b7e655a44424a5d47ae2bbf2e566857dabae776da30ee069ad3e330b9e54",
+        "task_id": "01a0a1dc-6dee-70e2-87fb-739938ea0604",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8177b7e655a44424a5d47ae2bbf2e566857dabae776da30ee069ad3e330b9e54"
+      }
+    }
+  }
+}

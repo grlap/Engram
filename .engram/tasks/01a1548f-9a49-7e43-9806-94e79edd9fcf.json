@@ -1,0 +1,52 @@
+{
+  "id": "01a1548f-9a49-7e43-9806-94e79edd9fcf",
+  "external_ref": null,
+  "title": "Integrate Batch E (S2.1 remote foundation) alone on the 6a291a8 base and land it",
+  "outcome": "Land the reviewed S2.1 patch alone on the 6a291a8 base.",
+  "acceptance": [
+    "The frozen combined tree passes the full gate, with its input fingerprint checked at completion.",
+    "The latest Codex and Claude review pair has no outstanding in-scope finding of Medium or higher on that same frozen tree.",
+    "The reviewed S2.1 tree lands under the standing approval."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "batch",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Batch E S2.1 landed as 54cb8b1dbe3f7f6957f871ad1b3b45e553a68178 on origin/master (pushed 2026-10-19T15:02:57Z), installed with build fingerprint 3c12ce007b8502890bad4c949bc6f678a5fafd5384626d09bb7bed434ff5420a. Fresh independent parent evaluation 8291f66bdcca4e50a8ab2ef91b327652 passed 3/3. Full gate and review pair passed on freeze 4dfdca17; pre/post-commit release builds and six-store readiness passed.",
+    "completed_at": "2026-10-19T15:38:07.266339800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "899754b3774b49d6816ac7c3b5b39816": {
+        "activity_id": "899754b3774b49d6816ac7c3b5b39816",
+        "task_id": "01a1548f-9a49-7e43-9806-94e79edd9fcf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f60a682c87944cb492f1e2b460db81ab"
+      }
+    }
+  }
+}

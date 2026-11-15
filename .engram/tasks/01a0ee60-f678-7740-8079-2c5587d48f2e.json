@@ -1,0 +1,51 @@
+{
+  "id": "01a0ee60-f678-7740-8079-2c5587d48f2e",
+  "external_ref": null,
+  "title": "Refresh acceptance-evaluation Status prose after host evaluator integration",
+  "outcome": "Refresh acceptance-evaluation Status prose after host evaluator integration",
+  "acceptance": [
+    "Every statement the revised Status section makes about Engram is checked against docs/shipped.md, so shipped facts and the target contract remain separate; the neighbouring sentence on end-to-end acceptance says it stays open until it is exercised on a real task.",
+    "The Status section in docs/features/acceptance-evaluation.md no longer says that no project has evaluation enabled, that the host integration is not delivered, or that the host item has no owner; it keeps Engram's shipped core behaviour, names TermAl as the host that evaluates, and makes no claim about what the host has delivered, what it still owes, or where that is documented."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Refreshed the acceptance-evaluation Status to describe shipped Engram core behavior accurately, name TermAl as evaluator without stale host claims, and keep real-task end-to-end acceptance open; landed as fb061c1 on origin/master after exact-input Markdown checks, clean Codex and Claude reviews, and independent 2/2 acceptance evaluation.",
+    "completed_at": "2026-09-29T21:21:10.123369Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3b318c4784a747dab175c96262fdda5b": {
+        "activity_id": "3b318c4784a747dab175c96262fdda5b",
+        "task_id": "01a0ee60-f678-7740-8079-2c5587d48f2e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a7de5d9a899f4e2a99fbbc73ffd5dc0b"
+      }
+    }
+  }
+}

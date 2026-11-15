@@ -1,0 +1,50 @@
+{
+  "id": "01a06d47-08f8-7bb1-8187-5c29c50844c7",
+  "external_ref": null,
+  "title": "Align graph-snapshot audit attribution bounds with the project-memory bounds; bound only doctor rendering at 256 bytes",
+  "outcome": "Align graph-snapshot audit attribution bounds with the project-memory bounds; bound only doctor rendering at 256 bytes",
+  "acceptance": [
+    "graph save succeeds with a 300-byte asserted actor id and doctor output stays bounded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "snapshot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Satisfied by earlier implementation; verified in current triage against the 300-byte actor graph-save regression and bounded UTF-8 doctor rendering test. Closing verified existing work, not claiming authorship of earlier code or a new test run.",
+    "completed_at": "2026-09-11T02:42:53.706792700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a11c55b96dd1eb26b9af6cda9834dd3fa4ea593ab7e3b579284500dd656e4bf7": {
+        "activity_id": "a11c55b96dd1eb26b9af6cda9834dd3fa4ea593ab7e3b579284500dd656e4bf7",
+        "task_id": "01a06d47-08f8-7bb1-8187-5c29c50844c7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ea63a539472fb7418d27ad0695953dc65af97200d503f99356bf24b676f35704"
+      }
+    }
+  }
+}

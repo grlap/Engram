@@ -1,0 +1,50 @@
+{
+  "id": "01a08855-ce77-74b0-92c9-49b26667df4a",
+  "external_ref": null,
+  "title": "Test atomic-plan relation-basis owner and mode guards",
+  "outcome": "Test atomic-plan relation-basis owner and mode guards",
+  "acceptance": [
+    "Wrong-owner and Immediate-mode bases return the exact refusal without database writes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08803-497f-7480-abb5-41fff20c7992",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added exact owner and Immediate-mode refusal regressions with in-transaction and post-rollback database-shape equality. Both targeted guard mutants failed as expected; restored focused tests and final full gates passed.",
+    "completed_at": "2026-09-09T23:14:00.499472500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e1cbcb7bb0657e2e74bfefe778e2c47b26b0ff0d49dd13aa9749e013cf04f6b4": {
+        "activity_id": "e1cbcb7bb0657e2e74bfefe778e2c47b26b0ff0d49dd13aa9749e013cf04f6b4",
+        "task_id": "01a08855-ce77-74b0-92c9-49b26667df4a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9a0dfc1f0deaaa9de42c2d654fdb37ef58042169c5d0a8f7bce850c9830b52f0"
+      }
+    }
+  }
+}

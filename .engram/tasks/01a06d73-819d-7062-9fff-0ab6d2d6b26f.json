@@ -1,0 +1,52 @@
+{
+  "id": "01a06d73-819d-7062-9fff-0ab6d2d6b26f",
+  "external_ref": null,
+  "title": "doctor --json reports a runtime-derived build_fingerprint beside the package version",
+  "outcome": "doctor --json reports a runtime-derived build_fingerprint beside the package version",
+  "acceptance": [
+    "doctor --json carries build_fingerprint derived at runtime from the running executable and the schema reference the different-build refusal uses; two different builds report different fingerprints and the same build reports the same one across runs; no capability catalog or feature version names are introduced"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "made"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-3b3f-7332-8345-4557c3a9cc0d",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a06d75-a23b-71b3-b02a-d8975df03b00"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered visible build components and canonical build fingerprint in every doctor JSON mode, sharing identity with version and next without persistence or admission changes. Validated by all required gates and two-reviewer code closure.",
+    "completed_at": "2026-09-05T10:41:41.993710300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3f91c55ea5ad7e53ec60896ac34c46448806c1bc11b77f2eb64af0d3c3cccdf1": {
+        "activity_id": "3f91c55ea5ad7e53ec60896ac34c46448806c1bc11b77f2eb64af0d3c3cccdf1",
+        "task_id": "01a06d73-819d-7062-9fff-0ab6d2d6b26f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "842c6be8ec3ffda66245be1a6e14853b405661a8389bebe4a5a4fb881d1e9b3b"
+      }
+    }
+  }
+}

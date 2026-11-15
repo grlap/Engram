@@ -1,0 +1,28 @@
+{
+  "id": "01a16d34-139d-7723-984d-3b57a87536e8",
+  "external_ref": null,
+  "title": "Graph snapshot restore reports an opaque type error for non-text catalog FTS keys",
+  "outcome": "Classify malformed non-text work_catalog_fts keys consistently during graph snapshot restore without losing refusal or destination-state guarantees.",
+  "acceptance": [
+    "Graph snapshot restore over a destination containing a NULL, integer or blob work_catalog_fts work_id reports InvalidWorkProjection with clear destination repair advice, or deliberately ignores that nonmatching malformed key; dry-run and real-load behavior have regression coverage and preserve the destination on refusal."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "graph-snapshot",
+    "review",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

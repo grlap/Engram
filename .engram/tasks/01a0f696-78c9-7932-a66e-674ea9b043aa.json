@@ -1,0 +1,51 @@
+{
+  "id": "01a0f696-78c9-7932-a66e-674ea9b043aa",
+  "external_ref": null,
+  "title": "A host can list, per bound criterion and at the binding read's cut, every verification of the bound kind on the active run",
+  "outcome": "A host can list, per bound criterion and at the binding read's cut, every verification of the bound kind on the active run",
+  "acceptance": [
+    "At the same pinned basis and cut as acceptance_binding_read, a host can page through, per bound criterion, every host verification record of the bound kind on the active run up to the cut, each with its full id, kind, result, source revision and position, in run-feed order with explicit omissions, without computing freshness or satisfaction",
+    "The request and response shape is concurred by the consuming host before coding (as an additive extension of acceptance_binding_read or a sibling read, as agreed), changes no stored record and no existing response field, and is documented in the host contract; tests cover several checks of one kind, mixed kinds, a check after the cut, and a stale continuation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The host-private acceptance_verification_read lists, for one criterion of an item on its active run, every host verification of the bound kind up to a run_cut that must be the run's head on every page. Rows come in run-feed order with full id, kind, fingerprint, result, source basis, position and producer, in pages of at most 8 rows and 16 KiB with exact counts and a validated avr1- continuation. It covers every result, fingerprint and source revision and judges nothing. A damaged candidate (feed, projection, producer or root association) is a storage error. Nine typed refusals. Additive sibling of acceptance_binding_read, with no stored or existing-field change; documented in the host contract. Landed as 48f6d34.",
+    "completed_at": "2026-10-01T12:07:32.033756100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4708dea46b43486fabe2d30b915670b4": {
+        "activity_id": "4708dea46b43486fabe2d30b915670b4",
+        "task_id": "01a0f696-78c9-7932-a66e-674ea9b043aa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "de3e32b4b24245439d62ac50fb466f8d"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0f329-c0c9-7d51-b56c-caf8f36104ff",
+  "external_ref": null,
+  "title": "Name the three requirement-recognition predicates in the acceptance lifecycle brief",
+  "outcome": "Name the three requirement-recognition predicates in the acceptance lifecycle brief",
+  "acceptance": [
+    "The doc clarification changes no runtime behavior and does not claim this predicate is already shared",
+    "The lifecycle brief explicitly names matching check kind and optional pinned check fingerprint as a predicate currently spelled in bind_verdicts, newest_verification_of_kind_on and match_verification_evidence, and states the three agree today"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Clarified separately implemented requirement recognition in the acceptance lifecycle brief: matching check kind and an optional pinned check fingerprint at the three named owners, with phase-specific guarantees preserved and no shared-predicate claim. Current-master Markdown checks, verified independent Codex/Claude whole-input pair and fresh independent acceptance ccbd652db7d740fabca99096dc6a681c passed; release readiness reports four live stores ready.",
+    "completed_at": "2026-10-09T17:41:32.440510Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3c8aab1b88dc4723aa16ba222ce0c0aa": {
+        "activity_id": "3c8aab1b88dc4723aa16ba222ce0c0aa",
+        "task_id": "01a0f329-c0c9-7d51-b56c-caf8f36104ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "912946b4f07943f59125c900f7797436"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a07fbf-fa41-7152-ad71-6fe03b24ac4a",
+  "external_ref": null,
+  "title": "Audit the suite for assertions that observe authorship rather than effect",
+  "outcome": "Audit the suite for assertions that observe authorship rather than effect",
+  "acceptance": [
+    "each identified test either observes the effect or states in the test that it pins authorship only"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "stream-review-docs",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "NOT PLANNED, backlog hygiene sweep (Greg via Advisor #1072 and #1074; Engram::Fable, 2026-10-09 ~00:10Z). A whole-suite audit for authorship-observing assertions has no defined corpus or completion boundary. Only bounded surveys were done (note 20b2b46c, 10-07), and they say they don't establish suite-wide completion. The scope can't be made honest without reopening the old design, and review now catches such assertions per changeset. Specific bad assertions get filed individually when found.",
+  "completion": null
+}

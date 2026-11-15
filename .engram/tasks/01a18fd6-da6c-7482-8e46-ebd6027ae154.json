@@ -1,0 +1,28 @@
+{
+  "id": "01a18fd6-da6c-7482-8e46-ebd6027ae154",
+  "external_ref": null,
+  "title": "On Unix, a relative store home starting with \"file:\" makes SQLite open a different file than Engram's own file operations use",
+  "outcome": "On Unix, a relative store home starting with \"file:\" makes SQLite open a different file than Engram's own file operations use",
+  "acceptance": [
+    "On Unix, opening a store whose SQLite filename would start with \"file:\" either opens exactly the literal path Engram's other file operations use, or is refused before any file is created, with a test showing which.",
+    "The open lock's special case for \"file:\" filenames is removed once sqlite_filename never yields one."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

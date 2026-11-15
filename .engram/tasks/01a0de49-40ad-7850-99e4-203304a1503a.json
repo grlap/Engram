@@ -1,0 +1,64 @@
+{
+  "id": "01a0de49-40ad-7850-99e4-203304a1503a",
+  "external_ref": null,
+  "title": "An agent can request an acceptance evaluation in the same turn it changed the source",
+  "outcome": "An agent that changes the source, commits, and asks for an acceptance evaluation in the same turn gets an evaluation that records and seals. That turn's own report does not void it, and the agent does not have to wait for a new turn it cannot start itself.",
+  "acceptance": [
+    "A source change and an evaluation request in one turn yield an evaluation that records and seals, even though that turn's report lands after the evaluator started, when every check the turn reports ran on its final revision and passed; for a criterion bound to a check, the check must be recorded before the request until the host holds the evaluation for the turn's report",
+    "A test covers a turn that changes the source, requests an evaluation, and reports its observations after the evaluator's start",
+    "The agent guidance no longer tells agents to wait for a turn boundary, or to start from a different focus, before requesting an evaluation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Same-turn acceptance evaluation, landed as b1de8b2 and proven live on build 18da245e.\n- Rule: after an evaluator's cut, a passed host check on the declared revision, its environment record and the resolutions it made no longer ask for a resubmission. Under a named root, a declared revision not yet sighted records, and completion waits for the host's sighting.\n- Live proof: three TermAl turns each edited the source, ran a foreground test that passed on the final revision, and asked. The turn's report landed after the evaluator's cut each time, and all three evaluations recorded and stayed fresh: 762cb8fe (cut 101), 35cde573 (cut 118), e58d830b (cut 132, all criteria pass). This completion seals on e58d830b.\n- Shape proven: every check on the final revision, passed. Other shapes wait for TermAl holding the evaluation until the turn's report.\n- The run has no Engram named-root binding, so the named-root rule rests on tests B77 to B79.\n- Evaluated source: b1de8b2 plus three uncommitted edits that land with w-075ba7eadacc (operations.rs help text, the stale-source table row, the flowchart edge).",
+    "completed_at": "2026-09-30T15:07:22.743994400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1f3a09a6aa414912a130719812a427a9": {
+        "activity_id": "1f3a09a6aa414912a130719812a427a9",
+        "task_id": "01a0de49-40ad-7850-99e4-203304a1503a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1f3a09a6aa414912a130719812a427a9"
+      },
+      "d8a2daed4431415496e93b45ceddbea7": {
+        "activity_id": "d8a2daed4431415496e93b45ceddbea7",
+        "task_id": "01a0de49-40ad-7850-99e4-203304a1503a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "433c7afb322e4a8e8803b7e6ac699662"
+      }
+    }
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "id": "01a101a6-8404-7831-8171-bafe0468562c",
+  "external_ref": null,
+  "title": "Test that listing tokens in the previous build's shapes are refused",
+  "outcome": "Test that listing tokens in the previous build's shapes are refused",
+  "acceptance": [
+    "A test rewrites a fresh listing token into each predecessor shape (a top-level cut field, a membership basis without observed_at, a project_cut basis without cut) and asserts each is refused as work_catalog_cursor_invalid",
+    "The boundary-millisecond and unrelated-note continuation tests assert the catalog-changed refusal reason, not any cursor refusal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "delivered",
+    "evaluation-pending",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Tests prove that listing tokens in the previous build's shapes are refused (landed b28a180643ad4359d1eccf393ed49deb4d978c22). Independent evaluation c6a26d5f0ef24500ba3f2191df219078 (Codex, session 14932) passed both criteria under Greg's hybrid model, with remote observation from the Windows B full gate test-fdd408e3 on master e7426a6.",
+    "completed_at": "2026-10-28T01:23:28.096967300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1cf1734f0da546fe990819ebcc9d0b17": {
+        "activity_id": "1cf1734f0da546fe990819ebcc9d0b17",
+        "task_id": "01a101a6-8404-7831-8171-bafe0468562c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "94d104930378426780ae17b52a0a2726"
+      },
+      "8c0e0ded331a442da8dcda188ffe79fc": {
+        "activity_id": "8c0e0ded331a442da8dcda188ffe79fc",
+        "task_id": "01a101a6-8404-7831-8171-bafe0468562c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8c0e0ded331a442da8dcda188ffe79fc"
+      },
+      "a0c9cb926932491bad12942f4073488f": {
+        "activity_id": "a0c9cb926932491bad12942f4073488f",
+        "task_id": "01a101a6-8404-7831-8171-bafe0468562c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a0c9cb926932491bad12942f4073488f"
+      },
+      "a8b9ab4ec12a4fbab1dce01550fd2d09": {
+        "activity_id": "a8b9ab4ec12a4fbab1dce01550fd2d09",
+        "task_id": "01a101a6-8404-7831-8171-bafe0468562c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "1cf1734f0da546fe990819ebcc9d0b17"
+      },
+      "eeb57f07a88941f5b0c221a17955b36d": {
+        "activity_id": "eeb57f07a88941f5b0c221a17955b36d",
+        "task_id": "01a101a6-8404-7831-8171-bafe0468562c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7e6680999f1d472c83e1387fd1a341a3"
+      },
+      "ff75c1882441495ba816107e3785c854": {
+        "activity_id": "ff75c1882441495ba816107e3785c854",
+        "task_id": "01a101a6-8404-7831-8171-bafe0468562c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8c0e0ded331a442da8dcda188ffe79fc"
+      }
+    }
+  }
+}

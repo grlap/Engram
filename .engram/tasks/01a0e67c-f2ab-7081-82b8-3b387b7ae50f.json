@@ -1,0 +1,66 @@
+{
+  "id": "01a0e67c-f2ab-7081-82b8-3b387b7ae50f",
+  "external_ref": null,
+  "title": "A run's freshness is bound to a source sighting from a workspace other than its named root, so no honest check can satisfy the bound obligation",
+  "outcome": "A run's source freshness is judged per named root. The host records which root each sighting measured. Obligation satisfaction and done compare a check with the newest sighting for that check's own named root, and an earlier sighting from a foreign workspace is disclosed, not binding. A sighting whose root cannot be established is never dropped silently, so a passing check can neither be wrongly held to someone else's change nor wrongly freed from its own.",
+  "acceptance": [
+    "A regression test reproduces the observed sequence. Workspace A, the shared main checkout, records a source change at R_a, then quiet sightings. The named root B is bound, sighted at R_b, and a passing test check runs in B. The bound obligation is satisfied by the B check, done seals and discloses the A change, and a later source change in B still refuses the check. A test also covers a sighting whose root cannot be established.",
+    "Obligation satisfaction and done's binding freshness rule compare a check with the newest sighting, and the latest source change, for the check's own named root. Sightings from another workspace recorded before that root was bound are disclosed, not binding. A sighting whose root cannot be established is never dropped silently: after binding, a fresh check in the named root is required, and otherwise the result is insufficient evidence. A later source change in the named root, or a change reported without a revision, still makes the check stale.",
+    "The design is agreed consult-first (Engram::Fable, Engram::Coder, Termal::Codex), including Termal::Codex's answer on whether TermAl already distinguishes session-workdir sightings from named-root sightings, and how the host channel carries the root identity.",
+    "The host records an authenticated workspace or named-root identity with each sighting, and Engram partitions sightings by that recorded identity. The partition is never inferred from workspace path text.",
+    "docs/features/acceptance-evaluation.md, local-work-system.md and behavioral-control-plane.md state the rule, and shipped.md names it."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Per-named-root source freshness landed on master as 2f8cc44 and is installed as build 3a84c2a2be5d.\n- The host names a claim's source root through the host-private named_root_bind op, and each sighting carries its stated generation and state. Engram partitions sightings by that recorded identity.\n- Each source change is classified against its own history: in-root, displaced, foreign under a bound name, unbound, or unlocated.\n- Checks count only in the root; pre-binding foreign changes are displaced and disclosed; foreign and unlocated changes keep their barriers after an end, a release or a rename.\n- Acceptance evaluation judges only the root; the doctor re-derives it all.\n- Sixteen review rounds: Codex and Claude through round 11, then Kimi in place of Codex by Greg's word. The final gate passed (rust 1471).\n- Readiness is ready and doctor clean on all three stores. Independent evaluation passed all 5 criteria.",
+    "completed_at": "2026-09-29T00:31:42.241627500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c9f65a98429747a7b4d31e502a8cbec8": {
+        "activity_id": "c9f65a98429747a7b4d31e502a8cbec8",
+        "task_id": "01a0e67c-f2ab-7081-82b8-3b387b7ae50f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c9f65a98429747a7b4d31e502a8cbec8"
+      },
+      "e878d3cdbd1b48798f69464de99f62fb": {
+        "activity_id": "e878d3cdbd1b48798f69464de99f62fb",
+        "task_id": "01a0e67c-f2ab-7081-82b8-3b387b7ae50f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f6535eeb37394964a3417706ba632ff4"
+      }
+    }
+  }
+}

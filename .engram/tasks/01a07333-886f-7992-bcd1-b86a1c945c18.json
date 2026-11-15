@@ -1,0 +1,47 @@
+{
+  "id": "01a07333-886f-7992-bcd1-b86a1c945c18",
+  "external_ref": null,
+  "title": "Smoke: parent with an optional child",
+  "outcome": "Smoke: parent with an optional child",
+  "acceptance": [
+    "Smoke: parent with an optional child is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "smoke: completing with an open optional child",
+    "completed_at": "2026-09-05T20:12:32.428399700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cb6328c171095c936c1c6a29d35ba9a1f62d20b607582436975eda9564975fb8": {
+        "activity_id": "cb6328c171095c936c1c6a29d35ba9a1f62d20b607582436975eda9564975fb8",
+        "task_id": "01a07333-886f-7992-bcd1-b86a1c945c18",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6300f7545206772aab2ee0749fc6ba2f15ed46698e88ae3d70f30bce683dfd39"
+      }
+    }
+  }
+}

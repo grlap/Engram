@@ -1,0 +1,50 @@
+{
+  "id": "01a07350-de93-7761-91d3-6a92b33caa6a",
+  "external_ref": null,
+  "title": "Preserve useful context ahead of an oversized detach reason",
+  "outcome": "Preserve useful context ahead of an oversized detach reason",
+  "acceptance": [
+    "show_omits_an_oversized_detach_reason_whole_and_preserves_origin_navigation passes with acceptance, children and history preserved"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a070b3-9c16-7663-be40-cb3fbfe0dff4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserve useful context while omitting a pressured reason whole",
+    "completed_at": "2026-09-05T21:09:49.548534200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b0882cb004ffd8010009f45a9d5fece93d01ba52bf895b767207050a5343b2a0": {
+        "activity_id": "b0882cb004ffd8010009f45a9d5fece93d01ba52bf895b767207050a5343b2a0",
+        "task_id": "01a07350-de93-7761-91d3-6a92b33caa6a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "391fdcb63806fbb6ac5088ffdf835dddc3c4dad3c67c7e500d22120727277066"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a07853-e7cf-7cc3-a7f1-18a1993065f4",
+  "external_ref": null,
+  "title": "Keep completed-child rejection on late-finding guidance",
+  "outcome": "Keep completed-child rejection on late-finding guidance",
+  "acceptance": [
+    "rejection_correction_completed_child_keeps_late_finding_guidance passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "pilot",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0761c-5f75-78d0-a0ae-ed549daa9983",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed-child rejection retains exact late-finding note and gate refusal; regression and all gates pass.",
+    "completed_at": "2026-09-06T20:30:53.416269600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a594b3b64123fc1d72a85977733b77cb3d80b7268992a27249a1e7ac7bb80448": {
+        "activity_id": "a594b3b64123fc1d72a85977733b77cb3d80b7268992a27249a1e7ac7bb80448",
+        "task_id": "01a07853-e7cf-7cc3-a7f1-18a1993065f4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1dfd176520a87e2255d6b3df65b13edaf7f7626ed6f67376f73446ced8f9958a"
+      }
+    }
+  }
+}

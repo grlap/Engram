@@ -1,0 +1,88 @@
+{
+  "id": "01a1a7ba-bf1c-7d23-8b9f-c68a5345f8e9",
+  "external_ref": null,
+  "title": "Clean up as part of finishing work: worktrees, builds and temporary files go when they've served, as a standing rule",
+  "outcome": "Remove a worktree when the item it served closes, as a standing rule in AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md stay byte-identical and, beside the .logs/.evidence rule, say: \"Finishing work includes cleaning up after it, without waiting for a disk to fill. When a worktree, build output or temporary file has served its purpose, its owner removes it, after the path check below, and records it; the Merger does so for a landed candidate. To keep one longer, record on an open item the concrete need and when it ends, then remove it then. A periodic sweep doesn't replace this.\"",
+    "The change is a .md-only landing: link check and identity check through the focused launcher, a clean review pair, landed under the standing approval, granting no new authority",
+    "The Merger's landing steps and the coders' closing step use the rule from then on, shown once on the next landing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "housekeeping"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Completed cleanup follow-through and recorded its independent 3/3 acceptance pass.",
+    "completed_at": "2026-11-09T19:56:05.880520700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "122bdee0c4544b6a85d3e25cab06c7a9": {
+        "activity_id": "122bdee0c4544b6a85d3e25cab06c7a9",
+        "task_id": "01a1a7ba-bf1c-7d23-8b9f-c68a5345f8e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "122bdee0c4544b6a85d3e25cab06c7a9"
+      },
+      "37e50418d08c46fa84a3e409dc108723": {
+        "activity_id": "37e50418d08c46fa84a3e409dc108723",
+        "task_id": "01a1a7ba-bf1c-7d23-8b9f-c68a5345f8e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "37e50418d08c46fa84a3e409dc108723"
+      },
+      "394c444df2e1413d819c24cac0254e41": {
+        "activity_id": "394c444df2e1413d819c24cac0254e41",
+        "task_id": "01a1a7ba-bf1c-7d23-8b9f-c68a5345f8e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b77748ee548d4fc880f79a80a668ab3a"
+      },
+      "6b9f5cbd428e4b0c9c818ff92e42dba4": {
+        "activity_id": "6b9f5cbd428e4b0c9c818ff92e42dba4",
+        "task_id": "01a1a7ba-bf1c-7d23-8b9f-c68a5345f8e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "6b9f5cbd428e4b0c9c818ff92e42dba4"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a0757e-176e-74d1-a283-19a90be0ca19",
+  "external_ref": null,
+  "title": "First-line titles in mutation receipts escape terminal controls through the existing text policy",
+  "outcome": "First-line titles in mutation receipts escape terminal controls through the existing text policy",
+  "acceptance": [
+    "a hostile-title test (ESC, CSI, OSC, bidi and newline sequences) covers the first line of all five mutation words and the continuation header, in text and MCP text content",
+    "short() and every first-line title rendering in add, claim, gate, note, and done receipts escape ESC and other C0/C1 controls through the existing terminal text policy, framed like acceptance criteria and refusal paths; JSON keeps stored bytes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "security"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed first-line title policy with Rust and CLI/MCP safety and exact JSON regressions.",
+    "completed_at": "2026-09-06T07:35:24.442945300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ab0ca221a1807e8221f88a9b10ebf2a72b663e97471fad65ded97fe36fd4dfca": {
+        "activity_id": "ab0ca221a1807e8221f88a9b10ebf2a72b663e97471fad65ded97fe36fd4dfca",
+        "task_id": "01a0757e-176e-74d1-a283-19a90be0ca19",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a517e407f598443031c4f1b19f89b8e2d10f9f5c8008ca796f944733d2eb6849"
+      }
+    }
+  }
+}

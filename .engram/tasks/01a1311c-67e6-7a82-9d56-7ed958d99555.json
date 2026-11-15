@@ -1,0 +1,28 @@
+{
+  "id": "01a1311c-67e6-7a82-9d56-7ed958d99555",
+  "external_ref": null,
+  "title": "Give prepared candidate reader I/O and parse refusals input-role context",
+  "outcome": "Give prepared candidate reader I/O and parse refusals input-role context",
+  "acceptance": [
+    "read_prepared errors identify the failing progress directory, selected or recorded destination, generation entry or task filename using role/path context while preserving underlying io/parse errors in the chain; focused fixtures distinguish missing progress from missing destinations and retain link-refusal code/kind checks and input preservation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a111ff-a616-72e3-ac41-4f5502a57604",
+  "external_ref": null,
+  "title": "Clarify criterion mapping refusals versus unreadable cited evidence",
+  "outcome": "Clarify criterion mapping refusals versus unreadable cited evidence",
+  "acceptance": [
+    "The criterion-links contract distinguishes unavailable or corrupt seal/run/completion binding refusals from unreadable cited evidence records, whose links remain with preview_error_class."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "docs",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Distinguished native seal/run/completion binding refusals from retained cited-evidence links with preview_error_class.",
+    "completed_at": "2026-10-09T03:05:35.939298900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4665c8abe6f046e3b497350894227213": {
+        "activity_id": "4665c8abe6f046e3b497350894227213",
+        "task_id": "01a111ff-a616-72e3-ac41-4f5502a57604",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "774c6ac4d679401d8763793a5081ada1"
+      }
+    }
+  }
+}

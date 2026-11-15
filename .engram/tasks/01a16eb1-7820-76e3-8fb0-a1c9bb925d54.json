@@ -1,0 +1,28 @@
+{
+  "id": "01a16eb1-7820-76e3-8fb0-a1c9bb925d54",
+  "external_ref": null,
+  "title": "Share turn-grant scalar parsing between exact grant reads and inspection details",
+  "outcome": "Share turn-grant scalar parsing between exact grant reads and inspection details",
+  "acceptance": [
+    "Both grant readers use shared state, millisecond timestamp and state/time coherence helpers while preserving exact-read refusal and diagnostic unknown/invalid behavior.",
+    "Focused regressions cover every stored grant state and malformed timestamp/coherence cases for both readers."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+  "disposal_reason": "The targeted active grant readers were removed with turn gating (landed at 5e8, cutover 6/6). Only refusal tests and doctor's historical-receipt reading still mention turn_begin, and both stay. Found by the legacy-scan explorer session-15943.",
+  "completion": null
+}

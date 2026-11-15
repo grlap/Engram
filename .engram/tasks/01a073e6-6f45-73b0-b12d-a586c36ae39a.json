@@ -1,0 +1,52 @@
+{
+  "id": "01a073e6-6f45-73b0-b12d-a586c36ae39a",
+  "external_ref": null,
+  "title": "Pin disposed navigation independently through summary byte shedding",
+  "outcome": "Pin disposed navigation independently through summary byte shedding",
+  "acceptance": [
+    "show_child_summary_retains_exact_totals_and_navigation_under_final_byte_pressure asserts explicit expected navigation with a disposed required child and zero visible summary refs"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0729e-24e1-7be0-9e97-a79e52dd1703",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Replaced visible-row-derived navigation expectations with explicit fixture expectations. Disposed required child beyond five-ref cap retains --all after both groups shed to zero. Injected flag-loss negative control failed on the exact navigation assertion, restored version and eight focused tests pass; all nine fresh parent gates pass.",
+    "completed_at": "2026-09-05T23:36:21.147182500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a9f9168e7ce605728f3383b6ba7f4330eb1d2e41371eb334ffc2089b143b9220": {
+        "activity_id": "a9f9168e7ce605728f3383b6ba7f4330eb1d2e41371eb334ffc2089b143b9220",
+        "task_id": "01a073e6-6f45-73b0-b12d-a586c36ae39a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c1a8b3ef75d749e0b083266e5d5912e3dd881461862b6a95dcf65bc4f0c54b8f"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a1c066-bee4-7f63-b6ac-d08bea7b4df5",
+  "external_ref": null,
+  "title": "One note reference over the catalog's size limit may fail searches that wouldn't select its item",
+  "outcome": "One note reference over the catalog's size limit may fail searches that wouldn't select its item",
+  "acceptance": [
+    "A focused test shows whether one note with a reference over the catalog's 1 MiB unit limit fails searches that wouldn't select its item; if it does, refs are bounded at write or the search no longer reads them, and such searches succeed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "catalog-search",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

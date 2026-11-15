@@ -1,0 +1,55 @@
+{
+  "id": "01a0632e-f22b-7510-9ab1-ef0de0c3cf9f",
+  "external_ref": null,
+  "title": "Paused implementation cuts until tests produce findings: policy bootstrap determinism, capability-map mismatch naming, replay observability, protocol diagnostics",
+  "outcome": "Paused implementation cuts until tests produce findings: policy bootstrap determinism, capability-map mismatch naming, replay observability, protocol diagnostics",
+  "acceptance": [
+    "Paused implementation cuts until tests produce findings: policy bootstrap determinism, capability-map mismatch naming, replay observability, protocol diagnostics is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "parked",
+    "stream-host-admission"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-1d0e-7501-ab6c-32084309571d",
+      "kind": "manual",
+      "detail": "Paused implementation cuts: awaiting concrete test findings that justify reopening the named policy/bootstrap/capability/replay/protocol work. Existing recorded pause; no findings lifting it were found in this audit.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:03.610007Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": "Retired: a paused placeholder with a defaulted tautological criterion and no concrete defect or deliverable; any concrete finding lives under its own item. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "631edfb3094123c5214d243c4570f50594526ef95d604e935c7c65aa87ddcf32": {
+        "activity_id": "631edfb3094123c5214d243c4570f50594526ef95d604e935c7c65aa87ddcf32",
+        "task_id": "01a0632e-f22b-7510-9ab1-ef0de0c3cf9f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "99ee724c27fb0361e786f157bc933c518ba292badd658179e14352fe9fe357d1"
+      }
+    }
+  }
+}

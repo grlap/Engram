@@ -1,0 +1,29 @@
+{
+  "id": "01a0b060-e79c-7fb2-a2ba-dd69fb3283c9",
+  "external_ref": null,
+  "title": "Operator purge of forgotten project memories (deferred by Greg; forget stays the agent mechanism)",
+  "outcome": "When Greg schedules it, an operator can physically erase a forgotten project memory's bodies from the local store under preview and audit, as spec section 6.5 frames purge; until then forget's tombstone is the mechanism and already hides the memory from every agent surface and the Work board",
+  "acceptance": [
+    "an operator command, not an agent word, physically erases a forgotten project memory's version bodies after a dry-run preview and leaves an attributed body-less audit stub",
+    "doctor, canonical hash closure, and graph snapshot save and load accept the purged stub without reporting corruption or resurrecting the body",
+    "spec section 6.5, the security brief, the CLI and MCP brief, and the shipped inventory describe the command, including that backups, portable heads, and earlier snapshots are out of its reach"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "project-memory",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

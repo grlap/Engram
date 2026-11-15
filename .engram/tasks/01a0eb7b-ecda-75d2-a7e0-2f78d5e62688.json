@@ -1,0 +1,52 @@
+{
+  "id": "01a0eb7b-ecda-75d2-a7e0-2f78d5e62688",
+  "external_ref": null,
+  "title": "Review speed's design review names a \"read-only Codex explorer\" with no stand-in for an unavailable vendor; align it with the stand-in reviewer rule",
+  "outcome": "Review speed's design review names a \"read-only Codex explorer\" with no stand-in for an unavailable vendor; align it with the stand-in reviewer rule",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (byte-identical) and .claude/commands/review-changes.md name the design-review explorer as a read-only Codex explorer with a stand-in of another vendor when Codex is unavailable (usage limit or outage met at that time, recorded on the item), worded consistently with the stand-in reviewer rule landed by the standing-approval amendment",
+    "Both coordinators' concurrence on the exact wording and Greg's disclosure are recorded on this item before landing, as the authority-text rule requires; the link check and the AGENTS/CLAUDE identity check pass through the focused launcher on the frozen tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Kimi now stands in only when Codex is unavailable. The changes cover the standing approval, the Review Cadence rules, the /review-changes command and the workflow docs. They also add a read-only Kimi explorer as a stand-in for design review, the limits of one stand-in per round and at most two reviews that count, the fewer-than-two rule, a stop-list clause scoped to the two required reviews, and the optional third Kimi review (its own title and fan-in; it never counts or blocks). Landed as ff305a6 on origin/master; docs only, so no build was installed.",
+    "completed_at": "2026-09-29T17:21:13.385580900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "16a6ff37bc32409ba840a8b3c9d10ae9": {
+        "activity_id": "16a6ff37bc32409ba840a8b3c9d10ae9",
+        "task_id": "01a0eb7b-ecda-75d2-a7e0-2f78d5e62688",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "af1124a2eaa94c4dbdaa2fb44fb55a72"
+      }
+    }
+  }
+}

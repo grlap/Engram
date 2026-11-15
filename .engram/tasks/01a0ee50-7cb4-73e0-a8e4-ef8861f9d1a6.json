@@ -1,0 +1,53 @@
+{
+  "id": "01a0ee50-7cb4-73e0-a8e4-ef8861f9d1a6",
+  "external_ref": null,
+  "title": "review-changes names the coordinator's final-diff audit as a step before a landing of authority text",
+  "outcome": "review-changes names the coordinator's final-diff audit as a step before a landing of authority text",
+  "acceptance": [
+    ".claude/commands/review-changes.md, and AGENTS.md and CLAUDE.md where the authority-text rule is stated, say that before a landing of authority text the coordinator reads the final frozen diff line by line against the sentences whose concurrence is recorded on the item and notes which recorded message governs each changed passage, and that a passage no recorded concurrence quotes whole is concurred before the freeze or taken out",
+    "the memory authority-text-final-diff-audit is removed once the step is in the checked-in text",
+    "the wording is concurred by both coordinators on this item before the freeze, Greg is sent it with its consequence before the landing, and the coordinator's own final-diff audit of this very changeset is recorded on the item before the landing; the link check and the AGENTS/CLAUDE identity check pass through the focused launcher and the review pair is clean on the frozen tree"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "review-changes.md section 6 now names the project's coordinator's final-diff audit before authority-text landings (with the other project's coordinator reading where the coordinator wrote the change), and AGENTS.md/CLAUDE.md carry it as condition (c) of the authority-text rule. Landed as 778e596 on master after both coordinators' concurrence, Greg's wording-on-record, the coordinator's own final-diff audit of this changeset, docs-only gates and a clean Codex + Claude pair on the frozen tree; readiness ready on all three live stores. The authority-text-final-diff-audit memory is retired (tombstone 21:42:54Z). Acceptance evaluation passed fresh on all three criteria (independent_session Claude, delegation-1613e0b2); the two source-change obligations are recorded as untested by done, as expected for a docs-only changeset.",
+    "completed_at": "2026-09-29T21:48:56.055871300Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "570bb068e89c410b83648c500022fe35": {
+        "activity_id": "570bb068e89c410b83648c500022fe35",
+        "task_id": "01a0ee50-7cb4-73e0-a8e4-ef8861f9d1a6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fc589a3d5c804651a9ac91383f1539ab"
+      }
+    }
+  }
+}

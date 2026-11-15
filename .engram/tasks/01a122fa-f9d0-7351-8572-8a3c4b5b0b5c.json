@@ -1,0 +1,27 @@
+{
+  "id": "01a122fa-f9d0-7351-8572-8a3c4b5b0b5c",
+  "external_ref": null,
+  "title": "Clear control diagnostic frame after every failed serve return",
+  "outcome": "Clear control diagnostic frame after every failed serve return",
+  "acceptance": [
+    "Every serve_observed exit clears diagnostic_frame, and reuse of a public HostControlServer after a failed serve cannot attach subsequent handle refusals to the stale frame sequence, grant or attempt."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

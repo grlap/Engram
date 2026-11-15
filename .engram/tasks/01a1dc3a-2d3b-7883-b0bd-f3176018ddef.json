@@ -1,0 +1,61 @@
+{
+  "id": "01a1dc3a-2d3b-7883-b0bd-f3176018ddef",
+  "external_ref": null,
+  "title": "Fix the round-1 family A review findings (A1-A5) in managed task-sync custody as a patch for the combined integration",
+  "outcome": "Fix the round-1 family A review findings (A1-A5) in managed task-sync custody as a patch for the combined integration",
+  "acceptance": [
+    "Each of the round-1 family A findings A1-A5 from the combined dd205 review is fixed, touching only the family A paths, against base f56646f85f752b7c4caf6a1e305264abb8bfc89c (tree 2bd82a31433029c5ca0fca3de3266be4fbe29bb2)",
+    "Each fix has a public behaviour test, which fails without the fix and passes with it, covering the required behaviour and its recovery",
+    "The patch goes back to the parent's integrator as a commit or format-patch, with the focused verification that ran on it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "managed-retention",
+    "performance",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1a584-01b6-7fe2-a1e4-47925cf9286d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "35dfbc91fd2b414db7ff933a3d910bc6": {
+        "activity_id": "35dfbc91fd2b414db7ff933a3d910bc6",
+        "task_id": "01a1dc3a-2d3b-7883-b0bd-f3176018ddef",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "35dfbc91fd2b414db7ff933a3d910bc6"
+      },
+      "a59b82a634184359968a79f02c61a695": {
+        "activity_id": "a59b82a634184359968a79f02c61a695",
+        "task_id": "01a1dc3a-2d3b-7883-b0bd-f3176018ddef",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "35dfbc91fd2b414db7ff933a3d910bc6"
+      }
+    }
+  }
+}

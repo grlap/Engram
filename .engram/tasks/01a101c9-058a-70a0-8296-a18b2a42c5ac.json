@@ -1,0 +1,93 @@
+{
+  "id": "01a101c9-058a-70a0-8296-a18b2a42c5ac",
+  "external_ref": null,
+  "title": "Remove the hash label from acceptance evaluation projections after TermAl runs the new reader",
+  "outcome": "Remove the hash label from acceptance evaluation projections after TermAl runs the new reader",
+  "acceptance": [
+    "Before removal, this child's holder note quotes the TermAl owner's confirmation that the evaluation-preferring reader has landed AND is running after restart, with its running build fingerprint. The note names the completed additive producer and the separately filed TermAl fallback-removal follow-up.",
+    "Current-evaluation show, show --full, complete evaluation detail/windows, compact next and normal/minimal evaluate JSON/MCP name the minted record id evaluation and omit hash for that id. CLI text/docs use evaluation/record id. Preserve show --full's existing authored contract and complete evaluation, verdict, freshness and carried/superseded metadata when present; remove only the obsolete hash alias for the evaluation id. Genuine content/source fingerprints retain their labels.",
+    "Tests verify the final projections including replay and minimal-budget cases and preserve ids, links, carried/superseded references and stored historical records. No Engram reader fallback or stored-format change is introduced; the documented rollout orders TermAl's separately filed fallback removal after this final producer lands."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux",
+    "area-host-integration",
+    "design",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0ed15-d924-7510-b388-136c0e0b4729",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a101c9-0563-78c1-9002-2e2de0461551"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed obsolete hash aliases for evaluation record IDs across current/full show and normal/minimal evaluate receipts; retained complete authored/evaluation metadata, replay identity, historical canonical rows and true fingerprint labels. Full nine-stage gate passed on the exact reviewed tree, both required independent vendor reviews were clean, and independent acceptance passed 3/3 with unchanged criteria. Landed and installed the clean committed binary, all four live stores ready. Evidence retention and clean worktree cleanup follow this completed seal.",
+    "completed_at": "2026-10-08T14:34:57.501941100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6decdafbd84645c9be6a64237187cca8": {
+        "activity_id": "6decdafbd84645c9be6a64237187cca8",
+        "task_id": "01a101c9-058a-70a0-8296-a18b2a42c5ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e912fd22caee4697ae1bf4d13b0adfe6"
+      },
+      "a883f26f90ae48d591a565b9836d3933": {
+        "activity_id": "a883f26f90ae48d591a565b9836d3933",
+        "task_id": "01a101c9-058a-70a0-8296-a18b2a42c5ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a883f26f90ae48d591a565b9836d3933"
+      },
+      "cfbaf5c9f7244967b383fd657affbf0b": {
+        "activity_id": "cfbaf5c9f7244967b383fd657affbf0b",
+        "task_id": "01a101c9-058a-70a0-8296-a18b2a42c5ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cfbaf5c9f7244967b383fd657affbf0b"
+      },
+      "ed0bbcbd713441c09fdf6119de08590e": {
+        "activity_id": "ed0bbcbd713441c09fdf6119de08590e",
+        "task_id": "01a101c9-058a-70a0-8296-a18b2a42c5ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4e776ac7a4064d04a472cd958cbea390"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0e8d0-6b7f-7821-9b2b-d56b55da8c5c",
+  "external_ref": null,
+  "title": "Document Engram's task state model with Mermaid diagrams: lifecycle, derived availability, run and claim states, obligations and the completion flow",
+  "outcome": "Document Engram's task state model with Mermaid diagrams: lifecycle, derived availability, run and claim states, obligations and the completion flow",
+  "acceptance": [
+    "A Mermaid flowchart of the agent flow (add, claim, note/gate/host evidence, update, evaluate, done, seal; reopen; handoff) labels each gate's refusal with the words a receipt carries — the recovery-cause kinds missing_acceptance_evaluation, acceptance_insufficient_evidence, acceptance_failed, acceptance_evaluation_stale (and the other WorkCompletionRecoveryCause kinds) with their Rust names beside them, the acceptance_criteria_required error, and acceptance_evaluation_refused for the evaluate-time R5 refusal — and matches docs/features/acceptance-evaluation.md",
+    "docs/features/local-work-system.md carries Mermaid state diagrams for WorkLifecycle (proposed/open/completed/cancelled/superseded with reopen), derived WorkAvailability (ready/claimed/active/blocked/deferred/waiting/closed) with its readiness reasons, WorkRunState and WorkClaimState with handoff, and WorkObligationState, each matching the enums in src/domain/work.rs",
+    "docs/shipped.md links the diagrams; the link check passes; AGENTS.md and CLAUDE.md are untouched"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "docs",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 75a172f and cee0612 on origin/master: docs/features/local-work-system.md gains a State diagrams subsection (planning lifecycle; availability as the derivation's precedence with readiness reasons; run, claim and handoff states; obligations and per-criterion verdicts; the word-level flow with each gate's refusal in receipt words) and reconciles the older lifecycle sketch and waiting bullet; docs/shipped.md links it. Seven review rounds (Codex and Claude), every finding fixed and reviewed again; docs-only gate on each freeze; independent evaluation 569c8005 passed 3 of 3 after the first evaluation failed criterion 1 on internal names, corrected in cee0612. No install: documentation only.",
+    "completed_at": "2026-09-28T17:13:54.324853600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "36fa5100e16441a7b28293cb84618090": {
+        "activity_id": "36fa5100e16441a7b28293cb84618090",
+        "task_id": "01a0e8d0-6b7f-7821-9b2b-d56b55da8c5c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5f214ea6583f43d68ab70e8cd572f25b"
+      }
+    }
+  }
+}

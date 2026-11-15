@@ -1,0 +1,66 @@
+{
+  "id": "01a1bdc6-d885-71f0-99bc-c4d66d741cb3",
+  "external_ref": null,
+  "title": "Remove what is dead of content-v1 and legacy source identity in Engram, and inventory the rest",
+  "outcome": "Remove what is dead of content-v1 and legacy source identity in Engram, and inventory the rest",
+  "acceptance": [
+    "An inventory recorded on this item, built with search and the compiler, lists every Engram writer, reader and wire contract of content-v1 and legacy source identity, each marked one of: removable now; waits for the evaluation proof w-46e8; stays because stored rows are still read.",
+    "Everything marked removable now is removed in one or more landed changesets, with what they removed named. Live evaluation and TermAl's strict readers keep working, and rows the live stores already hold keep being read as stored.",
+    "No new mechanism, gate or compatibility shim is added; tests that only pinned a removed path go with it, and behavior checks stay.",
+    "What waits for evaluation is left as a named list for the final removal after w-46e8, with TermAl's C6 as its counterpart."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": "Engram::Opus",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed everything the inventory marked removable now, in two landed changesets, and left the rest as a named list. 3f76e392 retires the host operation verification_bind and its writer, new staged_tree input, the dead new-write legacy arms and their docs, keeping stored records readable. e69167fd rewrites the two remaining content-v1 passages in the task sync design. Inventory notes 2aa9376e and 07e4006c; named list for the final removal 4fca9c5d. No schema, row or wire-shape change for stored records; all six live Central stores ready. Independent evaluation 303940ad passed all four criteria. Final removal (stage 2 and the rest of the named list) continues on a new item under Greg's word #740, with TermAl's C6.",
+    "completed_at": "2026-11-09T11:11:52.516541300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "12b1b2ba3e834c2f94891daa29684776": {
+        "activity_id": "12b1b2ba3e834c2f94891daa29684776",
+        "task_id": "01a1bdc6-d885-71f0-99bc-c4d66d741cb3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5785abbde90743d3abe47e06d83d2bc9"
+      },
+      "56b50463e40648ffa9e257e53d803307": {
+        "activity_id": "56b50463e40648ffa9e257e53d803307",
+        "task_id": "01a1bdc6-d885-71f0-99bc-c4d66d741cb3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "56b50463e40648ffa9e257e53d803307"
+      }
+    }
+  }
+}

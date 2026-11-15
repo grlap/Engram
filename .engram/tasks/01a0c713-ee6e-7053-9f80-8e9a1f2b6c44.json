@@ -1,0 +1,28 @@
+{
+  "id": "01a0c713-ee6e-7053-9f80-8e9a1f2b6c44",
+  "external_ref": null,
+  "title": "Explain or degrade oversized context-only control deliveries",
+  "outcome": "A context-only delivery that exceeds the host wire budget produces a cause-specific, recoverable response with actionable omission evidence instead of a bare host-directed DeliveryInvalid wedge.",
+  "acceptance": [
+    "A context-only delivery that exceeds MAX_CONTROL_DELIVERY_BYTES exposes a cause-specific recovery path or safely degrades with an omission manifest.",
+    "Regression coverage distinguishes wire-budget overflow from malformed delivery-page refusal and proves the session can recover."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-control-plane",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Superseded by the in-scope correction implemented and tested under w-e89694041785 after round4 review reclassification.",
+  "completion": null
+}

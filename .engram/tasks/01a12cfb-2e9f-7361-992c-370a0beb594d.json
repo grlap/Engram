@@ -1,0 +1,52 @@
+{
+  "id": "01a12cfb-2e9f-7361-992c-370a0beb594d",
+  "external_ref": null,
+  "title": "Test that task-sync export without a machine alias omits native activity",
+  "outcome": "Test that task-sync export without a machine alias omits native activity",
+  "acceptance": [
+    "A regression test creates native claim, release and completion history, exports without an origin-machine alias, and asserts every activity map is empty and the serialized task documents omit the activity key"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-low",
+    "sync",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added a regression test showing that task-sync export without a machine alias omits native activity.\n- Item A is claimed and released; item B is claimed, then evidence, a checkpoint and completion.\n- An aliased control export yields exactly A Released and B Finished.\n- The alias-free export:\n  - leaves every activity map empty;\n  - counts no omissions and leaves the store unchanged;\n  - writes no activity key in either task document;\n  - matches the default export byte for byte.\n- Files (test only): src/storage/work/task_sync/tests/activity.rs (+1 mod line) and src/storage/work/task_sync/tests/activity/without_alias.rs.\n- Vacuity: a fallback-alias mutant and a no-skip_serializing_if mutant each fail the test.\n- Reviews: two clean rounds (Codex 12260/12267, Claude 12261/12268).\n- Gate: test-64cb89cc passed 12/12 on freeze d768c6b8.\n- Evaluation: 7dd81715 passed.\n- Readiness: ready on all 4 live stores.\n- Landed 0e4da38; installed build 4fccb29fb3b7, sha256 aa6c5f8b; backup engram-20261012T192928Z-61b0fbec3f24.exe.",
+    "completed_at": "2026-10-12T19:29:52.506897700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "054f716347824a5abb9afddd091b2ac1": {
+        "activity_id": "054f716347824a5abb9afddd091b2ac1",
+        "task_id": "01a12cfb-2e9f-7361-992c-370a0beb594d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f2827b1c9a1c4f1fbb2ff8df2ad74ac9"
+      }
+    }
+  }
+}

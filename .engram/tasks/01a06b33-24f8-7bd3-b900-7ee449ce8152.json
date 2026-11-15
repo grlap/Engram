@@ -1,0 +1,49 @@
+{
+  "id": "01a06b33-24f8-7bd3-b900-7ee449ce8152",
+  "external_ref": null,
+  "title": "Remove out-of-contract phase reconstruction from late findings",
+  "outcome": "Remove out-of-contract phase reconstruction from late findings",
+  "acceptance": [
+    "Checkpoint/handoff reconstruction branches and tamper tests are removed while late evidence verification and writer-side marker guards remain; all gates and the same review pair are clean"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed out-of-contract checkpoint/handoff integrity reconstruction while preserving the late-evidence contract, writer safeguards, clean gates, and clean closure reviews.",
+    "completed_at": "2026-09-04T07:07:23.656917500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "80b193381ed40d7dcea572f1e47e8179b4942672d70f01261b6077c77bba9ec7": {
+        "activity_id": "80b193381ed40d7dcea572f1e47e8179b4942672d70f01261b6077c77bba9ec7",
+        "task_id": "01a06b33-24f8-7bd3-b900-7ee449ce8152",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "10d12ca1ba763e111d56ea1be0e68153d2770651a48490a2208eb8b9049c47c6"
+      }
+    }
+  }
+}

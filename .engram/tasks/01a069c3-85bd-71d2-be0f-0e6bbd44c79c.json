@@ -1,0 +1,49 @@
+{
+  "id": "01a069c3-85bd-71d2-be0f-0e6bbd44c79c",
+  "external_ref": null,
+  "title": "Split src/verbs.rs (5k lines) into src/verbs/ submodules",
+  "outcome": "verbs.rs splits into receipts, show rendering, and word handlers with tests beside their code",
+  "acceptance": [
+    "Mechanical moves only; no public-path change; all nine gates pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f68e-7a02-a2a5-ff41bb615183",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Mechanically split the 5,445-line verbs module into handler, receipt, terse-show, shared-vocabulary, and mirrored test modules while preserving all crate::verbs public paths and behavior; all required gates and the Codex/Claude closure review are clean.",
+    "completed_at": "2026-09-04T08:14:02.077588900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4f964027ca99bc7155c2257e4b980a0a89515be3f8e756e37864a9d2bedbfeb8": {
+        "activity_id": "4f964027ca99bc7155c2257e4b980a0a89515be3f8e756e37864a9d2bedbfeb8",
+        "task_id": "01a069c3-85bd-71d2-be0f-0e6bbd44c79c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c803069739637c647ed361f1637edf3d29ba340ed21a5fe247c9c7643ff47022"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a07441-c6f7-72a2-adbc-4095f152b7ec",
+  "external_ref": null,
+  "title": "Mark shortened inherited history notes with original size and detail",
+  "outcome": "Mark shortened inherited history notes with original size and detail",
+  "acceptance": [
+    "record_windows_history_note_summaries_name_complete_detail passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a073d0-2723-7973-bbb3-30e41424cb68",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shortened inherited-history notes now preserve exact original UTF-8 body size, explicit summary_truncated marker and complete-note detail locator. Observed pre-fix wrong-size regression now passes along with fresh nine gates.",
+    "completed_at": "2026-09-06T01:29:07.998819400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c93ad1b5c862e121ef10bc352f591b5dbbfb79c816f5a62cadaf7348a15f6a02": {
+        "activity_id": "c93ad1b5c862e121ef10bc352f591b5dbbfb79c816f5a62cadaf7348a15f6a02",
+        "task_id": "01a07441-c6f7-72a2-adbc-4095f152b7ec",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0ade622c966b6814fb72670401e4bf071e0758ff16a36595a5df9933bc0f7de6"
+      }
+    }
+  }
+}

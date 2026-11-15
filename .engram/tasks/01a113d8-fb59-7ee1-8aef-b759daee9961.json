@@ -1,0 +1,48 @@
+{
+  "id": "01a113d8-fb59-7ee1-8aef-b759daee9961",
+  "external_ref": null,
+  "title": "Handle symbolic links in landing fixture snapshots on macOS",
+  "outcome": "Handle symbolic links in landing fixture snapshots on macOS",
+  "acceptance": [
+    "The landing fixture snapshot records symbolic links without following their targets, including dangling links, while preserving byte checks for ordinary files and recursive directory comparison.",
+    "Regression coverage proves a dangling link no longer causes snapshot bytes NotFound and a changed link target is detected; the original inherited repository-routing assertions remain intact."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected landing fixture snapshots to classify entries without following symbolic links and preserve their exact raw targets. Ordinary file byte checks and recursive directory comparison remain; original inherited Git-routing assertions pass. Added dangling/cyclic directory-link, equal-content retarget, raw target-spelling and Unix file-link regressions. Final Windows full gate all9 stages passed on frozen input e89098b9; both required independent Codex/Kimi reviews clean, prior Medium fixed and reviewed again; independent acceptance 2/2 fresh. New release all4 live stores ready, backup/install verified before push. Native macOS and cfg(unix) execution unverified. Test-only change, no production/durable/schema/projection change; running sessions need no restart.",
+    "completed_at": "2026-10-07T01:32:34.715492600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "55b4f9e3978f4a5cb442a2e1d63afbf5": {
+        "activity_id": "55b4f9e3978f4a5cb442a2e1d63afbf5",
+        "task_id": "01a113d8-fb59-7ee1-8aef-b759daee9961",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1984c1300ba247438ffcef5252add677"
+      }
+    }
+  }
+}

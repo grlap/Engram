@@ -1,0 +1,83 @@
+{
+  "id": "01a15cc0-9628-70a1-88a2-06d82cecfe49",
+  "external_ref": null,
+  "title": "Engram control admission stays within its dispatch budget while a full gate runs on the same host",
+  "outcome": "Under the load of a full gate's Rust test stage on the same machine, Engram's control admission (evaluate, fence, begin) answers TermAl's turn_begin within its dispatch budget, so turns are not withheld and queues are not paused; or the record shows by measurement that the latency is outside Engram, cross-referenced to the TermAl item.",
+  "acceptance": [
+    "The 2026-10-21 04:31-04:35Z stall (dispatch_budget_exhausted at 04:31:48Z and 04:32:31Z, then begin_preparation_pending at 04:33:19Z; evaluate 9.8-19.8 s, fence 7.2-13.3 s; Greg reports 21-30 s) is attributed by measurement to its phases (store open, SQLite lock or busy wait, query and projection work, fsync or WAL checkpoint, response) and to the contended resource (disk I/O, CPU, SQLite lock), or the record names the evidence gap",
+    "A reproduction runs a full-gate Rust test stage, or an equivalent measured load, beside repeated admissions and shows whether admission latency exceeds the dispatch budget under that load",
+    "Either an in-scope Engram defect is fixed with a test that reproduces the slow path and shows admission back within budget under the load, or the record concludes with evidence that the cause is outside Engram, with a cross-reference to the TermAl item for the UX side (automatic recovery shown as blocking cards and a paused queue)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "incident",
+    "latency",
+    "throughput"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete on Greg's word (Asistant #239): the evaluate, fence and begin admission path and its dispatch budget no longer exist. A store-latency problem under gate load would be its own item with current evidence.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "22d1a0d068db4e4cbfe4c92614fc912b": {
+        "activity_id": "22d1a0d068db4e4cbfe4c92614fc912b",
+        "task_id": "01a15cc0-9628-70a1-88a2-06d82cecfe49",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "22d1a0d068db4e4cbfe4c92614fc912b"
+      },
+      "3125c4371aff40a28e0eaba80150c01a": {
+        "activity_id": "3125c4371aff40a28e0eaba80150c01a",
+        "task_id": "01a15cc0-9628-70a1-88a2-06d82cecfe49",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3125c4371aff40a28e0eaba80150c01a"
+      },
+      "530403639c394b3da33c2ebf05f307f2": {
+        "activity_id": "530403639c394b3da33c2ebf05f307f2",
+        "task_id": "01a15cc0-9628-70a1-88a2-06d82cecfe49",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "530403639c394b3da33c2ebf05f307f2"
+      },
+      "6431e33bb38844d9a8d23ad282b7d8fa": {
+        "activity_id": "6431e33bb38844d9a8d23ad282b7d8fa",
+        "task_id": "01a15cc0-9628-70a1-88a2-06d82cecfe49",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "24e0b84e8e374e99bc53f574a96a198d"
+      }
+    }
+  }
+}

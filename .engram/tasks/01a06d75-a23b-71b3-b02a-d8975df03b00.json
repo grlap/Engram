@@ -1,0 +1,49 @@
+{
+  "id": "01a06d75-a23b-71b3-b02a-d8975df03b00",
+  "external_ref": null,
+  "title": "Mechanical split: every Rust source file under 2,500 lines, by ownership",
+  "outcome": "Mechanical split: every Rust source file under 2,500 lines, by ownership",
+  "acceptance": [
+    "Every file under src/ and tests/ is below 2,500 lines after the split; the split is mechanical — no behavior change, no renamed public paths; the sets of fn names, the test count, the set of pub items, and every DDL/SQL string are identical before and after. Prove this with a before/after closure inventory: counts of fn/pub items per crate, test count from the gate run, and an unchanged-SQL check. Mirrored tests move under the owning module; existing crate:: paths stay valid through re-exports."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered owner-based mechanical split, landed by coordinator at2a3730f. All122 source/test files below2500 lines, maximum2417. Before/after per-crate inventory: library fn1651->1651, pub definitions2862->2862, tests431->431; binary fn64->64, pub16->16, tests14->14; integration fn3->3, pub0->0, tests1->1. Original reviewed freeze preserves all function-token and literal multisets, including853 SQL-labelled strings; existing public paths preserved by reexports, mirrored tests retained. Gates pass: Rust430 library plus14CLI plus1integration and separate scale1; fingerprint5 with3 existing Windows skips; MCP6, control4, parity13, fmt/check/Clippy/doclinks. Both reviews confirm parity. Optional clarity tidy belongs to the next slice, not this closure.",
+    "completed_at": "2026-09-05T09:09:18.286469200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cbb07562c3189d4f6e85742185610eb837370ede3260503c572c7452be1ddd79": {
+        "activity_id": "cbb07562c3189d4f6e85742185610eb837370ede3260503c572c7452be1ddd79",
+        "task_id": "01a06d75-a23b-71b3-b02a-d8975df03b00",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8817557fe336dbaed2b9ea43ba04b5c3d0a23d10099760e6a42d2b8ec2001fec"
+      }
+    }
+  }
+}

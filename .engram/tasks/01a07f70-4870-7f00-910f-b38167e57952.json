@@ -1,0 +1,62 @@
+{
+  "id": "01a07f70-4870-7f00-910f-b38167e57952",
+  "external_ref": null,
+  "title": "Inspect actor-bearing source import intents with the redactor",
+  "outcome": "Inspect actor-bearing source import intents with the redactor",
+  "acceptance": [
+    "import_redactor_inspects_actor_without_writes passes for create and notify"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Redactor inspects the original actor-bearing import intent on create and notify before persistence; rejection leaves database rows unchanged. Final gates passed; accepted freeze539037a9. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:59:08.537286600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "59fd7f7ea184359072a725d9b15ceacbb63f17036e7ad70e0a195ce5af00e889": {
+        "activity_id": "59fd7f7ea184359072a725d9b15ceacbb63f17036e7ad70e0a195ce5af00e889",
+        "task_id": "01a07f70-4870-7f00-910f-b38167e57952",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "49e30db5daf9c9b334b3f1fe31290dfa73320d8cf62de4ce2eb2f1eb0ed5be24"
+      },
+      "e2880607c571349df29feec44a4306f5bdec5da858cf9068254d395b9d5eb711": {
+        "activity_id": "e2880607c571349df29feec44a4306f5bdec5da858cf9068254d395b9d5eb711",
+        "task_id": "01a07f70-4870-7f00-910f-b38167e57952",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e2880607c571349df29feec44a4306f5bdec5da858cf9068254d395b9d5eb711"
+      }
+    }
+  }
+}

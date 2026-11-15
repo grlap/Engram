@@ -1,0 +1,71 @@
+{
+  "id": "01a1db3e-b427-7ca2-9ce1-54e0caeaa1f8",
+  "external_ref": null,
+  "title": "Let a store that already holds its own work join task-sync exchange, so two hosts with native work can sync both ways",
+  "outcome": "Let a store that already holds its own work join task-sync exchange, so two hosts with native work can sync both ways",
+  "acceptance": [
+    "A project store that already holds natively created tasks, has a begun project feed and has no exchange baseline enrolls in task-sync exchange by an ordinary folder import with --basis set to its own pre-merge project.json; no new verb is needed. Its native tasks, claims, runs, evidence and seals are not deleted, hidden or rewritten, and the import records its first baseline. A store-level and a CLI regression test show this.",
+    "In the same import, a merged folder that adds another native host's tasks (disjoint ids) adds them and leaves every local native task and its execution state unchanged. The reverse direction, where the other native host imports the same merged folder with its own basis, behaves the same. An exact repeat is a no-op. The refusal task_sync_native_state no longer blocks this case, and a folder that would change a native task's execution state is still refused by name. The regression tests cover both directions.",
+    "Two stores that both hold native work exchange tasks in both directions through the Git data branch, shown on real Windows and DL560 or Mac hosts",
+    "docs/features/task-planning-text.md and docs/shipped.md describe the route; until it ships they state that only an empty destination can receive a folder import"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "greg-directed",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "28dd3375c80d4148aa3d7b1c1a7f8d29": {
+        "activity_id": "28dd3375c80d4148aa3d7b1c1a7f8d29",
+        "task_id": "01a1db3e-b427-7ca2-9ce1-54e0caeaa1f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "28dd3375c80d4148aa3d7b1c1a7f8d29"
+      },
+      "4e95c0528f854092bdd06e9c37d7001f": {
+        "activity_id": "4e95c0528f854092bdd06e9c37d7001f",
+        "task_id": "01a1db3e-b427-7ca2-9ce1-54e0caeaa1f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4e95c0528f854092bdd06e9c37d7001f"
+      },
+      "a0b875a0608c43f0b129f8c2b1b890d9": {
+        "activity_id": "a0b875a0608c43f0b129f8c2b1b890d9",
+        "task_id": "01a1db3e-b427-7ca2-9ce1-54e0caeaa1f8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a0b875a0608c43f0b129f8c2b1b890d9"
+      }
+    }
+  }
+}

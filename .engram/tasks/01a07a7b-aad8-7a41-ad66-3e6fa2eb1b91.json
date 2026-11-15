@@ -1,0 +1,53 @@
+{
+  "id": "01a07a7b-aad8-7a41-ad66-3e6fa2eb1b91",
+  "external_ref": null,
+  "title": "Compact context identity is typed, its command line follows the command convention, and the note line reads cleanly",
+  "outcome": "Compact context identity is typed, its command line follows the command convention, and the note line reads cleanly",
+  "acceptance": [
+    "The capture identity used by the compact projection is a typed record/member address (the existing ObjectId plus member), not a string or a hash, so changing the locator's spelling is a compile error, not a silent loss of deduplication.",
+    "The note-detail command line is rendered through the shared command renderer like every other emitted command, and the note line omits the separator when there is no session marker to precede it",
+    "The one over-width documentation line from the review is rewrapped; no behavior changes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review",
+    "stream-agent-receipts"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Compact capture identity uses typed record/member addresses; note-detail commands use shared framing and absent-marker notes omit the separator. Landed and installed bundle8A.",
+    "completed_at": "2026-10-03T22:45:04.621439400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d56c3e728ecd475cb2cbb4b28d9e5d14": {
+        "activity_id": "d56c3e728ecd475cb2cbb4b28d9e5d14",
+        "task_id": "01a07a7b-aad8-7a41-ad66-3e6fa2eb1b91",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fd0e513aa538417bbb32057700a701a5"
+      }
+    }
+  }
+}

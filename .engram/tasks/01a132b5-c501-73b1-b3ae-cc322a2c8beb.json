@@ -1,0 +1,52 @@
+{
+  "id": "01a132b5-c501-73b1-b3ae-cc322a2c8beb",
+  "external_ref": null,
+  "title": "Refuse task-sync user instructions on status and disable",
+  "outcome": "Refuse task-sync user instructions on status and disable",
+  "acceptance": [
+    "The shared settings operation refuses a non-null user_instruction when action is status or disable, before creating or changing any settings path, with a clear argument refusal.",
+    "Regression tests exercise MCP and the shared service for both actions with an instruction, verify the refusal and unchanged settings bytes/path inventory, and retain successful enable behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Status and disable refuse non-null task-sync user instructions through the shared service, preserving read-only precedence, settings bytes/path inventory and enable/null behavior.",
+    "completed_at": "2026-10-13T04:34:03.545726300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3c16e50fdaa042958e76221372344b95": {
+        "activity_id": "3c16e50fdaa042958e76221372344b95",
+        "task_id": "01a132b5-c501-73b1-b3ae-cc322a2c8beb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "34480a02664e426081432d36926667a1"
+      }
+    }
+  }
+}

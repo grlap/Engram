@@ -1,0 +1,61 @@
+{
+  "id": "01a0632e-fb36-7c02-b266-862927068760",
+  "external_ref": null,
+  "title": "Generate gate bound refusals from MAX_GATE constants",
+  "outcome": "Agent-facing gate bounds cannot drift from the enforced domain constants.",
+  "acceptance": [
+    "Every gate_input_too_large numeric refusal interpolates the corresponding MAX_GATE constant."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Gate bound refusals now derive every numeric value from the enforced MAX_GATE constants, with exact pure-domain and public verb-layer regression coverage.",
+    "completed_at": "2026-09-03T20:46:24.332704300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "766c691b777628d111fe78dff29b35f31e97dbb84e5b4ffb90127be2ab221e39": {
+        "activity_id": "766c691b777628d111fe78dff29b35f31e97dbb84e5b4ffb90127be2ab221e39",
+        "task_id": "01a0632e-fb36-7c02-b266-862927068760",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "45904f0524b172f7fce7ee3f1a07cf7f4c099a22a02fcf71b2096fd07a9421b4"
+      },
+      "76fe65bf71ed2912532d144e31d504fc167d1d2c48e450a2968fe4381951ea1e": {
+        "activity_id": "76fe65bf71ed2912532d144e31d504fc167d1d2c48e450a2968fe4381951ea1e",
+        "task_id": "01a0632e-fb36-7c02-b266-862927068760",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "453e0edd8216c4b8848f2d2fad27983f5dbeebb50bcb5b793ebbe2842e9fa697"
+      }
+    }
+  }
+}

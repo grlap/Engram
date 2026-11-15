@@ -1,0 +1,52 @@
+{
+  "id": "01a0f59b-8b21-7c71-8909-d566cfb96475",
+  "external_ref": null,
+  "title": "A host can read, for one criterion set at a validated work and run cut, the original evidence that satisfied each bound criterion",
+  "outcome": "A host can read, for one criterion set at a validated work and run cut, the original evidence that satisfied each bound criterion",
+  "acceptance": [
+    "A read-only host query takes the canonical work identity, its expected current revision and the active run, captures the run's head as the cut on the first page and pins it for continuations, and returns per bound criterion the binding, its selected obligation and that obligation's resolution as of that cut: each original satisfying verification's full id, check kind, result, source revision and run-feed position, with its producer record, kept apart from current freshness, which it does not compute; an unbound criterion or one with no defined obligation says so explicitly",
+    "It adds no schema, ledger, closure, policy or authority, infers no criterion association from note prose, and its request and response shape is concurred by the consuming host before coding and documented in the host contract; tests cover a satisfied, an open, a waived and a re-bound criterion, an unbound one, and a refused moved revision and stale continuation",
+    "The result is paged with the pinned basis and explicit omissions, so a caller can read every criterion, not only the first page; a moved revision, an inactive run or a stale continuation refuses with a typed reason distinct from an empty result"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The host-private acceptance_binding_read operation shipped exactly on the v2 wire Termal::Codex concurred. For one item on its active run it reads each criterion's binding, the obligation completion selects, that obligation's recorded resolution, and the original satisfying verification with its producer. Pages are pinned to the run-feed cut the first page captures, with eight typed refusals and no writes. A lost projection row is a storage error. Landed as 5f733d7 and installed (build 504dfc6f…). Independent evaluation passed all 3 criteria.",
+    "completed_at": "2026-10-01T05:26:34.979304Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4e9f3f2f83b5492eabc6f6693317131a": {
+        "activity_id": "4e9f3f2f83b5492eabc6f6693317131a",
+        "task_id": "01a0f59b-8b21-7c71-8909-d566cfb96475",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ff4fdf12370c46529fe434173502777f"
+      }
+    }
+  }
+}

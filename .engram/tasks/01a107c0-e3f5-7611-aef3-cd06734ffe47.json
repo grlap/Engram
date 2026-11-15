@@ -1,0 +1,50 @@
+{
+  "id": "01a107c0-e3f5-7611-aef3-cd06734ffe47",
+  "external_ref": null,
+  "title": "Agent errors still show raw work ids for WorkAncestorNotOpen and a recovery cause's child",
+  "outcome": "Agent errors still show raw work ids for WorkAncestorNotOpen and a recovery cause's child",
+  "acceptance": [
+    "On CLI text, CLI JSON and MCP, a WorkAncestorNotOpen refusal names the affected item by work_ref instead of details.work_id, and a WorkCompletionRecoveryRequired cause that names a child (RequiredChildUnsealed) names it by short reference in the message, reminders and details, while the raw host/core envelope keeps its ids; a test covers both"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Agent ancestor refusals name affected work by short ref; RequiredChildUnsealed errors name the child by short ref in message, reminder and details, preserving raw core and host ids. Landed and installed after independent acceptance.",
+    "completed_at": "2026-10-05T04:57:30.555897700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "048e254fedc44e6cb0dcaea50656794d": {
+        "activity_id": "048e254fedc44e6cb0dcaea50656794d",
+        "task_id": "01a107c0-e3f5-7611-aef3-cd06734ffe47",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9fd81eeb96b4448b8a6e5d7764162fe7"
+      }
+    }
+  }
+}

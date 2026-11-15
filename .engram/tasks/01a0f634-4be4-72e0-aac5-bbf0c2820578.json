@@ -1,0 +1,53 @@
+{
+  "id": "01a0f634-4be4-72e0-aac5-bbf0c2820578",
+  "external_ref": null,
+  "title": "The opt-in phase trace also covers the host-private control transport",
+  "outcome": "The opt-in phase trace also covers the host-private control transport",
+  "acceptance": [
+    "A blocked or slow response reader shows as response_write_flush time rather than handler time, a slow cold start shows in the startup record, and a request or startup that never settles leaves bounded in-flight progress records naming its sequence and current phase, so a killed process's last line names where it stalled; execution that returns unfinished is written as incomplete",
+    "Tests show responses unchanged with the trace on, a writer-contention control raising begin_immediate, a blocked-reader control raising response_write_flush, a stalled request leaving bounded progress records, and no measurable added work when off; the correlation contract is concurred by TermAl and documented in the host contract",
+    "With the same opt-in at engram control start, the process emits one bounded stderr startup record (process start to ready for the first frame, with the store open, schema and policy checks and any audit as separate phases), and each control request emits one bounded stderr record after it settles, correlated by a per-process request sequence that the consuming host has agreed to match by order, holding the allowlisted phases handler_total, begin_immediate, commit, response_serialize and response_write_flush, with no SQL, paths, parameters or bodies; unset, there are no hooks, buffers or output"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The opt-in phase trace (ENGRAM_PHASE_TRACE) now covers `engram control`. It writes one bounded startup record, with separate phases from process start until the process is ready. Each frame gets one bounded record after it settles, numbered by its first byte, holding handler_total, response_serialize, response_write_flush and begin_immediate/commit summaries. A request or startup that never settles leaves bounded progress lines, and unfinished execution is recorded as incomplete or write_failed. While the trace owns stderr, diagnostics are routed through its queue, so an undrained stderr never blocks an exit. Unset, it installs nothing. The host contract is documented in behavioral-control-plane.md. Landed as 4a9ac7a.",
+    "completed_at": "2026-10-01T11:10:37.043282500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bcc972e3ed4340938143332516dce815": {
+        "activity_id": "bcc972e3ed4340938143332516dce815",
+        "task_id": "01a0f634-4be4-72e0-aac5-bbf0c2820578",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f9365e7c824543c0ba89964ac8502847"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a08f36-d8ff-7ea2-9785-6c55af06a7ca",
+  "external_ref": null,
+  "title": "Refuse empty repair targets as not initialized",
+  "outcome": "Refuse empty repair targets as not initialized",
+  "acceptance": [
+    "empty_schema_repair_refuses_without_initialization passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered pre-BEGIN empty-schema repair refusal StoreNotInitialized and doctor store_not_initialized; genuine zero-byte/empty SQLite unchanged. Named criterion passed full block8; writable initialization retained; round5 clean.",
+    "completed_at": "2026-09-11T10:10:39.824065700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5373674d767fcc84ef13b94b6a6a710bf16105a2bab16c7101f7b225e4d04087": {
+        "activity_id": "5373674d767fcc84ef13b94b6a6a710bf16105a2bab16c7101f7b225e4d04087",
+        "task_id": "01a08f36-d8ff-7ea2-9785-6c55af06a7ca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "aacd927c0cf41084036ff02764ff0298e3fec455c93f8b0149110a6a44e3d072"
+      }
+    }
+  }
+}

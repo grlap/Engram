@@ -1,0 +1,52 @@
+{
+  "id": "01a0748d-d9a6-7743-b234-b2dd91351132",
+  "external_ref": null,
+  "title": "Document gate-family note modes in the installed inventory and command synopsis",
+  "outcome": "Document gate-family note modes in the installed inventory and command synopsis",
+  "acceptance": [
+    "Installed inventory, CLI synopsis and continuation wording describe default gate exclusion, additive gates and exact family counts; documentation links pass"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0746d-44f7-78f1-96d6-3e5698c836c1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented default and gate-inclusive note windows consistently in the installed inventory and CLI contract",
+    "completed_at": "2026-09-06T02:31:58.039980200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "63b4530cbcc68453e155122224e860fa33766ce1e37511bc588351086aac0f0b": {
+        "activity_id": "63b4530cbcc68453e155122224e860fa33766ce1e37511bc588351086aac0f0b",
+        "task_id": "01a0748d-d9a6-7743-b234-b2dd91351132",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3b53512b0da8aeefe3a97cba936e6db8931df3ccdbbc1b925c6ebd2b71256db9"
+      }
+    }
+  }
+}

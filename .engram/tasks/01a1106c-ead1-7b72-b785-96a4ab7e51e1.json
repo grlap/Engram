@@ -1,0 +1,29 @@
+{
+  "id": "01a1106c-ead1-7b72-b785-96a4ab7e51e1",
+  "external_ref": null,
+  "title": "Proposal for Greg: a retained-evidence directory outside target/, which needs a narrow change to the work-only-in-repo rule's wording",
+  "outcome": "Proposal for Greg: a retained-evidence directory outside target/, which needs a narrow change to the work-only-in-repo rule's wording",
+  "acceptance": [
+    "Greg's recorded word on the proposed narrow wording (or his refusal) is on this item, verbatim with its source",
+    "If adopted: AGENTS.md and CLAUDE.md (identical) carry the wording through the Authority-and-Git route; .gitignore gains /evidence/; check-doc-links.mjs skips evidence/, verified with an archived Markdown fixture holding a dead link; the full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "evidence",
+    "needs-greg",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a111bd-db80-7c23-9681-99e9fb892fd0",
+  "disposal_reason": "Greg's later direction (Advisor #1048) chose dot-prefixed .logs/ and .evidence/ with removal on task close, replacing this item's top-level evidence/ proposal; Greg's words, the concurred v3 wording and the consequences are in this item's notes; implementation moves to w-99e9fb892fd0.",
+  "completion": null
+}

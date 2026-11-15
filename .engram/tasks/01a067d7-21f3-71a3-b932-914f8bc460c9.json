@@ -1,0 +1,49 @@
+{
+  "id": "01a067d7-21f3-71a3-b932-914f8bc460c9",
+  "external_ref": null,
+  "title": "scratch: optional-child behavior check",
+  "outcome": "scratch: optional-child behavior check",
+  "acceptance": [
+    "scratch: optional-child behavior check is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 4,
+  "labels": [
+    "scratch"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "scratch check: parent completes with an optional child open",
+    "completed_at": "2026-09-03T15:15:47.847799300Z",
+    "actor": {
+      "actor_id": "fable",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4eacc634182528937ab839cadd163e504e30de6cb22e3862af70651b5278a5c3": {
+        "activity_id": "4eacc634182528937ab839cadd163e504e30de6cb22e3862af70651b5278a5c3",
+        "task_id": "01a067d7-21f3-71a3-b932-914f8bc460c9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "18d7ec5688b1f5b6b998481afc03a26b7fdb3a7e4c3a38cf9954846b92a7ccca"
+      }
+    }
+  }
+}

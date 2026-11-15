@@ -1,0 +1,50 @@
+{
+  "id": "01a06f7d-7e4f-74f3-82cd-c975bac41ece",
+  "external_ref": null,
+  "title": "add --under a completed parent is refused with a remedy naming an independent root follow-up",
+  "outcome": "add --under a completed parent is refused with a remedy naming an independent root follow-up",
+  "acceptance": [
+    "add --under REF where REF is completed, cancelled, or superseded is refused with a typed remedy (file an independent root follow-up or add under an open ancestor); Phoenix's eleven items fenced by completed parents are the reproduction; existing fenced children stay as they are"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Terminal-parent child admission refuses atomically with independent-root/open-ancestor guidance; Proposed has distinct inspection guidance. Existing children and fences stay unchanged; no raw ancestor UUID added.",
+    "completed_at": "2026-09-05T04:29:12.946131900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "92c76a61a5a75c70b8fede3ceb624944ab5a7db7725a41312fd494d7a9a4d40e": {
+        "activity_id": "92c76a61a5a75c70b8fede3ceb624944ab5a7db7725a41312fd494d7a9a4d40e",
+        "task_id": "01a06f7d-7e4f-74f3-82cd-c975bac41ece",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9567692c916dbe23e40bbc2dad07fc54ce1c153e24ea458653137312dd1dc5c8"
+      }
+    }
+  }
+}

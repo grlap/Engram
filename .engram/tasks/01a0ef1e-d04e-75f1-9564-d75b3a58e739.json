@@ -1,0 +1,55 @@
+{
+  "id": "01a0ef1e-d04e-75f1-9564-d75b3a58e739",
+  "external_ref": null,
+  "title": "show prints a verification record's typed result, check kind, source revision and producer outcome",
+  "outcome": "show prints a verification record's typed result, check kind, source revision and producer outcome",
+  "acceptance": [
+    "A regression stores a verification record whose producer outcome is unknown and whose summary reports passing tests, and asserts what the ordinary, MCP and detail reads print; the reads leave the store unchanged",
+    "Existing fields of the rows are unchanged, so that a host which parses them keeps working; raw session, claim and grant ids stay on host views",
+    "For an indeterminate result the row says in plain words that the host recorded the outcome as unknown and that such a record cannot satisfy a passing-check requirement",
+    "show --notes and show --note RECORD print, for a native verification record, its typed result (passed, failed or indeterminate), check kind, source revision and the producer observation's outcome, in terminal text and in JSON, on the CLI and through MCP; the stored summary stays as attributed prose"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-agent-ux",
+    "area-control",
+    "dogfood",
+    "termal-report"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`show --notes` and `show --note` now print, for a native verification record, its typed result, check kind, source revision and producer outcome (`verification` in JSON, and a `verification:` text line). An indeterminate result adds, in plain words, that the host recorded the outcome as unknown, so the record cannot satisfy a passing-check requirement. Ordinary show names a verification note's result. The summary stays the host's prose, existing row fields are unchanged, and raw session, claim, grant and producer ids stay on host views. Only the record reads load the producer. A regression covers the notes window, the detail, ordinary show and the MCP show tool, with every table unchanged by the reads. Round 2 was clean from Codex and Claude on freeze 7905c9e4, and gate test-b106ba4f passed 9/9. Readiness reported all three stores ready. Commit a92e953 is pushed, and build 9438a626cab1 is installed with the previous build backed up.",
+    "completed_at": "2026-09-29T23:29:34.086391400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "743c996ac2fe4bed922794bea6207410": {
+        "activity_id": "743c996ac2fe4bed922794bea6207410",
+        "task_id": "01a0ef1e-d04e-75f1-9564-d75b3a58e739",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "351e6da1d6424baaac5b9ec76b8257e2"
+      }
+    }
+  }
+}

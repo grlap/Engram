@@ -1,0 +1,28 @@
+{
+  "id": "01a0ecf4-dbfd-7ee1-9855-360e6ca406fb",
+  "external_ref": null,
+  "title": "Changing a task's evaluation-mode pin after a failing evaluation retires it without carrying the failure",
+  "outcome": "Changing a task's evaluation-mode pin after a failing evaluation retires it without carrying the failure",
+  "acceptance": [
+    "A pin change with no blocking evaluation, or by a planner, behaves as the decided rule says, and the acceptance-evaluation doc states it",
+    "A test shows that after a blocking evaluation, a change to the item's evaluation-mode pin (clear, or pin another mode) by the run's executor no longer lets a later evaluation in the newly allowed mode complete the task without the failure being carried or the change refused"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

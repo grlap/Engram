@@ -1,0 +1,51 @@
+{
+  "id": "01a0a1de-5402-79e0-8641-5e596c5f0431",
+  "external_ref": null,
+  "title": "Independently compare every table in full-store round-trips",
+  "outcome": "A read-only independent SQLite comparator verifies complete current-profile source and imported stores without using the exporter manifest as its oracle.",
+  "acceptance": [
+    "Negative tests detect missing categories, typed-cell changes, rowid or sequence changes and nonempty operational/provenance loss without printing private row content.",
+    "Run on the coherent real-store backup and imported candidate, with separately recorded strict doctor and read-only resume/history evidence.",
+    "The comparator checks schema and all durable tables including empty categories, raw SQLite cell types and bytes, rowids and sequence high-water; declared FTS is compared logically."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a1db-4dc0-70d2-abe1-0bb2120a6fc1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Independent full-store comparator delivered and accepted on V4: 16 discriminators, complete durable-table/type/rowid/sequence/logical-FTS comparison, real current round-trip plus separate healthy doctor and read-only history/resume checks. No activation or universal transformed-profile proof.",
+    "completed_at": "2026-09-15T00:01:24.353871800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8a857110f007e9a7bdf3a4713822c533791eb66c6cd955ecf2bce9ae6d64de0a": {
+        "activity_id": "8a857110f007e9a7bdf3a4713822c533791eb66c6cd955ecf2bce9ae6d64de0a",
+        "task_id": "01a0a1de-5402-79e0-8641-5e596c5f0431",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "547907c74ae9ead1039c2a147358879ae08c6588d05d25b85e07d2163f586649"
+      }
+    }
+  }
+}

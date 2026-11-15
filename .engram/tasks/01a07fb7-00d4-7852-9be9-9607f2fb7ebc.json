@@ -1,0 +1,49 @@
+{
+  "id": "01a07fb7-00d4-7852-9be9-9607f2fb7ebc",
+  "external_ref": null,
+  "title": "Non-holder note retry reports a false idempotency conflict after the printed session id is reused",
+  "outcome": "Non-holder note retry reports a false idempotency conflict after the printed session id is reused",
+  "acceptance": [
+    "a committed observation retried with the printed --session-id returns its original capture rather than a conflict"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A committed non-holder observation retried with the printed session returns its original capture; storage and real CLI regressions preserve original attribution and store rows. Accepted in freeze539037a9; final gates passed. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:57:54.789691400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b7b5ec8e8e39a0b3122cef807133bd5eccb6e09d4c44cbe1e797181ed9e8a819": {
+        "activity_id": "b7b5ec8e8e39a0b3122cef807133bd5eccb6e09d4c44cbe1e797181ed9e8a819",
+        "task_id": "01a07fb7-00d4-7852-9be9-9607f2fb7ebc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "598de9793652f8c86aaee2276a3e8839d2843e2d9cf48148e337da2f31e75c6b"
+      }
+    }
+  }
+}

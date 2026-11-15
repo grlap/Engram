@@ -1,0 +1,115 @@
+{
+  "id": "01a180a7-2a7a-7883-b3b5-d5c7acf76b9f",
+  "external_ref": null,
+  "title": "Enforce a typed Git-tree applicability restriction on remote-derived verification evidence",
+  "outcome": "A remote-derived check minted at a gated checkpoint can carry a typed Git-tree restriction that every evidence-selection route enforces against a host-measured tree on the judged source basis, and no reader silently treats a restricted record as unrestricted",
+  "acceptance": [
+    "ExecutionSourceBasis accepts an optional host-measured git_tree (validated lowercase hex, refused by name otherwise) on checkpoint execution observations and execution_observe sightings; turn_checkpoint.verification_evidence accepts an optional applicability {kind: git_tree, tree} and refuses by name a restriction whose producer observation's source_basis lacks that exact tree; existing records' canonical bytes are unchanged",
+    "Every route that selects verification evidence to satisfy a test requirement (obligation satisfaction, completion's newest-check rule, bound-criterion evaluation citation, bound-from and attach) uses one shared predicate: a restricted record qualifies only when the relevant judged sighting carries an equal git_tree; a missing or different tree leaves it attributed but non-qualifying; matching tree with a different commit qualifies",
+    "Tests cover: an unused old restricted record does not veto a newer qualifying local check with equal content-v1 and a different tree; a selected restricted record with a mismatched or missing tree does not satisfy; mixed restricted records are each checked against their own restriction; matching tree qualifies",
+    "The stored VerificationEvidence reader refuses undeclared members by name (strict), with a pre-commit doctor+readiness census on every live store",
+    "A new declared rebuildable projection object, established by the narrow projection step in the agreed cutover, is the durable older-reader barrier: every build since 28b49ef refuses ordinary open of a store holding it with different_build_schema, without mutation; the host protocol advertises the applicability capability only when the open store holds that object, so no restricted record can be minted before the barrier exists; docs record the barrier, the ordering rule and that removing the object once restricted records exist is not allowed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "control-plane",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Remote-derived verification evidence can carry a typed Git-tree restriction: an optional host-measured git_tree on the source basis, and an optional applicability {kind: git_tree, tree} on checkpoint evidence. One shared predicate enforces it on every evidence-selection route; the stored reader is strict, and a declared rebuildable projection object is the older-reader barrier. The host advertises the capability only when the barrier exists. Landed in 56f84d7 (full gate test-0c4b836f PASS), pre-commit census on all 6 stores, installed as b96a94ed, and cut over live on 2026-10-29 (barrier 6/6, readiness 6/6). The independent evaluation 45c515b1 passed 5/5.",
+    "completed_at": "2026-10-29T22:05:42.713544800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0db1f7efa1f24e1b942d34fc5d8a96e2": {
+        "activity_id": "0db1f7efa1f24e1b942d34fc5d8a96e2",
+        "task_id": "01a180a7-2a7a-7883-b3b5-d5c7acf76b9f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0db1f7efa1f24e1b942d34fc5d8a96e2"
+      },
+      "41bd01a63d0f450e91babfcfb5d6cd01": {
+        "activity_id": "41bd01a63d0f450e91babfcfb5d6cd01",
+        "task_id": "01a180a7-2a7a-7883-b3b5-d5c7acf76b9f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "44cfbf1bee304c618713b210fb42b738"
+      },
+      "44cfbf1bee304c618713b210fb42b738": {
+        "activity_id": "44cfbf1bee304c618713b210fb42b738",
+        "task_id": "01a180a7-2a7a-7883-b3b5-d5c7acf76b9f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "44cfbf1bee304c618713b210fb42b738"
+      },
+      "52e8634c852a4e79a721e194fc86c752": {
+        "activity_id": "52e8634c852a4e79a721e194fc86c752",
+        "task_id": "01a180a7-2a7a-7883-b3b5-d5c7acf76b9f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8794dae757b94285b05edf5e05bf7990"
+      },
+      "b119a440d7a941d8a086ad62ac24ae8b": {
+        "activity_id": "b119a440d7a941d8a086ad62ac24ae8b",
+        "task_id": "01a180a7-2a7a-7883-b3b5-d5c7acf76b9f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "8cb3ebad301c47a690105d1430eb6673"
+      },
+      "f4d1170107424b009e1fd9168401f2f7": {
+        "activity_id": "f4d1170107424b009e1fd9168401f2f7",
+        "task_id": "01a180a7-2a7a-7883-b3b5-d5c7acf76b9f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f4d1170107424b009e1fd9168401f2f7"
+      }
+    }
+  }
+}

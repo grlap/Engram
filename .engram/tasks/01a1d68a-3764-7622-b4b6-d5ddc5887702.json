@@ -1,0 +1,30 @@
+{
+  "id": "01a1d68a-3764-7622-b4b6-d5ddc5887702",
+  "external_ref": null,
+  "title": "Read native task creation endpoints without decoding execution history",
+  "outcome": "Origin reference closure reads a task's immutable creation basis without repeatedly decoding its entire execution history.",
+  "acceptance": [
+    "Native endpoint lookup preserves exactly the same immutable Created or initial restored basis while decoding a bounded number of records regardless of later history length",
+    "Repeated endpoint use within one admission avoids redundant whole-history reads, with behavior/counter coverage rather than a timing threshold",
+    "Import-origin integrity audits and strict admission still refuse corrupted or missing creation bindings by name"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "performance",
+    "review-low",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

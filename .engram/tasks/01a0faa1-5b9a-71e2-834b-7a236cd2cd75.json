@@ -1,0 +1,34 @@
+{
+  "id": "01a0faa1-5b9a-71e2-834b-7a236cd2cd75",
+  "external_ref": null,
+  "title": "Portable handoff, stages 2 and 3: forced recovery, reconcile, and publication while active",
+  "outcome": "Deferred until stage 1 is in use and a host was lost without a release, or the release-time export is too slow or too large. Then: a host that died without releasing can be replaced by an attributed takeover that a still-running old host detects within a stated window, two lineages can be reconciled without dropping either, and an active writer can publish a closed export on a cadence.",
+  "acceptance": [
+    "`engram portable recover` takes over a head that is still `active` with an attributed statement, advancing the epoch by conditional advance, and is allowed only when the existing active writer's effective maximum validation age is 60 seconds or less; the changeset that adds it lowers the default age to 60 seconds, and a new default alone is not enough: against a writer whose persisted policy still says 24 hours, or a stage 1 host holding a validation taken under the longer age, `recover` is refused until an explicit transition has established the shorter bound for that writer; tests cover the persisted 24-hour policy, a custom longer age, and the old host with an old validation",
+    "A test with two simulated hosts shows that after a forced takeover the old host admits no new mutation later than 60 seconds after the takeover, and reports separately how long a write admitted before that takes to finish",
+    "Import of a payload from an active writer turns each live claim into a recoverable one through an attributed, audited event without rewriting any stored record, and a test shows the new host cannot use a claim of the old one",
+    "`engram portable reconcile` previews both lineages and continues one while keeping the other as a recovery bundle or proposed import, or forks a new project identity; it never drops a lineage or renumbers a dense feed, and tests cover each outcome",
+    "Publication while active pushes a closed export from an active writer on a cadence without freezing it, every such export already excludes the rows stage 1 excludes, and status reports the remote head and the lag; whether transfer sends only what changed is measured and stated, not assumed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "deferred",
+    "portable"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0faa0-685a-7f31-83d2-2028017ca901"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

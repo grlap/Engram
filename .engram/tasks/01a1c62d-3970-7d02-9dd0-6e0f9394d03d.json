@@ -1,0 +1,28 @@
+{
+  "id": "01a1c62d-3970-7d02-9dd0-6e0f9394d03d",
+  "external_ref": null,
+  "title": "Require recorded push rejection before non-fast-forward reconciliation",
+  "outcome": "Require recorded push rejection before non-fast-forward reconciliation",
+  "acceptance": [
+    "New NonFastForward reconciliation requires persisted exact rejection or explicitly documented authoritative transport assertion semantics; unknown outcomes remain visible.",
+    "Regression distinguishes started-but-unknown push from recorded refusal and preserves one-retry budget and parent retention."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

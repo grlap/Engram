@@ -1,0 +1,29 @@
+{
+  "id": "01a13bce-e197-7563-b0b6-58755ebeafcb",
+  "external_ref": null,
+  "title": "Keep Git exchange launch counters Windows-only in test builds",
+  "outcome": "Keep Git exchange launch counters Windows-only in test builds",
+  "acceptance": [
+    "The Windows-only LAUNCHES test counter is conditionally compiled with its consumers, while the service-start seam remains available where used.",
+    "No new warning allowance or Unix runtime assurance is introduced; source inspection and the supported Windows checks confirm unchanged test behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "portability",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

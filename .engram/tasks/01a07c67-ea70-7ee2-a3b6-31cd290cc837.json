@@ -1,0 +1,51 @@
+{
+  "id": "01a07c67-ea70-7ee2-a3b6-31cd290cc837",
+  "external_ref": null,
+  "title": "Refuse overflowing explicit memory revision bases without basis-free replay fallback",
+  "outcome": "Refuse overflowing explicit memory revision bases without basis-free replay fallback",
+  "acceptance": [
+    "memory_revisions_retain_attribution_replay_basis_and_rebuild_the_current_head refuses u64::MAX expected revision with typed current revision conflict"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "phoenix",
+    "pilot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07879-5d33-7742-a3c9-e134d64087ed",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Overflowing explicit bases now return the typed current-revision conflict.",
+    "completed_at": "2026-09-07T16:04:04.598562200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "da57033e26e80a821ef20c399482b2c908a348f95e9a2af427f2646951f79917": {
+        "activity_id": "da57033e26e80a821ef20c399482b2c908a348f95e9a2af427f2646951f79917",
+        "task_id": "01a07c67-ea70-7ee2-a3b6-31cd290cc837",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "33edede2300a2fb683292f4e1921b2d1a820423dc2326c2d871f3414435ef249"
+      }
+    }
+  }
+}

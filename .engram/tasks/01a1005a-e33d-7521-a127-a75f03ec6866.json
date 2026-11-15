@@ -1,0 +1,29 @@
+{
+  "id": "01a1005a-e33d-7521-a127-a75f03ec6866",
+  "external_ref": null,
+  "title": "Windows release links deterministically, so two builds of one commit are byte-identical",
+  "outcome": "Windows release links deterministically, so two builds of one commit are byte-identical",
+  "acceptance": [
+    "The repository's Cargo configuration passes /Brepro or an equivalent deterministic-link option for the windows-msvc linker only.",
+    "A controlled pair of release builds of one clean commit in two worktrees produces byte-identical executables with the option enabled; commands, toolchain, source state and runtime-derived comparison numbers are recorded in a holder note, with no pinned hash.",
+    "The full gate passes on the exact changeset."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "build-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

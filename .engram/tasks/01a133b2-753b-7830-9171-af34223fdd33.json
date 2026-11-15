@@ -1,0 +1,50 @@
+{
+  "id": "01a133b2-753b-7830-9171-af34223fdd33",
+  "external_ref": null,
+  "title": "Exercise production refusal envelopes for historical full-width citable ids",
+  "outcome": "Exercise production refusal envelopes for historical full-width citable ids",
+  "acceptance": [
+    "The 512-byte historical-id excerpt test renders the real StoreError::AcceptanceEvaluationAdmissionRefused Display and agent error message for four runtime-derived 64-hex ids, and proves every suggested id remains complete in the first 512 bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered: the 512-byte historical-id excerpt test (tests/citation_sources.rs → mod citable → full_historical_id_widths_fit_the_host_refusal_excerpt) now exercises the production envelopes. Four runtime-derived 64-hex ids (ObjectId::from_canonical_bytes, no pinned digest) go through the production citable::prefix and admission::refusal → StoreError::AcceptanceEvaluationAdmissionRefused. Three surfaces are rendered:\n- its real Display, equal to the shared envelope's message;\n- the real agent message for CLI and MCP, via AgentVerbs::error_message, which equals project_error's message, uses the short ref, and opens no store;\n- it proves every full id and more=true sit in the first 512 bytes, with the discovery before the rejection.\nThe old hand-built test inline in acceptance_evaluation.rs is removed.\nReview: two rounds. Round 1: two Lows (the agent surface; a vacuous Option ordering check), both fixed. Round 2: clean from Codex and Claude.\nValidation:\n- full gate test-126eb3de PASS on freeze 3f45cf7b (host verification aaffb992);\n- focused test host-recorded (3661ac1b);\n- evaluation 6b11cf22 PASS, observed basis.\nChangeset judgment: test only; no durable row, schema, projection or TermAl strict-reader change. readiness was ready on all 4 stores with the new build and with the installed binary.\nLanded 441b415 on origin/master, a fast-forward from 252a01ce. Installed build 39bb0b69bfa6 (exe sha256 97ba260c…7dc9); backup engram-20261014T070227Z-709bbddf8b9d.exe (sha256 b59161ca…a92e).\nRunning sessions do not need the new build: test only.",
+    "completed_at": "2026-10-14T07:02:44.976441Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ebc9e7c9ec194b3fa859d5b139e989a7": {
+        "activity_id": "ebc9e7c9ec194b3fa859d5b139e989a7",
+        "task_id": "01a133b2-753b-7830-9171-af34223fdd33",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bb7f0639547c43c1a9fbfd076edcd33d"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0853d-3aa3-7fd1-acc1-139dcdf62022",
+  "external_ref": null,
+  "title": "Cover documented atomic plan refusals without writes",
+  "outcome": "Cover documented atomic plan refusals without writes",
+  "acceptance": [
+    "Completed and non-open existing prerequisites refuse without database changes",
+    "Duplicate existing prerequisite aliases refuse without database changes",
+    "Optional plan root refuses without database changes",
+    "Plan with work_ref refuses and preserves full database and ambient session state"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8974-7260-978e-d85512ed108e",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered all four documented refusal regressions with unchanged database-content assertions and positive admission controls.",
+    "completed_at": "2026-09-09T08:52:07.955853600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e32ca5298e6fa7ec171336139c81732ebbeb66f24f157ad22413c6cbe6447232": {
+        "activity_id": "e32ca5298e6fa7ec171336139c81732ebbeb66f24f157ad22413c6cbe6447232",
+        "task_id": "01a0853d-3aa3-7fd1-acc1-139dcdf62022",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0ce25390c61a3cf01b2399ed3f7f8748f66a8f47cdcfc4da6034df967e429289"
+      }
+    }
+  }
+}

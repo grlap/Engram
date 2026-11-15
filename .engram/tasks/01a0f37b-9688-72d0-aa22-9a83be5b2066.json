@@ -1,0 +1,64 @@
+{
+  "id": "01a0f37b-9688-72d0-aa22-9a83be5b2066",
+  "external_ref": null,
+  "title": "Landing steps say the landed commit is copied from git rev-parse after the push, never typed",
+  "outcome": "Landing steps say the landed commit is copied from git rev-parse after the push, never typed",
+  "acceptance": [
+    ".claude/commands/review-changes.md and the engram-repo skill say that each landing value done records is copied from a command's output and never typed: the landed commit from `git rev-parse HEAD` run after the push, never typed or completed from a short hash; the push time from a UTC clock read in the same command as the push; and the installed build from the build_fingerprint that `engram readiness --json` reports when run with the installed binary",
+    "The change lands under the authority-text rule: both coordinators' concurrence on the exact wording recorded on the item, Greg sent the wording and its consequence before the landing, and a passed final-diff audit; the Markdown checks pass and the review pair has no outstanding finding of Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 265ed01433072f0071751a87476f2725b1724f1d on origin/master (pushed 2026-10-01T00:19:25Z, both values copied after the push per the new §8). review-changes.md gains '## 8. Record the landing' and the engram-repo skill its matching final paragraph: done's landing values are copied from command output, never typed — landed commit from git rev-parse HEAD after the push, push time from a UTC clock read in the same command, installed build from the build_fingerprint that engram readiness --json reports. Authority-text pipeline: both coordinators' concurrences recorded (mailbox-6f31ef05 #120, mailbox-38e17f30 #34), Greg sent the wording and consequence before the landing (Advisor/session-6219 after mailbox-ef254411 #10, confirmed #11), final-diff audit PASS (Fable2, mailbox-38e17f30 #36; diff hash 35d7c5a4 identical across the 6bca326->b4c0896 base move), Markdown checks passed on freeze aefccd03 (test-8e6fed9d, test-4a40a672), pair round 2 clean. No installed build recorded: the binary is NOT installed pending Greg's answer on w-d254fcdc3d22; the release build of the landed tree is staged at .worktrees/record-landing/target/release/engram.exe. Follow-ups filed: w-2c0a4b78b357 (name a source for remote/branch), w-d755e71e24e4 (clarify 'records its hash'). Acceptance evaluation 9608f7423ed64f7a96671045e253df5a: 2/2 pass.",
+    "completed_at": "2026-10-01T01:31:49.874698700Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3c50d015e48d410b9a252ecb72b29d7e": {
+        "activity_id": "3c50d015e48d410b9a252ecb72b29d7e",
+        "task_id": "01a0f37b-9688-72d0-aa22-9a83be5b2066",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3c50d015e48d410b9a252ecb72b29d7e"
+      },
+      "42d78fd1c21d4b1dab29d45b1fc63a7b": {
+        "activity_id": "42d78fd1c21d4b1dab29d45b1fc63a7b",
+        "task_id": "01a0f37b-9688-72d0-aa22-9a83be5b2066",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e88686b750784c2fa64d11ecba55735f"
+      }
+    }
+  }
+}

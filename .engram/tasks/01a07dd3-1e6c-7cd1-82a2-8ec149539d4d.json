@@ -1,0 +1,62 @@
+{
+  "id": "01a07dd3-1e6c-7cd1-82a2-8ec149539d4d",
+  "external_ref": null,
+  "title": "Keep linked completion acceptance recovery on the shared path",
+  "outcome": "Keep linked completion acceptance recovery on the shared path",
+  "acceptance": [
+    "criterion_links_recovery_matches_unlinked_acceptance_recovery passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07ca4-c2b5-7b53-bf40-5f83bc6dbfac",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented the recorded correction; its named regressions and all nine merged gates passed. Completed through new shell CLI build 6d8043d8e8b1, installed from merged working tree, NOT committed to master; Git landing awaits explicit authority. Fable independently reports healthy doctor. Pre-swap running MCP servers remain on 73401c0ab3cc. Earlier implementation notes and gate records retain the detailed evidence; no individual criterion links supplied here.",
+    "completed_at": "2026-09-08T01:26:45.660242Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "392f0cbc63d28ed8559978a26ea123ee1874658d735fb8b94982e087753bbb22": {
+        "activity_id": "392f0cbc63d28ed8559978a26ea123ee1874658d735fb8b94982e087753bbb22",
+        "task_id": "01a07dd3-1e6c-7cd1-82a2-8ec149539d4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a35d54a129657c7cffa71d1695dbac498d1e8bbead31a544e0b7c64303b6c8db"
+      },
+      "490b6a0ab78ca54f09f7bc9dfd8e2198d583b2647cb50f4c6a7ee77234b45cc4": {
+        "activity_id": "490b6a0ab78ca54f09f7bc9dfd8e2198d583b2647cb50f4c6a7ee77234b45cc4",
+        "task_id": "01a07dd3-1e6c-7cd1-82a2-8ec149539d4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "490b6a0ab78ca54f09f7bc9dfd8e2198d583b2647cb50f4c6a7ee77234b45cc4"
+      }
+    }
+  }
+}

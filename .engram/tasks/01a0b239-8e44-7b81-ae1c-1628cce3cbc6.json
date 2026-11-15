@@ -1,0 +1,65 @@
+{
+  "id": "01a0b239-8e44-7b81-ae1c-1628cce3cbc6",
+  "external_ref": null,
+  "title": "Rename the record-id type and columns from hash to id",
+  "outcome": "ObjectHash becomes ObjectId, and every column that holds a record id is named *_id; a hash is only ever called a fingerprint.",
+  "acceptance": [
+    "ObjectHash is renamed ObjectId across the crate, preserving stored record ids, canonical payloads and existing host wire spellings; the one-time pre-release graph-snapshot format-fingerprint change is explicitly accepted, documented with old-build recovery, and both live databases are converted and verified.",
+    "The cited review-command and CLI-reference terminology corrections use id for identity and fingerprint for compared content; all nine gates pass. Residual Low terminology findings may remain under Greg's explicit deferral permission, recorded in independent follow-ups w-ae42faae4774 and w-c180bcec46eb; no unresolved Medium, High or Critical review finding remains.",
+    "the 40 *_hash columns that reference objects(object_hash) are renamed *_id in the schema, with object_hash itself becoming object_id, and the change rides the parent's single conversion"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "identity",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0b239-6590-75b3-bb52-04199ab5f6e4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered ObjectId and explicit per-table record-link renames, preserving ids/canonical bytes and host wire spellings, converted and verified both live stores. Corrected the cited documentation terminology; all nine current-input gates passed and Codex/Claude review has no Medium/High/Critical. Independent Claude7181 evaluation e58f3aad5b084b82a869fca7ad092080 passes all3 current criteria on judgment basis. Approved snapshot boundary and Low deferrals are explicit in revision6; residuals remain tracked, not claimed fixed. Parent post-acceptance exact freeze check remains d84df8b9...25c19. Two documentation corrections remain uncommitted; no additional install required.",
+    "completed_at": "2026-09-21T04:14:40.115493400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9223c81d64f84542a47303d8751876c2": {
+        "activity_id": "9223c81d64f84542a47303d8751876c2",
+        "task_id": "01a0b239-8e44-7b81-ae1c-1628cce3cbc6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9223c81d64f84542a47303d8751876c2"
+      },
+      "e47f0284316c449badeac9bf627e0a94": {
+        "activity_id": "e47f0284316c449badeac9bf627e0a94",
+        "task_id": "01a0b239-8e44-7b81-ae1c-1628cce3cbc6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "703cd3ea837d439d9ca67b9677c3cc9f"
+      }
+    }
+  }
+}

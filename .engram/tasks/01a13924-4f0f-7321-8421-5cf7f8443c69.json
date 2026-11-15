@@ -1,0 +1,35 @@
+{
+  "id": "01a13924-4f0f-7321-8421-5cf7f8443c69",
+  "external_ref": null,
+  "title": "Admit and retain immutable task exchange capture and explicit fetch",
+  "outcome": "Admit and retain immutable task exchange capture and explicit fetch",
+  "acceptance": [
+    "Enabled main-checkout exchange admits existing materialized shared paths through its own inspector without weakening B2 replay; it pins project/store/profile, repository/admin/local branch and effective configured destination/ref, complete SQLite candidate and cut, prior export baseline, committed Git tree, selected index stages/flags and raw worktree, verified import basis or explicit none, reconciliation base and incoming commit before integration.",
+    "Capture and explicit fetch use S0's bounded runner and independent private Git-admin state/object-retention refs; retries preserve exact operation, candidate, branch basis and pinned incoming commit despite later SQLite writes or B1 pruning. Explicit absent-first-use and full preserved rebaseline replace unknown bases; equality never fabricates a successful import.",
+    "Owned tests cover committed-but-unimported edits concurrent with SQLite changes, target/profile/branch and selected-path drift, missing/divergent bases, linked/sparse checkout refusal, whole-candidate protected disclosure before new state, explicit authorized Git fetch through S0 with its deadline, cancellation and stdout/stderr limits, and interrupted capture/fetch/pin recovery while preserving unrelated index/code/task/SQLite state. These subprocess limits do not enforce transfer-byte, fetched-history, Git-object-expansion, disk-space or aggregate retained-state quotas; no enforced quarantine receive budget is claimed. Failure or interruption preserves the exact operation and available recovery evidence without treating a partial or unknown fetch as a retained incoming candidate or successful import.",
+    "No shared-file integration, commit/push, SQLite import/canonical receipt, TermAl relay or implicit Git authority is introduced; any durable-store requirement is presented to Greg before coding."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8b92-7eb1-9512-42885a9ab4f4",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13924-4e7e-7600-aa71-26c0b584547f",
+    "01a13b87-1bff-7cb1-93dc-1634799205dd",
+    "01a13b87-1c30-7de1-9913-5943719f07bf"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

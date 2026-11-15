@@ -1,0 +1,28 @@
+{
+  "id": "01a1182d-b0c4-7a80-89ee-45f80ce04fce",
+  "external_ref": null,
+  "title": "Separate project-memory session-admission tests from the test root",
+  "outcome": "Group project-memory session-admission coverage in a dedicated test submodule while preserving behavior and shared fixtures.",
+  "acceptance": [
+    "Move the session-admission test block beginning at refuse_forget_before_effects into src/storage/project_memory/tests/session_admission.rs; keep forget_request and seed_project_memory available in the parent for existing sibling tests, with unchanged assertions, fixtures and production code.",
+    "Preserve the discovered project-memory test set with only the expected module-prefix change for moved tests; affected project-memory tests, source-file-size guard, full gate and required independent review pair pass on the final frozen input."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "refactor",
+    "technical-debt"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

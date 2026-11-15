@@ -1,0 +1,53 @@
+{
+  "id": "01a1106e-42a0-7e61-b670-299df04ac3b3",
+  "external_ref": null,
+  "title": "Two control-plane doc wordings about a bind still differ from shipped behaviour",
+  "outcome": "Two control-plane doc wordings about a bind still differ from shipped behaviour",
+  "acceptance": [
+    "host-checklist.md's host-control paragraph says a new bind that succeeds leaves the session ready (a bind is refused while a begun turn awaits its checkpoint), matching cli-and-mcp.md's host-control paragraph",
+    "spec.md §2.7 says an exact bind retry returns the session's current status while that key is still its latest, not that it replays a stored result",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "host-checklist.md's host-control paragraph now matches cli-and-mcp.md. A new bind that succeeds leaves the session ready, though turn_evaluate still decides the turn. A new bind is refused while a begun turn awaits its checkpoint. An exact retry of the latest bind key returns the current status, phase unchanged. spec.md §2.7 says an exact bind retry returns the session's current status, not that it replays a stored result. The pair was clean (the pre-existing delivery_tokens Low is filed as w-bcf3877db941). Evaluation a8703f9c 3/3. Landed as 8a61217 (Markdown only, no install).",
+    "completed_at": "2026-10-06T10:21:22.058944500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cb0241d0546746e8bb1573ed1405fc9b": {
+        "activity_id": "cb0241d0546746e8bb1573ed1405fc9b",
+        "task_id": "01a1106e-42a0-7e61-b670-299df04ac3b3",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "611e834b03b14893939b94431e67d3ac"
+      }
+    }
+  }
+}

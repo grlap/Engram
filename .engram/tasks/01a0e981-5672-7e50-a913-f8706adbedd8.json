@@ -1,0 +1,52 @@
+{
+  "id": "01a0e981-5672-7e50-a913-f8706adbedd8",
+  "external_ref": null,
+  "title": "Read doctor catalog FTS content once instead of scanning it for each work item",
+  "outcome": "Read doctor catalog FTS content once instead of scanning it for each work item",
+  "acceptance": [
+    "A scale test or documented measurement compares the old and new path at a work-item count large enough to expose the repeated-scan cost.",
+    "Doctor's work-catalog content binding comparison uses one FTS content pass or an indexed lookup, while still identifying missing, duplicate, mismatched and orphan rows."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "doctor",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 401b92d (bundle 5B): doctor reads work_catalog_fts content once, keeping repeats, and still names missing, duplicate, mismatched and orphan rows. Orphans are counted over all work-item ids, undecodable items included. Measured at 9000 items: 7.3 s old vs 3.8 ms new; whole-doctor growth from other checks is filed as w-e373236a6371.",
+    "completed_at": "2026-10-03T14:28:31.135315800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "59e6f50fcdd543f28a4924067db04189": {
+        "activity_id": "59e6f50fcdd543f28a4924067db04189",
+        "task_id": "01a0e981-5672-7e50-a913-f8706adbedd8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "859dc9c06c1f429f81238391a754a6eb"
+      }
+    }
+  }
+}

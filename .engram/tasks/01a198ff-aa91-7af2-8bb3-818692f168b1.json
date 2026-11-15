@@ -1,0 +1,29 @@
+{
+  "id": "01a198ff-aa91-7af2-8bb3-818692f168b1",
+  "external_ref": null,
+  "title": "Bind reconciled shared work events to the import actor and planning transition",
+  "outcome": "Bind reconciled shared work events to the import actor and planning transition",
+  "acceptance": [
+    "SharedImportVersion work_event links require the same actor as the version/receipt and an explicitly admitted Model-A planning transition.",
+    "Focused positive and negative cases refuse same-time foreign-actor or unrelated terminal events without rewriting history or granting credit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

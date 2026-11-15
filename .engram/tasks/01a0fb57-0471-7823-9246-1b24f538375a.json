@@ -1,0 +1,29 @@
+{
+  "id": "01a0fb57-0471-7823-9246-1b24f538375a",
+  "external_ref": null,
+  "title": "Say whether the git-ref backup scratch history restarts for each target identity",
+  "outcome": "Say whether the git-ref backup scratch history restarts for each target identity",
+  "acceptance": [
+    "docs/features/off-host-backup.md states whether the git-ref adapter's scratch ref (refs/engram/backup/<project digest>) starts a fresh root for each target identity, or that a new remote receives the earlier history under the disclosure authorization, and step 2's statement that nothing at either target is touched for an attempt of another identity holds under that choice",
+    "the Git remote acceptance case in the brief covers the chosen behaviour"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "design",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

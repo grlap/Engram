@@ -1,0 +1,27 @@
+{
+  "id": "01a1b82f-909d-7d11-897f-ffd1cc4bb588",
+  "external_ref": null,
+  "title": "Avoid misnaming unknown control fields containing backticks",
+  "outcome": "Avoid misnaming unknown control fields containing backticks",
+  "acceptance": [
+    "Unknown or duplicate field names containing backticks or oversized suffixes never get reported as a different identifier; bounded safe identifiers remain useful and caller values/source objects stay private"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

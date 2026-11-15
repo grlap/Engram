@@ -1,0 +1,77 @@
+{
+  "id": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+  "external_ref": null,
+  "title": "Bring criteria evaluation back on Execution Observability: verdicts rest on observed execution, source and test evidence",
+  "outcome": "Bring criteria evaluation back on Execution Observability: verdicts rest on observed execution, source and test evidence",
+  "acceptance": [
+    "An agreed Engram+TermAl design (with TermAl w-fdbb4fb85a50) says which Execution Observability records an acceptance verdict may cite, and how a host evaluates each criterion from them without any turn gating",
+    "Engram accepts and enforces evaluated completion only on that evidence, and a missing verdict stays missing, never recorded as a pass",
+    "Evaluation is switched on in both stores' policy, by Greg's explicit decision for each project after the installed end-to-end proof, and a real task in each project has since passed an independent evaluation and completed on the installed builds"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "greg-directed"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Execution Observability based acceptance is implemented and deployed, and independent evaluated completion is active in Engram and TermAl under Greg's decisions. Agreed evidence rules, missing-verdict refusal, installed positive/negative proof and later real evaluated completions satisfy revised acceptance5; independent Claude evaluation67b8d487f40848eda3fe28a84de571c0 fresh3/3PASS onclean0bd70a30/tree276fa148.",
+    "completed_at": "2026-11-11T10:01:02.611514200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "985c57a5377b488f92599c8057a67ffc": {
+        "activity_id": "985c57a5377b488f92599c8057a67ffc",
+        "task_id": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "985c57a5377b488f92599c8057a67ffc"
+      },
+      "e26e1b99c4304893985fe6d603a673cc": {
+        "activity_id": "e26e1b99c4304893985fe6d603a673cc",
+        "task_id": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5924fea931a34b77b9e4ccc7d2c346fe"
+      },
+      "e86c11579cd848c78dd9a4a02d2a3f62": {
+        "activity_id": "e86c11579cd848c78dd9a4a02d2a3f62",
+        "task_id": "01a19d0e-a44a-7152-8078-89f3b3eeb688",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "e86c11579cd848c78dd9a4a02d2a3f62"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a1c984-b67b-79a2-8471-27bb1539f48f",
+  "external_ref": null,
+  "title": "Detect cycles while inspecting nested imported acceptance proofs",
+  "outcome": "Explicit imported-acceptance inspection detects revisited proof or decision identity and refuses cyclic foreign chains without repeating the full nesting limit.",
+  "acceptance": [
+    "Nested imported-acceptance inspection detects cyclic proof or decision identity while preserving legitimate acyclic proof chains and origin qualification.",
+    "Behavioral coverage exercises a retained self-referential or cyclic foreign proof and verifies bounded refusal without changing immutable historical records."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

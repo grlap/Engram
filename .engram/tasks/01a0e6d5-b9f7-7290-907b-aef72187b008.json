@@ -1,0 +1,53 @@
+{
+  "id": "01a0e6d5-b9f7-7290-907b-aef72187b008",
+  "external_ref": null,
+  "title": "A memory whose text holds a lone underscore fails the doctor's search probe, so the doctor reports a healthy store corrupt",
+  "outcome": "The doctor's full-text probe and memory search build queries from the same tokens the FTS5 tokenizer indexes, so a memory containing a lone underscore verifies, is found, and no longer makes the doctor (or migration import) call the store corrupt.",
+  "acceptance": [
+    "A memory search whose query holds such a token still finds the memory by its other tokens; a test shows it.",
+    "A project memory whose title or body holds a token made only of underscores (such as a lone `_`) passes the doctor's object_fts probe; a test stores one and shows the doctor healthy, and fails without the fix.",
+    "Tokens that mix letters or digits with underscores keep today's search behaviour.",
+    "With the fixed build, doctor on the live Engram store no longer reports object_fts:d95ed1dc6b5f4b07b0cba67da05022b6:fts_index or object_fts:f5a0a9b7a5734e7c80f26df3b1061aa7:fts_index."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "doctor",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The doctor no longer reports a healthy store corrupt when a memory holds a lone underscore. Landed as 2e836ae and installed as build a52ce998d0d8.\n- fts_tokens drops fragments with no letter or digit. The unicode61 index treats `_` as a separator, so such a fragment could never match.\n- fts_query returns None when nothing is left to search for, replacing the \"__engram_no_match__\" fallback that matched the phrase \"engram no match\". Memory search then finds nothing, and the doctor's probe is skipped while the stored-text check still runs.\n- The change is query-side only, so no store needs projection repair.\n- Tests: the tokenizer; a project memory with a lone underscore (doctor healthy, search, phrase order, the 16-token limit, index damage still reported); and a work-memory search with nothing searchable.\n- Three review rounds, the last clean from both Codex and Claude. Full gate test-24a37374 passed.\n- With the new build, the doctor is healthy on the Engram, PhoenixCodeNav and TermAl stores. On Engram it had reported the two false object_fts findings.\n- Independent evaluation 511b3bc1 passed all four criteria.\n- The remaining Unicode mismatches are tracked in w-1901af6c6f7e.",
+    "completed_at": "2026-09-28T09:45:14.825792400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f703ab9033f549228c45e44e749fcfb3": {
+        "activity_id": "f703ab9033f549228c45e44e749fcfb3",
+        "task_id": "01a0e6d5-b9f7-7290-907b-aef72187b008",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "37d4c739b17745cd92875f4395444efb"
+      }
+    }
+  }
+}

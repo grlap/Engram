@@ -1,0 +1,49 @@
+{
+  "id": "01a07019-843f-7381-a03f-64df52b4bd4e",
+  "external_ref": null,
+  "title": "Pair-session rule in the repo skill: after review consolidation the implementer continues into the fix iteration, gates, and re-freeze without waiting for a prompt",
+  "outcome": "Pair-session rule in the repo skill: after review consolidation the implementer continues into the fix iteration, gates, and re-freeze without waiting for a prompt",
+  "acceptance": [
+    "engram-repo SKILL.md and the review-changes workflow state the continue-without-prompt rule for pair sessions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Repository skill and review workflow now keep the implementer moving through scoped fixes, gates and closure without another prompt, while reviewer leaves remain read-only and authority boundaries remain explicit; validated and landed.",
+    "completed_at": "2026-09-05T08:27:25.929236500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bfff0e82a02123383163435ea52a9fc555b9d059c2b03a09358a0eb7940034f8": {
+        "activity_id": "bfff0e82a02123383163435ea52a9fc555b9d059c2b03a09358a0eb7940034f8",
+        "task_id": "01a07019-843f-7381-a03f-64df52b4bd4e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f35a3e472ce8cd0e899c7cc7866f159a2a0930075f2cdae6f82e680cfb3bbf2e"
+      }
+    }
+  }
+}

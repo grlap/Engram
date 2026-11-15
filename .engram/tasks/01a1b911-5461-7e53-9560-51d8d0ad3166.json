@@ -1,0 +1,28 @@
+{
+  "id": "01a1b911-5461-7e53-9560-51d8d0ad3166",
+  "external_ref": null,
+  "title": "Retain task-sync data history by squash or epoch rollover of the data branch",
+  "outcome": "Retain task-sync data history by squash or epoch rollover of the data branch",
+  "acceptance": [
+    "A documented retention policy for the data branch, either squash or rollover to a new orphan branch seeded with a complete bounded baseline, keeps every retained evidence closure verifiable and says honestly that clones and forks keep their copies."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "retention",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

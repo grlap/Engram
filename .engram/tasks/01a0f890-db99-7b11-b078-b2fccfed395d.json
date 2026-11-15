@@ -1,0 +1,51 @@
+{
+  "id": "01a0f890-db99-7b11-b078-b2fccfed395d",
+  "external_ref": null,
+  "title": "A storage error while reading a finished run's seal is reported as itself, not as a missing obligation",
+  "outcome": "A storage error while reading a finished run's seal is reported as itself, not as a missing obligation",
+  "acceptance": [
+    "An undecodable or missing seal still leaves the obligation checks strict",
+    "When loading a finished run or its completion seal fails with a SQLite error, the obligation read returns that storage error rather than a missing builtin obligation error, and a test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "finished_run_cut_on now returns a SQLite failure reading the finished run or its seal as itself, in the obligation read and in doctor. A missing or undecodable run or seal still gives no cut, so the checks stay strict. Rows of the wrong type, out of range or with invalid UTF-8 count as damage: doctor reports them instead of aborting. A six-case test covers it, mutation-checked for each round's fix. Review took 3 rounds, with the round-3 pair clean, gate 9/9, and the evaluation passed. Landed as 5e4521f and installed as build 2850fe9e.",
+    "completed_at": "2026-10-01T23:21:55.357169600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0a7fdd1de45c4970ade968420c1a8c55": {
+        "activity_id": "0a7fdd1de45c4970ade968420c1a8c55",
+        "task_id": "01a0f890-db99-7b11-b078-b2fccfed395d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "070ba8d0801b459abebef5f5ff30ba3f"
+      }
+    }
+  }
+}

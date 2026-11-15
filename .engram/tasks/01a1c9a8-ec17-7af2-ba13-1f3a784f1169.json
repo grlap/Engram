@@ -1,0 +1,29 @@
+{
+  "id": "01a1c9a8-ec17-7af2-ba13-1f3a784f1169",
+  "external_ref": null,
+  "title": "Bound delta projection read costs without pinning exact helper counts",
+  "outcome": "Delta projection tests enforce reads and decodes proportional to changed members while allowing equivalent internal validation work.",
+  "acceptance": [
+    "The proportionality tests use small justified bounds relative to changed members, independent of the large retained view size.",
+    "The regression still fails for a whole-view read or decode regression without pinning exact helper invocation counts."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "test-quality"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

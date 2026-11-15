@@ -1,0 +1,53 @@
+{
+  "id": "01a0affd-f3b5-7f83-ae0d-33c064cf2db0",
+  "external_ref": null,
+  "title": "Evaluated completion keeps criterion citations within the seal evidence and the checkpoint acknowledgement",
+  "outcome": "Under an evaluated policy the evidence-subset invariant still holds: the core refuses a seal whose criterion citations fall outside its evidence, and the service unions the verdict citations into the capture evidence and the checkpoint acknowledgement",
+  "acceptance": [
+    "a_direct_evaluated_seal_with_citations_outside_its_evidence_is_refused passes: a direct core completion under an evaluated policy whose verdict citations are not within the completion evidence is refused, and one whose citations are within it seals",
+    "evaluated_completion_unions_verdict_citations_into_the_seal_evidence_and_checkpoint passes: the service completion under an evaluated policy seals with every verdict citation, including observed typed evidence, present in seal.evidence and acknowledged by the completion checkpoint, as the local work system brief promises"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round10"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The closure invariant holds on the evaluated route: storage shares ensure_acceptance_citations_within between the self-asserted and evaluated completions and refuses a seal whose citations fall outside its evidence set, and the service's readiness read (Legacy / Ready / Blocked) unions a ready evaluation's citations into the completion evidence before capture and checkpoint. Pinned by a_direct_evaluated_seal_with_citations_outside_its_evidence_is_refused and evaluated_completion_unions_verdict_citations_into_the_seal_evidence_and_checkpoint (note plus host-minted verification citations). RED logs/38c, GREEN logs/39, 39c, 41 (two existing direct-core pins updated to carry their citations, classified on this item). Final sequence logs/42: fmt-check, check, clippy, lib 1112/4 ignored, bin 43, parity 31, mcp-dogfood 45, doc links all pass; eight gates recorded here once. Documented in completion step 4, matrix row B47, and the local-work-system closure sentence.",
+    "completed_at": "2026-09-17T16:02:19.354077Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9570e020db3ec4829825a307cc6bdb37bf0f134315dfb5d6e54a9b9bd25d1182": {
+        "activity_id": "9570e020db3ec4829825a307cc6bdb37bf0f134315dfb5d6e54a9b9bd25d1182",
+        "task_id": "01a0affd-f3b5-7f83-ae0d-33c064cf2db0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dfb3357e3cfeb66e9a97b45da74988591a170022f940a4c8c2e2b3288bd9253b"
+      }
+    }
+  }
+}

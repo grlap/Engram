@@ -1,0 +1,52 @@
+{
+  "id": "01a0f3c5-4125-7372-a33a-dee92190b3e1",
+  "external_ref": null,
+  "title": "A CLI test guards that a moved-basis refusal's JSON stderr never spells the locked-store phrase",
+  "outcome": "A CLI test guards that a moved-basis refusal's JSON stderr never spells the locked-store phrase",
+  "acceptance": [
+    "A binary-level test records an execution observation whose revision or workspace is 'database is locked', invokes real work evaluate with --json to a moved-basis refusal, and asserts exit 1, parseable JSON stderr without the literal phrase, and full recorded text decoded from details.deciding_observation",
+    "A binary-level test invokes the reachable core complete source-recovery refusal and asserts exit 1 and its actual JSON stdout without the literal 'database is locked' phrase while the deciding observation decodes to the full recorded text",
+    "Unit coverage preserves the shared refusal_stderr_text guard for StoreError variants whose source refusal cannot be reached through the core CLI error branch; no new CLI command or production behavior is added to manufacture that branch"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test-coverage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in bb1099a: a binary-level test pins that moved-basis evaluate and core completion refusals never spell the locked-store phrase while the recorded text decodes whole; unit coverage pins the stderr guard per refusal family.",
+    "completed_at": "2026-10-03T09:38:11.272198200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "945d1273be4543b4930dd4eaaabbdf11": {
+        "activity_id": "945d1273be4543b4930dd4eaaabbdf11",
+        "task_id": "01a0f3c5-4125-7372-a33a-dee92190b3e1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8603f3cc46b94cb585a46aec31136ecf"
+      }
+    }
+  }
+}

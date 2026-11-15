@@ -1,0 +1,29 @@
+{
+  "id": "01a18de7-9798-7eb1-84af-84e7a3798fda",
+  "external_ref": null,
+  "title": "Parse host-sent fingerprint fields as SHA-256 fingerprints, not with the record-id parser",
+  "outcome": "Parse host-sent fingerprint fields as SHA-256 fingerprints, not with the record-id parser",
+  "acceptance": [
+    "Every fingerprint field the host protocol accepts (intent_fingerprint and the other fingerprint fields currently typed ObjectId) is parsed by one fingerprint validator that accepts only 64 lowercase hex characters. A 32-hex value in such a field is refused with a typed refusal, and nothing is recorded.",
+    "Record-id fields keep accepting 32 or 64 lowercase hex characters, and no stored record is reread or rewritten.",
+    "Before landing, current TermAl traffic is confirmed from TermAl source to send 64-hex values in every tightened field; tests cover the accepted and the refused case for each field."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "host-protocol"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

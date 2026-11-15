@@ -1,0 +1,47 @@
+{
+  "id": "01a18db4-04bd-7ba3-8222-4a14e64c6248",
+  "external_ref": null,
+  "title": "Define one Engram–TermAl boundary contract for identifiers and end-to-end evidence",
+  "outcome": "Both projects share the existing producer-owned wire meanings and lifecycle rules, so validation, recovery and federation do not diverge by project or host; the current fec8 and gated-control repairs continue independently.",
+  "acceptance": [
+    "Record a source-backed field/ownership inventory for the current evidence/checkpoint boundary, distinguishing opaque record ids from fingerprints and scoped execution identities, and identify the concrete 32/64 validation mismatch without changing stored ids.",
+    "Record one joint architecture direction and phased plan with TermAl's architect and both project coordinators, reusing existing validators, transport and lifecycle, without a new approval gate or delaying fec8/gated-control repair.",
+    "Specify bounded producer-to-consumer conformance cases for both projects, live and recovery paths, supported local/remote hosts, idempotent replay and negative scope cases; route subsequent implementation to existing owners and cross-link the TermAl design item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "contract",
+    "greg-directed",
+    "host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a18db3-62bd-7f01-9900-d7826c4f78ec",
+  "disposal_reason": "Consolidate concurrent intake on EngramFable's existing w-d7826c4f78ec. Fable has removed the design prerequisite (history16:47:24.723549700Z), so no cycle remains; architecture source findings and final joint plan belong in its notes. No source/check artifacts or separate executor here.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "2f9d63f5b9734685b454b9dd603aa0c3": {
+        "activity_id": "2f9d63f5b9734685b454b9dd603aa0c3",
+        "task_id": "01a18db4-04bd-7ba3-8222-4a14e64c6248",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "5469bbdaaf1443f2a44e4d9333c92cc4"
+      }
+    }
+  }
+}

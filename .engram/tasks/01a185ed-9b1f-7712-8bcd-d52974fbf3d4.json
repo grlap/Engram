@@ -1,0 +1,44 @@
+{
+  "id": "01a185ed-9b1f-7712-8bcd-d52974fbf3d4",
+  "external_ref": null,
+  "title": "Document lost write-response recovery and prove identical note replay",
+  "outcome": "Document the supported committed-response and identical-replay contract, including exceptions, and prove that a lost note response can be recovered without duplicate evidence",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md documents the code-supported committed-response and retry contract after the queued note/gate correction: callers retain originating identity and original intent, an identical supported keyed replay returns the original IDs without duplication, and exceptions including restored completed gates require show REF --notes --gates readback first. It distinguishes caller response loss from a proven uncommitted refusal, makes no unsupported universal write or native SQLite certainty claim, and adds no outcome lookup, identity parameter or COMMIT branch.",
+    "One deterministic regression using the existing Fake/BrokenPipe transport harness around a real note commits the note, loses its reply, re-sends the identical call with retained original identity and intent, and obtains the same original evidence/checkpoint IDs with count one; a fresh reader independently sees exactly one record. No sleeps or new framework."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "reliability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "d6abad1f92a443b79fe9dea3de99ad6f": {
+        "activity_id": "d6abad1f92a443b79fe9dea3de99ad6f",
+        "task_id": "01a185ed-9b1f-7712-8bcd-d52974fbf3d4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d6abad1f92a443b79fe9dea3de99ad6f"
+      }
+    }
+  }
+}

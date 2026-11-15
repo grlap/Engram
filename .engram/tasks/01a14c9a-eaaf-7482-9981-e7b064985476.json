@@ -1,0 +1,55 @@
+{
+  "id": "01a14c9a-eaaf-7482-9981-e7b064985476",
+  "external_ref": null,
+  "title": "Task-sync setup CLI tests exceed the unchanged 30-second local Git bound under concurrent warm builds",
+  "outcome": "Task-sync setup CLI tests exceed the unchanged 30-second local Git bound under concurrent warm builds",
+  "acceptance": [
+    "attribution::setup_actor_context_prepare_preserves_raw_text_and_first_attribution and setup_refuses_nested_attributes_and_admits_current_lf_policy remain correct under concurrent warm builds without increasing the existing 30-second Git bound, skipping tests, weakening assertions or retrying until green; retain causal diagnosis and correction evidence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-testing",
+    "gate",
+    "host-load"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a14d32-f85e-7e60-bfa3-3e9037f1e8fa",
+      "kind": "manual",
+      "detail": "a naturally scheduled qualifying overlap supplies candidate evidence. Release only when the implemented candidate is actually run under an observed concurrent warm build with its exact source/load evidence; ordinary full-gate success alone does not satisfy the unchanged criterion. Required cap child w-00083eec9377 is separately executable; no additional controlled experiment is authorized.",
+      "created_by": {
+        "actor_id": "greg/codex",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-18T04:09:08.438054400Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "824479c2348743ba88d414cc65c2cfae": {
+        "activity_id": "824479c2348743ba88d414cc65c2cfae",
+        "task_id": "01a14c9a-eaaf-7482-9981-e7b064985476",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "824479c2348743ba88d414cc65c2cfae"
+      }
+    }
+  }
+}

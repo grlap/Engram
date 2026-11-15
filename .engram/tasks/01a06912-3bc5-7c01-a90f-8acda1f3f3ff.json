@@ -1,0 +1,64 @@
+{
+  "id": "01a06912-3bc5-7c01-a90f-8acda1f3f3ff",
+  "external_ref": null,
+  "title": "Gate-heavy run-evidence cut materialization is unbounded: note, checkpoint, and CompletionSeal decode every evidence object",
+  "outcome": "Gate-heavy run-evidence cut materialization is unbounded: note, checkpoint, and CompletionSeal decode every evidence object",
+  "acceptance": [
+    "canonical decodes per holder mutation stay within the bounded-mutation budget regardless of how much run evidence exists",
+    "claim_validated_mutations_are_bounded_at_project_scale passes with 128 alternating gate transitions before note, explicit checkpoint, and completion",
+    "no new tables, triggers, counters, or integrity-replay machinery"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "product"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Made gate-heavy note, checkpoint, and completion evidence membership bounded and decode-constant; added two-depth and membership edge regressions.",
+    "completed_at": "2026-09-03T21:57:58.054728200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "388fbb37c5703dc0fa55862478873b5b7bfeb8a8b45938f8446af9c97b1eff51": {
+        "activity_id": "388fbb37c5703dc0fa55862478873b5b7bfeb8a8b45938f8446af9c97b1eff51",
+        "task_id": "01a06912-3bc5-7c01-a90f-8acda1f3f3ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c6b2a8d221511c48c24c3aa0fee3014c37ca5100377e3f4b24add3a32ff88e8b"
+      },
+      "598fb94cb0fd16a6ec49c46e65e52ecf8cbbcb4fb02a689c4d3b81200b2efd52": {
+        "activity_id": "598fb94cb0fd16a6ec49c46e65e52ecf8cbbcb4fb02a689c4d3b81200b2efd52",
+        "task_id": "01a06912-3bc5-7c01-a90f-8acda1f3f3ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f5e7d3a5519da6fe1d696d41ef45eee2a7cd84c2346fcfe41e1865969e4b5e0d"
+      }
+    }
+  }
+}

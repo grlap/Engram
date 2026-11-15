@@ -1,0 +1,58 @@
+{
+  "id": "01a1c9af-bdb4-7e43-8263-f1d4ca40737a",
+  "external_ref": null,
+  "title": "Make migration import of a large store finish in bounded time instead of rescanning the whole store in late validation",
+  "outcome": "Make migration import of a large store finish in bounded time instead of rescanning the whole store in late validation",
+  "acceptance": [
+    "The phase that dominates `engram migration import` time on a store of TermAl's size class (about 2.4 GB) is identified by measurement, not inference",
+    "Import of that store size completes in a measured, bounded time with the same integrity guarantees (integrity check, projection repair, verification), with no validation step dropped or weakened",
+    "A test or measurement shows import time growing roughly linearly with row count rather than repeating whole-store scans per phase"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "migration",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "26393ae5d01f455d9fbb0a8f5bdb5da8": {
+        "activity_id": "26393ae5d01f455d9fbb0a8f5bdb5da8",
+        "task_id": "01a1c9af-bdb4-7e43-8263-f1d4ca40737a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "49a4671bf6e14304aef790b24fccc123"
+      },
+      "b9042636cbe946c7844764cd9fec1999": {
+        "activity_id": "b9042636cbe946c7844764cd9fec1999",
+        "task_id": "01a1c9af-bdb4-7e43-8263-f1d4ca40737a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b9042636cbe946c7844764cd9fec1999"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0729e-24e1-7be0-9e97-a79e52dd1703",
+  "external_ref": null,
+  "title": "show on a parent carries a bounded obligations summary: required children still owed versus open optional follow-ups, with exact omitted counts and a traversal command, so omission never looks like no obligations",
+  "outcome": "show on a parent carries a bounded obligations summary: required children still owed versus open optional follow-ups, with exact omitted counts and a traversal command, so omission never looks like no obligations",
+  "acceptance": [
+    "show PARENT (text, --json, MCP) always carries a bounded obligations block with counts of required children still owed and open optional follow-ups, up to a fixed number of refs each, an exact omitted count per group, and the ls command that lists the rest; open optional children are never labelled completion blockers"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a065cc-43af-7613-8414-1c9649237fca"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered bounded required-owed and open-optional parent summaries with exact totals and traversal, consistent safe show and full-note CLI/MCP receipts, historical generation-bound waiver inspection after root reopen, and independent pressure-to-zero navigation regressions. All nine quality gates passed and both reviewers closed all findings; landed and installed by Fable.",
+    "completed_at": "2026-09-05T23:49:32.393915400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b4eb5846d7ebe68963a2a399788dbf3913bf5da2a621a27329e3ac8e2487a6f6": {
+        "activity_id": "b4eb5846d7ebe68963a2a399788dbf3913bf5da2a621a27329e3ac8e2487a6f6",
+        "task_id": "01a0729e-24e1-7be0-9e97-a79e52dd1703",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ff8ae7d939564e420a4a16f7ca63ca938e2b6741fb67a8f0edbed80abd80a4f1"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "01a0e384-d508-71b0-8693-0af02eb04f08",
+  "external_ref": null,
+  "title": "A detached child's successor root drops its acceptance bindings",
+  "outcome": "Detach creates the successor root with the stranded child's acceptance bindings, so the successor still owes the bound host verification.",
+  "acceptance": [
+    "A detach test shows the successor of a bound child keeps its exact binding, opens that binding's obligation on its own new run, and refuses completion until host verification of the bound kind passes.",
+    "detach_work passes the child's stored acceptance bindings to the successor's creation request. A child whose binding is pinned to an environment recorded on its own run, which the successor's new run cannot record, is refused before anything is written, with the `update --bind` that binds every criterion again without environments as its remedy, and the detach advisory behind DetachAvailable withholds detach in the same case; a test shows the refusal, its remedy, the withheld advisory, and a successful detach after the rebind. Nothing else about detach changes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "coordination",
+    "migration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0e1cd-fda9-75a1-97c7-412448104323",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in ae425e1, installed as build 9503287d8a34. detach_work gives the successor the child's stored acceptance bindings. A child whose binding is pinned to an environment of its own run is refused before anything is written, with the `update --bind` rebind as its remedy, and the DetachAvailable advisory withholds detach in the same case. The tests detach_keeps_a_bound_criterion_owed_by_the_successor and detach_refuses_a_criterion_pinned_to_the_environment_of_the_childs_run are both mutation-checked. Round 4 was clean from Codex and Claude, and gate test-e41f5f9a passed. Independent evaluation 7b88e825 passed both criteria.",
+    "completed_at": "2026-09-27T16:14:03.850273300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6d0261f610274abc819e7406a96dc3f7": {
+        "activity_id": "6d0261f610274abc819e7406a96dc3f7",
+        "task_id": "01a0e384-d508-71b0-8693-0af02eb04f08",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5ff6e864980f4005973184c6f25400e1"
+      }
+    }
+  }
+}

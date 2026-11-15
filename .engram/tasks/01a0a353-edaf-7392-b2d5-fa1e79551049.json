@@ -1,0 +1,60 @@
+{
+  "id": "01a0a353-edaf-7392-b2d5-fa1e79551049",
+  "external_ref": null,
+  "title": "Specify and implement upgrade boundary tests before corrections",
+  "outcome": "Independent state-transition oracles expose current gaps before production changes and provide a fast local regression loop.",
+  "acceptance": [
+    "Cases trace to the agreed transition document with explicit expected outcome and relevant full no-follow file-inventory oracles, independent of production classification.",
+    "Cover representative reachable crash boundaries and contradictory combinations: split original, equal original and candidate, absent or empty sidecars, partial and complete staging, foreign bytes, journal phases, path aliases and terminal rollback closure.",
+    "Existing test coverage is reused; missing cases are authored and their baseline pass or failure classified before related fixes. Small focused runs are recorded once; remaining platform and power-loss gaps are explicit."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-review",
+    "area-storage",
+    "migration",
+    "stream-upgrade-closure"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0a272-a5e6-75e3-9485-f771ace3fc1a",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0a353-ebdc-7a10-a881-3ea8593d43d8"
+  ],
+  "blockers": [
+    {
+      "blocker_id": "01a0ab20-2b43-7dc0-a779-ebd9a78730ea",
+      "kind": "manual",
+      "detail": "Historical acceptance criterion 3 needs a decision: retained V5/V7 evidence explicitly identifies some fixtures executed only after correction and a later reconstructed matrix baseline. Final tests pass, but cleanup cannot assert every missing case had a classified pre-fix baseline or retroactively manufacture it.",
+      "created_by": {
+        "actor_id": "termal",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-09-16T16:50:07.285428Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete: its crash-boundary oracles target the coordinated prepare/activate/finalize/rollback upgrade state machine removed in 54285f2; the current migration is one-way export/import. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "86965b0d1d8804da1757494fe938506803b1e4918c67d9245df5e6ae2180a08e": {
+        "activity_id": "86965b0d1d8804da1757494fe938506803b1e4918c67d9245df5e6ae2180a08e",
+        "task_id": "01a0a353-edaf-7392-b2d5-fa1e79551049",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "e7845760cf754f168ee4551af16808eb"
+      }
+    }
+  }
+}

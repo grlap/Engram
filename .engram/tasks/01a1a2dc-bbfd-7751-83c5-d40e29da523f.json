@@ -1,0 +1,64 @@
+{
+  "id": "01a1a2dc-bbfd-7751-83c5-d40e29da523f",
+  "external_ref": null,
+  "title": "Apply typed task-sync delta exchanges atomically with indexed graph admission",
+  "outcome": "Complete the additive delta planning, intent and outcome contracts and their mixed-history dispatch in the same transaction as admitted graph changes, after indexed closure admission is available.",
+  "acceptance": [
+    "Strict new immutable delta kinds carry origin-qualified feed cuts, typed inventory roots and exact Git provenance without changing any historical record, fingerprint, ID, link or receipt.",
+    "The real delta writer owns closure admission, fresh state checks, graph changes and deletions, retained planning and reconciliation heads/holds, exactly one original receipt, ledger event and keyed projections in one atomic transaction; no standalone record-applied API can manufacture completion.",
+    "Mixed historical/delta baseline, reconciliation, feed and integrity dispatch is explicit; missing basis refuses with no guessed cursors, semantic substitution or implicit full-scan fallback.",
+    "Tests exercise 2,000-task changed selections in both directions, exact receipt replay before payload reads after later movement, mismatched intent, interruption and rollback; ordinary CLI/MCP/model-A wiring remains separately tracked under the parent.",
+    "Pending or unreadable restore provenance refuses a fresh strict task-sync continuation, and a changed restore occurrence never inherits old pending authority, with tests executed against the real strict writer using the restore record from w-25e0a28aab8e."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "delta-ledger",
+    "greg-directed",
+    "performance",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a1a3e3-860a-7a23-91e0-25e0a28aab8e"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "1f30e9af4837413383bdcc34bfa7a9e3": {
+        "activity_id": "1f30e9af4837413383bdcc34bfa7a9e3",
+        "task_id": "01a1a2dc-bbfd-7751-83c5-d40e29da523f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1f30e9af4837413383bdcc34bfa7a9e3"
+      },
+      "91ff8d5dfe814e7c8d6668fde0ccb8f2": {
+        "activity_id": "91ff8d5dfe814e7c8d6668fde0ccb8f2",
+        "task_id": "01a1a2dc-bbfd-7751-83c5-d40e29da523f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "91ff8d5dfe814e7c8d6668fde0ccb8f2"
+      }
+    }
+  }
+}

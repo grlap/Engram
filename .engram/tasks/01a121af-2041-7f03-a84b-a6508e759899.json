@@ -1,0 +1,50 @@
+{
+  "id": "01a121af-2041-7f03-a84b-a6508e759899",
+  "external_ref": null,
+  "title": "Test that full launcher Node stages keep the stage-kind contract without a runner label",
+  "outcome": "Test that full launcher Node stages keep the stage-kind contract without a runner label",
+  "acceptance": [
+    "A real full:true createRun/executeRun Node --test fixture with known counts asserts no tests.runner field, while the focused counterpart asserts node-test; removing the full-mode exclusion makes the regression fail."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added real full/focused Node regression protecting the full-mode runner omission.",
+    "completed_at": "2026-10-09T23:43:02.762065400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4a4f2c8a8e8d4c5896d6ec53eda89e80": {
+        "activity_id": "4a4f2c8a8e8d4c5896d6ec53eda89e80",
+        "task_id": "01a121af-2041-7f03-a84b-a6508e759899",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f7017e2d78d0401e9b33e3ac312e2196"
+      }
+    }
+  }
+}

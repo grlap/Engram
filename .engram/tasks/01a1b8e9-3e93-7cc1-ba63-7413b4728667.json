@@ -1,0 +1,38 @@
+{
+  "id": "01a1b8e9-3e93-7cc1-ba63-7413b4728667",
+  "external_ref": null,
+  "title": "Exchange complete historical evidence through bounded resumable Git packs",
+  "outcome": "An explicit full-evidence profile moves complete selected task-scoped historical graphs and optional selected artifacts between enrolled stores, retaining original facts and exact replay while making no destination credit or runtime mutation.",
+  "acceptance": [
+    "An explicit full-evidence export/import round-trips every selected historical family in accepted design §§2–3 and its typed dependency closure, including quiet observations, governing snapshots and actual revision objects, in immutable bounded packs. A→B→A tests preserve original UUIDs, canonical bytes, links, origins, pack identity and legacy meanings; same-id different-kind/bytes refuses atomically; live claims, sessions, path selection and uncredited checks gain no authority.",
+    "Origin-qualified feed segment/cut and governing-snapshot witnesses retain actual work-event/context dependencies and complete required intervals outside destination native feeds. Behavioral cases refuse missing interior source/root/claim events, gaps, beyond-cut entries, changed membership and broken known continuity; exact overlap replays and unavailable exact governing snapshots remain explicit.",
+    "The existing family-neutral binding/chain and single pending slot gain typed evidence/artifact operations and explicit planning Deferred outcomes without redefining historical task-only receipts. Tests cover planning held by a live claim, evidence retained independently, fresh planning successor after normal claim end, immutable old Deferred replay, zero-payload completed replay, and an unfinished preparation that still blocks; settlement never advances applied planning coverage.",
+    "Full selected history bootstraps and advances in bounded dependency-complete batches using keyed changed-object/feed views, with no silent scan or history reload on normal deltas/replay. Cases exercise the accepted record/pack/component/batch/plan/attachment/staging limits, oversized SCC refusal, partial progress/resume and crash rollback; no required record is truncated or marked applied across a gap.",
+    "Evidence-only Git changes advance only their family; task deletion/profile omission retains evidence. Explicit optional attachments preserve origin locators and do not read foreign absolute paths or private scratch; absent logs remain unavailable. Updated profile/disclosure/docs and bounded agent output state that imported records are retained facts, not destination satisfaction, and implementation names its actual projection/durable cutover under repository rules."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "execution-evidence",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a14bbb-7358-7dc1-842e-01a67dade6f5",
+    "01a1a2d3-80b3-7fd0-a330-b10696b2755a",
+    "01a1b911-469d-7f62-9647-4eabb205c7b2",
+    "01a1ba24-6adc-7893-85b8-2e98f151e7aa",
+    "01a1bd8c-50b3-79e3-96e0-15182dcd15f8"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

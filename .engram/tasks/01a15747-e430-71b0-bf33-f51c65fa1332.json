@@ -1,0 +1,52 @@
+{
+  "id": "01a15747-e430-71b0-bf33-f51c65fa1332",
+  "external_ref": null,
+  "title": "Tighten S2.4 relation refusal assertions and test the bound-ancestor branch",
+  "outcome": "Tighten S2.4 relation refusal assertions and test the bound-ancestor branch",
+  "acceptance": [
+    "The S2.4 relation refusal tests in src/storage/work/task_sync/tests/folder_apply/relations.rs assert the exact `{owner}: reason (detail)` text (ancestor_binding, immutable_blocker, id_collision, active_run, already_satisfied, unsupported_origin, prerequisite_bound) instead of reason-word substrings",
+    "A test covers the bound-ancestor branch of relation admission (folder_admission/relations.rs ancestor loop): a relation owner whose restored ancestor is not eligible (e.g. a Cancelled lifecycle), with no root execution, refuses as ancestor_binding with the exact detail and leaves the store unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "review-low",
+    "task-sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Pinned exact relation-refusal code/messages and added independent parent/grandparent ancestor-loop regressions with whole-store rollback checks. Both review-round findings fixed and re-reviewed clean; focused27/27, full3775/3775, independent acceptance2/2. Six live stores ready before and after commit; clean landed build installed without stopping processes.",
+    "completed_at": "2026-10-20T10:17:47.342802Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "132448d5abbc4790922cb8baaacdfcad": {
+        "activity_id": "132448d5abbc4790922cb8baaacdfcad",
+        "task_id": "01a15747-e430-71b0-bf33-f51c65fa1332",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d11979b9824441bdb8ffe174e246a7a7"
+      }
+    }
+  }
+}

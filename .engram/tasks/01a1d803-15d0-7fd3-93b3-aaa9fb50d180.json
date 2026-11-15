@@ -1,0 +1,29 @@
+{
+  "id": "01a1d803-15d0-7fd3-93b3-aaa9fb50d180",
+  "external_ref": null,
+  "title": "Prepare exact macOS Engram install and sync-enable instructions for Greg once the sync changes land",
+  "outcome": "Prepare exact macOS Engram install and sync-enable instructions for Greg once the sync changes land",
+  "acceptance": [
+    "When w-baa6 (and, if landed, w-6ea6) is on master, Greg receives through Engram::Asistant one exact, copy-pasteable macOS procedure: build or fetch the exact landed commit, back up the current binary, install, run read-only readiness on each Mac store with the expected build_fingerprint, and enable or join task sync, with the stop conditions and rollback",
+    "The procedure was checked against the landed commit's docs and CLI help, not written from memory, and names which steps the team cannot do for him"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "macos",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

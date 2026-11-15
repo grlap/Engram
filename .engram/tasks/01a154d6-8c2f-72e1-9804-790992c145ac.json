@@ -1,0 +1,52 @@
+{
+  "id": "01a154d6-8c2f-72e1-9804-790992c145ac",
+  "external_ref": null,
+  "title": "Confirm Engram accepts TermAl's remote-gate test verification record unchanged and passes a bound test criterion on it",
+  "outcome": "Confirm Engram accepts TermAl's remote-gate test verification record unchanged and passes a bound test criterion on it",
+  "acceptance": [
+    "A read-only source assessment, quoting code locations, states whether Engram's host-observed verification intake accepts a record with check_kind test, status passed, a producer label other than local (e.g. remote-gate), source_revision content-v1 at the landed commit, and free-form provenance fields (commit, tree, fingerprint, host, build, run, results sha), and whether a criterion bound to kind test then passes at the judged revision",
+    "Any refusal found is filed as its own p1 Engram item with the exact field and code path; the result is sent to TermAl's remote-gate import owner before that owner codes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "remote"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the read-only source assessment and pre-coding handoff. Engram rejects the hypothetical free-form fields; its existing native checkpoint supports bounded remote provenance through summary/refs and a judged-revision test pass when ordinary holder/grant/source guards match. TermAl's actual mapping uses that supported route, so the coordinators found no Engram refusal requiring a new P1. Independent evaluation 282362f6f5554411bed55b3310d195bf passed both unchanged criteria. No source change, runtime import, build, test, commit or installation is claimed.",
+    "completed_at": "2026-10-21T05:20:07.465839600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e56217951ed9412b89a7df082ccd4737": {
+        "activity_id": "e56217951ed9412b89a7df082ccd4737",
+        "task_id": "01a154d6-8c2f-72e1-9804-790992c145ac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7f723f99c8d04032b70759602db568e3"
+      }
+    }
+  }
+}

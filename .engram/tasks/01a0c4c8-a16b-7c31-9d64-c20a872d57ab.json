@@ -1,0 +1,27 @@
+{
+  "id": "01a0c4c8-a16b-7c31-9d64-c20a872d57ab",
+  "external_ref": null,
+  "title": "Avoid discarded fingerprint computation in project-memory attribution",
+  "outcome": "Avoid discarded fingerprint computation in project-memory attribution",
+  "acceptance": [
+    "Project-memory attribution measures canonical byte size without computing an unused fingerprint; aggregate and field size refusal behavior remains covered and unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a0c77e-86c0-73b3-9b89-86b4cb380df4",
+  "disposal_reason": "Duplicate: w-86b4cb380df4 criterion 2 covers project-memory attribution (src/storage/project_memory.rs:612) together with the work-source snapshot size check (feeds.rs:786); the surviving item carries the work. Triage 2026-09-27, consultation Engram::Fable, Termal::Fable, Engram::Coder, unanimous.",
+  "completion": null
+}

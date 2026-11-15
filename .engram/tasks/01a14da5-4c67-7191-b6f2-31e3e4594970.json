@@ -1,0 +1,154 @@
+{
+  "id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+  "external_ref": null,
+  "title": "Add opt-in MCP call timeline and read-phase diagnostics",
+  "outcome": "Ship bounded opt-in timing evidence that separates decoded receive, handler work and response dispatch/send, without claiming a cause for the historical MCP stall.",
+  "acceptance": [
+    "ENGRAM_MCP_PHASE_TRACE=1 at MCP start emits correlated monotonic receive, handler-start, handler-settle, send-dispatch and send-finish observations plus read-snapshot, profiled-statement and backup-reminder summaries; tracing off adds no timestamps, allocation, profile callback, transport wrapper or writer beyond the existing TLS-active check at the new hooks.",
+    "Trace association uses fixed-size bounded state and immutable handler/send tickets; string IDs, duplicates, cancellation, saturation and dropped futures cannot produce a guessed complete association or disclose caller text. Tool/transport results, timeouts, SQLite durability and scheduling behavior remain unchanged.",
+    "Regression tests cover the phase hooks, tracing on/off, privacy and bounds, send-future ownership and actual rmcp duplicate/cancellation response orders; focused checks and the exact-input full gate pass, and documentation states observation, correlation and loss limits."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "delivered",
+    "dogfood",
+    "evaluation-pending",
+    "mcp",
+    "observability",
+    "performance",
+    "tests"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a10edb-96e2-7de0-966b-434bed0c58d2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The opt-in MCP call timeline and read-phase diagnostics are landed (in the ancestry of e7426a6); verified on the Windows B gate bundle test-fdd408e3. An independent acceptance evaluation passed all 3 criteria (record 2e7e5758f62d4dba814b7f7e68ca96db).",
+    "completed_at": "2026-10-28T01:28:28.913447300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0e00a8e5d3d74c4b9f72454ec360271b": {
+        "activity_id": "0e00a8e5d3d74c4b9f72454ec360271b",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "445766eccd7d4364bf22ec239fabd8db"
+      },
+      "102a140d921a4508a8c7677d94333738": {
+        "activity_id": "102a140d921a4508a8c7677d94333738",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "102a140d921a4508a8c7677d94333738"
+      },
+      "1adc93d3753f4947b3f0389137c8e741": {
+        "activity_id": "1adc93d3753f4947b3f0389137c8e741",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1adc93d3753f4947b3f0389137c8e741"
+      },
+      "1bcea49436b645a9842886101cb2e82c": {
+        "activity_id": "1bcea49436b645a9842886101cb2e82c",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "44537509fc674e8290383f1bee4b2131"
+      },
+      "32b7869f3fd54b07a122e9bd5e8c1ee2": {
+        "activity_id": "32b7869f3fd54b07a122e9bd5e8c1ee2",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "04e9dabdb74a478f8b6977e9746adc5a"
+      },
+      "44537509fc674e8290383f1bee4b2131": {
+        "activity_id": "44537509fc674e8290383f1bee4b2131",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "44537509fc674e8290383f1bee4b2131"
+      },
+      "a64144a9f57e49c191746216a33cc997": {
+        "activity_id": "a64144a9f57e49c191746216a33cc997",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a64144a9f57e49c191746216a33cc997"
+      },
+      "b3339b9248074ff7bb2a4631f851e049": {
+        "activity_id": "b3339b9248074ff7bb2a4631f851e049",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b3339b9248074ff7bb2a4631f851e049"
+      },
+      "f82feeaefb934d6ea5292863282b7c8d": {
+        "activity_id": "f82feeaefb934d6ea5292863282b7c8d",
+        "task_id": "01a14da5-4c67-7191-b6f2-31e3e4594970",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f82feeaefb934d6ea5292863282b7c8d"
+      }
+    }
+  }
+}

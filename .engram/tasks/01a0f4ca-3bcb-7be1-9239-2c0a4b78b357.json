@@ -1,0 +1,50 @@
+{
+  "id": "01a0f4ca-3bcb-7be1-9239-2c0a4b78b357",
+  "external_ref": null,
+  "title": "Name a command-output source for remote and branch in the landing-record steps",
+  "outcome": "Name a command-output source for remote and branch in the landing-record steps",
+  "acceptance": [
+    "The landing-record steps name a command-output source for remote and branch"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as febf61eb06bf1fc09b5b1af092321205708ab36c on origin/master (pushed 2026-10-01T02:14:07Z; values recorded per §8, including this change's own remote/branch rule: `git rev-parse origin/master` after the push prints the landed commit). review-changes.md §8 and the engram-repo skill's final paragraph now name where remote and branch come from: the ones the push command named, verified by `git rev-parse REMOTE/BRANCH` after the push. One combined 4-file changeset with w-d755e71e24e4. Authority-text pipeline: both coordinators' concurrences (mailbox-6f31ef05 #126, mailbox-38e17f30 #39), Greg notified before the landing (Advisor/session-6219 after mailbox-ef254411 #13, confirmed #14, plus Fable's direct send), final-diff audit PASS (mailbox-38e17f30 #41; diff hash f26a5a25 identical across three base moves 89af563 -> c0ac723 -> 1ddded7), Markdown checks passed on landing freeze fa7948b7 (test-93de9100, test-bd0c2d49), landing pair clean (Codex delegation-1e05d14f no findings after two bash-shell access failures re-briefed to the default shell, TermAl w-380e6ea9951a; Claude delegation-806f3910 two Notes, no action). No installed build recorded: binary NOT installed pending Greg's answer on w-d254fcdc3d22; release build of the landed tree staged in .worktrees/landing-values. Acceptance evaluation 63f7ee5a2c754ab98e2dd6dec09fb0fb: 1/1 pass.",
+    "completed_at": "2026-10-01T02:16:25.437616Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "71ceefe4e07c4c23bf5d5886e3a88853": {
+        "activity_id": "71ceefe4e07c4c23bf5d5886e3a88853",
+        "task_id": "01a0f4ca-3bcb-7be1-9239-2c0a4b78b357",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e98faca400074f27acf59b25eeed9cc7"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "01a069a6-88fb-7553-8bb6-4e1645a40861",
+  "external_ref": null,
+  "title": "MADE host recipe: Claude Code with hooks (no TermAl) on the base tier",
+  "outcome": "A MADE integrator has an explicit advisory Claude Code host recipe: MADE validates and injects ENGRAM_HOME/ACTOR_ID/SESSION_ID/ACTOR_CONTEXT before launch, persists logical-session identity, starts one Engram MCP child per session, and uses SessionStart next --peek for non-advancing orientation after startup, resume, clear and compaction. Ordinary next remains an explicit delivery-advancing call; recipe verification is distinguished from a live MADE deployment.",
+  "acceptance": [
+    "The checklist names capability_map_revision on session_bind and the one generic different-build refusal as the whole version story",
+    "docs/ has a host checklist with ENGRAM_HOME/ACTOR_ID/SESSION_ID/ACTOR_CONTEXT injection, one MCP child per logical session, SessionStart startup/resume/clear/compact orientation via next --peek, ordinary next only for explicit delivery advancement, advisory assurance and an explicitly optional turn-gated tier"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-3b3f-7332-8345-4557c3a9cc0d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered bounded advisory MADE host recipe with shared launch identity, persisted logical-session mapping, SessionStart next --peek and unseen-delivery hazard, optional control tier and version contract. Lists all four MADE inputs and isolated smoke-test obligations. Official references checked; no real MADE integration test claimed. Doc gates passed and coordinator1464 accepted. Remains uncommitted; Fable owns later authorized check-in.",
+    "completed_at": "2026-09-08T04:07:39.960142Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f484e45412c73254d0ddf6f85e90e3d6ca317355b1d68173d988b2d00a27e47c": {
+        "activity_id": "f484e45412c73254d0ddf6f85e90e3d6ca317355b1d68173d988b2d00a27e47c",
+        "task_id": "01a069a6-88fb-7553-8bb6-4e1645a40861",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3fca0354693e7d1e009c1866fb0382e03f97a5492bc33120c2373be32a546830"
+      }
+    }
+  }
+}

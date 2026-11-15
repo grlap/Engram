@@ -1,0 +1,30 @@
+{
+  "id": "01a1b48c-1ce1-7ff0-ba39-c2fe652b0c2e",
+  "external_ref": null,
+  "title": "Retain long launcher errors in private collision-free diagnostic files",
+  "outcome": "Long error logging preserves terminal evidence with private uniquely named files and tolerates a log-write refusal.",
+  "acceptance": [
+    "Long launcher diagnostics use collision-free exclusive files with mode0600 and a bounded explicit artifact locator, without sharing a stage log name",
+    "A diagnostic write failure cannot prevent the terminal result from being saved; observable tests cover collision and failure handling",
+    "Development documentation accurately names the diagnostic artifact behavior"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "launcher",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a0f5f4-c248-7971-93b2-277ca5c53408",
+  "external_ref": null,
+  "title": "Revising a project memory does not require resending its whole body",
+  "outcome": "Revising a project memory does not require resending its whole body",
+  "acceptance": [
+    "A whole-body revise keeps working unchanged",
+    "The receipt shows what changed relative to the previous revision (a bounded diff or the changed section), so the writer can confirm nothing was dropped",
+    "remember --revise can change part of a memory (append a paragraph, or replace one marked section) without resending the unchanged body, keeping the expected-revision conflict check and attributed revision history"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "project-memory",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A project memory can be revised in part. With --revise, --key and --expected-revision N, `--append` adds a paragraph and `--section NAME` replaces the interior of one section marked `<!-- engram-section NAME -->` … `<!-- /engram-section NAME -->` (MCP append/section).\n\nThe body is built from revision N inside the writer transaction, keeping every other byte, so an exact retry replays and a stale basis conflicts. A missing section refuses with memory_section_not_found, naming the sections there are. Names are 1 to 64 bytes and never echoed. Empty text clears a section. Whole-body revise stores as before.\n\nEvery revise receipt shows the changed span as bounded excerpts, plus full reads of both revisions. History, replay and forget are unchanged.",
+    "completed_at": "2026-10-01T21:09:50.983358500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4917054b7b4d4b2b8ed02241057c0049": {
+        "activity_id": "4917054b7b4d4b2b8ed02241057c0049",
+        "task_id": "01a0f5f4-c248-7971-93b2-277ca5c53408",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3f4525ac5d1e4226a1ebe7195df1731e"
+      }
+    }
+  }
+}

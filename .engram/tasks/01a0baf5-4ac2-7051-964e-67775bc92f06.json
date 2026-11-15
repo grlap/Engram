@@ -1,0 +1,71 @@
+{
+  "id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
+  "external_ref": null,
+  "title": "Enabling turn-gated control from TermAl takes minutes because every step runs the whole-store doctor audit",
+  "outcome": "An operator can verify and enable an Engram project in a host in a few seconds on a large store, because the host's enablement check no longer waits for a full-store audit, and it is known what dominates doctor's time on the live store and whether the audit itself can be made faster or incremental.",
+  "acceptance": [
+    "a decision is recorded on what a host needs for enablement (store identity, health, required assurance) and whether that needs the full audit or a fast read such as `control-policy show` plus a bounded health check",
+    "after the change, verifying and saving turn-gated control for the Engram project from TermAl completes in seconds and the setting persists, shown by TermAl's saved project settings and a new control session in the store",
+    "what dominates `engram doctor --json` on the live Engram store (72 s measured on a 179 MB store) is established by measurement, per phase, and recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "dogfood",
+    "performance"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Obsolete on Greg's word (Asistant #239): turn-gated control no longer exists, so there is nothing to enable. Doctor's own time on the live store, its third criterion, would be a new item if it still matters.",
+  "completion": null,
+  "activity": {
+    "central": {
+      "81634ce7f1c54c948fed6869dc31aea5": {
+        "activity_id": "81634ce7f1c54c948fed6869dc31aea5",
+        "task_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b755ba959ff04d13914e1248cf269717"
+      },
+      "c3a56438d48e44cbb3732cbb9bdb6b4e": {
+        "activity_id": "c3a56438d48e44cbb3732cbb9bdb6b4e",
+        "task_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c3a56438d48e44cbb3732cbb9bdb6b4e"
+      },
+      "f30cd9684fd444b6bf908ee6a4b9d367": {
+        "activity_id": "f30cd9684fd444b6bf908ee6a4b9d367",
+        "task_id": "01a0baf5-4ac2-7051-964e-67775bc92f06",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f30cd9684fd444b6bf908ee6a4b9d367"
+      }
+    }
+  }
+}

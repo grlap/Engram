@@ -1,0 +1,53 @@
+{
+  "id": "01a1999e-0b27-7b01-b0e1-f83541035e58",
+  "external_ref": null,
+  "title": "Retire turn-gating tables through explicit full-store import while preserving surviving history",
+  "outcome": "Retire turn-gating tables through explicit full-store import while preserving surviving history",
+  "acceptance": [
+    "The current schema omits tables and mutable columns used only by turn gating, while preserving work-session connection fencing and shared policy/evidence data",
+    "Migration import accepts the explicitly named former tables and columns, validates their declarations and rows, reports exact retirement counts, and preserves all other stored ids, links and bytes; unknown tables or columns remain refused",
+    "Focused migration and strict-open regression tests cover populated retired tables, malformed input, unknown input, and unchanged surviving records"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered explicit four-table turn-gating retirement and selector-column conversion, preserving surviving history/session fencing, named validation/refusal/counts and regression coverage. Shipping six-copy migration and corrected rollback succeeded; complete source handed to parent for final combined gate/landing. Optional import-speed experiment continues independently on w-b6068d6a1cb0 and does not block this delivery.",
+    "completed_at": "2026-11-02T09:41:10.755327700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b49d8d45a785437fba6d781d7adae9c1": {
+        "activity_id": "b49d8d45a785437fba6d781d7adae9c1",
+        "task_id": "01a1999e-0b27-7b01-b0e1-f83541035e58",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "90e68f8b358947f2843b52dfc9dfc9d8"
+      }
+    }
+  }
+}

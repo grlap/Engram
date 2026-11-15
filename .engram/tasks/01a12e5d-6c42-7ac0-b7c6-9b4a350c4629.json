@@ -1,0 +1,77 @@
+{
+  "id": "01a12e5d-6c42-7ac0-b7c6-9b4a350c4629",
+  "external_ref": null,
+  "title": "Read an explicitly selected prepared task candidate without mutation",
+  "outcome": "Read an explicitly selected prepared task candidate without mutation",
+  "acceptance": [
+    "A public typed read_prepared API binds the requested operation, candidate destination, project and export profile, requires a completed matching journal generation and byte-identical retained/destination documents, returns exact raw documents with typed producer/cut/operation/profile and note/activity omission provenance, preserves retained structural disclosure semantics, and neither reserializes nor captures SQLite.",
+    "The reader uses bounded no-follow retained handles and refuses incomplete, pending, unknown, malformed, divergent, linked or reparse-point inputs without creating, deleting, changing or locking files; independently testable owned fixtures verify successful and failed reads preserve every input byte and entry.",
+    "No Git, CLI enablement, SQLite row/schema/projection or remote relay change is introduced; any contrary durable-store requirement is presented to Greg before coding."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a12302-8b0e-7ba1-a0be-79022fc49394",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the additive typed read_prepared library API with exact retained/destination bytes, structural disclosure semantics and provenance, bounded no-follow refusal with preservation fixtures, and source/shipped documentation. Landed and installed the exact validated tree; no durable store conversion or restart required.",
+    "completed_at": "2026-10-12T18:13:22.278045800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4052dd54e97448daa47ed5ae5abc1716": {
+        "activity_id": "4052dd54e97448daa47ed5ae5abc1716",
+        "task_id": "01a12e5d-6c42-7ac0-b7c6-9b4a350c4629",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4052dd54e97448daa47ed5ae5abc1716"
+      },
+      "805194a2904142c9b13406571603a9d1": {
+        "activity_id": "805194a2904142c9b13406571603a9d1",
+        "task_id": "01a12e5d-6c42-7ac0-b7c6-9b4a350c4629",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "805194a2904142c9b13406571603a9d1"
+      },
+      "a6e00f5e6b80446a9f2cc3b70ea958c4": {
+        "activity_id": "a6e00f5e6b80446a9f2cc3b70ea958c4",
+        "task_id": "01a12e5d-6c42-7ac0-b7c6-9b4a350c4629",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7f3078bcf59248358c50b72ff53b3a4d"
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "01a1a322-8fc8-70b0-be1c-d9d66d67dfe5",
+  "external_ref": null,
+  "title": "Compare test-run registration paths without lowercasing them on Windows",
+  "outcome": "The launcher's registration confirmation compares the host's returned run directory and worktree with its own paths as canonicalized, so roots that differ only by case are not treated as one root on a case-sensitive Windows directory",
+  "acceptance": [
+    "scripts/test-run-registration.mjs compares the host's returned run directory and worktree with its own paths without lowercasing on Windows, or the agreed host contract states that roots compare case-insensitively on Windows and both sides follow it",
+    "A test covers a Windows root whose canonical spelling has upper-case letters and shows registration confirms the host's root for that checkout",
+    "A test on a real case-sensitive filesystem (Mac or Linux runner) shows two distinct roots that differ only by case are not reported as the same root, and no platform branch in the comparison folds case on Windows. The same test runs on a case-enabled Windows directory where a host can create one, and otherwise reports that capability as unavailable rather than passing"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Preserved native path case when confirming test-run registration. Review and focused evidence on the carried implementation records Windows uppercase-root confirmation and Linux case-sensitive distinct-root rejection; Windows case-enabled-directory capability was unavailable and explicitly reported. The final carried candidate passed the DL560 standard FULL. Fast-forwarded and pushed to origin/master, release binary installed, all six live stores ready.",
+    "completed_at": "2026-11-04T03:12:04.929433300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bac78747db8e4af6a09bc9063dc75ef9": {
+        "activity_id": "bac78747db8e4af6a09bc9063dc75ef9",
+        "task_id": "01a1a322-8fc8-70b0-be1c-d9d66d67dfe5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f3c9474091ed46868894f5599b164ad0"
+      },
+      "f3c9474091ed46868894f5599b164ad0": {
+        "activity_id": "f3c9474091ed46868894f5599b164ad0",
+        "task_id": "01a1a322-8fc8-70b0-be1c-d9d66d67dfe5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ea74e974dae04187b56ab46c9437293b"
+      }
+    }
+  }
+}

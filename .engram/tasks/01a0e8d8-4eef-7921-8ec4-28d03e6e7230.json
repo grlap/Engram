@@ -1,0 +1,65 @@
+{
+  "id": "01a0e8d8-4eef-7921-8ec4-28d03e6e7230",
+  "external_ref": null,
+  "title": "The doctor takes about 30 s on the TermAl store, which is far smaller than the Engram store that takes 17 s, so some check scales with something other than row count",
+  "outcome": "The doctor takes about 30 s on the TermAl store, which is far smaller than the Engram store that takes 17 s, so some check scales with something other than row count",
+  "acceptance": [
+    "A read-only profile of `engram doctor` on the live TermAl store names the check or query that dominates its time and why it scales worse there than on the Engram store (for example note count per item, migrated note bodies, FTS probes per memory head, or protocol-attempt rows)",
+    "After the fix, the doctor's time on the TermAl store is proportionate to the Engram store's for the same checks (measured read-only on both, before and after, on the same installed build, numbers quoted on this item), with no check removed or weakened",
+    "The regression is covered by a test or a documented measurement procedure in docs/development.md"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "doctor",
+    "migration",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The doctor checks the work catalog's FTS index with one read-only PRAGMA integrity_check instead of a per-item whole-text phrase MATCH; TermAl's doctor dropped from about 33 s to 2.6 s on fixed backups (Engram 18-19 s); measurement procedure in docs/development.md; landed as add384a and installed as build 5a81658bd1e9",
+    "completed_at": "2026-09-29T10:30:52.767177100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "46296c75a2ae462291ccacf902e1a1f6": {
+        "activity_id": "46296c75a2ae462291ccacf902e1a1f6",
+        "task_id": "01a0e8d8-4eef-7921-8ec4-28d03e6e7230",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a4e10fc448c747ab97a863d4c312fbea"
+      },
+      "46382d3befa9498ab4bd814549e53a61": {
+        "activity_id": "46382d3befa9498ab4bd814549e53a61",
+        "task_id": "01a0e8d8-4eef-7921-8ec4-28d03e6e7230",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "46382d3befa9498ab4bd814549e53a61"
+      }
+    }
+  }
+}

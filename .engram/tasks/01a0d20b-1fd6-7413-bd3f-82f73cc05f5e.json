@@ -1,0 +1,53 @@
+{
+  "id": "01a0d20b-1fd6-7413-bd3f-82f73cc05f5e",
+  "external_ref": null,
+  "title": "Emit control_binding as explicit null in work focus and next once TermAl tolerates it",
+  "outcome": "Every host read of an item carries control_binding explicitly, so a missing key never has to be interpreted",
+  "acceptance": [
+    "Landed only after TermAl confirms its null-tolerant binding reader (its step 3, or a separate small TermAl commit Greg approves) is installed",
+    "Tests pin the explicit null for a non-holder on focus and next",
+    "The CLI and control-plane docs describe the explicit null; the full quality gates pass",
+    "`work core focus` and the focus nested in `work core next` always carry control_binding: the live claim's binding, or an explicit null when the caller holds no live claim; null and an absent key never mean different things"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Core focus, nested next and inspect emit exactly one control_binding object or explicit null; inspect retains complete focus and public accessors, with preserved bind eligibility, byte fitting and historical absent-key reads. Docs updated; full gate, required independent Codex/Kimi pair and independent acceptance4/4 passed. Installed clean release and pushed verified origin/master.",
+    "completed_at": "2026-10-07T06:28:55.414985300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c055af4285904be185749aaddf99937d": {
+        "activity_id": "c055af4285904be185749aaddf99937d",
+        "task_id": "01a0d20b-1fd6-7413-bd3f-82f73cc05f5e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d30da6c875284a98a02b1b4b093b9310"
+      }
+    }
+  }
+}

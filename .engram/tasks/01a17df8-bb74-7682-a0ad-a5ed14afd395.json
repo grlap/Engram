@@ -1,0 +1,79 @@
+{
+  "id": "01a17df8-bb74-7682-a0ad-a5ed14afd395",
+  "external_ref": null,
+  "title": "Let a projection-cutover changeset land under the standing approval, keeping the consumer stop and restart as Greg's acts",
+  "outcome": "Let a projection-cutover changeset land under the standing approval, keeping the consumer stop and restart as Greg's acts",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (identical) no longer list 'a store needs projection repair' among the cases that stop a standing-approval landing; migration still stops it",
+    "The standing-approval readiness condition accepts a live store reporting projection_repair_required, and the text states that stopping and restarting the consumers stays Greg's act at a coordinator-agreed moment, with the build installed only inside that stopped window",
+    "Landed under the authority-text procedure: both coordinators' concurrence on the exact wording recorded on this item, Greg sent the exact wording and its consequence, the final-diff audit recorded as passed, the link and AGENTS/CLAUDE identity checks passed, and a clean Codex+Claude pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "agent-instructions",
+    "authority",
+    "delivered",
+    "evaluation-pending",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Projection-cutover standing-approval wording was delivered in e7b8bc9d18b1b6f6e298a263f65b5f6bb419251a, with audited Codex/Claude R2 and passing exact-tree link/identity checks. Closing the delivered planning record from its existing evidence under Fable803; current restart-driven clarifications remain authoritative.",
+    "completed_at": "2026-11-04T06:01:53.907044900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1188a8c0c78042e68f8f137412cf356c": {
+        "activity_id": "1188a8c0c78042e68f8f137412cf356c",
+        "task_id": "01a17df8-bb74-7682-a0ad-a5ed14afd395",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "beb1e60cd84a4ae28af0cfb650451194"
+      },
+      "2fa2b5855ec04dc3aebfedfc7fa1bb28": {
+        "activity_id": "2fa2b5855ec04dc3aebfedfc7fa1bb28",
+        "task_id": "01a17df8-bb74-7682-a0ad-a5ed14afd395",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b6a6ab930d804835a6b49e70eadb9c5d"
+      },
+      "c524e0954f674fde8d9a7ab30291e6bc": {
+        "activity_id": "c524e0954f674fde8d9a7ab30291e6bc",
+        "task_id": "01a17df8-bb74-7682-a0ad-a5ed14afd395",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "2fa2b5855ec04dc3aebfedfc7fa1bb28"
+      }
+    }
+  }
+}

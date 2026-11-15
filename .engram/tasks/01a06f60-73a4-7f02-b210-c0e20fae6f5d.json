@@ -1,0 +1,51 @@
+{
+  "id": "01a06f60-73a4-7f02-b210-c0e20fae6f5d",
+  "external_ref": null,
+  "title": "Require exact-current canonical Revised field metadata",
+  "outcome": "Both reviewers found that the new defaulted Revised fields vector silently accepts prior-build canonical event shapes and renders a generic fallback. Preserve schema marker 1 while refusing incompatible durable shapes before mutation rather than adding compatibility.",
+  "acceptance": [
+    "A runtime-derived missing-fields canonical event fixture is refused before mutation with the generic different-build behavior; current revised events retain per-field history."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-1bbc-7412-892a-797f681ae314",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Per Fable ruling 567, new persisted Revised metadata was removed entirely. Field words are derived uniformly from adjacent verified canonical planning snapshots; first-native restored revisions use the immutable restore record. Coverage passes for all eight changed fields, older snapshots outside the displayed tail, no-op revisions, absent extra metadata and healthy stores.",
+    "completed_at": "2026-09-05T02:53:39.209584500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8df20ab391c40bc53ab692ffe3cd8461eebcfb4fbbaa9808cc38436de8b319e1": {
+        "activity_id": "8df20ab391c40bc53ab692ffe3cd8461eebcfb4fbbaa9808cc38436de8b319e1",
+        "task_id": "01a06f60-73a4-7f02-b210-c0e20fae6f5d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "25b78f4e0bcd63c1b6dba87c3a08f591fb9e2ba62fb085379cd3b9eaa5788ba6"
+      }
+    }
+  }
+}

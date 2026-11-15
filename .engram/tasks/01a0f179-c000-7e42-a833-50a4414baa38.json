@@ -1,0 +1,53 @@
+{
+  "id": "01a0f179-c000-7e42-a833-50a4414baa38",
+  "external_ref": null,
+  "title": "Give a host a read-only, claim-scoped read of a named root's lifecycle for an old claim",
+  "outcome": "Give a host a read-only, claim-scoped read of a named root's lifecycle for an old claim",
+  "acceptance": [
+    "A host session bound to the same project and store can read, for a named old run and claim, in one snapshot: those identities after their canonical association is validated, the claim and run lifecycle, the derived named-root state, the latest real root event's identity, position and generation (also when the derived state is none), and the run-feed read cut",
+    "Tests cover released, completed, ended, re-named at a higher generation, and still-bound-with-holder-gone claims, and a claim that does not belong to the named run; the host contract section documents the operation",
+    "The read reuses the existing named-root state derivation, mutates nothing, synthesizes no binding receipt, needs no live holder, and never reports a still-bound root as ended because its holder is gone; a refused or failed read is distinguishable from state none"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "named-root"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The host-private control channel has named_root_read (routing_token, run_id, claim_id). Any bound host session of the project reads any run and claim from one snapshot: the identities, the run's state and generation, the claim's stored lifecycle, the derived named_root state, the claim's newest recorded root event by its real id and position, and the read cut. It writes nothing, needs no live holder, never reads an expired holder as ended, refuses unknown, foreign or mismatched ids with named_root_read_refused, and reports a damaged run row as a storage error. The selector now keeps the event id. 12 Rust tests plus a real-process round trip; docs updated. Landed 93e66aa after two rounds (round 1 Lows and Note fixed; round 2 clean). Full gate test-7c50632c passed 9/9; readiness ready on 4 stores; the independent evaluation passed 3/3. TermAl consumes it in w-38baa9b769e3.",
+    "completed_at": "2026-10-01T03:29:19.164954300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "67bce6dc2a3b45b89f725199a0a718c2": {
+        "activity_id": "67bce6dc2a3b45b89f725199a0a718c2",
+        "task_id": "01a0f179-c000-7e42-a833-50a4414baa38",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "023f319c22f74b52b7361f0ee5eeac1e"
+      }
+    }
+  }
+}

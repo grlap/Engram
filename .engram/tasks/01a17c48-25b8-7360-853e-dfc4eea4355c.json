@@ -1,0 +1,29 @@
+{
+  "id": "01a17c48-25b8-7360-853e-dfc4eea4355c",
+  "external_ref": null,
+  "title": "Name the note search index, not the catalog index, in repair and restore errors about it",
+  "outcome": "Name the note search index, not the catalog index, in repair and restore errors about it",
+  "acceptance": [
+    "When projection repair finds work_note_fts invalid, its error names work_note_fts rather than work_catalog_fts (src/storage/work/schema.rs repair wrapper)",
+    "A graph-snapshot restore collision on work_note_fts names that table rather than the catalog FTS (src/storage/work/graph_snapshot/load.rs)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "diagnostics",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

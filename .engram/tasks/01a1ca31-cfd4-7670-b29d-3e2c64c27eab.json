@@ -1,0 +1,53 @@
+{
+  "id": "01a1ca31-cfd4-7670-b29d-3e2c64c27eab",
+  "external_ref": null,
+  "title": "Refuse foreign-only evidence consumption as a successful local replay",
+  "outcome": "Only a genuine locally attached consumption can produce a successful idempotent local-use replay receipt.",
+  "acceptance": [
+    "Retrying the exact asserted request/project/session/actor of a retained foreign-only consumption refuses before a successful local replay receipt; no native evidence, feed or run credit is installed.",
+    "A behavioral regression retains an ImportedConsumption original and retries its fields, checks refusal and unchanged canonical/native state, and preserves exact genuine local replay with intact run-feed/evidence membership."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review-follow-up",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Refuse successful local replay for retained foreign-only consumption through the existing imported-only boundary, while preserving genuine local replay. Both foreign proof-kind regressions now pass, with unchanged canonical/native state; formatting, strict Clippy and all25 consumption tests passed on candidate b84d657f. Independent evaluation fa859000a3f7419a8148b5223cc818b0 passed both criteria on that unchanged input.",
+    "completed_at": "2026-11-11T11:23:37.461585300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4460fd413c994a70979548c9d983c2b7": {
+        "activity_id": "4460fd413c994a70979548c9d983c2b7",
+        "task_id": "01a1ca31-cfd4-7670-b29d-3e2c64c27eab",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "497fe6ef86bc418ab341dcab9d6a5c2d"
+      }
+    }
+  }
+}

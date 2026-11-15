@@ -1,0 +1,51 @@
+{
+  "id": "01a10d93-7127-7913-a6fc-1a13f3bcfc6c",
+  "external_ref": null,
+  "title": "Isolate the doctor landing test Git fixture from inherited repository environment",
+  "outcome": "Isolate the doctor landing test Git fixture from inherited repository environment",
+  "acceptance": [
+    "The doctor landing test Git helper clears inherited repository-local Git environment variables and sets a fixture ceiling, so init, add, commit and worktree fixture commands remain confined to their named scratch repositories.",
+    "A regression or bounded execution with inherited Git routing variables proves fixture setup succeeds within the scratch repository without affecting another checkout."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-workflow",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Isolated doctor test Git commands from inherited routing and format settings using a resolved fixture ceiling, with a hostile-environment regression proving fixture success and an unchanged victim checkout.",
+    "completed_at": "2026-10-06T00:38:23.406516900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4426f1f64bd24aeba779b8d2b5696437": {
+        "activity_id": "4426f1f64bd24aeba779b8d2b5696437",
+        "task_id": "01a10d93-7127-7913-a6fc-1a13f3bcfc6c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "502e637947fd4ad9b0f40ac170bee630"
+      }
+    }
+  }
+}

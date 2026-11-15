@@ -1,0 +1,50 @@
+{
+  "id": "01a0f2ff-8179-7342-8573-d66adbedb3af",
+  "external_ref": null,
+  "title": "Evidence order paragraph calls the same-request environment reference an id; the wire uses an index",
+  "outcome": "Evidence order paragraph calls the same-request environment reference an id; the wire uses an index",
+  "acceptance": [
+    "The Evidence order paragraph of the host integration contract says a same-request environment reference is an index, matching the wire (EnvironmentEvidenceReference::Index, src/domain/control.rs:566-569), with both projects' concurrence on the replacement wording before it lands"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Fixed and landed as b5db805 on master (pushed 2026-09-30T16:06:07Z): the Evidence order paragraph of the host integration contract now reads \"a verification's producer must resolve, by stored id or by an observation id in the same request, and its environment by stored id or by its index in the same request;\" — matching the wire (EnvironmentEvidenceReference::Index, src/domain/control.rs:566-569, resolved at control_runtime.rs:1654; the producer half matches :1330-1339) and the document's own line 551. Both projects concurred on the replacement before it landed (Architect1 mailbox-acbb2383 #32, Termal::Fable2 relayed in #33; routed by Engram::Fable #31 on her ruling mailbox-6f31ef05 #83); round-2 reviewers verified the corrected sentence against the code, clean at every severity. Acceptance evaluation passed fresh on all 1 criteria (independent_session Claude).",
+    "completed_at": "2026-09-30T16:46:32.476629100Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "86a40368d2fd44d2a8b94f6c4b517596": {
+        "activity_id": "86a40368d2fd44d2a8b94f6c4b517596",
+        "task_id": "01a0f2ff-8179-7342-8573-d66adbedb3af",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a76d8b88af664e02b456daf3405fec62"
+      }
+    }
+  }
+}

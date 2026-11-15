@@ -1,0 +1,53 @@
+{
+  "id": "01a0f2f2-27e2-7d41-8789-2a75c412bf1e",
+  "external_ref": null,
+  "title": "Share evaluator affiliation while keeping submission-time parent admission separate",
+  "outcome": "Share evaluator affiliation while keeping submission-time parent admission separate",
+  "acceptance": [
+    "Same-session mark provenance and consume-time author affiliation continue to use the existing shared same_session_ineligibility owner",
+    "Tests reject a sub_agent submitted from an executor or former holder session, allow a distinct child with a currently executing parent at admission, and retain that admitted child record after a legitimate parent handoff without requiring the original parent still hold the run",
+    "admit_identity and staleness share the independent-session affiliation predicate over current holder, executor and holder history; a test records independently, hands this run to that evaluator, and proves done rejects it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Shared independent evaluator affiliation across admission and consumption without changing same-session provenance or submission-time parent admission. Public handoff regressions and affiliation table pass; full gate, independent reviews and all three acceptance criteria pass.",
+    "completed_at": "2026-09-30T18:31:13.349767900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a18e726c37324b468ea179c7ec6256a8": {
+        "activity_id": "a18e726c37324b468ea179c7ec6256a8",
+        "task_id": "01a0f2f2-27e2-7d41-8789-2a75c412bf1e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f43a83b9046b4baa94ff84bcffb5790e"
+      }
+    }
+  }
+}

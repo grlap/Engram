@@ -1,0 +1,50 @@
+{
+  "id": "01a08559-f6c4-7df3-a0ac-b98442c375e2",
+  "external_ref": null,
+  "title": "Documented child option inheritance in plan admission has no test that fails without it",
+  "outcome": "Documented child option inheritance in plan admission has no test that fails without it",
+  "acceptance": [
+    "A plan with a non-default root priority, labels, kind and external ref asserts the stored child rows, and removing the inheritance branch fails that test"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Atomic-plan test stores inherited and explicit child options on real rows; removing the omitted-priority overwrite or parent-label merge fails that test. Production planning files unchanged.",
+    "completed_at": "2026-09-12T02:26:02.710947800Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e699e7751ec763baacebac1534e5a533cffc92f9aa89828c9e478416dd7e9502": {
+        "activity_id": "e699e7751ec763baacebac1534e5a533cffc92f9aa89828c9e478416dd7e9502",
+        "task_id": "01a08559-f6c4-7df3-a0ac-b98442c375e2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ce8789aca0cb459609912db8431f40770e4e9448eab395632eab356fcea378ef"
+      }
+    }
+  }
+}

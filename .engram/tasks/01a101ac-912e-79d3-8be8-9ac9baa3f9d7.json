@@ -1,0 +1,28 @@
+{
+  "id": "01a101ac-912e-79d3-8be8-9ac9baa3f9d7",
+  "external_ref": null,
+  "title": "Name the before and after compiled checks explicitly in the authority audit procedure",
+  "outcome": "Name the before and after compiled checks explicitly in the authority audit procedure",
+  "acceptance": [
+    "The authority audit procedure explicitly requires the before and after compiled host checks, and describes the repository script as their reference implementation rather than a substitute."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

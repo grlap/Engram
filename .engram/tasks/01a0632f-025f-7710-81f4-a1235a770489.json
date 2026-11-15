@@ -1,0 +1,61 @@
+{
+  "id": "01a0632f-025f-7710-81f4-a1235a770489",
+  "external_ref": null,
+  "title": "Synchronize project-memory schema and operational documentation",
+  "outcome": "Synchronize project-memory schema and operational documentation",
+  "acceptance": [
+    "Spec and briefs cover project_key, memory tools, five next sections, discardable advertisement repair, and CLI stack rationale"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f8b3-7f12-82d3-8c7840907a84",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Project-memory schema, operational briefs, agent instructions, and CLI stack documentation are synchronized.",
+    "completed_at": "2026-09-02T17:37:49.368527400Z",
+    "actor": {
+      "actor_id": "codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "40d311df076f075a9b7e2118635e967565dd282d3cba89aedeab13346bde401b": {
+        "activity_id": "40d311df076f075a9b7e2118635e967565dd282d3cba89aedeab13346bde401b",
+        "task_id": "01a0632f-025f-7710-81f4-a1235a770489",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "fable",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "586c0edbe87c7e5f8d679d39c9ea523aaeef845238f71234add65e58bed204ff"
+      },
+      "db211657ac6cefdd48c890b7af97adf0c1979779f169c0cceedc49c9434e253a": {
+        "activity_id": "db211657ac6cefdd48c890b7af97adf0c1979779f169c0cceedc49c9434e253a",
+        "task_id": "01a0632f-025f-7710-81f4-a1235a770489",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6e0fa27acd10b10a520b34d8fb737e69db9b6c8f843e054dfb590ecf11c869c9"
+      }
+    }
+  }
+}

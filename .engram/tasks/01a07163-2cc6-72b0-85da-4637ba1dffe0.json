@@ -1,0 +1,63 @@
+{
+  "id": "01a07163-2cc6-72b0-85da-4637ba1dffe0",
+  "external_ref": null,
+  "title": "Make detach refusal remedies executable and explicit",
+  "outcome": "Make detach refusal remedies executable and explicit",
+  "acceptance": [
+    "Multi-blocker and future-deferral refusals name accurate reasons and runnable inspection or resolution commands"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0701e-3d2f-7432-a0e9-366cdba19e56",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered runnable detach remedies: single-blocker unblock, multiple-blocker inspection, deferred wait or reschedule with inspection. Both reviewers accepted landed behavior.",
+    "completed_at": "2026-09-05T15:02:50.612399300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5c3d4e86ce2463f181824dab9262051350d3eea79fa84f00d34fdb0dc00bcfef": {
+        "activity_id": "5c3d4e86ce2463f181824dab9262051350d3eea79fa84f00d34fdb0dc00bcfef",
+        "task_id": "01a07163-2cc6-72b0-85da-4637ba1dffe0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5c3d4e86ce2463f181824dab9262051350d3eea79fa84f00d34fdb0dc00bcfef"
+      },
+      "89a5f40f86bebaa0c223b8d276c7873f4b9e58a6f83ace01f226a6bd23353f78": {
+        "activity_id": "89a5f40f86bebaa0c223b8d276c7873f4b9e58a6f83ace01f226a6bd23353f78",
+        "task_id": "01a07163-2cc6-72b0-85da-4637ba1dffe0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "25ea374d8d3daac62c313596487a378e87751d111a008760050af6cbd2036dd9"
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a06fde-f44f-70a3-aeb2-b8e424eefcb1",
+  "external_ref": null,
+  "title": "Holder note and gate on a large item take ~14 s and show ~4.5 s on the live store",
+  "outcome": "Holder note and gate on a large item take ~14 s and show ~4.5 s on the live store",
+  "acceptance": [
+    "on the live Engram store's root item (274 notes, 26k work records) a holder note, a gate record, and show each complete well under one second; the mutation path is profiled and the O(n) step (canonical event or evidence loading per mutation, catalog refresh, or projection verification) is bounded by an index or a cut, with a scale-gate decode budget pinning it; no verification weakened"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Readiness now uses indexed current bindings instead of replaying proofs for every hint; completion and doctor retain exhaustive proof checks. Counter regressions, exact refusal and rollback tests, nine gates and paired closure accepted. Coordinator reports installed live-root show 140 ms, next 172 ms and note 350 ms.",
+    "completed_at": "2026-09-05T08:27:20.053221500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2c80c42d7ec69ed526cb6f26e5e5ae3e57c1bcd7a0679f972066317c65029786": {
+        "activity_id": "2c80c42d7ec69ed526cb6f26e5e5ae3e57c1bcd7a0679f972066317c65029786",
+        "task_id": "01a06fde-f44f-70a3-aeb2-b8e424eefcb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9c328ba9cac5ac00383db1638d2e8223bc4cb1726d7cbb3b5c56e9283cdb481b"
+      }
+    }
+  }
+}

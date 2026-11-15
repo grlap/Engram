@@ -1,0 +1,28 @@
+{
+  "id": "01a186d1-0e9f-7572-803b-6a0b27e112b3",
+  "external_ref": null,
+  "title": "Separate landing from completion: replace condition 3 with the shared \"Autonomous landing and completion\" rule in AGENTS.md and CLAUDE.md",
+  "outcome": "Separate landing from completion: replace condition 3 with the shared \"Autonomous landing and completion\" rule in AGENTS.md and CLAUDE.md",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md replace the standing approval's condition 3 paragraph with the exact concurred \"Autonomous landing and completion\" v2 text (Architect3 mailbox #76), byte-identical in both files",
+    "Greg's recorded word authorizing the widened timing carve-out is quoted verbatim with its source on this item before landing, and the final-diff authority audit records conditions (a), (b) and (c)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "agent-instructions",
+    "authority"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

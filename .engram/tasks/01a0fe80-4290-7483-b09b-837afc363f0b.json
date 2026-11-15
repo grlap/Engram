@@ -1,0 +1,51 @@
+{
+  "id": "01a0fe80-4290-7483-b09b-837afc363f0b",
+  "external_ref": null,
+  "title": "Defined deadline and cancellation semantics for backup push and capture that a host can rely on",
+  "outcome": "Defined deadline and cancellation semantics for backup push and capture that a host can rely on",
+  "acceptance": [
+    "docs/host-checklist.md and docs/features/cli-and-mcp.md state, as a contract a host can build a trigger on:\n- the capture and transport deadlines of `engram backup push` and their defaults;\n- the flags that set them;\n- what happens at each deadline: which work stops, what is left pending, and the exit code;\n- how a host cancels a running push, and what a cancelled push leaves behind and how the next push resolves it.\nA test covers each stated cancellation and deadline outcome that is not already covered.",
+    "The contract is sent to TermAl's coordinator, and the item's notes record the mailbox sequence and TermAl's answer."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "backup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The deadline and cancellation contract of backup push is documented and tested, and TermAl accepted it.\n- Docs: cli-and-mcp.md \"Deadlines and cancelling a push\", host-checklist.md item 4, and the off-host-backup.md wording.\n- Product: push removes record temp files a killed write left, under the lock and only by exact names.\n- Tests: deterministic kills of a real process at 9 named stages, a kill inside VACUUM INTO, abandoned resolution and confirmation, the prepare deadline, zero deadlines, adapter deadline races, and the sweep.\n- TermAl accepted the contract in mailbox-587a65fb sequence 75 (sent as 74).\n- Landed as c72e858: gate test-f627610d passed, round-4 reviews clean, independent evaluation 2/2, readiness ready on all 4 stores, build 084726aea1b9 installed.",
+    "completed_at": "2026-10-02T23:09:31.354620Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "35d5d35342764099a0dbc85052ff55d4": {
+        "activity_id": "35d5d35342764099a0dbc85052ff55d4",
+        "task_id": "01a0fe80-4290-7483-b09b-837afc363f0b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1d9d7816c7d749a8a87946797309d50f"
+      }
+    }
+  }
+}

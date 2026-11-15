@@ -1,0 +1,52 @@
+{
+  "id": "01a0e8f1-5d17-7dc1-a786-94f554b82932",
+  "external_ref": null,
+  "title": "Cancel and supersede leave a live handoff offer open: dispose_work expires only time-expired offers, so an offered row can outlive the item's disposal until its own expiry",
+  "outcome": "Cancel and supersede leave a live handoff offer open: dispose_work expires only time-expired offers, so an offered row can outlive the item's disposal until its own expiry",
+  "acceptance": [
+    "Disposing an item (cancel or supersede) with a live handoff offer either cancels that offer in the same transaction with an audited event, or refuses by name until the offer is cancelled — design review decides which — and a regression test covers cancel and supersede with a live offer",
+    "`show` on the disposed item and on the offer never reports the offer as acceptable after disposal; accepting it is refused by name"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "completion",
+    "handoff",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Cancel, supersede and reject refuse a live handoff offer before disposal effects. Fresh terminal handoff acceptance/cancellation names the disposed item, current agent views hide historical offers, and committed receipts replay unchanged. Full gate passed, independent Codex/Kimi reviews found no Medium-or-higher issue, and independent acceptance passed both criteria. Clean landed binary installed and commit pushed; two Low follow-ups tracked separately.",
+    "completed_at": "2026-10-07T08:36:32.059487800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "680d929885554e9e83bd66d4d379d1f5": {
+        "activity_id": "680d929885554e9e83bd66d4d379d1f5",
+        "task_id": "01a0e8f1-5d17-7dc1-a786-94f554b82932",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b460a301809b4f559c0aabe722405933"
+      }
+    }
+  }
+}

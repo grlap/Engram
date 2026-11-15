@@ -1,0 +1,76 @@
+{
+  "id": "01a1a011-bd47-7ac2-8c41-efec5adad667",
+  "external_ref": null,
+  "title": "Let the test launcher stop a detached run on macOS and Linux, so a superseded remote FULL can be cancelled instead of running to completion",
+  "outcome": "Let the test launcher stop a detached run on macOS and Linux, so a superseded remote FULL can be cancelled instead of running to completion",
+  "acceptance": [
+    "The supported launcher stop cancels a detached focused or full run on macOS and Linux: it ends that run's own process group and records the run as cancelled, without touching processes outside the run",
+    "A test covers stopping a detached run on a POSIX host, and the existing Windows job-supervisor stop behaviour and tests are unchanged",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "remote-runner",
+    "test-tooling"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered supported detached POSIX launcher cancellation with owned-group cleanup and regression coverage; landed the exact reviewed and full-gated candidate on master, pushed and installed it after all six live stores reported ready.",
+    "completed_at": "2026-11-03T14:50:24.400373200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3c13097bfc214a5d9097f1d8c6fae922": {
+        "activity_id": "3c13097bfc214a5d9097f1d8c6fae922",
+        "task_id": "01a1a011-bd47-7ac2-8c41-efec5adad667",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9a241388de1141b29bc2f4245d069e2b"
+      },
+      "b3283e0d661046cb986e7139986d7e2d": {
+        "activity_id": "b3283e0d661046cb986e7139986d7e2d",
+        "task_id": "01a1a011-bd47-7ac2-8c41-efec5adad667",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b4fa2006bcf243ea83c8f2c7f45393e8"
+      },
+      "b4fa2006bcf243ea83c8f2c7f45393e8": {
+        "activity_id": "b4fa2006bcf243ea83c8f2c7f45393e8",
+        "task_id": "01a1a011-bd47-7ac2-8c41-efec5adad667",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b4fa2006bcf243ea83c8f2c7f45393e8"
+      }
+    }
+  }
+}

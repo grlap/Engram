@@ -1,0 +1,149 @@
+{
+  "id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+  "external_ref": null,
+  "title": "engram mcp waits about 11 s after a clean transport close before exiting, on an idle host",
+  "outcome": "engram mcp waits about 11 s after a clean transport close before exiting, on an idle host",
+  "acceptance": [
+    "engram mcp exits within the close check's 30 s budget after stdin EOF, without changing SQLite durability or checkpoint behavior",
+    "The MCP dogfood suite passes in the full gate"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "dogfood",
+    "gate",
+    "mcp",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Implemented MCP shutdown tracing and a 30 s clean-close budget without changing SQLite durability or checkpoint behavior. Full gate passed on freeze d3c1cd1a; independent Codex and Claude reviews had no Medium or higher findings (low follow-ups filed or tracked). Installed release build is ready on all six live stores. Fresh closure evaluation 30913e7d226b46ca8529b7cc277a7635 passed 2/2. Landed and fast-forward pushed to origin/master.",
+    "completed_at": "2026-10-18T16:36:12.492138100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0338ebb1dff948c0b29777c3b8d2f995": {
+        "activity_id": "0338ebb1dff948c0b29777c3b8d2f995",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f53f29bb2bc94b13b1339e5bbfcc2102"
+      },
+      "0942dc0258544b9baeca8343bb72c859": {
+        "activity_id": "0942dc0258544b9baeca8343bb72c859",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0942dc0258544b9baeca8343bb72c859"
+      },
+      "0e1970a1d9024f5eadd23d5f962a500b": {
+        "activity_id": "0e1970a1d9024f5eadd23d5f962a500b",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0e1970a1d9024f5eadd23d5f962a500b"
+      },
+      "2405cca9df224f3e9bccb4bb617ea1d9": {
+        "activity_id": "2405cca9df224f3e9bccb4bb617ea1d9",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "e16b64dca7744af1af6bc2b7e55a730e"
+      },
+      "5752ed7e384b4d199d8ea8a9577a8185": {
+        "activity_id": "5752ed7e384b4d199d8ea8a9577a8185",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5752ed7e384b4d199d8ea8a9577a8185"
+      },
+      "7c01c28e109c4066b0b2eaadaa6f515a": {
+        "activity_id": "7c01c28e109c4066b0b2eaadaa6f515a",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7c01c28e109c4066b0b2eaadaa6f515a"
+      },
+      "b7a270aba0864670b63c2c248ac1cdc8": {
+        "activity_id": "b7a270aba0864670b63c2c248ac1cdc8",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b7a270aba0864670b63c2c248ac1cdc8"
+      },
+      "d1711b18b5ca460895646b2a197032f6": {
+        "activity_id": "d1711b18b5ca460895646b2a197032f6",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d1711b18b5ca460895646b2a197032f6"
+      },
+      "ed3fc4964d9746e4be77312705733e17": {
+        "activity_id": "ed3fc4964d9746e4be77312705733e17",
+        "task_id": "01a13894-a45d-78e3-a193-15b4b5e0a507",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ed3fc4964d9746e4be77312705733e17"
+      }
+    }
+  }
+}

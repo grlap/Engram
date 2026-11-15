@@ -1,0 +1,90 @@
+{
+  "id": "01a0fa18-803f-77e2-bd4c-deb297425d29",
+  "external_ref": null,
+  "title": "A host can durably record a turn it observed without admission, and a workspace change between turns, without inventing a grant",
+  "outcome": "A host that notices a turn only after it started, or a workspace change between turns, records it as a typed, attributed Engram observation that never reads as authorization, keeps unknown causality visible, and enters source-change accounting only where an explicit policy basis makes it eligible.",
+  "acceptance": [
+    "the host-private protocol has an operation that records an observed-but-unadmitted turn and an inter-turn workspace change with no grant, naming the observing host session separately from any actor claimed to have caused the effects, with an explicit observed interval or baseline and the exact run, claim and named-root basis",
+    "no such record creates or implies a grant, a begin transition, or a successful turn status, and every reader that shows it marks it unadmitted, with causality unknown unless the host supplied it",
+    "a recorded change opens source-change obligations only on an eligible unfinished run under an explicitly chosen policy basis; equal-revision reports replay as repeats and finished-run reports stay audit-only, each pinned by a test",
+    "the operation is idempotent under a host-supplied key, and an identical retry returns the same receipt",
+    "behavioral-control-plane.md and cli-and-mcp.md document the operation's wire shape, and TermAl's coordinator confirms the shape meets TermAl w-df1ef323efe9 before implementation starts"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A host records a turn it observed without admission, a workspace change between turns, or an observed check through the host-private execution_observe operation: attributed history that never reads as authorization, with unknown or merely asserted causality kept visible and every check uncredited. Under account_if_eligible, naming the current policy, an eligible reported change enters source-change accounting; otherwise it stays audit-only with a stated reason. Delivered by landing A (0464b68, record and audit) and landing B (02ce59f, accounting); evaluation 99f284d9 passed 5/5.",
+    "completed_at": "2026-10-02T07:44:32.933925900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3b3bbd509cbe4e9dac329ad2debee2d1": {
+        "activity_id": "3b3bbd509cbe4e9dac329ad2debee2d1",
+        "task_id": "01a0fa18-803f-77e2-bd4c-deb297425d29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3b3bbd509cbe4e9dac329ad2debee2d1"
+      },
+      "44371becafc341ffaa92a7fe3075653c": {
+        "activity_id": "44371becafc341ffaa92a7fe3075653c",
+        "task_id": "01a0fa18-803f-77e2-bd4c-deb297425d29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "619eaeca90794295a4f1718990188787"
+      },
+      "783f84f92bf043878bcd447a68145702": {
+        "activity_id": "783f84f92bf043878bcd447a68145702",
+        "task_id": "01a0fa18-803f-77e2-bd4c-deb297425d29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "a8657f9f57494fe5a03793c3cc6af46a"
+      },
+      "cddbe3891a8f4667bf57cf7e3f36daed": {
+        "activity_id": "cddbe3891a8f4667bf57cf7e3f36daed",
+        "task_id": "01a0fa18-803f-77e2-bd4c-deb297425d29",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7d5b7bf096854f9a990342581586c7a5"
+      }
+    }
+  }
+}

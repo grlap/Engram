@@ -1,0 +1,27 @@
+{
+  "id": "01a19ac4-5fbc-7173-bc20-351df204d735",
+  "external_ref": null,
+  "title": "Update planned task-sync reconciliation to use claims and ordinary receipts",
+  "outcome": "Update planned task-sync reconciliation to use claims and ordinary receipts",
+  "acceptance": [
+    "The planned reconciliation text in docs/spec.md and docs/features/git-task-sync.md uses ordinary claims, work-session associations and exact-key receipt retry, and no longer depends on removed turn admission, grants, checkpoints or begin/evaluate requests; it preserves uncertain request identity and independent host-action authority"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "documentation",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a10ff2-590d-73b1-9fc0-524b15d690c5",
+  "external_ref": null,
+  "title": "The control-plane doc calls operational records immutable while live, but a grant row's state changes",
+  "outcome": "The control-plane doc calls operational records immutable while live, but a grant row's state changes",
+  "acceptance": [
+    "docs/features/behavioral-control-plane.md no longer says operational records or grants are immutable while live without qualification, in its \"Durable control records\" section or in its \"Evaluate a turn\" grant paragraph; it says which part is immutable (the grant's intent binding, grant_json) and that a grant row's state moves issued, begun, completed or expired or superseded",
+    "That grant paragraph no longer says a begun grant stays durable only until checkpoint (grants stay stored in every state; nothing prunes them), nor that grant supersession emits a canonical event (a supersession is recorded in the operational supersession table)",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 240e4c7 on master, in the crl changeset. behavioral-control-plane.md no longer calls operational records or grants immutable while live, in either \"Durable control records\" or the \"Evaluate a turn\" grant paragraph:\n- A grant's intent binding (grant_json) is immutable, while its row's state moves from issued to begun and completed, or to expired or superseded.\n- Grants stay stored in every state.\n- A supersession is an operational record, not a canonical event.\n\nAcceptance is revision 2, which Fable accepted. Evaluation 13bad804 passed 3/3.",
+    "completed_at": "2026-10-06T08:16:42.359865200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f59b1296a9124257b73391052a032bc7": {
+        "activity_id": "f59b1296a9124257b73391052a032bc7",
+        "task_id": "01a10ff2-590d-73b1-9fc0-524b15d690c5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3a94d3b902484835bfcbba46e8e842e1"
+      }
+    }
+  }
+}

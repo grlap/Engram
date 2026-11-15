@@ -1,0 +1,30 @@
+{
+  "id": "01a19b7a-b18d-7c62-8ecd-857adc797c83",
+  "external_ref": null,
+  "title": "Canonicalize cutover home paths before deriving the Windows mutex",
+  "outcome": "Make supported apply, recovery and rollback commands targeting the same store home share one named Windows mutex regardless of a trailing directory separator.",
+  "acceptance": [
+    "Home paths with and without a trailing separator produce the same mutex identity for apply and journal-based recovery or rollback.",
+    "Path-root semantics remain valid and distinct store homes do not share a mutex.",
+    "Regression coverage proves competing supported commands for equivalent home spellings serialize or refuse consistently."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "cutover",
+    "review-followup",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

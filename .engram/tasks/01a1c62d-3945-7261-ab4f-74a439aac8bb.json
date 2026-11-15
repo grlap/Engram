@@ -1,0 +1,28 @@
+{
+  "id": "01a1c62d-3945-7261-ab4f-74a439aac8bb",
+  "external_ref": null,
+  "title": "Reselect imported consumption bindings inside the completion writer",
+  "outcome": "Reselect imported consumption bindings inside the completion writer",
+  "acceptance": [
+    "Completion compares its in-writer selected imported-consumption set against the measured set and refuses stale measurement before accepting unvalidated currency/source.",
+    "A coordinated connection interleaving regression covers late consumption while preserving existing exact completion replay."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review-follow-up"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

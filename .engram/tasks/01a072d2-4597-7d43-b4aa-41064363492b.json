@@ -1,0 +1,51 @@
+{
+  "id": "01a072d2-4597-7d43-b4aa-41064363492b",
+  "external_ref": null,
+  "title": "Reconcile compact note omissions when rendering full notes",
+  "outcome": "Reconcile compact note omissions when rendering full notes",
+  "acceptance": [
+    "full_notes_replace_only_the_compact_note_budget_contribution passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a072a6-7488-76a1-ab0b-9032f25d9ff4",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Full-note replacement reconciles only obsolete note omissions while preserving child/history omissions; regressions and clean review landed.",
+    "completed_at": "2026-09-05T19:35:23.344339700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9514b86f2b6d07e330a5d72c0080f16ab5a6f78d53395b301dffd8473fe81f04": {
+        "activity_id": "9514b86f2b6d07e330a5d72c0080f16ab5a6f78d53395b301dffd8473fe81f04",
+        "task_id": "01a072d2-4597-7d43-b4aa-41064363492b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0afd7a19043c224d82079f6e86ad97dca99fa4eda9a99a295e685b7e460c506e"
+      }
+    }
+  }
+}

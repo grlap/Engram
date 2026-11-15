@@ -1,0 +1,27 @@
+{
+  "id": "01a1286c-87b4-7491-9472-56f74bbbf0a5",
+  "external_ref": null,
+  "title": "A backup capture with a 1.5 s deadline took 12.45 s against a locked store during a full gate",
+  "outcome": "A backup capture with a 1.5 s deadline took 12.45 s against a locked store during a full gate",
+  "acceptance": [
+    "backup::tests::capture_deadline_bounds_a_wait_for_a_locked_store stays under its bound on repeated runs, including under concurrent build load, or the cause of the overrun is identified and fixed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "backup",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a1286c-a449-70d2-b3c9-a5e60f1e2698",
+  "disposal_reason": "Duplicate: Engram::Coder filed w-a5e60f1e2698 for the same test-e4815929 backup deadline overrun at the same minute; that item keeps the diagnosis",
+  "completion": null
+}

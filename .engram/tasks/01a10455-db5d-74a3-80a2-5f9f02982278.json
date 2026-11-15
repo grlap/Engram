@@ -1,0 +1,50 @@
+{
+  "id": "01a10455-db5d-74a3-80a2-5f9f02982278",
+  "external_ref": null,
+  "title": "DisplayIdentity::author labels a record \"you\" when its session and actor id match but its actor kind differs",
+  "outcome": "DisplayIdentity::author labels a record \"you\" when its session and actor id match but its actor kind differs",
+  "acceptance": [
+    "A record whose session id and actor id equal the reader's but whose actor kind differs is not labelled \"you\"; a test covers it, and the existing same-session and peer labels are unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 4,
+  "labels": [
+    "area-agent-ux",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A record whose session and actor id equal the reader's but whose actor kind differs is no longer labelled \"you\": author() also requires the agent kind the words and host channel record with, and the kind is carried through changes, history, notes, evaluator, status, record windows and next's note rows; other labels unchanged. Landed in b3fd3a2 (bundle 10 changeset 1).",
+    "completed_at": "2026-10-04T21:29:17.129779900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7c9a5725ec3f49bdb711d6c7f41250ad": {
+        "activity_id": "7c9a5725ec3f49bdb711d6c7f41250ad",
+        "task_id": "01a10455-db5d-74a3-80a2-5f9f02982278",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "383d4f0b17e64e01b99bf2396982c26d"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a07216-8281-72a1-847f-2d608a4fe4e0",
+  "external_ref": null,
+  "title": "Stop stranding deferred findings beneath work that then completes: done names remaining open optional children with the detach remedy, and the review workflow files deferred findings as independent roots with provenance",
+  "outcome": "Stop stranding deferred findings beneath work that then completes: done names remaining open optional children with the detach remedy, and the review workflow files deferred findings as independent roots with provenance",
+  "acceptance": [
+    "done on an item with open optional children prints each remaining child with the exact detach command as its remedy, without blocking completion",
+    "the review-changes workflow and the repo skill file findings the implementer will not fix in the slice as independent roots carrying a provenance note naming the reviewed item, never as children of it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "process"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered bounded optional-child completion summaries with exact remaining counts and admitted detach or resolve-first guidance, plus independent-root provenance rules for deferred review findings. Gates and pair review accepted; landed and installed.",
+    "completed_at": "2026-09-05T20:14:45.103889600Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ed933f3e5c22be7ff5ecd0244609408f1eb27adf2abb602385d55ea5263f25e2": {
+        "activity_id": "ed933f3e5c22be7ff5ecd0244609408f1eb27adf2abb602385d55ea5263f25e2",
+        "task_id": "01a07216-8281-72a1-847f-2d608a4fe4e0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "09ca968981d7b1402ea072bd695f7fe055103483efb5066f5490450f1e3234dc"
+      }
+    }
+  }
+}

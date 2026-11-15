@@ -1,0 +1,28 @@
+{
+  "id": "01a16ef1-d44c-7e72-b9b8-06a2222390f3",
+  "external_ref": null,
+  "title": "Cover MCP write transaction diagnostics and cached-store mutex wiring end to end",
+  "outcome": "Cover MCP write transaction diagnostics and cached-store mutex wiring end to end",
+  "acceptance": [
+    "An ordinary MCP diagnostics test sends a real write word through McpServer::call_tool with full capture and asserts a work_mutation transaction record carrying the observed request ID/sequence and selected-store fingerprint, plus a cached-store mutex observation from the service path."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "diagnostics",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

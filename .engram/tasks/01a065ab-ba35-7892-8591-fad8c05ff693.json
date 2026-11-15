@@ -1,0 +1,50 @@
+{
+  "id": "01a065ab-ba35-7892-8591-fad8c05ff693",
+  "external_ref": null,
+  "title": "Compact label shedding can grow the receipt and evict more navigation rows",
+  "outcome": "Every label-shedding step is strictly size-reducing, batched to avoid repeated whole-receipt serialization, and covered by the realistic single-short-label case",
+  "acceptance": [
+    "a verbs regression proves label shedding never grows pretty JSON and preserves rows when dropping labels is sufficient"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-36e4-7e13-bd8b-671b1bb1ff31",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Compact label shedding now only accepts emitted-size reductions, omits empty label arrays, preserves navigation titles and rows, and is covered by focused and full gates plus frozen review.",
+    "completed_at": "2026-09-03T05:43:20.931883200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fef355210ea9c3ed95ea11394ba3abec836063dc7c8979930380ac0061320cff": {
+        "activity_id": "fef355210ea9c3ed95ea11394ba3abec836063dc7c8979930380ac0061320cff",
+        "task_id": "01a065ab-ba35-7892-8591-fad8c05ff693",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3a7853be99911817452046f6060b5698ec5a8f08aef0d31075808c64d2b3e302"
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "id": "01a14c9a-eb07-7321-89e8-2821ed9a12ff",
+  "external_ref": null,
+  "title": "Cover control expiry on lifecycle and read operations and retain generic lifecycle BEGIN-busy errors",
+  "outcome": "Cover control expiry on lifecycle and read operations and retain generic lifecycle BEGIN-busy errors",
+  "acceptance": [
+    "Add deterministic control-frame expiry cases for named_root_bind, session_status and at least one read operation, asserting typed refusal before dispatch and unchanged store state.",
+    "Add a lifecycle BEGIN-busy regression showing it retains generic storage_error rather than control_store_busy; keep the existing turn-operation certification behavior and all assertions."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Test-only coverage for control-request expiry on lifecycle and read operations, and for the generic lifecycle BEGIN-busy error. expired_lifecycle_and_read_frames_are_refused_before_dispatch shows that expired named_root_bind (a generation-0 frame that fails validation before any transaction), session_status (refused before its transaction opens) and turn_grant_read frames get control_request_expired and leave the store unchanged, while the same frames in time reach each operation's own answer. lifecycle_begin_busy_keeps_the_generic_storage_error shows that a busy BEGIN on the lifecycle named_root_bind keeps storage_error with the \"database is locked\" text and no no-change claim; turn operations and (since w-b64c) session_status keep control_store_busy. Full gate test-c5e6dd97 passed 12/12 on freeze 76778a9a. Two review rounds: round-1 Lows fixed; round-2 Codex clean and Claude's Low filed as w-32f5a7e983ec. Evaluations d85e154d and closure ae7f0de5 passed 2/2. Landed as 5b274201 and installed as build ddadeabe790e; all six live stores ready.",
+    "completed_at": "2026-10-18T20:43:57.034503900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3116027aa8d94fe9b0746b572f401c06": {
+        "activity_id": "3116027aa8d94fe9b0746b572f401c06",
+        "task_id": "01a14c9a-eb07-7321-89e8-2821ed9a12ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3116027aa8d94fe9b0746b572f401c06"
+      },
+      "a47f9748909c4851b6aa78071df0c613": {
+        "activity_id": "a47f9748909c4851b6aa78071df0c613",
+        "task_id": "01a14c9a-eb07-7321-89e8-2821ed9a12ff",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "207ac1f5239e4a73a724813a3335c156"
+      }
+    }
+  }
+}

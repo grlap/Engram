@@ -1,0 +1,28 @@
+{
+  "id": "01a14d7a-cf98-73a2-84aa-aedfbdd455c2",
+  "external_ref": null,
+  "title": "Document all MCP shutdown trace stages and retained-owner limits",
+  "outcome": "Document all MCP shutdown trace stages and retained-owner limits",
+  "acceptance": [
+    "The shutdown trace documentation lists the two store_owner_drop stages, accurately describes which stages occur after the close flush, and states that these stages measure retained-owner release rather than guaranteeing final SQLite connection closure."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "mcp",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

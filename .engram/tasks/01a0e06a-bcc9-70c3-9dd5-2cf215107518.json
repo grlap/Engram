@@ -1,0 +1,54 @@
+{
+  "id": "01a0e06a-bcc9-70c3-9dd5-2cf215107518",
+  "external_ref": null,
+  "title": "The full audit replays a root's whole history with a full-state checksum at every step, and again for every waiver event",
+  "outcome": "The exhaustive audit (doctor, projection repair, backup verification) costs an amount linear in a root's deltas and members, not quadratic or worse, and says what it verifies at intermediate heads.",
+  "acceptance": [
+    "The audit replays each root's history at most once per run, however many waiver events the root has, shown by a test that counts replays",
+    "The audit verifies one full-state checksum per root generation, at its final head, together with the continuity of the delta chain, and no longer recomputes the checksum of intermediate states; a test shows the audit's checksum bytes for one root are the same order as one final state at 10, 100 and 1000 deltas",
+    "The documentation of doctor says what the audit verifies and what it leaves to the delta chain",
+    "When the final checksum or the chain does not verify, the audit reports the root as failed and a separate step-by-step replay names the first delta whose recorded checksum does not match; a test corrupts one intermediate and one final checksum and shows both outcomes",
+    "engram doctor on a copy of the live Engram store is timed before and after on the same host and the times are recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-work-lifecycle",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The full audit replays each root generation once and compares the full-state checksum at its last head only; both required-child waiver passes read that replay; a strict replay names the first mismatching head when the last head disagrees. Landed as commit 3263349 on master, pushed, installed as build da026eb0be80. Doctor on a copy of the live store: 84.5 s and 85.1 s before, 15.1 s and 15.6 s with the installed build. Reduced coverage accepted by Greg: a false checksum on an earlier head while the last head agrees, and an earlier delta change that leaves the final state unchanged, are not detected.",
+    "completed_at": "2026-09-27T02:44:01.853448800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "11457c407feb41ab93bb91bfc706178a": {
+        "activity_id": "11457c407feb41ab93bb91bfc706178a",
+        "task_id": "01a0e06a-bcc9-70c3-9dd5-2cf215107518",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5bc7cf684b2143c58125a0260e7f5293"
+      }
+    }
+  }
+}

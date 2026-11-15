@@ -1,0 +1,52 @@
+{
+  "id": "01a10feb-6f83-7bf0-bbe1-1ad48d5ce497",
+  "external_ref": null,
+  "title": "The architecture overview says operational control storage is bounded; mark its retention designed, not built",
+  "outcome": "The architecture overview says operational control storage is bounded; mark its retention designed, not built",
+  "acceptance": [
+    "docs/architecture.md no longer states that live grants and high-volume decisions use bounded operational storage as shipped behaviour; it marks bounded retention as designed, not built (nothing prunes control_turn_grants, control_turn_results or control_operation_results), consistent with docs/spec.md and docs/features/behavioral-control-plane.md",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "control-plane",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 240e4c7 on master as part of the crl changeset. architecture.md now says turn grants in every state, turn decisions and operation results use noncanonical operational storage. Bounding its retention is designed, not built, and nothing prunes it today. Evaluation 23de912e passed 2/2.",
+    "completed_at": "2026-10-06T08:16:45.462823400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f3c80bda6647468687e04329968a2f1c": {
+        "activity_id": "f3c80bda6647468687e04329968a2f1c",
+        "task_id": "01a10feb-6f83-7bf0-bbe1-1ad48d5ce497",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4f3e122e325545599a6abc2b728c7cb8"
+      }
+    }
+  }
+}

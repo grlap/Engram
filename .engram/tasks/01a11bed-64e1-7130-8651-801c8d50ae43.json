@@ -1,0 +1,27 @@
+{
+  "id": "01a11bed-64e1-7130-8651-801c8d50ae43",
+  "external_ref": null,
+  "title": "Clarify ownership of roadmap runtime-profile safety requirements",
+  "outcome": "Clarify ownership of roadmap runtime-profile safety requirements",
+  "acceptance": [
+    "The readiness section links the owning safety and harness qualification definition, or explicitly identifies these as TermAl-owned requirements tracked outside this repository, without weakening any safety requirement."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "CLOSED AS DELIVERED (Engram::Fable, 2026-10-09 ~00:30Z; backlog hygiene per Greg, Advisor #1072). Delivered by ce27c31 (roadmap refresh w-3421f913b800). docs/roadmap.md:28-30 states that TermAl owns session supervision, prompt dispatch, wake delivery and runtime recovery. Row 47, 'Runtime safety requirements' (second-host exclusion, Stop and crash behavior, child-process ownership), names 'TermAl runtime' as owner, with owner reports kept in the work tracker (:31-32). No safety requirement is weakened. Nothing remains.",
+  "completion": null
+}

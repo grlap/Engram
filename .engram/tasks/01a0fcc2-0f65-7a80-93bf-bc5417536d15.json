@@ -1,0 +1,50 @@
+{
+  "id": "01a0fcc2-0f65-7a80-93bf-bc5417536d15",
+  "external_ref": null,
+  "title": "named_root_read docs: enumerate run.state's five values and separate them from the work lifecycle",
+  "outcome": "named_root_read docs: enumerate run.state's five values and separate them from the work lifecycle",
+  "acceptance": [
+    "behavioral-control-plane.md's named_root_read section lists run.state's exact wire values (open, claimed, active, completed, cancelled) as WorkRunState, says a claimed or active run is the normal in-progress case, and says run.state is distinct from and never an alias of the work item lifecycle"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented named_root_read run.state's exact five WorkRunState wire values (open, claimed, active, completed, cancelled), normal claimed/active in-progress execution, and its distinction from the work-item lifecycle. Markdown link/identity gates pass on exact frozen input; independent Codex/Claude pair clean; fresh independent judgment evaluation28af014878204077a1492ff11b11ae1d passed criterion1. Landed/pushed in Fable386 window, main fast-forwarded. Docs only; no build, install or restart. Optional source test omission disclosed; no host-bound criterion.",
+    "completed_at": "2026-10-02T13:24:57.591515400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "06cca5f7cb2242dbb0dc07c0b6181f04": {
+        "activity_id": "06cca5f7cb2242dbb0dc07c0b6181f04",
+        "task_id": "01a0fcc2-0f65-7a80-93bf-bc5417536d15",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ad63032a3f8743a68c6cb2b7f134be32"
+      }
+    }
+  }
+}

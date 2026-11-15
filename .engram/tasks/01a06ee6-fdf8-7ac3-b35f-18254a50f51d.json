@@ -1,0 +1,50 @@
+{
+  "id": "01a06ee6-fdf8-7ac3-b35f-18254a50f51d",
+  "external_ref": null,
+  "title": "Decomposition under a held item by a non-holder: add --under a live-held parent is refused (Greg's decision)",
+  "outcome": "Decomposition under a held item by a non-holder: add --under a live-held parent is refused (Greg's decision)",
+  "acceptance": [
+    "decision recorded: either add --under a live-held parent by a project-bound non-holder creates the child as an attributed planning proposal the holder sees in next without touching the holder's claim, or the refusal stays and its remedy names the holder and the propose path; Phoenix's and my own refusals today are the reproduction"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered peer optional-child proposals under foreign live-held parents, including pending handoff, without changing holder authority. Landed in 2031a4b; nine gates and final paired fallback review clean.",
+    "completed_at": "2026-09-05T06:50:50.035974700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c4a5318155c2c6629796253516fa3be01f23219e0c549127a14d9d77477f8078": {
+        "activity_id": "c4a5318155c2c6629796253516fa3be01f23219e0c549127a14d9d77477f8078",
+        "task_id": "01a06ee6-fdf8-7ac3-b35f-18254a50f51d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "85cba54593bc677d7eb7c53b9dd15782a28f16a66ad8411745c6d92099d2ea5b"
+      }
+    }
+  }
+}

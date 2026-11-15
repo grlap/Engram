@@ -1,0 +1,29 @@
+{
+  "id": "01a0fcec-dd22-74b2-b9d2-24cc1d46adf3",
+  "external_ref": null,
+  "title": "Backup push docs: align the brief's push steps and the deadline wording with the shipped behaviour",
+  "outcome": "Backup push docs: align the brief's push steps and the deadline wording with the shipped behaviour",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md and docs/shipped.md say that a transport deadline leaves an attempt pending only when it passes during the resolution of a pending attempt or the put, and that a deadline passed while confirming the newest copy of an unchanged store keeps the existing receipt and creates no pending attempt",
+    "docs/features/off-host-backup.md's Push section states that retention runs after the attempt is recorded, and that a retention removal past the transport deadline is a warning that keeps the push's own exit code"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

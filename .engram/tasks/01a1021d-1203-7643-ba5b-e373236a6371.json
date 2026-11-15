@@ -1,0 +1,27 @@
+{
+  "id": "01a1021d-1203-7643-ba5b-e373236a6371",
+  "external_ref": null,
+  "title": "Doctor's remaining per-item checks still grow faster than linearly with work items and memories",
+  "outcome": "Doctor's remaining per-item checks still grow faster than linearly with work items and memories",
+  "acceptance": [
+    "A measurement names the checks behind whole-doctor growth past the full-text checks (9000 work items 8.6 s, 9000 memories 5.0 s on synthetic stores after the full-text fix) and either fixes the superlinear ones with a measured before/after or records why each is bounded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "doctor",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

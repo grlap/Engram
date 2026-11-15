@@ -1,0 +1,52 @@
+{
+  "id": "01a1041f-6563-7b31-b0d0-b01e3fccf599",
+  "external_ref": null,
+  "title": "Explain the terminal ancestor when claim and show report blocked work",
+  "outcome": "An agent claiming or inspecting work stranded below a terminal ancestor can identify the actual blocking ancestor and follow an admitted remedy, including when the direct parent is still open.",
+  "acceptance": [
+    "For a completed root -> open parent -> open child, claim refusal and show identify the terminal ancestor and its lifecycle without describing the open direct parent as completed; CLI and MCP retain actionable navigation or a supported remedy.",
+    "The explanation distinguishes explicit blockers and prerequisites from an ancestor lifecycle barrier, preserves refusal to resume a frozen execution, and has regression coverage for both a direct terminal parent and a terminal grandparent."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "agent-ergonomics",
+    "area-work-lifecycle",
+    "termal"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Blocked work now names the actual terminal ancestor in claim refusals and show/readiness diagnostics, preserves the open direct parent's identity/lifecycle, and keeps independent barriers and frozen execution guards. Native direct/grandparent Rust and CLI/MCP regressions passed the full Windows gate; independent Codex/Claude whole-input review and acceptance passed. Three Low findings are tracked as independent follow-ups.",
+    "completed_at": "2026-10-04T01:01:17.885668100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5ec662a6c5754171b94a6d52e1ad3e22": {
+        "activity_id": "5ec662a6c5754171b94a6d52e1ad3e22",
+        "task_id": "01a1041f-6563-7b31-b0d0-b01e3fccf599",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "84639af0e8c7468f915d2f1e01fd3efe"
+      }
+    }
+  }
+}

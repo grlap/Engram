@@ -1,0 +1,29 @@
+{
+  "id": "01a19823-5cd2-70b2-809f-5bf72aa1cb58",
+  "external_ref": null,
+  "title": "Keep restricted-label refusal order and remedy documentation accurate",
+  "outcome": "Restricted-label import refusals name unsupported fields in document order and explain the currently supported operator choices without implying an unavailable import re-baseline operation.",
+  "acceptance": [
+    "When a restricted-ness label edit is combined with lifecycle or another later document field, unsupported_fields lists labels before that field, with a regression test.",
+    "The Git task-sync and task-planning-text briefs state the actual supported remedy or explicitly state no supported import route exists for changing restricted-ness; they do not imply task-sync prepare --rebaseline can perform that import."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,24 @@
+{
+  "id": "01a07866-a10e-77b0-af3a-697e648efca2",
+  "external_ref": null,
+  "title": "Smoke rejection child 1788726386",
+  "outcome": "Smoke rejection child 1788726386",
+  "acceptance": [
+    "Smoke rejection child 1788726386 is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke: rejected on evidence, no delivery",
+  "completion": null
+}

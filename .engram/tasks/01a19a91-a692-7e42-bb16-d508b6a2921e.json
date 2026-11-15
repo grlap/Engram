@@ -1,0 +1,55 @@
+{
+  "id": "01a19a91-a692-7e42-bb16-d508b6a2921e",
+  "external_ref": null,
+  "title": "Restore coverage of surviving policy, storage integrity and ordinary-host replay after turn removal",
+  "outcome": "Restore coverage of surviving policy, storage integrity and ordinary-host replay after turn removal",
+  "acceptance": [
+    "Port policy administration compare-and-swap, maximal-history-head, actor redaction/normalization/bounds, receipt replay/conflict/corruption and historical authority preservation coverage to current policy operations, including historical admission-field policy import and a new metadata-omitting successor",
+    "Exercise atomic cold-schema rollback, historical typed-evidence run-binding and obligation rule-set corruption checks without restoring removed turn operations",
+    "Cover strict real-binary obligation-rule input and ordinary host late-COMMIT response loss settled by exact-key replay; use existing fixtures and hooks where possible",
+    "Focused checks covering added/ported tests pass on the exact supplied correction input, with source and actual result provenance retained for combined review"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "greg-directed",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1999a-842e-7ea3-84a7-5b17f50b5079",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Restored surviving policy, historical migration, storage integrity, strict CLI and ordinary-host late-COMMIT replay test coverage in ten owned test paths, carried by the parent. Focused runtime checks, final affected policy tests, Clippy and the requested backup regression passed with exact provenance retained. Parent combined source review reports the restored-coverage Medium fixed and no outstanding Medium-or-higher issue in this slice. Source-slice completion only; parent full gate, paired TermAl proof, migration/cutover and landing remain open.",
+    "completed_at": "2026-11-02T05:49:04.613656200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1755b86c273148cdaa55e8774798dbce": {
+        "activity_id": "1755b86c273148cdaa55e8774798dbce",
+        "task_id": "01a19a91-a692-7e42-bb16-d508b6a2921e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "df319d960b5f4088b62ad21314cfd36c"
+      }
+    }
+  }
+}

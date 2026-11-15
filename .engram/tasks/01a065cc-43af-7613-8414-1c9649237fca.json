@@ -1,0 +1,52 @@
+{
+  "id": "01a065cc-43af-7613-8414-1c9649237fca",
+  "external_ref": null,
+  "title": "Bound total compact ls structured and text output",
+  "outcome": "Bound total compact ls structured and text output",
+  "acceptance": [
+    "a byte-bounded ls page carries a usable continuation for the same filters and ordering (command or token), documented for catalog changes between pages, so every matching item is reachable without guessing search partitions, in text and JSON alike",
+    "compact ls output is bounded in both JSON and text under the parity budget with a test at the bound",
+    "ls accepts --under PARENT with --optional or --required across CLI, MCP, and the catalog query, so a remaining-children group in a done receipt or a show obligations summary can name one exact command that lists the rest",
+    "the bounded footer names the active limit and the byte budget that cut the page"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered byte-bounded counted listing with exact continuation, direct-parent required/optional filters, safe PowerShell/POSIX commands, typed stale-scope/time/metadata refusals, and full regression coverage. Landed and installed as confirmed by coordinator; all required gates passed.",
+    "completed_at": "2026-09-05T22:39:18.008957200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "08e8d4074c3f5daa599aec2c2424efae8c2c17fc64d833bc01e5ff471435123c": {
+        "activity_id": "08e8d4074c3f5daa599aec2c2424efae8c2c17fc64d833bc01e5ff471435123c",
+        "task_id": "01a065cc-43af-7613-8414-1c9649237fca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "04fb0b4db294c24d57202cb488b8b774fb504499c966900bf9f1fa36a473984e"
+      }
+    }
+  }
+}

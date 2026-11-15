@@ -1,0 +1,52 @@
+{
+  "id": "01a0d717-3b7e-7930-95b0-fcfcf0b81bfe",
+  "external_ref": null,
+  "title": "Read next's staged delivery page and its session row from one commit",
+  "outcome": "Read next's staged delivery page and its session row from one commit",
+  "acceptance": [
+    "A test commits a confirmation or re-stage between the session read and the payload read and shows the fixed behavior, and the test fails without the fix; the full quality gates pass",
+    "When a pending staged page exists, work_next reads the session row, the staged payload and the page verification from one commit. If another process with the same session confirms or re-stages the page in between, next then either returns the page it read or stages afresh; it never reports 'pending work delivery has no exact staged payload' or a staged-page verification error for that race"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "concurrency",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0d6ab-051f-7263-ad79-f0ca1bb7ef80",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "next's staged-delivery read now takes the session row, the staged payload and the page check from one snapshot (delivery_state). The implicit confirmation of the previous page is one UPDATE (confirm_pending_work_session_delivery). Race tests use the shared concurrent_commit harness: confirm, re-stage, confirm-past and a focus change, each committed mid-read. Each fails with its false error under the old code. Committed as 7c1ba5d, with the comment fix in 91c8140. An independent evaluation passed both criteria.",
+    "completed_at": "2026-09-25T17:10:55.217091300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6288fc6e675b4d80b9772374d6858930": {
+        "activity_id": "6288fc6e675b4d80b9772374d6858930",
+        "task_id": "01a0d717-3b7e-7930-95b0-fcfcf0b81bfe",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9f9ea525c844413085b2325db109a5e3"
+      }
+    }
+  }
+}

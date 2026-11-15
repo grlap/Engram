@@ -1,0 +1,67 @@
+{
+  "id": "01a1c296-8112-7241-911d-95e6447923b9",
+  "external_ref": null,
+  "title": "Honor note disclosure when capturing and exporting native evidence",
+  "outcome": "Honor note disclosure when capturing and exporting native evidence",
+  "acceptance": [
+    "Native evidence capture and final export enforce the selected binding's note and activity disclosure profile, so a notes-off binding cannot publish note bodies or restricted note/activity content through its evidence closure.",
+    "Complete canonical IDs, original bytes and feed-witness closure invariants are preserved: a disallowed closure is explicitly refused rather than silently dropping required records, rewriting originals or granting imported authority; any separate evidence-disclosure selection is explicit and consistently enforced.",
+    "Behavior tests capture a real run with work-scoped memory notes and evidence summaries under notes-off and disallowed labels, prove no forbidden bodies reach export packs/data commits, and cover permitted disclosed evidence plus replay/profile consistency."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "security",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Native evidence capture, replay and each export page enforce the selected binding's immutable note/activity disclosure profile, refusing disallowed full closures before packs are retained while preserving original IDs/bytes. Exact3ee0249e author checks PASS6/6 (48tests), independentClaude17184 evaluation13c33194 PASS3/3. Complete10path contribution prepared for parent combined review; not landed.",
+    "completed_at": "2026-11-10T02:23:54.590457800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1199c17cc70b422e833bcec8e581202c": {
+        "activity_id": "1199c17cc70b422e833bcec8e581202c",
+        "task_id": "01a1c296-8112-7241-911d-95e6447923b9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1199c17cc70b422e833bcec8e581202c"
+      },
+      "7e575ea1504d43d5b4bac3677feef079": {
+        "activity_id": "7e575ea1504d43d5b4bac3677feef079",
+        "task_id": "01a1c296-8112-7241-911d-95e6447923b9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "70e85ceecfd44c5a841e79cc6ab8e461"
+      }
+    }
+  }
+}

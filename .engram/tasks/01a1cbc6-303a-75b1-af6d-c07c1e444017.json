@@ -1,0 +1,28 @@
+{
+  "id": "01a1cbc6-303a-75b1-af6d-c07c1e444017",
+  "external_ref": null,
+  "title": "Disable warning queue registration when its monitor thread cannot start",
+  "outcome": "A failed warning-monitor startup leaves operations runnable without retaining an unbounded queue of warning entries.",
+  "acceptance": [
+    "If the warning worker cannot be spawned, later Warning registrations do not accumulate entries that no worker can prune; operations keep their original result and deadline behavior.",
+    "A behavioral failure-path check demonstrates the disabled-monitor behavior without relying on an actual exhausted host."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "reliability",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

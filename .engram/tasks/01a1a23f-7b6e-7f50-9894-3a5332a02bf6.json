@@ -1,0 +1,56 @@
+{
+  "id": "01a1a23f-7b6e-7f50-9894-3a5332a02bf6",
+  "external_ref": null,
+  "title": "Design indexed touched-closure admission for task-sync graph changes",
+  "outcome": "Specify a source-backed graph overlay and indexed closure that can validate changed task documents without visiting disconnected project tasks.",
+  "acceptance": [
+    "Map existing forward and reverse parent, required-child, prerequisite, replacement and origin queries and indexes to a complete touched-closure algorithm, including deletions and cycles through unchanged tasks.",
+    "Identify each whole-project capture or graph scan in folder admission and Model A paths, and name the existing owner that will replace it; no duplicate domain rules or graph validator.",
+    "Define counters and fixture cases proving exact relevant nodes and edges visited, retained references read separately, disconnected tasks untouched, and native/run/seal/history refusals preserved.",
+    "Record whether existing indexes suffice. Any new projection derivation or durable schema/record change gets a concrete repair or migration plan for Fable and Greg before implementation; this design item changes no source."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered indexed touched-closure design and current-source scan mapping; incorporated Codex16737/Fable1371 clarifications including adjacency requery and field-classified graph work. Design only, no source/store changes or execution credit.",
+    "completed_at": "2026-11-08T00:42:35.923298700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d615bc81ebf14578ac514de8e36344ba": {
+        "activity_id": "d615bc81ebf14578ac514de8e36344ba",
+        "task_id": "01a1a23f-7b6e-7f50-9894-3a5332a02bf6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "617973860c2b4b418e5548b6491429ef"
+      }
+    }
+  }
+}

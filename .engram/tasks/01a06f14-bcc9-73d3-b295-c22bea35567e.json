@@ -1,0 +1,50 @@
+{
+  "id": "01a06f14-bcc9-73d3-b295-c22bea35567e",
+  "external_ref": null,
+  "title": "add --note TEXT records the first attributed note at creation (convenience; non-holder notes already remove the claim dance)",
+  "outcome": "add --note TEXT records the first attributed note at creation (convenience; non-holder notes already remove the claim dance)",
+  "acceptance": [
+    "add --note TEXT (repeatable) records each text as an attributed note on the new item in the same transaction, identical to add followed by note --work-ref REF from the creating session; Greg decides whether the sugar is wanted"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered atomic ordered initial notes through CLI and MCP creation, bounded and attributed without execution credit, preserved through snapshot round trips. Landed in 2031a4b with nine gates and paired fallback closure clean; child replay limitations documented and deferred.",
+    "completed_at": "2026-09-05T06:51:20.086880500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d31d89d9bed3cd0d5e8d461775b8138dd7a6b7cdbbad99e6ecace5ca6355555f": {
+        "activity_id": "d31d89d9bed3cd0d5e8d461775b8138dd7a6b7cdbbad99e6ecace5ca6355555f",
+        "task_id": "01a06f14-bcc9-73d3-b295-c22bea35567e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "521396cf8c82c0a508b41c066419b8da376f706c37296380ba85bce52aa2b53c"
+      }
+    }
+  }
+}

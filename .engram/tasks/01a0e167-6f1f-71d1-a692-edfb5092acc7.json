@@ -1,0 +1,64 @@
+{
+  "id": "01a0e167-6f1f-71d1-a692-edfb5092acc7",
+  "external_ref": null,
+  "title": "An execution observation cannot say whether source_changed was measured or assumed",
+  "outcome": "A reader of a stored execution observation can tell a source change the host measured by comparing two revisions from one it assumed because a revision was missing.",
+  "acceptance": [
+    "An observation that states an assumed change is stored and shown with that statement, and the documentation of the host protocol names the accepted values and what each means",
+    "The accepted values are agreed with TermAl's agents before the change lands, since the host protocol is a live external contract",
+    "The host protocol's execution observation takes an optional statement of how source_changed was established; an observation without it is read and shown as one where the host did not say, never as measured or unchanged, and records the live stores already hold keep being read as stored, with their bytes unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": "independent_session",
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Execution observations carry an optional reported_source_change (content_comparison, assumed_missing_baseline, watcher_only), the host's word on how it established a reported change; absent means the host did not say. Attribution only, validated before storage, additive to the store, shown on every obligation page, in show/done and in peer next deltas. Landed as 2486947, installed build 0670f09c4497, both live stores ready; the contract is with TermAl for its side. Accepted by an independent evaluation, 3 of 3, after criterion 3 was revised to the decided design.",
+    "completed_at": "2026-09-27T15:40:46.433990800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4aaa6a70241d4a619bb067dc289cd65a": {
+        "activity_id": "4aaa6a70241d4a619bb067dc289cd65a",
+        "task_id": "01a0e167-6f1f-71d1-a692-edfb5092acc7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "4aaa6a70241d4a619bb067dc289cd65a"
+      },
+      "7dc720d4d9e54f6e8b09360ce175e2b1": {
+        "activity_id": "7dc720d4d9e54f6e8b09360ce175e2b1",
+        "task_id": "01a0e167-6f1f-71d1-a692-edfb5092acc7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b1898c54e2ad4a188a87bdeab2e72e8b"
+      }
+    }
+  }
+}

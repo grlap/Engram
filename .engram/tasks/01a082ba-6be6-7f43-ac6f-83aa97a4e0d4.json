@@ -1,0 +1,28 @@
+{
+  "id": "01a082ba-6be6-7f43-ac6f-83aa97a4e0d4",
+  "external_ref": null,
+  "title": "Decide whether the root-state format change owes a docs/shipped.md row",
+  "outcome": "Decide whether the root-state format change owes a docs/shipped.md row",
+  "acceptance": [
+    "Either a row is added or the decision that none is owed is recorded with its reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": "01a08016-3f58-7de2-b435-07cd2fc5eaee",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a082cb-3516-7662-9ee0-aea5ae674202",
+  "disposal_reason": "Continue as independent work: whether this format change owes a capability-inventory row is still undecided",
+  "completion": null
+}

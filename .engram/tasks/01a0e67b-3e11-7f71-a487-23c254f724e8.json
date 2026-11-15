@@ -1,0 +1,52 @@
+{
+  "id": "01a0e67b-3e11-7f71-a487-23c254f724e8",
+  "external_ref": null,
+  "title": "Assert graph-snapshot restored record ids and bytes across fresh loads",
+  "outcome": "Assert graph-snapshot restored record ids and bytes across fresh loads",
+  "acceptance": [
+    "Loading one graph snapshot into two independent fresh stores gives each inherited RestoredRecord the same id and canonical bytes in both stores.",
+    "Those two loads give each native history layer distinct minted record ids and identical canonical bytes."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A new test, restored_identity.rs, loads one graph snapshot into two independent fresh stores, using different loaders and times. It asserts the following. Inherited restored records keep the file's id and canonical bytes in both stores, matching the store the file was saved from. Native layers get distinct minted ids, apart from every inherited id, with identical bytes. The fixture's exact shape, the key sets and the object kinds also hold. Expected values are derived at run time, and the comment names each assertion's failure. Two loader mutants failed the matching assertions. The final review round, Codex and Claude on freeze e82a3b4d…868f, was clean, and gate test-f614dc85 passed 9/9. Readiness reported all three live stores ready. Commit de3d9f1 is pushed, and build 3355c7c6a872 is installed with the previous build backed up.",
+    "completed_at": "2026-09-29T20:58:04.783916700Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c52a6d2544c14ab5b6b41bc7df7b9deb": {
+        "activity_id": "c52a6d2544c14ab5b6b41bc7df7b9deb",
+        "task_id": "01a0e67b-3e11-7f71-a487-23c254f724e8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6a84df6f1ace4d4a88bfa8a65ca2d69e"
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "id": "01a0f528-10e5-7920-80f3-50992fc0da41",
+  "external_ref": null,
+  "title": "MCP tool errors rmcp builds for malformed arguments lack the reminders and next other tool errors carry",
+  "outcome": "MCP tool errors rmcp builds for malformed arguments lack the reminders and next other tool errors carry",
+  "acceptance": [
+    "In ordinary engram mcp, a tool call whose arguments fail deserialization (for example update with an action word that does not exist, or an undeclared field) returns an isError tool result whose structured JSON carries a stable code, error.reminders and error.next like the other tool errors, or docs/features/cli-and-mcp.md states that rmcp's own argument errors have no such fields; a real-stdio test pins the shape."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documentation branch delivered: in ordinary engram mcp, an argument a word's input schema rejects (undeclared field, wrong type, unknown action) is refused by the MCP library before the word runs as an isError tool error with text-only content describing the problem and no structured JSON, reminders or next; the MCP INSTRUCTIONS sentence, cli-and-mcp.md, shipped.md and the engram-use skill now say so (read-only mode refuses such arguments itself as structured mcp_read_only_refused), and source/test comments speak of every error Engram itself returns. A real-stdio dogfood test pins the shape for all three cases and a following valid call. Field naming for type errors is filed as w-c8e867988b60. Store judgment: none; readiness ready on all 4 stores.",
+    "completed_at": "2026-10-04T14:49:55.663826200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "59439a47e51545908c52eebca28775f9": {
+        "activity_id": "59439a47e51545908c52eebca28775f9",
+        "task_id": "01a0f528-10e5-7920-80f3-50992fc0da41",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ac02ea6efdf544dab5bbedd0c0b21aa9"
+      },
+      "c4dd5cbeb4434fd7aa6e4623702639bb": {
+        "activity_id": "c4dd5cbeb4434fd7aa6e4623702639bb",
+        "task_id": "01a0f528-10e5-7920-80f3-50992fc0da41",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c4dd5cbeb4434fd7aa6e4623702639bb"
+      }
+    }
+  }
+}

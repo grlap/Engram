@@ -1,0 +1,52 @@
+{
+  "id": "01a12a0d-000d-7300-a913-9ac55c991c74",
+  "external_ref": null,
+  "title": "Refuse path-shaped shared-note authors in final or unlisted slash segments",
+  "outcome": "Refuse path-shaped shared-note authors in final or unlisted slash segments",
+  "acceptance": [
+    "Shared-note export omission and candidate dry/apply refusal cover greg/.ssh, x/etc/shadow, team/var/lib/engram/key.pem and x/users, with unchanged target state and no body or id in shared bytes",
+    "Normal principals such as greg/claude, org.example/codex and Engram::Fable remain admitted"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Task-sync note authors and activity actors are now judged as paths by their whole value as well as per word: three or more slash segments, a dot-leading segment, or a last segment that is a listed prefix (ignoring trailing glue) is refused, so spaces cannot split x/My Documents/key.pem into allowed pieces. Export omits such notes and activity; import refuses them dry and apply before any write. Two-segment principals such as greg/claude, org.example/codex, team/docs-bot and Engram::Fable stay admitted.\n- Files: src/task_sync/notes.rs, tests notes/paths.rs and activity/validation.rs, docs/features/task-planning-text.md.\n- Reviews: round 3 CLEAN (Codex 12230, Claude 12231) after in-scope Lows from rounds 1 and 2 were fixed.\n- Gate: test-85ea3ca5 passed 12/12 on freeze 233d8fdf.\n- Evaluations: 3c3320d2 passed 2/2 before the commit; 3e11a665 passed 2/2 after it.\n- Readiness: ready on all 4 live stores.\n- Landed b92491d; installed build 3f9e0cf02a38, sha256 84374c8d; backup engram-20261012T160312Z-05a19caa7493.exe.\n- Out of scope: w-2bf911b13753 and w-fca036d8b341.",
+    "completed_at": "2026-10-12T16:06:09.956073100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6b593481824244cc987e22e84da9efa1": {
+        "activity_id": "6b593481824244cc987e22e84da9efa1",
+        "task_id": "01a12a0d-000d-7300-a913-9ac55c991c74",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bdf7b5f65541472f8e0a0681b9839f36"
+      }
+    }
+  }
+}

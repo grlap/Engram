@@ -1,0 +1,60 @@
+{
+  "id": "01a17fc6-8894-72b2-a0cb-a18d4386663f",
+  "external_ref": null,
+  "title": "Three launcher tests fail on macOS, and their fixture deletes the child output that would show why",
+  "outcome": "Three launcher tests fail on macOS, and their fixture deletes the child output that would show why",
+  "acceptance": [
+    "On the Mac, a standard full gate on a master containing the fix passes scripts/test-launcher.test.mjs, including 'bare executable names resolve through PATH and Windows shims refuse' (line 921), 'direct Cargo execution selects outer frames for filtered counts, not generic wrappers' (line 2677) and 'direct Cargo execution preserves frame refusals, doctests and failure outcomes' (line 2707), with the cause stated on this item",
+    "When one of these copied-Node-executable fixture tests fails, the failure message carries the child's exit status, stderr and results path instead of the fixture's finally block deleting them",
+    "The same tests still pass on Windows"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "delivered",
+    "evaluation-pending",
+    "gate",
+    "macos",
+    "test-launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "4558487e4b2649d997a285a6f4224f40": {
+        "activity_id": "4558487e4b2649d997a285a6f4224f40",
+        "task_id": "01a17fc6-8894-72b2-a0cb-a18d4386663f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "eca0ece66e604f7eafdf4b5b3d0f1d79"
+      },
+      "660aba8536f741c9b201ada53055d208": {
+        "activity_id": "660aba8536f741c9b201ada53055d208",
+        "task_id": "01a17fc6-8894-72b2-a0cb-a18d4386663f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4558487e4b2649d997a285a6f4224f40"
+      }
+    }
+  }
+}

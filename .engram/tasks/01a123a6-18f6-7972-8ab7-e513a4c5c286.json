@@ -1,0 +1,27 @@
+{
+  "id": "01a123a6-18f6-7972-8ab7-e513a4c5c286",
+  "external_ref": null,
+  "title": "Replace standing guidance's stale 'planned external backup' status with the shipped capability",
+  "outcome": "Replace standing guidance's stale 'planned external backup' status with the shipped capability",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md remain identical and describe external backup as a shipped optional capability consistently with docs/shipped.md, with applicable instruction-governance and Markdown validation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

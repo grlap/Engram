@@ -1,0 +1,51 @@
+{
+  "id": "01a07acf-1d71-7a21-85a1-db518c34c942",
+  "external_ref": null,
+  "title": "Window and shipped contracts describe explicit reads without focus selection",
+  "outcome": "Window and shipped contracts describe explicit reads without focus selection",
+  "acceptance": [
+    "Window contracts retain full_detail in continuation next and describe one explicit read snapshot; shipped inventory states read separation and qualifies focused-next detach guidance"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "dogfood",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07a21-e397-7ed1-b935-a7a498504052",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed: window and shipped contracts match explicit snapshots, no focus selection, retained full_detail navigation and qualified focused-next detach guidance. Neighboring stale claims corrected; documentation links and both reviewers cleared.",
+    "completed_at": "2026-09-07T08:13:31.926149100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1b2bc2d23ee5954354f03f1fc7644315122192edb9873bb3a63e113cb39968bf": {
+        "activity_id": "1b2bc2d23ee5954354f03f1fc7644315122192edb9873bb3a63e113cb39968bf",
+        "task_id": "01a07acf-1d71-7a21-85a1-db518c34c942",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "498bbd0a6cbe31b3c73e5e7eee896af76d7a4e2e1e5bd83d56fff53e8b6fe83b"
+      }
+    }
+  }
+}

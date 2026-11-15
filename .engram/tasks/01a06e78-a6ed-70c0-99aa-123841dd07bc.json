@@ -1,0 +1,52 @@
+{
+  "id": "01a06e78-a6ed-70c0-99aa-123841dd07bc",
+  "external_ref": null,
+  "title": "Distinguish canonical representation failures from projection mismatch labels",
+  "outcome": "Distinguish canonical representation failures from projection mismatch labels",
+  "acceptance": [
+    "a canonical-side representation-guard failure reports its own diagnostic label distinct from the projection mismatch label; label text only, no acceptance or authority change"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 4e1b0e1 (bundle 5A): a canonical value that decodes but does not round-trip is labelled KIND:ID:canonical_representation in all three projection verifiers. The projection is still compared with the unguarded canonical value, so its own damage or drift is reported beside that label. The guard's acceptance is unchanged. Tests cover each family alone, with an injected member and with semantic drift.",
+    "completed_at": "2026-10-03T13:54:06.357120500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6a84d28b1f934f9193f5dad65c8df56f": {
+        "activity_id": "6a84d28b1f934f9193f5dad65c8df56f",
+        "task_id": "01a06e78-a6ed-70c0-99aa-123841dd07bc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e5415658ca954c02afe7579e924af96b"
+      }
+    }
+  }
+}

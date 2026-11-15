@@ -1,0 +1,55 @@
+{
+  "id": "01a1c292-c8b2-7230-806a-1dabe1edce42",
+  "external_ref": null,
+  "title": "Exercise Git-backed incoming evidence application through its public step",
+  "outcome": "Exercise Git-backed incoming evidence application through its public step",
+  "acceptance": [
+    "A meaningful real Git/two-store fixture captures native evidence, stages and commits its packs on the dedicated data branch, fetches and retains the selected commit on the receiver, and calls the composed apply_evidence_exchange or public apply_evidence step.",
+    "The regression proves original canonical IDs and bytes are retained without native feed, verification or claim credit, exact completed replay succeeds with Git and pack files unavailable, and malformed or conflicting packs record the original terminal outcome identities.",
+    "Run the regression on the supported confined-execution platform using actual implementation paths; do not substitute a hand-built InspectedEvidence or pack copying alone for the composed receive path."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Git-backed incoming evidence application is now exercised end to end through its public step. The new Windows regression task_exchange_windows_incoming_evidence_applies_through_the_public_step_and_replays_offline runs over real confined HTTPS on the dedicated data branch:\n- a sender store captures real native evidence under the binding's explicit 95e6 disclosure profile, stages its packs, and commits and pushes;\n- a receiver store fetches and retains the commit per operation, then applies through LocalWorkService::task_sync_exchange_step(ApplyEvidence) with explicit opt-in.\nIt proves:\n- original IDs and bytes are retained as imported-only, with no native feed, run or claim credit;\n- an exact replay succeeds offline with Git and pack files hidden;\n- a changed retry is refused;\n- invalid-payload, unenrolled-origin (Dependency) and conflicting-record packs record their original terminal outcomes with no admission, and replay offline.\nA small #[cfg(all(test, windows))] storage helper exposes the native sender history and the inertness probes; production visibility is unchanged. Delivered in candidate 48789bd6 (0bd70a30 plus the 98c1 carry plus 95e6, plus 5 test paths). Central GO-CENTRAL-ENGRAM-1DAB-WIN-3 passed (test-c60493bd, 58.5 s) with the candidate's own engram as source owner. Independent evaluation c1cec08ba546479083779d963105f14f passed all 3 criteria. Landing belongs to parent 12325 with the combined freeze.",
+    "completed_at": "2026-11-10T06:10:48.580422100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8f43710d344c469b81a85d2e3f01a8ae": {
+        "activity_id": "8f43710d344c469b81a85d2e3f01a8ae",
+        "task_id": "01a1c292-c8b2-7230-806a-1dabe1edce42",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7fc598fe95184079b18412b54acb92b5"
+      }
+    }
+  }
+}

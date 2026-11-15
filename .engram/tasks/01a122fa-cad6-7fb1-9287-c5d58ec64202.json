@@ -1,0 +1,28 @@
+{
+  "id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "external_ref": null,
+  "title": "Implement agent-merged Git task sync per spec r4.1 in independently testable slices",
+  "outcome": "Implement agent-merged Git task sync per spec r4.1 in independently testable slices",
+  "acceptance": [
+    "Each slice lands separately with its own acceptance; the spec (w-698816632ed1, r4.1) and the architecture handoff b646f1d994b740aab3f9c55152cb1cda govern; the sync stays optional and explicitly configured",
+    "Two active stores that each already hold their own local tasks and changes exchange planning in both directions; concurrent edits to the same task produce explicit conflicts, never silent overwrite; host-local claims, runs, grants and private state stay local. This is proven by a real two-host pilot with existing independent work and concurrent edits (Greg, Advisor #2472, 2026-10-31: core acceptance, not an optional enhancement)"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "epic",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

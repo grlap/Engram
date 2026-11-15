@@ -1,0 +1,53 @@
+{
+  "id": "01a0bd9e-bb30-7a72-918b-1d7c9c27e2eb",
+  "external_ref": null,
+  "title": "Provide read-only control reconciliation evidence for missing session bindings",
+  "outcome": "Provide read-only control reconciliation evidence for missing session bindings",
+  "acceptance": [
+    "A bounded read-only diagnostic identifies the exact resolved project/database, queried session and retained grant, and reports their binding/grant presence from one current-schema snapshot without binding, expiring, checkpointing, repairing or mutating store state.",
+    "Deterministic regression tests, required gates and independent Codex/Claude review cover the producer contract; TermAl consumer owner confirms the agreed receipt is sufficient for strict reset reconciliation without treating a snapshot as a fence.",
+    "Positive absent-binding evidence requires both a missing session row and no grant rows for that session or the retained grant ID; existing or mismatched binding, orphan or cross-session grant, malformed state, wrong schema/path, busy and uncertain reads cannot be accepted as absence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "recovery"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered bounded read-only control-session-inspect CLI/library producer with exact selectors/store identity, single admitted snapshot, conservative presence and fail-closed refusal receipts; documented host-owned reconciliation fences and unchecked residue. Nine final-input gates passed, Codex/Claude review consolidated without actionable findings, required child completed. Independent Claude7132 acceptance records 3/3 judgment pass after direct consumer-owner confirmation116 closed the evidence gap. Parent read all verdicts and rechecked unchanged693f3cd8...fc29f. Source delivery only: no commit/install/restart or live Save/fresh-session acceptance.",
+    "completed_at": "2026-09-20T10:58:16.936878Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8b3574712c784fceac530dcebc1b1e21": {
+        "activity_id": "8b3574712c784fceac530dcebc1b1e21",
+        "task_id": "01a0bd9e-bb30-7a72-918b-1d7c9c27e2eb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5d01786987374110887f09e0b5b88909"
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "id": "01a0f341-a8ce-7ce0-8305-a5b3a153f84b",
+  "external_ref": null,
+  "title": "A memories call refused for its context generation offers the memories retry, not an advancing next",
+  "outcome": "A memories call refused for its context generation offers the memories retry, not an advancing next",
+  "acceptance": [
+    "When `engram work memories` (any form: listing, search, full or history read) is refused because its context generation is not a plain token, the CLI text, the CLI JSON error and the MCP error offer `engram work memories` as the retry command and not `engram work next`; a refused `next` still offers `engram work next`; tests assert the retry command on the CLI and MCP routes for both words."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A memories call refused for its context generation now offers the memories retry (engram work memories …) instead of an advancing next, on MCP, CLI JSON and CLI text; unit and dogfood tests cover it. Landed in 99c249e (bundle 8C-1).",
+    "completed_at": "2026-10-04T17:03:02.269102Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2da63ebbd2394e8fb6c504894598ac38": {
+        "activity_id": "2da63ebbd2394e8fb6c504894598ac38",
+        "task_id": "01a0f341-a8ce-7ce0-8305-a5b3a153f84b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e3f5707fcf9e497fb8f74117b385d201"
+      },
+      "7ffed5cd42c24c82b5668554d26e8493": {
+        "activity_id": "7ffed5cd42c24c82b5668554d26e8493",
+        "task_id": "01a0f341-a8ce-7ce0-8305-a5b3a153f84b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7ffed5cd42c24c82b5668554d26e8493"
+      }
+    }
+  }
+}

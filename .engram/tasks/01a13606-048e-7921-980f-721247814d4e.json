@@ -1,0 +1,33 @@
+{
+  "id": "01a13606-048e-7921-980f-721247814d4e",
+  "external_ref": null,
+  "title": "Task sync stage 2: active reconciliation with TermAl G1/G2 and both halves of G3",
+  "outcome": "Task sync stage 2: active reconciliation with TermAl G1/G2 and both halves of G3",
+  "acceptance": [
+    "Active reconciliation follows the sequence: durable hold, then settlement of the original execution/observations/exact intents under a persistent candidate-bound fence, then each holder releasing its own claim, then release-induced cleanup, then a fresh candidate-bound readiness and readset barrier, then an atomic compare/apply that audits SupersededByImport retirement and reported state, keeping old evidence/seal ids and bytes",
+    "Candidate, root, run, claim, fence or basis mismatches and incomplete proof fail closed; held prompts stay retained; issued-but-unbegun or uncertain dispatch cannot escape; a missing stored Begin outcome stays pending unless exact-owner positively-unsent retirement or a serialized authoritative terminal outcome proves otherwise; recovery never runs a first provider execution",
+    "Tests join the real delivered G1/G2/G3 production seams (TermAl w-358040469407 and Engram w-42d16bae66ac), cover the release-induced cleanup race and final basis change, and reopen with a new generation and no claim; only this item closes the parent's active-reconciliation criterion"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a12302-8c8f-70a1-83d7-65fb79ead0c3",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a13602-091d-7c33-a378-42d16bae66ac",
+    "01a13605-f076-7c81-b16c-4a746d6f713e"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a1549b-6daf-7e12-8054-145daddd333f",
+  "external_ref": null,
+  "title": "Reject a final '.' or '..' export-path component before task-sync directory staging",
+  "outcome": "Reject a final '.' or '..' export-path component before task-sync directory staging",
+  "acceptance": [
+    "A task-sync directory export whose destination path ends in '.' or '..' is refused before staging with an explicit path error, instead of reaching the native no-replace move, where EINVAL would read as task_sync_publication_unsupported; a test covers both components"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "note",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

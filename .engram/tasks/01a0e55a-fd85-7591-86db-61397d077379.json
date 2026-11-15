@@ -1,0 +1,51 @@
+{
+  "id": "01a0e55a-fd85-7591-86db-61397d077379",
+  "external_ref": null,
+  "title": "Correct graph-snapshot documentation that conflates record identity with content",
+  "outcome": "Correct graph-snapshot documentation that conflates record identity with content",
+  "acceptance": [
+    "Snapshot documentation distinguishes inherited record ids preserved across loads, freshly minted native history-layer ids, and content fingerprints used for comparison."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review",
+    "snapshot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrected graph-snapshot record-identity documentation: inherited/source record ids and canonical bytes persist, native history layers mint ids on load, and content fingerprints are comparisons. Disclosed the current restored-memory MemoryId exception and precise test gap. Docs checks passed; Codex and Claude R7 clean; independent acceptance passed.",
+    "completed_at": "2026-09-28T05:50:42.972849200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "986639711a884d1faea37f05ee9f540b": {
+        "activity_id": "986639711a884d1faea37f05ee9f540b",
+        "task_id": "01a0e55a-fd85-7591-86db-61397d077379",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ae458372d1ef4d1d8e33db6da74cbada"
+      }
+    }
+  }
+}

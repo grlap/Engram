@@ -1,0 +1,29 @@
+{
+  "id": "01a198ea-d568-7131-85e1-e31ace5404ca",
+  "external_ref": null,
+  "title": "Validate each active hold once during a folder admission transaction",
+  "outcome": "Validate each active hold once during a folder admission transaction",
+  "acceptance": [
+    "Folder admission caches validation per distinct active hold and answers endpoint membership through existing keyed active projection.",
+    "Large-scope refusal regression proves unchanged state and bounded repeated hold validation while preserving all endpoint fences."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

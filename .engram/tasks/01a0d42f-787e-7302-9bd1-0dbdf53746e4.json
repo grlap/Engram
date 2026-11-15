@@ -1,0 +1,52 @@
+{
+  "id": "01a0d42f-787e-7302-9bd1-0dbdf53746e4",
+  "external_ref": null,
+  "title": "Show a control binding only when session bind would accept it",
+  "outcome": "Show a control binding only when session bind would accept it",
+  "acceptance": [
+    "A test shows an ordinary live claim still carries the binding, and bind accepts it",
+    "A test shows that a held claim with a pending handoff offer (live, same holder, revision and fence) has no binding in focus and next and a null one in inspect, and that session bind refuses that binding as stale; once the offer is cancelled, the same binding is shown again and bind accepts it. The other checks bind makes that the owned predicate skips (a closed ancestor, a run outside the active root execution) have no reachable state while a descendant claim is live, because completion and disposal refuse it; they are covered because the views call bind's own validator",
+    "work core inspect, work core focus, next and the claim receipt compute control_binding with the same validation session bind uses (validate_control_work_binding_on), so they show a binding exactly when bind would accept it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "focus, next, core inspect and a newly built claim receipt show control_binding only when session bind would accept it. The owned claim proposes it, and bind's own validator decides on the same connection. Bind's history check now reads only the claim epoch's events, newest first, and stops at the first match, so its cost stays the same as history grows. Tests: pending offer, cancel and unrecorded-root cases; a bounded-lookup test; mutation checks. Docs updated. Full gates passed three times, and three rounds of Codex and Claude review found only wording issues, all fixed. Committed as 859f500, pushed, and installed as build b1984ecec780; readiness was ready on both stores.",
+    "completed_at": "2026-09-24T18:08:36.934972200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7b75b2da683b4853a9b6e72adc17cd5e": {
+        "activity_id": "7b75b2da683b4853a9b6e72adc17cd5e",
+        "task_id": "01a0d42f-787e-7302-9bd1-0dbdf53746e4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "37222b57fab94945942f57b074343ca5"
+      }
+    }
+  }
+}

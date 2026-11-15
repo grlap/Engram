@@ -1,0 +1,49 @@
+{
+  "id": "01a08d5d-bcaa-79b1-a4b7-2b3c9819ce8f",
+  "external_ref": null,
+  "title": "The bounded first-delivery candidates follow creation order rather than priority",
+  "outcome": "The bounded first-delivery candidates follow creation order rather than priority",
+  "acceptance": [
+    "a test asserts that a newly added higher-priority ready item appears among the bounded first-delivery candidates ahead of older lower-priority ones, and that the first delivery plus the named continuation still reaches every ready item exactly once"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Compact next, peek, and ls --ready rank by priority then work_id; continuation and stale restart stay exact-once.",
+    "completed_at": "2026-09-13T07:51:39.965275300Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "fdfdf77bce65d332feabd34653f53fd14ac901b234f862014214ca4e9e9e528d": {
+        "activity_id": "fdfdf77bce65d332feabd34653f53fd14ac901b234f862014214ca4e9e9e528d",
+        "task_id": "01a08d5d-bcaa-79b1-a4b7-2b3c9819ce8f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "31fa4275d4e2605dca626087df0beda15d80eb60f31a0f895a77e1c628777504"
+      }
+    }
+  }
+}

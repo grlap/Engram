@@ -1,0 +1,27 @@
+{
+  "id": "01a1c293-b8b7-72c3-8a94-abc141b55afd",
+  "external_ref": null,
+  "title": "Refresh shipped exchange capabilities and rebuildable projection inventory",
+  "outcome": "Refresh shipped exchange capabilities and rebuildable projection inventory",
+  "acceptance": [
+    "Shipped and feature/spec documentation accurately describes the current CLI exchange front doors and explicit projection-repair cutover, with a complete or directly referenced rebuildable table inventory."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "follow-up",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

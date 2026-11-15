@@ -1,0 +1,43 @@
+{
+  "id": "01a14bef-4e7a-7030-b686-8942a7920075",
+  "external_ref": null,
+  "title": "Bounded receive slice 1: budget kernel (project reservation, receive lease, finite durable ticket ledger, budgeted writer, crash substrate)",
+  "outcome": "Bounded receive slice 1: budget kernel (project reservation, receive lease, finite durable ticket ledger, budgeted writer, crash substrate)",
+  "acceptance": [
+    "One project-level reservation root per stable project/store identity; a second independent root (for example via another main checkout) is refused unless explicitly reconciled",
+    "A host-local receive lease covers the whole receive with no SQLite transaction held over network",
+    "A fixed-capacity append-only ticket ledger, separate from the export journal, flushes each fixed-size ticket before its tranche is consumed; a torn or contradictory tail never recovers a smaller budget (refuse or burn the maximum)",
+    "Every operation-owned write (preallocation, partials, scratch, index, journal, markers, copies) goes through a budgeted writer that accounts bytes and file counts before writing; same-operation retries never reset consumption",
+    "Fail-first tests cover torn latest ticket, duplicated quota root, and crash-burn of unused credit; process-crash proof is separated from power-loss claims"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "resource-limits",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a14bc4-fa6d-7101-90c3-8538455dd83d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [
+    {
+      "blocker_id": "01a14bf1-da15-7fb1-95f8-74d5a80a96b9",
+      "kind": "manual",
+      "detail": "GREG STOP on all w-8538 slices (Advisor #1639, 22:18Z): \"Nie nie. Nie róbcie tego. Nie teraz. Po prostu git fetch.\" Deferred; unblock only on Greg's word.",
+      "created_by": {
+        "actor_id": "greg/claude",
+        "actor_kind": "agent"
+      },
+      "created_at": "2026-10-17T22:18:23.633164900Z"
+    }
+  ],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0f2e1-0daa-70a0-af24-88fb4c6ac536",
+  "external_ref": null,
+  "title": "Amend the host integration contract with the receipt, evidence-order, replay and named-root rules agreed with TermAl",
+  "outcome": "Amend the host integration contract with the receipt, evidence-order, replay and named-root rules agreed with TermAl",
+  "acceptance": [
+    "A holder note lists, for each factual sentence of the amendment about Engram's behaviour, the source location at the landed commit that it rests on, and no sentence contradicts the named-root and checkpoint text already in that document",
+    "The link check and the AGENTS/CLAUDE identity check pass on the tree, and the review pair has no outstanding finding of Medium or higher",
+    "docs/features/behavioral-control-plane.md carries, in its Host integration contract and Planned interfaces sections, the amendment text whose exact wording both coordinators and Termal::Architect1 concurred on, as recorded in a holder note quoting that wording with the concurring message references"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The host integration contract of docs/features/behavioral-control-plane.md carries the amendment agreed with TermAl: requirement 8 covers hosts that cannot intercept compaction; requirements 12-15 give the replay discipline, receipt reconciliation, grant-purpose and bind-before-sighting rules; five paragraphs state what a checkpoint receipt proves (including the unresolved-write and evidence_basis handling), the causal evidence order with the wire-accurate producer/environment references, whole-report refusals, grant lifecycle, and named-root replay reliance; the planned claim-scoped root lifecycle read is added. Fact-checked against the wire at b1de8b2 and 4e04e94 (the per-sentence source map is on the item); both projects' concurrences recorded (Architect1 #14/#17/#20, Engram::Fable #19, Termal::Fable2 15:37Z, and for the Evidence order correction Fable #31, Architect1 #32, Fable2 #33); the review pair clean of Medium or higher in the latest round with the one Low fixed and re-reviewed; docs-only checks passed on the frozen tree; readiness ready on all three live stores. Landed as b5db805. Acceptance evaluation passed fresh on all three criteria (60ea1393, independent_session Claude).",
+    "completed_at": "2026-09-30T16:43:09.563085300Z",
+    "actor": {
+      "actor_id": "greg/kimi",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bf0abe472af94a6d9cf943af4a77460e": {
+        "activity_id": "bf0abe472af94a6d9cf943af4a77460e",
+        "task_id": "01a0f2e1-0daa-70a0-af24-88fb4c6ac536",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/kimi",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "912746abf7304d3e92e0ac95e9f7ba30"
+      }
+    }
+  }
+}

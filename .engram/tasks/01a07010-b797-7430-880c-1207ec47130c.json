@@ -1,0 +1,51 @@
+{
+  "id": "01a07010-b797-7430-880c-1207ec47130c",
+  "external_ref": null,
+  "title": "Handle peer optional-child proposals during a live parent handoff",
+  "outcome": "Handle peer optional-child proposals during a live parent handoff",
+  "acceptance": [
+    "A live-offer storage regression exercises the decided peer-only optional-child behavior without holder-only cancellation guidance and proves parent item, run, claim, fence, expiry, offer and checkpoint invariance. Document admission true/false/refusal and side-effect-free validation; preserve required-child and prerequisite refusals."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06ee6-fdf8-7ac3-b35f-18254a50f51d",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Admitted peer optional creation during pending handoff without altering holder authority; storage and acceptor-next regressions pass.",
+    "completed_at": "2026-09-05T05:51:51.873262800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e9dd76f650ce5105a52cb9dc4679f3439356195dd56b71131039dbef042d64b0": {
+        "activity_id": "e9dd76f650ce5105a52cb9dc4679f3439356195dd56b71131039dbef042d64b0",
+        "task_id": "01a07010-b797-7430-880c-1207ec47130c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "32dfb711fc4fd71a38764a7e9756fb068c41b90d7177654a5f9ec3c3e14b46c7"
+      }
+    }
+  }
+}

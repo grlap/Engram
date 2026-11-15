@@ -1,0 +1,29 @@
+{
+  "id": "01a1800a-5ec1-76a3-ab16-bc25336d4389",
+  "external_ref": null,
+  "title": "Decide how acceptance evaluations use the remote hosts: a remote observer with a central judge, or a full remote evaluator",
+  "outcome": "Decide how acceptance evaluations use the remote hosts: a remote observer with a central judge, or a full remote evaluator",
+  "acceptance": [
+    "One recommendation with its rules is recorded here, carrying each consultee's verdict: Termal::Fable2, Termal::Codex, Engram::Architect3 and Engram::Coder (or its recorded absence). It covers evidence binding to tree and build, replay and staleness, independence, remote work, cost and risk, and any doc or implementation gap",
+    "The recommendation was sent to Greg through Engram::Advisor, and his answer (adoption or change) is quoted verbatim with its source"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "greg-decision",
+    "remote"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

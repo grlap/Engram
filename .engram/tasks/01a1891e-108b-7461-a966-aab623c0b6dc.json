@@ -1,0 +1,77 @@
+{
+  "id": "01a1891e-108b-7461-a966-aab623c0b6dc",
+  "external_ref": null,
+  "title": "Refresh README, shipped inventory and roadmap to show the current state after the cutover, remote gates and gated control",
+  "outcome": "Greg and new readers can see from README and docs where Engram stands today: what works, active limitations, and what is next",
+  "acceptance": [
+    "README.md gives a short, current status section: what Engram does today, which recent capabilities shipped (with their landed commits verified in git log), the active limitations and what comes next; every status claim agrees with docs/shipped.md",
+    "docs/shipped.md lists every capability that has landed on master since its last revision, verified against git log and the source, and keeps shipped facts separate from roadmap or target prose",
+    "docs/roadmap.md is current: items that shipped are moved out of the roadmap, and the remaining next steps (including gated control for the TermAl projects pending a TermAl host fix, and planned Git task sync) are stated as planned, not shipped",
+    "No work refs appear in any changed prose; the changeset touches only .md files outside AGENTS.md and CLAUDE.md; the link check and the AGENTS/CLAUDE identity check pass through the focused launcher on the frozen tree; the Codex and Claude review round on that tree has no outstanding Medium-or-higher finding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "README now has a dated current-status section (recent landed changes with verified commits, active limitations, what's next). docs/shipped.md lists the capabilities landed through today, and docs/roadmap.md separates shipped from planned: Engram gated turns on, TermAl-project gated turns pending a host fix, Git task sync planned. Only three .md files changed, with no work refs; the link and AGENTS/CLAUDE identity checks passed; the R3 Codex+Claude pair was clean. Landed in 83093646, pushed and installed (build 8f1c70e0). The independent evaluation 353ee5fc passed 4/4.",
+    "completed_at": "2026-10-30T00:06:22.992624500Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "53755877f14f47cda8071089ba13fd4c": {
+        "activity_id": "53755877f14f47cda8071089ba13fd4c",
+        "task_id": "01a1891e-108b-7461-a966-aab623c0b6dc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6ddea161cf5846bda454d9c6b5a50e45"
+      },
+      "6bf614d8d0c747a2b55f4010db776f2a": {
+        "activity_id": "6bf614d8d0c747a2b55f4010db776f2a",
+        "task_id": "01a1891e-108b-7461-a966-aab623c0b6dc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "6d9fa7034cc34dd08a713cf80fe07eed"
+      },
+      "6d9fa7034cc34dd08a713cf80fe07eed": {
+        "activity_id": "6d9fa7034cc34dd08a713cf80fe07eed",
+        "task_id": "01a1891e-108b-7461-a966-aab623c0b6dc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "0d02d41eb80849b59b77a403cfd56cce"
+      }
+    }
+  }
+}

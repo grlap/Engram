@@ -1,0 +1,30 @@
+{
+  "id": "01a1dae6-ffec-7812-8256-ce5fd4db4261",
+  "external_ref": null,
+  "title": "Exercise a real noncanonical Windows spelling in the refusal-path test",
+  "outcome": "Replace the inert dot alias in the task-sync refusal fixture with a case alias that survives path construction, and check omission of both caller and admitted paths from JSON.",
+  "acceptance": [
+    "The Windows fixture passes a spelling that differs from the admitted plain checkout and asserts that difference.",
+    "The test checks human stderr against the admitted checkout, includes stderr on failure, and omits both caller and admitted paths from structured JSON.",
+    "The corrected case passes on Windows and the same test passes on Linux and macOS after a fresh candidate is cut onto current master."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review-low",
+    "tests",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

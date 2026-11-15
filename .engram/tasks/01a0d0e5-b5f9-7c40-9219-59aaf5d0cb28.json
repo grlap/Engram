@@ -1,0 +1,52 @@
+{
+  "id": "01a0d0e5-b5f9-7c40-9219-59aaf5d0cb28",
+  "external_ref": null,
+  "title": "show --json reports an unreadable completion seal the same as a missing one",
+  "outcome": "show --json reports an unreadable completion seal the same as a missing one",
+  "acceptance": [
+    "A regression test covers a completed item with an unreadable seal and asserts the error_class",
+    "The full quality gates pass",
+    "When a completed item's completion seal cannot be bound or read, show --json reports acceptance {provenance: unavailable} with an error_class naming the failure, distinct from the plain {provenance: unavailable} of an item with no seal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A completed item whose seal the run names but cannot be read or bound (missing, malformed or misbound) now shows acceptance {provenance: unavailable, error_class} in show --json, distinct from the plain unavailable of an item with no native seal. Tests cover missing, malformed and misbound seals plus a no-seal negative control. Landed as 4ab86e9 with w-901e99a7d50a and w-553e2d2d85d7 (bundle 7 group A). Round 2: gate test-5aae4182 PASS on freeze 81c609f6…, pair clean of Low and above, independent evaluation passing all 3 criteria, readiness ready on all 4 stores. Installed build c4c244b7…f4c0.",
+    "completed_at": "2026-10-03T21:00:33.059453400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3af5254a30854e11b5c7b4ecea27e124": {
+        "activity_id": "3af5254a30854e11b5c7b4ecea27e124",
+        "task_id": "01a0d0e5-b5f9-7c40-9219-59aaf5d0cb28",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "fc5723f7293e42dea645adee3d0929c3"
+      }
+    }
+  }
+}

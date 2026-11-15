@@ -1,0 +1,31 @@
+{
+  "id": "01a1c718-6a19-70c2-a5ec-c9a2e41a8b0e",
+  "external_ref": null,
+  "title": "Decide and grant standing authority for routine task-sync data-branch commit and push",
+  "outcome": "Decide and grant standing authority for routine task-sync data-branch commit and push",
+  "acceptance": [
+    "Greg's explicit word on whether agents may commit and push the project's orphan task/evidence data branch as a routine sync step is recorded verbatim with its source, including which hosts and sessions it covers and any limits (no force-push, no history rewrite, only the data branch)",
+    "If he grants it, the AGENTS.md/CLAUDE.md wording that grants exactly that act lands through the authority-text route: both coordinators' concurrence, the exact wording sent to Greg before landing, and the final-diff audit recorded as passed before landing; the files stay identical",
+    "Until then the existing rules stand: every data-branch commit or push needs Greg's own word, and the docs and the w-004cb3ab6090 pilot record that dependency"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "authority-text",
+    "greg-decision",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,68 @@
+{
+  "id": "01a1a23f-7d41-7640-993e-11a7763a6a14",
+  "external_ref": null,
+  "title": "Specify task-sync delta wiring, cursor provenance and receipt-first replay",
+  "outcome": "Prepare the concrete integration and format decision for proportional ordinary export/import, Model A, and exact zero-payload replay.",
+  "acceptance": [
+    "Specify how ordinary export, commit import and Model A consume the same changed set, use explicit bootstrap or rebuild, apply changed tasks atomically, and preserve historical exact receipts before any payload read.",
+    "Resolve the project.json feed-cut provenance and existing ordered documents_fingerprint versus incrementally maintained inventory_root without silently changing stored fingerprint meanings or guessing missing historical cursors.",
+    "For every proposed durable change, name exact tables, record types and fields, conversion or retirement counts, ID/link preservation, import/repair behavior, no-write refusal and every-live-store cutover requirement; present the plan through Fable for Greg before coding.",
+    "Define end-to-end 2,000-task/history tests for five changed, one added and one deleted task, both directions, no-op and replay after later local edits, with payload read/decode/write/removal and graph-closure counters. No implementation or store mutation occurs in this design item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "performance",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1947d-b015-7fa2-b76c-dd205a1454a3",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered source-backed additive delta/cursor/receipt-first design; Codex16737 reviewed, all four Medium and adopted Low corrections incorporated and presented through Fable before implementation. No source/store mutation or execution credit.",
+    "completed_at": "2026-11-08T00:42:24.293057500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "1f64c3fee59d47358e6f138644d6756c": {
+        "activity_id": "1f64c3fee59d47358e6f138644d6756c",
+        "task_id": "01a1a23f-7d41-7640-993e-11a7763a6a14",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "1f64c3fee59d47358e6f138644d6756c"
+      },
+      "c717217f3bfb400bb0946b0879305d08": {
+        "activity_id": "c717217f3bfb400bb0946b0879305d08",
+        "task_id": "01a1a23f-7d41-7640-993e-11a7763a6a14",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2a3d275b38854aba80fdd8c81ff4c58d"
+      }
+    }
+  }
+}

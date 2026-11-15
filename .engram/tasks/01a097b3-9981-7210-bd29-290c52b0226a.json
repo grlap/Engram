@@ -1,0 +1,49 @@
+{
+  "id": "01a097b3-9981-7210-bd29-290c52b0226a",
+  "external_ref": null,
+  "title": "Coordinate CLI stderr terminal safety batch",
+  "outcome": "Coordinate CLI stderr terminal safety batch",
+  "acceptance": [
+    "Consult Fable and Grok, consolidate bounded stderr scope, independently verify original acceptance and evidence, run nine parent-owned gates and complete the standard read-only Codex/Claude review pair"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "coordination"
+  ],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Consultation, bounded acceptance verification, full nine parent gates and clean Codex/Claude review completed; implementation seal links and original evidence read back. No Git/install performed.",
+    "completed_at": "2026-09-13T00:17:54.478314500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "eb2b48c8db3421101563ba2da5df5e3951659755c7ee2a65dd713b6d215cde53": {
+        "activity_id": "eb2b48c8db3421101563ba2da5df5e3951659755c7ee2a65dd713b6d215cde53",
+        "task_id": "01a097b3-9981-7210-bd29-290c52b0226a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "07382005c16198fabe1f92131e379c7f2387a2efe2cc8ae760864f22c99bfa5e"
+      }
+    }
+  }
+}

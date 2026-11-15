@@ -1,0 +1,50 @@
+{
+  "id": "01a0f363-0d27-7420-b80e-6ef78a07b024",
+  "external_ref": null,
+  "title": "Name boundary-matrix rows covered by the mode and task-pin regression matrix",
+  "outcome": "Name boundary-matrix rows covered by the mode and task-pin regression matrix",
+  "acceptance": [
+    "The mode_and_pin_matrix_preserves_admission_and_freshness test names the agreed boundary-matrix rows it exercises, with row identifiers verified against the current contract."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 0d6eb26: the mode and task-pin matrix test names the boundary rows it covers (B01's evaluate refusal, B04, B08) and disclaims the rest.",
+    "completed_at": "2026-10-03T08:03:15.423806200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "19af16b1b74f483bb32fda79c7ed958a": {
+        "activity_id": "19af16b1b74f483bb32fda79c7ed958a",
+        "task_id": "01a0f363-0d27-7420-b80e-6ef78a07b024",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "bb8af30758f442d88c9d41556fb79ad3"
+      }
+    }
+  }
+}

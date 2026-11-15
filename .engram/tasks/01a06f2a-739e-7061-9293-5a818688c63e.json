@@ -1,0 +1,50 @@
+{
+  "id": "01a06f2a-739e-7061-9293-5a818688c63e",
+  "external_ref": null,
+  "title": "next surfaces a session's recorded coordination obligations without an implementation claim (design)",
+  "outcome": "next surfaces a session's recorded coordination obligations without an implementation claim (design)",
+  "acceptance": [
+    "a coordinator or reviewer session that holds no claim sees on next the obligations it recorded or was assigned (review parent, owed note or gate, pending handoff) as a distinct section; evaluated against ordinary coordination items first; no new role or watch system unless the evaluation shows one is needed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "advisor",
+    "dogfood"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Claimless resume discovery implemented and documented to the accepted design, all correction children and gates complete, independent review closed.",
+    "completed_at": "2026-09-05T17:35:11.011841700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "176fadf2392b9ab4a594c509c169409c0734c0b5ba25660e00f2fb64cb3c5091": {
+        "activity_id": "176fadf2392b9ab4a594c509c169409c0734c0b5ba25660e00f2fb64cb3c5091",
+        "task_id": "01a06f2a-739e-7061-9293-5a818688c63e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "094177f023b51f4595b89b8141912f9ff093787eafd90bad301381a1f36edab6"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "01a08f92-bb0b-70d2-a7de-12c5ce5fd676",
+  "external_ref": null,
+  "title": "Refuse missing work schema metadata as different-build schema",
+  "outcome": "Refuse missing work schema metadata as different-build schema",
+  "acceptance": [
+    "missing_work_schema_metadata_refuses_on_open_and_repair passes",
+    "missing_work_schema_metadata_refuses_through_cli passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "review",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a07cab-bb1c-7ef3-a615-0c891ac90a26",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered different-build refusal when only work_schema_metadata is missing; native4mode and CLI named criteria passed full block8, no corruption classification or mutation. Round5 clean.",
+    "completed_at": "2026-09-11T10:10:42.412687100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "ee943f3d6757b55ecf363ac543f4abca9bfc61086ca0bb6b7c7f5df39580c696": {
+        "activity_id": "ee943f3d6757b55ecf363ac543f4abca9bfc61086ca0bb6b7c7f5df39580c696",
+        "task_id": "01a08f92-bb0b-70d2-a7de-12c5ce5fd676",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b21ca8b79ba10dd52d8a656134ef57b78d52b21b313e74786e66a31407290fe6"
+      }
+    }
+  }
+}

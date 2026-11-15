@@ -1,0 +1,53 @@
+{
+  "id": "01a15d16-389a-7de0-938d-9fcc4bb4cc94",
+  "external_ref": null,
+  "title": "Build a retained Engram library test executable at master to serve as the admission-stall load source",
+  "outcome": "Build a retained Engram library test executable at master to serve as the admission-stall load source",
+  "acceptance": [
+    "One `cargo test --lib --no-run` runs through the focused launcher in a fresh clean detached worktree at a named master commit, and its launcher result shows expected, before and after fingerprints equal",
+    "A holder note gives the test executable's path and SHA-256, the source commit and tree, the launcher result id, and the path and test count of a saved `--list` output, and the worktree is kept until the coordinator releases it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "incident",
+    "latency",
+    "throughput"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a15cc0-9628-70a1-88a2-06d82cecfe49",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Built and delivered the retained Engram library test executable from clean detached master commit 7d6710cfec40c98d68088c6dd0f38b84023b2a72/tree52f8f205d9e6b674ae1f552ff52d724dd39d2aed. One focused cargo test --lib --no-run passed, exit0, run test-cc0c5970-9dcb-47ec-90c3-ae9f92fc0f2b; expected=before=after=0dc0e6f7be2243e884cfe5a482b33aa97b3326f344b0a2ea7f4ba85529602236. Exe engam artifact actual name engram-15ef11171ca5a1c1.exe, SHA2569f8574023b3be9d97c7efa4fb22e4ae16153141f23dfb54be6e3a49528324122; saved --list has2677tests/0benchmarks, SHAd12df7373eaf68664a8e70b78d060f2dd247b6a5b5f88f74fdf11e973ad30e9a. Independent evaluation a049136d01d74f309ab314662a5a7215 passed2/2 atcut28. Root retained through both loadarms until explicit coordinator release; no source changes, commit, install or runtime restart.",
+    "completed_at": "2026-10-21T07:09:47.314000800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "efc06e161e68417db496a7809d7d75b5": {
+        "activity_id": "efc06e161e68417db496a7809d7d75b5",
+        "task_id": "01a15d16-389a-7de0-938d-9fcc4bb4cc94",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0147863f59734c6fb110607707f5a38f"
+      }
+    }
+  }
+}

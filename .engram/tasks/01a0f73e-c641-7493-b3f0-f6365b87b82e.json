@@ -1,0 +1,52 @@
+{
+  "id": "01a0f73e-c641-7493-b3f0-f6365b87b82e",
+  "external_ref": null,
+  "title": "Acceptance criteria keep the order their author typed",
+  "outcome": "add and update say when the stored acceptance order differs from the order typed",
+  "acceptance": [
+    "Revisions already stored are read as stored with their existing order and bindings unchanged; a revision that only reorders criteria is recorded as a real revision; the CLI and MCP help for add and update say that order is kept",
+    "Tests cover a non-alphabetical list with bindings round-tripping in typed order, a duplicate removed while the order is kept, and an existing sorted revision read unchanged",
+    "add, update --accept and planning store criteria in the order given, removing exact duplicates (keeping the first) and trimming whitespace, so stored position N is the Nth criterion typed; --bind, --verdict and --link positions keep referring to the stored list, which now equals the typed list"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Acceptance criteria are stored in the order typed: trimmed, without blanks, and without a repeat of an earlier criterion. add, update --accept, decompose, plan and the import preview share one normalizer. A binding counts positions in the typed list with blanks included: a binding on a blank is refused, fixing a mis-resolution the design review found, and one on a repeat lands on the first occurrence. A reorder is a real revision: a moved bound criterion owes its verification again, a failed evaluation is carried across it, and history lists it. Graph snapshots check acceptance for repeats only. Stored sorted lists read as stored. The help text and docs say the order is kept, and that reordering a bound criterion owes its verification again.",
+    "completed_at": "2026-10-01T18:42:42.027095800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d1c26348d656445995258e855ec3860a": {
+        "activity_id": "d1c26348d656445995258e855ec3860a",
+        "task_id": "01a0f73e-c641-7493-b3f0-f6365b87b82e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e5f1d1a7e8964533a9da5784c929861c"
+      }
+    }
+  }
+}

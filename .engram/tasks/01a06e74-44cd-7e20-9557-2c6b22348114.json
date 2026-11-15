@@ -1,0 +1,51 @@
+{
+  "id": "01a06e74-44cd-7e20-9557-2c6b22348114",
+  "external_ref": null,
+  "title": "Reject duplicate known fields before work projection Value decoding",
+  "outcome": "Reject duplicate known fields before work projection Value decoding",
+  "acceptance": [
+    "typed_projection_checks_reject_duplicate_known_fields passes for top-level, nested object, nested enum and array-element members using exact verifier labels"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review",
+    "snapshot"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e4d-ce4c-7072-bebc-d4401f171d98",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Projection types now decode original bytes before Value conversion, rejecting duplicate known members at top level and inside objects, enums, and arrays. All seven families have exact-label regressions; malformed blockers additionally pin the existing doctor Json refusal. Eight focused tests and all final gates pass.",
+    "completed_at": "2026-09-04T22:31:23.084500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "08e35b1a8f11c19efff23f1f92f7955ad19460a5684c97600b46f0c9ed3d6eaa": {
+        "activity_id": "08e35b1a8f11c19efff23f1f92f7955ad19460a5684c97600b46f0c9ed3d6eaa",
+        "task_id": "01a06e74-44cd-7e20-9557-2c6b22348114",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "dev/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "73ec054c05935a601b17b88b7701e1e505f79210fa48ba78b6dcca10bbbf831b"
+      }
+    }
+  }
+}

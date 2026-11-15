@@ -1,0 +1,63 @@
+{
+  "id": "01a10ed5-15bf-7243-abb7-987b34f92b57",
+  "external_ref": null,
+  "title": "The atomic-plan doc says the descendant check never visits closed history, which reads as covering graph restore too",
+  "outcome": "The atomic-plan doc says the descendant check never visits closed history, which reads as covering graph restore too",
+  "acceptance": [
+    "docs/features/atomic-work-plan.md scopes the closed-history sentence to planning admission, so it no longer implies that graph snapshot restore skips closed items",
+    "The doc link check passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "docs/features/atomic-work-plan.md now scopes the \"never visits closed history\" claim to the planning admission check and states restore's cost separately (\"Graph restoration validates the same limit in one pass over the snapshot's items, closed ones included, so its work grows with the snapshot's size and not with the number of roots\"), so the paragraph no longer implies that graph snapshot restore skips closed items. Landed in the shared changeset with w-808cfe09c876 and w-37a24b8cccb3 as 7340a475c1ac9cc1c857bb5a0c04ddb2bae9307c on origin master (fast-forward from 73c0f8d, pushed 2026-10-06T05:53:51Z); its own earlier round on 1f1514f was clean (freeze b31e6edd…) and the whole input was reviewed clean of Medium or higher on freeze 5d82c31f… (round 2 on 73c0f8d); full gate test-6b8532a2 9/9 with the doc link check; evaluation 4f4e961e8b024d4bb2b54a7ba9474119 passed both criteria; readiness ready on all four live stores with the build from the commit; installed build c1f7f82e2853 (exe 29ec899ee953…), previous exe backed up as engram-20261006T055332Z-ca8a56871983.exe. The low987 worktree is removed with this completion.",
+    "completed_at": "2026-10-06T05:54:04.772792Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2368d73569fc4a2fb345f7449cb4e220": {
+        "activity_id": "2368d73569fc4a2fb345f7449cb4e220",
+        "task_id": "01a10ed5-15bf-7243-abb7-987b34f92b57",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2368d73569fc4a2fb345f7449cb4e220"
+      },
+      "8515fe9ea2cd446e9d0c3a8550a91887": {
+        "activity_id": "8515fe9ea2cd446e9d0c3a8550a91887",
+        "task_id": "01a10ed5-15bf-7243-abb7-987b34f92b57",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "efc7f59d13804d86873ff15b3ae4ae53"
+      }
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "id": "01a110b0-81b0-7923-9995-e736c419c503",
+  "external_ref": null,
+  "title": "Tighten the explicit-empty seal member docs sentence and make its test assert the whole integrity report",
+  "outcome": "Tighten the explicit-empty seal member docs sentence and make its test assert the whole integrity report",
+  "acceptance": [
+    "docs/features/sqlite-store.md says a member the type fills in when absent is accepted stored or omitted only when the type always writes it back, while a stored member the type drops on writing (an unknown member, or one skipped when empty) is refused, and presents obligations/environment as examples among the seal's skipped members (foreign_workspace_changes, required_child_resolutions, acceptance_evaluation)",
+    "explicit_empty_skipped_seal_members_are_refused_by_integrity_verification also asserts that invalid_objects, invalid_control_records and invalid_graph_snapshot_audits are empty and that invalid_work_records holds exactly the expected findings and no others, and that each injection leaves the rest of the stored value unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "docs",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The docs/features/sqlite-store.md paragraph now says what a write-back check refuses: an unknown member, an empty value of a member skipped when empty, or a null for one skipped when absent. It names the completion seal's skipped members, including landing, and says a non-empty list survives. explicit_empty_skipped_seal_members_are_refused_by_integrity_verification now asserts the whole integrity report: the other finding lists are empty, the work-record findings equal the expected map exactly, and each injection leaves the rest of the stored value unchanged (an untouched side is compared whole). Landed in ce32318 with w-a426617d5def: full gate test-296baf89 passed, the round-2 pair was clean, and the evaluation passed 2/2 (8a27e677…).",
+    "completed_at": "2026-10-09T01:18:38.387935600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "94cc84b8969d49afb24fc867687fbbd1": {
+        "activity_id": "94cc84b8969d49afb24fc867687fbbd1",
+        "task_id": "01a110b0-81b0-7923-9995-e736c419c503",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "caa158f3bc2c4b288a3f2937179928bc"
+      },
+      "b916a18cc5e44177be51f64f9e429b53": {
+        "activity_id": "b916a18cc5e44177be51f64f9e429b53",
+        "task_id": "01a110b0-81b0-7923-9995-e736c419c503",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b916a18cc5e44177be51f64f9e429b53"
+      },
+      "bbc3c66dbea641458db9822bed335a25": {
+        "activity_id": "bbc3c66dbea641458db9822bed335a25",
+        "task_id": "01a110b0-81b0-7923-9995-e736c419c503",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bbc3c66dbea641458db9822bed335a25"
+      }
+    }
+  }
+}

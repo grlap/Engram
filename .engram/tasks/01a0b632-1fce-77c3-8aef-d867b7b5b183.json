@@ -1,0 +1,50 @@
+{
+  "id": "01a0b632-1fce-77c3-8aef-d867b7b5b183",
+  "external_ref": null,
+  "title": "Switch on evaluated acceptance for the Engram project store",
+  "outcome": "Completion on the Engram project store requires a recorded per-criterion acceptance evaluation; the legacy self-asserted path is off.",
+  "acceptance": [
+    "on that store done without an evaluation is refused and names evaluate as the remedy, and done after a passing evaluation seals with provenance evaluated",
+    "the active control policy of the Engram store carries an acceptance-evaluation setting that allows same_session and independent_session with mechanical basis asserted, activated in Greg's name with an auditable reason"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Evaluated acceptance is active on the Engram project store at policy epoch 2 (same_session and independent_session allowed, mechanical basis asserted), activated in Greg's name. The live store refused done without an evaluation and named evaluate as the remedy; this completion is the first on the store sealed from a recorded per-criterion evaluation. PhoenixCodeNav is unchanged.",
+    "completed_at": "2026-09-18T20:29:00.577168900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5cd9757dd07f4ea38211cf02434bf194": {
+        "activity_id": "5cd9757dd07f4ea38211cf02434bf194",
+        "task_id": "01a0b632-1fce-77c3-8aef-d867b7b5b183",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f1c66bb978174d19a6232fe6990d40eb"
+      }
+    }
+  }
+}

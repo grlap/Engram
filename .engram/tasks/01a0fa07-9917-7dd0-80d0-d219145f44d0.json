@@ -1,0 +1,54 @@
+{
+  "id": "01a0fa07-9917-7dd0-80d0-d219145f44d0",
+  "external_ref": null,
+  "title": "Design off-host backup so a store can honestly report local_backed_up",
+  "outcome": "Design off-host backup so a store can honestly report local_backed_up",
+  "acceptance": [
+    "docs/features/ holds a design brief for off-host backup that names what each copy contains and excludes, where it goes and how that target is configured, what triggers a copy, how freshness is recorded, and exactly when doctor reports local_backed_up instead of local",
+    "the brief names the restore path from an off-host copy onto a clean home and the acceptance test that proves a restored store equals the source at the copy's cut",
+    "the brief states what happens when a copy fails or goes stale, and how the operator sees it, with no silent degradation",
+    "the implementation is decomposed into Engram items, each with criteria an independent evaluator can check from the repository and command output",
+    "both architects record their concurrence on the final brief, and the questions that need Greg's decision are listed on this item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "design"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Off-host backup is designed and its brief is on master. docs/features/off-host-backup.md names two copy kinds (the verified full-store file and the unwidened work-graph document), the BackupAdapter port with the directory and git-ref adapters, target configuration with the operator's disclosure authorization and off-host assertion, the eight-step push with its lock and pending-attempt record, the host trigger, the freshness rule under which doctor reports local_backed_up and the reasons it reports otherwise, the status, doctor and next surfaces, restore from either kind onto a clean home with the store-equality acceptance test, and the acceptance tests. Nine companion documents were aligned with it. Implementation is filed as root w-5627a19713d8 with eight required children and the later root w-121c35181dea. Both architects concurred on the landed text and the coordinator approved it; three landing-review rounds by Engram::Opus found and I fixed every Medium, and the one remaining Low is filed as w-1b24f538375a. Landed by Engram::Opus as a Markdown-only changeset; nothing was built or installed. The independent acceptance evaluation 01a8f7af44394b4382c29658695cf7c2 passed all five criteria.",
+    "completed_at": "2026-10-02T06:49:06.441164300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b78dd6dda8ac45e181f40009e8782095": {
+        "activity_id": "b78dd6dda8ac45e181f40009e8782095",
+        "task_id": "01a0fa07-9917-7dd0-80d0-d219145f44d0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1a35ae61416f4ac08ba48ba9720795a6"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "project": {
+    "format": "engram-task-planning-v1",
+    "project_id": "github.com/grlap/Engram"
+  },
+  "profile": {
+    "include_notes": false,
+    "origin_machine": "central"
+  },
+  "folder_exchange": {
+    "complete": true,
+    "export_basis": {
+      "inventory_fingerprint": "161816c7faa944fee5e99eb4e4e6ec5200b9b6c1e9d9b22d041ebb3968ca179f"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a115c0-7b79-7e32-8e07-3767dd993c27",
+  "external_ref": null,
+  "title": "Markdown-only validation omits tests that consume documented contract tables",
+  "outcome": "Markdown contract-table changes receive the checks that consume them, while ordinary prose keeps a proportionate validation path.",
+  "acceptance": [
+    "Identify the current tests that consume Markdown and correct the claim that only the link checker reads Markdown; keep AGENTS.md and CLAUDE.md identical and review-command guidance consistent.",
+    "Record and validate a bounded check-selection rule for edits to consumed contract tables versus ordinary prose, preserving existing effective receipt tests and applicable authority-text review requirements."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Premise gone: no test reads a Markdown file any more. A grep for include_str and read_to_string of .md finds none; a4c488e3 and Greg's rules-greg-no-instruction-file-tests-2026-11-07 removed such tests. So no Markdown-only change can affect a test that reads documented tables. Closed by Engram::Fable after a read-only triage, under rules-greg-close-senseless-tasks-2026-11-08 and Greg's #803.",
+  "completion": null
+}

@@ -1,0 +1,78 @@
+{
+  "id": "01a0c666-bd0d-7b30-9d72-300477cb3da4",
+  "external_ref": null,
+  "title": "Split Engram src/storage/work/completion.rs below 2,500 lines",
+  "outcome": "One-file refactor of src/storage/work/completion.rs; original and extracted modules stay below 2,500 lines with measured acceptance evidence.",
+  "acceptance": [
+    "A host-observed automated test proves src/storage/work/completion.rs and every module extracted from it are each at most 2,499 physical lines at the final source revision. Evidence lists every covered path and before/after count; include blank/comment lines and a nonempty final unterminated line. Newly extracted modules must not escape the inventory.",
+    "A lightweight size check for this file family runs in normal validation and fails at 2,500 lines, passes at 2,499, counts LF/CRLF consistently, and refuses an empty or failed inventory. Reuse one shared checker if already available; do not build a new framework per task.",
+    "Independent-session final acceptance cites the fresh host-observed line-count test evidence. Completion must remain blocked when that bound evidence is missing, failed or stale; demonstrate that gating safely on an isolated fixture rather than relaxing the live task. A plan evaluation or author-written gate note is not a substitute for the observed size result.",
+    "Split only this file's responsibilities into ordinary modules without behavior, schema/SQL or public-interface changes. Preserve existing tests/assertions and pass relevant regressions plus required project gates/review. No minification, duplicate implementation, deleted tests or transferring the oversized body to another oversized file."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 1,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": "independent_session",
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-storage",
+    "area-work",
+    "file-size",
+    "maintainability",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0b5b4-14a8-7840-8eeb-108a13d58018"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "src/storage/work/completion.rs was split in af7c098 (2706 to 2304 physical lines, child_barriers.rs extracted, no behaviour change); all 14 files of the family are at most 2,499 lines, proven by the host-observed family size test on 2026-09-27 under this claim, and accepted by an independent evaluation, 4 of 4.",
+    "completed_at": "2026-09-27T06:36:44.114228300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4298dc8757884a6994f32f39676b6406": {
+        "activity_id": "4298dc8757884a6994f32f39676b6406",
+        "task_id": "01a0c666-bd0d-7b30-9d72-300477cb3da4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "68c58df2545b46489e954885d9215efe"
+      },
+      "51ba7cc08e6148b495294e58d02cc807": {
+        "activity_id": "51ba7cc08e6148b495294e58d02cc807",
+        "task_id": "01a0c666-bd0d-7b30-9d72-300477cb3da4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "51ba7cc08e6148b495294e58d02cc807"
+      }
+    }
+  }
+}

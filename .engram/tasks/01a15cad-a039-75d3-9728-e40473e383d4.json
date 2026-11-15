@@ -1,0 +1,31 @@
+{
+  "id": "01a15cad-a039-75d3-9728-e40473e383d4",
+  "external_ref": null,
+  "title": "Section 6a: bind the reviewed-root check to the adopted round's independently retained freeze fingerprint",
+  "outcome": "Section 6a: bind the reviewed-root check to the adopted round's independently retained freeze fingerprint",
+  "acceptance": [
+    "/review-changes section 6a condition 1 says that the reviewed-root checker run uses the reviewed freeze's fingerprint retained independently as section 3 requires, equal to the adopted round's freeze, and that the old fingerprint in the carry proof equals that freeze",
+    "The change is recorded as a narrowing under the authority-text procedure (a), (b) and (c), and TermAl's twin rule, if it exists by then, gets the same narrowing or a recorded reason why not"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "authority",
+    "review-low",
+    "throughput",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a15c1c-8b6c-7013-8092-c2c47f9f8965",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,44 @@
+{
+  "id": "01a0f117-3c93-7093-b03e-d09de674c389",
+  "external_ref": null,
+  "title": "Show a standing blocking evaluation before a host spawns an evaluator, and give the re-roll refusal a typed class",
+  "outcome": "Show a standing blocking evaluation before a host spawns an evaluator, and give the re-roll refusal a typed class",
+  "acceptance": [
+    "Before this item completes, its holder note retains TermAl-owner evidence for the consuming host: a standing typed reroll refuses termal_evaluate_acceptance before any evaluator child or delegation is created (both counts unchanged); a non-refusing status permits spawn; a pinned live check names the real Engram producer/build. Engram show/next and CLI/MCP typed refusals plus a race case are tested and documented; a permissive reroll result means only this guard permits, with other admission conditions still enforced."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "8b0e8bceda4b43d3adc6b14524903ea2": {
+        "activity_id": "8b0e8bceda4b43d3adc6b14524903ea2",
+        "task_id": "01a0f117-3c93-7093-b03e-d09de674c389",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c149cf7f1e664bde80e4c1df381a2baf"
+      }
+    }
+  }
+}

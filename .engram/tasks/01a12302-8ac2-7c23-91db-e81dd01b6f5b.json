@@ -1,0 +1,53 @@
+{
+  "id": "01a12302-8ac2-7c23-91db-e81dd01b6f5b",
+  "external_ref": null,
+  "title": "Task sync incremental local export and progress",
+  "outcome": "Task sync incremental local export and progress",
+  "acceptance": [
+    "Every supported planning and note mutation is captured once in the export, runtime-only changes leave shared bytes unchanged, and an interrupted export resumes without skipping local changes, with tests",
+    "No TermAl remote relay is introduced, and any durable-store change is presented to Greg before coding"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a12302-746c-7570-a6df-a88094a73d20"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered and landed explicit local incremental task preparation with complete immutable candidates, same-snapshot inventory and feed cut, reuse of unchanged document bytes, stable task/note/activity identities, and pending-operation recovery. Full gate and current Codex+Claude review pair passed; independent acceptance passed both unchanged criteria. All four live stores report ready; no durable-store or projection change and no TermAl remote relay.",
+    "completed_at": "2026-10-12T02:31:54.683596500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "9d5f3ed9e0c1412681aea43e955afab9": {
+        "activity_id": "9d5f3ed9e0c1412681aea43e955afab9",
+        "task_id": "01a12302-8ac2-7c23-91db-e81dd01b6f5b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2ec1a646d5f0472d833e1bdcd5cdf579"
+      }
+    }
+  }
+}

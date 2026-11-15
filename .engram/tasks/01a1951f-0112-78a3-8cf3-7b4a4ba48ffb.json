@@ -1,0 +1,28 @@
+{
+  "id": "01a1951f-0112-78a3-8cf3-7b4a4ba48ffb",
+  "external_ref": null,
+  "title": "Clean up a journal startup marker when its initial exclusive write fails after creation",
+  "outcome": "Clean up a journal startup marker when its initial exclusive write fails after creation",
+  "acceptance": [
+    "Startup records exclusive ownership as soon as creation succeeds, so a subsequent initial write or close failure still attempts cleanup and preserves all failures.",
+    "A deterministic create-then-write-fails regression proves cleanup, while a pre-existing marker collision remains untouched and startup remains failed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "test-harness"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

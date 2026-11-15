@@ -1,0 +1,51 @@
+{
+  "id": "01a0f8bd-e908-74f2-8534-e71f1f8ad95c",
+  "external_ref": null,
+  "title": "The host binding and verification reads are tested across a reorder of non-alphabetical criteria",
+  "outcome": "The host binding and verification reads are tested across a reorder of non-alphabetical criteria",
+  "acceptance": [
+    "A test reads a bound non-alphabetical acceptance list through the host binding and verification reads, reorders it, checks the moved criterion's current position, requirement and newly opened obligation through those reads, and checks that both reads refuse the pre-reorder revision"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "A test drives the host binding and verification reads over a bound list that is not alphabetical, through a reorder. It checks:\n- the moved criterion's new position, requirement and newly opened obligation;\n- that the vacated position reads unbound;\n- that both reads refuse the pre-reorder revision.\nThe full gate passed 9/9, the pair was clean, and the evaluation passed. Landed as 9842b31 and installed as build ef436b7a.",
+    "completed_at": "2026-10-01T22:34:11.665840600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "184c8a764ada468297f0e6c3ab61d3d7": {
+        "activity_id": "184c8a764ada468297f0e6c3ab61d3d7",
+        "task_id": "01a0f8bd-e908-74f2-8534-e71f1f8ad95c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e51e9a08bc2d4f00b85e021c24254403"
+      }
+    }
+  }
+}

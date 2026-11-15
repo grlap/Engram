@@ -1,0 +1,59 @@
+{
+  "id": "01a17b95-4b17-7592-b4ca-9f73fd5434dd",
+  "external_ref": null,
+  "title": "Full projection repair takes over 40 minutes on a 1.16 GB store",
+  "outcome": "Full projection repair takes over 40 minutes on a 1.16 GB store",
+  "acceptance": [
+    "engram doctor --repair-projections on an export/import copy of the live Engram store (about 1.16 GB) completes in under 5 minutes on an idle host, with its existing rebuild-and-verify contract unchanged",
+    "The cause of the observed 2.5 TB of logical read transfer is identified and stated on this item"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "delivered",
+    "evaluation-pending",
+    "performance",
+    "repair"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "036e2bded9b542199a7caa7755c51305": {
+        "activity_id": "036e2bded9b542199a7caa7755c51305",
+        "task_id": "01a17b95-4b17-7592-b4ca-9f73fd5434dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "c9656a2df37546fd97e4d0713b354182"
+      },
+      "c9656a2df37546fd97e4d0713b354182": {
+        "activity_id": "c9656a2df37546fd97e4d0713b354182",
+        "task_id": "01a17b95-4b17-7592-b4ca-9f73fd5434dd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "d4b594ea77a04d8ab88bba3d58706021"
+      }
+    }
+  }
+}

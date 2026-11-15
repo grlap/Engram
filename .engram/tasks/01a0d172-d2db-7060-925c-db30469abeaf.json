@@ -1,0 +1,68 @@
+{
+  "id": "01a0d172-d2db-7060-925c-db30469abeaf",
+  "external_ref": null,
+  "title": "Read a claimed item's control binding without changing focus",
+  "outcome": "Read a claimed item's control binding without changing focus",
+  "acceptance": [
+    "A read-only core command (e.g. `engram work core inspect REF --json`) returns the same item view as `work core focus`, including control_binding when the calling session holds the item's live claim, without changing the session's focus, staging or discarding a delivery page, or appending any event",
+    "Tests prove focus, delivery state and the project feed are unchanged by the read, and that the binding matches the one `work core focus` returns for the same holder",
+    "The CLI docs describe the command as the host's way to read a claim's binding before session_bind",
+    "The full quality gates pass",
+    "control_binding in that output is null when the caller does not hold a live claim on the item, exactly as in focus"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-host-integration",
+    "control-plane"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0d20b-1fd6-7413-bd3f-82f73cc05f5e"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Read-only core inspect returns the holder binding or explicit null exactly as focus, using one read-only snapshot without changing focus, delivery or feed state. Existing service and CLI regressions passed in the retained exact-source full gate; docs agree. Fresh independent assessment passes all5 unchanged criteria, resolving the old exact-as-focus failure after the prerequisite landing.",
+    "completed_at": "2026-10-07T06:40:14.963974400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2f45df20079044b9a6c1fc62b731d695": {
+        "activity_id": "2f45df20079044b9a6c1fc62b731d695",
+        "task_id": "01a0d172-d2db-7060-925c-db30469abeaf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "47c0d2f9aa3243ffbf9fea870961af29"
+      },
+      "c3bccb9ad478403e9e8bb81b76ecf75d": {
+        "activity_id": "c3bccb9ad478403e9e8bb81b76ecf75d",
+        "task_id": "01a0d172-d2db-7060-925c-db30469abeaf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "c3bccb9ad478403e9e8bb81b76ecf75d"
+      }
+    }
+  }
+}

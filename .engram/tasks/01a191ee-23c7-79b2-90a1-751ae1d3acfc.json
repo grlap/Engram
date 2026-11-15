@@ -1,0 +1,28 @@
+{
+  "id": "01a191ee-23c7-79b2-90a1-751ae1d3acfc",
+  "external_ref": null,
+  "title": "Correct the Rule id row's scope and two stale built-in-only comments in the host identifier contract",
+  "outcome": "Correct the Rule id row's scope and two stale built-in-only comments in the host identifier contract",
+  "acceptance": [
+    "The Rule id row's scope in docs/features/cli-and-mcp.md names the obligation rule set the obligation records (the one active when its source change was observed), not the rule set the active policy selects",
+    "The class_of comment above rule_id/obligations_satisfied and the contract unit test's comment describe obligation rules as built-in or operator-named"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "host-protocol",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

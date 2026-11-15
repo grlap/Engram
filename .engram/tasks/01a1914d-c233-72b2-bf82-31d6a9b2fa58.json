@@ -1,0 +1,30 @@
+{
+  "id": "01a1914d-c233-72b2-bf82-31d6a9b2fa58",
+  "external_ref": null,
+  "title": "Cover registered verification association refusals and staged interrupted input",
+  "outcome": "Registered verification tests pin typed association refusal attribution and staged-tree/interrupted-stage evidence behavior.",
+  "acceptance": [
+    "Focused real-facade cases cover mismatched initiating session, another project's work, and changed work revision, asserting the intended typed refusal field and unchanged full database/schema snapshot.",
+    "A StagedTree case asserts exact git-tree revision and git_tree with base-commit provenance.",
+    "An interrupted Indeterminate stage with started_at and no completed_at mints no verification, and receipt/doctor row-matching remains consistent."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-host-integration",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a1d2da-679b-7701-a116-48573987a74c",
+  "external_ref": null,
+  "title": "Report basis-relative task-sync conflicts within a bounded diagnostic payload",
+  "outcome": "A stale-basis refusal names actual locally diverged tasks and provides bounded evidence of both sides without filling the diagnostic with incoming-only changes.",
+  "acceptance": [
+    "Incoming-only edits do not crowd actual local divergence out of the reported conflict set",
+    "Large task text and notes have a documented byte-bounded diagnostic with explicit omitted counts and a supported route to both full inputs",
+    "Behavioral tests include more than20 incoming-only edits before a genuine local divergence and large note bodies"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a1a1ef-8e77-78f1-a99f-789a7d0e554d",
+  "external_ref": null,
+  "title": "Recover unrelated Windows B runner inputs removed during POSIX cleanup",
+  "outcome": "Establish the exact impact of the Windows B cleanup deletion, restore identifiable unrelated runner inputs from original records, and preserve explicit ownership for any unrecoverable evidence.",
+  "acceptance": [
+    "The original Windows B cleanup invocation, shell, cwd, timestamp, exit and native output are retained, and the removed, recovered and uncertain paths under target/runner-inputs, target/tmp and target/p are identified with their affected tasks or runs; source and unaffected worktrees are checked separately",
+    "Identifiable original inputs are restored from saved mailbox or native bytes with provenance and available byte-identity comparisons; no lost result is fabricated or replaced by an unmarked rerun, and every unrecoverable or uncertain artifact has a named owner and recorded next action",
+    "Further deletion stays stopped until impact is classified, affected owners and both coordinators receive the concrete outcome, and any demonstrated command, shell or lifecycle defect is fixed or tracked with its actual evidence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "cleanup",
+    "evidence",
+    "remote-runner"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Established the Windows B cleanup command and observed effect, restored three identifiable original inputs, recorded the unrecoverable unknown contents and ownership, verified read-only clone health, and completed the coordinator-approved dispatch recovery without reproducing the deletion.",
+    "completed_at": "2026-11-03T15:19:39.943841900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b0eb9f0b2909489880439e1938fb4ed4": {
+        "activity_id": "b0eb9f0b2909489880439e1938fb4ed4",
+        "task_id": "01a1a1ef-8e77-78f1-a99f-789a7d0e554d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "13104ded384540ea98b9a9daf86d4d6d"
+      }
+    }
+  }
+}

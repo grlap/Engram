@@ -1,0 +1,64 @@
+{
+  "id": "01a1466d-a9c3-7263-b001-95481455ce36",
+  "external_ref": null,
+  "title": "Root task export reports IO instead of the documented no_parent when the destination parent is missing; decide refusal precedence",
+  "outcome": "Root task export reports IO instead of the documented no_parent when the destination parent is missing; decide refusal precedence",
+  "acceptance": [
+    "Decide and document refusal precedence for export destinations with no lexical parent versus a parent missing or inaccessible on disk, using the actual absolute-path and existing-destination validation order; any behavior change is explicit.",
+    "A deterministic repository-contained regression pins the chosen behavior while ordinary-parent exports and no-clobber safeguards remain enforced."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented and regression-tested export refusal precedence while preserving production ordering, retry and no-clobber safeguards; landed and installed commit5d57cfaa, fullgate12/12PASS, independent Codex+Claude noMedium+, readiness5/5 and fresh independent acceptance2/2PASS.",
+    "completed_at": "2026-10-17T19:31:44.165682Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7b6613ebc3ce48168fdd988626f81a9c": {
+        "activity_id": "7b6613ebc3ce48168fdd988626f81a9c",
+        "task_id": "01a1466d-a9c3-7263-b001-95481455ce36",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7b6613ebc3ce48168fdd988626f81a9c"
+      },
+      "e3c96a0bd1c24e1c869babf1ba87f0f8": {
+        "activity_id": "e3c96a0bd1c24e1c869babf1ba87f0f8",
+        "task_id": "01a1466d-a9c3-7263-b001-95481455ce36",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6f6b1b1f1d6a4492ac272378ea0bff88"
+      }
+    }
+  }
+}

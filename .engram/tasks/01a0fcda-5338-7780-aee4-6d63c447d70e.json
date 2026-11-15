@@ -1,0 +1,64 @@
+{
+  "id": "01a0fcda-5338-7780-aee4-6d63c447d70e",
+  "external_ref": null,
+  "title": "backup push: a capture deadline near u64::MAX panics after the capture instead of failing with a typed code",
+  "outcome": "backup push: a capture deadline near u64::MAX panics after the capture instead of failing with a typed code",
+  "acceptance": [
+    "`engram backup push --capture-deadline-secs 18446744073709551615` (and the same for --transport-deadline-secs) neither panics nor leaves a stage: either the CLI refuses the value before any work, or the deadline is computed with checked arithmetic and an overflow means no limit; a test covers it",
+    "`engram backup push --capture-deadline-secs 18446744073709551615` does not panic: a deadline too large for the clock is treated as no deadline for the preparation of the compressed file, as capture_store already treats it, and a test covers it"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "backup push no longer panics on a deadline too far off for the clock. The preparation deadline is computed with checked_add, and an unrepresentable deadline sets no limit; a representable deadline behaves exactly as before. Tests cover prepare(None), a push with both deadlines at u64::MAX (upload, changed and unchanged store), and the CLI with both flags at 18446744073709551615 (exit 0, empty stage); there is also a doc line. Landed as 4301255 after gate test-0ca9e6a3 passed, a clean review pair (Codex 10013, Claude 10014) and independent evaluation 2/2. Readiness was ready on all 4 stores; build 24f43edf50b9 is installed.",
+    "completed_at": "2026-10-03T02:38:04.505090600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "432f20a983eb414cbaf1965608827ebd": {
+        "activity_id": "432f20a983eb414cbaf1965608827ebd",
+        "task_id": "01a0fcda-5338-7780-aee4-6d63c447d70e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "7c015de6637e436dab40e12e6c2f59b4"
+      },
+      "b459776dd2e74e639121ab3e9ecdea92": {
+        "activity_id": "b459776dd2e74e639121ab3e9ecdea92",
+        "task_id": "01a0fcda-5338-7780-aee4-6d63c447d70e",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1389b39dab74436d897781df80580340"
+      }
+    }
+  }
+}

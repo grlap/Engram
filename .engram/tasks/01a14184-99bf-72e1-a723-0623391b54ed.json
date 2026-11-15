@@ -1,0 +1,30 @@
+{
+  "id": "01a14184-99bf-72e1-a723-0623391b54ed",
+  "external_ref": null,
+  "title": "List closed work newest-closed first by stored close time",
+  "outcome": "List closed work newest-closed first by stored close time",
+  "acceptance": [
+    "An opt-in `ls --closed` (MCP `closed: true`) lists every completed, cancelled and superseded item exactly once in ONE list, including items from the 2026-09 historical import, ordered by the stored closed_at descending with the stable work id as tie-breaker; there is no separate section, category or label for imported history.",
+    "Closed rows carry the terminal kind and closed_at; the continuation is project-, filter- and order-bound with a (closed_at, work_id) seek key, survives a process restart while the ordered sequence is unchanged, and refuses a mismatched project, filter or order or a changed membership; incompatible ready/blocked switches are refused; the existing 1..1000 limit clamp, 12 KiB page fitting and last-emitted-key anchoring are kept.",
+    "The listing is derived at query time from stored records with no schema change or migration, and existing `ls`, `--all`, `--search` and `--ready` outputs and cursor semantics are unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "cli",
+    "termal",
+    "work-ui"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Not needed now (Greg, Advisor #1458): the TermAl Closed view uses the existing `ls --all` continuation with client-side lifecycle filtering and Updated sorting; the payload already has lifecycle and updated_at. Revive only if that payload demonstrably lacks the needed fields.",
+  "completion": null
+}

@@ -1,0 +1,62 @@
+{
+  "id": "01a07f70-41b4-7781-b97e-b2a565217dfa",
+  "external_ref": null,
+  "title": "Keep intact work readable when source disclosure fails",
+  "outcome": "Keep intact work readable when source disclosure fails",
+  "acceptance": [
+    "import_corrupt_notice_preserves_show_context passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Corrupt advisory source disclosure produces a bounded error class while ordinary show preserves intact work context; regression passes. Final gates passed; accepted freeze539037a9. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:59:05.818631500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "90626e6f6ac5ddf1402771161432f8a29a0eafebf9acbe56714d87ac271b8481": {
+        "activity_id": "90626e6f6ac5ddf1402771161432f8a29a0eafebf9acbe56714d87ac271b8481",
+        "task_id": "01a07f70-41b4-7781-b97e-b2a565217dfa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a12e2aa92d0113fd0cc37b9869d4640d7bda8bae8404426f53f5548a7fc639cf"
+      },
+      "a513e2e998d968c9767475efaa422858dd5bd4113af9efb5a26c09a586f157da": {
+        "activity_id": "a513e2e998d968c9767475efaa422858dd5bd4113af9efb5a26c09a586f157da",
+        "task_id": "01a07f70-41b4-7781-b97e-b2a565217dfa",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a513e2e998d968c9767475efaa422858dd5bd4113af9efb5a26c09a586f157da"
+      }
+    }
+  }
+}

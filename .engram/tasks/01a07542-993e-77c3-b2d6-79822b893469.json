@@ -1,0 +1,52 @@
+{
+  "id": "01a07542-993e-77c3-b2d6-79822b893469",
+  "external_ref": null,
+  "title": "Preserve disposed-child state in compact recovery receipts",
+  "outcome": "Preserve disposed-child state in compact recovery receipts",
+  "acceptance": [
+    "required successor resolution agrees across CLI, MCP, listing and done passes with recovery.item.state preserved"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "gate",
+    "phoenix",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0729e-2371-76c0-94df-31fef89664ba",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed with output-economy slice: recovery.item.state preserved; Rust and CLI/MCP successor-refusal regressions pass.",
+    "completed_at": "2026-09-06T06:54:54.380780300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "50108457429e2647f3e3abda71cae0f3c18d868b0b68a122ad962b59526cdfce": {
+        "activity_id": "50108457429e2647f3e3abda71cae0f3c18d868b0b68a122ad962b59526cdfce",
+        "task_id": "01a07542-993e-77c3-b2d6-79822b893469",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "853c335318261352d689838345704253192ea3c0af2bcc160b8b96aea2538818"
+      }
+    }
+  }
+}

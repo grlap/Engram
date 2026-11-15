@@ -1,0 +1,95 @@
+{
+  "id": "01a16c87-d52c-7b11-9a53-5fb5cf9791a1",
+  "external_ref": null,
+  "title": "Report Nmax restore timings by stage",
+  "outcome": "Report Nmax restore timings by stage",
+  "acceptance": [
+    "The Nmax harness reports prepare/validation, insert, per-item projection/catalog/FTS materialization and commit times separately for each fixture",
+    "Ordinary gates keep a gate-sized scale fixture set, with the Nmax matrix opt-in"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "delivered",
+    "evaluation-pending",
+    "gate",
+    "scale"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1512c-8cfd-7b53-99ae-94ec157bb012",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "18a9d671acce4c1c94a857acd6fef72c": {
+        "activity_id": "18a9d671acce4c1c94a857acd6fef72c",
+        "task_id": "01a16c87-d52c-7b11-9a53-5fb5cf9791a1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "18a9d671acce4c1c94a857acd6fef72c"
+      },
+      "25cc8deaf0db454c8c03a3d7ae1aad75": {
+        "activity_id": "25cc8deaf0db454c8c03a3d7ae1aad75",
+        "task_id": "01a16c87-d52c-7b11-9a53-5fb5cf9791a1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "b6ba2f9267c347fb9ad54998c5a072ba"
+      },
+      "5f6c91fc13bc476a853b214e66282e0e": {
+        "activity_id": "5f6c91fc13bc476a853b214e66282e0e",
+        "task_id": "01a16c87-d52c-7b11-9a53-5fb5cf9791a1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5f6c91fc13bc476a853b214e66282e0e"
+      },
+      "6059c95c80c6444cbb63d385a7b8430b": {
+        "activity_id": "6059c95c80c6444cbb63d385a7b8430b",
+        "task_id": "01a16c87-d52c-7b11-9a53-5fb5cf9791a1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "25cc8deaf0db454c8c03a3d7ae1aad75"
+      },
+      "7fd8f5d6d6b44300b37ce12b418d21f4": {
+        "activity_id": "7fd8f5d6d6b44300b37ce12b418d21f4",
+        "task_id": "01a16c87-d52c-7b11-9a53-5fb5cf9791a1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "7fd8f5d6d6b44300b37ce12b418d21f4"
+      }
+    }
+  }
+}

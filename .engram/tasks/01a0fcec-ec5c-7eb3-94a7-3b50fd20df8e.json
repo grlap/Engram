@@ -1,0 +1,28 @@
+{
+  "id": "01a0fcec-ec5c-7eb3-94a7-3b50fd20df8e",
+  "external_ref": null,
+  "title": "Retention-deadline push test: make its put independent of the short transport budget so contention cannot fail it",
+  "outcome": "Retention-deadline push test: make its put independent of the short transport budget so contention cannot fail it",
+  "acceptance": [
+    "`a_retention_removal_past_the_deadline_is_a_warning_and_holds_the_lock` no longer depends on the put finishing within the test's short transport deadline: the blocked removal's deadline is independent of the time the put took (for example through a test-only budget for retention), and the test still shows the warning, the held lock, the kept ledger and the next push finishing the removal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "backup",
+    "review",
+    "test"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

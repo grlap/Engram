@@ -1,0 +1,53 @@
+{
+  "id": "01a0af5a-95c4-72f3-b661-eeb135b5984a",
+  "external_ref": null,
+  "title": "The evaluate word's reserve counts interior control characters and its exhausted-shedding path returns only a measured receipt",
+  "outcome": "The evaluate word's reserve counts interior control characters and its exhausted-shedding path returns only a measured receipt",
+  "acceptance": [
+    "EVALUATE_WORD_RESERVE's derivation counts every word-only text field that may carry interior control characters (the summary title and, where its admission rule allows them, the session id) at six JSON bytes per byte, the maximal-envelope test builds those fields from U+0001 bytes at their admitted maxima, and the reserve covers the derived total with margin",
+    "after verdict rows, reminders, and extra next commands are shed, the evaluate word never returns a receipt that agent_receipt_fits rejected: the last resort is a minimal measured receipt that keeps the verdict-independent provenance (evaluation hash, replayed flag, mode, counts, work ref, full detail), whose size a test pins under the budget, with no post-commit refusal path"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "EVALUATE_WORD_RESERVE is 3072 with its derivation corrected on the constant: the summary title and the effective session id, which admit interior control characters, are counted at six JSON bytes per byte, and the maximal-envelope test builds both from U+0001 bytes at their admitted maxima. The word's exhausted-shedding branch answers with minimal_evaluate_receipt (verdict-independent provenance only), measured like every receipt and pinned under 1 KiB with a control-character session handle; no post-commit refusal path. Focused suites logs/23; final sequence logs/24 all pass; gates recorded here.",
+    "completed_at": "2026-09-17T12:43:49.308694800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0237e241fef801eb645e3dd63f34ad0660ae204d5b5c97c6fa9c374fd36eb408": {
+        "activity_id": "0237e241fef801eb645e3dd63f34ad0660ae204d5b5c97c6fa9c374fd36eb408",
+        "task_id": "01a0af5a-95c4-72f3-b661-eeb135b5984a",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "ce3891a6ce3745d7dd88d633f487eb408c26a5ceee006125ec8edb63754f7ec2"
+      }
+    }
+  }
+}

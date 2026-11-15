@@ -1,0 +1,49 @@
+{
+  "id": "01a079bd-f4e5-7ec1-8961-748a42f3eca6",
+  "external_ref": null,
+  "title": "Add handwritten agent testimony as a fourth website folio",
+  "outcome": "Add handwritten agent testimony as a fourth website folio",
+  "acceptance": [
+    "Fourth folio includes approved Advisor quote and fictional aside with responsive accessible navigation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "website"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added the fourth handwritten Agent notes page with real Advisor pilot feedback, the approved Anonymous joke, responsive navigation, accessible motion, updated documentation and passing validation.",
+    "completed_at": "2026-09-07T02:59:25.319381800Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0d13d4b975db417706eaf90e4778cdd615bb210c6f640e24c9ab5058920b46bb": {
+        "activity_id": "0d13d4b975db417706eaf90e4778cdd615bb210c6f640e24c9ab5058920b46bb",
+        "task_id": "01a079bd-f4e5-7ec1-8961-748a42f3eca6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "62ca93bf2a68f9c67524fa6c028a628cefec85fb5b930a307280164fbc7e9b5c"
+      }
+    }
+  }
+}

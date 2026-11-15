@@ -1,0 +1,51 @@
+{
+  "id": "01a1cc7f-0758-7d72-948c-0c11fd1ac9ae",
+  "external_ref": null,
+  "title": "Update remaining sync overview docs for the dedicated data branch",
+  "outcome": "Update remaining sync overview docs for the dedicated data branch",
+  "acceptance": [
+    "The task-sync prose in docs/features/README.md, docs/vision.md, docs/roadmap.md, docs/features/cross-host-task-sync.md, docs/features/sqlite-store.md, docs/features/git-task-sync.md and docs/spec.md agrees with the dedicated orphan data branch and persistent data worktree, removing obsolete code/task merge, code-branch carrier, task sparse-checkout and mixed-input validation claims while preserving host-local SQLite, execution authority and existing no-exemption wording."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "review-follow-up",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Aligned the seven remaining sync overview/design documents with the dedicated orphan data branch and persistent MAIN/.engram-data/ worktree. Removed obsolete code/task merge, code-branch carrier, task sparse-checkout and mixed-input validation claims; updated shipped folder/setup status while preserving canonical host-local SQLite, local execution authority and existing no-exemption/policy requirements. Combined eight-file staged tree36fd481706f24b623574d0d96d3d99f87cb9de5d/basecc09052c7b5e3b92c90215818911a03c65f30367, +105/-82. LINKS-5 test-3f7822f6 passed native0/input matched; fresh whole-input R4 Codex17549 and Claude17550 attempt4 both no findings; earlier Medium/Low findings fixed and reviewed again. Independent Claude17566 evaluationbbd9637e400e44e6ad981e8a97b8bf5d passed criterion1/rev2 with native stale=null. Markdown-only scope; no Cargo/runtime checks needed. B508 completed separately/seald340c3ec. READY for Fable after-sync integration; no master landing/push/install claimed. Shared worktree and admin run evidence retained for Fable integration until exact package is carried and evidence retention obligations end; cleanup belongs to integration owner after recording retained evidence.",
+    "completed_at": "2026-11-11T22:07:15.734297600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c23470a7152b46ef9eff7689bed3600b": {
+        "activity_id": "c23470a7152b46ef9eff7689bed3600b",
+        "task_id": "01a1cc7f-0758-7d72-948c-0c11fd1ac9ae",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4cc3eb6dfd4e40549cbce87797807c35"
+      }
+    }
+  }
+}

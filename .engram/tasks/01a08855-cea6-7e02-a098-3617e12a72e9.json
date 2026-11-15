@@ -1,0 +1,50 @@
+{
+  "id": "01a08855-cea6-7e02-a098-3617e12a72e9",
+  "external_ref": null,
+  "title": "Test planned prerequisite event transition guard",
+  "outcome": "Test planned prerequisite event transition guard",
+  "acceptance": [
+    "A non-prerequisite transition is refused before any canonical or feed write"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a08803-497f-7480-abb5-41fff20c7992",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added exact wrong-transition refusal regression with database-shape checks. Removing the planned prerequisite event guard made the test fail; restored focused and final full gates passed.",
+    "completed_at": "2026-09-09T23:14:00.557325400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "d666d12b98bcfd152c5a8f99f1e5dc24bcea7a560f369468776c0f745c019c73": {
+        "activity_id": "d666d12b98bcfd152c5a8f99f1e5dc24bcea7a560f369468776c0f745c019c73",
+        "task_id": "01a08855-cea6-7e02-a098-3617e12a72e9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a8e8f58e11c5b599e16c0df8b4bd5764666c28bbffe5ec98b1b40ec429e7f487"
+      }
+    }
+  }
+}

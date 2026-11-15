@@ -1,0 +1,61 @@
+{
+  "id": "01a07846-7b64-7783-b00a-7ed3dda5ba18",
+  "external_ref": null,
+  "title": "A keyless reject retry after a lost response recognizes the already-rejected shape instead of refusing as not open",
+  "outcome": "A keyless reject retry after a lost response recognizes the already-rejected shape instead of refusing as not open",
+  "acceptance": [
+    "a keyless update CHILD --reject REASON repeated after its response was lost (parent revision advanced by the waiver, child cancelled) replays the original receipt or returns a typed refusal that says the child is already cancelled with a matching waiver on the parent, naming both, never the generic not-open refusal with a cancel/waive remedy; explicit-key retry unchanged; test with the real CLI/MCP path"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Keyless rejection recovers the unchanged cancelled-child and matching-waiver receipt across real CLI/MCP restarts; drift refuses accurately, explicit keys unchanged. Required corrections sealed; all nine gates independently pass and pair closed; landed fba7824.",
+    "completed_at": "2026-09-07T04:28:35.680417100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "715a8d4f47f31ea431ed81eb3ca6aa494f446f0310e65734b0fdf24468718e69": {
+        "activity_id": "715a8d4f47f31ea431ed81eb3ca6aa494f446f0310e65734b0fdf24468718e69",
+        "task_id": "01a07846-7b64-7783-b00a-7ed3dda5ba18",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d6c3fd1a3b60830c787d546a1b0bc41914f807637dd447428ae5f36ca47eb99f"
+      },
+      "b3dbbba62d1ffb9954bf948513c7ddf510129cbb37aa84cbc01ec8e8c21415b1": {
+        "activity_id": "b3dbbba62d1ffb9954bf948513c7ddf510129cbb37aa84cbc01ec8e8c21415b1",
+        "task_id": "01a07846-7b64-7783-b00a-7ed3dda5ba18",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b3dbbba62d1ffb9954bf948513c7ddf510129cbb37aa84cbc01ec8e8c21415b1"
+      }
+    }
+  }
+}

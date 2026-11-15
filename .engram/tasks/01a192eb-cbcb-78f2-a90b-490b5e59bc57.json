@@ -1,0 +1,28 @@
+{
+  "id": "01a192eb-cbcb-78f2-a90b-490b5e59bc57",
+  "external_ref": null,
+  "title": "Measure task-sync exchange record costs on a coherent copy of a live store",
+  "outcome": "Measure task-sync exchange record costs on a coherent copy of a live store",
+  "acceptance": [
+    "An authorized coherent-copy measurement reports source/build and copy provenance, object counts, query plans, lookup and decode costs separately, including clearly labeled representative fixtures. Measurements do not query or alter the live store beyond coherent capture, disclose task/private content, or claim a synthetic result proves production performance.",
+    "The store choice and the quiet slot are named by the coordinator before capture"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "performance",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Duplicate of w-841e6980d4cf. Engram::Opus filed the same split of w-0ba5464d7ceb criterion 5 at the same time, with a pointer to the brief's measurement procedure (note 802af6fe); his item is kept.",
+  "completion": null
+}

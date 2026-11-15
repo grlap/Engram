@@ -1,0 +1,45 @@
+{
+  "id": "01a0748d-db2a-7c92-af6e-4f8c318aae07",
+  "external_ref": null,
+  "title": "Narrow note-window gate-family classification to gate-capable records",
+  "outcome": "Narrow note-window gate-family classification to gate-capable records",
+  "acceptance": [
+    "Gate-family index probes only native work evidence JSON, uses restored gate_name projection, preserves exact families and live read guards, and passes focused regressions"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": "01a0746d-44f7-78f1-96d6-3e5698c836c1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "folded into w-f8ec46aa561c as its first commit-adjacent change",
+  "completion": null,
+  "activity": {
+    "central": {
+      "f3e87cadcd4d5b6d13ee8c261583067c903715070f5a2e088d7438c63aa4d461": {
+        "activity_id": "f3e87cadcd4d5b6d13ee8c261583067c903715070f5a2e088d7438c63aa4d461",
+        "task_id": "01a0748d-db2a-7c92-af6e-4f8c318aae07",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "abandoned",
+        "state_revision": 2,
+        "event_id": "f03197acf1c29f21c6a7e536a05fa09d28b606813dc125ae7857be6dad91ef93"
+      }
+    }
+  }
+}

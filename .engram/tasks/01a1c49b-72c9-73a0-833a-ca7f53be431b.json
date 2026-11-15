@@ -1,0 +1,64 @@
+{
+  "id": "01a1c49b-72c9-73a0-833a-ca7f53be431b",
+  "external_ref": null,
+  "title": "Adapt typed evidence fixtures to the combined disclosure profile API",
+  "outcome": "Adapt typed evidence fixtures to the combined disclosure profile API",
+  "acceptance": [
+    "The combined typed evidence capture helper supplies an explicit permitted disclosure profile and passes that same profile to evidence export without dropping or rewriting fixture evidence.",
+    "Both native typed-dependency regressions and affected native-capture checks pass on the delivered combined fixture adaptation; production disclosure policy and original IDs/bytes remain unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Adapted the combined native evidence fixtures to an explicit permitted disclosure profile and the same export profile. The historical positive fixture creates a real reference-free note from the outset; captured records, original IDs/bytes, production disclosure guard, generic helper and all assertions remain unchanged. Independent evaluation4305b9bb90174664a8d107bf8b19d218 passed2/2 on clean6ba50f71/tree421cafc3. StrictClippy, native typed2/2, nativecapture11/11 and fmt passed; parent carried exact two-file +29/-2 patch to07973336 with identical tree. No landing asserted.",
+    "completed_at": "2026-11-10T14:50:09.684684400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6e1a3d7e026141359d7765bfc4fb863b": {
+        "activity_id": "6e1a3d7e026141359d7765bfc4fb863b",
+        "task_id": "01a1c49b-72c9-73a0-833a-ca7f53be431b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1304c4e6eb1d483e9880b79f9e9f5d6f"
+      },
+      "a91da059b4c44a738e68df57cea90bf8": {
+        "activity_id": "a91da059b4c44a738e68df57cea90bf8",
+        "task_id": "01a1c49b-72c9-73a0-833a-ca7f53be431b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a91da059b4c44a738e68df57cea90bf8"
+      }
+    }
+  }
+}

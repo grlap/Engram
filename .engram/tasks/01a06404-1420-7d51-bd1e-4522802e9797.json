@@ -1,0 +1,62 @@
+{
+  "id": "01a06404-1420-7d51-bd1e-4522802e9797",
+  "external_ref": null,
+  "title": "Bound completion recovery scale across cumulative required-child breadth",
+  "outcome": "The completion recovery scale gate covers the maximum supported cumulative required-child breadth, not only one decomposition call.",
+  "acceptance": [
+    "The scale fixture builds at least 128 required children for one parent through repeated decompositions and completion recovery remains inside an explicit derived decode budget."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "gate",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06336-c086-7852-959e-0eab264bb1a9",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Extended completion recovery coverage to the maximum cumulative 128-child breadth, then replaced the history-linear discriminator with compact barrier revisions and grouped doctor waiver replay.",
+    "completed_at": "2026-09-03T01:13:27.620682300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "758c99e6a61555514c69896df4bc111c4aade5ea17f1b0aa5ddd53f1a452beee": {
+        "activity_id": "758c99e6a61555514c69896df4bc111c4aade5ea17f1b0aa5ddd53f1a452beee",
+        "task_id": "01a06404-1420-7d51-bd1e-4522802e9797",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "758c99e6a61555514c69896df4bc111c4aade5ea17f1b0aa5ddd53f1a452beee"
+      },
+      "ef95dc485299b3dfe8344e7f8772c0d791c5be4090d92af3c5871d3201eb41a8": {
+        "activity_id": "ef95dc485299b3dfe8344e7f8772c0d791c5be4090d92af3c5871d3201eb41a8",
+        "task_id": "01a06404-1420-7d51-bd1e-4522802e9797",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dc59601129ad571b73aab1fab198cdc9625b964a506e58261152ed33ca8a87ae"
+      }
+    }
+  }
+}

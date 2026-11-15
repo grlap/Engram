@@ -1,0 +1,77 @@
+{
+  "id": "01a19ef4-8bb2-7f53-8ccb-ec78ab7ff298",
+  "external_ref": null,
+  "title": "Remove the completed turn-admission migration converter now that all six live stores are converted",
+  "outcome": "Remove the completed turn-admission migration converter now that all six live stores are converted",
+  "acceptance": [
+    "src/storage/migration/retired_control.rs, its declaration, the retired-table and retired-policy-column accounting, acceptance and skipping in src/storage/migration.rs, and the retired_control tests and SQL fixture are removed",
+    "An export containing control_sessions, control_turn_results, control_turn_grants, control_turn_grant_supersessions or the removed control_policy_state columns is refused by name through ordinary strict import, with a test",
+    "Historical policy-chain tests keep proving historical object bytes and links survive; historical readers are unchanged; the full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "greg-directed",
+    "legacy-cleanup",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed the obsolete turn-admission migration converter and tests while preserving strict named refusal behavior and historical policy-chain readers. The exact aggregate full gate passed; the candidate is landed, pushed, and installed.",
+    "completed_at": "2026-11-03T08:55:00.741939200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4e22b7e71ec44db5a59beb1f4c1b9492": {
+        "activity_id": "4e22b7e71ec44db5a59beb1f4c1b9492",
+        "task_id": "01a19ef4-8bb2-7f53-8ccb-ec78ab7ff298",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "213269248239493da5e2396be57d28f2"
+      },
+      "94ff0ab01f7745069743e060a1690f83": {
+        "activity_id": "94ff0ab01f7745069743e060a1690f83",
+        "task_id": "01a19ef4-8bb2-7f53-8ccb-ec78ab7ff298",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "94ff0ab01f7745069743e060a1690f83"
+      },
+      "fab7312b2503458ca180161ad5c7807c": {
+        "activity_id": "fab7312b2503458ca180161ad5c7807c",
+        "task_id": "01a19ef4-8bb2-7f53-8ccb-ec78ab7ff298",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "2e0a05a94d424ed6897b6bea168b7dd6"
+      }
+    }
+  }
+}

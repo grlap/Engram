@@ -1,0 +1,63 @@
+{
+  "id": "01a082c9-a79c-7353-8d8d-af63029c7233",
+  "external_ref": null,
+  "title": "Translate the Polish assertion message in the root reopen probe",
+  "outcome": "Translate the Polish assertion message in the root reopen probe",
+  "acceptance": [
+    "The failure message and PASS line read in English and no non-English prose remains in src/"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Translated the assertion diagnostic to English without changing its logic or thresholds. Focused tests and all nine gates passed before Fable-owned clean review and authorized check-in e3b63bc. The new follow-up bundle is separate.",
+    "completed_at": "2026-09-08T22:13:31.537376900Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "83c4857f8b31cbc53bbe5a66b64fb7c6b46b21faa0d27ec5e97de71311dfffae": {
+        "activity_id": "83c4857f8b31cbc53bbe5a66b64fb7c6b46b21faa0d27ec5e97de71311dfffae",
+        "task_id": "01a082c9-a79c-7353-8d8d-af63029c7233",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "f2e114f53d0c15019c5343fac339f105d63a8a382b973f790e8cb4b69b36f5e5"
+      },
+      "bd83b741bcd5691c116dd92fb20efe08b8463e7e13a1ed32ee62da4f03e8a7a8": {
+        "activity_id": "bd83b741bcd5691c116dd92fb20efe08b8463e7e13a1ed32ee62da4f03e8a7a8",
+        "task_id": "01a082c9-a79c-7353-8d8d-af63029c7233",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "bd83b741bcd5691c116dd92fb20efe08b8463e7e13a1ed32ee62da4f03e8a7a8"
+      }
+    }
+  }
+}

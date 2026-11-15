@@ -1,0 +1,53 @@
+{
+  "id": "01a0ee3e-0a7a-7d90-8fc6-094ff8031b16",
+  "external_ref": null,
+  "title": "show lists the evaluation records of an item's run, not only the newest, with each record's evaluator session, mode, attempt key and verdict summary",
+  "outcome": "show lists the evaluation records of an item's run, not only the newest, with each record's evaluator session, mode, attempt key and verdict summary",
+  "acceptance": [
+    "`show REF --evaluation RECORD_ID` returns one record complete, with every verdict, rationale and citation, so that an older evaluation can be read in full",
+    "a reader can tell from the window that two records came from the same evaluator session and in which order, and can compare that label with the holder's; no hash is used as identity, and ordinary `show` and `show --full` keep their newest-only meaning and their existing identity assertions",
+    "an explicit bounded window `show REF --evaluations [--after CURSOR]` lists the evaluation records of the item's active run, or of its latest run when the item is completed, in run-feed order, each with its record id, run position, mode, the evaluator's session as the stable display label that `show` already uses for sessions, the attempt key, created time, work revision, per-criterion verdict words up to a bound with the exact count of omitted verdicts, its stale reason computed at the read cut when it has one, the record it supersedes when it names one, and whether it is the newest; exact total, shown and omitted counts and a continuation are given, and a cursor from another cut or run is refused",
+    "nothing about admission, staleness or sealing changes: the newest whole record still decides, and an older record is not called stale merely because a later one exists; docs/features/acceptance-evaluation.md and docs/features/local-work-system.md describe both reads, and the mcp-dogfood suite covers an item with a failing record followed by a passing one from the same evaluator session"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "area-agent-ux"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`show REF --evaluations [--after CURSOR]` (MCP evaluations) lists the evaluation records of the item's active run, or of its latest run once none is active. Records are shown in run-feed order within the 12 KiB budget, with exact counts and a continuation bound to the item, run, read cut and policy. Each row gives:\n- the record id and position, mode, evaluator session label, attempt key, time and revision;\n- bounded verdict words with the exact omitted count;\n- its own stale reason (an ended run's records are listed but not judged), what it supersedes, and whether it is the newest.\n\n`show REF --evaluation RECORD_ID` (MCP evaluation) returns one record complete, with every verdict's criterion, rationale and citations and its evaluator provenance. There is no schema change, and completion and staleness are unchanged. Four review rounds were run; round 4 was clean from Codex and Claude on freeze 7ca257a3, and gate test-acd580b9 passed 9/9. Readiness reported all three stores ready. Commit 96c937d is pushed, and build 128b23a6fd62 is installed with the previous build backed up.",
+    "completed_at": "2026-09-29T22:57:58.115468Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3567440ce5144865965cfc968d861d1e": {
+        "activity_id": "3567440ce5144865965cfc968d861d1e",
+        "task_id": "01a0ee3e-0a7a-7d90-8fc6-094ff8031b16",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "01b00b46c86c4fbb90a2d12d2d4b717b"
+      }
+    }
+  }
+}

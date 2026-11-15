@@ -1,0 +1,75 @@
+{
+  "id": "01a1937d-782d-79b0-b4f4-7473fbd40913",
+  "external_ref": null,
+  "title": "Make the phase-trace contending-writer test independent of how long a store open takes on a loaded host",
+  "outcome": "Make the phase-trace contending-writer test independent of how long a store open takes on a loaded host",
+  "acceptance": [
+    "phase_trace::control::tests::a_contending_writer_raises_begin_immediate_at_startup proves the contention it names regardless of how long schema initialization takes: the competing writer still holds the lock when BEGIN IMMEDIATE runs, for example by handing the lock over by signal rather than holding it for a fixed time.",
+    "The test passes on master, run repeatedly in a loaded parallel environment such as DL560 with several concurrent jobs, without loosening the assertion that BEGIN IMMEDIATE waited."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "flaky-diagnosis",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The contending-writer regression no longer depends on schema-open timing. The exact carried candidate passed full Mac and Windows B gates, and the test passed 20/20 under four concurrent process lanes. The change is present on master 8b5495eb and installed in build f35eec36. Independent acceptance evaluation remains absent after a recorded TermAl HTTP 409; under Greg's current rule it does not block completion, and no verdict is claimed.",
+    "completed_at": "2026-11-02T00:10:25.312650400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "055792b91ea54ab4887542f1d01c53fb": {
+        "activity_id": "055792b91ea54ab4887542f1d01c53fb",
+        "task_id": "01a1937d-782d-79b0-b4f4-7473fbd40913",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "29eb0fc39fd04c3393202cbf31937a1a"
+      },
+      "29eb0fc39fd04c3393202cbf31937a1a": {
+        "activity_id": "29eb0fc39fd04c3393202cbf31937a1a",
+        "task_id": "01a1937d-782d-79b0-b4f4-7473fbd40913",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "29eb0fc39fd04c3393202cbf31937a1a"
+      },
+      "b067b27c7ac04f1ab2ed70fbef852906": {
+        "activity_id": "b067b27c7ac04f1ab2ed70fbef852906",
+        "task_id": "01a1937d-782d-79b0-b4f4-7473fbd40913",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "02d6aeafd09f4b1bb9497766c1f5f44a"
+      }
+    }
+  }
+}

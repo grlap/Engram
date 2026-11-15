@@ -1,0 +1,29 @@
+{
+  "id": "01a1991a-be85-7a41-b023-8028c877eacc",
+  "external_ref": null,
+  "title": "Let the reconciliation ledger append validate its new outcome atomically",
+  "outcome": "Let the reconciliation ledger append validate its new outcome atomically",
+  "acceptance": [
+    "A valid ReconciledImportApplied outcome appends through the canonical ledger store_event route inside one transaction.",
+    "The validator can inspect the pending outcome and linked versions/retirements without requiring a row not yet inserted; malformed outcomes roll back with no effects."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

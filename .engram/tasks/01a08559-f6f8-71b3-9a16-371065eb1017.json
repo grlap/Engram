@@ -1,0 +1,61 @@
+{
+  "id": "01a08559-f6f8-71b3-9a16-371065eb1017",
+  "external_ref": null,
+  "title": "Core propose reads plan files with the unbounded reader while a bounded one exists beside it",
+  "outcome": "Core propose reads plan files with the unbounded reader while a bounded one exists beside it",
+  "acceptance": [
+    "core propose uses the bounded JSON reader with headroom over the typed plan bound, and an oversized file is refused before it is read whole"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "core propose uses bounded JSON reader with2MiB headroom; oversized files refuse before whole-file read. Actual CLI and all nine gates passed; review accepted.",
+    "completed_at": "2026-09-09T20:55:27.638153100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "a00cf41806bd39cec25deea5f7dd37d7dad33aa4c8d4603497b6f7f9e82bd4fb": {
+        "activity_id": "a00cf41806bd39cec25deea5f7dd37d7dad33aa4c8d4603497b6f7f9e82bd4fb",
+        "task_id": "01a08559-f6f8-71b3-9a16-371065eb1017",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a00cf41806bd39cec25deea5f7dd37d7dad33aa4c8d4603497b6f7f9e82bd4fb"
+      },
+      "b26f90a5b341ac81913fd4cca0dcb851a4823a43f679ff39b99fa9cebca32c06": {
+        "activity_id": "b26f90a5b341ac81913fd4cca0dcb851a4823a43f679ff39b99fa9cebca32c06",
+        "task_id": "01a08559-f6f8-71b3-9a16-371065eb1017",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4a22ccca2e97799ea05da91bd353e681a5a4cbab84f4d2fbd259de7c5d243e8b"
+      }
+    }
+  }
+}

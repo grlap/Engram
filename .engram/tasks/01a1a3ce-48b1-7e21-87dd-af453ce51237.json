@@ -1,0 +1,65 @@
+{
+  "id": "01a1a3ce-48b1-7e21-87dd-af453ce51237",
+  "external_ref": null,
+  "title": "Split the two largest Rust test modules by scenario family without changing what they test",
+  "outcome": "Split the two largest Rust test modules by scenario family without changing what they test",
+  "acceptance": [
+    "src/storage/work/completion/tests/named_root.rs and src/storage/graph_snapshot/tests.rs are split into child modules by scenario family, with shared fixtures in one helper module",
+    "The set of test functions, their bodies apart from moved helper paths, their ignore reasons and their results are identical before and after; no test is deleted, skipped or loosened",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-tests",
+    "file-split",
+    "greg-directed"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Split the named-root and graph-snapshot Rust test modules by scenario family, preserving all 121 selected test IDs, bodies, ignore reasons and outcomes. Final candidate 7f1aca4 passed the DL560 standard FULL (12/12 stages, 3/3 preflight, unchanged fingerprint). Fast-forwarded and pushed to origin/master, release binary installed, all six live stores ready.",
+    "completed_at": "2026-11-04T03:11:50.130895500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "43f355a3674a4614b6fe5a950da4ea2f": {
+        "activity_id": "43f355a3674a4614b6fe5a950da4ea2f",
+        "task_id": "01a1a3ce-48b1-7e21-87dd-af453ce51237",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "f0a1e48725e4491ebf3c88d29fdffdc1"
+      },
+      "f0a1e48725e4491ebf3c88d29fdffdc1": {
+        "activity_id": "f0a1e48725e4491ebf3c88d29fdffdc1",
+        "task_id": "01a1a3ce-48b1-7e21-87dd-af453ce51237",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "dd49982554cd42d2ac65191faa3fde74"
+      }
+    }
+  }
+}

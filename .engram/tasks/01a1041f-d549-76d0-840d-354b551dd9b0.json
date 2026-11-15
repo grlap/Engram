@@ -1,0 +1,30 @@
+{
+  "id": "01a1041f-d549-76d0-840d-354b551dd9b0",
+  "external_ref": null,
+  "title": "Assess explicit cross-item context for acceptance evaluation without copying source notes",
+  "outcome": "Agree a bounded host/core contract that lets an evaluator inspect explicitly named cross-item context with provenance while preserving current-run verification and completion-seal evidence rules, or record a justified alternative that removes the observed copy burden.",
+  "acceptance": [
+    "Read the reported source/destination evidence and current host/core contracts, distinguish contextual material from eligible current-run evidence, and record the agreed ownership and approach with Engram and TermAl.",
+    "The proposed flow covers explicit source item plus full locator, full bounded-read continuation/omission handling, source attribution, invalid locator failures, and the current-run verification/freshness/seal boundary. No unrelated host-observed gate credit transfers.",
+    "Give Fable evaluator-checkable implementation scope or an evidence-backed decision to retain the restriction with an actionable workflow; this assessment itself does not authorize a format migration or new execution authority."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-ergonomics",
+    "termal"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

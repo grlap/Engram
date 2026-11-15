@@ -1,0 +1,41 @@
+{
+  "id": "01a1c75a-d19e-7be3-98d8-310cc8e1111d",
+  "external_ref": null,
+  "title": "Keep source-membership projection derivation within the ledger's admitted capacity",
+  "outcome": "A valid admitted exchange history can rebuild and verify its source-membership projections without exhausting a smaller aggregate reader budget.",
+  "acceptance": [
+    "Source-membership derivation supports histories within the ledger's admitted record and byte limits without charging repeated binding reads against an incompatible whole-history budget; malformed or excessive input still refuses safely.",
+    "A meaningful behavior check demonstrates successful derivation at a history size or byte shape that previously exhausted the derivation budget, and preserves damaged-chain refusal and correct rebuilt membership."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "96da6e54ec834f13816fac550d8ca22a": {
+        "activity_id": "96da6e54ec834f13816fac550d8ca22a",
+        "task_id": "01a1c75a-d19e-7be3-98d8-310cc8e1111d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "96da6e54ec834f13816fac550d8ca22a"
+      }
+    }
+  }
+}

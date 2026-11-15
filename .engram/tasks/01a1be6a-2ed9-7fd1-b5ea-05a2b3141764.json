@@ -1,0 +1,62 @@
+{
+  "id": "01a1be6a-2ed9-7fd1-b5ea-05a2b3141764",
+  "external_ref": null,
+  "title": "Remove the work_run_evidence.source_revision column after evaluation and content-v1 cleanup",
+  "outcome": "Remove the work_run_evidence.source_revision column after evaluation and content-v1 cleanup",
+  "acceptance": [
+    "After the switch, a recorded inventory lists every real reader and writer of work_run_evidence.source_revision, and of any path that duplicates the value out of canonical JSON.",
+    "The column and its duplicating paths are gone from the current schema. Historical canonical_json, ids and links are byte-for-byte unchanged and still read as stored, and no fingerprint is computed to replace the column.",
+    "The changeset states its store consequence from the actual schema and projection repair rules; if a migration is needed, its plan is shown to Greg before any store is touched, and import names and reports what it retires. No destructive step runs without that."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "cleanup",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a19eed-99be-7382-8778-46e8594c7e7e",
+    "01a1bdc6-d885-71f0-99bc-c4d66d741cb3"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "0ae900df9e324251a096dc84838bc6ed": {
+        "activity_id": "0ae900df9e324251a096dc84838bc6ed",
+        "task_id": "01a1be6a-2ed9-7fd1-b5ea-05a2b3141764",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "0ae900df9e324251a096dc84838bc6ed"
+      },
+      "d6363bc0ea4540b3ac3d56296f60c3fc": {
+        "activity_id": "d6363bc0ea4540b3ac3d56296f60c3fc",
+        "task_id": "01a1be6a-2ed9-7fd1-b5ea-05a2b3141764",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "d6363bc0ea4540b3ac3d56296f60c3fc"
+      }
+    }
+  }
+}

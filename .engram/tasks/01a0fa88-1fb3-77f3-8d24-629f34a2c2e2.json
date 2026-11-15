@@ -1,0 +1,56 @@
+{
+  "id": "01a0fa88-1fb3-77f3-8d24-629f34a2c2e2",
+  "external_ref": null,
+  "title": "The build identity names the source revision it was built from",
+  "outcome": "The build identity names the source revision it was built from",
+  "acceptance": [
+    "The build components that `engram doctor --json` and `engram readiness --json` print gain a source revision field: the commit id of the tree the executable was built from, a marker when that tree had uncommitted changes, and an explicit unavailable value when the build could not determine it; a test asserts the field's presence and shape",
+    "Building outside a Git checkout, or without Git installed, still succeeds and reports the revision as unavailable; the build script change is covered by a test or by a documented manual check recorded in the item's notes with its command output",
+    "The backup manifest's source revision field is filled from this value, and a test asserts that the manifest carries the same revision the build reports",
+    "docs/features/cli-and-mcp.md's build identity section describes the field and says it is recovery information, not proof that the revision rebuilds to the same binary"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "backup",
+    "build-identity"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0fa87-21a0-7a71-96de-5627a19713d8",
+  "child_requirement": "required",
+  "prerequisites": [
+    "01a0fa87-6a1a-7cb2-8b39-d09eaa35f204"
+  ],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The build identity names its source revision. A build script records `<commit>`, `<commit>+dirty` or `unavailable`, read-only and failing soft. The value is a fingerprinted build component printed by doctor, readiness and next. `--version` shows `rev <12>[+dirty]`, and the backup manifest records it. The docs describe it as recovery information. Landed as 4c6a92d; the installed build is 7e42ebb769cd and reports rev 4c6a92d362a3.",
+    "completed_at": "2026-10-02T12:29:19.954043100Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "96cc7faecb8e40f2b1e9b69b5d676a2e": {
+        "activity_id": "96cc7faecb8e40f2b1e9b69b5d676a2e",
+        "task_id": "01a0fa88-1fb3-77f3-8d24-629f34a2c2e2",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b7d289d360aa4ba0bccbcd51e402373f"
+      }
+    }
+  }
+}

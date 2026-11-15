@@ -1,0 +1,57 @@
+{
+  "id": "01a0cb25-9014-7971-95cc-6e620bed0bfd",
+  "external_ref": null,
+  "title": "Delete unreachable storage entry points and never-used task states",
+  "outcome": "Storage functions that nothing in production reaches are gone, thin wrappers kept only for tests are test-only, and the task lifecycle keeps only the state ever stored, while live turn-grant context assembly and task-change delivery behave exactly as before.",
+  "acceptance": [
+    "Docs no longer describe removed entry points as available, and the doc link check passes",
+    "Live turn-grant context assembly and task-change delivery are unchanged, and their tests still pass",
+    "No table definition changes, and the new build passes readiness and doctor on a copy of each live store",
+    "Public storage functions with no production caller are out of the production build: record_turn_observation and explain_context are removed with the helpers only they used; task_delta, task_changes_since, search_memories, append_task_object, show_memory and rebuild_memory_index compile only for tests, which reach live logic through them",
+    "TaskState keeps only Active, the finalizer turn purpose stays a parseable host value that is always refused, and no stored record in either live store uses a removed state",
+    "Tests that exercised only removed code are deleted",
+    "The full quality gates pass",
+    "Thin test-only wrappers over live code (build_context, start_task, join_task, bind_control_session and both checkpoint_control_turn convenience variants) compile only for tests"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Unreachable storage entry points are out of the production build. record_turn_observation and explain_context are deleted; the remaining public wrappers reach live logic only from tests and compile only for tests. TaskState keeps only Active, and finalizer turns are always refused. Live turn-grant context assembly and task-change delivery are unchanged. The changes are committed as 1ad8b2b and pushed.",
+    "completed_at": "2026-09-23T01:06:08.095413900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8be2795382cf41f98166553230d36c43": {
+        "activity_id": "8be2795382cf41f98166553230d36c43",
+        "task_id": "01a0cb25-9014-7971-95cc-6e620bed0bfd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "6ee04006dc6e492f84ed097766798da1"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0f0fb-c49a-7011-a88b-772eed7148c6",
+  "external_ref": null,
+  "title": "Same-session mark author lookup decodes the item's whole event history on every read",
+  "outcome": "Same-session mark author lookup decodes the item's whole event history on every read",
+  "acceptance": [
+    "A counter-based regression shows that the event bodies fetched and decoded by the mark-author lookup do not grow with notes and gates recorded after the mark was set; this does not assert constant SQLite VM work, which may grow while there is no transition-kind index",
+    "Finding who set a task's current same_session mark reads only the events that can change the mark, retaining the first native baseline needed to distinguish restored history, or scans backward and stops at the mark's origin, instead of materializing every full event of the item",
+    "Restored items, detach successors and marks without a recorded session still have no author"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "acceptance-evaluation",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed in 0d6eb26: the same-session mark author is read from the item's first event and its creations and revisions only, with a decode-counter regression.",
+    "completed_at": "2026-10-03T08:03:24.435392800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f3bffaca74ee420195b8e44dc95d7951": {
+        "activity_id": "f3bffaca74ee420195b8e44dc95d7951",
+        "task_id": "01a0f0fb-c49a-7011-a88b-772eed7148c6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5cac49b02f8743ed9afb4615394361aa"
+      }
+    }
+  }
+}

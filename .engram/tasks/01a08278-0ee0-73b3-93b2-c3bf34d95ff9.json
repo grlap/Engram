@@ -1,0 +1,61 @@
+{
+  "id": "01a08278-0ee0-73b3-93b2-c3bf34d95ff9",
+  "external_ref": null,
+  "title": "Doctor refusal text claims a compatible portable handoff that is not shipped",
+  "outcome": "Doctor refusal text claims a compatible portable handoff that is not shipped",
+  "acceptance": [
+    "The refusal names only capabilities this build actually has, and docs/shipped.md agrees"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The refusal and its documented contract now name only capabilities this build has; the command-line test pins the exact remedy text so the wording cannot drift back unnoticed.",
+    "completed_at": "2026-09-09T06:10:08.266650400Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "403a70a2f38f5897cca2debc041abc201c49c1cd2f291a7138f82dff972c2ed9": {
+        "activity_id": "403a70a2f38f5897cca2debc041abc201c49c1cd2f291a7138f82dff972c2ed9",
+        "task_id": "01a08278-0ee0-73b3-93b2-c3bf34d95ff9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "523a25e61d93928088237ea7a35c5838d9f9411b6ad4e6948691a7095c748067"
+      },
+      "68e81d1b39a855e981b662418266c4e1e6756a3d805066472952e605a968d06c": {
+        "activity_id": "68e81d1b39a855e981b662418266c4e1e6756a3d805066472952e605a968d06c",
+        "task_id": "01a08278-0ee0-73b3-93b2-c3bf34d95ff9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "68e81d1b39a855e981b662418266c4e1e6756a3d805066472952e605a968d06c"
+      }
+    }
+  }
+}

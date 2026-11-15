@@ -1,0 +1,97 @@
+{
+  "id": "01a183ac-7f5d-7b80-8ace-52ccb25e52fc",
+  "external_ref": null,
+  "title": "Reconcile the repository's Node pin (.nvmrc says 22) with the Node 24.14.0 the gate host runs",
+  "outcome": "Reconcile the repository's Node pin (.nvmrc says 22) with the Node 24.14.0 the gate host runs",
+  "acceptance": [
+    ".nvmrc names the Node major version that the landing gate actually runs on, or the gate host runs the pinned version, with the choice and its reason recorded"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "tooling"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": ".nvmrc now pins Node 24.14.0, the version the gate hosts run; review-freeze CI reads .nvmrc via node-version-file. Landed in 6ebcc629 (with the parent-first restore change), pushed to origin/master and installed (build 73328949). The independent evaluation 5ae42a6b passed 1/1. The choice to pin to the host version follows Greg's decision #2239.",
+    "completed_at": "2026-10-29T20:02:02.897929Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "06aa14980b594e99811c707337a8d0ca": {
+        "activity_id": "06aa14980b594e99811c707337a8d0ca",
+        "task_id": "01a183ac-7f5d-7b80-8ace-52ccb25e52fc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ec800822a6744593badef25351f67671"
+      },
+      "7f87954de4624036aece8c39b73c45ee": {
+        "activity_id": "7f87954de4624036aece8c39b73c45ee",
+        "task_id": "01a183ac-7f5d-7b80-8ace-52ccb25e52fc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1ce1b5e2588b4fb19cb8a49d4f3bb8ab"
+      },
+      "9ca5dc5c128d46b4a72defe5827b4a7f": {
+        "activity_id": "9ca5dc5c128d46b4a72defe5827b4a7f",
+        "task_id": "01a183ac-7f5d-7b80-8ace-52ccb25e52fc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "9ca5dc5c128d46b4a72defe5827b4a7f"
+      },
+      "ddd79a9677b7459e85e3ed0fdbf7371e": {
+        "activity_id": "ddd79a9677b7459e85e3ed0fdbf7371e",
+        "task_id": "01a183ac-7f5d-7b80-8ace-52ccb25e52fc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ddd79a9677b7459e85e3ed0fdbf7371e"
+      },
+      "eaddc89bfa1e4b0c9bf77ecdb1a12552": {
+        "activity_id": "eaddc89bfa1e4b0c9bf77ecdb1a12552",
+        "task_id": "01a183ac-7f5d-7b80-8ace-52ccb25e52fc",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "ddd79a9677b7459e85e3ed0fdbf7371e"
+      }
+    }
+  }
+}

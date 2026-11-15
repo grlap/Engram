@@ -1,0 +1,54 @@
+{
+  "id": "01a0f2f2-2822-7a43-9b2c-6037825258a4",
+  "external_ref": null,
+  "title": "Expose typed evaluation admission causes for eligibility, root and citation refusals",
+  "outcome": "Expose typed evaluation admission causes for eligibility, root and citation refusals",
+  "acceptance": [
+    "A host-facing test submits an ineligible mode/mark and distinguishes its structured cause from source-root and citation failures without parsing a reason string",
+    "Re-roll cause implementation is deduplicated with w-d09de674c389, whose same-guard disclosure and typed refusal remain separately owned",
+    "Tests submit a declaration with no initial named-root sighting and a bound pass citing a wrong-run, beyond-cut or wrong-source check; each exposes the deciding core cause and navigation/remedy context through service, CLI and MCP",
+    "The serialized-cause change is coordinated with Termal::Fable2 before coding; existing typed basis movement and carried-failure causes retain their semantics"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "architecture",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered transient typed eligibility, source-root and citation admission causes with shared service/word/CLI/MCP remedies and navigation, preserving refusal bytes, codes/status and admission decisions. Real host-facing regressions and database rollback verified by full round3 gate; independent pair and acceptance4/4 passed. Separately owned reroll unchanged. Pushed and installed exact gated build; all live stores ready.",
+    "completed_at": "2026-09-30T22:10:53.907270400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "0d3b6c7bbc1645928d2a9248c1d35244": {
+        "activity_id": "0d3b6c7bbc1645928d2a9248c1d35244",
+        "task_id": "01a0f2f2-2822-7a43-9b2c-6037825258a4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "442b894ee37847b192bd32f171ca6969"
+      }
+    }
+  }
+}

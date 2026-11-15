@@ -1,0 +1,54 @@
+{
+  "id": "01a1c288-bcdc-7171-a459-9aa1b9c781a7",
+  "external_ref": null,
+  "title": "Retire stale uncited imported acceptance uses during native completion",
+  "outcome": "Retire stale uncited imported acceptance uses during native completion",
+  "acceptance": [
+    "A previously consumed imported acceptance proof that completion does not explicitly select can retire its stale implicit obligation credit after source, revision, named-root or claim movement, allowing completion with fresh applicable native evidence.",
+    "Explicitly cited stale acceptance still refuses, terminal and provenance conflicts remain enforced, historical consumptions and obligation records remain immutable, and native acceptance freshness checks cannot be bypassed.",
+    "Behavior regressions exercise acceptance consumption followed by source, revision, root, recovery and handoff movement, fresh native evidence and successful uncited completion, plus explicit stale-citation refusal and doctor or projection-repair health."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Retired stale uncited imported acceptance credit across source, revision, root and claim movement, preserving explicit stale-use refusal and original proof/conflict checks; current native evidence and policy still govern completion.",
+    "completed_at": "2026-11-10T03:35:31.890051200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "75b8085d8d824a81afeb35c412cad81b": {
+        "activity_id": "75b8085d8d824a81afeb35c412cad81b",
+        "task_id": "01a1c288-bcdc-7171-a459-9aa1b9c781a7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "8cd4eed1d9c64fd1975b6f5268ea1c40"
+      }
+    }
+  }
+}

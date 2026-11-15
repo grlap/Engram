@@ -1,0 +1,52 @@
+{
+  "id": "01a0c28a-6110-7c41-9236-a7ab15ab9991",
+  "external_ref": null,
+  "title": "Remove policy justification from core records and storage APIs",
+  "outcome": "Remove policy justification from core records and storage APIs",
+  "acceptance": [
+    "Core callsites and Rust library tests compile and assert reason-free records while retaining policy/CAS/replay/authority invariants; no canonical history rewriting or live-store mutation.",
+    "ProjectPolicyAuthorityDecision and all policy-admin/explicit bootstrap storage APIs no longer carry, validate or manufacture a policy-change reason; policy-operation fingerprint fields are removed accordingly, without compatibility branches."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-control-plane",
+    "area-host-integration",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0c27f-ad39-7222-8efe-a562563fed5c",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed policy-change justification from the core authority record, all three policy administration APIs and fingerprints, and explicit bootstrap while preserving actor attribution, CAS/idempotency behavior, immutable historical bytes, and healthy policy-history advancement. Updated owned Rust callsites/tests; combined gates and paired review passed.",
+    "completed_at": "2026-09-21T07:14:07.454490800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "49082da4e612486994afad3b773b666d": {
+        "activity_id": "49082da4e612486994afad3b773b666d",
+        "task_id": "01a0c28a-6110-7c41-9236-a7ab15ab9991",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5c5edefdc508425099f1b641d8d75d42"
+      }
+    }
+  }
+}

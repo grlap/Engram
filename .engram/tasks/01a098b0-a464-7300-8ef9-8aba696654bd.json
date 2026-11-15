@@ -1,0 +1,49 @@
+{
+  "id": "01a098b0-a464-7300-8ef9-8aba696654bd",
+  "external_ref": null,
+  "title": "Coordinate ready-priority and compact-reason package verification",
+  "outcome": "Coordinate ready-priority and compact-reason package verification",
+  "acceptance": [
+    "Verify both existing items against the approved ready-order and compact-reason contract, record parent gates, consolidate clean independent Codex and Claude reviews, and read back implementation completion evidence."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "coordination"
+  ],
+  "assigned_to": "termal",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Verified ready-priority and compact-reason package: nine passing gates, clean independent pair, frozen-content checks, and both implementation completion records read back.",
+    "completed_at": "2026-09-13T07:52:37.508977700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "198504468513ae7af84498c3da5946e0b7feea169f3cf30284b29e2d57058b5f": {
+        "activity_id": "198504468513ae7af84498c3da5946e0b7feea169f3cf30284b29e2d57058b5f",
+        "task_id": "01a098b0-a464-7300-8ef9-8aba696654bd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1afa96664330f0558e6ca50177a7827494f5364c1d2aa161845779b45cb37e1c"
+      }
+    }
+  }
+}

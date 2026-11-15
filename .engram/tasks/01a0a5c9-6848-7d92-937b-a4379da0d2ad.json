@@ -1,0 +1,62 @@
+{
+  "id": "01a0a5c9-6848-7d92-937b-a4379da0d2ad",
+  "external_ref": null,
+  "title": "Refuse live-only SHM after RetainedMain before cleanup",
+  "outcome": "Refuse live-only SHM after RetainedMain before cleanup",
+  "acceptance": [
+    "Independent activate and recover refuse with unchanged no-follow inventory including journal-publish.tmp when live SHM is present and retained SHM is absent after RetainedMain."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a382-0b72-7803-8346-15c884db56ba",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against accepted evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:45:15.121774500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "cd5edd1d43e09020aea05396d3fa235c49ec283f0e176a51a42e640ef7fe0eb8": {
+        "activity_id": "cd5edd1d43e09020aea05396d3fa235c49ec283f0e176a51a42e640ef7fe0eb8",
+        "task_id": "01a0a5c9-6848-7d92-937b-a4379da0d2ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "cd5edd1d43e09020aea05396d3fa235c49ec283f0e176a51a42e640ef7fe0eb8"
+      },
+      "e122f60ba902d8d66eeb2b37996608732099ad9aded6e4249968b71e76b991db": {
+        "activity_id": "e122f60ba902d8d66eeb2b37996608732099ad9aded6e4249968b71e76b991db",
+        "task_id": "01a0a5c9-6848-7d92-937b-a4379da0d2ad",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "d4693059c0b946146fcd47791b22845fb278930386c917c263bfb4c003c2612a"
+      }
+    }
+  }
+}

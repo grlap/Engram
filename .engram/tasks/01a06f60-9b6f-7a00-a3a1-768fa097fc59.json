@@ -1,0 +1,51 @@
+{
+  "id": "01a06f60-9b6f-7a00-a3a1-768fa097fc59",
+  "external_ref": null,
+  "title": "Pin the exact ls byte-truncation branch in regression coverage",
+  "outcome": "The complete-envelope test checks totals, omitted counts and byte size but does not require the verbose fixture to trim or assert the byte-bounded hint. Strengthen the discriminating assertions without loosening existing checks.",
+  "acceptance": [
+    "phoenix_list_reports_exact_counts_and_fits_the_complete_envelope explicitly asserts fewer than 25 verbose rows and the exact byte-bounded hint, alongside both complete-envelope byte limits."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06e94-1251-7030-a930-bb92b6f88464",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The verbose list regression now explicitly requires byte trimming and the exact byte-bounded hint, alongside total/omitted/more consistency and full pretty-JSON/text envelope caps. The zero-row regression pins both surface hints and continuation guidance. All fixture and import/style failures encountered during iteration were classified and corrected without relaxing assertions.",
+    "completed_at": "2026-09-05T02:54:04.658351100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2e6ab243f01f4894a1aca7a3243a42ac3446283a746f73c7f3c525fb3fb3a0a2": {
+        "activity_id": "2e6ab243f01f4894a1aca7a3243a42ac3446283a746f73c7f3c525fb3fb3a0a2",
+        "task_id": "01a06f60-9b6f-7a00-a3a1-768fa097fc59",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "5e8deb2b5eeefa27c1fe636bc5216f63ae55a69159ad080d36f14cea20635981"
+      }
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "id": "01a08329-3195-7b23-ae2d-cdd3438bc8d6",
+  "external_ref": null,
+  "title": "A complete logical export and import carries a whole store across a durable format change",
+  "outcome": "A complete logical export and import carries a whole store across a durable format change",
+  "acceptance": [
+    "A deliberately truncated export fails the comparison, so success cannot come from skipping data or disabling validation",
+    "A real export of the current store imports into an empty new store, and a comparison manifest matches every category, relation and content check with no unexplained difference",
+    "After import, ordinary resume, history reads and doctor all pass on the new store without repair",
+    "An export with an injected integrity fault is refused by the import and leaves no partially installed store",
+    "Claims, leases and session or execution state are preserved as data, and resume after a controlled offline cutover on the same host is safe, while no second host receives live authority",
+    "Original canonical bytes and their original hashes are retained, and every reference whose identity changed resolves through an explicit total mapping recorded in the new store",
+    "The export of a complete store names every category it contains with exact counts, and refuses rather than silently omitting anything it cannot represent"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "architecture",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered complete lossless logical export/import across aggregate-root and delta-root formats with retained canonical originals, total identity mapping, explicit representation audits, exact-page historical attribution handling and fail-closed source consistency checks. Negative controls, focused tests, nine gates, paired review and independent historical data acceptance passed. Advisor completed fresh two-store offline migration and accepted installed data; this session independently resumed through the installed CLI and matched a preselected pre-freeze note byte-for-byte. Same-host continuity only; host MCP deadline remains separately routed.",
+    "completed_at": "2026-09-09T04:28:42.557468100Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bde06e5d570ee45c8cf3cd40daf12d13272cd7ee0ab42eb32ed1f109fdbe97c1": {
+        "activity_id": "bde06e5d570ee45c8cf3cd40daf12d13272cd7ee0ab42eb32ed1f109fdbe97c1",
+        "task_id": "01a08329-3195-7b23-ae2d-cdd3438bc8d6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c40c8d9a346fe0d641c7d74002b221ed71757e0cc14fd6f684292d858aa1702b"
+      }
+    }
+  }
+}

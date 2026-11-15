@@ -1,0 +1,52 @@
+{
+  "id": "01a0affe-03d8-7c70-88ac-181f73ffb27b",
+  "external_ref": null,
+  "title": "The seal-evaluation validator selects the newest evaluation at the completion cut",
+  "outcome": "The shared seal-to-evaluation check requires the bound evaluation to be the newest on the run feed at the completion cut, so an older pass cannot be bound over a newer blocking verdict; this is integrity coverage, not an ordinary done bypass",
+  "acceptance": [
+    "a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused passes: a seal re-frozen to bind an older passing evaluation while a newer fail or needs_human evaluation sits at or before the completion cut is reported by doctor under the binding label, refused by the provenance read, and refused at completion; a healthy evaluated completion and an evaluation appended after the cut remain valid"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle",
+    "review-round10"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "The shared seal-to-evaluation check now requires the bound evaluation to be the newest on the run feed at the completion cut (newest_evaluation_through; reason \"is not the newest evaluation on the run feed at the completion cut\"), ordered after the all-pass check so every prior reason stands. Pinned by a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused (newer fail and needs_human; healthy control; post-cut exclusion; doctor label, shared-check refusal, unavailable provenance read) and an older-pass case in the per-relationship test; B36's re-freeze became a shared helper. RED logs/38c, GREEN logs/39 and 41; final sequence logs/42 all pass. Documented in the shared binding check paragraph and matrix row B48.",
+    "completed_at": "2026-09-17T16:02:04.971178600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "6e30537f886b75babc0c636a1c88834306a12c097aed1b384c171289e575aef1": {
+        "activity_id": "6e30537f886b75babc0c636a1c88834306a12c097aed1b384c171289e575aef1",
+        "task_id": "01a0affe-03d8-7c70-88ac-181f73ffb27b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "c3a2854315a2ba98cba8fe1c52c72dc31c5c205be6522509586ddcfe7ad0781a"
+      }
+    }
+  }
+}

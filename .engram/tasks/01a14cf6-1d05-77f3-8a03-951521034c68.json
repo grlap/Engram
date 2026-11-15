@@ -1,0 +1,63 @@
+{
+  "id": "01a14cf6-1d05-77f3-8a03-951521034c68",
+  "external_ref": null,
+  "title": "Keep Copy busy-gap diagnostics within one wait episode",
+  "outcome": "Keep Copy busy-gap diagnostics within one wait episode",
+  "acceptance": [
+    "Copy busy max_outside excludes gaps between distinct SQLite busy-handler counter sequences; deterministic two-sequence tests prove ordinary inter-sequence work is excluded while the largest measured within-sequence gap is retained."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "backup",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Copy busy-gap diagnostics now exclude gaps across SQLite busy-handler counter resets while retaining the largest measured gap within a counter sequence. Deterministic two-sequence tests passed; the combined full gate passed all 12 stages and the Codex/Claude pair had no findings. Fresh independent closure acceptance passed 1/1 without changing acceptance criteria.",
+    "completed_at": "2026-10-18T18:32:36.233962600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3018415803294316bee08de4f1c27fd2": {
+        "activity_id": "3018415803294316bee08de4f1c27fd2",
+        "task_id": "01a14cf6-1d05-77f3-8a03-951521034c68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1182fdd4888f4322aa8317980c35bbbd"
+      },
+      "63b6a42da7bb4e04b41e318944402a11": {
+        "activity_id": "63b6a42da7bb4e04b41e318944402a11",
+        "task_id": "01a14cf6-1d05-77f3-8a03-951521034c68",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "63b6a42da7bb4e04b41e318944402a11"
+      }
+    }
+  }
+}

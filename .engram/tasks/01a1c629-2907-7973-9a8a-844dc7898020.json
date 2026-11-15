@@ -1,0 +1,55 @@
+{
+  "id": "01a1c629-2907-7973-9a8a-844dc7898020",
+  "external_ref": null,
+  "title": "Allow genuine native seal reuse and make acceptance qualification retries reliable",
+  "outcome": "Preserve native completion provenance after planning import, exact concurrent acceptance replay, and isolated Git-backed evidence fixtures.",
+  "acceptance": [
+    "A task imported as planning then genuinely executed and completed natively can export its new native seal for onward reuse; restored seals, restored child proofs and invalid native events remain refused.",
+    "Two connections qualifying the same complete acceptance request concurrently return the original decision; changed actor/project/session/request or occupied foreign/colliding identity remains refused.",
+    "The shared evidence verification Git fixture isolates global/system config, hooks/templates and redirect variables and disables signing per command without changing user/global configuration.",
+    "Meaningful regressions cover onward reuse and concurrent qualification; focused results and exact owned patch/base/tree are recorded."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "greg-directed",
+    "review-repair",
+    "sync"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1b911-469d-7f62-9647-4eabb205c7b2",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered native seal reuse after imported planning, exact concurrent acceptance qualification replay and isolated per-command evidence Git fixtures. Exact3c327163/treea25fe57c passed all5 focused stages,43/43behavior and32/32size, bothnewregressions actualok, checked8pathpatch accepted byintegrationowner. Independent Opus evaluation31f3b772b1be463c88d0766a688cfec7 attempt1/cut182 passes4/4,newest/stale:null, samecleancommit/tree; full2974byteoutput readcomplete. Evaluatorjudgments rely onrecordedauthorruns andsourceinspection, no independentruntime/FULLclaim. Prior done attempt withexplicitlinks was refused by evaluated-policy linkrule; this call uses evaluation's recordedcitations asrequired. Parentownscombinedreviews/FULL/landing; temporaryretentiononopenparent remains.",
+    "completed_at": "2026-11-10T17:27:01.986559800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "39860ea50d3442a4b493b40baa3e094b": {
+        "activity_id": "39860ea50d3442a4b493b40baa3e094b",
+        "task_id": "01a1c629-2907-7973-9a8a-844dc7898020",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "98afd4c34a17464ea19014a7412409af"
+      }
+    }
+  }
+}

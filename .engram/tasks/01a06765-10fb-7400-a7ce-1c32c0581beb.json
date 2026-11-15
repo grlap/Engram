@@ -1,0 +1,49 @@
+{
+  "id": "01a06765-10fb-7400-a7ce-1c32c0581beb",
+  "external_ref": null,
+  "title": "Keep compact next materially smaller than its hard response ceiling",
+  "outcome": "A compact next regression guard bounds per-row or relative payload economy independently of the 12 KiB protocol ceiling.",
+  "acceptance": [
+    "parity coverage fails when compact next grows disproportionately to its returned row count"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added an independent compact-next economy regression: the realistic default 20-row fixture must retain all 20 rows while both JSON and text receipts stay at or below 8 KiB, below the 12 KiB hard ceiling.",
+    "completed_at": "2026-09-03T13:58:56.844212700Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4d44f09752e10cf770492af7e90970090f72b91119ac4b3c77226a5f4e91ba60": {
+        "activity_id": "4d44f09752e10cf770492af7e90970090f72b91119ac4b3c77226a5f4e91ba60",
+        "task_id": "01a06765-10fb-7400-a7ce-1c32c0581beb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e58e730ad54cdf21b9f3cd1dc3537adfd349338d7dffe197abf0b6506463dc0c"
+      }
+    }
+  }
+}

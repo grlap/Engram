@@ -1,0 +1,52 @@
+{
+  "id": "01a0e506-d348-7500-a791-70bef48b0dd8",
+  "external_ref": null,
+  "title": "Audit consistency of Engram working-rule memories",
+  "outcome": "Audit consistency of Engram working-rule memories",
+  "acceptance": [
+    "A concise audit result distinguishes actual contradictions from scoped exceptions and identifies concrete corrections without inventing authority.",
+    "Conflicting, stale or ambiguous working rules are compared against current direct user instructions and repository rules, with exact memory keys and justified classifications.",
+    "Current project memories are inventoried and read, with failed reads and concurrent changes disclosed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 1,
+  "labels": [
+    "coordination",
+    "memory"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Audited all58 current memory heads, recovered concurrent revisions, compared rule conflicts against direct user instructions and repository sources, and recorded exact findings/corrections with scope and evidence limits. Independent evaluation passed3/3. Later standing-approval memory correction is separately attributed; the audit does not claim every remaining inconsistency is repaired.",
+    "completed_at": "2026-09-27T22:45:56.699818900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "e8658c213de34d7186ccd0049b401c7e": {
+        "activity_id": "e8658c213de34d7186ccd0049b401c7e",
+        "task_id": "01a0e506-d348-7500-a791-70bef48b0dd8",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7fac8ac57534407daf3d50f59900d038"
+      }
+    }
+  }
+}

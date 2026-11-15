@@ -1,0 +1,65 @@
+{
+  "id": "01a13325-593c-7913-8dfc-8e9188754f26",
+  "external_ref": null,
+  "title": "Launcher run-directory guidance and detached-worker failure diagnostics",
+  "outcome": "Launcher run-directory guidance and detached-worker failure diagnostics",
+  "acceptance": [
+    "Launching where Git cannot locate the review-runs directory reports safe guidance to run from a repository worktree without copying raw Git stderr into normal completion output.",
+    "A public CLI regression verifies the safe guidance for a non-repository launch with no run directory.",
+    "Detached _run failures preserve actionable diagnostics for execution.lock refusal and unexpected exceptions in saved artifacts, while ordinary completion output remains metadata-only and a duplicate executor never overwrites the admitted owner's results.",
+    "Regression coverage demonstrates both the duplicate-admission failure and an unexpected worker exception without diagnostic prose entering normal stdout or notification bodies."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered fixed safe Git run-directory guidance and exclusive detached-worker stack/cause artifacts with metadata-only completion output, protected duplicate admission, and public CLI/worker regressions. Landed, pushed and installed the exact two-file validated change.",
+    "completed_at": "2026-10-13T10:09:47.436699500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "36fcbe538c804f2caa7f8c84c4323074": {
+        "activity_id": "36fcbe538c804f2caa7f8c84c4323074",
+        "task_id": "01a13325-593c-7913-8dfc-8e9188754f26",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "36fcbe538c804f2caa7f8c84c4323074"
+      },
+      "e99e0141f5744b5682c3295989b4ac17": {
+        "activity_id": "e99e0141f5744b5682c3295989b4ac17",
+        "task_id": "01a13325-593c-7913-8dfc-8e9188754f26",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4f18074d12a943ec8e95bed681f8a319"
+      }
+    }
+  }
+}

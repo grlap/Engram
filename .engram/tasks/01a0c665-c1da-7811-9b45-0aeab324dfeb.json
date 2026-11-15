@@ -1,0 +1,41 @@
+{
+  "id": "01a0c665-c1da-7811-9b45-0aeab324dfeb",
+  "external_ref": null,
+  "title": "Split TermAl src/engram_host_adapter.rs below 2,500 lines",
+  "outcome": "TermAl's Engram adapter is easier to inspect without changing authorization, transport or recovery behavior.",
+  "acceptance": [
+    "A host-observed automated test proves src/engram_host_adapter.rs and every module extracted from it are each at most 2,499 physical lines at the final source revision. Evidence lists every covered path and before/after count; include blank/comment lines and a nonempty final unterminated line. Newly extracted modules must not escape the inventory.",
+    "A lightweight size check for this file family runs in normal validation and fails at 2,500 lines, passes at 2,499, counts LF/CRLF consistently, and refuses an empty or failed inventory. Reuse one shared checker if already available; do not build a new framework per task.",
+    "Independent-session final acceptance cites the fresh host-observed line-count test evidence. Completion must remain blocked when that bound evidence is missing, failed or stale; demonstrate that gating safely on an isolated fixture rather than relaxing the live task. A plan evaluation or author-written gate note is not a substitute for the observed size result.",
+    "Split only this file's responsibilities into ordinary modules without behavior, schema/SQL or public-interface changes. Preserve existing tests/assertions and pass relevant regressions plus required project gates/review. No minification, duplicate implementation, deleted tests or transferring the oversized body to another oversized file."
+  ],
+  "acceptance_bindings": [
+    {
+      "criterion": 1,
+      "requirement": {
+        "check_kind": "test"
+      }
+    }
+  ],
+  "evaluation_mode": "independent_session",
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "control-plane",
+    "file-size",
+    "maintainability",
+    "refactor"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Tracked in TermAl's own store as TermAl w-fb2b0d02457c since the 2026-09-28 move of TermAl's work out of Engram's store; keeping both would be two ledgers for one file. The file is TermAl's (src/engram_host_adapter.rs, 6,762 lines at acea4c7). Cancelled by Engram::Fable, 2026-10-01 about 03:35Z.",
+  "completion": null
+}

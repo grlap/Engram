@@ -1,0 +1,54 @@
+{
+  "id": "01a1462b-0dbd-7542-bcc7-29f60c122d41",
+  "external_ref": null,
+  "title": "Cover the untested task sync refusal producers and tighten the refusal code docs",
+  "outcome": "Cover the untested task sync refusal producers and tighten the refusal code docs",
+  "acceptance": [
+    "Each task sync refusal producer without a direct test gets one asserting its code: export of an external or source-snapshot item, non_utf8_name, no_parent, appeared, file_grew, task_limit, tree_limit, an export activity conflict, local note divergence, a record-id pin, and a symlinked task file",
+    "A test makes the documented-codes check fail when a TaskSyncRefusal variant is missing from the list it iterates",
+    "The refusal codes docs state the destination parent and no_parent wording, the oversized-note details shape, and whether a --json receipt carries per-file path context",
+    "A guard asserts that a locked-store failure during task sync is not classified as a task sync refusal"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "agent-ergonomics",
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Added direct task-sync refusal producer tests and exhaustive documentation-inventory omission controls; clarified parent/no_parent, oversized-note and JSON-path contracts; verified real Windows SQLite lock refusal retains the generic code. All review findings corrected and rereviewed. Committed, pushed and installed the exact validated source.",
+    "completed_at": "2026-10-17T05:10:08.443230800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "be26d9c232394fc49cb864c525046d8f": {
+        "activity_id": "be26d9c232394fc49cb864c525046d8f",
+        "task_id": "01a1462b-0dbd-7542-bcc7-29f60c122d41",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7fa2f054551f4f3c9fe3199c82c66ef5"
+      }
+    }
+  }
+}

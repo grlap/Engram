@@ -1,0 +1,53 @@
+{
+  "id": "01a1120e-fed9-7843-9486-2b853b3a3ec5",
+  "external_ref": null,
+  "title": "Avoid redundant memory reads while reliably recovering governing rules",
+  "outcome": "Agents retrieve governing rules and relevant task memories without repeatedly loading unchanged bodies already present in their current context.",
+  "acceptance": [
+    "Define when current-context content can be reused and when compaction, replacement or a revision change requires fresh retrieval; advertisement flags alone never prove a body was read.",
+    "Deliver a compact governing entry point and task-specific retrieval procedure, including continuation discovery and explicit handling of failed reads or missing context.",
+    "Validate unchanged-context reuse, changed rules and post-compaction recovery with representative source-backed examples demonstrating less redundant retrieval and correct recovery of applicable rules; optional byte counts may support the comparison, and instruction changes follow existing authority requirements."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "agent-ergonomics",
+    "coordination",
+    "token-efficiency"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a1120e-8381-7850-9559-e95ae7770943",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered compact guidance navigation, safe unchanged-context memory reuse, and source-backed recovery examples; all acceptance criteria passed independently.",
+    "completed_at": "2026-10-06T20:43:23.877904Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "c4912f16450945d58d6fb8d36210d767": {
+        "activity_id": "c4912f16450945d58d6fb8d36210d767",
+        "task_id": "01a1120e-fed9-7843-9486-2b853b3a3ec5",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "e5b171c95c2240b18e4b45d309cdae0d"
+      }
+    }
+  }
+}

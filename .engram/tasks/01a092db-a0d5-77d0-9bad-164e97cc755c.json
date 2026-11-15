@@ -1,0 +1,52 @@
+{
+  "id": "01a092db-a0d5-77d0-9bad-164e97cc755c",
+  "external_ref": null,
+  "title": "Keep the ACK refusal actionable for an ordinary agent after focus discard",
+  "outcome": "Keep the ACK refusal actionable for an ordinary agent after focus discard",
+  "acceptance": [
+    "agent_ack_recovery_after_focus_discard_has_plain_retry_guidance passes with ordinary-next guidance, unchanged refused delivery state, and successful native agent retry"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "gate",
+    "host-protocol",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a092bc-933e-7c30-9662-6c18ace95795",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Ordinary agent ACK-race refusal now offers plain next retry with state-preserving regression coverage.",
+    "completed_at": "2026-09-12T00:57:33.538189500Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b7408b42d3565b1e3b2c308136b3a63f3f48fe2211020a84f4f75bfbba7f4e54": {
+        "activity_id": "b7408b42d3565b1e3b2c308136b3a63f3f48fe2211020a84f4f75bfbba7f4e54",
+        "task_id": "01a092db-a0d5-77d0-9bad-164e97cc755c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "867c8ca49502532a1d1d65fedf57c8083f6c198dfe8c19f72e9d65e6ce3f768a"
+      }
+    }
+  }
+}

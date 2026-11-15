@@ -1,0 +1,28 @@
+{
+  "id": "01a128e3-b860-7521-89ca-94e86a300583",
+  "external_ref": null,
+  "title": "If a control shutdown timeout recurs, diagnose it from the captured lifecycle record",
+  "outcome": "On a real recurrence, identify its cause from the owned fixture lifecycle evidence and correct the responsible defect without weakening the shutdown bound.",
+  "acceptance": [
+    "A recurring control shutdown timeout has retained lifecycle evidence, an identified cause, and a correction verified against that evidence without relaxing the shutdown bound."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "gate",
+    "watch"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

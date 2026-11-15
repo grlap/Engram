@@ -1,0 +1,52 @@
+{
+  "id": "01a067f7-102a-7ef1-8b4d-e523629d2da7",
+  "external_ref": null,
+  "title": "Redact UUID-shaped session identities from terse show",
+  "outcome": "Show renders safe session words or opaque short references across holder, handoff, text, and history fields.",
+  "acceptance": [
+    "Holder and handoff guidance remains actionable without raw session identifiers",
+    "Show JSON and text contain no UUID when shell attribution defaults mint a UUID-shaped session id"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "review",
+    "security",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-376e-7c22-974e-413276ff3f69",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Terse show now renders current/other session identities relatively and rejects UUID-shaped leakage in structured and text output, including default shell sessions.",
+    "completed_at": "2026-09-03T16:20:06.308350300Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "da46db5f8f669b4384a3c9ddeef8a78182079749e418b59572422940679affa9": {
+        "activity_id": "da46db5f8f669b4384a3c9ddeef8a78182079749e418b59572422940679affa9",
+        "task_id": "01a067f7-102a-7ef1-8b4d-e523629d2da7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "87db6b71279804174c20b94b1c92585f43268b095f4357c64f5a309314c2dd60"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "01a19bcc-4e10-7132-b122-1a58d4af64a5",
+  "external_ref": null,
+  "title": "Correct grant preservation and observation-policy wording after turn-gating removal",
+  "outcome": "Make migration and security guides distinguish retired turn tables from surviving passive history and current observation policy.",
+  "acceptance": [
+    "full-store-migration.md no longer says current turn grants retain identities across the explicit retirement conversion, while accurately preserving surviving canonical historical records and receipts",
+    "security-and-trust.md describes surviving work-session/observation policy and rule-set selection without claiming a begun turn grant or current grant projections"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "superseded",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": "01a19ef4-9c77-7260-8388-6f9629e964a7",
+  "disposal_reason": "Both original acceptance requirements copied verbatim to replacement revision3 positions6/7; security Part1 landed72 and migration Part2 reviewedclean5dba. Consolidate duplicate prose cleanup per Fable overlap instruction; replacement stays open for final validation/landing, no requirement waived.",
+  "completion": null
+}

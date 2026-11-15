@@ -1,0 +1,29 @@
+{
+  "id": "01a16edb-2f07-7d73-813d-53e669a687e0",
+  "external_ref": null,
+  "title": "Clarify completion focus rustdoc and delivery replay paragraph order",
+  "outcome": "Two Low documentation findings left on the refused-focus patch are corrected without changing runtime behavior.",
+  "acceptance": [
+    "The work_complete_on rustdoc describes pinned targeting, navigation only after successful completion, and unchanged focus on typed refusal.",
+    "The focus-navigation paragraph in local-work-system.md does not interrupt the host read/replay/ACK recovery and serialization explanation."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "docs",
+    "focus",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

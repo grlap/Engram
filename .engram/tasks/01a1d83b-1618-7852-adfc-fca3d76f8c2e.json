@@ -1,0 +1,29 @@
+{
+  "id": "01a1d83b-1618-7852-adfc-fca3d76f8c2e",
+  "external_ref": null,
+  "title": "Allow synced relation edits on open children beneath terminal ancestors",
+  "outcome": "An incoming prerequisite or blocker edit on an Open optional child is admitted when its ancestor is terminal but has no engaged execution or reconciliation hold, matching the ordinary planning writer and documented folder contract.",
+  "acceptance": [
+    "A folder relation edit to an Open optional child beneath a Completed parent applies when local execution is dormant, with coverage for native and reported ancestor completion",
+    "Live ancestor or root execution and reconciliation holds still prevent the relation edit with a clear per-task result"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

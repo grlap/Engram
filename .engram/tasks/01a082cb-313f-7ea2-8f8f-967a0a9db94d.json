@@ -1,0 +1,63 @@
+{
+  "id": "01a082cb-313f-7ea2-8f8f-967a0a9db94d",
+  "external_ref": null,
+  "title": "Two fault-injection tests now trip the member-key guard instead of the case they are named for",
+  "outcome": "Two fault-injection tests now trip the member-key guard instead of the case they are named for",
+  "acceptance": [
+    "Each test injects a canonically hashed member and asserts the exact refusal it is named for"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Both fault-injection tests now compare the whole message and reach the guard each one names; the defects were in the tests and no production validation changed.",
+    "completed_at": "2026-09-09T06:10:08.363221Z",
+    "actor": {
+      "actor_id": "grzeg",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "15038421ccc16fd38ebdbe4e6f567630671a127c1c4308a356858e08ddec1682": {
+        "activity_id": "15038421ccc16fd38ebdbe4e6f567630671a127c1c4308a356858e08ddec1682",
+        "task_id": "01a082cb-313f-7ea2-8f8f-967a0a9db94d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7311f6c28b7d6dc260e527304ea0f1c65962beac200450e52dbbcc9d35ad1b2c"
+      },
+      "ffce09ea0490885c3ab750f77f1412dd5715d08fbfe4fcebe5fc7b4ba2abd372": {
+        "activity_id": "ffce09ea0490885c3ab750f77f1412dd5715d08fbfe4fcebe5fc7b4ba2abd372",
+        "task_id": "01a082cb-313f-7ea2-8f8f-967a0a9db94d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "ffce09ea0490885c3ab750f77f1412dd5715d08fbfe4fcebe5fc7b4ba2abd372"
+      }
+    }
+  }
+}

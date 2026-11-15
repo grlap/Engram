@@ -1,0 +1,28 @@
+{
+  "id": "01a1b7fa-5105-7741-8728-09f17fcafc82",
+  "external_ref": null,
+  "title": "Cover shared repeat accounting after an equal intervening quiet sighting",
+  "outcome": "Behavioral coverage exercises equal SQLite-extracted and canonical shared source identity in repeat accounting",
+  "acceptance": [
+    "Existing shared-source behavior fixture records c-to-d change, equal quiet sighting d, then c-to-d report and asserts Repeat with no spurious new obligation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "low",
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

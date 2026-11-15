@@ -1,0 +1,52 @@
+{
+  "id": "01a121d5-86d6-7111-b886-edf6461efa20",
+  "external_ref": null,
+  "title": "A project-bound note fails with database is locked during concurrent writes",
+  "outcome": "Ordinary note writes handle concurrent SQLite writer admission without dropping the note or returning an unclassified database-is-locked failure; recording and uncertain-result semantics remain correct.",
+  "acceptance": [
+    "A deterministic two-connection regression exercises a project-bound note while another connection holds the SQLite write transaction beyond the old busy timeout; once the contender commits, the admitted note is recorded exactly once without the generic database-is-locked refusal, with focus and holder/non-holder semantics preserved",
+    "The busy writer admission behavior is diagnosed on current source and corrected through a supported bounded mechanism; it does not blindly retry an uncertain commit, alter durable records or weaken mutation authority, and genuine resource-unavailability still returns explicit diagnostic evidence"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "dogfood",
+    "reliability",
+    "storage"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Project-bound note writes share one lazy 10-second native SQLite writer admission window, preserving authority, focus, ordinary timeout settings and existing idempotent recovery. Busy/locked acquisition refusals provide typed timing/code/certainty diagnostics without retrying transaction bodies, commits or whole words.",
+    "completed_at": "2026-10-09T21:23:46.152896400Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "184a7af66ecb43e99d1800b8fc1744c1": {
+        "activity_id": "184a7af66ecb43e99d1800b8fc1744c1",
+        "task_id": "01a121d5-86d6-7111-b886-edf6461efa20",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3abab8fd66084fb19f455454627ec39a"
+      }
+    }
+  }
+}

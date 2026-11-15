@@ -1,0 +1,67 @@
+{
+  "id": "01a0cc46-071c-7910-84ec-b3e075647dca",
+  "external_ref": null,
+  "title": "Remove the finalizer turn purpose and phase from the host protocol",
+  "outcome": "The host protocol no longer carries a finalizer turn that no task can ever reach: TurnPurpose::Finalizer and SessionPhase::FinalizerOpen are gone from the wire vocabulary, the control evaluator and the docs, synchronized with TermAl.",
+  "acceptance": [
+    "Both live stores are checked read-only beforehand, and no stored session phase, grant or turn result uses either value",
+    "TermAl's host adapter carries no reference to either value, confirmed with its owner in the same synchronization as the other wire changes",
+    "The full quality gates pass",
+    "TurnPurpose::Finalizer and SessionPhase::FinalizerOpen are removed from the domain types, the control evaluator and the host and CLI docs, and a host request naming either is refused as an unknown value"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "host-protocol",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed unreachable finalizer purpose/phase from the typed protocol and evaluator; unknown values refuse. Pre-edit store absence checks and synchronized host-owner confirmation are recorded. Corrected independent acceptance passes all four criteria; no criteria changed.",
+    "completed_at": "2026-09-23T19:40:45.367905800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "47f8adc3386d4b2f9b82224eeab6e158": {
+        "activity_id": "47f8adc3386d4b2f9b82224eeab6e158",
+        "task_id": "01a0cc46-071c-7910-84ec-b3e075647dca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "47f8adc3386d4b2f9b82224eeab6e158"
+      },
+      "e5368c195df8434db8b42159e0d462f0": {
+        "activity_id": "e5368c195df8434db8b42159e0d462f0",
+        "task_id": "01a0cc46-071c-7910-84ec-b3e075647dca",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "27213c7938914335b2664a5c55fe82e5"
+      }
+    }
+  }
+}

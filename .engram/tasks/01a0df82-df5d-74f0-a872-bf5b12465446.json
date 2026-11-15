@@ -1,0 +1,33 @@
+{
+  "id": "01a0df82-df5d-74f0-a872-bf5b12465446",
+  "external_ref": null,
+  "title": "Agents can create, change or delete files only inside their project's repository folder",
+  "outcome": "Agents can create, change or delete files only inside their project's repository folder",
+  "acceptance": [
+    "A Windows host test proves each of the criteria above, including a PowerShell script whose $home assignment fails before a recursive delete",
+    "An agent's shell command or file tool that creates, changes, moves or deletes a file outside its project's repository folder and worktrees is refused before it runs, the file survives, and the session and Greg see a refusal naming the path",
+    "Engram holds the rule as project policy: the allowed roots are the project's repository folder and its worktrees, and the policy names the tool-owned exceptions",
+    "Installing a build Greg approved passes only through an explicit exception that Engram records with its path and approval",
+    "Reads outside the repository stay allowed, and Engram, Cargo and TermAl tool writes to their own homes and caches still work",
+    "The same command inside the repository folder or one of its worktrees runs"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "control-plane",
+    "safety"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "Greg explicitly redirected scope in Advisor session-6219 on 2026-09-26: TermAl will not block dangerous operations; the repository-only rules are already recorded in Beads and Engram. Stop the planned host enforcement work and focus on cleanup and refactoring. Instruction-level repository write restrictions remain in force.",
+  "completion": null
+}

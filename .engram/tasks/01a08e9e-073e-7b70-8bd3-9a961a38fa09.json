@@ -1,0 +1,51 @@
+{
+  "id": "01a08e9e-073e-7b70-8bd3-9a961a38fa09",
+  "external_ref": null,
+  "title": "Align the pair workflow proposal mailbox recipe with the read-first TermAl mailbox contract",
+  "outcome": "Align the pair workflow proposal mailbox recipe with the read-first TermAl mailbox contract",
+  "acceptance": [
+    "The mailbox recipe says to omit afterSequence, save the read receipt, process every body including own sends, acknowledge the unchanged receipt even after sending, re-read on a gap or conflict, and use mailbox listing only for discovery."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-docs-review",
+    "docs",
+    "stream-review-docs"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed mailbox recipe in commit 497e81b; independent Codex evaluation 9c208e7cd90241a5a2beddf5dd2d66f1 passed criterion 1, citing current-run evidence c5c3cfb2f0ec46abb0a99bb4ecf1c78b. Round4 full gate and both clean reviews cover the committed content. Host stock untested-change disclosure remains distinct from those recorded launcher results.",
+    "completed_at": "2026-09-27T20:22:50.280537700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "70b942420b6e44e4a8c07dbb238f5fbd": {
+        "activity_id": "70b942420b6e44e4a8c07dbb238f5fbd",
+        "task_id": "01a08e9e-073e-7b70-8bd3-9a961a38fa09",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0be2382d1a9548a4a0b4a992a772589c"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "01a1d24c-2eda-7dd0-a8b8-2adaf4e64571",
+  "external_ref": null,
+  "title": "Show the new title in the `work update` receipt when the update changes the title",
+  "outcome": "Show the new title in the `work update` receipt when the update changes the title",
+  "acceptance": [
+    "After `engram work update REF --title NEW`, the receipt's first line names the item with NEW, not the title it had before the update",
+    "A behavior test covers a title change through the CLI update receipt"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-cli"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

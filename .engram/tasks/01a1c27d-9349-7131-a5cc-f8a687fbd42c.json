@@ -1,0 +1,27 @@
+{
+  "id": "01a1c27d-9349-7131-a5cc-f8a687fbd42c",
+  "external_ref": null,
+  "title": "Add the test-ref bullets to the authority list at the top of /review-changes",
+  "outcome": "Add the test-ref bullets to the authority list at the top of /review-changes",
+  "acceptance": [
+    "The commit and push authority list near the top of .claude/commands/review-changes.md names the test-ref bullets, as docs/development.md, fix-bug.md and the engram-repo skill do, with both coordinators' concurrence on the wording recorded on the item."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "authority-text",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

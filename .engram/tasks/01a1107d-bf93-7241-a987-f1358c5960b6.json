@@ -1,0 +1,52 @@
+{
+  "id": "01a1107d-bf93-7241-a987-f1358c5960b6",
+  "external_ref": null,
+  "title": "Doctor reports one canonical-representation cause twice for a completion seal",
+  "outcome": "Doctor reports one canonical-representation cause twice for a completion seal",
+  "acceptance": [
+    "When a completion seal's canonical object does not survive being written back, integrity verification reports completion_seal:<id>:canonical_representation once per seal, keeping both seal checks as detectors: duplicates of that exact label are dropped at work-report assembly (first occurrence kept), and every other finding, their order and the checked count are unchanged",
+    "Tests pin it: the explicit-empty seal member matrix expects that label once (and the sqlite-store brief's table no longer says it is reported by both seal checks); the canonical-representation-vs-projection-drift test asserts exact count one for the seal's canonical label, including combined damage; a raw-byte canonical seal with a duplicate known field plus an explicit `obligations: []` still reports canonical_representation once together with the generic completion_seal:<id> label; two distinct corrupted seals each get one label; and a missing canonical object and a kind mismatch keep their own findings"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "doctor",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Doctor now reports a completion seal's canonical_representation finding once per seal. Both detectors stay: the run-binding check reads through a Value, the projection-vs-object check is typed. verify_work_projections_on keeps the first of identical completion_seal:<id>:canonical_representation labels; every other finding, the order and the checked count are unchanged. Tests:\n- the explicit-empty matrix now expects 1 (was 2);\n- the drift test has exact counts;\n- a repeated-member + [] seal still reports it via the only check that can see it;\n- two seals get one label each;\n- a missing or mistyped object keeps its own exact findings.\nThe sqlite-store table was updated. Full gate test-4874e3fc passed; evaluation 67cacfe1 2/2. Landed as ab55fda and installed as 245439738e5f.",
+    "completed_at": "2026-10-06T11:28:51.227109800Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "042563d75f6242c0977987393c4cb392": {
+        "activity_id": "042563d75f6242c0977987393c4cb392",
+        "task_id": "01a1107d-bf93-7241-a987-f1358c5960b6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "24d4aca2779f4dd9a46abb5a355b8221"
+      }
+    }
+  }
+}

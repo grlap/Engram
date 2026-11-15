@@ -1,0 +1,51 @@
+{
+  "id": "01a0dfaa-cf11-7751-911d-0542ee9d0f94",
+  "external_ref": null,
+  "title": "Write Greg's review-speed decisions into the instructions and /review-changes",
+  "outcome": "Write Greg's review-speed decisions into the instructions and /review-changes",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md (kept identical) and the /review-changes instructions state Greg's 2026-09-26 review-speed decisions: gate and both reviews run in parallel on one frozen input, a changeset touching only .md files runs the link check and the AGENTS/CLAUDE identity check instead of the full gate while both reviewers still review, a design review with Engram::Fable and a read-only Codex explorer precedes coding, only non-mutating work on the next item happens during a gate or review, and fix rounds keep both reviewers",
+    "node scripts/check-doc-links.mjs passes and AGENTS.md and CLAUDE.md are byte-identical"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed as 7424da9 and 259a1a1.\n- Greg's five review-speed decisions of 2026-09-26 are written into AGENTS.md/CLAUDE.md (\"Review speed\", the .md-only paragraph in Required Quality Gates, and the standing-approval clause) and /review-changes:\n  1. the gate and both reviews run in parallel on one frozen input, and a failed gate discards those reviews;\n  2. an .md-only changeset runs the link and identity checks through the launcher instead of the full gate;\n  3. a design review with Engram::Fable and a read-only Codex explorer comes before coding;\n  4. only non-mutating work happens on the next item during a gate or review;\n  5. fix rounds keep both reviewers.\n- /fix-bug, the engram-repo skill and the pair workflow match.\n- Reviews: four rounds, then two follow-up rounds after the first evaluation found /review-changes missing two decisions.\n- Independent Codex re-evaluation: 2/2 pass.",
+    "completed_at": "2026-09-26T22:13:21.126195900Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "12a798d01953431685c79e1012029c9e": {
+        "activity_id": "12a798d01953431685c79e1012029c9e",
+        "task_id": "01a0dfaa-cf11-7751-911d-0542ee9d0f94",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "99e924f2f2fb4eb7a03f17103b59f21e"
+      }
+    }
+  }
+}

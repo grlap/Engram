@@ -1,0 +1,79 @@
+{
+  "id": "01a1ac67-d6a1-7cc2-af2a-7828ac63767b",
+  "external_ref": null,
+  "title": "Let Engram's Git read admit repositories with pinned submodules, in step with TermAl's submodule capture, so Questly and Phoenix checks can count",
+  "outcome": "Engram's live Git read at evaluate and done treats a repository with initialized, pinned and Git-clean submodules as current at the check's root commit, by the same rules TermAl's capture uses, so a correct check in Questly or PhoenixCodeNav is not refused just because the repository has submodules.",
+  "acceptance": [
+    "On real Questly commits on Linux and Windows, and on real PhoenixCodeNav commits on Windows, in a disposable clean checkout with every submodule initialized at its pin, an ordinary launcher run records committed input; evaluate and done accept that check with evaluations on, and done accepts it on bound work with evaluations off.",
+    "A dirty child, a child off its pin, an uninitialized child and a dirty root are each refused at evaluate and done, naming the cause, on Linux and on Windows",
+    "Engram and TermAl, which have no submodules, behave as before, and the existing evaluation matrix rows still pass",
+    "There is no exception list; Git-ignored output such as PhoenixCodeNav's .codenav is outside the verdict; no historical evaluation, verification or seal changes",
+    "Both items (this and TermAl's w-c07c410dac75) close together, only on executed host rows from point 1 on Linux and Windows, run against the exact commits being landed"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "greg-directed",
+    "source-identity"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Admit clean initialized pinned and nested submodules through ordinary recursive Git status at evaluate and done; preserve named refusals, ignored-output behavior and existing records. Landed, pushed and installed exact fd candidate.",
+    "completed_at": "2026-11-06T04:02:03.025935600Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "260ceee26ff64369ae71fe7634cfa2b6": {
+        "activity_id": "260ceee26ff64369ae71fe7634cfa2b6",
+        "task_id": "01a1ac67-d6a1-7cc2-af2a-7828ac63767b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "260ceee26ff64369ae71fe7634cfa2b6"
+      },
+      "3644ec9308284bc681aa40e83b61ee53": {
+        "activity_id": "3644ec9308284bc681aa40e83b61ee53",
+        "task_id": "01a1ac67-d6a1-7cc2-af2a-7828ac63767b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "3644ec9308284bc681aa40e83b61ee53"
+      },
+      "ff9a4ac34e21481d8de3e0ba54d2c289": {
+        "activity_id": "ff9a4ac34e21481d8de3e0ba54d2c289",
+        "task_id": "01a1ac67-d6a1-7cc2-af2a-7828ac63767b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a4a520b9c409477fa839a1fbb92dd5bb"
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "01a0cb14-cc0d-7b40-a2a9-965d3423dafd",
+  "external_ref": null,
+  "title": "Prevent background TermAl CLI calls from opening visible terminal windows on Windows",
+  "outcome": "Prevent background TermAl CLI calls from opening visible terminal windows on Windows",
+  "acceptance": [
+    "Mailbox delivery, completion wakeups and CLI exit/error reporting still work; explicitly requested interactive terminals remain available.",
+    "On Windows, the background TermAl CLI invocation path reported by Greg completes without opening or flashing visible terminal windows; verify the actual desktop behavior end to end."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-host-integration",
+    "cli",
+    "usability",
+    "windows"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Background test-launcher runs no longer open visible terminal windows on Windows. The cause was the review fingerprint helper running git without windowsHide from the launcher's console-less detached worker. Fixed in 1f5afa9, gated, reviewed in two Codex and Claude rounds, and pushed. Verified end to end on the real detached launcher path, including the TermAl CLI notification, with a desktop probe that observed from before launch: 0 terminal or console windows, against 46 from the same capture path before the fix. Accepted by an independent Codex evaluator through TermAl.",
+    "completed_at": "2026-09-23T03:14:29.607162400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "922f411ec62241d9a2cdeab4e20a0b82": {
+        "activity_id": "922f411ec62241d9a2cdeab4e20a0b82",
+        "task_id": "01a0cb14-cc0d-7b40-a2a9-965d3423dafd",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "edef6a3fddaa4ac38132268c73c00f16"
+      }
+    }
+  }
+}

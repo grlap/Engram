@@ -1,0 +1,77 @@
+{
+  "id": "01a19fb9-1298-7221-97ae-6b1502837d61",
+  "external_ref": null,
+  "title": "Refuse MCP update and handoff fields that the selected action does not use, instead of silently discarding them",
+  "outcome": "Refuse MCP update and handoff fields that the selected action does not use, instead of silently discarding them",
+  "acceptance": [
+    "For the MCP update and handoff tools, every supplied field is either consumed by the selected action or refused before any mutation, with a refusal naming the field and the action (for example update action=cancel with title, or handoff action=accept with to, summary, reason or ttl_seconds)",
+    "Valid action-specific fields and existing refusal codes are unchanged, and tests cover at least one refused unrelated field per action family",
+    "The full gate passes"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-mcp",
+    "greg-directed",
+    "legacy-cleanup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed, pushed to origin/master, and installed as 8b91bf6688942069bc7b700f3620d05f24af3c5b. Shared DL560 standard-launcher FULL passed with matched before/after fingerprints. Release binary fingerprint 2c060909696de9b2b50bd617c54e6f33ff8621118a9c0b4bfec8c9de95bfa1fc; all six live stores report ready. Previous binary backed up; no migration or TermAl restart.",
+    "completed_at": "2026-11-03T17:31:29.261381100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4d94bce6f4ed414694559981d93bb08e": {
+        "activity_id": "4d94bce6f4ed414694559981d93bb08e",
+        "task_id": "01a19fb9-1298-7221-97ae-6b1502837d61",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "98feec890c8c4a9f9225091278496310"
+      },
+      "8540d93c3f944f929808901c197f715d": {
+        "activity_id": "8540d93c3f944f929808901c197f715d",
+        "task_id": "01a19fb9-1298-7221-97ae-6b1502837d61",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8540d93c3f944f929808901c197f715d"
+      },
+      "c11d250f5551488db48e14b2006b9022": {
+        "activity_id": "c11d250f5551488db48e14b2006b9022",
+        "task_id": "01a19fb9-1298-7221-97ae-6b1502837d61",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "released",
+        "state_revision": 2,
+        "event_id": "4d94bce6f4ed414694559981d93bb08e"
+      }
+    }
+  }
+}

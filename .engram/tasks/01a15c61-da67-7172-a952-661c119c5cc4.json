@@ -1,0 +1,56 @@
+{
+  "id": "01a15c61-da67-7172-a952-661c119c5cc4",
+  "external_ref": null,
+  "title": "Instructions allow adopting a clean review round across a base-only carry (Greg-approved wording)",
+  "outcome": "AGENTS.md, CLAUDE.md, /review-changes and the team-coordination skill carry Greg's approved base-only carry wording exactly: a clean latest round may be adopted for a carried tree under the section 6a conditions, a carried authority change gets a fresh identity audit, and no gate, check, readiness or evaluation ever carries.",
+  "acceptance": [
+    "AGENTS.md and CLAUDE.md are byte-identical and contain change A of target/tmp/c2c4-draft3.md word for word (wrapping aside), inserted in the standing-approval review bullet after 'independent root with provenance.'",
+    ".claude/commands/review-changes.md contains change B as a new section '6a. Adopt a clean round across a base-only carry' after section 6, and change C as a new paragraph after the fallback paragraph of the audit section, both word for word apart from wrapping",
+    ".agents/skills/team-coordination/SKILL.md lines 57-58 read as change D, word for word apart from wrapping; no other passage of these files changes",
+    "Termal::Fable2's final-diff audit of the exact frozen input, with the compiled freeze checker before and after, is recorded as passed; the Markdown-only checks pass; and a Codex and a Claude review find no in-scope Medium or higher"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 1,
+  "labels": [
+    "acceptance-evaluation",
+    "agent-instructions",
+    "authority",
+    "throughput",
+    "workflow"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a15c1c-8b6c-7013-8092-c2c47f9f8965",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed Greg-approved review adoption wording in AGENTS.md, CLAUDE.md, /review-changes and team-coordination skill, with DRAFT3 narrowings. Exact gated/reviewed tree52f8f205d9e6b674ae1f552ff52d724dd39d2aed committed as7d6710cfec40c98d68088c6dd0f38b84023b2a72, parente90cd21bea187c0bf9523c432cf30e1752bb0d9f, FF pushed origin/master and local master fast-forwarded cleanly. Independent acceptance03cf5492728d41d4b33c208298a5af42 passed4/4 revision2/cut68; fresh r3 Codex+Claude pair no findings, fresh Fable2 carried audit PASS, both Markdown checks exit0 expected=before=after=b9b3cc80. No review/gate/evaluation was adopted for this landing.",
+    "completed_at": "2026-10-21T05:25:07.049556Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "81dcad0fbee045e28f7c3c8a27ca0a1c": {
+        "activity_id": "81dcad0fbee045e28f7c3c8a27ca0a1c",
+        "task_id": "01a15c61-da67-7172-a952-661c119c5cc4",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a3d1ae58aa7c4f1b930c22f1b143b332"
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "01a07053-e97e-7f61-8685-a7de1233e23a",
+  "external_ref": null,
+  "title": "Smoke: initial notes",
+  "outcome": "Smoke: initial notes",
+  "acceptance": [
+    "Smoke: initial notes is done"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "cancelled",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": "smoke item, cancelled after verification",
+  "completion": null
+}

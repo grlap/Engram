@@ -1,0 +1,63 @@
+{
+  "id": "01a07163-310f-7233-8a88-4f8740a5de4d",
+  "external_ref": null,
+  "title": "Carry typed blocking-ancestor state into detach receipts",
+  "outcome": "Carry typed blocking-ancestor state into detach receipts",
+  "acceptance": [
+    "Structured blocked_reason remains present independent of the human why wording"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "phoenix",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0701e-3d2f-7432-a0e9-366cdba19e56",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered typed blocking-parent state and prose-independent structured receipt; accepted by both reviewers. Residual reminder-literal cleanup explicitly carries into the next slice per lead.",
+    "completed_at": "2026-09-05T15:03:05.047028800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b484bd464a37bdbcde1049cbdb0ebfcf6c6678488da2cbb63699ef38e0d2739e": {
+        "activity_id": "b484bd464a37bdbcde1049cbdb0ebfcf6c6678488da2cbb63699ef38e0d2739e",
+        "task_id": "01a07163-310f-7233-8a88-4f8740a5de4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "b484bd464a37bdbcde1049cbdb0ebfcf6c6678488da2cbb63699ef38e0d2739e"
+      },
+      "dc40cf72efd213079c2f463efafab472b1786c0c5bf3aec325c16b9c55e29547": {
+        "activity_id": "dc40cf72efd213079c2f463efafab472b1786c0c5bf3aec325c16b9c55e29547",
+        "task_id": "01a07163-310f-7233-8a88-4f8740a5de4d",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0e5ed5400de909de9d5475c1dfe83f396859b984b25a0efda8a44d8dd072580f"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "01a13d02-4d1a-7bb2-a8ad-1e922c7b6827",
+  "external_ref": null,
+  "title": "Give exchange configuration drift an actionable public retry remedy",
+  "outcome": "Give exchange configuration drift an actionable public retry remedy",
+  "acceptance": [
+    "RunError::TargetChanged directs public service callers to retry the exchange to observe current configuration, without instructing them to call the internal target capture API.",
+    "A focused regression verifies the public drift guidance, with exchange admission and drift refusal behaviour unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,50 @@
+{
+  "id": "01a1a4ee-0c11-7330-928f-9283afdb361c",
+  "external_ref": null,
+  "title": "Read complete task snapshots through the hardened local Git owner",
+  "outcome": "Supply the explicit cold audit with exact complete Git snapshots without inventing a legacy exchange intent or reading worktree files.",
+  "acceptance": [
+    "A read-only complete-snapshot library seam uses the existing hardened command/query, exact full commit validation, ordinary mode/canonical task path and strict document/disclosure/graph validation owners.",
+    "It returns exact commit/tree/parents and raw commit comparison plus complete typed task documents and explicitly unverified envelope metadata, with bounded named refusals and no ref/index/worktree/store mutation.",
+    "Behavioral fixtures cover complete 2000-task capture, merge/empty snapshot, SHA object-format exactness, unsafe modes/paths, malformed envelopes/documents and per-blob/aggregate bounds; parent executes focused checks before integration."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 0,
+  "labels": [
+    "area-storage",
+    "cold-git-reader",
+    "greg-directed",
+    "managed-custody",
+    "performance",
+    "sync",
+    "task-sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": "01a1a4e4-ebba-7db0-960e-2c985bbd04c5",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "8f87a47e0e9747cc8425ca5cb2109fd8": {
+        "activity_id": "8f87a47e0e9747cc8425ca5cb2109fd8",
+        "task_id": "01a1a4ee-0c11-7330-928f-9283afdb361c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8f87a47e0e9747cc8425ca5cb2109fd8"
+      }
+    }
+  }
+}

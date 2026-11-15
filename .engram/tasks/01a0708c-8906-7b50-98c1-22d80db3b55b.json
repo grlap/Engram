@@ -1,0 +1,51 @@
+{
+  "id": "01a0708c-8906-7b50-98c1-22d80db3b55b",
+  "external_ref": null,
+  "title": "State conservative restored-child readiness limitation",
+  "outcome": "State conservative restored-child readiness limitation",
+  "acceptance": [
+    "Readiness documentation explicitly states that restored child completions can suppress the advisory done suggestion even when completion permits them"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "dogfood",
+    "performance",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06fde-f44f-70a3-aeb2-b8e424eefcb1",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Documented the existing conservative omission of restored child completions from advisory readiness without expanding authority; reviewed and landed.",
+    "completed_at": "2026-09-05T08:27:14.531174800Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "4510dce2e44aa2671fdc60c8dd6d9a99d3513261d85659bae043a772da15a492": {
+        "activity_id": "4510dce2e44aa2671fdc60c8dd6d9a99d3513261d85659bae043a772da15a492",
+        "task_id": "01a0708c-8906-7b50-98c1-22d80db3b55b",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4213d66e833ae54635d474d60543ef463f79b2e5e1c7e334960652028c8d3de7"
+      }
+    }
+  }
+}

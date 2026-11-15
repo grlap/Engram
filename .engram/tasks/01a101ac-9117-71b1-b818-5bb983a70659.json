@@ -1,0 +1,28 @@
+{
+  "id": "01a101ac-9117-71b1-b818-5bb983a70659",
+  "external_ref": null,
+  "title": "Define the holder and carried-check precondition in the authority audit procedure",
+  "outcome": "Define the holder and carried-check precondition in the authority audit procedure",
+  "acceptance": [
+    "The authority audit procedure names the item holder/review parent, explains a carried check or links its definition, and says that missing or negative no-carried-check confirmation requires clarification before any identity pass is recorded."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "authority",
+    "docs",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

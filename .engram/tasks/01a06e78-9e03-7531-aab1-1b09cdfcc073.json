@@ -1,0 +1,54 @@
+{
+  "id": "01a06e78-9e03-7531-aab1-1b09cdfcc073",
+  "external_ref": null,
+  "title": "Clarify explicit empty skipped members in completion-seal projections",
+  "outcome": "Clarify explicit empty skipped members in completion-seal projections",
+  "acceptance": [
+    "docs/features/sqlite-store.md documents, with the exact shapes, that integrity verification (doctor, and the full verification migration import runs before publishing) refuses a completion seal whose work_completion_seals projection or canonical object carries an explicit `obligations: []` or `environment: []` (members the seal type skips when empty), naming the findings each case produces (projection only: completion_seal:<id>:projection_binding and completion_seal:<id>; canonical only: completion_seal:<id>:canonical_representation, reported by both seal checks; both: all of these), while ordinary loads decode such a seal; and a test pins, for each of the two fields, the projection-only, canonical-only and both cases with that exact finding matrix, injecting real JSON [], asserting that normal encoding omits the member, that the omitted-member baseline stays healthy, that an ordinary load decodes the seal, and that verification leaves the stored bytes unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 3,
+  "labels": [
+    "area-storage",
+    "docs",
+    "review",
+    "snapshot",
+    "stream-snapshot-integrity",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0632e-f1ad-70b1-8c41-c073eed553ad",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "sqlite-store.md now documents that integrity verification requires every stored member to survive being written back. A completion seal stored with an explicit `\"obligations\": []` or `\"environment\": []` decodes, but doctor reports it and migration import refuses to publish it. The exact findings: projection only, projection_binding plus the bare seal label; canonical only, canonical_representation from both checks; both, all of these. An ordinary load still decodes such a seal. A new test pins all six cases, the healthy baseline, the ordinary load, and that verification leaves the bytes unchanged. Full gate test-d85f17f5 passed; evaluation 75cd219c 1/1. Landed as a3b8efe and installed as build ef448e9e674e. Follow-ups: w-e736c419c503, w-a426617d5def, w-f1358c5960b6.",
+    "completed_at": "2026-10-06T10:13:58.323909200Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "988a66c0b95c4b46ad0f17f316a741ee": {
+        "activity_id": "988a66c0b95c4b46ad0f17f316a741ee",
+        "task_id": "01a06e78-9e03-7531-aab1-1b09cdfcc073",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "cf1e02f19bb74437aba6447f11103b50"
+      }
+    }
+  }
+}

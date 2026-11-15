@@ -1,0 +1,80 @@
+{
+  "id": "01a0cb25-a3cd-7733-aa1b-7c5b8838c6c0",
+  "external_ref": null,
+  "title": "Remove resource leases and the host obligation-waive operation",
+  "outcome": "The host control protocol no longer offers resource leases or obligation waive; TermAl removes its matching waiver surface in coordination.",
+  "acceptance": [
+    "An open bound obligation can still be cleared by revising or dropping its binding",
+    "LeaseAcquire, LeaseRelease and ObligationWaive are gone from the host control protocol, with their storage and control code",
+    "TermAl removes its matching obligation-waive adapter, route and helper surface in coordination, with host-owned validation recorded",
+    "The full quality gates pass",
+    "The leases table is dropped only in an approved store conversion; otherwise it stays",
+    "behavioral-control-plane.md, host-checklist.md, shipped.md and the roadmap no longer present resource leases as shipped"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 2,
+  "labels": [
+    "area-host-integration",
+    "area-storage",
+    "simplification"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0cb25-5382-71b3-bcfe-27f0ba501743",
+  "child_requirement": "optional",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed resource leases and host obligation-waive operations in Engram with coordinated TermAl removal06f09d0. Binding revision and operator waiver remain. Explicit approved conversion removed empty lease state; docs disclose non-locking resource intents. Independent acceptance passes6/6, with existing Engram and host validation attributed at its actual assurance.",
+    "completed_at": "2026-09-23T19:43:15.531613900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "40bc541313e14e62925aeb7c25f13590": {
+        "activity_id": "40bc541313e14e62925aeb7c25f13590",
+        "task_id": "01a0cb25-a3cd-7733-aa1b-7c5b8838c6c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "40bc541313e14e62925aeb7c25f13590"
+      },
+      "9ba2be2cbce04087b192bad39486879a": {
+        "activity_id": "9ba2be2cbce04087b192bad39486879a",
+        "task_id": "01a0cb25-a3cd-7733-aa1b-7c5b8838c6c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "73760976ced148d3a8be52155030c100"
+      },
+      "aac721157a7a4379adf22635c5df7071": {
+        "activity_id": "aac721157a7a4379adf22635c5df7071",
+        "task_id": "01a0cb25-a3cd-7733-aa1b-7c5b8838c6c0",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "aac721157a7a4379adf22635c5df7071"
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "id": "01a0a606-a251-7810-897b-631a98761f3c",
+  "external_ref": null,
+  "title": "Rollback from Activating missing-main must refuse unexpected SHM",
+  "outcome": "Rollback from Activating missing-main must refuse unexpected SHM",
+  "acceptance": [
+    "Independent rollback after RetainedMain refuses dual and live-only SHM with unchanged no-follow inventory including journal-publish.tmp."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "gate",
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0a382-0b72-7803-8346-15c884db56ba",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered correction reconciled against accepted evidence; acceptance unchanged.",
+    "completed_at": "2026-09-16T16:45:17.878239Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2c7717563398d93f041d078dbe9017eff68182aac15a22a67a8aa3b7be9493df": {
+        "activity_id": "2c7717563398d93f041d078dbe9017eff68182aac15a22a67a8aa3b7be9493df",
+        "task_id": "01a0a606-a251-7810-897b-631a98761f3c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "grzeg",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "2c7717563398d93f041d078dbe9017eff68182aac15a22a67a8aa3b7be9493df"
+      },
+      "d7ae780ba04ac84192edceb7d3bb1aa1880ee41a33c1afa973db4442536e676b": {
+        "activity_id": "d7ae780ba04ac84192edceb7d3bb1aa1880ee41a33c1afa973db4442536e676b",
+        "task_id": "01a0a606-a251-7810-897b-631a98761f3c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "0bbbbceb70749a3b4c163986da41e90883d01f47e7de6fd329787cd2f40cb964"
+      }
+    }
+  }
+}

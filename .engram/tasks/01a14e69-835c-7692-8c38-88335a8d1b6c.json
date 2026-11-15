@@ -1,0 +1,50 @@
+{
+  "id": "01a14e69-835c-7692-8c38-88335a8d1b6c",
+  "external_ref": null,
+  "title": "Document all MCP shutdown trace stages",
+  "outcome": "Document all MCP shutdown trace stages",
+  "acceptance": [
+    "MCP shutdown trace documentation lists store_owner_drop_started and store_owner_drop_finished, describes the final four stages as best effort after the flush, and explains that service_waiting_returned precedes retained store-owner release"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 1,
+  "labels": [
+    "docs",
+    "gate"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed documentation of all eight MCP shutdown trace stages, retained-owner release order, and the final four best-effort records after the bounded flush. The unchanged criterion passed fresh independent evaluation 84ec834998d84c70a9628a557d7d49a0. Combined full gate, Codex/Claude review pair, release build and installed readiness for six live stores passed. No runtime or schema change and no restart required.",
+    "completed_at": "2026-10-18T19:55:30.436015800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "704f62f9ccac4aa780c2e77a2287420b": {
+        "activity_id": "704f62f9ccac4aa780c2e77a2287420b",
+        "task_id": "01a14e69-835c-7692-8c38-88335a8d1b6c",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "24ff12a7b34947b9ac6dba3b61e9a900"
+      }
+    }
+  }
+}

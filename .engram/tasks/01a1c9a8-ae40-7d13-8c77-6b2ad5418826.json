@@ -1,0 +1,29 @@
+{
+  "id": "01a1c9a8-ae40-7d13-8c77-6b2ad5418826",
+  "external_ref": null,
+  "title": "Make the imported-completion governing test reach the governing check",
+  "outcome": "The governing fault refreshes the completion request after work revision changes and asserts the governing-specific refusal rather than passing on stale revision admission.",
+  "acceptance": [
+    "The governing fault reaches imported-acceptance governing validation with a current expected work revision and a valid claim fence.",
+    "The regression asserts the governing-specific refusal and fails when that recheck is bypassed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "review",
+    "test-quality"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

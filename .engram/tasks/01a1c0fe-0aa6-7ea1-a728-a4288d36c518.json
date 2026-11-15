@@ -1,0 +1,28 @@
+{
+  "id": "01a1c0fe-0aa6-7ea1-a728-a4288d36c518",
+  "external_ref": null,
+  "title": "Test that a sealed imported-evidence completion survives a later conflict",
+  "outcome": "Test that a sealed imported-evidence completion survives a later conflict",
+  "acceptance": [
+    "A behavior test completes a local seal using imported evidence, retains a later terminal conflict, verifies the existing seal remains healthy and immutable, and verifies a new use is refused for the conflict."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "execution-evidence",
+    "low",
+    "tests"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

@@ -1,0 +1,66 @@
+{
+  "id": "01a0b27e-9f8b-7c22-b217-3757f381f05f",
+  "external_ref": null,
+  "title": "Atomically select and claim the next ready child under a root",
+  "outcome": "One call selects the next ready child under a named root and claims it in the same transaction, using Engram's derived readiness and deterministic ordering, so parallel sessions under one root never race on the same child and never claim a blocked one.",
+  "acceptance": [
+    "an exact same-session retry recovers the same result; the receipt names the claimed child and its position among the root's ready children",
+    "docs (local-work-system, cli-and-mcp, shipped) describe the operation; all nine gates pass",
+    "one call selects the next ready child under a named root by the derived readiness and the priority-then-work-id order that ls --ready uses, excludes blocked, deferred, held and terminal children, and claims the selected child in the same write transaction",
+    "the operation is an extension of claim (or a host/core operation), not a new top-level word; the fourteen-word agent surface is unchanged",
+    "when no child is ready the call refuses with the reason and claims nothing; two concurrent callers never receive the same child"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-work-lifecycle",
+    "gates"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "`claim --under PARENT` (CLI positional REF or --under; MCP `under` beside optional `work_ref`; core update `claim_next_ready`) selects a parent's next ready direct child by the availability projection and priority-then-work-id order that `ls --ready` uses, re-verifies each candidate canonically, and claims the first admissible one inside the same immediate write transaction; blocked, deferred, held and closed children are never selected, a child lapsed under an unaccounted holder is passed over without a recovery reason, and nothing ready refuses with counts by availability and claims nothing. A repeat renews the child the session already holds (found from claim metadata, reading no sibling); a nonempty core key replays the original selection. The receipt names the child, its position and the ready count. No word was added. Delivered in ac525ae with review fixes in 3bf3305, 4ead3ce and f76b60a; reviewed in rounds 9 (Claude; Codex unavailable, host freeze-checker path gap), 10 and 11 (both reviewers, freeze attested before and after; round 11 had no finding above Low, all fixed in f76b60a, which was gated but not re-reviewed). Nine gates passed on every commit (runs 10, 12, 13, 14). Docs: local-work-system, cli-and-mcp, shipped, SKILL, CLAUDE/AGENTS.",
+    "completed_at": "2026-09-18T17:25:03.390587400Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "8046f42ab9e54bd4856b7e29fa592029": {
+        "activity_id": "8046f42ab9e54bd4856b7e29fa592029",
+        "task_id": "01a0b27e-9f8b-7c22-b217-3757f381f05f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "8046f42ab9e54bd4856b7e29fa592029"
+      },
+      "df8a4f0c1ff14f9d9516c924bb94c6d1": {
+        "activity_id": "df8a4f0c1ff14f9d9516c924bb94c6d1",
+        "task_id": "01a0b27e-9f8b-7c22-b217-3757f381f05f",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "223e8692cee5435090f1ef66beddc541"
+      }
+    }
+  }
+}

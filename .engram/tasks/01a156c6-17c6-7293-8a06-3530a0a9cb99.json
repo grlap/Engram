@@ -1,0 +1,55 @@
+{
+  "id": "01a156c6-17c6-7293-8a06-3530a0a9cb99",
+  "external_ref": null,
+  "title": "Write the S3 pilot Git runbook: pilot branch bootstrap, divergence recovery and cleanup owner",
+  "outcome": "Write the S3 pilot Git runbook: pilot branch bootstrap, divergence recovery and cleanup owner",
+  "acceptance": [
+    "Before any pilot Git act, the S3 pilot item records a runbook within the landed S3 pilot bullet: the bare repository is created with --initial-branch=pilot (or each clone switches to pilot before its first commit), and the first ordinary non-force push that creates pilot is the start of the permitted fast-forward line",
+    "The runbook gives the exact divergence sequence without merge, rebase or force: fetch, move the clone onto the fetched head (git reset --soft <remote>/pilot or git checkout --detach <remote>/pilot) keeping the agent-merged export, commit, then push HEAD:pilot without '+'; any abandoned unpublished local commit is recorded on the pilot item; git pull is never used",
+    "The runbook names the lane that removes the bare repository and pilot clones at close (with the repository path check before any recursive delete), and records that the pilot does not exercise a committed .engram eol attribute"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "task",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "pilot",
+    "review-low",
+    "sync",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a14c4e-d3f4-7333-a5bc-70c009dde0ec",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered the complete S3 pilot Git runbook and addenda on this child and the S3 pilot item. Covers pilot branch bootstrap and first non-force push, strict-pinned private SSH route, explicit own-basis export/import with controlled placement, fetch/reset-soft/recommit divergence without pull/merge/rebase/force, per-commit/push evidence, cleanup ownership/path checks, execution-time CLI verification/fresh-home setup and the committed-eol-attribute coverage gap. Independent evaluation a0c90b69479c40f2a137e0ad028954b1 recorded all three criteria passing on judgment after full-artifact inspection. This completes the tracker-writing deliverable only; no source change, landing, install, pilot Git act, store creation/enrollment, Cargo or test was performed for it.",
+    "completed_at": "2026-10-20T03:20:06.097814300Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "367205ca128c45ac91d04b232d5c2df8": {
+        "activity_id": "367205ca128c45ac91d04b232d5c2df8",
+        "task_id": "01a156c6-17c6-7293-8a06-3530a0a9cb99",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "07bc844411ec437ea442f23a1cdc2c18"
+      }
+    }
+  }
+}

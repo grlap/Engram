@@ -1,0 +1,50 @@
+{
+  "id": "01a067f7-13d0-7660-875e-dcf42e20c736",
+  "external_ref": null,
+  "title": "Restore checkpoint completion change collapsing",
+  "outcome": "Peer change summaries collapse a checkpoint followed by completion using identity rather than rendered prose.",
+  "acceptance": [
+    "A checkpoint whose summary matches the work title followed by completion produces the intended single peer change line"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a06499-376e-7c22-974e-413276ff3f69",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Checkpoint/completion change collapsing is restored by work identity with focused regression coverage; the narrower completion-owned checkpoint follow-up is tracked separately.",
+    "completed_at": "2026-09-03T16:20:08.415062200Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "bdce0965311369ac3e7ef04f863485f0765f94cf7a2eecd07f842aa78e0bbc1e": {
+        "activity_id": "bdce0965311369ac3e7ef04f863485f0765f94cf7a2eecd07f842aa78e0bbc1e",
+        "task_id": "01a067f7-13d0-7660-875e-dcf42e20c736",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "b2d80f9b83ac6f79bee1c3e5353814b613505a891ea6305dc5e4556e4600e037"
+      }
+    }
+  }
+}

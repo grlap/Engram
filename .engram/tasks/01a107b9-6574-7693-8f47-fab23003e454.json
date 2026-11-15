@@ -1,0 +1,50 @@
+{
+  "id": "01a107b9-6574-7693-8f47-fab23003e454",
+  "external_ref": null,
+  "title": "An ended item keeps an active blocker, so ls --all --blocked lists finished work",
+  "outcome": "An ended item keeps an active blocker, so ls --all --blocked lists finished work",
+  "acceptance": [
+    "A recorded decision says whether ending an item (complete, cancel, supersede) retires its active blockers, or whether the blocked filter excludes ended work; the code, ls help, MCP description, docs and the engram-use skill follow it, with a test of ls --all --blocked on an item blocked before it ended"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Blocked catalog listings exclude completed, cancelled and superseded work before counting and paging, including --all and restored ended shapes; historical blockers remain inspectable. Help, MCP descriptions, feature docs and use skill match the recorded Option B decision. Native/Rust regressions cover counts, pages, Proposed/Deferred preservation and cursor membership. Landed, pushed and installed the reviewed gated tree after fresh independent 1/1 acceptance and all four stores ready.",
+    "completed_at": "2026-10-04T22:14:27.850015100Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "3c4b6b498415408d9c4c1b6545a82370": {
+        "activity_id": "3c4b6b498415408d9c4c1b6545a82370",
+        "task_id": "01a107b9-6574-7693-8f47-fab23003e454",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "58a493ed9a8c44a9a50751be64d002a2"
+      }
+    }
+  }
+}

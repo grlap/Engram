@@ -1,0 +1,58 @@
+{
+  "id": "01a1c969-988f-7750-85dc-ccc13083eaac",
+  "external_ref": null,
+  "title": "Acceptance-evaluation submission into Engram exceeds TermAl's 6000 ms host-adapter deadline",
+  "outcome": "Acceptance-evaluation submission into Engram exceeds TermAl's 6000 ms host-adapter deadline",
+  "acceptance": [
+    "The slow path is identified from measured evidence on the affected store and item: which Engram operation, which query or scan, and how its time grows with the item's notes, evidence, children or the store's size",
+    "Under concurrent writers, an acceptance-evaluation submission completes within the operation limit, with a minimum 60-second limit and one shared absolute lock-wait budget rather than a separate five-second budget at each acquisition; the opener-plus-writer sequence is covered by behavioral evidence.",
+    "No retry, timeout extension or partial write is used to hide the slowness; a submission that does time out leaves no half-recorded evaluation"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "performance"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "311071883abb4a2d8405e4f17abbbc50": {
+        "activity_id": "311071883abb4a2d8405e4f17abbbc50",
+        "task_id": "01a1c969-988f-7750-85dc-ccc13083eaac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "311071883abb4a2d8405e4f17abbbc50"
+      },
+      "5f1d9f58837147aab92884cc25018cc0": {
+        "activity_id": "5f1d9f58837147aab92884cc25018cc0",
+        "task_id": "01a1c969-988f-7750-85dc-ccc13083eaac",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5f1d9f58837147aab92884cc25018cc0"
+      }
+    }
+  }
+}

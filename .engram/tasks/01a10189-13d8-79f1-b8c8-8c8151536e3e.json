@@ -1,0 +1,29 @@
+{
+  "id": "01a10189-13d8-79f1-b8c8-8c8151536e3e",
+  "external_ref": null,
+  "title": "Bound root-mutation cost by something that does not grow with closed history (for example an incremental state checksum)",
+  "outcome": "When the council's revisit trigger is met, decide and file a concrete design whose root-mutation work does not grow with closed history, with the storage and conversion consequences named. Do not activate on the basis of this filing alone.",
+  "acceptance": [
+    "The revisit trigger is recorded from evidence: a live root passes 1.5 times the post-fix problem point recorded by the constant-factor follow-up, or an Engram or TermAl agent reports a mutation over its applicable budget.",
+    "A council-reviewed design identifies how mutation work is bounded independently of closed history, including correctness, concurrency, replay and audit consequences, with independently checkable structural validation proposed.",
+    "Any durable checksum or stored-format change has its explicit import conversion and every-live-store migration consequence named, and Greg's recorded format decision precedes any stored change."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "research",
+  "priority": 3,
+  "labels": [
+    "design",
+    "performance"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

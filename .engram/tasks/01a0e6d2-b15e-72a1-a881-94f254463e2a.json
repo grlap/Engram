@@ -1,0 +1,29 @@
+{
+  "id": "01a0e6d2-b15e-72a1-a881-94f254463e2a",
+  "external_ref": null,
+  "title": "Convert historical work_complete protocol results that lack acceptance_criteria_asserted",
+  "outcome": "Every live store's work_complete protocol results decode as the current WorkCompleteResult. Historical results that lack acceptance_criteria_asserted gain it through a named import conversion, and the conversion code is gone once every live store is converted.",
+  "acceptance": [
+    "Greg's word is recorded on this item before any live store is exported for the conversion. Every live store is then converted by migration export and import, and the conversion code is removed once the last live store has been converted.",
+    "Migration import names the conversion and reports the rows it maps, per store: the historical work_complete protocol results that lack acceptance_criteria_asserted (at the read-only inventory of 2026-09-28 05:36Z, Engram 251 and PhoenixCodeNav 137).",
+    "No serde default or untagged fallback variant reads the old shape. After conversion, the doctor decodes work_complete protocol results like every other registered protocol result.",
+    "The conversion derives acceptance_criteria_asserted from the sealed acceptance of the completion the result reports, never from a default, and keeps record ids and links unchanged. The attempt row and its work_protocol_result object stay byte-identical to each other."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 2,
+  "labels": [
+    "migration"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

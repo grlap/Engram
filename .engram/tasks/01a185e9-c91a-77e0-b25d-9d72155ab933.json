@@ -1,0 +1,27 @@
+{
+  "id": "01a185e9-c91a-77e0-b25d-9d72155ab933",
+  "external_ref": null,
+  "title": "Restrict committed-mutation proof construction to its service owner",
+  "outcome": "Restrict committed-mutation proof construction to its service owner",
+  "acceptance": [
+    "Only the service capture/replay owner can construct a CommittedMutation; verb adapters read required proof fields through read-only access without changing committed receipt contents, idempotency or core-error behavior."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "architecture",
+    "review-low"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

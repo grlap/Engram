@@ -1,0 +1,53 @@
+{
+  "id": "01a0aec6-6768-7721-b5a8-a802237a98cb",
+  "external_ref": null,
+  "title": "Doctor and policy history bind evaluations to seals, authority to policy, and citations to canonical verification results",
+  "outcome": "Doctor and policy history bind evaluations to seals, authority to policy, and citations to canonical verification results",
+  "acceptance": [
+    "a re-frozen policy version whose acceptance_evaluation disagrees with its authority decision is refused by policy-history verification",
+    "a shared seal-to-evaluation validator (exists, same work and run, at or before the completion cut, all pass, derived vector equals the sealed vector) is unit-tested per relationship and a doctor test with a re-frozen forged seal reports completion_seal:<hash>:acceptance_evaluation_binding while legacy seals stay healthy",
+    "an observed citation is classified from the canonical VerificationEvidence and a corrupted verification_result projection column is refused as an invalid projection"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0adac-b96a-71b2-b11f-407798f2110a",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "One shared seal-to-evaluation validator (exists, names the sealed work and run, at or before the completion cut, all pass, derives the sealed vector) applied by completion before the write, by doctor (completion_seal:<hash>:acceptance_evaluation_binding), and by the provenance read; the policy loader compares authority.acceptance_evaluation with the policy so history, opening, and doctor refuse a re-frozen disagreeing version; observed citations are classified from the canonical VerificationEvidence and an inconsistent projection column refuses. Doctor now decodes set_acceptance_evaluation receipts (gap found by the fixtures' positive controls, logs/10). Negative fixtures re-freeze every hash so only the relationship is wrong. Gates recorded here for the whole correction changeset (logs/13, /14). RED logs/08 and /10, GREEN logs/11 and /12; docs doctor paragraph, R10, B36/B37/B40.",
+    "completed_at": "2026-09-17T10:44:49.518718300Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "2e088640fde62d70aa72c29c2c3f726c669aeb5a104e62a04b52cf08826adf86": {
+        "activity_id": "2e088640fde62d70aa72c29c2c3f726c669aeb5a104e62a04b52cf08826adf86",
+        "task_id": "01a0aec6-6768-7721-b5a8-a802237a98cb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "9f2bb85f2b0c94019b9974a0fa1844123a2cb2890f0089ad127ba63e8ca950bf"
+      }
+    }
+  }
+}

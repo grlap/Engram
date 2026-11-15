@@ -1,0 +1,65 @@
+{
+  "id": "01a0c08c-751c-75e3-b6a5-dceed348fdf9",
+  "external_ref": null,
+  "title": "Borrow JSON projection bytes after checksum removal",
+  "outcome": "Borrow JSON projection bytes after checksum removal",
+  "acceptance": [
+    "Checksum-free projection readers preserve decoded results and error behavior while borrowing &[u8]",
+    "cargo clippy --all-targets --all-features -- -D warnings passes without suppressing needless_pass_by_value in decode_json_projection"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "area-storage",
+    "gate",
+    "identity",
+    "legacy"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a0b239-9dec-7810-8276-35ec66cb0602",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Projection decoder borrows &[u8], preserves JSON/error semantics and passes warning-free clippy. Independent Claude7173 accepted both unchanged criteria.",
+    "completed_at": "2026-09-21T03:24:37.616273800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "f141918d3ec74d21b22f7722ca3e04f1": {
+        "activity_id": "f141918d3ec74d21b22f7722ca3e04f1",
+        "task_id": "01a0c08c-751c-75e3-b6a5-dceed348fdf9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "3d7675df798a4daf9d0b9e6da0627090"
+      },
+      "f17d28682198473787c8133423b10a17": {
+        "activity_id": "f17d28682198473787c8133423b10a17",
+        "task_id": "01a0c08c-751c-75e3-b6a5-dceed348fdf9",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "f17d28682198473787c8133423b10a17"
+      }
+    }
+  }
+}

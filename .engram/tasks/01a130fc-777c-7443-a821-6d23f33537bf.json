@@ -1,0 +1,64 @@
+{
+  "id": "01a130fc-777c-7443-a821-6d23f33537bf",
+  "external_ref": null,
+  "title": "Clarify stage-local launcher output and contradictory saved stages",
+  "outcome": "Clarify stage-local launcher output and contradictory saved stages",
+  "acceptance": [
+    "The launcher docs and regression tests explicitly distinguish per-stage success from an overall FAIL caused by input drift; the overall verdict remains decisive for run success and source-identity validation remains a separate host requirement.",
+    "Saved passed stages with a missing/nonzero exit, an error or counted failures do not present an unqualified passed stage line; targeted tests cover these shapes without weakening overall verdict checks."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-tooling",
+    "review",
+    "testing"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed launcher stage-local normalization and matching bounded diagnostic inspection, with regression coverage preserving overall input-drift verdicts and saved artifacts.",
+    "completed_at": "2026-10-14T10:59:56.164389900Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "900b3096a2704569b72d7697a55efe5e": {
+        "activity_id": "900b3096a2704569b72d7697a55efe5e",
+        "task_id": "01a130fc-777c-7443-a821-6d23f33537bf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "1aa21543c37a46d489d62d151dc674c5"
+      },
+      "fff3cb5bbc0241f7bfad75b12b204b96": {
+        "activity_id": "fff3cb5bbc0241f7bfad75b12b204b96",
+        "task_id": "01a130fc-777c-7443-a821-6d23f33537bf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "fff3cb5bbc0241f7bfad75b12b204b96"
+      }
+    }
+  }
+}

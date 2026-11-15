@@ -1,0 +1,63 @@
+{
+  "id": "01a10824-1df0-7c93-8ea6-8336ef8a14a6",
+  "external_ref": null,
+  "title": "Build the dropped-retirement-target reminder in the caller's spelling and cover it through MCP memories full",
+  "outcome": "Build the dropped-retirement-target reminder in the caller's spelling and cover it through MCP memories full",
+  "acceptance": [
+    "The reminder a full memories read gives for a dropped retirement target is built in the caller's spelling where the response is assembled, not rewritten afterwards by string equality",
+    "A test reads memories with full:true through the MCP words while a revision has dropped the retirement target, and asserts the reminder names retires_with and clear_retires_with; the CLI form keeps --retires-with and --clear-retires-with"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "mcp",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Build dropped-retirement-target full-memory reminders with caller argument spelling at response assembly; preserve CLI flags and verify the MCP words through a real server.",
+    "completed_at": "2026-10-05T01:46:13.748956200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "af45f62eb7ab428da01b53d052493aed": {
+        "activity_id": "af45f62eb7ab428da01b53d052493aed",
+        "task_id": "01a10824-1df0-7c93-8ea6-8336ef8a14a6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "a9e60e250ad74e4d86d0f2b2d27c6d28"
+      },
+      "dd0744cb2ade4290b58f1e4a62853c87": {
+        "activity_id": "dd0744cb2ade4290b58f1e4a62853c87",
+        "task_id": "01a10824-1df0-7c93-8ea6-8336ef8a14a6",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "dd0744cb2ade4290b58f1e4a62853c87"
+      }
+    }
+  }
+}

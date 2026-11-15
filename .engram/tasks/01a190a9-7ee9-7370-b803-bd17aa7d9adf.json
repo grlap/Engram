@@ -1,0 +1,46 @@
+{
+  "id": "01a190a9-7ee9-7370-b803-bd17aa7d9adf",
+  "external_ref": null,
+  "title": "Show failed registered-run aggregates in verification notes and acceptance reads",
+  "outcome": "An agent reading verification notes or acceptance binding evidence can see when a passing stage belongs to a failed or indeterminate registered run.",
+  "acceptance": [
+    "Verification notes and acceptance verification reads expose the registered producer's aggregate failure or indeterminate outcome alongside or conservatively combined with the stage outcome; they do not present only passed/succeeded for that case.",
+    "Existing execution-observation records keep their stored meaning, and any host-protocol shape change is reconciled with its actual consumer.",
+    "Focused regressions cover passing stages from failed and indeterminate aggregates on both read surfaces and preserve admission, binding and completion refusal."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 2,
+  "labels": [
+    "acceptance-evaluation",
+    "area-host-integration",
+    "review-followup"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null,
+  "activity": {
+    "central": {
+      "a9c5ec8e6210413cbd56297a2f41fb72": {
+        "activity_id": "a9c5ec8e6210413cbd56297a2f41fb72",
+        "task_id": "01a190a9-7ee9-7370-b803-bd17aa7d9adf",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a9c5ec8e6210413cbd56297a2f41fb72"
+      }
+    }
+  }
+}

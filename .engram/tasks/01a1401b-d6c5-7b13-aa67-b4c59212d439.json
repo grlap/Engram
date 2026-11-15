@@ -1,0 +1,52 @@
+{
+  "id": "01a1401b-d6c5-7b13-aa67-b4c59212d439",
+  "external_ref": null,
+  "title": "Test launcher resolves pwsh installed as a Windows app execution alias",
+  "outcome": "Test launcher resolves pwsh installed as a Windows app execution alias",
+  "acceptance": [
+    "On Windows, scripts/test-launcher.mjs executable() accepts a PATH candidate that is an app execution alias (statSync throws EACCES while lstatSync and accessSync F_OK succeed) and launches it, so a full gate runs when pwsh exists only as %LOCALAPPDATA%\\Microsoft\\WindowsApps\\pwsh.exe.",
+    "A launcher test covers the alias case (stat refusal with a present reparse-point entry is resolved; a genuinely missing or non-file candidate is still refused with the existing executable-not-found error) and fails if the alias acceptance is removed."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 0,
+  "labels": [
+    "area-tooling",
+    "gate",
+    "launcher"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Landed 129c5ed on master. scripts/test-launcher.mjs executable() now accepts, on Windows, a PATH candidate whose stat is refused with EACCES while lstat reports a link (the Store app execution alias for pwsh under WindowsApps). It still requires access(F_OK). Every other stat failure is refused as before, and a failed lstat keeps the original refusal as the diagnostic. The lookup's file-system calls and platform are injectable for tests; callers are unchanged.\n- The new launcher test covers the alias and each refusal, and failed with the alias branch disabled.\n- Live proof: the bootstrap focused pwsh run failed at preflight on master and passed on this tree. Full gate test-4e061dfa passed 12/12 on freeze 456b32c4, with its rust stage running pwsh through the alias.\n- Pair: Codex had no findings; Claude had one Low (comment wording, filed as its own item) and one Note.\n- Evaluation 656cfa27 passed 2/2.\n- Installed build e2a250e6bfd60e7981b26276bb5db3a1aa9543ef3d4d4c6d33089f4a4d396a74 (exe 446fe55df4b9). Backup engram-20261015T163652Z-ba492db5af89.exe. All 4 live stores ready.",
+    "completed_at": "2026-10-15T16:37:10.120365600Z",
+    "actor": {
+      "actor_id": "greg/claude",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "b564f9997f1c4b91bcadb58333be15b7": {
+        "activity_id": "b564f9997f1c4b91bcadb58333be15b7",
+        "task_id": "01a1401b-d6c5-7b13-aa67-b4c59212d439",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/claude",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "27c07acf45324847afc08b5b6b0d0e4e"
+      }
+    }
+  }
+}

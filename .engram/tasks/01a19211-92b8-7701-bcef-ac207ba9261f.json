@@ -1,0 +1,29 @@
+{
+  "id": "01a19211-92b8-7701-bcef-ac207ba9261f",
+  "external_ref": null,
+  "title": "A planning update on an item the session doesn't hold moves the session's focus away from the item it holds",
+  "outcome": "A planning update on an item the session doesn't hold moves the session's focus away from the item it holds",
+  "acceptance": [
+    "An unclaimed planning update (block, unblock, revise, after/drop_after, supersede, cancel, add) on an item the session does not hold leaves the session's focus on its currently held item. The receipt says focus is unchanged.",
+    "When the session holds no item, the existing focus-selection behaviour and its receipt disclosure stay as they are today.",
+    "Tests cover: holding item X, then blocking or revising item Y, leaves focus on X with X's claim untouched; and with no held item, focus selection is unchanged."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-agent-ux",
+    "area-work-lifecycle"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

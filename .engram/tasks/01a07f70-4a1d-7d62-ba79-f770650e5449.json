@@ -1,0 +1,62 @@
+{
+  "id": "01a07f70-4a1d-7d62-ba79-f770650e5449",
+  "external_ref": null,
+  "title": "Describe authored intake and immutable refresh notices consistently",
+  "outcome": "Describe authored intake and immutable refresh notices consistently",
+  "acceptance": [
+    "Source intake contracts contain no proposed local patch claim"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "integration",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a069a6-8931-7be2-a128-85b242cc0923",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "In-scope intake feature and host contracts describe authored work and immutable notices with no local patch. The older normative specification contradiction is explicitly owned separately by Fable under decision1565. Final gates passed; accepted freeze539037a9. No commit or install claimed.",
+    "completed_at": "2026-09-08T07:59:09.448671400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "5461559cf3574e63f71b7df7b94aebb34c51c13d3d0e5d824470e124ab9179b9": {
+        "activity_id": "5461559cf3574e63f71b7df7b94aebb34c51c13d3d0e5d824470e124ab9179b9",
+        "task_id": "01a07f70-4a1d-7d62-ba79-f770650e5449",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "5461559cf3574e63f71b7df7b94aebb34c51c13d3d0e5d824470e124ab9179b9"
+      },
+      "d3f0a993cd74dcb022cc540d9b0407c839a45a7e9f550fb0ac0f07af7f597065": {
+        "activity_id": "d3f0a993cd74dcb022cc540d9b0407c839a45a7e9f550fb0ac0f07af7f597065",
+        "task_id": "01a07f70-4a1d-7d62-ba79-f770650e5449",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "41039a953e87938de027d4507d23568f79e9c7e5c24797b8f4df1e6de8e6d18e"
+      }
+    }
+  }
+}

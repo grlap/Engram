@@ -1,0 +1,75 @@
+{
+  "id": "01a109af-37ef-78d1-ae8f-4a9a833f6afb",
+  "external_ref": null,
+  "title": "Describe reject refusal for every non-open ancestor in CLI contract",
+  "outcome": "Describe reject refusal for every non-open ancestor in CLI contract",
+  "acceptance": [
+    "The reject paragraph in cli-and-mcp.md describes refusal for the nearest non-open ancestor, including Proposed, consistently with lifecycle.rs and local-work-system.md; it does not promise detach for a Proposed ancestor."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-work-lifecycle",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "CLI contract distinguishes non-open direct-parent refusal from nearest non-open higher ancestor above an open parent, including Proposed; detach guidance follows whole-chain admission. Own intermediate ancestor regression passed, full Windows9stage gate and whole-input pair passed, fresh independent acceptance1/1.",
+    "completed_at": "2026-10-05T21:37:27.648444200Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "068dca27bf7c42b298c6bb0c5a02098f": {
+        "activity_id": "068dca27bf7c42b298c6bb0c5a02098f",
+        "task_id": "01a109af-37ef-78d1-ae8f-4a9a833f6afb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "068dca27bf7c42b298c6bb0c5a02098f"
+      },
+      "3c6caaee4b0a4ff39b68a3fd8ab826d0": {
+        "activity_id": "3c6caaee4b0a4ff39b68a3fd8ab826d0",
+        "task_id": "01a109af-37ef-78d1-ae8f-4a9a833f6afb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "7fd1e29a71e147c7a8c010e37b815e0e"
+      },
+      "68b8f1bf6e9a43a48453fe01670cd074": {
+        "activity_id": "68b8f1bf6e9a43a48453fe01670cd074",
+        "task_id": "01a109af-37ef-78d1-ae8f-4a9a833f6afb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "68b8f1bf6e9a43a48453fe01670cd074"
+      }
+    }
+  }
+}

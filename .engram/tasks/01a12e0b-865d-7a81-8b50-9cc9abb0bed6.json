@@ -1,0 +1,27 @@
+{
+  "id": "01a12e0b-865d-7a81-8b50-9cc9abb0bed6",
+  "external_ref": null,
+  "title": "Diagnose and refuse untracked case aliases of task sync setup files",
+  "outcome": "Diagnose and refuse untracked case aliases of task sync setup files",
+  "acceptance": [
+    "Owned Windows fixtures establish behavior of untracked .GITIGNORE/.GITATTRIBUTES aliases with no tracked lowercase file and prove unsafe setup refuses without changing their bytes, index, private intent or SQLite"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

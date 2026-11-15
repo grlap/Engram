@@ -1,0 +1,78 @@
+{
+  "id": "01a122fa-ddd4-7643-b37a-28c5e4faadc7",
+  "external_ref": null,
+  "title": "Task sync slice 1: typed deterministic task text format with round-trip export and import between two isolated stores",
+  "outcome": "Task sync slice 1: typed deterministic task text format with round-trip export and import between two isolated stores",
+  "acceptance": [
+    "Exporting a store's shared task state and importing it into a second isolated store round-trips every exported record with stable UUIDs (ids never re-minted or rewritten)",
+    "Export is deterministic: the same store state exports byte-identical text, proven by a repeat-export test",
+    "Import is atomic and idempotent: a failed or partial import leaves the target store untouched, and importing the same export twice changes nothing the second time, with tests",
+    "No live claims, grants, delivery state or private (agent-scope) scratch is ever exported, proven by a test that seeds each kind and inspects the exported text",
+    "No durable-store migration and no TermAl remote relay are introduced in this slice"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 1,
+  "labels": [
+    "area-storage",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": "01a122fa-cad6-7fb1-9287-c5d58ec64202",
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Delivered typed deterministic planning-text directory export and atomic import with stable UUID round trips, exact-repeat no-op, rollback-safe dry run, inert reported history and private/live-state exclusion.",
+    "completed_at": "2026-10-10T23:16:45.517056700Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "074e6b34326f47c7883a1dc1ab1cffdc": {
+        "activity_id": "074e6b34326f47c7883a1dc1ab1cffdc",
+        "task_id": "01a122fa-ddd4-7643-b37a-28c5e4faadc7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "074e6b34326f47c7883a1dc1ab1cffdc"
+      },
+      "a2378849c1b9439194063788a2268410": {
+        "activity_id": "a2378849c1b9439194063788a2268410",
+        "task_id": "01a122fa-ddd4-7643-b37a-28c5e4faadc7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "a2378849c1b9439194063788a2268410"
+      },
+      "ffebd04cc2554370a344056ef052dcab": {
+        "activity_id": "ffebd04cc2554370a344056ef052dcab",
+        "task_id": "01a122fa-ddd4-7643-b37a-28c5e4faadc7",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "751f8f7e230f4515ac3babfe88613736"
+      }
+    }
+  }
+}

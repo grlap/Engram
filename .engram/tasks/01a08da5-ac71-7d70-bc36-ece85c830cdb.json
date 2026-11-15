@@ -1,0 +1,53 @@
+{
+  "id": "01a08da5-ac71-7d70-bc36-ece85c830cdb",
+  "external_ref": null,
+  "title": "A leading UTF-8 byte-order mark makes JSON file input fail to parse",
+  "outcome": "A leading UTF-8 byte-order mark makes JSON file input fail to parse",
+  "acceptance": [
+    "a JSON input file that begins with a single UTF-8 byte-order mark is accepted by every command that reads JSON from an @path file, with the same result as the same file without the mark",
+    "a test covers a marked and an unmarked file on both a bounded and an unbounded input path",
+    "the mark is removed only at the file input boundary: inline JSON, string contents and canonical bytes are unchanged, and a second leading mark is still refused",
+    "the raw byte limit is still enforced on the file bytes including the mark, and otherwise invalid JSON is still refused"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "feature",
+  "priority": 4,
+  "labels": [
+    "feedback",
+    "usability"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Both @file JSON readers accept exactly one leading UTF-8 BOM. Raw bounded length includes the marker and is checked first; inline JSON and body/canonical meaning remain unchanged. Tests cover both readers, all core mutation call sites and policy input, malformed/double BOM/invalid UTF-8, exact limits and one-byte overflow. A limit-order mutation was killed and reverted. Full9 passed; wording corrections accepted by Fable2203 on freeze0563b3dd. Review had no functional defects; Claude exact pre-check was not executed because of its added echo suffix, while exact post-check passed. No Git/install; shipped update remains due at installation.",
+    "completed_at": "2026-09-11T00:20:23.549167400Z",
+    "actor": {
+      "actor_id": "termal",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "7739658fdc5e973267c91d1ced574211e71c15c42d4cddb41bb99e33c21a3344": {
+        "activity_id": "7739658fdc5e973267c91d1ced574211e71c15c42d4cddb41bb99e33c21a3344",
+        "task_id": "01a08da5-ac71-7d70-bc36-ece85c830cdb",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "termal",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "738f57391090e9a5a03e0a4ea2b27812ddcfb2d0449acf0eeda44c5a4aa3a6b0"
+      }
+    }
+  }
+}

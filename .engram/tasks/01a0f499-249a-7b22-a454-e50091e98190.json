@@ -1,0 +1,27 @@
+{
+  "id": "01a0f499-249a-7b22-a454-e50091e98190",
+  "external_ref": null,
+  "title": "Restored-record id bindings and helpers still call the record id a hash",
+  "outcome": "Restored-record id bindings and helpers still call the record id a hash",
+  "acceptance": [
+    "The export binding in src/storage/graph_snapshot.rs, latest_restored_record_hash (src/storage/work/query.rs) and its caller in src/storage/work/completion/child_barriers.rs, and the stored_hash/hash labels in src/storage/work/completion/projections.rs name a restored record's id as an id or record id, not a hash, with behavior unchanged"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 4,
+  "labels": [
+    "area-storage",
+    "review"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}

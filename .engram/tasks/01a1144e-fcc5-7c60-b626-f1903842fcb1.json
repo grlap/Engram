@@ -1,0 +1,88 @@
+{
+  "id": "01a1144e-fcc5-7c60-b626-f1903842fcb1",
+  "external_ref": null,
+  "title": "Remove retired generic note capture from live session-admission documentation",
+  "outcome": "The CLI/MCP and SQLite briefs describe only production callers of live actor-session admission after generic task-memory capture retirement.",
+  "acceptance": [
+    "docs/features/cli-and-mcp.md and docs/features/sqlite-store.md no longer describe generic note capture as a live actor-session admission caller; any retained reference explicitly identifies historical test fixtures.",
+    "Documentation links pass and the required independent review pair finds no outstanding Medium-or-higher finding on the correction."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "area-memory",
+    "documentation",
+    "review"
+  ],
+  "assigned_to": "greg/codex",
+  "deferred_until": null,
+  "lifecycle": "completed",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": {
+    "summary": "Removed retired generic note capture from live session-admission documentation in the CLI/MCP brief, SQLite brief and shipped capability inventory, preserving production callers and admission semantics.",
+    "completed_at": "2026-10-08T16:20:39.589899800Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  },
+  "activity": {
+    "central": {
+      "629b436a65fa41d3a5c2fb944c2eade9": {
+        "activity_id": "629b436a65fa41d3a5c2fb944c2eade9",
+        "task_id": "01a1144e-fcc5-7c60-b626-f1903842fcb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "629b436a65fa41d3a5c2fb944c2eade9"
+      },
+      "74430010e70b41c0bd8494b43e35203a": {
+        "activity_id": "74430010e70b41c0bd8494b43e35203a",
+        "task_id": "01a1144e-fcc5-7c60-b626-f1903842fcb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "74430010e70b41c0bd8494b43e35203a"
+      },
+      "87178462d48c4132b8cf6f500f89bed7": {
+        "activity_id": "87178462d48c4132b8cf6f500f89bed7",
+        "task_id": "01a1144e-fcc5-7c60-b626-f1903842fcb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "started",
+        "state_revision": 1,
+        "event_id": "87178462d48c4132b8cf6f500f89bed7"
+      },
+      "8e17d2254d39499e898d0d3212b69a66": {
+        "activity_id": "8e17d2254d39499e898d0d3212b69a66",
+        "task_id": "01a1144e-fcc5-7c60-b626-f1903842fcb1",
+        "origin_machine": "central",
+        "actor": {
+          "actor_id": "greg/codex",
+          "actor_kind": "agent"
+        },
+        "state": "finished",
+        "state_revision": 2,
+        "event_id": "4b0ddba0646b4d38b3917a6d9ead409b"
+      }
+    }
+  }
+}

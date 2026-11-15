@@ -1,0 +1,28 @@
+{
+  "id": "01a1951f-0132-7452-a350-dabef99134e8",
+  "external_ref": null,
+  "title": "Cover journal startup pulse expiry before its timeout callback runs",
+  "outcome": "Cover journal startup pulse expiry before its timeout callback runs",
+  "acceptance": [
+    "A deterministic regression expires the injected monotonic startup clock, runs the next pulse before the timeout callback, and proves startup rejects without another marker write.",
+    "The regression verifies marker cleanup and absence of active startup listeners/timers, while preserving the single startup deadline and existing one-shot calibration."
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "bug",
+  "priority": 3,
+  "labels": [
+    "review",
+    "testing"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
