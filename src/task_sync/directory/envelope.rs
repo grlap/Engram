@@ -21,6 +21,7 @@ pub(crate) fn prepare_folder_documents(
     // the folder reader. Retained raw bytes remain separately authoritative.
     let export_basis = documents_fingerprint(&tree.folder_documents()?);
     let envelope = FolderProjectDocument {
+        memory_profile: None,
         project: tree.project,
         profile: profile.clone(),
         folder_exchange: FolderExchangeDocument {

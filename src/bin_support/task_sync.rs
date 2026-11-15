@@ -1,7 +1,7 @@
 //! Thin planning interchange front door confined to the dedicated data checkout.
 
 use super::attribution::resolve_shell_work_attribution;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use engram::{
     LocalWorkService, ProjectId, SessionId,
     storage::{TaskSyncImportResult, TaskSyncTaskStatus},
@@ -163,6 +163,15 @@ enum TaskSyncCommand {
         /// Imported notes and activity retain their original aliases.
         #[arg(long)]
         origin_machine: Option<String>,
+        /// Include Internal project-memory histories under the memory profile.
+        #[arg(long)]
+        include_memories: bool,
+        /// Explicit retained pre-export .engram folder for interrupted memory publication.
+        #[arg(long, requires = "include_memories")]
+        memory_recovery_basis: Option<PathBuf>,
+        /// Compared inputs for an already authored common-prefix memory merge.
+        #[arg(long, requires = "include_memories")]
+        memory_resolution: Option<PathBuf>,
         /// Print the receipt as JSON, and a refusal as a JSON error with its code on stderr.
         #[arg(long)]
         json: bool,
@@ -188,6 +197,15 @@ enum TaskSyncCommand {
         /// Run the whole import, then roll it back.
         #[arg(long)]
         dry_run: bool,
+        /// Consume the advertised memory component after task application.
+        #[arg(long)]
+        include_memories: bool,
+        /// Per-key compared merge inputs or seed manifests as bounded JSON.
+        #[arg(long, requires = "include_memories")]
+        memory_resolution: Option<PathBuf>,
+        /// Explicit one-time fallback for manifest-bound untagged old seeds.
+        #[arg(long, requires = "memory_resolution")]
+        mark_untagged_seeds: bool,
         /// Print a refusal as a JSON error with its code on stderr.
         #[arg(long)]
         json: bool,
@@ -551,6 +569,9 @@ async fn run_observed(
             branch,
             include_notes,
             origin_machine,
+            include_memories,
+            memory_recovery_basis,
+            memory_resolution,
             json,
         } => {
             let outcome = (|| -> Result<()> {
@@ -568,12 +589,109 @@ async fn run_observed(
                     &branch,
                 )?;
                 let path = data.select_folder(&path)?;
-                let exported = service.export_task_sync_folder(&profile, chrono::Utc::now())?;
-                let written =
-                    directory::write_data_folder(&data, &exported.tree, &exported.profile)?;
+                let memory_lock = include_memories
+                    .then(|| engram::task_sync::memories::directory::publication_lock(&data))
+                    .transpose()?;
+                let memory_basis = if include_memories {
+                    let committed = engram::task_sync::memories::directory::committed(
+                        &data,
+                        &selected_project,
+                    )?;
+                    if let Some(retained) = &memory_recovery_basis {
+                        anyhow::ensure!(
+                            engram::task_sync::memories::directory::read_basis(retained)?
+                                == committed,
+                            engram::task_sync::TaskSyncRefusal::MemoryExportBasisChanged
+                                .invalid("recovery basis differs from data HEAD")
+                        );
+                    }
+                    anyhow::ensure!(
+                        path.exists() || committed.is_empty(),
+                        engram::task_sync::TaskSyncRefusal::MemoryExportComponentMissing
+                            .invalid("restore the committed memory component before export")
+                    );
+                    committed
+                } else {
+                    Default::default()
+                };
+                let resolutions = match memory_resolution {
+                    Some(path) => engram::task_sync::memories::directory::read_options(&path)?,
+                    None => Default::default(),
+                };
+                let (exported, memory_capture) = if include_memories {
+                    let (tasks, memories) = service.export_task_sync_folder_with_memories(
+                        &profile,
+                        &memory_basis,
+                        &resolutions,
+                        chrono::Utc::now(),
+                    )?;
+                    (tasks, Some(memories))
+                } else {
+                    (
+                        service.export_task_sync_folder(&profile, chrono::Utc::now())?,
+                        None,
+                    )
+                };
+                let complete = memory_capture.as_ref().map(|captured| {
+                    let mut complete = memory_basis.clone();
+                    complete.extend(captured.keys.clone());
+                    complete
+                });
+                if let Some(complete) = &complete {
+                    engram::task_sync::memories::directory::preflight(
+                        &data,
+                        &memory_basis,
+                        complete,
+                        memory_recovery_basis.is_some(),
+                        &exported.tree,
+                        &exported.profile,
+                    )?;
+                }
+                let existing = if include_memories {
+                    directory::matching_memory_task_export(
+                        &data,
+                        &exported.tree,
+                        &exported.profile,
+                        memory_recovery_basis.is_some(),
+                    )?
+                } else {
+                    None
+                };
+                let written = match existing {
+                    Some(existing) => existing,
+                    None => directory::write_data_folder(&data, &exported.tree, &exported.profile)?,
+                };
+                let memory_receipt = if include_memories {
+                    let selected = memory_basis;
+                    let captured = memory_capture.context("memory capture missing")?;
+                    let complete = complete.context("complete memory selection missing")?;
+                    if let Some(retained) = &memory_recovery_basis
+                        && directory::memory_profile_recovery_pending(&data)?
+                    {
+                        directory::recover_memory_profile_locked(
+                            &data,
+                            retained,
+                            memory_lock.as_ref().context("memory lock missing")?,
+                        )?;
+                    }
+                    directory::enable_memory_profile(&data)?;
+                    engram::task_sync::memories::directory::write_locked(
+                        &data,
+                        &selected,
+                        &complete,
+                        memory_recovery_basis.is_some(),
+                        memory_lock.as_ref().context("memory lock missing")?,
+                    )?;
+                    Some(
+                        serde_json::json!({"exported_keys":captured.keys.len(),"withheld":captured.withheld}),
+                    )
+                } else {
+                    None
+                };
                 attribution.print_notices();
                 eprintln!("REDACTOR: development no-op; task planning fields are shared text");
                 if json
+                    || include_memories
                     || include_notes
                     || origin_machine.is_some()
                     || !exported.activity_omissions.counts.is_empty()
@@ -586,6 +704,7 @@ async fn run_observed(
                             "export_basis": written.export_basis,
                             "omissions": exported.omissions,
                             "activity_omissions": exported.activity_omissions,
+                            "memories": memory_receipt,
                         }))?
                     );
                 } else {
@@ -601,9 +720,12 @@ async fn run_observed(
             basis,
             empty_basis,
             dry_run,
+            include_memories,
+            memory_resolution,
+            mark_untagged_seeds,
             json,
         } => {
-            let outcome = (|| -> Result<TaskSyncImportResult> {
+            let outcome = (|| -> Result<(TaskSyncImportResult, bool)> {
                 service.require_task_sync_enabled()?;
                 let data = engram::task_sync::data_worktree::DataWorktree::observe_project(
                     project_file,
@@ -611,7 +733,26 @@ async fn run_observed(
                     &branch,
                 )?;
                 data.select_folder(&path)?;
-                let folder = directory::read_resolved_data_folder(&data)?;
+                let memory_lock = include_memories
+                    .then(|| engram::task_sync::memories::directory::publication_lock(&data))
+                    .transpose()?;
+                let folder = if let Some(held) = &memory_lock {
+                    directory::read_resolved_data_folder_with_memories_locked(&data, held)?
+                } else {
+                    directory::read_resolved_data_folder(&data)?
+                };
+                let memories = if include_memories {
+                    engram::task_sync::memories::directory::read_locked(
+                        &data,
+                        memory_lock.as_ref().expect("memory import fence"),
+                    )?
+                } else {
+                    Default::default()
+                };
+                let mut resolutions = match memory_resolution {
+                    Some(path) => engram::task_sync::memories::directory::read_options(&path)?,
+                    None => std::collections::BTreeMap::new(),
+                };
                 let basis = match (basis, empty_basis) {
                     (Some(file), false) => {
                         directory::DestinationBasis::Recorded(directory::read_folder_basis(&file)?)
@@ -620,18 +761,42 @@ async fn run_observed(
                     _ => anyhow::bail!("select exactly one of --basis or --empty-basis"),
                 };
                 data.revalidate()?;
-                let result = service.import_task_sync_folder(
+                for options in resolutions.values_mut() {
+                    options.mark_untagged_seed = mark_untagged_seeds && options.seed.is_some();
+                }
+                let combined = service.import_task_sync_folder_with_memories(
                     &folder,
                     &basis,
+                    &memories,
+                    &resolutions,
                     dry_run,
                     chrono::Utc::now(),
                 )?;
+                let result = combined.tasks;
+                let memory_results = combined.memories;
+                let memory_partial = combined.memory_partial;
                 attribution.print_notices();
-                println!("{}", serde_json::to_string_pretty(&result)?);
-                Ok(result)
+                if include_memories {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &serde_json::json!({"tasks":result,"memories":memory_results,"memory_partial":memory_partial})
+                        )?
+                    );
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                Ok((result, memory_partial))
             })();
             return match outcome {
-                Ok(result) => Ok(import_exit_code(&result, &path)),
+                Ok((result, memory_partial)) => {
+                    let task_exit = import_exit_code(&result, &path);
+                    Ok(if memory_partial {
+                        ExitCode::from(PARTIAL_IMPORT_EXIT)
+                    } else {
+                        task_exit
+                    })
+                }
                 Err(error) => refusal_outcome(Err(error), json),
             };
         }
@@ -700,4 +865,89 @@ fn materialization_path(path: std::path::PathBuf) -> Result<std::path::PathBuf> 
         "materialization selection paths must not contain '..'; use the original absolute paths without parent components"
     );
     Ok(std::path::absolute(path)?)
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn memory_sync_cli_requires_explicit_profile_for_recovery_and_seed_marking() {
+        let merged = crate::Cli::try_parse_from([
+            "engram",
+            "task-sync",
+            "export",
+            "folder",
+            "--include-memories",
+            "--memory-resolution",
+            "merge.json",
+        ])
+        .unwrap();
+        assert!(
+            matches!(merged.command, crate::Command::TaskSync(args) if matches!(args.operation, TaskSyncCommand::Export { memory_resolution:Some(_), .. }))
+        );
+        assert!(
+            crate::Cli::try_parse_from([
+                "engram",
+                "task-sync",
+                "export",
+                "folder",
+                "--memory-resolution",
+                "merge.json"
+            ])
+            .is_err()
+        );
+        let parsed = crate::Cli::try_parse_from([
+            "engram",
+            "task-sync",
+            "export",
+            "folder",
+            "--include-memories",
+            "--memory-recovery-basis",
+            "retained",
+        ])
+        .unwrap();
+        assert!(
+            matches!(parsed.command, crate::Command::TaskSync(args) if matches!(args.operation, TaskSyncCommand::Export { include_memories:true, memory_recovery_basis:Some(_), .. }))
+        );
+        assert!(
+            crate::Cli::try_parse_from([
+                "engram",
+                "task-sync",
+                "export",
+                "folder",
+                "--memory-recovery-basis",
+                "retained"
+            ])
+            .is_err()
+        );
+        let parsed = crate::Cli::try_parse_from([
+            "engram",
+            "task-sync",
+            "import",
+            "folder",
+            "--empty-basis",
+            "--include-memories",
+            "--memory-resolution",
+            "options.json",
+            "--mark-untagged-seeds",
+        ])
+        .unwrap();
+        assert!(
+            matches!(parsed.command, crate::Command::TaskSync(args) if matches!(args.operation, TaskSyncCommand::Import { include_memories:true, mark_untagged_seeds:true, .. }))
+        );
+        assert!(
+            crate::Cli::try_parse_from([
+                "engram",
+                "task-sync",
+                "import",
+                "folder",
+                "--empty-basis",
+                "--include-memories",
+                "--mark-untagged-seeds"
+            ])
+            .is_err()
+        );
+    }
 }
