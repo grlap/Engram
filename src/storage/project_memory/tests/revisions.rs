@@ -1,5 +1,160 @@
 use super::*;
 
+#[test]
+fn memory_seed_retains_shared_tag_without_changing_local_recorder() {
+    use crate::task_sync::memories::{FORMAT, ImportProvenance, Source, body_sha256};
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let mut seed = project_memory_request(
+        "seed-project",
+        "seed-recorder",
+        Some("rule"),
+        "shared body",
+        1000,
+    );
+    let tag = ImportProvenance {
+        format: FORMAT.into(),
+        project_id: seed.project_id.clone(),
+        key: "rule".into(),
+        revision_id: ObjectId::mint(),
+        previous: Some(ObjectId::mint()),
+        body_sha256: body_sha256(&seed.body),
+        retiring_target: None,
+        source_clear: false,
+        source: Source {
+            actor_id: "central-author".into(),
+            actor_kind: "agent".into(),
+            actor_context: None,
+            reason: "original rule".into(),
+            remembered_at: seed.created_at,
+        },
+    };
+    tag.attach(&mut seed.actor).unwrap();
+    store
+        .remember_project_memory(&seed, &DevelopmentNoopRedactor)
+        .unwrap();
+    let history = project_memory_history_on(&store.connection, &seed.project_id, "rule").unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].version.actor.actor_id, "project-memory-agent");
+    assert_eq!(
+        history[0].version.actor.session_id,
+        Some(SessionId("seed-recorder".into()))
+    );
+    assert_eq!(
+        ImportProvenance::from_actor(&history[0].version.actor).unwrap(),
+        Some(tag.clone())
+    );
+    let full = store
+        .project_memory_full(
+            &seed.project_id,
+            &seed.session_id,
+            &seed.actor,
+            "rule",
+            None,
+        )
+        .unwrap();
+    assert_eq!(full.actor_id, "project-memory-agent");
+    assert_eq!(full.reported_source, Some(tag.source.clone()));
+    let response = crate::work_service::project_memory_full_response(
+        full,
+        crate::argument_names::ArgumentNames::Cli,
+    )
+    .unwrap();
+    let rendered = response.terminal_lines().join("\n");
+    assert!(rendered.contains("reported source: central-author"));
+    assert!(rendered.contains("recorded locally by project-memory-agent"));
+    assert_eq!(response.memory.body, "shared body");
+    let before = store.connection.total_changes();
+    assert!(
+        store
+            .remember_project_memory(&seed, &DevelopmentNoopRedactor)
+            .unwrap()
+            .duplicate
+    );
+    assert_eq!(store.connection.total_changes(), before);
+    seed.body = "incorrect seed".into();
+    assert!(
+        store
+            .remember_project_memory(&seed, &DevelopmentNoopRedactor)
+            .is_err()
+    );
+    assert_eq!(store.connection.total_changes(), before);
+}
+
+#[test]
+fn memory_batch_failure_rolls_back_earlier_revisions_and_change_state() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let first = project_memory_request("batch-project", "importer", Some("rule"), "first", 1000);
+    let before = crate::storage::test_database_shape_snapshot(&store.connection);
+    {
+        let transaction = store.connection.transaction().unwrap();
+        SqliteStore::remember_project_memory_on(
+            &transaction,
+            &first,
+            &crate::domain::ProjectMemoryEdit::Whole,
+            &DevelopmentNoopRedactor,
+            admit_project_memory_full,
+        )
+        .unwrap();
+        let mut second = first.clone();
+        second.body = "second".into();
+        second.revise = true;
+        second.expected_revision = Some(2);
+        assert!(matches!(
+            SqliteStore::remember_project_memory_on(
+                &transaction,
+                &second,
+                &crate::domain::ProjectMemoryEdit::Whole,
+                &DevelopmentNoopRedactor,
+                admit_project_memory_full,
+            ),
+            Err(StoreError::ProjectMemoryRevisionConflict {
+                expected: 2,
+                current: 1,
+                ..
+            })
+        ));
+        // Dropping the batch must also remove the first revision and its signal.
+    }
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection),
+        before
+    );
+}
+
+#[test]
+fn memory_batch_can_roll_back_a_retirement_then_commit_it() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let first = project_memory_request("batch-project", "importer", Some("rule"), "first", 1000);
+    store
+        .remember_project_memory(&first, &DevelopmentNoopRedactor)
+        .unwrap();
+    let forget = ForgetProjectMemoryRequest {
+        project_id: first.project_id.clone(),
+        session_id: first.session_id.clone(),
+        key: "rule".into(),
+        actor: first.actor.clone(),
+        created_at: first.created_at,
+    };
+    let before = crate::storage::test_database_shape_snapshot(&store.connection);
+    {
+        let transaction = store.connection.transaction().unwrap();
+        assert!(!SqliteStore::forget_project_memory_on(
+            &transaction, &forget, &DevelopmentNoopRedactor,
+        ).unwrap().duplicate);
+    }
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection),
+        before
+    );
+    let transaction = store.connection.transaction().unwrap();
+    SqliteStore::forget_project_memory_on(&transaction, &forget, &DevelopmentNoopRedactor).unwrap();
+    transaction.commit().unwrap();
+    assert!(matches!(
+        store.remember_project_memory(&first, &DevelopmentNoopRedactor),
+        Err(StoreError::ProjectMemoryRetired(_))
+    ));
+}
+
 fn assert_revision_refusals_and_creation_replay(
     store: &mut SqliteStore,
     first: &RememberProjectMemoryRequest,
