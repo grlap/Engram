@@ -11,6 +11,55 @@ mod resolution;
 mod snapshot;
 mod validation;
 
+#[test]
+fn memory_sync_task_delta_skips_memory_files_and_tree_entries() {
+    let fixture = Fixture::new(1);
+    let before = fixture.commit();
+    let memory = fixture.root.join(".engram/memories/rule");
+    fs::create_dir_all(&memory).unwrap();
+    fs::write(
+        memory.join("head.json"),
+        "task delta does not consume memory text",
+    )
+    .unwrap();
+    let id = crate::ObjectId::mint();
+    fs::write(memory.join(format!("{id}.json")), "separate component").unwrap();
+    let after = fixture.commit();
+    let delta = fixture.read(&before, &after).unwrap();
+    assert!(delta.upserts.is_empty() && delta.removed.is_empty());
+}
+
+#[test]
+fn memory_sync_task_delta_refuses_a_memory_capable_basis_or_incoming_commit() {
+    let fixture = Fixture::new(1);
+    let tasks_only = fixture.commit();
+    let path = fixture.root.join(".engram/project.json");
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    envelope["memory_profile"] = crate::task_sync::memories::FORMAT.into();
+    fs::write(&path, serde_json::to_vec_pretty(&envelope).unwrap()).unwrap();
+    let memories = fixture.commit();
+    for (prior, incoming) in [
+        (&tasks_only, &memories),
+        (&memories, &memories),
+        (&memories, &tasks_only),
+    ] {
+        let error = fixture.read(prior, incoming).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<StoreError>(),
+            Some(StoreError::TaskSyncRefused {
+                refusal: TaskSyncRefusal::MemoryProfileRequiresOptIn,
+                ..
+            })
+        ));
+        assert!(
+            error
+                .to_string()
+                .contains("folder import --include-memories")
+        );
+    }
+}
+
 struct Fixture {
     _owned: crate::test_support::TempHome,
     root: PathBuf,
