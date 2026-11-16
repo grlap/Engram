@@ -10,8 +10,10 @@ use crate::task_sync::{
 use chrono::{DateTime, Utc};
 
 impl SqliteStore {
-    /// Only the invocation that commits a new transition receives a fresh flag.
-    /// Replay and uncertain observations never authorize another dispatch.
+    /// Only the invocation that commits a new transition receives a fresh flag,
+    /// or, for a start whose committing call returned no success, the exact
+    /// retry that finishes its pending witness. Replay after a returned start
+    /// and uncertain observations never authorize another dispatch.
     /// Reconciliation remains a separately admitted agent operation.
     pub(crate) fn record_task_sync_delta_progress_once(
         &mut self,
@@ -70,9 +72,9 @@ impl SqliteStore {
                     guard,
                     &request,
                 )?;
-                let mut ledger = super::commit::checked_on(&transaction, input, selection, guard)?;
+                let operation = super::commit::checked_on(&transaction, input, selection, guard)?;
                 require(
-                    ledger.events.values().any(|event| {
+                    operation.events.iter().any(|(_, event)| {
                         event.binding == input.binding_id
                             && matches!(&event.transition,
                                 Transition::DeltaLocalCommitRecorded { prepared, commit }
@@ -80,13 +82,19 @@ impl SqliteStore {
                     }),
                     "record the exact delta commit before publication",
                 )?;
-                if let Some((id, _)) = ledger.events.iter().find(|(_, event)| {
+                if let Some((id, _)) = operation.events.iter().find(|(_, event)| {
                     event.binding == input.binding_id && event.transition == transition
                 }) {
-                    return Ok((id.clone(), false));
+                    // A start whose committing call returned no success has
+                    // dispatched nothing yet: this exact retry carries it.
+                    let owed = matches!(transition, Transition::PushStarted { .. })
+                        && guard.is_some_and(crate::task_sync::origin::continuity::PreparedContinuity::resumes_interrupted);
+                    return Ok((id.clone(), owed));
                 }
+                let mut chain =
+                    super::super::Chain::resume(&transaction, input, &selection.prepared)?;
                 let object =
-                    super::super::append(&transaction, &mut ledger, input, transition, now)?;
+                    super::super::append_keyed(&transaction, &mut chain, input, transition, now)?;
                 let event: Event = object.decode()?;
                 // Flush before SQL commit. Rollback or rewind leaves custody
                 // uncertainty, never a second dispatch permission.

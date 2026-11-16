@@ -323,3 +323,50 @@ fn readiness_and_doctor_text_frame_unicode_without_changing_json() {
         assert_eq!(value["code"], "projection_repair_required");
     }
 }
+
+#[test]
+fn remote_association_index_upgrade_is_projection_repair_on_a_copied_store() {
+    let source = test_support::temp_home().unwrap();
+    let original = setup(source.path());
+    let connection = rusqlite::Connection::open(&original).unwrap();
+    connection
+        .execute_batch("DROP INDEX objects_work_remote_association_item")
+        .unwrap();
+    drop(connection);
+    let original_bytes = fs::read(&original).unwrap();
+    let copied = test_support::temp_home().unwrap();
+    fs::copy(
+        source.path().join(".engram-project"),
+        copied.path().join(".engram-project"),
+    )
+    .unwrap();
+    let database = project_database_path(
+        &copied.path().join("home"),
+        &ProjectId("readiness-fixture".into()),
+    );
+    fs::create_dir_all(database.parent().unwrap()).unwrap();
+    fs::copy(&original, &database).unwrap();
+    let before = fs::read(&database).unwrap();
+    let refused = receipt(&run(copied.path(), &["readiness", "--json"]), false);
+    assert_eq!(refused["code"], "projection_repair_required", "{refused}");
+    assert_eq!(
+        fs::read(&database).unwrap(),
+        before,
+        "readiness is read-only"
+    );
+    let repaired = run(copied.path(), &["doctor", "--repair-projections", "--json"]);
+    assert!(
+        repaired.status.success(),
+        "{} {}",
+        String::from_utf8_lossy(&repaired.stdout),
+        String::from_utf8_lossy(&repaired.stderr)
+    );
+    let ready = receipt(&run(copied.path(), &["readiness", "--json"]), true);
+    assert_eq!(
+        fs::read(&original).unwrap(),
+        original_bytes,
+        "source store remains untouched"
+    );
+    println!("copied store readiness before repair: {refused}");
+    println!("copied store readiness after repair: {ready}");
+}

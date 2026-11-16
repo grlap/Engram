@@ -3,8 +3,12 @@ use super::*;
 use crate::DevelopmentNoopRedactor;
 use crate::domain::*;
 
+mod capture_disclosure;
 mod downstream;
+mod history_cost;
 mod host_wire;
+mod receipt_diagnostics;
+mod refused_history;
 mod shared_input;
 
 #[test]
@@ -619,7 +623,9 @@ fn remote_verification_names_each_input_mismatch() {
     let mut f = fixture();
     legacy_input(&mut f.request.completion.input).commit = Some(object_name("other commit"));
     let receipt = f.assert_uncredited(RemoteVerificationReason::CommitMismatch);
-    assert_eq!(receipt.qualification.detail, None);
+    let detail = receipt.qualification.detail.unwrap();
+    assert!(detail.contains(&format!("expected_commit={}", tested_commit())));
+    assert!(detail.contains(&format!("observed_commit={}", object_name("other commit"))));
 
     let mut f = fixture();
     legacy_input(&mut f.request.completion.input).commit = None;
@@ -677,7 +683,7 @@ fn remote_verification_names_each_input_mismatch() {
 }
 
 #[test]
-fn remote_verification_unsupported_schema_reserves_nothing_and_stays_off_the_item() {
+fn remote_verification_unsupported_schema_reserves_nothing_and_stays_off_the_run() {
     let mut f = fixture();
     f.request.completion.schema_version = 2;
     let run = f.run_head();
@@ -774,7 +780,7 @@ fn remote_verification_reasons_follow_the_agreed_precedence() {
 }
 
 #[test]
-fn remote_verification_moved_scope_writes_nothing_on_the_item() {
+fn remote_verification_moved_scope_writes_nothing_on_the_run() {
     type Change = fn(&mut Fixture);
     let moves: [Change; 5] = [
         |f| f.request.association.root.generation = 2,
@@ -791,7 +797,7 @@ fn remote_verification_moved_scope_writes_nothing_on_the_item() {
         let receipt = f.assert_uncredited(RemoteVerificationReason::AssociationStale);
         assert!(receipt.qualification.detail.is_some());
         assert_eq!(f.run_head(), run, "nothing on the item's run");
-        // The terminal origin and the visible delivery, both project-scoped.
+        // The terminal origin and the delivery each have a project entry.
         assert_eq!(f.project_head(), project + 2);
         assert!(
             receipt.origin.is_some(),

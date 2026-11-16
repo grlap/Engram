@@ -5,7 +5,7 @@ use super::{
     Direction, GitSelection, InspectedDelta, Instant, ObjectId, Result, RunLimits, SqliteStore,
     Utc, ensure, observe_git_selection, remaining, retention,
 };
-use crate::task_sync::{delta::RetainedDeltaCandidate, inventory::InventoryRoot};
+use crate::task_sync::delta::RetainedDeltaCandidate;
 
 /// Retain the exact incoming payload without importing planning or contacting a
 /// remote. Existing bytes are replayed, never replaced or reminted.
@@ -88,17 +88,25 @@ pub(crate) async fn retain_incoming_delta_remaining(
         cancel,
     )
     .await?;
-    let delta = crate::task_sync::git::read_task_delta(
+    // The source-before root was verified when it was recorded, so the
+    // selected commit's membership follows from the changed paths alone.
+    let delta = crate::task_sync::git::read_verified_task_delta(
         &binding.repository.main_checkout,
         &binding.project,
         &source_before.snapshot.commit.oid,
+        source_before.snapshot.membership.inventory_root,
         &source_after.commit.oid,
+        remaining(limits, started)?.deadline,
     )?;
+    delta.require_root(source_after.membership.inventory_root)?;
+    ensure!(
+        delta.incoming.profile == source_after.membership.profile,
+        "incoming delta profile differs from selected Git commit"
+    );
     let mut documents = delta
-        .upserts
+        .changed
         .into_iter()
-        .map(|(id, task)| (id, Some(task)))
-        .chain(delta.removed.into_iter().map(|id| (id, None)))
+        .map(|(id, task)| (id, task.after))
         .collect::<BTreeMap<_, _>>();
     ensure!(
         documents
@@ -108,35 +116,22 @@ pub(crate) async fn retain_incoming_delta_remaining(
             == *source_changed,
         "incoming delta changed keys differ from selected Git commits"
     );
-    // Retention is an explicit cold inspection. Read the selected snapshot to
-    // prove its declared membership and include destination-only changed keys.
-    let snapshot = crate::task_sync::git::read_task_snapshot_bounded(
+    // A destination-only key is unchanged by the source, so its value is the
+    // selected commit's document at that path, read alone.
+    let destination_only = intent
+        .candidate
+        .changed
+        .iter()
+        .copied()
+        .filter(|id| !documents.contains_key(id))
+        .collect::<Vec<_>>();
+    documents.extend(crate::task_sync::git::read_tasks_at(
         &binding.repository.main_checkout,
         &binding.project,
         &source_after.commit.oid,
+        destination_only,
         remaining(limits, started)?.deadline,
-    )?;
-    let root = snapshot
-        .tree
-        .tasks
-        .iter()
-        .try_fold(InventoryRoot::ZERO, InventoryRoot::including)?;
-    ensure!(
-        root == source_after.membership.inventory_root
-            && snapshot.envelope.profile == source_after.membership.profile,
-        "incoming delta membership or profile differs from selected Git commit"
-    );
-    let tasks = snapshot
-        .tree
-        .tasks
-        .into_iter()
-        .map(|task| (task.id, task))
-        .collect::<BTreeMap<_, _>>();
-    for id in &intent.candidate.changed {
-        documents
-            .entry(*id)
-            .or_insert_with(|| tasks.get(id).cloned());
-    }
+    )?);
     let payload = DeltaCandidatePayload {
         format: crate::task_sync::delta::DELTA_PAYLOAD_FORMAT.into(),
         project_id: binding.project.clone(),

@@ -15,6 +15,7 @@ use crate::{ProjectId, domain::ProvenanceLink};
 mod fts_terms;
 mod fts_verification;
 mod listing_acknowledgement;
+mod listing_cost;
 mod partial;
 pub(super) mod retiring;
 mod revisions;

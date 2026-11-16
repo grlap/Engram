@@ -117,6 +117,11 @@ impl SqliteStore {
             &mut report.checked_objects,
             &mut report.invalid_objects,
         )?;
+        super::project_memory::listing::verify(
+            &self.connection,
+            &mut report.checked_objects,
+            &mut report.invalid_objects,
+        )?;
         Self::verify_project_memory_retiring_targets_on(
             &self.connection,
             &mut report.checked_objects,
@@ -710,7 +715,9 @@ impl SqliteStore {
         }
         validate_keyed_project_memory_shape(version, assertion)?;
 
-        if let (Some(key), Scope::Project { project }) = (&version.project_key, &version.scope) {
+        let listing_metadata = if let (Some(key), Scope::Project { project }) =
+            (&version.project_key, &version.scope)
+        {
             let history =
                 super::project_memory::project_memory_history_on(transaction, project, key)?;
             if history
@@ -724,7 +731,14 @@ impl SqliteStore {
                     "a live assertion cannot replace a newer project-memory revision".into(),
                 ));
             }
-        }
+            Some((
+                project,
+                key,
+                super::project_memory::listing::Metadata::from_history(&history, assertion_id)?,
+            ))
+        } else {
+            None
+        };
 
         let (scope_kind, project_id, task_id, work_id, agent_id) = match &version.scope {
             Scope::Project { project } => ("project", &project.0, None, None, None),
@@ -807,6 +821,9 @@ impl SqliteStore {
                 "live assertion {assertion_id} cannot replace terminal memory head {}",
                 version.memory_id.0
             )));
+        }
+        if let Some((project, key, metadata)) = listing_metadata {
+            metadata.write(transaction, project, key)?;
         }
         transaction.execute(
             "DELETE FROM object_fts WHERE object_id IN (?1, ?2)",

@@ -27,9 +27,11 @@ pub struct DeltaPublicationRequest<'a> {
 }
 
 /// Record a start or observation of the original selected outgoing delta.
-/// Returns the original event and false on replay. Only a newly committed
-/// start can authorize dispatch; true for a new observation grants none.
-/// The caller must never dispatch from an old start.
+/// Returns the original event and false on replay. A start authorizes its one
+/// dispatch exactly once: true for the call that commits it, or, when that
+/// call returned no success, for the exact retry that finds it; true for a new
+/// observation grants none. The caller dispatches only on a true start, never
+/// from an old start returned with false.
 /// This function creates no commit, changes no branch and never pushes. An
 /// observation is the owner's own read-only read of the selected remote tip;
 /// the caller's stated observation can never confirm on its own.

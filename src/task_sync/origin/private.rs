@@ -520,5 +520,26 @@ pub(crate) fn advance(
     directory(database, &expected.project, false)?
         .ok_or_else(|| invalid("origin private directory missing"))?
         .replace_slot(PrivateFile::OriginRegistration, &serde_json::to_vec(next)?)
-        .map_err(|_| invalid("origin witness update failed; committed exchange remains uncertain"))
+        .map_err(|_| {
+            invalid("origin witness update failed; committed exchange remains uncertain")
+        })?;
+    #[cfg(test)]
+    if next.pending_exchange.is_none()
+        && expected.pending_exchange.is_some()
+        && FAIL_AFTER_WITNESS_ADVANCE.with(|fail| fail.replace(false))
+    {
+        return Err(invalid(
+            "origin witness update failed; committed exchange remains uncertain",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Once set, the next witness advance that acknowledges a pending
+    /// exchange reports failure after its replacement is in place, as a
+    /// failed directory sync after the rename.
+    pub(crate) static FAIL_AFTER_WITNESS_ADVANCE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 }

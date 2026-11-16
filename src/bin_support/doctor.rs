@@ -17,6 +17,7 @@ pub(crate) enum ProjectionMaintenance {
     VerificationApplicabilityIndex,
     FullRepair,
     NoteSearchIndex,
+    MemoryListMetadata,
 }
 
 impl ProjectionMaintenance {
@@ -62,6 +63,29 @@ pub(crate) fn doctor(
     }
     if let Some(mode) = projection_maintenance {
         return match mode {
+            ProjectionMaintenance::MemoryListMetadata => {
+                let checked = match SqliteStore::build_project_memory_list_metadata(database) {
+                    Ok(checked) => checked,
+                    Err(error) => {
+                        return report_error(
+                            database,
+                            project_id,
+                            &error,
+                            json,
+                            Phase::ProjectionRepair,
+                        );
+                    }
+                };
+                refusals::emit(
+                    &with_build(serde_json::json!({
+                        "mode": "memory_list_metadata_build", "scope": "keyed_project_memory",
+                        "mutation_enabled": true, "project_id": project_id,
+                        "database": canonical_database_path(database)?, "healthy": true,
+                        "checked_memory_keys": checked, "full_audit": "not_run",
+                    })),
+                    json,
+                )
+            }
             ProjectionMaintenance::VerificationApplicabilityIndex => {
                 let checked = match SqliteStore::build_verification_applicability_index(database) {
                     Ok(checked) => checked,

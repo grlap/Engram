@@ -1078,6 +1078,7 @@ impl SqliteStore {
              ) STRICT;",
             )?;
             connection.execute_batch(super::VERIFICATION_APPLICABILITY_DDL)?;
+            connection.execute_batch(super::project_memory::listing::DDL)?;
             #[cfg(test)]
             if fail_cold_schema_after_ddl() && !building_schema_reference() {
                 return Err(StoreError::InvalidControlProjection(
@@ -1624,6 +1625,7 @@ impl SqliteStore {
              ) STRICT;",
         )?;
         connection.execute_batch(super::VERIFICATION_APPLICABILITY_DDL)?;
+        connection.execute_batch(super::project_memory::listing::DDL)?;
         Ok(())
     }
 
@@ -1641,12 +1643,14 @@ impl SqliteStore {
                 invalid_heads.join(", ")
             )));
         }
+        super::project_memory::listing::rebuild(connection)?;
         Self::rebuild_object_fts_from_heads_on(connection)?;
         Self::rebuild_project_memory_state_on(connection)?;
         let mut checked = 0;
         let mut invalid = Vec::new();
         Self::verify_object_fts_on(connection, &mut checked, &mut invalid)?;
         Self::verify_project_memory_state_on(connection, &mut checked, &mut invalid)?;
+        super::project_memory::listing::verify(connection, &mut checked, &mut invalid)?;
         if !invalid.is_empty() {
             return Err(StoreError::InvalidMemoryProjection(format!(
                 "explicit projection repair did not rebuild: {}",

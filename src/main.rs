@@ -145,6 +145,9 @@ enum Command {
         /// Establish the verification applicability barrier after older consumers exit.
         #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections", "build_note_search_index", "check_landings"])]
         build_verification_applicability_index: bool,
+        /// Build only absent project-memory list metadata after old consumers exit.
+        #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections", "build_note_search_index", "build_verification_applicability_index", "check_landings"])]
+        build_memory_list_metadata: bool,
         /// Check every landing the seals record against a local git repository; never fetches.
         #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections"])]
         check_landings: bool,
@@ -1161,6 +1164,7 @@ async fn run_cli() -> Result<ExitCode> {
             repair_projections,
             build_note_search_index,
             build_verification_applicability_index,
+            build_memory_list_metadata,
             check_landings,
             repo,
         } => {
@@ -1180,7 +1184,9 @@ async fn run_cli() -> Result<ExitCode> {
                 &project_id,
                 json,
                 recover_policy,
-                if build_verification_applicability_index {
+                if build_memory_list_metadata {
+                    Some(ProjectionMaintenance::MemoryListMetadata)
+                } else if build_verification_applicability_index {
                     Some(ProjectionMaintenance::VerificationApplicabilityIndex)
                 } else {
                     ProjectionMaintenance::selected(repair_projections, build_note_search_index)

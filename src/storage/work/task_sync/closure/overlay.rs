@@ -60,7 +60,70 @@ pub(in crate::storage::work::task_sync) fn capture_on(
     overlay(project, before, changes)
 }
 
-fn seeds(changes: &BTreeMap<WorkId, Option<TaskDocument>>) -> Result<BTreeSet<WorkId>, StoreError> {
+/// [`capture_on`] for an import that may also remove a task this host
+/// published since its last import: such a task is no member of the import
+/// baseline yet, so removing it leaves the baseline components unchanged.
+pub(in crate::storage::work::task_sync) fn capture_published_on(
+    connection: &rusqlite::Connection,
+    project: &ProjectId,
+    changes: &BTreeMap<WorkId, Option<TaskDocument>>,
+    published: &BTreeSet<WorkId>,
+) -> Result<TaskGraphOverlay, StoreError> {
+    if project.0.trim().is_empty() {
+        return Err(TaskSyncRefusal::InvalidGraph.invalid("empty project id"));
+    }
+    let before = component::capture(
+        connection,
+        project,
+        TaskSyncGraphView::Baseline,
+        seeds(changes)?,
+    )?;
+    let baseline_changes = changes
+        .iter()
+        .filter(|(id, next)| {
+            next.is_some() || !published.contains(id) || before.documents.contains_key(id)
+        })
+        .map(|(id, next)| (*id, next.clone()))
+        .collect();
+    overlay(project, before, &baseline_changes)
+}
+
+/// Check a change to a binding's admitted export membership, such as a merged
+/// resolution, on the component it touches. Old relations are traversed both
+/// ways, so an unchanged task still pointing at a removed one refuses, and
+/// the complete-graph validator runs before and after on that component
+/// alone. The export head must still be `expected`. Runs inside the caller's
+/// transaction; nothing is written.
+///
+/// # Errors
+/// Refuses unavailable or different export membership, damaged selected
+/// projections, nonmember removals and an invalid resulting graph.
+pub(in crate::storage::work::task_sync) fn check_export_change_on(
+    connection: &rusqlite::Connection,
+    binding: &crate::ObjectId,
+    project: &ProjectId,
+    expected: &crate::task_sync::delta::OutputMembership,
+    changes: &BTreeMap<WorkId, Option<TaskDocument>>,
+) -> Result<(), StoreError> {
+    super::super::origin::with_origin_scope(connection, || {
+        let captured = super::membership::capture_on(
+            connection,
+            binding,
+            crate::task_sync::TaskSyncMembershipView::Export,
+            seeds(changes)?,
+        )?;
+        if captured.membership != *expected {
+            return Err(TaskSyncRefusal::BaselineHeadMoved.invalid(
+                "the export membership is no longer the one this change was planned against",
+            ));
+        }
+        overlay(project, captured.component, changes).map(drop)
+    })
+}
+
+pub(in crate::storage::work::task_sync) fn seeds(
+    changes: &BTreeMap<WorkId, Option<TaskDocument>>,
+) -> Result<BTreeSet<WorkId>, StoreError> {
     let mut seeds = BTreeSet::new();
     for (&id, next) in changes {
         seeds.insert(id);

@@ -8,9 +8,9 @@ use super::{
     ObjectId, OptionalExtension, PROJECT_MEMORY_FIRST_LINE_BYTES, PROJECT_MEMORY_LIST_LIMIT,
     ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow, ProjectMemoryListingCut, Scope,
     SessionId, SqliteStore, StoreError, StoredProjectMemory, admit_live_project_memory_sessions,
-    fts_query, history, memory_full, normalize_project_memory_query, params,
-    project_memory_history_on, validate_keyed_project_memory_shape,
-    validate_project_memory_authorization, validate_project_memory_key,
+    fts_query, memory_full, normalize_project_memory_query, params, project_memory_history_on,
+    validate_keyed_project_memory_shape, validate_project_memory_authorization,
+    validate_project_memory_key,
 };
 
 impl SqliteStore {
@@ -223,27 +223,7 @@ pub(super) fn lookup_project_memory_history_on(
                AND json_extract(object.canonical_json, '$.scope.project') = ?1
                AND json_extract(object.canonical_json, '$.project_key') = ?2",
             params![project_id.0, key],
-            |row| {
-                Ok(MemoryHeadProjectionRow {
-                    memory_id: row.get(0)?,
-                    version_id: row.get(1)?,
-                    assertion_id: row.get(2)?,
-                    schema_version: row.get(3)?,
-                    status: row.get(4)?,
-                    scope_kind: row.get(5)?,
-                    project_id: row.get(6)?,
-                    task_id: row.get(7)?,
-                    work_id: row.get(8)?,
-                    agent_id: row.get(9)?,
-                    memory_kind: row.get(10)?,
-                    authority: row.get(11)?,
-                    delivery: row.get(12)?,
-                    sensitivity: row.get(13)?,
-                    title: row.get(14)?,
-                    body: row.get(15)?,
-                    created_at_ms: row.get(16)?,
-                })
-            },
+            memory_head_row,
         )
         .optional()?;
     let Some(stored) = stored else {
@@ -266,6 +246,46 @@ pub(super) fn lookup_project_memory_history_on(
         }
         return Ok(Vec::new());
     };
+    let (head, _) = validate_project_memory_head_on(connection, project_id, key, &stored)?;
+    let history = project_memory_history_on(connection, project_id, key)?;
+    if history.last().is_none_or(|entry| {
+        entry.version_id != head.version_id || entry.assertion != head.assertion
+    }) {
+        return Err(StoreError::InvalidMemoryProjection(
+            "project memory head is not the current canonical revision".into(),
+        ));
+    }
+    Ok(history)
+}
+
+fn memory_head_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryHeadProjectionRow> {
+    Ok(MemoryHeadProjectionRow {
+        memory_id: row.get(0)?,
+        version_id: row.get(1)?,
+        assertion_id: row.get(2)?,
+        schema_version: row.get(3)?,
+        status: row.get(4)?,
+        scope_kind: row.get(5)?,
+        project_id: row.get(6)?,
+        task_id: row.get(7)?,
+        work_id: row.get(8)?,
+        agent_id: row.get(9)?,
+        memory_kind: row.get(10)?,
+        authority: row.get(11)?,
+        delivery: row.get(12)?,
+        sensitivity: row.get(13)?,
+        title: row.get(14)?,
+        body: row.get(15)?,
+        created_at_ms: row.get(16)?,
+    })
+}
+
+fn validate_project_memory_head_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    key: &str,
+    stored: &MemoryHeadProjectionRow,
+) -> Result<(StoredProjectMemory, ObjectId), StoreError> {
     let version_id = ObjectId::from_stored(stored.version_id.clone())
         .ok_or_else(|| StoreError::InvalidStoredKey(stored.version_id.clone()))?;
     let assertion_id = ObjectId::from_stored(stored.assertion_id.clone())
@@ -287,7 +307,7 @@ pub(super) fn lookup_project_memory_history_on(
         &assertion,
         assertion.status,
     )?;
-    let shape_matches = stored == expected
+    let shape_matches = *stored == expected
         && version.project_key.as_deref() == Some(key)
         && matches!(&version.scope, Scope::Project { project } if project == project_id)
         && version.kind == MemoryKind::Episode
@@ -300,16 +320,38 @@ pub(super) fn lookup_project_memory_history_on(
             "project memory key projection does not match its canonical objects".into(),
         ));
     }
-    let history = project_memory_history_on(connection, project_id, key)?;
-    if history
-        .last()
-        .is_none_or(|entry| entry.version_id != version_id || entry.assertion != assertion)
-    {
-        return Err(StoreError::InvalidMemoryProjection(
-            "project memory head is not the current canonical revision".into(),
-        ));
-    }
-    Ok(history)
+    Ok((
+        StoredProjectMemory {
+            version_id,
+            version,
+            assertion,
+        },
+        assertion_id,
+    ))
+}
+
+fn project_memory_head_by_id_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    key: &str,
+    memory_id: &str,
+) -> Result<(StoredProjectMemory, ObjectId), StoreError> {
+    let stored = connection
+        .query_row(
+            "SELECT memory_id, version_id, assertion_id, schema_version, status, scope_kind,
+                project_id, task_id, work_id, agent_id, memory_kind, authority, delivery,
+                sensitivity, title, body, created_at_ms
+         FROM memory_heads WHERE memory_id=?1",
+            [memory_id],
+            memory_head_row,
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::InvalidMemoryProjection(
+                "selected project memory has no durable head".into(),
+            )
+        })?;
+    validate_project_memory_head_on(connection, project_id, key, &stored)
 }
 
 pub(in crate::storage) fn validate_stored_project_memory_key(
@@ -343,7 +385,7 @@ pub(super) fn project_memory_rows_on(
         };
         let mut statement = connection.prepare(
             "SELECT json_extract(object.canonical_json, '$.project_key'),
-                    COUNT(*) OVER()
+                    head.memory_id, COUNT(*) OVER()
              FROM object_fts AS f
              JOIN memory_heads AS head ON head.version_id = f.object_id
              JOIN objects AS object ON object.object_id = head.version_id
@@ -373,24 +415,35 @@ pub(super) fn project_memory_rows_on(
                     escaped_key_query,
                     limit
                 ],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
             )?
             .collect::<Result<Vec<_>, _>>()?;
         let total = matches
             .first()
-            .map_or(Ok(0), |(_, total)| usize::try_from(*total))
+            .map_or(Ok(0), |(_, _, total)| usize::try_from(*total))
             .map_err(|_| {
                 StoreError::InvalidMemoryProjection("memory match count is invalid".into())
             })?;
         (
-            matches.into_iter().map(|(key, _)| key).collect(),
+            matches
+                .into_iter()
+                .map(|(key, memory_id, _)| (key, memory_id))
+                .collect(),
             Some(total),
         )
     } else {
+        // Keep current heads as the outer loop. Letting SQLite start from
+        // the canonical key index can scan every historical version first.
         let mut statement = connection.prepare(
-            "SELECT json_extract(object.canonical_json, '$.project_key')
+            "SELECT json_extract(object.canonical_json, '$.project_key'), head.memory_id
              FROM memory_heads AS head
-             JOIN objects AS object ON object.object_id = head.version_id
+             CROSS JOIN objects AS object ON object.object_id = head.version_id
              WHERE object.object_kind = 'memory_version'
                AND json_extract(object.canonical_json, '$.scope.kind') = 'project'
                AND json_extract(object.canonical_json, '$.scope.project') = ?1
@@ -403,7 +456,7 @@ pub(super) fn project_memory_rows_on(
         (
             statement
                 .query_map(params![project_id.0, after, limit], |row| {
-                    row.get::<_, String>(0)
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?,
             None,
@@ -411,25 +464,21 @@ pub(super) fn project_memory_rows_on(
     };
     let rows = keys
         .into_iter()
-        .map(|key| {
+        .map(|(key, memory_id)| {
             let key = validate_stored_project_memory_key(&key)?;
-            let history = lookup_project_memory_history_on(connection, project_id, &key)?;
-            let stored = history.last().ok_or_else(|| {
-                StoreError::InvalidMemoryProjection(
-                    "project memory list candidate has no canonical binding".into(),
-                )
-            })?;
+            let (stored, assertion_id) =
+                project_memory_head_by_id_on(connection, project_id, &key, &memory_id)?;
             if stored.assertion.status != MemoryStatus::Active {
                 return Err(StoreError::InvalidMemoryProjection(
                     "project memory list candidate is not active".into(),
                 ));
             }
-            let revision = history_revision(&history)?;
-            let mut row = project_memory_list_row(key, stored, revision);
+            let (revision, dropped) =
+                super::listing::for_head(connection, project_id, &key, &stored, &assertion_id)?;
+            let mut row = project_memory_list_row(key, &stored, revision);
             row.retiring_state =
                 retiring_state_on(connection, project_id, row.retiring_target.as_ref())?;
-            row.retiring_target_dropped =
-                history::retiring_target_dropped(&history, history.len() - 1);
+            row.retiring_target_dropped = dropped;
             Ok(row)
         })
         .collect::<Result<Vec<_>, StoreError>>()?;

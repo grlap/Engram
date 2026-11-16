@@ -78,7 +78,14 @@ fn validate_record(
     labels: &BTreeMap<WorkId, Vec<String>>,
     record: &RecordEnvelope,
 ) -> Result<()> {
-    content::validate(profile, record)?;
+    let native_remote_detail = record.kind() == RecordKind::RemoteVerificationAssociation
+        && !super::super::is_imported_only(connection, record.object_id())?
+        && connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id=?1 AND object_kind=?2 AND canonical_json=?3)",
+            rusqlite::params![record.object_id().as_str(), record.kind().as_str(), record.canonical_bytes()],
+            |row| row.get::<_, bool>(0),
+        )?;
+    content::validate(profile, record, native_remote_detail)?;
     let check = |work, body: &str, refs: &[String], actor: &ActorContext| {
         check_note(connection, profile, labels, work, body, refs, actor)
     };

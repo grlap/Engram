@@ -94,7 +94,7 @@ fn append_revision_without_target(store: &mut SqliteStore, key: &str, body: &str
 }
 
 /// Creates one work item in `project`.
-fn create_item(store: &mut SqliteStore, project: &str, title: &str) -> crate::WorkItem {
+pub(super) fn create_item(store: &mut SqliteStore, project: &str, title: &str) -> crate::WorkItem {
     store
         .create_work(
             &CreateWorkRequest {

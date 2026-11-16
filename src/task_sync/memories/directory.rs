@@ -47,6 +47,24 @@ pub fn read_locked(
     Ok(result)
 }
 
+/// [`read_locked`], with the bytes the memory files hold on disk as read, for
+/// an import that counts them against the folder's size limit.
+///
+/// # Errors
+/// As [`read_locked`].
+pub fn read_locked_with_bytes(
+    data: &DataWorktree,
+    held: &PublicationLock,
+) -> Result<(BTreeMap<String, KeyHistory>, u64)> {
+    held.validate(data)?;
+    data.revalidate()?;
+    let selected = data.select_folder(&data.checkout.join(".engram"))?;
+    let root = PrivateDirectory::open(&selected)?;
+    let (result, bytes) = read_root_with_bytes(&root)?;
+    data.revalidate()?;
+    Ok((result, u64::try_from(bytes)?))
+}
+
 /// Captures the data worktree HEAD component, or an unborn bootstrap basis.
 ///
 /// # Errors
@@ -139,12 +157,39 @@ pub fn preflight(
     tasks: &crate::task_sync::TaskTree,
     profile: &crate::task_sync::progress::ExportProfile,
 ) -> Result<()> {
+    let task_bytes = crate::task_sync::directory::memory_export_task_bytes(tasks, profile)?;
+    preflight_component(
+        data,
+        basis,
+        selected,
+        recovering,
+        &tasks.project.project_id,
+        Some(task_bytes),
+    )
+    .map(drop)
+}
+
+/// [`preflight`] for an export whose task files are written and sized by
+/// their own incremental route: every memory admission check, and the
+/// combined size only when `task_bytes` is given. Returns the bytes of the
+/// selected memory component, for the task route's size limit.
+///
+/// # Errors
+/// As [`preflight`].
+pub fn preflight_component(
+    data: &DataWorktree,
+    basis: &BTreeMap<String, KeyHistory>,
+    selected: &BTreeMap<String, KeyHistory>,
+    recovering: bool,
+    project: &crate::ProjectId,
+    task_bytes: Option<usize>,
+) -> Result<u64> {
     data.revalidate()?;
-    let mut total = crate::task_sync::directory::memory_export_task_bytes(tasks, profile)?;
+    let mut total = 0_usize;
     for (key, history) in selected {
         history.validate()?;
         ensure!(
-            key == &history.key && history.project_id == tasks.project.project_id,
+            key == &history.key && history.project_id == *project,
             "memory publication project/key mismatch"
         );
         let head = serde_json::to_vec_pretty(&HeadDocument {
@@ -165,19 +210,20 @@ pub fn preflight(
                 .context("memory publication byte overflow")?;
         }
     }
-    ensure!(
-        total <= TREE_LIMIT,
-        "combined task and memory tree exceeds 128 MiB"
-    );
+    if let Some(task_bytes) = task_bytes {
+        ensure!(
+            total
+                .checked_add(task_bytes)
+                .is_some_and(|combined| combined <= TREE_LIMIT),
+            "combined task and memory tree exceeds 128 MiB"
+        );
+    }
     for (key, old) in basis {
         old.validate()?;
         let new = selected
             .get(key)
             .context("memory export cannot omit a selected key")?;
-        ensure!(
-            old.project_id == tasks.project.project_id,
-            "memory basis project mismatch"
-        );
+        ensure!(old.project_id == *project, "memory basis project mismatch");
         if matches!(old.head, Head::Tombstone { .. }) {
             ensure!(old == new, "permanent tombstone cannot be replaced");
         }
@@ -198,16 +244,65 @@ pub fn preflight(
         Some(root) if recovering => {
             recovery::validate(&root, basis, selected)?;
         }
-        Some(root) => ensure!(
-            read_root_for_capability(&root, true)?.0 == *basis,
-            crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged.invalid("memory_export_component_changed: on-disk memory tree differs from the committed basis")
-        ),
+        Some(root) => {
+            ensure!(
+                read_root_for_capability(&root, true)?.0 == *basis,
+                crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged.invalid("memory_export_component_changed: on-disk memory tree differs from the committed basis")
+            );
+            ensure_revision_bytes(&root, selected)?;
+        }
         None => ensure!(
             basis.is_empty(),
             crate::task_sync::TaskSyncRefusal::MemoryExportComponentMissing.invalid("memory_export_component_missing: restore the committed memory component before export")
         ),
     }
-    data.revalidate()
+    data.revalidate()?;
+    Ok(u64::try_from(total)?)
+}
+
+/// Each selected revision already on disk holds exactly the bytes the writer
+/// would publish for it. The writer refuses anything else after the task
+/// files are written, so it is refused here, before any write.
+fn ensure_revision_bytes(
+    root: &PrivateDirectory,
+    selected: &BTreeMap<String, KeyHistory>,
+) -> Result<()> {
+    let absent = |error: &anyhow::Error| {
+        error
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    };
+    let memories = match root.child(Path::new("memories")) {
+        Ok(child) => child,
+        Err(error) if absent(&error) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for (key, history) in selected {
+        let directory = match memories.child(Path::new(key)) {
+            Ok(child) => child,
+            Err(error) if absent(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        for (id, revision) in &history.revisions {
+            let name = format!("{id}.json");
+            let Some(existing) = directory.read_bounded(Path::new(&name), FILE_LIMIT)? else {
+                continue;
+            };
+            if existing != serde_json::to_vec_pretty(revision)? {
+                let eol = if existing.windows(2).any(|pair| pair == b"\r\n") {
+                    " It holds CRLF line endings: keep `text eol=lf` in .engram/.gitattributes and check core.autocrlf, then restore the file from the data branch."
+                } else {
+                    " Restore it from the data branch."
+                };
+                return Err(crate::task_sync::TaskSyncRefusal::MemoryExportComponentChanged
+                    .invalid(format!(
+                        "memory_export_component_changed: memories/{key}/{name} is not byte for byte the shared revision it records, so nothing was written.{eol}"
+                    ))
+                    .into());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Reads a caller-retained pre-export folder as explicit recovery evidence.
@@ -487,17 +582,38 @@ pub fn write_locked(
 ) -> Result<()> {
     fence.validate(data)?;
     data.revalidate()?;
-    let root = PrivateDirectory::open(&data.select_folder(&data.checkout.join(".engram"))?)?;
-    let (current_tasks, _) =
+    let (tasks, task_bytes) =
         crate::task_sync::directory::read_resolved_data_folder_for_memory_recovery(data)?;
-    preflight(
+    write_admitted(
         data,
         basis,
         selected,
         recovering,
-        &current_tasks.tree,
-        &current_tasks.profile,
-    )?;
+        fence,
+        &tasks.tree.project.project_id,
+        task_bytes,
+    )
+}
+
+/// [`write_locked`] for an export whose task route already admitted the
+/// folder: it gives the folder's project and the bytes its task files hold,
+/// so no task file is read again.
+///
+/// # Errors
+/// As [`write_locked`].
+pub fn write_admitted(
+    data: &DataWorktree,
+    basis: &BTreeMap<String, KeyHistory>,
+    selected: &BTreeMap<String, KeyHistory>,
+    recovering: bool,
+    fence: &PublicationLock,
+    project: &crate::ProjectId,
+    task_bytes: usize,
+) -> Result<()> {
+    fence.validate(data)?;
+    data.revalidate()?;
+    let root = PrivateDirectory::open(&data.select_folder(&data.checkout.join(".engram"))?)?;
+    preflight_component(data, basis, selected, recovering, project, Some(task_bytes))?;
     for (key, old) in basis {
         old.validate()?;
         let new = selected
@@ -530,13 +646,11 @@ pub fn write_locked(
         }
     }
     ensure!(total <= TREE_LIMIT, "memory tree exceeds 128 MiB");
-    let (tasks, task_bytes) =
-        crate::task_sync::directory::read_resolved_data_folder_for_memory_recovery(data)?;
     ensure!(
         selected
             .values()
             .chain(basis.values())
-            .all(|history| history.project_id == tasks.tree.project.project_id),
+            .all(|history| history.project_id == *project),
         "memory publication belongs to another project"
     );
     ensure!(

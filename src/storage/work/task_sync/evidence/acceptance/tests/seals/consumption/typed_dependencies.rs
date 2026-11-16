@@ -14,11 +14,13 @@ fn original<'a>(packs: &'a [EvidencePack], id: &ObjectId) -> &'a RecordEnvelope 
 }
 
 fn retain_original_context(data: &mut Selected) {
+    retain_context(&data.origin, &mut data.target, &data.verification.origin);
+}
+
+pub(super) fn retain_context(producer: &Fixture, target: &mut Fixture, origin: &ObjectId) {
     // The selected-use fixture packs feed witnesses, but not every transitive
     // context object. Onward native capture requires that complete inventory.
-    let origin = &data.verification.origin;
-    let mut pending = data
-        .target
+    let mut pending = target
         .store
         .connection
         .prepare(
@@ -39,9 +41,9 @@ fn retain_original_context(data: &mut Selected) {
         if records.contains_key(&id) {
             continue;
         }
-        let (kind, bytes) = object_on(&data.target.store.connection, &id)
+        let (kind, bytes) = object_on(&target.store.connection, &id)
             .unwrap()
-            .or_else(|| object_on(&data.origin.store.connection, &id).unwrap())
+            .or_else(|| object_on(&producer.store.connection, &id).unwrap())
             .unwrap_or_else(|| panic!("original producer context is missing: {id}"));
         let record =
             RecordEnvelope::from_canonical(origin.clone(), id.clone(), &kind, bytes).unwrap();
@@ -55,7 +57,7 @@ fn retain_original_context(data: &mut Selected) {
     }
     let complete = pack(origin, records.into_values().collect());
     inventory::plan_batch(std::slice::from_ref(&complete), |_| Ok(None)).unwrap();
-    retain(&mut data.target.store, &complete);
+    retain(&mut target.store, &complete);
 }
 
 fn kind_refusal(

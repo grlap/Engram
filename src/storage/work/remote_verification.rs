@@ -26,10 +26,7 @@ mod tests;
 /// project, host and run, and its fingerprint the terminal facts.
 pub(in crate::storage::work) const ORIGIN_OPERATION: &str = "remote_verification_origin";
 fn remote_stage(mode: RemoteRunMode) -> &'static str {
-    match mode {
-        RemoteRunMode::Full => "full",
-        RemoteRunMode::Focused => "focused",
-    }
+    mode.word()
 }
 
 fn invalid(field: &str, reason: &str) -> StoreError {
@@ -74,7 +71,7 @@ pub(in crate::storage) fn record_remote_verification_on(
         validate_destination(tx, project, session, request, now)?
     } else {
         Err(format!(
-            "this build reads completion schema {REMOTE_COMPLETION_SCHEMA_VERSION}, not {}",
+            "check=producer_schema observed_schema_version={} expected_schema_version={REMOTE_COMPLETION_SCHEMA_VERSION}; remedy=deliver a supported completion schema from a compatible producer; this build cannot credit the unsupported producer",
             completion.schema_version
         ))
     };
@@ -95,7 +92,11 @@ pub(in crate::storage) fn record_remote_verification_on(
         ),
         Ok(_) if conflict => RemoteVerificationQualification::refused(
             RemoteVerificationReason::ResultConflict,
-            Some("this run already has different terminal facts".into()),
+            Some(conflicting_terminal_detail(
+                tx,
+                origin.as_ref(),
+                completion,
+            )?),
         ),
         Ok(_) => crate::control::remote_result_disqualification(
             completion,
@@ -138,12 +139,7 @@ pub(in crate::storage) fn record_remote_verification_on(
         object.bytes(),
     )?;
     let Ok(item) = destination else {
-        super::feeds::append_to_project_feed(
-            tx,
-            project,
-            REMOTE_VERIFICATION_ASSOCIATION_KIND,
-            &object,
-        )?;
+        append_refused_delivery(tx, &record, &object)?;
         return Ok(RemoteVerificationReceipt {
             operation: object.key().clone(),
             origin,
@@ -206,6 +202,44 @@ pub(in crate::storage) fn record_remote_verification_on(
     })
 }
 
+/// Preserve item visibility without attaching a refused destination to any run.
+fn append_refused_delivery(
+    tx: &Transaction<'_>,
+    record: &RemoteVerificationAssociationRecord,
+    object: &CanonicalObject,
+) -> Result<(), StoreError> {
+    let item = match super::query::load_work_item(tx, record.request.association.binding.work_id) {
+        Ok(item) if item.project_id == record.project_id => Some(item),
+        Ok(_) | Err(StoreError::WorkNotFound(_)) => None,
+        Err(error) => return Err(error),
+    };
+    if let Some(item) = item {
+        let positions = super::feeds::append_to_work_feeds(
+            tx,
+            &record.project_id,
+            item.root_id,
+            None,
+            None,
+            REMOTE_VERIFICATION_ASSOCIATION_KIND,
+            object,
+        )?;
+        super::note_index::append_native(
+            tx,
+            &positions,
+            object.key(),
+            &super::note_index::NativeNote::RemoteVerification(record),
+        )?;
+    } else {
+        super::feeds::append_to_project_feed(
+            tx,
+            &record.project_id,
+            REMOTE_VERIFICATION_ASSOCIATION_KIND,
+            object,
+        )?;
+    }
+    Ok(())
+}
+
 fn source_basis(
     request: &RemoteVerificationRequest,
 ) -> Result<VerificationSourceBasis, StoreError> {
@@ -247,19 +281,32 @@ fn validate_destination(
     let binding = &request.association.binding;
     let item = match super::query::load_work_item(tx, binding.work_id) {
         Ok(item) => item,
-        Err(StoreError::WorkNotFound(_)) => return Ok(Err("the work item is unknown".into())),
+        Err(StoreError::WorkNotFound(_)) => {
+            return Ok(Err(format!(
+                "check=destination_item observed_work_id={} expected=an existing item in project {}; remedy=deliver to an existing item in this project using its current binding",
+                binding.work_id.0, project.0,
+            )));
+        }
         Err(error) => return Err(error),
     };
     if item.project_id != *project {
-        return Ok(Err("the work item belongs to another project".into()));
+        return Ok(Err(format!(
+            "check=destination_project observed_work_id={} observed_project=another_project expected_project={}; remedy=deliver through the destination item's project connection; foreign project details are not disclosed",
+            binding.work_id.0, project.0,
+        )));
     }
     if item.revision != binding.work_revision {
-        return Ok(Err("the work item changed since the binding".into()));
+        return Ok(Err(format!(
+            "check=work_revision observed_work_revision={} expected_work_revision={}; remedy=read this item and re-deliver the same retained terminal with its current item revision and binding",
+            binding.work_revision, item.revision,
+        )));
     }
     match super::planning::validate_control_work_binding_on(tx, project, session, binding, now) {
         Ok(()) => {}
         Err(StoreError::ControlWorkBindingStale { .. } | StoreError::WorkClaimMismatch { .. }) => {
-            return Ok(Err("the claim, fence or run moved since the binding".into()));
+            return Ok(Err(control_binding_detail(
+                tx, session, binding, &item, now,
+            )?));
         }
         Err(error) => return Err(error),
     }
@@ -268,7 +315,10 @@ fn validate_destination(
         super::latest_named_root_event_on(tx, binding.run_id, binding.claim_id, i64::MAX)?
             .map(|(_, event)| event);
     let Some(current) = current else {
-        return Ok(Err("the claim has no named root".into()));
+        return Ok(Err(format!(
+            "check=named_root observed_workspace_id={} observed_generation={} current_root=missing expected_root=bound; remedy=name the source root for the current claim, then re-deliver the same retained terminal with that root binding",
+            root.workspace_id, root.generation,
+        )));
     };
     if current.kind != NamedRootBindingKind::Bound
         || current.workspace_id != root.workspace_id
@@ -276,9 +326,170 @@ fn validate_destination(
         || current.claim_fence != binding.claim_fence
         || current.session_id != *session
     {
-        return Ok(Err("the named root moved".into()));
+        return Ok(Err(format!(
+            "check=named_root observed_workspace_id={} expected_workspace_id={} observed_generation={} expected_generation={} observed_claim_fence={} expected_claim_fence={} observed_session_id={} expected_session_id={} current_state={} required_state=bound; remedy={}",
+            root.workspace_id,
+            current.workspace_id,
+            root.generation,
+            current.generation,
+            binding.claim_fence,
+            current.claim_fence,
+            session.0,
+            current.session_id.0,
+            match current.kind {
+                NamedRootBindingKind::Bound => "bound",
+                NamedRootBindingKind::Ended => "ended",
+            },
+            match current.kind {
+                NamedRootBindingKind::Bound =>
+                    "read the current claim's named root and re-deliver the same retained terminal with its current workspace, generation and session binding",
+                NamedRootBindingKind::Ended =>
+                    "name and bind a new source root generation strictly greater than the ended generation for the current claim, then re-deliver the same retained terminal with that new workspace, generation and session binding",
+            },
+        )));
     }
     Ok(Ok(item))
+}
+
+/// Read current authority only after its existing validator has refused. These
+/// values explain the decision; they never replace or refresh the carried binding.
+fn control_binding_detail(
+    connection: &Connection,
+    session: &SessionId,
+    binding: &crate::domain::ControlWorkBinding,
+    item: &crate::domain::WorkItem,
+    now: DateTime<Utc>,
+) -> Result<String, StoreError> {
+    let run = super::query::active_run_snapshot(connection, item)?;
+    let claim = run
+        .as_ref()
+        .map(|run| super::query::load_work_claim_optional(connection, run.run_id))
+        .transpose()?
+        .flatten();
+    let handoff = run
+        .as_ref()
+        .map(|run| super::execution::live_handoff_on(connection, run.run_id, now))
+        .transpose()?
+        .flatten();
+    let (handoff_detail, handoff_remedy) = handoff.as_ref().map_or_else(
+        || ("current_handoff=none".to_owned(), ""),
+        |offer| (
+            format!(
+                "current_handoff_offer_id={} current_handoff_state=offered current_handoff_expires_at={}",
+                offer.offer_id.0, offer.expires_at.to_rfc3339(),
+            ),
+            "settle the live handoff first: its holder can cancel, its recipient can accept, or wait for its expiry; then ",
+        ),
+    );
+    let absent = || "missing".to_owned();
+    Ok(format!(
+        "check=control_binding observed_run_id={} expected_run_id={} observed_root_execution_id={} expected_root_execution_id={} observed_claim_id={} expected_claim_id={} observed_claim_fence={} expected_claim_fence={} observed_session_id={} expected_session_id={} current_claim_state={} current_claim_expires_at={} {handoff_detail} observed_now={now}; expected=no live handoff, a live current claim and historically valid item/run binding; remedy={handoff_remedy}read or reclaim the item, then re-deliver the same retained terminal with the current claim, fence, run, item revision and session; an expired or superseded claim cannot earn retroactive credit",
+        binding.run_id.0,
+        run.as_ref()
+            .map_or_else(absent, |run| run.run_id.0.to_string()),
+        binding.root_execution_id.0,
+        run.as_ref()
+            .map_or_else(absent, |run| run.root_execution_id.0.to_string()),
+        binding.claim_id.0,
+        claim
+            .as_ref()
+            .map_or_else(absent, |claim| claim.claim_id.0.to_string()),
+        binding.claim_fence,
+        claim
+            .as_ref()
+            .map_or_else(absent, |claim| claim.fence.to_string()),
+        session.0,
+        claim
+            .as_ref()
+            .map_or_else(absent, |claim| claim.holder.0.clone()),
+        claim
+            .as_ref()
+            .map_or_else(absent, |claim| match claim.state {
+                crate::domain::WorkClaimState::Active => "active".into(),
+                crate::domain::WorkClaimState::Released => "released".into(),
+                crate::domain::WorkClaimState::Completed => "completed".into(),
+            }),
+        claim
+            .as_ref()
+            .map_or_else(absent, |claim| claim.expires_at.to_rfc3339()),
+    ))
+}
+
+fn conflicting_terminal_detail(
+    connection: &Connection,
+    origin: Option<&ObjectId>,
+    completion: &RemoteRunCompletion,
+) -> Result<String, StoreError> {
+    let origin = origin.ok_or_else(|| {
+        StoreError::InvalidWorkProjection("a conflicting remote terminal has no origin".into())
+    })?;
+    let original: RemoteTerminalOrigin =
+        super::feeds::load_typed_work_object(connection, origin, REMOTE_TERMINAL_ORIGIN_KIND)?;
+    let observed = serde_json::to_value(completion)?;
+    let retained = serde_json::to_value(&original.completion)?;
+    let difference = terminal_difference(Some(&observed), Some(&retained), "completion")
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection("conflicting terminal facts are equal".into())
+        })?;
+    Ok(format!(
+        "check=terminal_origin {difference} observed_terminal=({}) expected_terminal=({}) origin={origin}; remedy=deliver the original retained terminal for this host and run, or deliver a genuinely new run; an already settled terminal cannot be replaced",
+        completion.describe(),
+        original.completion.describe(),
+    ))
+}
+
+/// One bounded field difference, without expanding a complete source identity.
+fn terminal_difference(
+    observed: Option<&serde_json::Value>,
+    expected: Option<&serde_json::Value>,
+    field: &str,
+) -> Option<String> {
+    use serde_json::Value;
+    if observed == expected {
+        return None;
+    }
+    match (observed, expected) {
+        (Some(Value::Object(left)), Some(Value::Object(right))) => {
+            for key in left.keys().chain(right.keys()) {
+                if let Some(difference) =
+                    terminal_difference(left.get(key), right.get(key), &format!("{field}.{key}"))
+                {
+                    return Some(difference);
+                }
+            }
+        }
+        (Some(Value::Array(left)), Some(Value::Array(right))) => {
+            for index in 0..left.len().max(right.len()) {
+                if let Some(difference) = terminal_difference(
+                    left.get(index),
+                    right.get(index),
+                    &format!("{field}[{index}]"),
+                ) {
+                    return Some(difference);
+                }
+            }
+        }
+        _ => {
+            let bounded = |value: Option<&Value>| {
+                let text = value.map_or_else(|| "missing".into(), Value::to_string);
+                if text.chars().count() > 160 {
+                    format!(
+                        "{}… ({} bytes)",
+                        text.chars().take(160).collect::<String>(),
+                        text.len()
+                    )
+                } else {
+                    text
+                }
+            };
+            return Some(format!(
+                "differing_field={field} observed_value={} expected_value={}",
+                bounded(observed),
+                bounded(expected),
+            ));
+        }
+    }
+    None
 }
 
 /// The run's terminal origin and whether these facts differ from it. The first

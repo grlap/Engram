@@ -7,6 +7,21 @@ use std::time::{Duration, Instant};
 
 use super::{git, setup::PrivateDirectory};
 
+/// The forward-only way past another host's commits merged in before this
+/// host exported its own changes: a new commit sets their task files aside,
+/// this host exports on top, and reverting the set-aside commit brings them
+/// back for the import. The data branch only moves forward. `commit` is the
+/// folder this host last recorded, when it was a commit.
+pub(crate) fn set_aside_exit(commit: Option<&str>) -> String {
+    let source = commit.map_or_else(
+        || "COMMIT, the data branch's commit that holds this host's last export".to_owned(),
+        str::to_owned,
+    );
+    format!(
+        "set the other host's task changes aside without moving the branch back: in the data worktree run `git restore --source={source} --staged --worktree -- .engram/tasks` and commit that; export and commit; then `git revert --no-edit` the set-aside commit, resolving any conflict on a task both hosts changed as an agent merge and committing it, and import"
+    )
+}
+
 /// The fixed bound of one local administration query.
 pub(crate) const QUERY_BOUND: Duration = crate::operation_time::MINIMUM;
 
@@ -129,6 +144,149 @@ impl DataWorktree {
             main_checkout: self.checkout.clone(),
             git_directory: self.git_directory.clone(),
         }
+    }
+
+    /// The observed HEAD commit, when the folder's task files and envelope
+    /// hold exactly its content: nothing staged, modified or untracked there.
+    /// Policy files and other data beside them do not count. A HEAD that moved
+    /// since the observation refuses rather than certifying another commit.
+    ///
+    /// # Errors
+    /// Refuses a failed or unbounded Git status read, and drift.
+    pub fn committed_folder(&self) -> Result<Option<String>> {
+        let Some(head) = &self.head else {
+            return Ok(None);
+        };
+        Ok(self.folder_changes()?.is_empty().then(|| head.clone()))
+    }
+
+    /// The observed HEAD commit, if the branch has one.
+    #[must_use]
+    pub fn head_commit(&self) -> Option<&str> {
+        self.head.as_deref()
+    }
+
+    /// The task files and envelope that differ from HEAD: staged, modified,
+    /// deleted or untracked, as paths relative to the data checkout. An
+    /// ignored task file or envelope counts too, so an ignore rule never
+    /// hides a loose file at a folder path, which an export would otherwise
+    /// count as committed; other ignored entries, which the folder's policy
+    /// ignores by design, do not.
+    ///
+    /// Comparing worktree bytes lets Git apply attributes, so every configured
+    /// filter driver is disabled for this read: no clean or process command
+    /// runs, and a file a filter would have normalised reads as changed, never
+    /// as clean. End-of-line conversion still applies, so a file that differs
+    /// only in its line endings may read as clean; imports read the commit,
+    /// never these bytes. The observation is checked again afterwards, so the
+    /// result belongs to the HEAD it was observed with.
+    ///
+    /// # Errors
+    /// Refuses a failed or unbounded Git read, and drift since observation.
+    pub fn folder_changes(&self) -> Result<std::collections::BTreeSet<String>> {
+        // The same bound as every other folder listing: a status over a folder
+        // at its task limit on a slow disk must finish, not time out.
+        let deadline = QUERY_BOUND;
+        // Both listings name every folder path, so they take the folder
+        // listing limit rather than the general query output limit.
+        let listing = |args: &[&str]| {
+            let _warning = crate::operation_time::Warning::start("local Git query");
+            super::git::query_listing(
+                &self.checkout,
+                args,
+                deadline,
+                super::git::MAX_LISTING_BYTES,
+            )
+        };
+        // Status skips a file whose index entry is marked assume-unchanged or
+        // skip-worktree, so such a file could hide an edit from this read.
+        for entry in listing(&[
+            "ls-files",
+            "-v",
+            "-z",
+            "--",
+            ".engram/tasks",
+            ".engram/project.json",
+        ])?
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+        {
+            ensure!(
+                entry.len() > 2 && entry[1] == b' ',
+                "malformed Git index result"
+            );
+            ensure!(
+                entry[0] != b'S' && !entry[0].is_ascii_lowercase(),
+                "index inspection is suppressed for {}: clear it with `git update-index --no-assume-unchanged --no-skip-worktree` on that path in the data worktree",
+                String::from_utf8_lossy(&entry[2..])
+            );
+        }
+        let configured = super::git::query(
+            &self.checkout,
+            &["config", "--name-only", "--get-regexp", r"^filter\."],
+            true,
+            None,
+            deadline,
+        )?;
+        let drivers = String::from_utf8(configured)?
+            .lines()
+            .filter_map(|key| key.strip_prefix("filter.")?.rsplit_once('.'))
+            .map(|(driver, _)| driver.to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut overrides = Vec::new();
+        for driver in &drivers {
+            for (key, value) in [
+                ("clean", ""),
+                ("smudge", ""),
+                ("process", ""),
+                ("required", "false"),
+            ] {
+                overrides.push("-c".to_owned());
+                overrides.push(format!("filter.{driver}.{key}={value}"));
+            }
+        }
+        let mut args = overrides.iter().map(String::as_str).collect::<Vec<_>>();
+        args.extend([
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            // Each ignored file, also inside an ignored directory, which
+            // `matching` would list as the directory alone.
+            "--ignored=traditional",
+            "--no-renames",
+            "--",
+            ".engram/tasks",
+            ".engram/project.json",
+        ]);
+        let status = listing(args.as_slice())?;
+        self.revalidate()?;
+        let mut paths = std::collections::BTreeSet::new();
+        for record in status
+            .split(|byte| *byte == 0)
+            .filter(|record| !record.is_empty())
+        {
+            let path = record
+                .get(3..)
+                .ok_or_else(|| anyhow::anyhow!("malformed Git status record"))?;
+            let path = String::from_utf8(path.to_vec())?;
+            // The folder's own policy ignores every task-directory entry
+            // that is not a task file, such as a desktop's metadata file or a
+            // nested directory, so only an ignored file at a task file's path
+            // or the envelope's is a change.
+            let folder_file = path == ".engram/project.json"
+                || path.strip_prefix(".engram/tasks/").is_some_and(|name| {
+                    !name.contains('/')
+                        && std::path::Path::new(name)
+                            .extension()
+                            .is_some_and(|extension| extension == "json")
+                });
+            if record.starts_with(b"!! ") && !folder_file {
+                continue;
+            }
+            paths.insert(path);
+        }
+        Ok(paths)
     }
 
     /// Re-observe the exact worktree, administration, branch and HEAD.
@@ -353,7 +511,14 @@ impl DataWorktree {
                 "--exclude-standard",
             ],
         ] {
-            check_paths(&query_within(&self.checkout, &args, false, budget)?)?;
+            // Each inventory names every folder path, so it takes the folder
+            // listing limit rather than the general query output limit.
+            check_paths(&git::query_listing(
+                &self.checkout,
+                &args,
+                budget.bound()?,
+                git::MAX_LISTING_BYTES,
+            )?)?;
         }
         Ok(())
     }

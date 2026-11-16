@@ -25,6 +25,12 @@ pub(crate) use work::task_sync::folder::folder_apply_projection;
 #[cfg(test)]
 pub(crate) use work::task_sync::folder::folder_apply_summary;
 pub use work::task_sync::folder::{TaskSyncFolderApply, TaskSyncFolderExport};
+pub use work::task_sync::folder_head::{
+    FolderDisk, FolderExportPlan, FolderHead, FolderHeadReason, FolderSource,
+};
+pub use work::task_sync::folder_import::{
+    FolderCompleteApply, FolderDeltaApply, FolderDeltaOutcome, FolderImportApplied,
+};
 pub(crate) use work::task_sync::ledger::custody::Observed as TaskSyncCustodyObservation;
 pub(crate) use work::task_sync::ledger::origin_repositories_on as task_sync_origin_repositories_on;
 pub use work::task_sync::{TaskSyncTaskResult, TaskSyncTaskStatus};
@@ -544,6 +550,7 @@ const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "memory_heads_scope"),
     ("index", "memory_heads_work_scope"),
     ("table", "project_memory_state"),
+    ("table", "project_memory_list_metadata"),
     ("table", "project_memory_advertisements"),
     ("index", "control_changes_task_cursor"),
 ];

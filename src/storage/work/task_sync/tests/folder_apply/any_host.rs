@@ -346,6 +346,81 @@ fn native_creator_accepts_returned_planning_without_an_execution_history_ban() {
     assert!(health.is_healthy(), "{health:?}");
 }
 
+// Two stores that each created and executed work before any exchange: no
+// baseline, a begun feed and a live claim. Each enrols by importing the
+// merged folder against its own current basis.
+#[test]
+fn native_stores_without_a_baseline_enrol_by_importing_a_merged_folder_both_ways() {
+    let native_store = |titles: [&str; 2], second: i64| {
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let ids = titles.map(|title| {
+            store
+                .create_work(
+                    &root_request(PROJECT, title, second),
+                    &crate::DevelopmentNoopRedactor,
+                )
+                .unwrap()
+                .work_id
+        });
+        (store, ids)
+    };
+    let (mut a, [claimed_on_a, planned_on_a]) = native_store(["claimed on A", "planned on A"], 0);
+    let (mut b, [claimed_on_b, planned_on_b]) = native_store(["claimed on B", "planned on B"], 1);
+    claim_restored(&mut a, claimed_on_a, "executor-a", 2);
+    claim_restored(&mut b, claimed_on_b, "executor-b", 3);
+    let baseline = |store: &SqliteStore| {
+        super::super::super::baseline::load(&store.connection, &project()).unwrap()
+    };
+    assert!(baseline(&a).is_none() && baseline(&b).is_none());
+    let mut merged = exported(&a);
+    merged.tasks.extend(exported(&b).tasks);
+    merged.tasks.sort_by_key(|task| task.id.0);
+    for (store, local, foreign, key) in [
+        (
+            &mut a,
+            [claimed_on_a, planned_on_a],
+            [claimed_on_b, planned_on_b],
+            "enrol-a",
+        ),
+        (
+            &mut b,
+            [claimed_on_b, planned_on_b],
+            [claimed_on_a, planned_on_a],
+            "enrol-b",
+        ),
+    ] {
+        let before = local.map(|id| store.get_work_item(id).unwrap());
+        assert!(before[0].active_run_id.is_some());
+        let result = exchange(store, &merged, key, 5).unwrap();
+        assert!(result.changed);
+        assert_eq!(
+            result
+                .tasks
+                .iter()
+                .map(|task| task.task)
+                .collect::<Vec<_>>(),
+            {
+                let mut added = foreign.to_vec();
+                added.sort_by_key(|id| id.0);
+                added
+            }
+        );
+        assert!(
+            result
+                .tasks
+                .iter()
+                .all(|task| task.status == TaskSyncTaskStatus::Applied)
+        );
+        assert_eq!(local.map(|id| store.get_work_item(id).unwrap()), before);
+        assert!(baseline(&*store).is_some());
+        assert_eq!(exported(store), merged);
+        let health = store.verify_all().unwrap();
+        assert!(health.is_healthy(), "{health:?}");
+        let repeat = exchange(store, &merged, &format!("{key}-again"), 6).unwrap();
+        assert!(!repeat.changed && repeat.tasks.is_empty());
+    }
+}
+
 #[test]
 fn native_dormant_run_closes_without_a_seal_when_completion_is_reported() {
     let directory = crate::test_support::temp_home().unwrap();

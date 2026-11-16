@@ -81,6 +81,7 @@ pub(in crate::storage::work) fn create_schema(connection: &Connection) -> Result
                AND json_extract(canonical_json,'$.transition.transition')='outgoing_reconciled'
                AND json_extract(canonical_json,'$.transition.reconciliation.step') IN ('resolved','delta_resolved');",
     )?;
+    super::custody::managed::create_schema(connection)?;
     select::create_schema(connection)
 }
 

@@ -6,7 +6,7 @@ use super::{
 };
 
 impl SqliteStore {
-    pub(super) fn open_projection_maintenance(
+    pub(in crate::storage) fn open_projection_maintenance(
         path: &Path,
         missing_note_index: bool,
     ) -> Result<Connection, StoreError> {
@@ -26,7 +26,7 @@ impl SqliteStore {
         Ok(connection)
     }
 
-    pub(super) fn preflight_projection_maintenance(
+    pub(in crate::storage) fn preflight_projection_maintenance(
         connection: &Connection,
     ) -> Result<(), StoreError> {
         if !Self::sqlite_user_schema_exists(connection)? {

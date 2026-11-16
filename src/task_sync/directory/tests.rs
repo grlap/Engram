@@ -336,3 +336,24 @@ fn task_sync_directory_refuses_empty_notes_profile_before_publication_and_admiss
     .unwrap();
     assert_eq!(read(&path).unwrap(), tree);
 }
+
+#[test]
+fn memories_beside_a_folder_count_the_envelope_that_will_advertise_them() {
+    let fixture = crate::test_support::temp_home().unwrap();
+    let path = fixture.path().join("candidate");
+    write_folder(&path, &candidate(), &profile()).unwrap();
+    let stored = ["project.json", ".gitignore", ".gitattributes"]
+        .iter()
+        .filter_map(|name| fs::metadata(path.join(name)).ok())
+        .map(|meta| meta.len())
+        .sum::<u64>();
+    let limit = u64::try_from(LIMITS.tree_bytes).unwrap();
+    // The folder's files as they stand fill the limit exactly, but the
+    // envelope grows when it advertises the memory component.
+    let error = admit_memories_beside(&path, limit - stored, 0).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("nothing was written"),
+        "{error:#}"
+    );
+    admit_memories_beside(&path, limit - stored - 256, 0).unwrap();
+}

@@ -98,10 +98,15 @@ pub(super) const NOTE_OBJECTS: &str = "
     UNION ALL
     SELECT observation_id, 'observation', NULL FROM work_observations WHERE work_id = ?1
     UNION ALL
-    SELECT entry.object_id, 'remote', NULL
-    FROM work_runs run JOIN work_feed_entries entry
-      ON entry.feed_kind = 'run_execution' AND entry.feed_id = run.run_id
-    WHERE run.work_id = ?1 AND entry.object_kind = 'remote_verification_association'
+    SELECT object.object_id, 'remote', NULL
+    FROM work_items item CROSS JOIN objects object
+      INDEXED BY objects_work_remote_association_item
+    WHERE item.work_id = ?1 AND object.object_kind = 'remote_verification_association'
+      AND json_extract(CAST(object.canonical_json AS TEXT), '$.request.association.binding.work_id') = ?1
+      AND json_extract(CAST(object.canonical_json AS TEXT), '$.project_id') = item.project_id
+      AND EXISTS(SELECT 1 FROM work_feed_entries entry
+        WHERE entry.feed_kind = 'root_work' AND entry.feed_id = item.root_id
+          AND entry.object_id = object.object_id)
 ";
 
 fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(), StoreError> {

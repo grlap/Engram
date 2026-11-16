@@ -756,11 +756,20 @@ the origin, the decision and the local `associated_at`. The run's own
 `finished_at` stays apart from that time and is what every time guard reads. The
 delivery stands on its item's project, root and run feeds, and `show` lists it
 among the item's observations with both times, where it cannot be cited as run
-evidence. A stale or unsupported delivery goes on the project feed only, and
-writes nothing in that item's scope, so `show` does not list it: its durable
-visibility is its receipt, which an exact retry returns, and one change delivery
-to each session. A result can serve several items, as one origin with several
-deliveries.
+evidence. New stale or unsupported deliveries that name an existing item in this
+project stand on its project and root feeds, with no run-feed entry. `show
+--notes --gates` lists them as uncredited observations with the original reason,
+detail and both times. They cannot be cited as run evidence, mint no verification
+and leave the qualification and execution accounting unchanged. Unknown items
+and foreign-project destinations remain project-feed-only. Older refusals that
+were recorded only on the project feed stay there, without backfill; their receipt
+and project change delivery remain available. Item reads use a rebuildable index
+on the association's destination item and keyed root membership checks, so
+unrelated root history does not grow the lookup. Existing stores need explicit
+projection repair to add this index before the new build opens them; canonical
+records, feeds and evidence credit do not change. An exact
+retry returns the same receipt. A result can serve several items, as one origin
+with several deliveries.
 
 ### What earns credit
 
@@ -805,6 +814,30 @@ for complete object equality. Historical native reasons remain as stored. Debris
 records remain readable, but the current launcher has no debris disposition lane:
 adding a non-ignored untracked file changes `source_id` and fails its input check.
 A gate or mailbox message does not turn historical evidence into new verification.
+
+New refusal details identify the deciding check, the delivered values and the
+current or required values, followed by a remedy. A stale association reports
+the item revision or claim, fence, run, session and named-root values that no
+longer match. Read the current item and root binding before delivering the same
+retained terminal again; delivery never refreshes that binding automatically.
+A live handoff is reported with its offer identity, state and expiry; settle
+that offer before delivering against the current binding again.
+An unknown or foreign-project destination reports that boundary without
+disclosing another project's authority. Input refusals report the tested and
+expected commit or tree, or the availability and summaries of the retained
+source endpoints. Missing facts stay missing. Result and mode refusals state
+the required terminal, verdict, finish time or full-run mode. Recover retained
+facts before requesting a new run; an already settled terminal cannot be
+replaced with different facts. A terminal conflict names its first differing
+field and bounded observed and retained values, even when endpoint summaries
+are equal. These explanations add no reason codes or wire
+fields and do not change qualification order. Historical deliveries, including
+an exact retry's receipt, keep their original detail.
+Explicit native evidence capture retains an exact native original's generated
+diagnostic values as metadata. Its notes opt-in, actor checks and remote reason
+prose checks still apply. Imported qualification details remain subject to the
+prose disclosure check, including when reached through a native use's dependency
+closure; imported text is never trusted merely because it occupies that field.
 
 Only a qualifying delivery mints verification: one `test` record, written by the
 same writer as any other, whose producer is the delivery. Shared input stores the

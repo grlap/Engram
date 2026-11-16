@@ -157,6 +157,7 @@ impl SqliteStore {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute("DELETE FROM memory_heads", [])?;
+        transaction.execute("DELETE FROM project_memory_list_metadata", [])?;
         transaction.execute("DELETE FROM object_fts", [])?;
         let mut activated = 0;
         // Canonical objects do not change during this rebuild transaction.

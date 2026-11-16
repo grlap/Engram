@@ -56,6 +56,37 @@ fn note_search_index_build_is_an_explicit_exclusive_doctor_mode() {
 }
 
 #[test]
+fn memory_list_metadata_build_is_an_explicit_exclusive_doctor_mode() {
+    use clap::Parser;
+    let parsed =
+        super::Cli::try_parse_from(["engram", "doctor", "--build-memory-list-metadata", "--json"])
+            .unwrap();
+    assert!(matches!(
+        parsed.command,
+        super::Command::Doctor {
+            build_memory_list_metadata: true,
+            ..
+        }
+    ));
+    for other in [
+        "--repair-projections",
+        "--recover-policy",
+        "--check-landings",
+        "--build-note-search-index",
+        "--build-verification-applicability-index",
+    ] {
+        assert_eq!(
+            super::Cli::try_parse_from(
+                ["engram", "doctor", "--build-memory-list-metadata", other,]
+            )
+            .unwrap_err()
+            .kind(),
+            clap::error::ErrorKind::ArgumentConflict
+        );
+    }
+}
+
+#[test]
 fn authority_waiver_accepts_record_ids_and_reports_invalid_definition_ids() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("waiver-record-ids.db");

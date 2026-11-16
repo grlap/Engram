@@ -316,6 +316,33 @@ reporting no healthy result and deleting no data. An integrity refusal
 includes the invalid-record labels as well as counts; the failed repair rolls
 back its rebuildable changes too.
 
+Project-memory list pages validate only the selected canonical head pairs and
+read `project_memory_list_metadata` by project and key. This rebuildable table
+binds each head's memory, version and assertion ids to its revision count and
+dropped retirement-target disclosure. Head writes maintain it in the same
+transaction, including forget and restored tombstones. List decoding scales
+with the page size, independent of revision history. Each selected candidate
+decodes two memory objects; a local retirement target additionally uses the
+existing work-item validator to read its current state. That validation is
+measured separately and stays proportional to the selected page, including
+pagination lookahead, rather than memory revision history. Filtered FTS ranking and
+exact match counting still depend on current matches. Explicit full/history
+reads, mutation admission and doctor retain complete chain validation. Missing
+or stale list metadata refuses rather than replaying history on demand.
+
+An existing store missing only this table can use
+`engram doctor --build-memory-list-metadata --json` after every old-build
+consumer has exited. This narrow cutover validates all keyed canonical memory
+chains against durable heads, including terminal keys, and creates only the
+missing metadata table in one transaction. It refuses an existing target or
+unrelated schema damage; use full projection repair for those cases. Its JSON
+reports `checked_memory_keys` and `full_audit: "not_run"`: this is scoped
+verification, not an exhaustive store audit. Work rows, FTS, durable heads and
+memory advertisements stay unchanged. The cost is proportional to keyed memory
+history, not the whole store. Run `readiness` afterward on each live store.
+Introducing this projection requires the coordinated projection-repair
+cutover; ordinary open never creates it, and no separate restart is implied.
+
 The read-only `--recover-policy` path cannot run SQLite crash recovery. When a
 non-clean shutdown leaves a WAL that SQLite itself must recover, diagnostics
 fails without mutation; the operator must stop writers and preserve a
@@ -378,7 +405,12 @@ state (`project_memory_state`), the observation index `work_observations`, and
 the restored-history projections `work_restored_records` and `work_restored_evidence` are disposable and
 rebuilt explicitly from verified durable rows and canonical objects.
 Task-sync projections follow the same rule: `work_project_feed_tasks`,
+`work_project_feed_coverage` (one row per classified project-feed position, so
+a change capture over a position the index lost refuses with
+`task_sync_feed_projection_gap` instead of reporting fewer changes),
 `work_task_sync_baseline`, `work_task_sync_baseline_heads`,
+`work_task_sync_folder_heads` (the ordinary folder route's current head per
+project and note selection),
 `work_task_sync_reconciliation_active`, `work_task_sync_exchange_operations`,
 `work_task_sync_exchange_heads`, `work_task_sync_producing_origin_members`,
 `work_task_sync_producing_origin_heads`, `work_task_sync_document_members`,

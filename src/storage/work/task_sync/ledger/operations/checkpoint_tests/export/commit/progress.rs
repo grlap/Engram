@@ -113,7 +113,8 @@ fn delta_publication_start_is_once_and_unknown_survives_restart_until_exact_conf
 }
 
 #[test]
-fn delta_publication_recovers_only_its_exact_committed_private_ack() {
+fn delta_publication_recovers_only_its_exact_committed_private_ack_and_owes_an_unacknowledged_start_once()
+ {
     for progress in [
         OutgoingProgress::PushStarted,
         OutgoingProgress::Observed(PublicationObservation::Unknown { observed_tip: None }),
@@ -152,9 +153,20 @@ fn delta_publication_recovers_only_its_exact_committed_private_ack() {
         let before = state(&f.store);
         drop(f.store);
         let mut store = SqliteStore::open(&f.binding.store.database).unwrap();
+        // A start whose private acknowledgement never settled returned no
+        // success, so it handed out no dispatch: the exact retry carries it,
+        // once. An observation is never a dispatch.
+        let owed = matches!(progress, OutgoingProgress::PushStarted);
         assert_eq!(
             store
-                .record_task_sync_delta_progress_once(&input, &selection, progress, at(44),)
+                .record_task_sync_delta_progress_once(&input, &selection, progress.clone(), at(44),)
+                .unwrap(),
+            (event.clone(), owed)
+        );
+        assert_eq!(state(&store), before);
+        assert_eq!(
+            store
+                .record_task_sync_delta_progress_once(&input, &selection, progress, at(45),)
                 .unwrap(),
             (event, false)
         );

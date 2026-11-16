@@ -186,7 +186,11 @@ impl Disclosure<'_> {
     }
 }
 
-pub(super) fn validate(profile: &ExportProfile, record: &RecordEnvelope) -> Result<()> {
+pub(super) fn validate(
+    profile: &ExportProfile,
+    record: &RecordEnvelope,
+    native_remote_detail: bool,
+) -> Result<()> {
     use RecordKind as K;
     let check = Disclosure(profile);
     match record.kind() {
@@ -233,7 +237,9 @@ pub(super) fn validate(profile: &ExportProfile, record: &RecordEnvelope) -> Resu
             let value: d::RemoteVerificationAssociationRecord = decode(record)?;
             Disclosure::actor(&value.actor)?;
             check.note(&value.request.completion.result.reason)?;
-            if let Some(detail) = &value.qualification.detail {
+            // Only an exact native original has locally generated diagnostic
+            // metadata. Imported originals can carry arbitrary detail prose.
+            if !native_remote_detail && let Some(detail) = &value.qualification.detail {
                 check.note(detail)?;
             }
             if let d::RemoteVerificationUse::AuthorizedTestRef { ref_name, .. } =
