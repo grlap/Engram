@@ -1,0 +1,375 @@
+//! One Git diff checked against a recorded inventory root, in place of a read
+//! of every task at a commit.
+//!
+//! The base commit's root was verified when it was recorded, so the incoming
+//! root follows from the changed paths alone: remove each changed path's old
+//! member, add its new one. Unchanged blobs are never opened.
+
+use std::{collections::BTreeMap, path::Path, time::Duration};
+
+use anyhow::Result;
+
+use super::{
+    Reader, evidence_path, memory_path, parse_changes, policy_path, query_error, task_path,
+};
+use crate::{
+    ProjectId, WorkId,
+    task_sync::{
+        self, TaskDocument, TaskSyncRefusal, directory::FolderBasis, inventory::InventoryRoot,
+    },
+};
+
+/// One changed task path: its document at the base commit and at the
+/// incoming one. A rename is a removal and an addition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChangedTask {
+    pub before: Option<TaskDocument>,
+    pub after: Option<TaskDocument>,
+}
+
+/// The changed tasks between two commits and the incoming root they imply.
+#[derive(Clone, Debug)]
+pub struct VerifiedTaskDelta {
+    pub base_commit: String,
+    pub incoming_commit: String,
+    /// The exact base and incoming commit objects that were read.
+    pub base_object: super::super::CommitObject,
+    pub incoming_object: super::super::CommitObject,
+    /// The base envelope as written; its embedded basis is not trusted.
+    pub base: FolderBasis,
+    /// The incoming envelope as written; its embedded basis is not trusted.
+    pub incoming: FolderBasis,
+    /// Every task path the diff names, also one whose bytes decode the same.
+    pub changed: BTreeMap<WorkId, ChangedTask>,
+    /// The recorded base root with every change applied.
+    pub root: InventoryRoot,
+    /// The stored bytes of the changed task files at the base commit and at
+    /// the incoming one, as Git holds them, not their re-encoded length.
+    pub bytes_before: u64,
+    pub bytes_after: u64,
+}
+
+/// Read the task changes from `base` to `incoming` and the inventory root
+/// they imply from `base_root`. `base` must be an ancestor of `incoming`, so
+/// a force-moved branch refuses even when its contents match. One deadline
+/// bounds every Git query of the read.
+///
+/// # Errors
+/// Refuses a missing or non-commit selection, a non-descendant or
+/// unprovable history, a changed disclosure, unsafe paths or modes,
+/// malformed documents, the byte bound and bounded Git failures.
+pub fn read_verified_task_delta(
+    repository: &Path,
+    project: &ProjectId,
+    base: &str,
+    base_root: InventoryRoot,
+    incoming: &str,
+    deadline: Duration,
+) -> Result<VerifiedTaskDelta> {
+    read(
+        repository, project, base, base_root, incoming, deadline, true,
+    )
+}
+
+/// The same rooted read between two exact commits whose ancestry is not part
+/// of the question, such as an original publication and the merge resolving
+/// it. Only the root arithmetic and the selected blobs are checked.
+///
+/// # Errors
+/// Refuses as [`read_verified_task_delta`] does, except for history.
+pub fn read_rooted_task_diff(
+    repository: &Path,
+    project: &ProjectId,
+    base: &str,
+    base_root: InventoryRoot,
+    incoming: &str,
+    deadline: Duration,
+) -> Result<VerifiedTaskDelta> {
+    read(
+        repository, project, base, base_root, incoming, deadline, false,
+    )
+}
+
+fn read(
+    repository: &Path,
+    project: &ProjectId,
+    base: &str,
+    base_root: InventoryRoot,
+    incoming: &str,
+    deadline: Duration,
+    ancestry: bool,
+) -> Result<VerifiedTaskDelta> {
+    let _warning = crate::operation_time::Warning::start("Git verified task delta read");
+    let reader = Reader::bounded(repository, project, deadline)?;
+    let base_object = reader.commit_object(base, "recorded source")?;
+    let incoming_object = reader.commit_object(incoming, "incoming")?;
+    if ancestry {
+        require_ancestor(&reader, base, incoming)?;
+    }
+    // The memory component, when the commits carry it, is no task path:
+    // the import that includes memories reads it separately.
+    let (old, _, _) = reader.metadata_with_size(&base_object.tree, project)?;
+    let (new, _, _) = reader.metadata_with_size(&incoming_object.tree, project)?;
+    if old.profile.include_notes != new.profile.include_notes {
+        return Err(TaskSyncRefusal::DivergentPlanning
+            .invalid(
+                "task commit delta note selection differs from its prior basis; import the complete folder with `--rebuild`",
+            )
+            .into());
+    }
+    let raw = reader.listing(&[
+        "diff-tree",
+        "-r",
+        "-t",
+        "--raw",
+        "-z",
+        "--no-commit-id",
+        "--no-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-abbrev",
+        base,
+        incoming,
+        "--",
+        ".engram",
+    ])?;
+    let mut tasks = Vec::new();
+    let mut policies = Vec::new();
+    for change in parse_changes(&raw)? {
+        if policy_path(&change.path) {
+            policies.push(change);
+            continue;
+        }
+        if change.path == ".engram/project.json"
+            || evidence_path(&change.path)
+            || memory_path(&change.path, false)
+        {
+            continue;
+        }
+        tasks.push((task_path(&change.path)?, change));
+    }
+    // A policy file the commit changed keeps the per-file limit the complete
+    // reader applies; the batched read refuses one above it by name.
+    let policy_blobs = policies
+        .iter()
+        .filter(|change| change.status != "D")
+        .map(|change| (change.new_oid.as_str(), change.path.as_str()))
+        .collect::<Vec<_>>();
+    if !policy_blobs.is_empty() {
+        reader.blobs(&policy_blobs)?;
+    }
+    // Every old and new blob through one batched read, in diff order.
+    let mut wanted = Vec::new();
+    for (_, change) in &tasks {
+        if change.status != "A" {
+            wanted.push((change.old_oid.as_str(), change.path.as_str()));
+        }
+        if change.status != "D" {
+            wanted.push((change.new_oid.as_str(), change.path.as_str()));
+        }
+    }
+    let mut blobs = reader.blobs(&wanted)?.into_iter();
+    let mut next = |id| -> Result<(TaskDocument, u64)> {
+        let bytes = blobs
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("batched blob read returned too few objects"))?;
+        Ok((document(&bytes, id)?, u64::try_from(bytes.len())?))
+    };
+    let mut bytes_before = 0_u64;
+    let mut bytes_after = 0_u64;
+    let mut changed = BTreeMap::new();
+    let mut root = base_root;
+    for (id, change) in tasks {
+        let before = if change.status == "A" {
+            None
+        } else {
+            let (document, size) = next(id)?;
+            bytes_before += size;
+            Some(document)
+        };
+        let after = if change.status == "D" {
+            None
+        } else {
+            let (document, size) = next(id)?;
+            bytes_after += size;
+            Some(document)
+        };
+        if let Some(before) = &before {
+            root = root.excluding(before)?;
+        }
+        if let Some(after) = &after {
+            root = root.including(after)?;
+        }
+        changed.insert(id, ChangedTask { before, after });
+    }
+    let project_document = task_sync::ProjectDocument {
+        format: task_sync::FORMAT.into(),
+        project_id: project.clone(),
+        notes_included: new.profile.include_notes,
+    };
+    task_sync::validate_selected_documents(
+        &project_document,
+        changed.values().filter_map(|task| task.after.as_ref()),
+    )
+    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    Ok(VerifiedTaskDelta {
+        base_commit: base.into(),
+        incoming_commit: incoming.into(),
+        base_object,
+        incoming_object,
+        base: old,
+        incoming: new,
+        changed,
+        root,
+        bytes_before,
+        bytes_after,
+    })
+}
+
+impl VerifiedTaskDelta {
+    /// Require the root this delta implies to be the one an exchange declared.
+    ///
+    /// # Errors
+    /// Refuses a different root by name.
+    pub fn require_root(&self, declared: InventoryRoot) -> Result<()> {
+        if self.root != declared {
+            return Err(TaskSyncRefusal::InventoryRootMismatch
+                .invalid(format!(
+                    "the Git delta from {} to {} implies inventory root {}, not the declared {declared}; import the complete folder with `--rebuild`",
+                    self.base_commit, self.incoming_commit, self.root
+                ))
+                .into());
+        }
+        Ok(())
+    }
+}
+
+/// Read selected task documents at one commit by path, `None` for an absent
+/// one. Only the named paths are listed and opened, never the whole tree.
+///
+/// # Errors
+/// Refuses a missing commit, unsafe modes, malformed documents, the byte
+/// bound and bounded Git failures.
+pub fn read_tasks_at(
+    repository: &Path,
+    project: &ProjectId,
+    commit: &str,
+    ids: impl IntoIterator<Item = WorkId>,
+    deadline: Duration,
+) -> Result<BTreeMap<WorkId, Option<TaskDocument>>> {
+    let mut selected = ids
+        .into_iter()
+        .map(|id| (id, None))
+        .collect::<BTreeMap<_, _>>();
+    if selected.is_empty() {
+        return Ok(selected);
+    }
+    let reader = Reader::bounded(repository, project, deadline)?;
+    let tree = reader.commit_tree(commit, "selected")?;
+    let paths = selected
+        .keys()
+        .map(|id| format!(".engram/tasks/{}.json", id.0))
+        .collect::<Vec<_>>();
+    // Each listing stays well under the smallest platform command-line
+    // limit, however many tasks are selected; the reader's one deadline
+    // bounds them all.
+    let mut listed = Vec::new();
+    for batch in path_batches(&paths) {
+        let mut args = vec!["ls-tree", "-z", "--full-name", tree.as_str(), "--"];
+        args.extend(batch.iter().map(String::as_str));
+        for entry in super::parse_entries(&reader.query(&args)?)? {
+            let id = task_path(&entry.name)?;
+            if entry.mode != "100644" || entry.kind != "blob" {
+                return Err(TaskSyncRefusal::DestinationNotFile
+                    .invalid("task snapshot requires ordinary task blobs")
+                    .into());
+            }
+            if !selected.contains_key(&id) {
+                return Err(TaskSyncRefusal::InvalidGraph
+                    .invalid("Git listed a task path that was not selected")
+                    .into());
+            }
+            listed.push((id, entry));
+        }
+    }
+    let wanted = listed
+        .iter()
+        .map(|(_, entry)| (entry.oid.as_str(), entry.name.as_str()))
+        .collect::<Vec<_>>();
+    let blobs = reader.blobs(&wanted)?;
+    for ((id, _), bytes) in listed.iter().zip(blobs) {
+        selected.insert(*id, Some(document(&bytes, *id)?));
+    }
+    Ok(selected)
+}
+
+/// The argument bytes one listing may carry: a quarter of Windows' 32,767
+/// character command line, leaving room for the hardening arguments.
+const PATH_BATCH_BYTES: usize = 8 * 1024;
+
+fn path_batches(paths: &[String]) -> Vec<&[String]> {
+    let mut batches = Vec::new();
+    let mut start = 0;
+    let mut bytes = 0;
+    for (index, path) in paths.iter().enumerate() {
+        if index > start && bytes + path.len() + 1 > PATH_BATCH_BYTES {
+            batches.push(&paths[start..index]);
+            start = index;
+            bytes = 0;
+        }
+        bytes += path.len() + 1;
+    }
+    if start < paths.len() {
+        batches.push(&paths[start..]);
+    }
+    batches
+}
+
+fn require_ancestor(reader: &Reader<'_>, base: &str, incoming: &str) -> Result<()> {
+    if base == incoming {
+        return Ok(());
+    }
+    let args = ["merge-base", "--is-ancestor", base, incoming];
+    match reader.raw_query(&args) {
+        Ok(_) => Ok(()),
+        Err(error)
+            if matches!(
+                error.downcast_ref::<super::super::QueryFailure>(),
+                Some(super::super::QueryFailure::Nonzero { code: Some(1), .. })
+            ) =>
+        {
+            // A shallow history can hide the path between the two commits, so
+            // only a complete one proves they diverged. Nothing is fetched.
+            if reader
+                .query(&["rev-parse", "--is-shallow-repository"])?
+                .trim_ascii()
+                == b"true"
+            {
+                return Err(TaskSyncRefusal::SourceHistoryUnavailable
+                    .invalid(format!(
+                        "a shallow repository cannot prove {incoming} descends from the recorded source commit {base}; no object is fetched. Fetch the full history (`git fetch --unshallow`), or import the complete folder with `--rebuild`"
+                    ))
+                    .into());
+            }
+            Err(TaskSyncRefusal::SourceHistoryDiverged
+                .invalid(format!(
+                    "the recorded source commit {base} is not an ancestor of {incoming}, as after a force-moved data branch; import the complete folder with `--rebuild`"
+                ))
+                .into())
+        }
+        Err(error) => Err(query_error(&args, &error, None)),
+    }
+}
+
+/// One task document from its blob bytes, which must name the same task as
+/// its path; the batched read already bounded the bytes.
+fn document(bytes: &[u8], id: WorkId) -> Result<TaskDocument> {
+    let task: TaskDocument =
+        task_sync::parse(bytes).map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    if task.id != id {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task filename/id mismatch")
+            .into());
+    }
+    Ok(task)
+}

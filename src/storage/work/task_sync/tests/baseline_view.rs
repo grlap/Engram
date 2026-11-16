@@ -219,7 +219,7 @@ fn only_the_bootstrap_writes_every_member_and_a_change_of_k_touches_k_rows() {
         &project(),
         Some(previous),
         changes.clone(),
-        "basis after five changes",
+        Some("basis after five changes"),
         &profile(),
         at(6),
     )
@@ -333,7 +333,7 @@ fn a_baseline_planned_against_an_older_head_refuses_by_name() {
         &project(),
         Some(stale),
         BTreeMap::from([(edited.id, Some(edited))]),
-        "stale basis",
+        Some("stale basis"),
         &profile(),
         at(7),
     )
@@ -351,7 +351,7 @@ fn a_baseline_planned_against_an_older_head_refuses_by_name() {
         &project(),
         None,
         BTreeMap::new(),
-        "unchained basis",
+        Some("unchained basis"),
         &profile(),
         at(7),
     )
@@ -493,13 +493,14 @@ fn record(
         previous: Some(head(store).record),
         changes,
         inventory_root,
-        export_basis: "hand-built basis".into(),
+        export_basis: Some("hand-built basis".into()),
         profile: crate::task_sync::progress::ExportProfile {
             include_notes,
             // Shared notes need an origin alias to be a valid profile.
             origin_machine: include_notes.then(|| "hand-built-host".into()),
         },
         created_at: at(9),
+        retired_unshared: std::collections::BTreeSet::new(),
     }
 }
 
@@ -590,6 +591,71 @@ fn a_retired_task_can_rejoin_and_the_root_follows_it() {
         loaded.head.inventory_root,
         baseline::tree_root(&loaded.tree).unwrap()
     );
+    let report = store.verify_all().unwrap();
+    assert!(report.is_healthy(), "{report:?}");
+}
+
+#[test]
+fn a_task_that_never_joined_is_retired_only_by_name_and_replays_from_the_records() {
+    let (mut store, _) = exchanged(4);
+    let unshared = WorkId(uuid::Uuid::new_v4());
+    let root = head(&store).inventory_root;
+    // Its removal alone names no member, and naming it without removing it
+    // is an inconsistent record: both leave the view as it was.
+    let mut unremoved = record(&store, BTreeMap::new(), root.clone(), false);
+    unremoved.retired_unshared.insert(unshared);
+    for (planning, reason) in [
+        (
+            record(
+                &store,
+                BTreeMap::from([(unshared, None)]),
+                root.clone(),
+                false,
+            ),
+            "which is not a member",
+        ),
+        (unremoved, "record is inconsistent"),
+    ] {
+        let before = view(&store);
+        let error = append_raw(&mut store, &planning).unwrap_err();
+        assert!(format!("{error:#}").contains(reason), "{reason}: {error:#}");
+        assert_eq!(view(&store), before, "{reason}");
+    }
+    let mut retiring = record(
+        &store,
+        BTreeMap::from([(unshared, None)]),
+        root.clone(),
+        false,
+    );
+    retiring.retired_unshared.insert(unshared);
+    append_raw(&mut store, &retiring).unwrap();
+    assert!(
+        baseline::retired(&store.connection, &project())
+            .unwrap()
+            .contains(&unshared)
+    );
+    assert_eq!(
+        baseline::retired_among(&store.connection, &project(), [unshared]).unwrap(),
+        BTreeSet::from([unshared])
+    );
+    assert_eq!(
+        head(&store).inventory_root,
+        root,
+        "a task that never joined leaves the root as it was"
+    );
+    // The view is derived again from the records alone, retirement included.
+    let written = view(&store);
+    store
+        .connection
+        .execute_batch(
+            "DROP TABLE work_task_sync_baseline;
+             DROP TABLE work_task_sync_baseline_heads;",
+        )
+        .unwrap();
+    let findings =
+        crate::storage::work::schema::repair_rebuildable_schema_on(&store.connection).unwrap();
+    assert!(findings.is_empty(), "{findings:?}");
+    assert_eq!(view(&store), written);
     let report = store.verify_all().unwrap();
     assert!(report.is_healthy(), "{report:?}");
 }

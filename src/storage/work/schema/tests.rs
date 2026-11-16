@@ -179,6 +179,7 @@ fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
              CREATE INDEX work_items_replacement_reverse ON work_items(work_id);
              DROP INDEX work_completion_seals_work;
              CREATE INDEX work_completion_seals_work ON work_completion_seals(seal_id);
+             DROP INDEX objects_work_remote_association_item;
              DROP INDEX objects_task_sync_membership_checkpoint;
              CREATE INDEX objects_task_sync_membership_checkpoint ON objects(object_id);
              DROP TABLE work_catalog_fts;
@@ -204,13 +205,13 @@ fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
                 "SELECT COUNT(*) FROM sqlite_master
                  WHERE name IN ('work_items_ready', 'work_run_active', 'work_catalog_fts',
                      'work_items_replacement_reverse', 'work_completion_seals_work',
-                     'objects_task_sync_membership_checkpoint')",
+                     'objects_task_sync_membership_checkpoint', 'objects_work_remote_association_item')",
                 [],
                 |row| row.get::<_, i64>(0),
             )
             .expect("count missing projections"),
         6,
-        "ordinary open must preserve the wrong definitions"
+        "ordinary open must preserve wrong definitions and leave the missing index absent"
     );
     drop(refused);
 
@@ -228,6 +229,7 @@ fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
         "work_items_replacement_reverse",
         "work_completion_seals_work",
         "objects_task_sync_membership_checkpoint",
+        "objects_work_remote_association_item",
     ] {
         assert_eq!(
             reopened

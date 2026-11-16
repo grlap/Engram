@@ -1,4 +1,5 @@
-//! Dispatch the single admitted resolved retry; replay only observes.
+//! Dispatch the single admitted resolved retry; replay observes, unless the
+//! call that committed the start returned no success.
 
 use super::super::{
     ExchangeTarget, PublicationAttempt, RunError, TargetSelection, attempt::GitIo, remaining,
@@ -24,8 +25,10 @@ use anyhow::{Context, Result, ensure};
 use std::time::Instant;
 
 /// Publish the admitted merged commit once. A canonical confirmed or stopped
-/// outcome returns offline. An existing retry start or Unknown only observes;
-/// it never dispatches again. A second known refusal records an explicit stop.
+/// outcome returns offline. An existing retry start is entered again and
+/// pushes only when the call that committed it returned no success, so its one
+/// push was never made; otherwise it, like Unknown, only observes and never
+/// dispatches again. A second known refusal records an explicit stop.
 /// Invocation grants no Git authority or live authority from another host.
 ///
 /// # Errors
@@ -107,6 +110,9 @@ pub(crate) async fn publish_delta_retry_remaining(
 
 enum Mode {
     Fresh,
+    /// A recorded retry start with nothing observed since: its committing
+    /// call may have returned no success, so the exact start is entered again.
+    Started,
     Observe,
     /// A recorded exact refusal of the retry start; resume to its stop.
     Refused(ObjectId),
@@ -164,7 +170,7 @@ fn mode(store: &SqliteStore, input: &InspectedDeltaResolution) -> Result<Mode> {
             Ok(Mode::Fresh)
         }
         Transition::OutgoingReconciled { reconciliation, .. } if matches!(reconciliation.as_ref(),OutgoingReconciliation::PushStarted {reconciliation} if reconciliation==recipe) => {
-            Ok(Mode::Observe)
+            Ok(Mode::Started)
         }
         Transition::PushObserved { .. } if event.sequence > recipe_event.sequence => {
             Ok(Mode::Observe)
@@ -240,6 +246,17 @@ pub(crate) async fn publish_with(
         Mode::Terminal(outcome) => return Ok(outcome),
         Mode::Refused(start) => return refused(store, input, io, start).await,
         Mode::Observe => return observe(store, input, io).await,
+        // The exact start, entered again, still carries the dispatch its
+        // committing call never returned; otherwise only observe.
+        Mode::Started => {
+            let (start, owed) = record(store, input, io, OutgoingProgress::PushStarted).await?;
+            return if owed {
+                let (_, commit) = resolved(input)?;
+                dispatch(store, input, io, &commit, start).await
+            } else {
+                observe(store, input, io).await
+            };
+        }
         Mode::Fresh => (),
     }
     let (selected, commit) = resolved(input)?;
@@ -263,6 +280,18 @@ pub(crate) async fn publish_with(
         }
         return observe(store, input, io).await;
     }
+    dispatch(store, input, io, &commit, start).await
+}
+
+/// The one push a fresh retry start authorizes, then its recorded refusal and
+/// stop, or the observation of its result.
+async fn dispatch(
+    store: &mut SqliteStore,
+    input: &InspectedDeltaResolution,
+    io: &mut impl DeltaAttemptIo,
+    commit: &DeltaCommitSelection,
+    start: ObjectId,
+) -> Result<PublicationAttempt> {
     // Record the exact refusal before any follow-up call, so a lost fetch or
     // response still ends in the explicit stop rather than uncertainty.
     if let Err(RunError::NonFastForward) = io.push(&commit.commit.oid).await {

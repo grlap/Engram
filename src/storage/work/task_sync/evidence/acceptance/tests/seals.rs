@@ -16,6 +16,15 @@ fn destination(origin: &mut Fixture, root: &std::path::Path) -> Fixture {
 }
 
 fn destination_at(origin: &mut Fixture, root: &std::path::Path, start: i64) -> Fixture {
+    destination_in(origin, root, start, SqliteStore::open_in_memory().unwrap())
+}
+
+fn destination_in(
+    origin: &mut Fixture,
+    root: &std::path::Path,
+    start: i64,
+    mut store: SqliteStore,
+) -> Fixture {
     let snapshot = origin
         .store
         .save_work_graph_snapshot(
@@ -27,7 +36,6 @@ fn destination_at(origin: &mut Fixture, root: &std::path::Path, start: i64) -> F
             &DevelopmentNoopRedactor,
         )
         .unwrap();
-    let mut store = SqliteStore::open_in_memory().unwrap();
     store
         .load_work_graph_snapshot(
             &project(),
