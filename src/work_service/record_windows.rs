@@ -205,8 +205,8 @@ impl LocalWorkService {
         })
     }
 
-    /// Complete immutable note detail; deliberately no window byte limit.
-    /// Record-id prefixes resolve only within this item's note membership.
+    /// Complete immutable note or history detail; no window byte limit.
+    /// Record-id prefixes resolve only within this item's record membership.
     /// A native verification record also carries a page of its reconstructed
     /// obligation assessment; `after` continues that page and is refused for
     /// any other note.
@@ -265,8 +265,8 @@ impl LocalWorkService {
         let store = self.read_store_at(now)?;
         store.work_read_snapshot(|store| {
             let item = store.resolve_work_ref(&self.project_id, work_ref)?;
-            let index = store.work_record_index(&self.project_id, item.work_id, kind)?;
             let prefix = prefix.to_ascii_lowercase();
+            let index = store.work_record_matches(&self.project_id, item.work_id, kind, &prefix)?;
             let matches = index
                 .iter()
                 .filter(|row| {
@@ -281,9 +281,9 @@ impl LocalWorkService {
             if matches.len() != 1 || (member.is_none() && matches[0].address.member.is_some()) {
                 return Err(reference_invalid(
                     if matches.is_empty() {
-                        "note locator does not belong to this item"
+                        "note or history locator does not belong to this item; read this item's notes or history for its locators"
                     } else {
-                        "note locator is ambiguous or needs its immutable member index"
+                        "note or history locator is ambiguous or needs its immutable member index"
                     },
                     matches.iter().map(|row| row.locator.clone()).collect(),
                 ));
@@ -605,7 +605,7 @@ fn project_record(
     kind: WorkRecordKind,
     detail: bool,
 ) -> Result<WorkRecordRow, StoreError> {
-    let mut note_body_bytes = None;
+    let body_bytes;
     let mut summary_truncated = false;
     let mut verification = None;
     let mut gate = None;
@@ -615,7 +615,7 @@ fn project_record(
     {
         WorkRecordContent::Note(mut note) => {
             super::projection::project_full_note(&mut note)?;
-            note_body_bytes = Some(note.summary.len());
+            body_bytes = note.summary.len();
             verification = note.verification.take();
             gate = note.gate.take();
             let label = if crate::domain::status_note_role(&note.actor).is_some() {
@@ -644,9 +644,18 @@ fn project_record(
             // One read of the event's facts serves the change kind and the
             // displayed summary.
             let display = super::history_display::HistoryDisplay::load(store, &event, &position)?;
+            let full = display.detail_summary();
+            body_bytes = full.len();
+            let summary = if detail {
+                full
+            } else {
+                let shown = display.summary(false);
+                summary_truncated = shown != full;
+                shown
+            };
             (
                 display.stored_summary().change_kind,
-                display.summary(false),
+                summary,
                 Vec::new(),
                 event.actor.clone(),
                 event.created_at,
@@ -662,7 +671,7 @@ fn project_record(
             // The window shows a compact summary but keeps the original
             // size, and says when it shortened it so the row offers its
             // detail; the detail read keeps the whole text.
-            note_body_bytes = Some(summary.len());
+            body_bytes = summary.len();
             let shown = if detail {
                 complete_member = Some(member);
                 summary
@@ -678,7 +687,7 @@ fn project_record(
         gate,
         family: entry.record_family,
         locator: entry.locator.clone(),
-        body_bytes: note_body_bytes.unwrap_or(summary.len()),
+        body_bytes,
         summary,
         kind: label,
         refs,

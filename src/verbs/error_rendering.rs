@@ -168,7 +168,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             more,
         } => json!({
             "reason": reason, "candidates": candidates, "more": more,
-            "remedy": "use the complete locator printed beside the note",
+            "remedy": "use the complete locator printed beside the note or history entry",
         }),
         StoreError::WorkCriterionLinkInvalid { criterion, reason } => {
             let mut details = json!({

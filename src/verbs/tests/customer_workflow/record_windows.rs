@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 mod corrections;
 mod gate_families;
 mod inherited_detail;
+mod native_detail;
 mod newest_history;
 mod restored_order;
 
@@ -197,11 +198,16 @@ fn record_windows_traverse_every_native_and_inherited_member_without_mutating_th
             at(130),
         )
         .unwrap_err();
+    let container_members = history
+        .iter()
+        .filter(|row| row["locator"].as_str().unwrap().starts_with(bare_record))
+        .count();
     assert!(
-        matches!(&error.error, StoreError::WorkNoteReferenceInvalid { candidates, more: 4, .. } if candidates.len() == 16)
+        matches!(&error.error, StoreError::WorkNoteReferenceInvalid { candidates, more, .. }
+        if candidates.len() == 16 && *more == container_members - candidates.len())
     );
     assert!(error.guidance().next[0].contains(" --note "));
-    assert_eq!(error.guidance().next.len(), 17);
+    assert_eq!(error.guidance().next.len(), 18);
     for locator in ["short", ":1", "12345678:0", "12345678:1:2"] {
         let error = restored
             .show_records(

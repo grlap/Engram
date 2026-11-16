@@ -76,6 +76,23 @@ impl HistoryDisplay {
         };
         super::compact_text_to(&line, 192)
     }
+
+    /// Explicit history detail keeps the complete transition text. It does
+    /// not expose the event's claim, run or handoff structures.
+    pub(super) fn detail_summary(&self) -> String {
+        match &self.event.transition {
+            WorkTransition::Blocked { blocker_id } => {
+                history_blocker(blocker_id, self.event.blocker.as_ref(), true)
+            }
+            WorkTransition::Unblocked { blocker_id } => {
+                format!(
+                    "cleared {}",
+                    history_blocker(blocker_id, self.cleared.as_ref(), true)
+                )
+            }
+            _ => transition_detail(&self.event, &self.fields, self.cleared.as_ref()),
+        }
+    }
 }
 
 fn transition_detail(
@@ -120,9 +137,9 @@ fn transition_detail(
         T::PrerequisiteRemoved {
             prerequisite_id, ..
         } => format!("removed prerequisite {}", work_ref(*prerequisite_id)),
-        T::Blocked { blocker_id } => history_blocker(blocker_id, event.blocker.as_ref()),
+        T::Blocked { blocker_id } => history_blocker(blocker_id, event.blocker.as_ref(), false),
         T::Unblocked { blocker_id } => {
-            format!("cleared {}", history_blocker(blocker_id, cleared))
+            format!("cleared {}", history_blocker(blocker_id, cleared, false))
         }
         T::Claimed { recovered, .. } => {
             if *recovered {
@@ -228,7 +245,7 @@ fn agent_work_event_summary_with(
 
 /// One blocker as history names it: its selector first, whole, then its kind
 /// and a bounded preview of the detail it was raised with.
-fn history_blocker(blocker_id: &str, blocker: Option<&crate::WorkBlocker>) -> String {
+fn history_blocker(blocker_id: &str, blocker: Option<&crate::WorkBlocker>, full: bool) -> String {
     let selector = blocker_selector::encode(blocker_id);
     blocker.map_or_else(
         || format!("blocker {selector}"),
@@ -236,7 +253,11 @@ fn history_blocker(blocker_id: &str, blocker: Option<&crate::WorkBlocker>) -> St
             format!(
                 "blocker {selector} ({}) \"{}\"",
                 blocker_kind_word(blocker.kind),
-                compact_text_to(&blocker.detail, MAX_HISTORY_BLOCKER_DETAIL_BYTES)
+                if full {
+                    blocker.detail.clone()
+                } else {
+                    compact_text_to(&blocker.detail, MAX_HISTORY_BLOCKER_DETAIL_BYTES)
+                }
             )
         },
     )
@@ -295,11 +316,11 @@ fn work_transition_summary(
         }
         WorkTransition::Blocked { blocker_id } => format!(
             "{}: \"{title}\"",
-            history_blocker(blocker_id, event.blocker.as_ref())
+            history_blocker(blocker_id, event.blocker.as_ref(), false)
         ),
         WorkTransition::Unblocked { blocker_id } => format!(
             "cleared {}: \"{title}\"",
-            history_blocker(blocker_id, cleared)
+            history_blocker(blocker_id, cleared, false)
         ),
         WorkTransition::Claimed {
             recovered: true, ..

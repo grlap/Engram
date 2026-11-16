@@ -506,7 +506,7 @@ impl VerbError {
             let mut reminders = vec![reason.clone()];
             if *more > 0 {
                 reminders.push(format!(
-                    "{more} additional candidate locators omitted; inspect the note windows"
+                    "{more} additional candidate locators omitted; inspect the note and history windows"
                 ));
             }
             let mut next = candidates
@@ -514,6 +514,7 @@ impl VerbError {
                 .map(|locator| format!("engram work show {target} --note {locator}"))
                 .collect::<Vec<_>>();
             next.push(format!("engram work show {target} --notes"));
+            next.push(format!("engram work show {target} --history"));
             return Guidance { reminders, next };
         }
         let message = self.error.to_string();

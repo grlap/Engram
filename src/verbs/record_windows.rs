@@ -164,10 +164,10 @@ impl AgentVerbs {
                 .as_ref()
                 .map(|page| super::verification_assessment::render(page, &work_ref, &row.locator))
                 .transpose()?;
-            // An inherited event or completion came from the history window.
+            // Native and inherited events/completions came from history.
             let next = vec![format!(
                 "engram work show {work_ref} {}",
-                if row.member.is_some() {
+                if row.family == WorkRecordFamily::History {
                     "--history"
                 } else {
                     "--notes"
@@ -217,6 +217,10 @@ impl AgentVerbs {
                     "history {}: complete inherited {} member, {bytes} UTF-8 bytes",
                     row.locator,
                     super::terminal_safe_line(&row.kind)
+                ),
+                None if row.family == WorkRecordFamily::History => format!(
+                    "history {}: {} UTF-8 body bytes (complete detail)",
+                    row.locator, row.body_bytes
                 ),
                 None => format!(
                     "note {}: {} UTF-8 body bytes (complete detail)",

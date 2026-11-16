@@ -173,6 +173,16 @@ impl WorkRecordReader<'_> {
         work_id: WorkId,
         kind: WorkRecordKind,
     ) -> Result<Vec<WorkRecordIndex>, StoreError> {
+        self.work_record_rows(project, work_id, kind, None)
+    }
+
+    fn work_record_rows(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        kind: WorkRecordKind,
+        prefix: Option<&str>,
+    ) -> Result<Vec<WorkRecordIndex>, StoreError> {
         if load_work_item(self.connection, work_id)?.project_id != *project {
             return Err(invalid("record window cannot cross projects"));
         }
@@ -186,6 +196,9 @@ impl WorkRecordReader<'_> {
                 params![work_id.0.to_string(), i64::try_from(record.generation_index).map_err(|_| invalid("record generation overflow"))?], |row| row.get(0),
             )?;
             let record_id = parse_record_id(stored_record_id)?;
+            if prefix.is_some_and(|prefix| !record_id.as_str().starts_with(prefix)) {
+                continue;
+            }
             let record = Arc::new(record);
             // A deterministic presentation order, not a chronology: the
             // snapshot carries no position shared across families, so each
@@ -195,7 +208,7 @@ impl WorkRecordReader<'_> {
             let mut members = (1..=record.history.notes.len())
                 .map(RestoredMember::Note)
                 .collect::<Vec<_>>();
-            if kind == WorkRecordKind::History {
+            if kind == WorkRecordKind::History || prefix.is_some() {
                 if !carried_disposal {
                     members.extend((1..=record.history.events.len()).map(RestoredMember::Event));
                 }
@@ -239,7 +252,7 @@ impl WorkRecordReader<'_> {
                 });
             }
         }
-        let sql = match kind {
+        let mut sql = match kind {
             WorkRecordKind::Notes | WorkRecordKind::NotesWithGates => format!(
                 "SELECT notes.hash, notes.family, entry.position, entry.object_kind,
                     CASE WHEN notes.family IN ('observation', 'remote') THEN 'observations'
@@ -254,14 +267,40 @@ impl WorkRecordReader<'_> {
                    ON entry.object_id = notes.hash AND entry.feed_kind = 'project' AND entry.feed_id = ?2
                  LEFT JOIN objects object ON notes.family = 'run'
                    AND entry.object_kind = 'work_evidence' AND object.object_id = notes.hash
-                 ORDER BY entry.position"),
+                 {} ORDER BY entry.position", if prefix.is_some() {
+                    "WHERE notes.hash >= ?3 AND notes.hash < ?4"
+                 } else { "" }),
             WorkRecordKind::History =>
                 "SELECT entry.object_id, 'event', entry.position, entry.object_kind, 'history'
                  FROM work_feed_entries entry WHERE entry.work_id = ?1 AND entry.feed_kind = 'project'
                    AND entry.feed_id = ?2 AND entry.object_kind = 'work_event' ORDER BY entry.position".into(),
         };
+        if prefix.is_some() {
+            // The feed's existing (kind, id, object_id) unique key bounds this
+            // probe by the supplied hex prefix, rather than the item's history.
+            // Unary plus keeps the item/event checks as residual predicates:
+            // the chronological item index cannot narrow a locator lookup.
+            let events = "SELECT entry.object_id, 'event', entry.position, entry.object_kind, 'history'
+                FROM work_feed_entries entry WHERE entry.feed_kind = 'project' AND entry.feed_id = ?2
+                  AND entry.object_id >= ?3 AND entry.object_id < ?4
+                  AND +entry.work_id = ?1 AND +entry.object_kind = 'work_event'";
+            sql = if kind == WorkRecordKind::History {
+                events.into()
+            } else {
+                format!("SELECT * FROM ({sql}) UNION ALL {events}")
+            };
+        }
         let mut statement = self.connection.prepare(&sql)?;
-        let mut rows = statement.query(params![work_id.0.to_string(), project.0])?;
+        let mut rows = if let Some(prefix) = prefix {
+            statement.query(params![
+                work_id.0.to_string(),
+                project.0,
+                prefix,
+                format!("{prefix}g")
+            ])?
+        } else {
+            statement.query(params![work_id.0.to_string(), project.0])?
+        };
         while let Some(row) = rows.next()? {
             #[cfg(test)]
             super::cost::note_index_visit();
@@ -292,6 +331,9 @@ impl WorkRecordReader<'_> {
                 shared: None,
             });
         }
+        drop(rows);
+        #[cfg(test)]
+        super::cost::sql("record_locator_rows", &statement);
         for entry in &mut indexed {
             // Full locators are unambiguous without a quadratic prefix scan.
             // The detail resolver also accepts unique prefixes of eight digits.
@@ -397,10 +439,36 @@ impl SqliteStore {
         work_id: WorkId,
         kind: WorkRecordKind,
     ) -> Result<Vec<WorkRecordIndex>, StoreError> {
-        let mut indexed =
-            WorkRecordReader::new(&self.connection).work_record_index(project, work_id, kind)?;
+        self.work_record_rows(project, work_id, kind, None)
+    }
+
+    /// Resolve a detail locator without indexing unrelated native events.
+    /// Immutable inherited generations retain their existing verification and
+    /// disposal semantics; shared notes are enumerated once, as for a window.
+    pub(crate) fn work_record_matches(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        kind: WorkRecordKind,
+        prefix: &str,
+    ) -> Result<Vec<WorkRecordIndex>, StoreError> {
+        self.work_record_rows(project, work_id, kind, Some(prefix))
+    }
+
+    fn work_record_rows(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        kind: WorkRecordKind,
+        prefix: Option<&str>,
+    ) -> Result<Vec<WorkRecordIndex>, StoreError> {
+        let mut indexed = WorkRecordReader::new(&self.connection)
+            .work_record_rows(project, work_id, kind, prefix)?;
         let item = load_work_item(&self.connection, work_id)?;
         for member in super::task_sync::shared::additional_notes(&self.connection, &item)? {
+            if prefix.is_some_and(|prefix| !member.record.as_str().starts_with(prefix)) {
+                continue;
+            }
             let address = WorkRecordAddress {
                 hash: member.record,
                 member: Some(RestoredMember::SharedNote(member.index)),

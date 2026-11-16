@@ -89,6 +89,9 @@ pub(crate) struct VerificationFacts {
     pub source_workspace: String,
 }
 
+// Keep the item's runs outside their feed probes. SQLite can then use each
+// feed's identity key, including a caller's pushed-down locator range, instead
+// of scanning unrelated run-feed entries before checking their work binding.
 pub(super) const NOTE_OBJECTS: &str = "
     SELECT evidence_id AS hash, 'run' AS family, NULL AS restored_gate
     FROM work_run_evidence WHERE work_id = ?1
@@ -99,7 +102,7 @@ pub(super) const NOTE_OBJECTS: &str = "
     SELECT observation_id, 'observation', NULL FROM work_observations WHERE work_id = ?1
     UNION ALL
     SELECT entry.object_id, 'remote', NULL
-    FROM work_runs run JOIN work_feed_entries entry
+    FROM work_runs run CROSS JOIN work_feed_entries entry
       ON entry.feed_kind = 'run_execution' AND entry.feed_id = run.run_id
     WHERE run.work_id = ?1 AND entry.object_kind = 'remote_verification_association'
 ";
