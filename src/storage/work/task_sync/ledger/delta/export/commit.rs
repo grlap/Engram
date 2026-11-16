@@ -44,18 +44,20 @@ impl SqliteStore {
                     guard,
                     &request,
                 )?;
-                let mut ledger = checked_on(&transaction, input, selection, guard)?;
+                let operation = checked_on(&transaction, input, selection, guard)?;
                 let transition = Transition::DeltaLocalCommitRecorded {
                     prepared: selection.prepared.clone(),
                     commit: selection.commit.clone(),
                 };
-                if let Some((id, _)) = ledger.events.iter().find(|(_, event)| {
+                if let Some((id, _)) = operation.events.iter().find(|(_, event)| {
                     event.binding == input.binding_id && event.transition == transition
                 }) {
                     return Ok(id.clone());
                 }
+                let mut chain =
+                    super::super::Chain::resume(&transaction, input, &selection.prepared)?;
                 let object =
-                    super::super::append(&transaction, &mut ledger, input, transition, now)?;
+                    super::super::append_keyed(&transaction, &mut chain, input, transition, now)?;
                 transaction.commit()?;
                 Ok(object.key().clone())
             },
@@ -64,13 +66,13 @@ impl SqliteStore {
 }
 
 /// Both commit binding and publication use the same exact preparation,
-/// retained bytes, origin, supersession and exhaustive custody admission.
+/// retained bytes, origin, supersession and selected canonical operation.
 pub(super) fn checked_on(
     connection: &rusqlite::Connection,
     input: &InspectedDelta,
     selection: &DeltaCommitSelection,
     guard: Option<&crate::task_sync::origin::continuity::PreparedContinuity>,
-) -> Result<super::super::super::Ledger, StoreError> {
+) -> Result<view::read::CheckedOperation, StoreError> {
     checked_with_resolution_on(connection, input, selection, None, guard)
 }
 
@@ -80,7 +82,7 @@ pub(super) fn checked_with_resolution_on(
     selection: &DeltaCommitSelection,
     resolution: Option<&crate::task_sync::exchange::InspectedDeltaResolution>,
     guard: Option<&crate::task_sync::origin::continuity::PreparedContinuity>,
-) -> Result<super::super::super::Ledger, StoreError> {
+) -> Result<view::read::CheckedOperation, StoreError> {
     super::super::local_store(connection, &input.binding)?;
     let actual = super::prepare::input_on(connection, &input.binding_id, &input.intent)?;
     require(
@@ -110,8 +112,6 @@ pub(super) fn checked_with_resolution_on(
             == Some(&selection.commit),
         "delta commit selection is missing or changed",
     )?;
-    // Keep the existing exhaustive custody/capacity contract explicit.
-    let ledger = super::super::super::Ledger::load(connection)?;
     let root = &input.binding.repository.git_directory;
     let observed = guard
         .and_then(|guard| guard.custody().get(root))
@@ -123,23 +123,33 @@ pub(super) fn checked_with_resolution_on(
     } else {
         input.intent.operation
     };
-    super::super::super::custody::check(
-        &ledger,
+    let request = resolution
+        .map(crate::task_sync::exchange::InspectedDeltaResolution::request_fingerprint)
+        .transpose()
+        .map_err(|error| invalid(error.to_string()))?;
+    super::super::super::custody::check_on(
+        connection,
         root,
         observed,
         Some(operation),
-        super::super::super::same_directory,
+        request.as_ref(),
+        None,
+        &mut view::read::ReadBudget::default(),
     )?;
     require(
-        !ledger
-            .bindings
-            .values()
-            .any(|binding| binding.supersedes.as_ref() == Some(&input.binding_id)),
+        view::select::successor(connection, &input.binding_id)?.is_none(),
         "delta commit binding was superseded",
     )?;
     require(
         !super::super::super::recovery::quarantined(connection, &input.binding_id, &input.binding)?,
         "delta commit binding was quarantined",
     )?;
-    Ok(ledger)
+    let operation = view::read::operation_on(
+        connection,
+        &input.binding_id,
+        &input.binding,
+        &selection.prepared,
+        &mut view::read::ReadBudget::default(),
+    )?;
+    Ok(operation)
 }

@@ -178,6 +178,10 @@ enum TaskSyncCommand {
         /// Explicitly retire unseen selected revisions of this locally forgotten key.
         #[arg(long, requires = "include_memories", value_name = "KEY")]
         retire_unseen: Vec<String>,
+        /// Write the complete folder and record it afresh, instead of only the
+        /// tasks changed since the last recorded export or import.
+        #[arg(long)]
+        rebuild: bool,
         /// Print the receipt as JSON, and a refusal as a JSON error with its code on stderr.
         #[arg(long)]
         json: bool,
@@ -188,18 +192,19 @@ enum TaskSyncCommand {
         directory: PathBuf,
         #[arg(long, default_value = "engram-data")]
         branch: String,
-        /// This host's own project.json from its export before the merge.
-        #[arg(
-            long,
-            value_name = "PROJECT_JSON",
-            conflicts_with = "empty_basis",
-            required_unless_present = "empty_basis"
-        )]
+        /// This host's own project.json from its export before the merge, for
+        /// the complete route: the first import of a store, or `--rebuild`.
+        /// An incremental import reads its basis from the recorded folder head.
+        #[arg(long, value_name = "PROJECT_JSON", conflicts_with = "empty_basis")]
         basis: Option<PathBuf>,
         /// Import into a destination holding no shared planning yet; the import
         /// checks that it is empty.
         #[arg(long)]
         empty_basis: bool,
+        /// Import the complete folder against `--basis` and record it afresh,
+        /// instead of only the paths changed since the last recorded import.
+        #[arg(long)]
+        rebuild: bool,
         /// Run the whole import, then roll it back.
         #[arg(long)]
         dry_run: bool,
@@ -600,6 +605,7 @@ fn run_folder_exchange(
             memory_recovery_basis,
             memory_resolution,
             retire_unseen,
+            rebuild,
             json,
         } => {
             let outcome = (|| -> Result<()> {
@@ -650,74 +656,67 @@ fn run_folder_exchange(
                 for key in retire_unseen {
                     resolutions.entry(key).or_default().retire_unseen = true;
                 }
-                let (exported, memory_capture) = if include_memories {
-                    let (tasks, memories) = service.export_task_sync_folder_with_memories(
-                        &profile,
-                        &memory_basis,
-                        &resolutions,
-                        chrono::Utc::now(),
-                    )?;
-                    (tasks, Some(memories))
-                } else {
-                    (
-                        service.export_task_sync_folder(&profile, chrono::Utc::now())?,
-                        None,
-                    )
-                };
-                let complete = memory_capture.as_ref().map(|captured| {
-                    let mut complete = memory_basis.clone();
-                    complete.extend(captured.keys.clone());
-                    complete
-                });
-                if let Some(complete) = &complete {
-                    engram::task_sync::memories::directory::preflight(
-                        &data,
-                        &memory_basis,
-                        complete,
-                        memory_recovery_basis.is_some(),
-                        &exported.tree,
-                        &exported.profile,
-                    )?;
-                }
-                let existing = if include_memories {
-                    directory::matching_memory_task_export(
-                        &data,
-                        &exported.tree,
-                        &exported.profile,
-                        memory_recovery_basis.is_some(),
-                    )?
-                } else {
-                    None
-                };
-                let written = match existing {
-                    Some(existing) => existing,
-                    None if include_memories => directory::write_data_folder_with_memories(
-                        &data,
-                        &exported.tree,
-                        &exported.profile,
-                    )?,
-                    None => directory::write_data_folder(&data, &exported.tree, &exported.profile)?,
-                };
+                // The memory component is captured on the task plan's own
+                // snapshot, and every memory admission check runs on it
+                // before any file is written; the task export then counts
+                // the component's bytes against the folder's size limit.
+                let mut admitted = None;
+                let memory_export =
+                    include_memories.then(|| engram::work_service::FolderMemoryExport {
+                        selected: &memory_basis,
+                        resolutions: &resolutions,
+                        admit: Box::new(|captured: engram::task_sync::memories::ExportOutcome| {
+                            let mut complete = memory_basis.clone();
+                            complete.extend(captured.keys.clone());
+                            match &memory_recovery_basis {
+                                // An interrupted capability publication is
+                                // recovered against the envelope it staged,
+                                // before the task route writes a newer one.
+                                Some(retained) => directory::recover_memory_profile_locked(
+                                    &data,
+                                    retained,
+                                    memory_lock.as_ref().context("memory lock missing")?,
+                                )?,
+                                None => anyhow::ensure!(
+                                    !directory::memory_profile_recovery_pending(&data)?,
+                                    "memory capability staging requires --memory-recovery-basis"
+                                ),
+                            }
+                            let bytes =
+                                engram::task_sync::memories::directory::preflight_component(
+                                    &data,
+                                    &memory_basis,
+                                    &complete,
+                                    memory_recovery_basis.is_some(),
+                                    selected_project,
+                                    None,
+                                )?;
+                            admitted = Some((captured, complete));
+                            Ok(bytes)
+                        }),
+                    });
+                let receipt = service.export_task_sync_data_folder(
+                    &data,
+                    &profile,
+                    rebuild,
+                    memory_export,
+                    chrono::Utc::now(),
+                )?;
                 let memory_receipt = if include_memories {
                     let selected = memory_basis;
-                    let captured = memory_capture.context("memory capture missing")?;
-                    let complete = complete.context("complete memory selection missing")?;
-                    if let Some(retained) = &memory_recovery_basis
-                        && directory::memory_profile_recovery_pending(&data)?
-                    {
-                        directory::recover_memory_profile_locked(
-                            &data,
-                            retained,
-                            memory_lock.as_ref().context("memory lock missing")?,
-                        )?;
-                    }
+                    let (captured, complete) = admitted.context("memory capture missing")?;
                     directory::enable_memory_profile(&data)?;
-                    engram::task_sync::memories::directory::write_locked(
+                    // The task route already admitted the folder, so the
+                    // memory component is published without reading its
+                    // task files again.
+                    engram::task_sync::memories::directory::write_admitted(
                         &data,
                         &selected,
                         &complete,
                         memory_recovery_basis.is_some(),
                         memory_lock.as_ref().context("memory lock missing")?,
+                        selected_project,
+                        usize::try_from(receipt.task_bytes)?,
                     )?;
                     for withheld in &captured.withheld {
                         eprintln!("Memory key {} withheld: {}", withheld.key, withheld.reason);
@@ -730,23 +729,22 @@ fn run_folder_exchange(
                 };
                 attribution.print_notices();
                 eprintln!("REDACTOR: development no-op; task planning fields are shared text");
+                report_superseded(&receipt.superseded);
                 if json
                     || include_memories
                     || include_notes
                     || origin_machine.is_some()
-                    || !exported.activity_omissions.counts.is_empty()
+                    || !receipt.activity_omissions.counts.is_empty()
                 {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "directory": path,
-                            "notes_included": written.tree.project.notes_included,
-                            "export_basis": written.export_basis,
-                            "omissions": exported.omissions,
-                            "activity_omissions": exported.activity_omissions,
-                            "memories": memory_receipt,
-                        }))?
-                    );
+                    let mut value = serde_json::to_value(&receipt)?;
+                    value["directory"] = serde_json::to_value(&path)?;
+                    if let Some(memories) = memory_receipt {
+                        value["memories"] = memories;
+                    }
+                    value["next"] = serde_json::json!([
+                        "commit the exported folder in the data worktree before merging or importing"
+                    ]);
+                    println!("{}", serde_json::to_string_pretty(&value)?);
                 } else {
                     println!("{}", path.display());
                 }
@@ -759,6 +757,7 @@ fn run_folder_exchange(
             branch,
             basis,
             empty_basis,
+            rebuild,
             dry_run,
             include_memories,
             memory_resolution,
@@ -776,57 +775,40 @@ fn run_folder_exchange(
                 let memory_lock = include_memories
                     .then(|| engram::task_sync::memories::directory::publication_lock(&data))
                     .transpose()?;
-                let folder = if let Some(held) = &memory_lock {
-                    directory::read_resolved_data_folder_with_memories_locked(&data, held)?
-                } else {
-                    directory::read_resolved_data_folder(&data)?
-                };
-                let memories = if include_memories {
-                    engram::task_sync::memories::directory::read_locked(
-                        &data,
-                        memory_lock.as_ref().expect("memory import fence"),
-                    )?
-                } else {
-                    BTreeMap::default()
+                let (memories, memory_bytes) = match &memory_lock {
+                    Some(held) => {
+                        engram::task_sync::memories::directory::read_locked_with_bytes(&data, held)?
+                    }
+                    None => (BTreeMap::default(), 0),
                 };
                 let mut resolutions = match memory_resolution {
                     Some(path) => engram::task_sync::memories::directory::read_options(&path)?,
                     None => std::collections::BTreeMap::new(),
                 };
-                let basis = match (basis, empty_basis) {
-                    (Some(file), false) => {
-                        directory::DestinationBasis::Recorded(directory::read_folder_basis(&file)?)
-                    }
-                    (None, true) => directory::DestinationBasis::Empty,
-                    _ => anyhow::bail!("select exactly one of --basis or --empty-basis"),
-                };
-                data.revalidate()?;
                 for options in resolutions.values_mut() {
                     options.mark_untagged_seed = mark_untagged_seeds && options.seed.is_some();
                 }
-                let combined = service.import_task_sync_folder_with_memories(
-                    &folder,
-                    &basis,
-                    &memories,
-                    &resolutions,
+                let basis = destination_basis(basis, empty_basis)?;
+                data.revalidate()?;
+                let receipt = service.import_task_sync_data_folder(
+                    &data,
+                    basis.as_ref(),
+                    rebuild,
                     dry_run,
+                    memory_lock
+                        .as_ref()
+                        .map(|fence| engram::work_service::MemoryImport {
+                            fence,
+                            selected: &memories,
+                            options: &resolutions,
+                            bytes: memory_bytes,
+                        })
+                        .as_ref(),
                     chrono::Utc::now(),
                 )?;
-                let result = combined.tasks;
-                let memory_results = combined.memories;
-                let memory_partial = combined.memory_partial;
                 attribution.print_notices();
-                if include_memories {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(
-                            &serde_json::json!({"tasks":result,"memories":memory_results,"memory_partial":memory_partial})
-                        )?
-                    );
-                } else {
-                    println!("{}", serde_json::to_string_pretty(&result)?);
-                }
-                Ok((result, memory_partial))
+                println!("{}", serde_json::to_string_pretty(&receipt)?);
+                Ok((receipt.result, receipt.memory_partial))
             })();
             match outcome {
                 Ok((result, memory_partial)) => {
@@ -842,6 +824,36 @@ fn run_folder_exchange(
         }
         _ => anyhow::bail!("folder exchange requires an export or import operation"),
     }
+}
+
+/// Name the held edits a rebuild replaced, so that loss is never silent.
+fn report_superseded(superseded: &[engram::WorkId]) {
+    if !superseded.is_empty() {
+        eprintln!(
+            "This rebuild wrote this host's version over another host's held edit of: {}",
+            superseded
+                .iter()
+                .map(|id| id.0.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+}
+
+/// The destination basis an import selected: this host's own export, an
+/// empty store, or none for an import that reads its recorded folder head.
+fn destination_basis(
+    basis: Option<PathBuf>,
+    empty_basis: bool,
+) -> Result<Option<directory::DestinationBasis>> {
+    Ok(match (basis, empty_basis) {
+        (Some(file), false) => Some(directory::DestinationBasis::Recorded(Box::new(
+            directory::read_folder_basis(&file)?,
+        ))),
+        (None, true) => Some(directory::DestinationBasis::Empty),
+        (None, false) => None,
+        (Some(_), true) => anyhow::bail!("select at most one of --basis or --empty-basis"),
+    })
 }
 
 fn import_exit_code(result: &TaskSyncImportResult, folder: &Path) -> ExitCode {
@@ -867,7 +879,7 @@ fn import_exit_code(result: &TaskSyncImportResult, folder: &Path) -> ExitCode {
     }
     if partial {
         eprintln!(
-            "Partial task import: preserve the incoming Git commit before the next export; a routine export now would overwrite its pending edits. Re-merge that commit against a fresh local export using the common commit, then import the resolved documents with the fresh basis. Do not replay the old documents over newer local edits or advance the incoming commit as the exchange base. Applied changes remain applied; --dry-run writes nothing."
+            "Partial task import: each held task keeps the incoming bytes in the folder, and an export leaves them in place. Resolve why it was held here, for example by releasing the claim, then import again: every import reads the held tasks again at the commit it imports. A task held as local_planning_changed was also changed here: apply its held edits to this host's planning first, because `engram task-sync export --rebuild` writes this host's version over the held one and lists it as superseded. Applied changes remain applied; --dry-run writes nothing."
         );
         ExitCode::from(PARTIAL_IMPORT_EXIT)
     } else {

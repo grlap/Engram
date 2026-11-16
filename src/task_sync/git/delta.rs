@@ -16,8 +16,17 @@ use crate::{
 };
 use anyhow::{Context, Result};
 
+mod verified;
+pub use verified::{
+    ChangedTask, VerifiedTaskDelta, read_rooted_task_diff, read_tasks_at, read_verified_task_delta,
+};
+
 const BOUND: Duration = crate::operation_time::MINIMUM;
 pub(super) const MAX_DELTA_BYTES: usize = 128 * 1024 * 1024;
+// The largest raw diff listing a delta between two admitted folders can
+// produce: every task path on both sides, each record well under 512 bytes
+// with the longest object ids, plus the tree entries.
+use super::query::MAX_LISTING_BYTES;
 
 /// Typed changed documents, not a complete admitted tree or a stored record.
 /// The caller supplies an already-admitted prior commit and validates the
@@ -66,7 +75,7 @@ pub fn read_task_delta(
             )
             .into());
     }
-    let raw = reader.query(&[
+    let raw = reader.listing(&[
         "diff-tree",
         "-r",
         "-t",
@@ -199,6 +208,24 @@ impl<'a> Reader<'a> {
             .map_err(|error| query_error(args, &error, None))
     }
 
+    /// A path listing that grows with the change count, such as a commit
+    /// diff, bounded for every task the folder limits allow on both sides.
+    fn listing(&self, args: &[&str]) -> Result<Vec<u8>> {
+        let remaining = self
+            .total_bound
+            .checked_sub(self.started.elapsed())
+            .filter(|left| !left.is_zero())
+            .ok_or(super::QueryFailure::Deadline)
+            .map_err(|error| query_error(args, &anyhow::Error::from(error), None))?;
+        super::query::run_listing_observed(
+            self.repository,
+            args,
+            remaining.min(BOUND),
+            MAX_LISTING_BYTES,
+        )
+        .map_err(|error| query_error(args, &error, None))
+    }
+
     fn raw_query(&self, args: &[&str]) -> Result<Vec<u8>> {
         let remaining = self
             .total_bound
@@ -318,6 +345,110 @@ impl<'a> Reader<'a> {
             .map_err(|error| query_error(&args, &error, Some(path)))
     }
 
+    /// Task blobs through one Git process per batch, never one per blob, so a
+    /// large delta stays within its deadline. Each blob keeps the per-file
+    /// limit and all of them together the delta byte bound.
+    pub(super) fn blobs(&self, wanted: &[(&str, &str)]) -> Result<Vec<Vec<u8>>> {
+        // A full SHA-256 object id and its newline: well under the input bound.
+        const BATCH: usize = 8 * 1024;
+        let mut blobs = Vec::with_capacity(wanted.len());
+        let mut total = 0_usize;
+        for chunk in wanted.chunks(BATCH) {
+            let mut input = Vec::with_capacity(chunk.len() * 65);
+            for &(oid, path) in chunk {
+                task_sync::ledger::oid(oid)
+                    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+                #[cfg(test)]
+                BLOB_READS.with(|reads| reads.borrow_mut().push(path.to_owned()));
+                #[cfg(not(test))]
+                let _ = path;
+                input.extend_from_slice(oid.as_bytes());
+                input.push(b'\n');
+            }
+            let remaining = self
+                .total_bound
+                .checked_sub(self.started.elapsed())
+                .filter(|left| !left.is_zero())
+                .ok_or(super::QueryFailure::Deadline)?;
+            let args = ["cat-file", "--batch"];
+            // The remaining delta budget and a header per object.
+            let limit = u64::try_from(MAX_DELTA_BYTES.saturating_sub(total) + chunk.len() * 128)?;
+            let output = super::query::batch_blobs_observed(
+                self.repository,
+                &input,
+                remaining.min(BOUND),
+                limit,
+            )
+            .map_err(|error| {
+                // The batch output outgrew what the remaining bound admits
+                // before its headers could be checked one by one.
+                if matches!(
+                    error.downcast_ref::<super::QueryFailure>(),
+                    Some(super::QueryFailure::OutputLimit)
+                ) {
+                    TaskSyncRefusal::DestinationTreeLimit
+                        .invalid(format!(
+                            "the changed folder files of this commit delta, old and new together, exceed its byte bound of {MAX_DELTA_BYTES} bytes, or one of them exceeds the per-file limit of {} bytes; import the complete folder with `--rebuild`",
+                            directory::MAX_FILE_BYTES
+                        ))
+                        .into()
+                } else {
+                    query_error(&args, &error, None)
+                }
+            })?;
+            let mut rest = output.as_slice();
+            for &(oid, path) in chunk {
+                let malformed = || {
+                    TaskSyncRefusal::GitQueryFailed.invalid(format!(
+                        "local Git cat-file returned a malformed batch record for {path}"
+                    ))
+                };
+                let end = rest
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .ok_or_else(malformed)?;
+                let header = std::str::from_utf8(&rest[..end]).map_err(|_| malformed())?;
+                if header.strip_prefix(oid) == Some(" missing") {
+                    return Err(TaskSyncRefusal::GitQueryFailed
+                        .invalid(format!(
+                            "the object of folder file {path} is not in the local repository: fetch the data branch completely, or import the complete folder with `--rebuild`"
+                        ))
+                        .into());
+                }
+                let size = header
+                    .strip_prefix(oid)
+                    .and_then(|tail| tail.strip_prefix(" blob "))
+                    .and_then(|size| size.parse::<usize>().ok())
+                    .ok_or_else(malformed)?;
+                if size as u64 > directory::MAX_FILE_BYTES {
+                    return Err(TaskSyncRefusal::DestinationFileLimit
+                        .invalid(format!("folder file {path} exceeds the per-file limit"))
+                        .into());
+                }
+                total = total.saturating_add(size);
+                if total > MAX_DELTA_BYTES {
+                    return Err(TaskSyncRefusal::DestinationTreeLimit
+                        .invalid(
+                            "the changed folder files of this commit delta, old and new together, exceed its byte bound; import the complete folder with `--rebuild`",
+                        )
+                        .into());
+                }
+                let body = rest.get(end + 1..end + 1 + size).ok_or_else(malformed)?;
+                if rest.get(end + 1 + size) != Some(&b'\n') {
+                    return Err(malformed().into());
+                }
+                blobs.push(body.to_vec());
+                rest = &rest[end + 2 + size..];
+            }
+            if !rest.is_empty() {
+                return Err(TaskSyncRefusal::GitQueryFailed
+                    .invalid("local Git cat-file returned more batch records than asked")
+                    .into());
+            }
+        }
+        Ok(blobs)
+    }
+
     pub(super) fn evidence_blob(&self, oid: &str, limit: usize) -> Result<Vec<u8>> {
         let remaining = self
             .total_bound
@@ -393,6 +524,8 @@ fn parse_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
 pub(super) struct Change {
     pub(super) path: String,
     pub(super) status: String,
+    /// The base blob, so a verified delta can remove the old member exactly.
+    pub(super) old_oid: String,
     pub(super) new_oid: String,
 }
 
@@ -473,6 +606,7 @@ fn parse_changes(bytes: &[u8]) -> Result<Vec<Change>> {
         changes.push(Change {
             path: path.into(),
             status: fields[4].into(),
+            old_oid: fields[2].into(),
             new_oid: fields[3].into(),
         });
     }
@@ -556,6 +690,12 @@ fn nul_records(bytes: &[u8]) -> Result<Vec<&str>> {
 
 #[cfg(test)]
 thread_local! { static BLOB_READS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) }; }
+
+/// The paths of the blobs this thread read since the last call.
+#[cfg(test)]
+pub(crate) fn take_blob_reads() -> Vec<String> {
+    BLOB_READS.with(|reads| std::mem::take(&mut *reads.borrow_mut()))
+}
 
 #[cfg(test)]
 mod tests;

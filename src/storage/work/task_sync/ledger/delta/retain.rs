@@ -1,8 +1,8 @@
 //! Private incoming retention shares the applying writer's exact reservation.
 
 use super::{
-    DateTime, DeltaBasis, Direction, InspectedDelta, Ledger, SqliteStore, StoreError, Utc, fresh,
-    invalid, preflight, producing_origin, require, task_sync,
+    DateTime, DeltaBasis, Direction, InspectedDelta, SqliteStore, StoreError, Utc, fresh, invalid,
+    preflight, producing_origin, require, task_sync, view,
 };
 use crate::task_sync::delta::RetainedDeltaCandidate;
 
@@ -51,13 +51,11 @@ impl SqliteStore {
                     &request,
                 )?;
                 fresh(&transaction, input)?;
-                let ledger = Ledger::load(&transaction)?;
+                let mut budget = view::read::ReadBudget::default();
+                let binding = view::read::binding_on(&transaction, &input.binding_id, &mut budget)?;
                 require(
-                    ledger.bindings.get(&input.binding_id) == Some(&input.binding)
-                        && !ledger
-                            .bindings
-                            .values()
-                            .any(|binding| binding.supersedes.as_ref() == Some(&input.binding_id)),
+                    binding == input.binding
+                        && view::select::successor(&transaction, &input.binding_id)?.is_none(),
                     "delta retention binding changed or was superseded",
                 )?;
                 require(
@@ -69,12 +67,15 @@ impl SqliteStore {
                     "delta retention binding was quarantined",
                 )?;
                 require(
-                    ledger
-                        .events
-                        .iter()
-                        .filter(|(_, event)| event.binding == input.binding_id)
-                        .max_by_key(|(_, event)| event.sequence)
-                        .is_some_and(|(_, event)| super::super::settled_tail(event)),
+                    super::super::settled_tail(
+                        &view::read::tail_on(
+                            &transaction,
+                            &input.binding_id,
+                            &binding,
+                            &mut budget,
+                        )?
+                        .event,
+                    ),
                     "incoming retention cannot bypass an unresolved operation",
                 )?;
                 super::deferred::refuse_held_scope_on(&transaction, input)?;

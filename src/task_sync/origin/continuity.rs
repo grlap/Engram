@@ -22,6 +22,9 @@ pub(crate) struct PreparedContinuity {
     request: Option<crate::ObjectId>,
     operation: Option<uuid::Uuid>,
     recovered_activation: Option<RecoveredActivation>,
+    /// Whether this exchange resumes its own exact request, still pending in
+    /// the private witness: a call that committed it never returned success.
+    resumed: bool,
 }
 
 struct RecoveredActivation {
@@ -131,6 +134,27 @@ impl PreparedContinuity {
         request: Option<&crate::ObjectId>,
         operation: Option<uuid::Uuid>,
     ) -> Result<(), StoreError> {
+        self.capture_custody_inner(connection, repository, request, operation, false)
+    }
+
+    pub(crate) fn capture_cold_custody(
+        &mut self,
+        connection: &rusqlite::Connection,
+        repository: Option<&Path>,
+        request: Option<&crate::ObjectId>,
+        operation: Option<uuid::Uuid>,
+    ) -> Result<(), StoreError> {
+        self.capture_custody_inner(connection, repository, request, operation, true)
+    }
+
+    fn capture_custody_inner(
+        &mut self,
+        connection: &rusqlite::Connection,
+        repository: Option<&Path>,
+        request: Option<&crate::ObjectId>,
+        operation: Option<uuid::Uuid>,
+        cold: bool,
+    ) -> Result<(), StoreError> {
         if !connection.is_autocommit() {
             return Err(invalid(
                 "observe origin custody outside the SQLite transaction",
@@ -143,7 +167,15 @@ impl PreparedContinuity {
         }
         let mut custody = BTreeMap::new();
         for root in roots {
-            custody.insert(root.clone(), Observed::capture(&root)?);
+            let mut observed = if cold {
+                Observed::capture_cold(&root)?
+            } else {
+                Observed::capture_for(&root, operation)?
+            };
+            if !cold {
+                observed.capture_related_on(connection)?;
+            }
+            custody.insert(root.clone(), observed);
         }
         self.custody = custody;
         self.request = request.cloned();
@@ -212,7 +244,20 @@ impl PreparedContinuity {
             request: None,
             operation: None,
             recovered_activation: None,
+            resumed: false,
         })
+    }
+
+    /// Mark this exchange as resuming its own exact pending request.
+    pub(crate) fn mark_resumed(&mut self) {
+        self.resumed = true;
+    }
+
+    /// Whether this exchange resumes an exact request whose earlier call
+    /// committed but never returned success: an advanced witness is the only
+    /// way a call returns success, so that call handed out no result.
+    pub(crate) fn resumes_interrupted(&self) -> bool {
+        self.resumed
     }
 
     /// Bounded private-state comparison before writer admission and immediately

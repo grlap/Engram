@@ -136,13 +136,14 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
         "7200",
         "--json",
     ]));
+    // A cleared folder is written again by the complete route.
     let renewed = fixture.path().join("renewed");
     data_worktree::clear(&marker);
     success(
         command(&source, &marker)
             .args(["task-sync", "export"])
             .arg(&live)
-            .args(["--origin-machine", "machine-A"]),
+            .args(["--origin-machine", "machine-A", "--rebuild"]),
     );
     data_worktree::retain_snapshot(&marker, &renewed);
     assert_eq!(
@@ -182,7 +183,10 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
         let path = fixture.path().join(alias.unwrap_or("plain"));
         data_worktree::clear(&marker);
         let mut export = command(&target, &marker);
-        export.args(["task-sync", "export"]).arg(&live);
+        export
+            .args(["task-sync", "export"])
+            .arg(&live)
+            .arg("--rebuild");
         if let Some(alias) = alias {
             export.args(["--origin-machine", alias]);
         }

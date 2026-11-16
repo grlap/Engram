@@ -29,8 +29,10 @@ pub struct DeltaOutgoingSelection<'a> {
 }
 
 /// Publish the original selected delta commit once. A confirmed canonical
-/// outcome returns without reading Git or files. An existing start or unknown
-/// outcome only observes the remote; it never dispatches the push again.
+/// outcome returns without reading Git or files. An existing start is entered
+/// again and pushes only when the call that committed it returned no success,
+/// so its one push was never made; otherwise it, like an unknown outcome, only
+/// observes the remote and never dispatches the push again.
 /// Known ancestry or non-fast-forward failure requests agent reconciliation.
 /// This entry does not admit a resolved delta retry or grant Git authority.
 ///
@@ -102,6 +104,9 @@ pub(crate) async fn publish_delta_outgoing_remaining(
 
 enum Mode {
     Fresh,
+    /// A recorded start with nothing observed since: its committing call
+    /// may have returned no success, so the exact start is entered again.
+    Started,
     Observe,
     /// A recorded exact refusal of this start; resume its fetch only.
     Refused(ObjectId),
@@ -135,7 +140,8 @@ fn mode(store: &SqliteStore, selected: &DeltaOutgoingSelection<'_>) -> Result<Mo
             ..
         } => Ok(Mode::Confirmed(latest.clone())),
         Transition::PushRejected { push_started, .. } => Ok(Mode::Refused(push_started.clone())),
-        Transition::PushStarted { .. } | Transition::PushObserved { .. } => Ok(Mode::Observe),
+        Transition::PushStarted { .. } => Ok(Mode::Started),
+        Transition::PushObserved { .. } => Ok(Mode::Observe),
         Transition::DeltaLocalCommitRecorded { .. } => Ok(Mode::Fresh),
         _ => anyhow::bail!("delta publication requires its original committed selection"),
     }
@@ -190,6 +196,17 @@ pub(crate) async fn publish_with(
         Mode::Confirmed(event) => return Ok(PublicationAttempt::Confirmed { event }),
         Mode::Refused(start) => return refused(io, start).await,
         Mode::Observe => return observe(store, input, commit, io).await,
+        // The exact start, entered again, still carries the dispatch its
+        // committing call never returned; otherwise only observe.
+        Mode::Started => {
+            let (start, owed) =
+                record(store, input, commit, io, OutgoingProgress::PushStarted).await?;
+            return if owed {
+                dispatch(store, input, commit, io, start).await
+            } else {
+                observe(store, input, commit, io).await
+            };
+        }
         Mode::Fresh => (),
     }
     io.revalidate(input, commit).await?;
@@ -209,6 +226,18 @@ pub(crate) async fn publish_with(
         }
         return observe(store, input, commit, io).await;
     }
+    dispatch(store, input, commit, io, start).await
+}
+
+/// The one push a fresh start authorizes, then its recorded refusal or the
+/// observation of its result.
+async fn dispatch(
+    store: &mut SqliteStore,
+    input: &InspectedDelta,
+    commit: &DeltaCommitSelection,
+    io: &mut impl DeltaAttemptIo,
+    start: ObjectId,
+) -> Result<PublicationAttempt> {
     // Record the exact refusal before any follow-up call; a lost fetch or
     // response then stays a known refusal, never an uncertain publication.
     if let Err(RunError::NonFastForward) = io.push(&commit.commit.oid).await {

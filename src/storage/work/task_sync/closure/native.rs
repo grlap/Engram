@@ -72,6 +72,73 @@ impl SqliteStore {
             })
         })
     }
+
+    /// Check the task graph a folder export leaves beside tasks an import
+    /// held: the folder documents of every connected component the held and
+    /// written tasks touch, with each held task as the folder holds it (`None`
+    /// when its file is gone) and each written task as written (`None` when
+    /// removed). Every other folder document is this host's own export of
+    /// its planning, so these components are the only part of the folder no
+    /// store has admitted; tasks outside them are not read.
+    ///
+    /// # Errors
+    /// Refuses with [`TaskSyncRefusal::InvalidGraph`] a resulting graph that
+    /// is inconsistent, and capture failures.
+    pub fn check_task_sync_folder_beside_held(
+        &self,
+        project: &ProjectId,
+        profile: &ExportProfile,
+        held: &BTreeMap<WorkId, Option<crate::task_sync::TaskDocument>>,
+        written: &BTreeMap<WorkId, Option<crate::task_sync::TaskDocument>>,
+    ) -> Result<(), StoreError> {
+        let mut seeds = BTreeSet::new();
+        for (id, document) in held.iter().chain(written) {
+            seeds.insert(*id);
+            if let Some(document) = document {
+                seeds.extend(
+                    document_edges(document)
+                        .into_iter()
+                        .map(|(_, target)| target),
+                );
+            }
+        }
+        let mut documents = self.work_read_snapshot(|store| {
+            origin::with_origin_scope(&store.connection, || {
+                let component = capture_on(&store.connection, project, profile, seeds)?;
+                // A task retired from exchange membership is in no folder.
+                let entries = super::super::baseline::entries(
+                    &store.connection,
+                    project,
+                    component.documents.keys().copied(),
+                )?;
+                Ok(component
+                    .documents
+                    .into_iter()
+                    .filter(|(id, _)| entries.get(id).is_none_or(|entry| entry.document.is_some()))
+                    .collect::<BTreeMap<_, _>>())
+            })
+        })?;
+        for (&id, document) in written.iter().chain(held) {
+            match document {
+                Some(document) => {
+                    documents.insert(id, document.clone());
+                }
+                None => {
+                    documents.remove(&id);
+                }
+            }
+        }
+        crate::task_sync::TaskTree {
+            project: crate::task_sync::ProjectDocument {
+                format: crate::task_sync::FORMAT.into(),
+                project_id: project.clone(),
+                notes_included: profile.include_notes,
+            },
+            tasks: documents.into_values().collect(),
+        }
+        .validate_stored()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))
+    }
 }
 
 pub(in crate::storage::work::task_sync) fn capture_on(

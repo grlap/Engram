@@ -72,6 +72,17 @@ pub(super) fn input_with_cut(
         .repository
         .git_directory
         .join("engram-task-sync-commits");
+    {
+        let reservation =
+            retention::audit::AuditReservation::acquire(&binding.repository.git_directory).unwrap();
+        reservation
+            .reserve_artifact(
+                operation,
+                retention::audit::journal::Family::Commit,
+                &commit,
+            )
+            .unwrap();
+    }
     std::fs::create_dir_all(&selections).unwrap();
     std::fs::write(
         selections.join(format!("{operation}.json")),

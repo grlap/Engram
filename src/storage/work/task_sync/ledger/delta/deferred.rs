@@ -1,9 +1,8 @@
 //! A known live planning owner defers this request; unknown effects stay pending.
 
 use super::{
-    CanonicalObject, CompletedExchange, Connection, Event, InspectedDelta, Ledger, ObjectId,
-    StoreError, Transaction, Transition, append, invalid, producing_origin, reconciliation,
-    require,
+    CanonicalObject, CompletedExchange, Connection, Event, InspectedDelta, ObjectId, StoreError,
+    Transaction, Transition, append_keyed, invalid, producing_origin, reconciliation, require,
 };
 use crate::storage::work::query;
 use crate::task_sync::delta::DeltaIntent;
@@ -146,7 +145,7 @@ pub(super) fn refuse_held_scope_on(
 
 pub(super) fn try_defer_on(
     transaction: &Transaction<'_>,
-    ledger: &mut Ledger,
+    chain: &mut super::Chain,
     input: &InspectedDelta,
     prepared: &CanonicalObject,
     now: DateTime<Utc>,
@@ -235,9 +234,9 @@ pub(super) fn try_defer_on(
     let mut after_cut = input.intent.local_cut.clone();
     after_cut.position.position = cut.position;
     after_cut.anchor = cut.anchor;
-    let outcome = append(
+    let outcome = append_keyed(
         transaction,
-        ledger,
+        chain,
         input,
         Transition::PlanningDeferred {
             prepared: prepared.key().clone(),

@@ -102,6 +102,60 @@ fn append(first: &KeyHistory, body: &str) -> KeyHistory {
 }
 
 #[test]
+fn memory_bytes_an_import_counts_are_the_files_on_disk_not_a_reencoding() {
+    let (_fixture, data) = fixture();
+    let selected = BTreeMap::from([("rule".into(), history("original", None))]);
+    memories::directory::write(&data, &BTreeMap::new(), &selected).unwrap();
+    // The same documents, padded with valid JSON whitespace.
+    let key = data.checkout.join(".engram").join("memories").join("rule");
+    let mut on_disk = 0_u64;
+    for entry in std::fs::read_dir(&key).unwrap() {
+        let path = entry.unwrap().path();
+        let padded = [std::fs::read(&path).unwrap().as_slice(), &[b' '; 4096]].concat();
+        std::fs::write(&path, &padded).unwrap();
+        on_disk += u64::try_from(padded.len()).unwrap();
+    }
+    let held = memories::directory::publication_lock(&data).unwrap();
+    let (read, bytes) = memories::directory::read_locked_with_bytes(&data, &held).unwrap();
+    assert_eq!(read, selected, "the padded files hold the same histories");
+    assert_eq!(bytes, on_disk);
+}
+
+#[test]
+fn memory_publication_beside_an_admitted_task_route_reads_no_task_file() {
+    let (_fixture, data) = fixture();
+    // A task file no reader can decode: only a publisher that reads the
+    // task files again meets it.
+    let tasks = data.checkout.join(".engram").join("tasks");
+    std::fs::create_dir_all(&tasks).unwrap();
+    std::fs::write(
+        tasks.join(format!("{}.json", uuid::Uuid::new_v4())),
+        b"not a task",
+    )
+    .unwrap();
+    let selected = BTreeMap::from([("rule".into(), history("original", None))]);
+    let held = memories::directory::publication_lock(&data).unwrap();
+    assert!(
+        memories::directory::write_locked(&data, &BTreeMap::new(), &selected, false, &held)
+            .is_err()
+    );
+    memories::directory::write_admitted(
+        &data,
+        &BTreeMap::new(),
+        &selected,
+        false,
+        &held,
+        &ProjectId("data/fixture".into()),
+        0,
+    )
+    .unwrap();
+    assert_eq!(
+        memories::directory::read_locked(&data, &held).unwrap(),
+        selected
+    );
+}
+
+#[test]
 fn memory_sync_import_reader_uses_the_publication_fence() {
     let (_fixture, data) = fixture();
     let selected = BTreeMap::from([("rule".into(), history("original", None))]);

@@ -189,6 +189,18 @@ fn resolution_with_rejection(
             .key()
             .clone(),
     };
+    {
+        let reservation =
+            retention::audit::AuditReservation::acquire(&f.binding.repository.git_directory)
+                .unwrap();
+        reservation
+            .reserve_artifact(
+                resolved.operation,
+                retention::audit::journal::Family::Commit,
+                &commit,
+            )
+            .unwrap();
+    }
     std::fs::write(
         f.binding
             .repository
@@ -208,6 +220,86 @@ fn resolution_with_rejection(
             commit: Box::new(commit),
         },
     }
+}
+
+#[test]
+fn managed_resolution_and_retry_keep_one_canonical_operation_and_dispatch() {
+    let mut f = super::super::managed::fixture();
+    let input = resolution(&mut f, true);
+    let recipe = f
+        .store
+        .record_task_sync_delta_resolution(&input, at(43))
+        .unwrap();
+    assert_eq!(
+        f.store
+            .record_task_sync_delta_resolution(&input, at(44))
+            .unwrap(),
+        recipe
+    );
+    let (start, fresh) = f
+        .store
+        .record_task_sync_delta_retry_once(&input, &OutgoingProgress::PushStarted, at(45))
+        .unwrap();
+    assert!(fresh);
+    assert_eq!(
+        f.store
+            .record_task_sync_delta_retry_once(&input, &OutgoingProgress::PushStarted, at(46))
+            .unwrap(),
+        (start, false)
+    );
+    let OutgoingReconciliation::DeltaResolved { commit, .. } = &input.recipe else {
+        unreachable!()
+    };
+    let confirmed = OutgoingProgress::Observed(PublicationObservation::Confirmed {
+        observed_tip: commit.oid.clone(),
+    });
+    let (outcome, fresh) = f
+        .store
+        .record_task_sync_delta_retry_once(&input, &confirmed, at(47))
+        .unwrap();
+    assert!(fresh);
+    let before = state(&f.store);
+    assert_eq!(
+        f.store
+            .record_task_sync_delta_retry_once(&input, &confirmed, at(48))
+            .unwrap(),
+        (outcome, false)
+    );
+    assert_eq!(state(&f.store), before);
+    assert!(
+        retention::audit::journal::observe(&f.binding.repository.git_directory)
+            .unwrap()
+            .unwrap()
+            .writes
+            .is_empty()
+    );
+    assert!(f.store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn managed_resolution_refuses_a_missing_original_publication_witness() {
+    let mut f = super::super::managed::fixture();
+    let input = resolution(&mut f, true);
+    let root = &f.binding.repository.git_directory;
+    let path = root
+        .join("engram-task-sync-publication-attempts")
+        .join(format!("{}.json", input.original.intent.operation));
+    // Simulate damage to a required original witness after its publication was
+    // recorded. The resolved operation's complete artifacts do not replace it.
+    std::fs::remove_file(&path).unwrap();
+    let before = state(&f.store);
+    let pending = retention::audit::journal::observe(root).unwrap();
+    let error = f
+        .store
+        .record_task_sync_delta_resolution(&input, at(43))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("publication witness is missing"),
+        "{error}"
+    );
+    assert_eq!(state(&f.store), before);
+    assert_eq!(retention::audit::journal::observe(root).unwrap(), pending);
+    assert!(!path.exists());
 }
 
 #[test]

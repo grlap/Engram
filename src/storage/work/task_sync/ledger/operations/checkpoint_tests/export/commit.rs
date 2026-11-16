@@ -70,6 +70,20 @@ pub(super) fn selected(f: &mut ExportFixture) -> (InspectedDelta, DeltaCommitSel
         .repository
         .git_directory
         .join("engram-task-sync-commits");
+    // Match the real commit writer's durable reservation while substituting
+    // only its Git observations in this storage fixture.
+    {
+        let reservation =
+            retention::audit::AuditReservation::acquire(&f.binding.repository.git_directory)
+                .unwrap();
+        reservation
+            .reserve_artifact(
+                f.intent.operation,
+                retention::audit::journal::Family::Commit,
+                &commit,
+            )
+            .unwrap();
+    }
     std::fs::create_dir_all(&path).unwrap();
     std::fs::write(
         path.join(format!("{}.json", f.intent.operation)),
