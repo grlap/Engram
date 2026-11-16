@@ -80,6 +80,30 @@ export function registerCommitInputTests(support) {
         return result;
       } });
       assert.deepEqual(capture(response()), measured);
+      // Match the production writer, not an arbitrary "warning" prefix. The
+      // real-binary slow observation is also retained with this fix's evidence.
+      const warning = "warning: source observation is still running after 10 seconds; attempt=123/0; elapsed_ms=10001\n";
+      const nested = warning.replace("source observation", "local Git query");
+      for (const stderr of [warning, nested, warning.replace("\n", "\r\n"), nested + warning,
+        warning.repeat(878)]) {
+        assert.deepEqual(capture({ ...response(), stderr: Buffer.from(stderr) }), measured);
+      }
+      const warningBound = 256 * 1024;
+      const prefix = warning.repeat(Math.floor(warningBound / warning.length) - 1);
+      const padded = warning.replace("10001", "1".repeat(warningBound - prefix.length - warning.length + 5));
+      const atBound = Buffer.from(prefix + padded);
+      assert.equal(atBound.length, warningBound);
+      assert.deepEqual(capture({ ...response(), stderr: atBound }), measured);
+      assert.throws(() => capture({ ...response(), stderr: Buffer.concat([atBound, Buffer.from("x")]) }), /stderr exceeded its byte bound/u);
+      for (const stderr of ["warning", warning.slice(0, -1), warning + nested.slice(0, -1),
+        "\n" + warning, warning + "\n", "unexpected\n" + warning, warning + "unexpected\n",
+        warning.replace("10 seconds", "11 seconds"), warning.replace("source observation", "task-sync command"),
+        warning.replace("123/0", "-123/0"), warning.replace("123/0", "123/0.5"),
+        warning.replace("10001", "１０００１"), "\u001b[0m" + warning, "\ufeff" + warning,
+        warning.replace("\n", "\r"), warning.replace("\n", "\0\n"),
+        Buffer.concat([Buffer.from(warning), Buffer.from([0xff])])]) {
+        assert.throws(() => capture({ ...response(), stderr: Buffer.from(stderr) }), /process stderr/u);
+      }
       const refused = { ...observation, status: "unavailable", source: null, tree: null,
         refusal: { code: "deadline", message: "reader deadline" }, source_id: null };
       assert.throws(() => capture(response(refused, 1)), (error) => error.refusal?.code === "deadline");
@@ -98,7 +122,12 @@ export function registerCommitInputTests(support) {
         { ...response(), stderr: Buffer.from("warning") },
         { ...response(), signal: "SIGTERM" },
         { ...response(), error: Object.assign(new Error("owner timed out"), { code: "ETIMEDOUT" }) },
-      ]) assert.throws(() => capture(result), /committed input unavailable/u);
+      ]) {
+        assert.throws(() => capture(result), /committed input unavailable/u);
+        assert.throws(() => capture({ ...result,
+          stderr: Buffer.concat([Buffer.from(warning), result.stderr]) }), /committed input unavailable/u);
+      }
+      assert.throws(() => capture({ ...response(refused, 1), stderr: Buffer.from(warning) }), /refusal carried process stderr/u);
       const renamed = { ...observation, status: "not_clean", entries: [{ status: "R ", path: "new", origin: "old" }] };
       assert.deepEqual(capture(response(renamed)).entries, renamed.entries);
       assert.throws(() => capture(response({ ...renamed, entries: [{ status: "R ", path: "new" }] })), /malformed changed-path/u);
@@ -136,8 +165,52 @@ export function registerCommitInputTests(support) {
         { ...measured.sourceId, changes: [change, change] },
         { ...measured.sourceId, changes: [{ ...change, path: "z" }, { ...change, path: "a" }] },
         { ...measured.sourceId, submodules: [{ path: "child", commit: measured.commit, changes: [], extra: true }] },
-      ]) assert.throws(() => capture(response({ ...observation, source_id })), /source_id/u);
+      ]) {
+        assert.throws(() => capture(response({ ...observation, source_id })), /source_id/u);
+        assert.throws(() => capture({ ...response({ ...observation, source_id }),
+          stderr: Buffer.from(warning) }), /source_id/u);
+      }
       assert.throws(() => capture(response({ ...refused, source_id: measured.sourceId }, 1)), /unavailable envelope/u);
+    });
+  });
+
+  test("supported source warnings preserve committed-input admission and both worker boundaries", async () => {
+    for (const unexpected of [false, true]) await fixture(async ({ root, marker, marking }) => {
+      // Keep the real source owner and all three adapter calls. Only append
+      // diagnostic bytes after each actual owner process has exited.
+      const warning = "warning: local Git query is still running after 10 seconds; attempt=123/0; elapsed_ms=10001\r\n"
+        + "warning: source observation is still running after 10 seconds; attempt=123/1; elapsed_ms=10002\n";
+      const suffix = warning + (unexpected ? "unexpected diagnostic\n" : "");
+      const local = copyLauncher(root, (source) => source.replace(
+        "import { captureCommitInputStatus,", "import { captureCommitInputStatus as ownerCapture,")
+        + `\nfunction captureCommitInputStatus(root, environment) {
+          return ownerCapture(root, environment, { run: (binary, args, options) => {
+            const result = spawnSync(binary, args, options);
+            return { ...result, stderr: Buffer.concat([result.stderr, Buffer.from(${JSON.stringify(suffix)})]) };
+          } });
+        }\n`);
+      git(["add", "--", "scripts"], root);
+      commit(root);
+      const worker = await import(pathToFileURL(local).href);
+      if (unexpected) {
+        let runDir;
+        await assert.rejects(worker.createRun({ root, input: "commit", stages: [marking()] }, env), (error) => {
+          runDir = error.runDir;
+          return error.reason === "input-capture-failed";
+        });
+        assert.equal(json(join(runDir, "results.json")).stages[0].state, "unrun");
+        assert.equal(existsSync(marker), false);
+      } else {
+        const measured = captureCommitInputStatus(root, env);
+        const runDir = await worker.createRun({ root, input: "commit", stages: [marking()] }, env);
+        const result = await worker.executeRun(runDir, env);
+        assert.equal(result.state, "passed", result.error);
+        assert.equal(result.input.eligible, true);
+        assert.equal(readFileSync(marker, "utf8"), "x", "selected stage runs exactly once");
+        assert.deepEqual(json(join(runDir, "request.json")).sourceId, measured.sourceId);
+        assert.deepEqual(result.sourceIdBefore, measured.sourceId);
+        assert.deepEqual(result.sourceIdAfter, measured.sourceId);
+      }
     });
   });
 

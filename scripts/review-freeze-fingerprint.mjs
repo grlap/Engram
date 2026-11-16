@@ -291,6 +291,23 @@ export function sourceBinaryPath(env = process.env) {
 }
 
 const SOURCE_JSON_BYTES = 1024 * 1024;
+// Mirror only the source owner's operation_time diagnostic at this subprocess
+// boundary. It is noncanonical stderr, never part of the source identity.
+const SOURCE_WARNING_BYTES = 256 * 1024;
+const sourceWarningLine = /^warning: (?:source observation|local Git query) is still running after 10 seconds; attempt=[0-9]+\/[0-9]+; elapsed_ms=[0-9]+\r?$/u;
+function sourceStderrFailure(stderr, status) {
+  if (stderr === undefined || stderr === null) return null;
+  if (!Buffer.isBuffer(stderr)) return "owner returned unreadable process stderr";
+  if (stderr.length > SOURCE_WARNING_BYTES) return "owner process stderr exceeded its byte bound";
+  if (stderr.length === 0) return null;
+  if (status !== 0) return "owner refusal carried process stderr";
+  try {
+    // Preserve a BOM so that it, like every other unexpected byte, is refused.
+    const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(stderr);
+    if (text.endsWith("\n") && text.slice(0, -1).split("\n").every((line) => sourceWarningLine.test(line))) return null;
+  } catch { /* malformed UTF-8 is unusable diagnostic output */ }
+  return "owner carried unexpected or incomplete process stderr";
+}
 const sourceCodes = new Set(["input_unavailable", "deadline", "output_limit"]);
 const fieldsExactly = (value, fields) => value !== null && typeof value === "object" && !Array.isArray(value)
   && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
@@ -398,9 +415,11 @@ export function captureCommitInputStatus(startDirectory = process.cwd(), sourceE
     throw unavailable(result.error?.message ?? `owner exited ${result.status ?? "without a status"}${result.signal ? ` (${result.signal})` : ""}`);
   }
   const output = result.stdout;
-  if (!Buffer.isBuffer(output) || output.length > SOURCE_JSON_BYTES + 1 || result.stderr?.length) {
-    throw unavailable("owner output exceeded its bound or carried process stderr");
+  if (!Buffer.isBuffer(output) || output.length > SOURCE_JSON_BYTES + 1) {
+    throw unavailable("owner output exceeded its byte bound");
   }
+  const stderrFailure = sourceStderrFailure(result.stderr, result.status);
+  if (stderrFailure) throw unavailable(stderrFailure);
   let observation;
   try {
     const json = new TextDecoder("utf-8", { fatal: true }).decode(output);
