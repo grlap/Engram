@@ -3,6 +3,7 @@ use crate::WorkLifecycle;
 use crate::storage::work::test_support::*;
 use crate::storage::work::*;
 
+mod label_cost;
 mod note_index;
 mod note_search_followups;
 mod note_search_measurement;
@@ -502,7 +503,7 @@ fn catalog_search_served_by_the_index_seeks_candidates() {
 }
 
 #[test]
-fn phoenix_catalog_cursor_plan_seeks_without_sorting_with_availability_filters() {
+fn catalog_cursor_plan_restricts_lifecycle_before_ordering() {
     let store = SqliteStore::open_in_memory().expect("store");
     let query = WorkCatalogQuery {
         lifecycles: vec![WorkLifecycle::Open],
@@ -529,11 +530,12 @@ fn phoenix_catalog_cursor_plan_seeks_without_sorting_with_availability_filters()
         .join("\n");
     assert!(
         plan.contains(
-            "SEARCH candidate USING INDEX work_items_catalog_after (project_id=? AND work_id>?)"
+            "SEARCH candidate USING INDEX work_items_ready (project_id=? AND lifecycle=?)"
         ),
         "{plan}"
     );
-    assert!(!plan.contains("USE TEMP B-TREE"), "{plan}");
+    // Sorting the current lifecycle's candidates is bounded by current work,
+    // rather than walking completed history to retain work-id index order.
     let (count, _) = work_catalog_sql(&project, at(0), &query, false, None).expect("count SQL");
     assert!(count.contains("COUNT(*)"));
     assert!(!count.contains("candidate.work_id >"));

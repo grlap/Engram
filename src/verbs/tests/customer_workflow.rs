@@ -19,6 +19,7 @@ mod disposal_handoffs;
 mod focus_ownership;
 mod landing;
 mod listing;
+mod memory_current_context;
 mod memory_recovery;
 mod memory_recovery_changes;
 mod memory_retirement;

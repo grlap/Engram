@@ -24,6 +24,8 @@ fn project_memory_advisory_is_constant_decode_at_scale() {
             )
             .expect("remember scale fixture");
     }
+    // Exclude first-use process diagnostics from the advisory's decode count.
+    let _ = crate::build_identity::current();
     crate::canonical::reset_canonical_decode_count();
     let next = service
         .work_next_for_agent(

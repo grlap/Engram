@@ -1652,8 +1652,9 @@ Rules that matter:
   current revision; without it, the receipt names the replaced and new
   revisions. An identical same-session body and explicit basis replays;
   without a basis, only an identical current revision replays. `memories KEY
-  --full` reads the current body and offers previous-version navigation;
-  `--revision N` reads one historical body. `forget` permanently retires all
+  --full` reads only the current body without historical navigation;
+  an explicit `--revision N` selects that revision and enables history
+  navigation, even when N is the current revision. `forget` permanently retires all
   reads of the key, retaining local canonical history. Snapshots transfer live
   histories, but only the tombstone for forgotten keys. MCP uses `revise`,
   `expected_revision`, and `revision` with the same meanings.
@@ -1674,7 +1675,8 @@ Rules that matter:
   a marker needs its own text to pair. Every revise's receipt shows what changed:
   `changed (EDIT): B → A bytes; R removed and N added at byte S`, then the
   removed and added text as bounded excerpts with any bytes left out, and
-  `next` offers full reads of both revisions; its JSON carries `change`.
+  `next` offers the current full read; its JSON carries `change`. Reading an
+  earlier full body requires an explicit `memories KEY --full --revision N`.
   `--retires-with local:REF` or `--retires-with external:PROJECT#REFERENCE`
   (MCP `retires_with`) names the item whose resolution makes a workaround
   memory worth reviewing; a revise keeps the current target, and

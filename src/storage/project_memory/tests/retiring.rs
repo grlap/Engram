@@ -274,6 +274,7 @@ fn a_target_dropped_without_a_clear_is_disclosed_until_restored() {
     let response = crate::work_service::project_memory_full_response(
         current,
         crate::argument_names::ArgumentNames::Cli,
+        false,
     )
     .unwrap();
     assert!(

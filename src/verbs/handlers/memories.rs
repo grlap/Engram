@@ -40,12 +40,11 @@ impl AgentVerbs {
             import_provenance,
             now,
         )?;
-        let (changed, reads) = super::super::memory_change::lines(&receipt);
+        let changed = super::super::memory_change::lines(&receipt);
         let mut guidance = Guidance {
             reminders: Vec::new(),
             next: vec![format!("engram work memories {} --full", receipt.key)],
         };
-        guidance.next.extend(reads);
         guidance.next.push("engram work memories".into());
         let replay = if receipt.duplicate { " (replayed)" } else { "" };
         let line = match receipt.replaced_revision {

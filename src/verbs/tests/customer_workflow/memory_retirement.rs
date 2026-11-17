@@ -624,10 +624,10 @@ fn a_historical_version_never_calls_its_completed_target_a_forget_candidate() {
 }
 
 // A partial revise through the verbs: the receipt says what changed, with
-// bounded excerpts, and offers full reads of both revisions; --append and
+// bounded excerpts, and offers the current full read; --append and
 // --section together are refused before anything is written.
 #[test]
-fn a_partial_revise_receipt_shows_the_change_and_both_reads() {
+fn a_partial_revise_receipt_shows_the_change_and_current_read() {
     let (_directory, verbs, _, _) = fixture();
     remember(&verbs, "running-notes", "First finding.", None, false, 1);
     let partial = |append: bool, section: Option<&str>, at_ms: i64| {
@@ -659,10 +659,17 @@ fn a_partial_revise_receipt_shows_the_change_and_both_reads() {
         "{text}"
     );
     assert!(text.contains("  + Second finding."), "{text}");
-    for revision in [1, 2] {
-        let read = format!("engram work memories running-notes --full --revision {revision}");
-        assert!(appended.next.contains(&read), "{:?}", appended.next);
-    }
+    assert!(
+        appended
+            .next
+            .contains(&"engram work memories running-notes --full".to_owned())
+    );
+    assert!(
+        appended
+            .next
+            .iter()
+            .all(|command| !command.contains("--revision"))
+    );
     assert_eq!(appended.value["change"]["edit"], "append");
     assert_eq!(appended.value["change"]["added_bytes"], 17);
 }

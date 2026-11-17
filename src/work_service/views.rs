@@ -26,10 +26,11 @@ impl ProjectMemoryFullResponse {
     pub(crate) fn new(
         memory: ProjectMemoryFull,
         names: crate::argument_names::ArgumentNames,
+        history_requested: bool,
     ) -> Self {
         let mut next = Vec::new();
         let mut reminders = Vec::new();
-        if memory.revision > 1 {
+        if history_requested && memory.revision > 1 {
             next.push(format!(
                 "engram work memories {} --full --revision {}",
                 memory.key,
