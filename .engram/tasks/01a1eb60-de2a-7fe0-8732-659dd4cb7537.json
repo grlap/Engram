@@ -15,19 +15,12 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "completed",
+  "lifecycle": "open",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": {
-    "summary": "Completed on DL560 for the cross-host close test",
-    "completed_at": "2026-11-17T21:24:43.209076337Z",
-    "actor": {
-      "actor_id": "dl560-s4-engram-runner",
-      "actor_kind": "agent"
-    }
-  }
+  "completion": null
 }
