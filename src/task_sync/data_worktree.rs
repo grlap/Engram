@@ -80,6 +80,7 @@ impl Budget {
 
 mod advance;
 mod commit;
+mod discovery;
 mod evidence;
 mod initialize;
 mod project;
@@ -332,7 +333,6 @@ impl DataWorktree {
         // Every query below spends the same operation budget.
         let query =
             |root: &Path, args: &[&str], missing: bool| query_within(root, args, missing, budget);
-        let git_path = |root: &Path, flag: &str| git_path_within(root, flag, budget);
         PrivateDirectory::open(code_checkout)?;
         PrivateDirectory::open(checkout)?;
         let code_checkout = std::fs::canonicalize(code_checkout)?;
@@ -345,18 +345,19 @@ impl DataWorktree {
             checkout == code_checkout.join(DIRECTORY_NAME),
             "data worktree must use the fixed .engram-data directory in the main checkout"
         );
+        let code = discovery::read(&code_checkout, budget)?;
+        let data = discovery::read(&checkout, budget)?;
         ensure!(
-            git_path(&code_checkout, "--show-toplevel")? == code_checkout
-                && git_path(&checkout, "--show-toplevel")? == checkout,
+            code.top_level == code_checkout && data.top_level == checkout,
             "select exact code and data worktree roots"
         );
-        let common_directory = git_path(&code_checkout, "--git-common-dir")?;
+        let common_directory = code.common_directory;
         ensure!(
-            git_path(&code_checkout, "--git-dir")? == common_directory,
+            code.git_directory == common_directory,
             "select the main code checkout, not a linked code worktree"
         );
-        check_code_path_untracked_within(&code_checkout, budget)?;
-        let git_directory = git_path(&checkout, "--git-dir")?;
+        check_code_path_untracked_at(&code_checkout, code.head.as_deref(), budget)?;
+        let git_directory = data.git_directory;
         ensure!(
             query(
                 &checkout,
@@ -366,9 +367,9 @@ impl DataWorktree {
             "data worktree must be complete; sparse checkout is not supported"
         );
         ensure!(
-            git_path(&checkout, "--git-common-dir")? == common_directory
+            data.common_directory == common_directory
                 && git_directory != common_directory
-                && git_directory != git_path(&code_checkout, "--git-dir")?,
+                && git_directory != code.git_directory,
             "data worktree must have its own administration in the code repository"
         );
         ensure!(
@@ -391,27 +392,19 @@ impl DataWorktree {
             .is_empty(),
             "data worktree must be ignored by the code checkout"
         );
-        let head = query(
-            &checkout,
-            &["rev-parse", "--verify", "--quiet", "HEAD"],
-            true,
-        )?;
-        let head = if head.is_empty() {
-            None
-        } else {
-            let head = oid_line(&head)?;
-            Some(head)
-        };
         let observed = Self {
             code_checkout,
             checkout,
             git_directory,
             common_directory,
             reference,
-            head,
+            head: data.head,
         };
         if let Some(head) = &observed.head {
-            observed.check_commit_within(head, budget)?;
+            let code_head = code.head.context(
+                "code HEAD is absent; commit the code checkout before admitting existing data history",
+            )?;
+            observed.check_commit_against(head, &code_head, budget)?;
         }
         observed.check_data_paths_within(budget)?;
         Ok(observed)
@@ -438,10 +431,16 @@ impl DataWorktree {
             false,
             budget,
         )?)?;
+        self.check_commit_against(commit, &code_head, budget)
+    }
+
+    fn check_commit_against(&self, commit: &str, code_head: &str, budget: Budget) -> Result<()> {
+        super::ledger::oid(commit)?;
+        super::ledger::oid(code_head)?;
         ensure!(
             query_within(
                 &self.checkout,
-                &["merge-base", commit, &code_head],
+                &["merge-base", commit, code_head],
                 true,
                 budget
             )?
@@ -500,27 +499,15 @@ impl DataWorktree {
     }
 
     fn check_data_paths_within(&self, budget: Budget) -> Result<()> {
-        for args in [
-            vec!["ls-files", "-z", "--cached"],
-            vec!["ls-files", "-z", "--others", "--exclude-standard"],
-            vec![
-                "ls-files",
-                "-z",
-                "--others",
-                "--ignored",
-                "--exclude-standard",
-            ],
-        ] {
-            // Each inventory names every folder path, so it takes the folder
-            // listing limit rather than the general query output limit.
-            check_paths(&git::query_listing(
-                &self.checkout,
-                &args,
-                budget.bound()?,
-                git::MAX_LISTING_BYTES,
-            )?)?;
-        }
-        Ok(())
+        // Without exclusion rules, --others includes ignored files too. Keep
+        // the complete cached/untracked union in one names-only observation.
+        // It names every folder path, so retain the folder listing limit.
+        check_paths(&git::query_listing(
+            &self.checkout,
+            &["ls-files", "-z", "--cached", "--others"],
+            budget.bound()?,
+            git::MAX_LISTING_BYTES,
+        )?)
     }
 }
 
@@ -529,6 +516,21 @@ pub(super) fn check_code_path_untracked(code: &Path) -> Result<()> {
 }
 
 fn check_code_path_untracked_within(code: &Path, budget: Budget) -> Result<()> {
+    let head = query_within(
+        code,
+        &["rev-parse", "--verify", "--quiet", "HEAD"],
+        true,
+        budget,
+    )?;
+    let head = if head.is_empty() {
+        None
+    } else {
+        Some(oid_line(&head)?)
+    };
+    check_code_path_untracked_at(code, head.as_deref(), budget)
+}
+
+fn check_code_path_untracked_at(code: &Path, head: Option<&str>, budget: Budget) -> Result<()> {
     ensure!(
         query_within(
             code,
@@ -539,18 +541,12 @@ fn check_code_path_untracked_within(code: &Path, budget: Budget) -> Result<()> {
         .is_empty(),
         "code index tracks the reserved .engram-data path; preserve it and resolve before exchange"
     );
-    let head = query_within(
-        code,
-        &["rev-parse", "--verify", "--quiet", "HEAD"],
-        true,
-        budget,
-    )?;
-    if !head.is_empty() {
-        let head = oid_line(&head)?;
+    if let Some(head) = head {
+        super::ledger::oid(head)?;
         ensure!(
             query_within(
                 code,
-                &["ls-tree", "-z", &head, "--", DIRECTORY_NAME],
+                &["ls-tree", "-z", head, "--", DIRECTORY_NAME],
                 false,
                 budget
             )?
@@ -608,6 +604,10 @@ fn git_path_within(root: &Path, flag: &str, budget: Budget) -> Result<PathBuf> {
     let path = std::str::from_utf8(&bytes)?
         .strip_suffix('\n')
         .context("unterminated Git administration path")?;
+    parse_git_path(root, path)
+}
+
+fn parse_git_path(root: &Path, path: &str) -> Result<PathBuf> {
     ensure!(
         !path.contains(['\r', '\n', '\0']),
         "ambiguous Git administration path"

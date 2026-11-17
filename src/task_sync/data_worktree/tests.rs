@@ -7,6 +7,7 @@ mod evidence;
 mod memories;
 mod mixed_planning;
 mod reserved_path;
+mod spawn_count;
 
 #[test]
 fn administration_queries_keep_the_original_operation_deadline() {
