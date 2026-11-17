@@ -153,13 +153,7 @@ impl LocalWorkService {
             // remaining rows are still the ones the first page announced; a
             // write elsewhere in the project does not move them.
             let end = if let Some(cursor) = &cursor {
-                if now < cursor.cut.observed_at || cursor.total != index.len() {
-                    return Err(invalid("the window changed; start a fresh window"));
-                }
-                index
-                    .iter()
-                    .position(|row| row.address == cursor.address && row.order == cursor.order)
-                    .ok_or_else(|| invalid("continuation boundary no longer matches this window"))?
+                continuation_end(cursor, &index, item.work_id, kind, now)?
             } else {
                 index.len()
             };
@@ -346,6 +340,41 @@ impl LocalWorkService {
             Ok((item.short_ref.clone(), row, page))
         })
     }
+}
+
+fn continuation_end(
+    cursor: &RecordCursor,
+    index: &[WorkRecordIndex],
+    work: WorkId,
+    kind: WorkRecordKind,
+    now: DateTime<Utc>,
+) -> Result<usize, StoreError> {
+    let kind = match kind {
+        WorkRecordKind::Notes => "notes",
+        WorkRecordKind::NotesWithGates => "notes_with_gates",
+        WorkRecordKind::History => "history",
+    };
+    let remedy = "restart the same show window from its first page";
+    if now < cursor.cut.observed_at {
+        return Err(invalid(&format!(
+            "window changed: check=clock_reversal item={} kind={kind} captured_at={} now={now}; restore nondecreasing operation time or {remedy}",
+            work.0, cursor.cut.observed_at
+        )));
+    }
+    if cursor.total != index.len() {
+        return Err(invalid(&format!(
+            "window changed: check=selected_count item={} kind={kind} expected_count={} observed_count={}; {remedy}",
+            work.0,
+            cursor.total,
+            index.len()
+        )));
+    }
+    index
+        .iter()
+        .position(|row| row.address == cursor.address && row.order == cursor.order)
+        .ok_or_else(|| invalid(&format!(
+            "window changed: check=boundary item={} kind={kind} expected_address={:?} expected_order={:?} observed=tuple_not_found selected_count={}; {remedy}", work.0, cursor.address, cursor.order, index.len()
+        )))
 }
 
 /// Obligation assessments shown per page of a verification record's history.

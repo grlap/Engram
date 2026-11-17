@@ -24,6 +24,7 @@ mod memory_recovery;
 mod memory_recovery_changes;
 mod memory_retirement;
 mod mutation_titles;
+mod navigation_refusals;
 mod note_search;
 mod note_writer_admission;
 mod orientation;
