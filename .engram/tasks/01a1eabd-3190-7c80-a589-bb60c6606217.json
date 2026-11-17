@@ -18,12 +18,19 @@
   ],
   "assigned_to": null,
   "deferred_until": null,
-  "lifecycle": "open",
+  "lifecycle": "completed",
   "parent_id": null,
   "child_requirement": "required",
   "prerequisites": [],
   "blockers": [],
   "superseded_by": null,
   "disposal_reason": null,
-  "completion": null
+  "completion": {
+    "summary": "Landed the shared non-forced cleanup deletion guidance in AGENTS.md and CLAUDE.md. The post-landing independent evaluation a203c602b93448cd9c550ddcda4055c2 passed both acceptance criteria on commit 8c0a435bccb75faff7e98d3c1a1d6443f766c63e. Installed the exact build; all six checked live stores were ready. No TermAl restart was performed.",
+    "completed_at": "2026-11-17T21:27:39.478217500Z",
+    "actor": {
+      "actor_id": "greg/codex",
+      "actor_kind": "agent"
+    }
+  }
 }

@@ -1,0 +1,29 @@
+{
+  "id": "01a1eb67-b64b-7582-881a-32e544e87a24",
+  "external_ref": null,
+  "title": "Set a repo-local, already-public Git identity on runner data clones before any engram-data commit",
+  "outcome": "Set a repo-local, already-public Git identity on runner data clones before any engram-data commit",
+  "acceptance": [
+    "Runner hosts (DL560, Mac) that commit engram-data use a data clone whose repo-local user.name/user.email equal an identity already public in that repository, so a data commit never publishes a new personal email",
+    "The engram-use skill's disclosure check names commit author and committer metadata among the things to read before a push"
+  ],
+  "acceptance_bindings": [],
+  "evaluation_mode": null,
+  "kind": "chore",
+  "priority": 3,
+  "labels": [
+    "disclosure",
+    "dl560",
+    "sync"
+  ],
+  "assigned_to": null,
+  "deferred_until": null,
+  "lifecycle": "open",
+  "parent_id": null,
+  "child_requirement": "required",
+  "prerequisites": [],
+  "blockers": [],
+  "superseded_by": null,
+  "disposal_reason": null,
+  "completion": null
+}
