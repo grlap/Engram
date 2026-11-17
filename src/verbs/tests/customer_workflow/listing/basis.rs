@@ -38,18 +38,19 @@ fn ready_next(receipt: &Receipt) -> LsInput {
     input
 }
 
-fn assert_catalog_changed(result: Result<Receipt, crate::verbs::VerbError>) {
-    let error = result
-        .expect_err("catalog change must refuse continuation")
-        .error;
+fn assert_catalog_changed(
+    result: Result<Receipt, crate::verbs::VerbError>,
+) -> crate::verbs::VerbError {
+    let error = result.expect_err("catalog change must refuse continuation");
     assert!(
         matches!(
-            &error,
+            &error.error,
             StoreError::WorkCatalogCursorInvalid { reason }
-                if reason == "catalog changed; start a fresh listing"
+                if reason.contains("check=") && reason.contains("same filters")
         ),
         "{error:?}"
     );
+    error
 }
 
 fn candidates(verbs: &AgentVerbs) -> Vec<String> {
@@ -76,6 +77,7 @@ fn next_minted_ready_continuation_is_refused_by_an_unrelated_note_unlike_ls() {
     let token = listing_token_value(navigation.after.as_deref().unwrap());
     assert_eq!(token["basis"]["kind"], "project_cut");
     assert!(token["basis"]["cut"]["project_position"].is_i64());
+    let captured_position = token["basis"]["cut"]["project_position"].as_i64().unwrap();
     assert!(verbs.ls(&navigation, at(101)).is_ok());
     let listed = verbs
         .ls(
@@ -108,7 +110,29 @@ fn next_minted_ready_continuation_is_refused_by_an_unrelated_note_unlike_ls() {
         .unwrap();
     // The project cut moved, so compact next's navigation is refused; the
     // listing's own sequence did not, so its continuation survives.
-    assert_catalog_changed(verbs.ls(&navigation, at(103)));
+    let error = assert_catalog_changed(verbs.ls(&navigation, at(103)));
+    let message = error.to_string();
+    assert!(message.contains("check=project_head"));
+    assert!(message.contains(&format!("expected_position={captured_position}")));
+    let mut fresh = ready_navigation(&error.guidance().next[0]);
+    assert!(fresh.after.is_none());
+    let mut seen = Vec::new();
+    loop {
+        let page = verbs.ls(&fresh, at(104)).unwrap();
+        for row in page.value["items"].as_array().unwrap() {
+            seen.push(row["ref"].as_str().unwrap().to_owned());
+        }
+        fresh.after = page.value["after"].as_str().map(str::to_owned);
+        if fresh.after.is_none() {
+            break;
+        }
+        note(&verbs, &candidates[0], "Unrelated continuation write", 104);
+    }
+    assert_eq!(seen.len(), candidates.len());
+    assert_eq!(
+        seen.iter().collect::<std::collections::BTreeSet<_>>().len(),
+        seen.len()
+    );
     assert!(verbs.ls(&continued, at(103)).is_ok());
     assert!(
         verbs
@@ -142,10 +166,15 @@ fn next_minted_ready_continuation_is_refused_inside_a_sub_millisecond_expiry() {
         token["basis"]["cut"]["valid_until_ms"],
         (at(40) + chrono::Duration::milliseconds(123)).timestamp_millis()
     );
-    assert_catalog_changed(verbs.ls(
+    let error = assert_catalog_changed(verbs.ls(
         &navigation,
         at(40) + chrono::Duration::microseconds(123_200),
     ));
+    assert!(error.to_string().contains("check=time_boundary"));
+    assert!(error.to_string().contains(&format!(
+        "valid_until_ms={}",
+        token["basis"]["cut"]["valid_until_ms"]
+    )));
     let after = at(40) + chrono::Duration::milliseconds(124);
     let fresh = ready_next(&peek(&verbs, after));
     assert!(

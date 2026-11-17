@@ -28,6 +28,8 @@ import { registerStopTests } from "./test-launcher-tests/stop.mjs";
 import { registerPosixStopTests } from "./test-launcher-tests/posix-stop.mjs";
 import { registerCommitInputTests } from "./test-launcher-tests/commit-input.mjs";
 import { registerRequestMessageTests } from "./test-launcher-tests/request-message.mjs";
+// FULL reaches every remote adapter case through this existing test entrypoint.
+import "./test-task.test.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));

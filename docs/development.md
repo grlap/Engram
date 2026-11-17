@@ -1243,6 +1243,75 @@ copied and verified; inspect these conditions first. A run's
 notification-retry data lives in its directory and goes with it. Do not
 remove the whole `review-runs` directory as a shortcut.
 
+### Request a remote test from a work item and branch
+
+In the TermAl session that holds the item and has named its worktree:
+
+```sh
+node scripts/test-task.mjs WORK BRANCH --remote RUNNER --confirm-safe-to-publish
+node scripts/test-task.mjs WORK BRANCH --remote RUNNER --focused 'node --test scripts/example.test.mjs' --confirm-safe-to-publish
+```
+
+`WORK` is the item's short `w-...` reference; full UUIDs are refused so they
+cannot create a second ref for the same item and candidate. `RUNNER` is the
+existing runner's exact native session route (host-qualified
+when remote). The confirmation asserts that the whole candidate is safe to
+publish under the author's existing test-ref authority, including that this
+session wrote the candidate. The adapter resolves the branch once with Git
+replacement objects and legacy grafts disabled, requires one parent proven
+reachable from origin, refuses an
+existing `author-test/WORK-COMMIT8` ref, and pushes only that immutable commit
+with an explicit refspec. It disables followed tags and recursive submodule
+pushes and leaves existing hooks in place. SSH origins should already be
+configured for noninteractive access; the adapter disables Git terminal prompts
+but preserves the caller's SSH configuration. Caller operations keep a
+60-second hard budget and emit one bounded stderr warning after ten seconds.
+The absence check and normal push
+are not an atomic creation: a concurrent writer could create the ref between
+them. Only Git's porcelain `*` (new ref) status permits dispatch. Any other
+status stops and reports the ref and observed old/new object IDs (an old ID
+may be abbreviated or unknown); a racing fast-forward may already have
+updated the ref. The adapter never forces, deletes or retries a push.
+
+Before publication, the existing `/api/engram/named-roots` response must contain
+one row for the item, canonical current worktree path and naming session.
+This checks cached root presence, not a live claim. A transferred holder names
+the root again and retries next turn. No display text is parsed as authority.
+
+The script uses the existing `TERMAL_CLI mailbox send --test-request-json`
+interface. Its verified `MailboxTestRequest` fields are `mode` (`full` by
+default, `focused` only with an explicit selection), and
+`targets[{workRef,use:{kind:"committed_input",expected_commit,purpose:"verification"}}]`.
+These match TermAl's `mailbox_test_request.rs` and `coordination_cli.rs`.
+Focused selection stays literal text in the request body; it is never run
+locally. The host captures requester, store, claim and named-root association.
+
+One exact `mailbox read-message --message-id ID --json` checks that capture.
+A successful response prints `outcome:"pending"`, `message_id`, `request_key`,
+`ref`, `commit`, `tree`, `pushed_at` and `run_id:null`. Record that push's ref,
+commit and timestamp on the work item. The actual run, `source_id` and result
+arrive through existing completion delivery. There is no local mode, result
+polling, scheduler or READY automation.
+
+If capture is uncredited, the refusal states that publication and dispatch
+already happened. Resolve that original request with the runner, reclaim and
+re-name the root, then deliberately issue a corrected existing mailbox request
+against the retained commit/ref with a new intent/key. Re-running the adapter
+refuses the retained ref; the original key cannot refresh its captured
+association. If send outcome is unknown, recover the identical original
+`request_message`, recipient and key printed separately from the refusal's
+`reason`, rather than creating another
+intent. Keep the ref until every request's evidence or disposition is recorded,
+then remove it under the existing author test-ref cleanup rule.
+`published` means publication by this invocation, not whether another actor
+already put the ref on origin. CLI failure observations retain the exit status, signal, killed flag and a
+bounded stderr diagnostic. Send exit 2 is a usage refusal before dispatch:
+correct its arguments and deliberately request the retained input. Known CLI
+spawn errors (ENOENT, EACCES or EINVAL with no exit status, signal or kill)
+also refuse with nothing dispatched; correct the CLI path or permissions.
+Send exit 1 and timeouts keep dispatch UNKNOWN. A failed exact read also
+keeps capture UNKNOWN and never causes another dispatch.
+
 ### Test temporary files
 
 Rust and Node fixtures live in this repository's own `target/tmp/engram`,

@@ -102,23 +102,7 @@ impl SqliteStore {
                 let membership =
                     catalog_membership(&store.connection, project, now, query, ids.as_deref())?;
                 if let Some(expected) = expected {
-                    let changed = match expected {
-                        ListingExpectation::Membership {
-                            observed_at,
-                            fingerprint,
-                        } => now < observed_at || membership.fingerprint != fingerprint,
-                        ListingExpectation::ProjectCut(cut) => {
-                            now < cut.observed_at
-                                || store.work_feed_head(&FeedId::Project(project.clone()))?
-                                    != cut.project_position
-                                || cut
-                                    .valid_until_ms
-                                    .is_some_and(|until| now.timestamp_millis() >= until)
-                        }
-                    };
-                    if changed {
-                        return Err(cursor_invalid("catalog changed; start a fresh listing"));
-                    }
+                    validate_expectation(store, project, now, expected, &membership.fingerprint)?;
                 }
                 if let Some((encoded, after)) = ready_seek_key(query)?
                     && current_work_priority(&store.connection, after)? != Some(encoded)
@@ -155,6 +139,70 @@ impl SqliteStore {
                 Ok((page, total, preceding, claims, fingerprint, matches))
             })
         })
+    }
+}
+
+fn validate_expectation(
+    store: &SqliteStore,
+    project: &ProjectId,
+    now: DateTime<Utc>,
+    expected: ListingExpectation<'_>,
+    membership: &str,
+) -> Result<(), StoreError> {
+    let observed_at = match expected {
+        ListingExpectation::Membership { observed_at, .. } => observed_at,
+        ListingExpectation::ProjectCut(cut) => cut.observed_at,
+    };
+    let remedy = "start engram work ls with the same filters from its first page";
+    if now < observed_at {
+        return Err(cursor_invalid(&format!(
+            "catalog changed: check=clock_reversal project={} captured_at={observed_at} now={now}; restore nondecreasing operation time or {remedy}",
+            project.0
+        )));
+    }
+    match expected {
+        ListingExpectation::Membership { fingerprint, .. } => {
+            if membership != fingerprint {
+                return Err(cursor_invalid(&format!(
+                    "catalog changed: check=membership project={} expected_fingerprint={} observed_fingerprint={membership}; {remedy}",
+                    project.0,
+                    diagnostic_fingerprint(fingerprint)
+                )));
+            }
+        }
+        ListingExpectation::ProjectCut(cut) => {
+            let head = store.work_feed_head(&FeedId::Project(project.clone()))?;
+            if head != cut.project_position {
+                return Err(cursor_invalid(&format!(
+                    "catalog changed: check=project_head project={} expected_position={} observed_position={head}; {remedy}",
+                    project.0, cut.project_position
+                )));
+            }
+            if let Some(until) = cut.valid_until_ms
+                && now.timestamp_millis() >= until
+            {
+                return Err(cursor_invalid(&format!(
+                    "catalog changed: check=time_boundary project={} valid_until_ms={until} now_ms={}; {remedy}",
+                    project.0,
+                    now.timestamp_millis()
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+// Cursor text is caller-controlled. Describe malformed fingerprints without
+// reflecting arbitrary text into a refusal; this adds no admission predicate.
+fn diagnostic_fingerprint(value: &str) -> String {
+    if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        value.to_owned()
+    } else {
+        format!(
+            "invalid(bytes={}, sha256={:x})",
+            value.len(),
+            Sha256::digest(value.as_bytes())
+        )
     }
 }
 
