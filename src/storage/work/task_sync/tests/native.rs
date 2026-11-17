@@ -132,15 +132,12 @@ fn task_sync_native_history_blockers_disposals_and_bindings_round_trip() {
     assert!(target.verify_all().unwrap().is_healthy());
 }
 
-#[test]
-fn task_sync_external_imported_origin_is_refused_without_side_effects() {
-    let mut source = SqliteStore::open_in_memory().unwrap();
-    let project = ProjectId("external".into());
+fn external_item(source: &mut SqliteStore, project: &ProjectId) -> WorkItem {
     let input = crate::domain::WorkImportInput {
         snapshot: crate::WorkSourceSnapshot {
             schema_version: crate::schema::SCHEMA_VERSION,
-            adapter_kind: "planner".into(),
-            canonical_ref: "plan/item".into(),
+            adapter_kind: "beads".into(),
+            canonical_ref: "beads-42".into(),
             projected: crate::WorkSourceProjection {
                 title: Some("external".into()),
                 body: None,
@@ -160,10 +157,10 @@ fn task_sync_external_imported_origin_is_refused_without_side_effects() {
             acceptance: Vec::new(),
         }),
     };
-    let preview = source.preview_work_import(&project, &input, at(0)).unwrap();
-    source
+    let preview = source.preview_work_import(project, &input, at(0)).unwrap();
+    let receipt = source
         .apply_work_import(
-            &project,
+            project,
             &input,
             &preview.preview_token,
             &actor("author"),
@@ -171,15 +168,273 @@ fn task_sync_external_imported_origin_is_refused_without_side_effects() {
             &crate::DevelopmentNoopRedactor,
         )
         .unwrap();
-    let before = state(&source);
-    let error = source.export_task_tree(&project).unwrap_err();
+    source
+        .revise_work(
+            &crate::domain::ReviseWorkRequest {
+                work_id: receipt.work_id,
+                expected_revision: receipt.work_revision,
+                patch: crate::domain::WorkRevisionPatch {
+                    external_ref: Some("external:beads:beads-42".into()),
+                    ..Default::default()
+                },
+                authority: crate::domain::WorkPlanningAuthority::Project,
+                actor: actor("author"),
+                idempotency_key: "external-reference".into(),
+                updated_at: at(2),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap()
+}
+
+fn external_profile() -> crate::task_sync::progress::ExportProfile {
+    crate::task_sync::progress::ExportProfile {
+        include_notes: false,
+        origin_machine: None,
+    }
+}
+
+fn exchange_external(
+    store: &mut SqliteStore,
+    tree: &TaskTree,
+    key: &str,
+    second: i64,
+) -> TaskSyncImportResult {
+    let project = &tree.project.project_id;
+    let profile = external_profile();
+    let basis = store
+        .export_task_sync_folder(project, &profile)
+        .unwrap()
+        .export_basis;
+    let result = store
+        .apply_task_sync_folder(
+            crate::storage::TaskSyncFolderApply {
+                project,
+                actor: &actor("folder-importer"),
+                tree,
+                export_basis: &basis,
+                profile: &profile,
+                complete: true,
+                now: at(second),
+            },
+            key,
+        )
+        .unwrap();
     assert!(
-        error
-            .to_string()
-            .contains("external imported origin and source snapshot")
+        result
+            .tasks
+            .iter()
+            .all(|task| task.status == crate::storage::TaskSyncTaskStatus::Applied),
+        "{result:?}"
     );
-    assert_eq!(refusal_code(&error), "task_sync_origin_mismatch");
+    result
+}
+
+fn snapshot_bytes(store: &SqliteStore, id: &ObjectId) -> Vec<u8> {
+    store.connection.query_row(
+        "SELECT canonical_json FROM objects WHERE object_id=?1 AND object_kind='work_source_snapshot'",
+        [id.as_str()],
+        |row| row.get(0),
+    ).unwrap()
+}
+
+#[test]
+fn task_sync_external_imported_planning_round_trips_without_source_provenance() {
+    let mut source = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("external".into());
+    let original = external_item(&mut source, &project);
+    let snapshot = original.source_snapshot_id.as_ref().unwrap();
+    let original_bytes = snapshot_bytes(&source, snapshot);
+    let before = state(&source);
+    let tree = source.export_task_tree(&project).unwrap();
+    let task = &tree.tasks[0];
+    assert_eq!(task.id, original.work_id);
+    assert_eq!(task.title, "authored");
+    assert_eq!(task.outcome, "outcome");
+    assert_eq!(task.external_ref, original.external_ref);
+    let capture = source
+        .capture_task_documents(&project, &external_profile(), [original.work_id])
+        .unwrap();
+    assert!(matches!(
+        &capture.documents[&original.work_id],
+        crate::task_sync::CapturedTask::Present(selected) if selected.as_ref() == task
+    ));
     assert_eq!(state(&source), before);
+    let bytes = tree.documents().unwrap();
+    let mut target = SqliteStore::open_in_memory().unwrap();
+    import(&mut target, &TaskTree::from_documents(&bytes).unwrap());
+    assert_eq!(
+        target
+            .export_task_tree(&project)
+            .unwrap()
+            .documents()
+            .unwrap(),
+        bytes
+    );
+    let peer = target.get_work_item(original.work_id).unwrap();
+    assert_eq!(peer.origin, crate::WorkOrigin::Local);
+    assert_eq!(peer.source_snapshot_id, None);
+    assert_eq!(target.work_source_for_item(peer.work_id).unwrap(), None);
+    let snapshots: i64 = target
+        .connection
+        .query_row(
+            "SELECT count(*) FROM objects WHERE object_kind='work_source_snapshot'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(snapshots, 0);
+    assert_eq!(source.get_work_item(original.work_id).unwrap(), original);
+    assert_eq!(snapshot_bytes(&source, snapshot), original_bytes);
+    for store in [&source, &target] {
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+}
+
+#[test]
+fn task_sync_external_imported_planning_returns_edits_and_repeats() {
+    let mut source = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("external".into());
+    let original = external_item(&mut source, &project);
+    let snapshot = original.source_snapshot_id.as_ref().unwrap();
+    let original_bytes = snapshot_bytes(&source, snapshot);
+    let initial = source.export_task_tree(&project).unwrap();
+    let mut target = SqliteStore::open_in_memory().unwrap();
+    exchange_external(&mut target, &initial, "peer-enrol", 3);
+    let peer = target.export_task_tree(&project).unwrap();
+    exchange_external(&mut source, &peer, "source-enrol", 4);
+    assert_eq!(source.get_work_item(original.work_id).unwrap(), original);
+    let repeated = state(&source);
+    exchange_external(&mut source, &peer, "source-enrol", 5);
+    assert_eq!(state(&source), repeated);
+    assert!(!exchange_external(&mut source, &peer, "source-repeat", 6).changed);
+    let mut edited = peer;
+    edited.tasks[0].title = "Peer edit".into();
+    edited.tasks[0].outcome = "Peer outcome".into();
+    edited.tasks[0].acceptance = vec!["Shared criterion".into()];
+    edited.tasks[0].priority = 1;
+    exchange_external(&mut target, &edited, "peer-edit", 7);
+    let from_peer = target.export_task_tree(&project).unwrap();
+    exchange_external(&mut source, &from_peer, "return-edit", 8);
+    assert_eq!(source.export_task_tree(&project).unwrap(), from_peer);
+    let held = source.get_work_item(original.work_id).unwrap();
+    assert_eq!(held.origin, crate::WorkOrigin::Imported);
+    assert_eq!(held.source_snapshot_id, original.source_snapshot_id);
+    assert_eq!(held.created_by, original.created_by);
+    assert_eq!(held.created_at, original.created_at);
+    assert_eq!(snapshot_bytes(&source, snapshot), original_bytes);
+    let mut reverse = from_peer;
+    reverse.tasks[0].title = "Source edit".into();
+    exchange_external(&mut source, &reverse, "source-edit", 9);
+    exchange_external(
+        &mut target,
+        &source.export_task_tree(&project).unwrap(),
+        "return-peer",
+        10,
+    );
+    assert_eq!(target.export_task_tree(&project).unwrap(), reverse);
+    assert_eq!(snapshot_bytes(&source, snapshot), original_bytes);
+    for store in [&source, &target] {
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+}
+
+#[test]
+fn task_sync_external_imported_mixed_graph_keeps_every_identity_and_edge() {
+    let mut source = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("external".into());
+    let imported = external_item(&mut source, &project);
+    let native = source
+        .create_work(
+            &root_request(&project.0, "native", 3),
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let decomposition = source
+        .decompose_work(
+            &crate::domain::DecomposeWorkRequest {
+                parent_id: imported.work_id,
+                expected_parent_revision: imported.revision,
+                children: vec![crate::storage::work::test_support::child(
+                    "child",
+                    ChildRequirement::Required,
+                    "Native child",
+                )],
+                prerequisites: Vec::new(),
+                authority: crate::domain::WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "mixed-child".into(),
+                created_at: at(4),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let child = &decomposition.children[0];
+    source
+        .add_work_prerequisite(
+            &crate::domain::ChangeWorkPrerequisiteRequest {
+                work_id: child.work_id,
+                prerequisite_id: native.work_id,
+                expected_revision: child.revision,
+                authority: crate::domain::WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "mixed-edge".into(),
+                changed_at: at(5),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let tree = source.export_task_tree(&project).unwrap();
+    assert_eq!(tree.tasks.len(), 3);
+    let shared_child = tree
+        .tasks
+        .iter()
+        .find(|task| task.id == child.work_id)
+        .unwrap();
+    assert_eq!(shared_child.parent_id, Some(imported.work_id));
+    assert_eq!(shared_child.prerequisites, [native.work_id]);
+    let mut target = SqliteStore::open_in_memory().unwrap();
+    exchange_external(&mut target, &tree, "mixed-enrol", 6);
+    assert_eq!(target.export_task_tree(&project).unwrap(), tree);
+    for store in [&source, &target] {
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+}
+
+#[test]
+fn task_sync_external_imported_capture_refuses_inconsistent_source_bindings() {
+    let mut source = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("external".into());
+    let item = external_item(&mut source, &project);
+    let before = state(&source);
+    for (origin, snapshot) in [
+        (crate::WorkOrigin::Imported, None),
+        (crate::WorkOrigin::Local, item.source_snapshot_id.clone()),
+    ] {
+        let mut invalid = item.clone();
+        invalid.origin = origin;
+        invalid.source_snapshot_id = snapshot;
+        let error = super::super::capture::capture_document_on(
+            &source.connection,
+            invalid,
+            false,
+            None,
+            false,
+            &mut crate::task_sync::notes::NoteOmissions::default(),
+            &mut crate::task_sync::notes::NoteOmissions::default(),
+        )
+        .unwrap_err();
+        assert_eq!(refusal_code(&error), "task_sync_origin_mismatch");
+        assert_eq!(state(&source), before);
+    }
+}
+
+#[test]
+fn task_sync_external_imported_plain_import_still_refuses_native_state() {
+    let mut source = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("external".into());
+    external_item(&mut source, &project);
+    let before = state(&source);
     let mut tree = candidate();
     tree.project.project_id = project.clone();
     for dry_run in [true, false] {

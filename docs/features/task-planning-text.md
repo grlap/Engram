@@ -594,8 +594,13 @@ and completion seals are outside this profile. Export/import require the
 ignore/attribute edit or polling.
 Export visibly reports the development no-op redactor: it filters nothing.
 Authored planning fields are shared text, not automatically scrubbed secrets.
-Items imported from an external source with an immutable source snapshot are
-refused by this profile; graph export retains that provenance instead.
+Items imported from an external source are shared as ordinary planning
+documents with the same task UUID. Their external reference is plain shared
+text. The immutable source snapshot and external-import provenance stay
+host-local and are never a dependency of planning export or import. A peer
+creates the task with local origin and no source snapshot; return imports
+preserve the original host's source citation. Full graph export retains that
+source history.
 The CLI accepts `--actor-context` (or `ENGRAM_ACTOR_CONTEXT`) and
 `--source-skill` for local import attribution; these never enter shared files.
 
@@ -1113,7 +1118,7 @@ replacement.
 | `task_sync_removed_planning` | The candidate omits a task the store already holds; or a memory export would publish a key the folder already holds whose retirement target the last import holds out of the folder. |
 | `task_sync_id_collision` | A candidate task, blocker, note or activity id already belongs to another record, task or project. |
 | `task_sync_invalid_graph` | The candidate is malformed, or fails its graph, reference or disclosure admission; or a folder envelope or basis file is malformed, incomplete or inconsistent with its own fingerprint. |
-| `task_sync_origin_mismatch` | The candidate or the selected basis names another project, an import origin binding differs, or export meets an externally imported item. |
+| `task_sync_origin_mismatch` | The candidate or the selected basis names another project, an import origin binding differs, or a local item's origin and source-snapshot binding disagree. |
 | `task_sync_destination_occupied` | The export destination already contains a different candidate. |
 | `task_sync_destination_appeared` | The export destination appeared while the export was prepared. |
 | `task_sync_publication_unsupported` | The filesystem cannot atomically move a staged directory without replacing an existing entry; nothing is published. |

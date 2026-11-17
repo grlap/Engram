@@ -104,10 +104,9 @@ pub(in crate::storage::work) fn capture_document_on(
     activity_omissions: &mut NoteOmissions,
 ) -> Result<(TaskDocument, bool), StoreError> {
     let id = item.work_id;
-    if item.origin == crate::WorkOrigin::Imported || item.source_snapshot_id.is_some() {
-        return Err(TaskSyncRefusal::OriginMismatch.invalid(
-            "task export refuses external imported origin and source snapshot; use graph export to retain that provenance",
-        ));
+    if (item.origin == crate::WorkOrigin::Imported) != item.source_snapshot_id.is_some() {
+        return Err(TaskSyncRefusal::OriginMismatch
+            .invalid("task export refuses inconsistent work origin and source snapshot binding"));
     }
     let event_records = query::canonical_work_event_records_for_item(connection, id)?;
     let shared_activity = activity::capture(
