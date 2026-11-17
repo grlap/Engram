@@ -189,7 +189,11 @@ Where they are silent, ask the operator, as above.
   applies them with the same flag. Once the data branch holds memories, every
   export and import for that project must pass `--include-memories`; without
   it they refuse with `memory_profile_requires_opt_in`. A key whose history
-  is not wholly internal is withheld, with a reason.
+  is not wholly internal is withheld, with a reason. The data branch holds
+  memories when HEAD's `.engram/project.json` carries `memory_profile`, even
+  while `.engram/memories/` is empty. On a branch that does not yet hold
+  them, the first export with `--include-memories` is a deliberate opt-in,
+  like changing the note selection.
 - Not filtered for secrets: task text is exported as stored. Native notes
   pass only a path and locator filter, and notes imported from another host
   are exported as stored. No filter detects secrets. A key, password or
@@ -256,12 +260,13 @@ Each host keeps two records privately, outside the data worktree, in a
 scratch location the project permits:
 
 - Its basis: a byte-for-byte copy of `.engram-data/.engram/project.json`,
-  made with a file copy (`cp`, `Copy-Item`) right after its own export wrote
-  that file, that is, whenever the export's route is not `unchanged`. Never
-  take it from another host's export. Do not capture it through a shell
-  redirect such as `git show ... > file`: Windows PowerShell 5.1 rewrites
-  redirected output as UTF-16. The basis serves only the complete import
-  route (`--basis`); once this host has exported or imported, ordinary
+  made with a file copy (`cp`, `Copy-Item`) right after its own export
+  changed that file. Never take it from another host's export. Do not
+  capture it through a shell redirect such as `git show ... > file`: Windows
+  PowerShell 5.1 rewrites redirected output as UTF-16. The basis serves the
+  complete import route (`--basis`), which a store's first import of a
+  committed folder needs, including the first host's first import after it
+  only exported. Once this host has imported a committed folder, ordinary
   imports are incremental and take no basis.
 - Its imported commit: the data-branch commit this store is known to hold,
   namely its own export commit or a commit whose import finished with exit
@@ -308,14 +313,17 @@ tree with `memory_export_component_changed`.
    HEAD is the recorded imported commit, no merge is in progress, and the
    data worktree is clean.
 2. Export planning only into the checked-out folder:
-   `engram task-sync export .engram-data/.engram`, adding
+   `engram task-sync export .engram-data/.engram --json`, adding
    `--include-memories` when the data branch holds memories. If the export
    fails, restore the folder with
    `git -C .engram-data restore --source=HEAD --staged --worktree -- .engram`,
    then read `git -C .engram-data status`, stop and report the refusal and
    any untracked file left behind, without deleting it.
-3. If the export's route is not `unchanged`, copy the new basis, as
-   [kept above](#keep-the-exchange-state).
+3. If the export changed `.engram/project.json`
+   (`git -C .engram-data diff --quiet -- .engram/project.json` exits `1`),
+   copy the new basis, as [kept above](#keep-the-exchange-state). The
+   receipt's `route` describes only the task files: a first memory opt-in
+   can change `project.json` while the route is `unchanged`.
 4. `git -C .engram-data add .engram`, then read
    `git -C .engram-data diff --cached --name-status`. It may list only
    `.engram/project.json`, files under `.engram/tasks/` and, with
@@ -341,7 +349,7 @@ tree with `memory_export_component_changed`.
    the worktree in place during ordinary cleanup.
 4. If the remote already has the data branch, this is not a first host:
    [join a new host](#join-a-new-host) instead.
-5. Export planning only: `engram task-sync export .engram-data/.engram`.
+5. Export planning only: `engram task-sync export .engram-data/.engram --json`.
    Add `--include-memories` when the project exchanges memories.
 6. Copy the basis, as [kept above](#keep-the-exchange-state).
 7. Run the disclosure check before committing, commit only `.engram/` in the
@@ -406,9 +414,10 @@ changing this project's tasks.
 5. Dry-run the import:
    `engram task-sync import .engram-data/.engram --dry-run --json`, adding
    `--include-memories` when the branch holds memories. Once this host has
-   exported or imported, this is the incremental route and reads only what
-   changed since its last import. Add `--basis <private>/basis.json` only
-   when a refusal names the complete route. Never use another host's
+   imported a committed folder, this is the incremental route and reads only
+   what changed since its last import. A store's first import, including the
+   first host's after it only exported, is the complete route: add
+   `--basis <private>/basis.json`, as the refusal names. Never use another host's
    `project.json` as the basis: the comparison is by content and cannot tell
    hosts apart. Read the receipt. Continue only if
    the dry run exits `0`; otherwise stop, keep the commit, and follow the

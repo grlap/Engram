@@ -383,7 +383,9 @@ and no size limit.
   branch, never code, docs or tests. The origin repository may be public, so
   every pushed export is visible to anyone: before each push the pusher
   confirms the export carries no secret, credential or private personal
-  data. This grants no other commit, push, install or restart.
+  data. This grants no other commit, push, install or restart. Teams run
+  this sync whenever they judge it useful, without asking each time, and
+  every code push is followed by this sync; this grants no code push.
 - Implementers claim their own Engram items and complete them with the
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.

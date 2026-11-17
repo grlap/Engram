@@ -1044,12 +1044,16 @@ duplicate or mismatched ids and unresolved conflict markers are refused.
 `engram-project-memories-v1` capability independently of `--include-notes`.
 The folder project's `memory_profile` field advertises it; older readers refuse
 the unknown field, and current task-only imports require explicit memory opt-in.
-Keep this host's exported task `project.json` as its pre-merge basis as usual.
+Keep this host's exported task `project.json` as its pre-merge basis as usual;
+it serves the complete import route.
 Export captures task and memory text from the same SQLite snapshot and withholds
 a whole key when one of its historical task targets is outside the selected task
 profile. After the ordinary fetch and agent merge of the data branch, use
-`task-sync import MAIN/.engram-data/.engram --basis BASIS/project.json
---include-memories`. Tasks apply before their dependent memories. This route
+`task-sync import MAIN/.engram-data/.engram --include-memories`, the
+incremental route once this host has imported a committed folder. A store's
+first import, including the first publisher's after it only exported, is the
+complete route and adds `--basis BASIS/project.json`. Tasks apply before
+their dependent memories. This route
 does not fetch, merge, commit or push. Git authority remains separate.
 Once the committed data HEAD advertises this capability, task-only export
 also refuses with `memory_profile_requires_opt_in`, even if the working
