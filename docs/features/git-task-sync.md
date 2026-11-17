@@ -962,6 +962,36 @@ Git records document history;
 the document is not an immutable canonical object and its task id is not a
 canonical version id. A fingerprint compares content; it identifies no task.
 
+For an existing task on an enrolled destination, folder import and the incoming
+delta writer's folder admission use the planning-field allowlist below. An
+explicit [planning successor](#host-binding-and-validation-identity) follows its
+own revision contract. All applied edits still pass the destination's ordinary
+revision validation and local execution admission.
+
+If a task change includes a field marked Refused below, `unsupported_fields`
+names every unsupported field and refuses that task's whole change. Every local
+value stays unchanged, including Applied fields edited in the same document.
+Other admission failures keep their own refusal reasons. Carrying a field in an
+initial task document does not make a later folder edit supported.
+
+| Field | Existing-task edit | Reason and effect |
+| --- | --- | --- |
+| `title` | Applied | Replaces the title through the ordinary planning revision writer. |
+| `outcome` | Applied | Replaces the outcome through the ordinary planning revision writer. |
+| `acceptance` | Applied | Replaces the complete ordered criteria list, including additions, removals and reordering. |
+| `acceptance_bindings` | Applied | Sets or clears portable typed requirements; a criteria edit carries its complete binding list. Record-id pins refuse before mutation as `acceptance_pin`. |
+| `priority` | Applied | Uses the ordinary planning revision's priority validation. |
+| `labels` | Applied | Replaces planning labels through the ordinary revision writer. |
+| `assigned_to` | Applied | Sets or clears planning assignment; it creates no execution claim. |
+| `kind` | Refused as `kind` | Task-kind changes are outside the enrolled-folder edit allowlist. |
+| `evaluation_mode` | Refused as `evaluation_mode` | The folder revision writer does not implement edits to the existing evaluation policy. |
+| `deferred_until` | Refused as `deferred_until` | The folder revision writer does not implement edits to the existing deferral. |
+| `external_ref` | Refused as `external_ref` | The folder revision writer does not implement edits to the existing external linkage. |
+
+Other lifecycle and structural changes follow the
+[enrolled-destination contract](task-planning-text.md#edits-on-an-enrolled-destination);
+prerequisite and blocker edits follow the [relation contract](task-folder-relations.md).
+
 The initial profile exchanges task planning and shared notes, including closed
 tasks. An imported completion is attributed as a reported outcome; it must not
 manufacture a local completion seal, acceptance pass or satisfied host obligation.

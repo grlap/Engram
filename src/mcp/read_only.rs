@@ -485,7 +485,7 @@ mod tests {
             assert_eq!(result["retiring_target_dropped"]["revision"], 2);
         }
         assert_eq!(value["next"], cli_result.value["next"]);
-        assert!(value["next"][0].as_str().unwrap().contains("--revision 2"));
+        assert_eq!(value["next"], json!(["engram work memories"]));
         let historical = reader.memories(Parameters(
             serde_json::from_value(json!({"query": key, "full": true, "revision": 2})).unwrap(),
         ));
@@ -494,6 +494,14 @@ mod tests {
         assert_eq!(historical["body"], "Legacy body --caller-data");
         assert_eq!(historical["retiring_target_dropped"]["revision"], 2);
         assert_eq!(historical["reminders"], json!([]));
+        assert_eq!(
+            historical["next"],
+            json!([
+                format!("engram work memories {key} --full --revision 1"),
+                format!("engram work memories {key} --full"),
+                "engram work memories"
+            ])
+        );
         // Both the actual read envelopes and the production write callback
         // check the current and widest historical-navigation renderings.
         let full = store
@@ -525,12 +533,13 @@ mod tests {
             crate::argument_names::ArgumentNames::Mcp,
         ] {
             let response =
-                crate::work_service::project_memory_full_response(full.clone(), names).unwrap();
+                crate::work_service::project_memory_full_response(full.clone(), names, false)
+                    .unwrap();
             assert!(serde_json::to_vec(&response).unwrap().len() <= 12 * 1024);
             let mut oversized = full.clone();
             oversized.body = "x".repeat(12 * 1024);
             assert!(
-                crate::work_service::project_memory_full_response(oversized.clone(), names)
+                crate::work_service::project_memory_full_response(oversized.clone(), names, false)
                     .is_err()
             );
             assert!(

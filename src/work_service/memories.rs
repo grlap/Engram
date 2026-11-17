@@ -323,7 +323,7 @@ impl LocalWorkService {
             key,
             revision,
         )?;
-        project_memory_full_response(full, names).map_err(|error| match error {
+        project_memory_full_response(full, names, revision.is_some()).map_err(|error| match error {
             StoreError::InvalidProjectMemory(detail) => StoreError::InvalidMemoryProjection(detail),
             other => other,
         })
@@ -466,16 +466,23 @@ pub(crate) fn retiring_target_lines(
 pub(crate) fn project_memory_full_response(
     memory: ProjectMemoryFull,
     names: crate::argument_names::ArgumentNames,
+    history_requested: bool,
 ) -> Result<ProjectMemoryFullResponse, StoreError> {
-    project_memory_full_response_within(memory, names, MAX_PROJECT_MEMORY_FULL_BYTES)
+    project_memory_full_response_within(
+        memory,
+        names,
+        history_requested,
+        MAX_PROJECT_MEMORY_FULL_BYTES,
+    )
 }
 
 fn project_memory_full_response_within(
     memory: ProjectMemoryFull,
     names: crate::argument_names::ArgumentNames,
+    history_requested: bool,
     limit: usize,
 ) -> Result<ProjectMemoryFullResponse, StoreError> {
-    let response = ProjectMemoryFullResponse::new(memory, names);
+    let response = ProjectMemoryFullResponse::new(memory, names, history_requested);
     let bytes = serde_json::to_vec(&response)?.len();
     if bytes > limit {
         return Err(StoreError::InvalidProjectMemory(format!(
@@ -518,8 +525,8 @@ pub(crate) fn ensure_project_memory_full_is_admissible(
         crate::argument_names::ArgumentNames::Cli,
         crate::argument_names::ArgumentNames::Mcp,
     ] {
-        project_memory_full_response_within(memory.clone(), names, limit)?;
-        project_memory_full_response_within(historical.clone(), names, limit)?;
+        project_memory_full_response_within(memory.clone(), names, true, limit)?;
+        project_memory_full_response_within(historical.clone(), names, true, limit)?;
     }
     Ok(())
 }

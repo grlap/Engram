@@ -477,8 +477,8 @@ fn legacy_at_limit(
             crate::argument_names::ArgumentNames::Cli,
             crate::argument_names::ArgumentNames::Mcp,
         ] {
-            crate::work_service::project_memory_full_response(full.clone(), names)?;
-            crate::work_service::project_memory_full_response(historical.clone(), names)?;
+            crate::work_service::project_memory_full_response(full.clone(), names, true)?;
+            crate::work_service::project_memory_full_response(historical.clone(), names, true)?;
         }
         Ok(())
     };

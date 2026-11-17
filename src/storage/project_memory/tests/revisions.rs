@@ -57,6 +57,7 @@ fn memory_seed_retains_shared_tag_without_changing_local_recorder() {
     let response = crate::work_service::project_memory_full_response(
         full,
         crate::argument_names::ArgumentNames::Cli,
+        false,
     )
     .unwrap();
     let rendered = response.terminal_lines().join("\n");

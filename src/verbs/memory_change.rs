@@ -25,11 +25,11 @@ pub(super) fn edit(append: bool, section: Option<&str>) -> Result<ProjectMemoryE
     }
 }
 
-/// The lines a revise's receipt adds, and the commands that read both
-/// revisions in full.
-pub(super) fn lines(receipt: &ProjectMemoryMutationReceipt) -> (Vec<String>, Vec<String>) {
-    let (Some(change), Some(before)) = (&receipt.change, receipt.replaced_revision) else {
-        return (Vec::new(), Vec::new());
+/// The bounded change a revise's receipt adds. Historical navigation is
+/// reserved for an explicitly requested revision read.
+pub(super) fn lines(receipt: &ProjectMemoryMutationReceipt) -> Vec<String> {
+    let Some(change) = &receipt.change else {
+        return Vec::new();
     };
     let mut lines = vec![summary(change)];
     for (sign, text, bytes, omitted) in [
@@ -57,16 +57,7 @@ pub(super) fn lines(receipt: &ProjectMemoryMutationReceipt) -> (Vec<String>, Vec
             lines.push(format!("  {sign} … {omitted} more bytes"));
         }
     }
-    let next = [before, receipt.revision]
-        .into_iter()
-        .map(|revision| {
-            format!(
-                "engram work memories {} --full --revision {revision}",
-                receipt.key
-            )
-        })
-        .collect();
-    (lines, next)
+    lines
 }
 
 fn summary(change: &ProjectMemoryChange) -> String {

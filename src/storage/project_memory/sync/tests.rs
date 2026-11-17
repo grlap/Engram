@@ -17,6 +17,65 @@ fn actor() -> ActorContext {
     }
 }
 
+#[test]
+fn current_memory_context_import_keeps_only_the_latest_head_after_reopen() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let path = directory.path().join("imported-memory.db");
+    let mut author = SqliteStore::open_in_memory().unwrap();
+    remember(&mut author, "Superseded first guidance", false);
+    remember(&mut author, "Superseded second guidance", true);
+    remember(&mut author, "Current guidance", true);
+    let selected = capture(&author, None);
+    {
+        let mut destination = SqliteStore::open(&path).unwrap();
+        import(&mut destination, &selected, false, None).unwrap();
+    }
+    let recorder = actor();
+    let session = recorder.session_id.as_ref().unwrap();
+    let project = crate::ProjectId("sync-project".into());
+    let mut destination = SqliteStore::open(&path).unwrap();
+    let full = destination
+        .project_memory_full(&project, session, &recorder, "rule", None)
+        .unwrap();
+    assert_eq!(full.revision, 3);
+    assert_eq!(full.body, "Current guidance");
+    let listed = destination
+        .project_memories(&project, session, &recorder, None, None)
+        .unwrap();
+    assert_eq!(listed.memories.len(), 1);
+    assert_eq!(listed.memories[0].revision, 3);
+    assert_eq!(listed.memories[0].first_line, "Current guidance");
+    let old_search = destination
+        .project_memories(&project, session, &recorder, Some("Superseded"), None)
+        .unwrap();
+    assert_eq!(
+        old_search.memories,
+        [] as [crate::domain::ProjectMemoryListRow; 0]
+    );
+    let historical = destination
+        .project_memory_full(&project, session, &recorder, "rule", Some(1))
+        .unwrap();
+    assert_eq!(historical.body, "Superseded first guidance");
+    forget(&mut author, recorder.clone());
+    let retired = capture(&author, Some(&selected));
+    import(&mut destination, &retired, false, None).unwrap();
+    drop(destination);
+    let destination = SqliteStore::open(&path).unwrap();
+    for revision in [None, Some(1), Some(3)] {
+        assert!(matches!(
+            destination.project_memory_full(&project, session, &recorder, "rule", revision),
+            Err(StoreError::ProjectMemoryRetired(_))
+        ));
+    }
+    assert_eq!(
+        destination
+            .project_memories(&project, session, &recorder, None, None)
+            .unwrap()
+            .memories,
+        [] as [crate::domain::ProjectMemoryListRow; 0]
+    );
+}
+
 fn forget(store: &mut SqliteStore, recorder: ActorContext) {
     store
         .forget_project_memory(

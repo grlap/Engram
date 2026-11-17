@@ -416,6 +416,15 @@ fn work_catalog_sql(
         crate::storage::admit_session_id(session)?;
     }
     let ready_seek = ready_seek_key(query)?;
+    // Indexed text searches already supply keyed candidates. Otherwise choose
+    // the lifecycle prefix before ordering, so an open listing does not walk
+    // completed project history through the project/work-id index.
+    let indexed_text_search = query
+        .search
+        .as_deref()
+        .map(normalize_work_catalog_key)
+        .is_some_and(|text| catalog_uses_fts(&text));
+    let lifecycle_candidates = !query.lifecycles.is_empty() && !indexed_text_search;
     let mut parameters = vec![
         Value::Text(project_id.0.clone()),
         Value::Integer(now.timestamp_millis()),
@@ -501,13 +510,26 @@ fn work_catalog_sql(
             &mut parameters,
             Value::Text(normalize_work_catalog_key(label)),
         );
-        candidate_filters.push(format!(
-            "EXISTS (
+        candidate_filters.push(if query.lifecycles.is_empty() && !indexed_text_search {
+            // With no lifecycle or indexed text filter, drive from this label's
+            // members instead of checking every project item for membership.
+            format!(
+                "candidate.work_id IN (
+                     SELECT label.work_id FROM work_item_labels label
+                     WHERE label.label_key = {parameter}
+                 )"
+            )
+        } else {
+            // Probe membership only for the selected lifecycle/text candidates;
+            // materializing a label's closed members would re-read its history.
+            format!(
+                "EXISTS (
                  SELECT 1 FROM work_item_labels label
                  WHERE label.work_id = candidate.work_id
                    AND label.label_key = {parameter}
-             )"
-        ));
+                 )"
+            )
+        });
     }
     if let Some(search) = query
         .search
@@ -547,26 +569,35 @@ fn work_catalog_sql(
                 push_catalog_parameter(&mut parameters, Value::Text(work_id.to_string()));
             listed.push(format!("SELECT {parameter}"));
         }
-        // The range skips unassigned items, so this scan follows assignments.
         let parameter = push_catalog_parameter(&mut parameters, Value::Text(search));
-        listed.push(format!(
-            "SELECT assignee.work_id FROM work_items assignee
-             WHERE assignee.project_id = ?1
-               AND assignee.assigned_to_key > ''
-               AND CASE WHEN octet_length(assignee.assigned_to_key) <= {unit_bytes}
-                        THEN instr(assignee.assigned_to_key, {parameter}) ELSE 0 END > 0"
-        ));
+        if use_fts {
+            // Indexed text searches still collect their assignment candidates.
+            // The range skips unassigned items.
+            listed.push(format!(
+                "SELECT assignee.work_id FROM work_items assignee
+                 WHERE assignee.project_id = ?1
+                   AND assignee.assigned_to_key > ''
+                   AND CASE WHEN octet_length(assignee.assigned_to_key) <= {unit_bytes}
+                            THEN instr(assignee.assigned_to_key, {parameter}) ELSE 0 END > 0"
+            ));
+        }
         if let Some(ids) = note_matches {
             let parameter = push_catalog_parameter(&mut parameters, Value::Text(ids.into()));
             listed.push(format!("SELECT value FROM json_each({parameter})"));
         }
-        let listed = format!("candidate.work_id IN ({})", listed.join(" UNION ALL "));
+        let listed = if listed.is_empty() {
+            "0".to_owned()
+        } else {
+            format!("candidate.work_id IN ({})", listed.join(" UNION ALL "))
+        };
         candidate_filters.push(if use_fts {
             listed
         } else {
             format!(
                 "(CASE WHEN octet_length(candidate.search_text_key) <= {unit_bytes}
                        THEN instr(candidate.search_text_key, {text}) ELSE 0 END > 0
+                  OR CASE WHEN octet_length(candidate.assigned_to_key) <= {unit_bytes}
+                          THEN instr(candidate.assigned_to_key, {parameter}) ELSE 0 END > 0
                   OR {listed})"
             )
         });
@@ -621,13 +652,20 @@ fn work_catalog_sql(
         format!("COUNT(*) FROM classified {classified_where}")
     };
     let availability = projected_work_availability_sql();
+    let candidates = if lifecycle_candidates && query.parent_id.is_some() {
+        "work_items candidate INDEXED BY work_items_parent"
+    } else if lifecycle_candidates {
+        "work_items candidate INDEXED BY work_items_ready"
+    } else {
+        "work_items candidate"
+    };
     let sql = format!(
         "WITH classified AS (
              SELECT candidate.work_id,
                     candidate.priority,
                     ({availability}) AS availability,
                     ({PROJECTED_WORK_HAS_BLOCKER_SQL}) AS has_blocker
-             FROM work_items candidate
+             FROM {candidates}
              WHERE {}
          )
          SELECT {selection}",

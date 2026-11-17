@@ -1155,8 +1155,9 @@ body from revision N inside the write, appending a paragraph or replacing one
 marked section and keeping every other byte; the stored revision is still a
 full body, so history, replay and `forget` are unchanged (see
 [CLI and MCP](cli-and-mcp.md)).
-Use `memories KEY --full --revision N` to read one prior attributed version;
-each full read offers bounded previous-version navigation. There is no need
+Use `memories KEY --full --revision N` to select one attributed version and
+enable bounded previous-version navigation. An ordinary `memories KEY --full`
+read returns only current guidance, without history links. There is no need
 for a companion key to correct a note. Without `--revise`, an existing live
 key still refuses `memory_exists` with revision guidance, except an identical
 creation retry. `forget` permanently retires the key, including all history
