@@ -150,6 +150,29 @@ instructions, which name the approved repository, branch and who may push.
 Where they are silent, ask the operator and act only within the scope the
 operator states.
 
+### When to sync
+
+These rules apply where a project's instructions authorize pushing its data
+branch, for example by adopting the sentence in
+[pointer for a consuming project](#pointer-for-a-consuming-project). Those
+instructions still name the repository, the data branch and who may push it.
+Where they are silent, ask the operator, as above.
+
+- Sync whenever it is useful, without asking each time. A routine exchange of
+  task and memory data through the data branch is ordinary work within the
+  authority the project's instructions give for that branch.
+- Follow every code push with a data sync, so that the shared task state
+  matches the pushed code. The data sync is follow-through, not a gate on the
+  code push.
+- When the export or any check in this procedure fails, or the merge cannot
+  be reconciled, leave the data unpublished and report the cause, the owner
+  and the remedy; never force or bypass the failure. When nothing changed,
+  finish without a commit.
+- Keep data and code apart. Exported data goes only on the data branch, and
+  the data branch carries no code, documentation or tests.
+- These rules grant no code commit or push. Authority to commit or push code
+  comes only from the project's own instructions.
+
 ### What is exchanged
 
 - Exchanged: task planning (title, outcome, acceptance, kind, priority,
@@ -161,7 +184,12 @@ operator states.
 - Not exchanged by this folder route: live claims, runs, sessions, grants,
   delivery state, evidence and verification records (gates, host checks,
   evaluations, observations) and private scratch.
-- Not exchanged yet: project memories. Do not report memories as synced.
+- Exchanged only when an export opts in with `--include-memories`: project
+  memories, each key with its revision history or its tombstone. Import
+  applies them with the same flag. Once the data branch holds memories, every
+  export and import for that project must pass `--include-memories`; without
+  it they refuse with `memory_profile_requires_opt_in`. A key whose history
+  is not wholly internal is withheld, with a reason.
 - Not filtered for secrets: task text is exported as stored. Native notes
   pass only a path and locator filter, and notes imported from another host
   are exported as stored. No filter detects secrets. A key, password or
@@ -228,10 +256,13 @@ Each host keeps two records privately, outside the data worktree, in a
 scratch location the project permits:
 
 - Its basis: a byte-for-byte copy of `.engram-data/.engram/project.json`,
-  made with a file copy (`cp`, `Copy-Item`) right after its own export. Never
+  made with a file copy (`cp`, `Copy-Item`) right after its own export wrote
+  that file, that is, whenever the export's route is not `unchanged`. Never
   take it from another host's export. Do not capture it through a shell
   redirect such as `git show ... > file`: Windows PowerShell 5.1 rewrites
-  redirected output as UTF-16.
+  redirected output as UTF-16. The basis serves only the complete import
+  route (`--basis`); once this host has exported or imported, ordinary
+  imports are incremental and take no basis.
 - Its imported commit: the data-branch commit this store is known to hold,
   namely its own export commit or a commit whose import finished with exit
   `0` on this host.
@@ -254,7 +285,7 @@ run, an import refused with exit `1`, or exit `3`), do not export, commit or
 push on top of it. A fresh export there would silently
 revert the other host's changes and, once pushed, make that host cancel the
 tasks it added. Keep that commit and the old basis. Rerun the same import
-with the same basis when the refusal was transient, such as a lock or I/O
+when the refusal was transient, such as a lock or I/O
 failure. Otherwise stop and report to the operator; reconcile through the
 re-merge the
 [folder exchange](../../features/task-planning-text.md#git-folder-exchange)
@@ -263,32 +294,34 @@ describes, without writing an export over the unimported commit. See
 
 ### Refresh the export
 
-Export publishes a whole new `.engram` folder. It refuses
-(`task_sync_destination_occupied`) while that folder exists with different
-content, even when the folder holds only evidence packs or the `.gitignore`
-and `.gitattributes` policy files. Those entries are not planning and must
-survive a refresh, so the folder is removed and they are restored afterwards:
+Once this host has exported or imported, export updates the checked-out
+`.engram` folder in place: it rewrites only the task files that changed and
+leaves the other entries, such as evidence packs and the `.gitignore` and
+`.gitattributes` policy files. Never remove the folder before exporting. An
+export refuses a missing folder, or one with changes the last export or
+import did not leave (`task_sync_incremental_basis_unavailable`). With
+`--include-memories` on a branch that holds memories, a missing folder
+refuses instead with `memory_export_component_missing`, and a changed memory
+tree with `memory_export_component_changed`.
 
 1. Pass the three checks in [keep the exchange state](#keep-the-exchange-state):
    HEAD is the recorded imported commit, no merge is in progress, and the
-   data worktree is clean. Then list what HEAD tracks:
-   `git -C .engram-data ls-tree --name-only HEAD .engram/`. Note every entry
-   other than `.engram/project.json` and `.engram/tasks`.
-2. `git -C .engram-data rm -r -q .engram`. If it fails or the folder still
-   exists afterwards, stop and report `git -C .engram-data status`.
-3. Export planning only: `engram task-sync export .engram-data/.engram`. If
-   the export fails, restore the folder with
-   `git -C .engram-data restore --source=HEAD --staged --worktree -- .engram`
-   and stop.
-4. Restore every entry noted in step 1 with
-   `git -C .engram-data checkout HEAD -- <entry>...`, for example
-   `.engram/evidence`.
-5. Copy the new basis, as [kept above](#keep-the-exchange-state).
-6. `git -C .engram-data add .engram`, then read
+   data worktree is clean.
+2. Export planning only into the checked-out folder:
+   `engram task-sync export .engram-data/.engram`, adding
+   `--include-memories` when the data branch holds memories. If the export
+   fails, restore the folder with
+   `git -C .engram-data restore --source=HEAD --staged --worktree -- .engram`,
+   then read `git -C .engram-data status`, stop and report the refusal and
+   any untracked file left behind, without deleting it.
+3. If the export's route is not `unchanged`, copy the new basis, as
+   [kept above](#keep-the-exchange-state).
+4. `git -C .engram-data add .engram`, then read
    `git -C .engram-data diff --cached --name-status`. It may list only
-   `.engram/project.json` and files under `.engram/tasks/`; anything else
-   means a step went wrong, so restore the folder as in step 3 and stop. If
-   it lists nothing, the store has no change: skip the commit, and HEAD stays
+   `.engram/project.json`, files under `.engram/tasks/` and, with
+   `--include-memories`, files under `.engram/memories/`. Anything else means
+   a step went wrong, so restore the folder as in step 2 and stop. If it
+   lists nothing, the store has no change: skip the commit, and HEAD stays
    the imported commit. Otherwise run the disclosure check, commit, and
    record that commit as the imported commit.
 
@@ -309,6 +342,7 @@ survive a refresh, so the folder is removed and they are restored afterwards:
 4. If the remote already has the data branch, this is not a first host:
    [join a new host](#join-a-new-host) instead.
 5. Export planning only: `engram task-sync export .engram-data/.engram`.
+   Add `--include-memories` when the project exchanges memories.
 6. Copy the basis, as [kept above](#keep-the-exchange-state).
 7. Run the disclosure check before committing, commit only `.engram/` in the
    data worktree, and record that commit as this host's imported commit.
@@ -329,7 +363,9 @@ operator runs `engram init` with the confirmed home, as in
 2. In the data worktree, fetch the published branch into the unborn branch:
    `git -C .engram-data fetch origin engram-data`, then
    `git -C .engram-data merge --ff-only FETCH_HEAD`.
-3. `engram task-sync import .engram-data/.engram --empty-basis --dry-run --json`.
+3. `engram task-sync import .engram-data/.engram --empty-basis --dry-run --json`,
+   with `--include-memories` when the branch holds memories, here and in
+   every later import.
    Read the receipt; a dry run writes nothing. Continue only if it exits
    `0`; otherwise stop and report.
 4. Run the same import without `--dry-run`. On exit `0`, record the fetched
@@ -367,10 +403,14 @@ changing this project's tasks.
    `git -C .engram-data diff --no-renames --name-status --diff-filter=D <imported commit> HEAD -- .engram/tasks`
    must list nothing, unless the operator has stated that removal is
    intended. Otherwise stop and keep the commit.
-5. Dry-run the import with your own basis:
-   `engram task-sync import .engram-data/.engram --basis <private>/basis.json --dry-run --json`.
-   Never use another host's `project.json` as the basis: the comparison is by
-   content and cannot tell hosts apart. Read the receipt. Continue only if
+5. Dry-run the import:
+   `engram task-sync import .engram-data/.engram --dry-run --json`, adding
+   `--include-memories` when the branch holds memories. Once this host has
+   exported or imported, this is the incremental route and reads only what
+   changed since its last import. Add `--basis <private>/basis.json` only
+   when a refusal names the complete route. Never use another host's
+   `project.json` as the basis: the comparison is by content and cannot tell
+   hosts apart. Read the receipt. Continue only if
    the dry run exits `0`; otherwise stop, keep the commit, and follow the
    guard in [keep the exchange state](#keep-the-exchange-state).
 6. Run the same import without `--dry-run`. On exit `0`, record HEAD as the
@@ -424,6 +464,14 @@ The [startup recovery contract](../../host-checklist.md#recover-saved-guidance-a
 ```text
 At session start and after compaction, confirm Engram access, read `next` with `peek: true`, run the unfiltered `memories` command it prints with any printed context generation when the route admits that recording (omit it through a read-only route), follow its continuation commands, and read relevant current entries in full before acting.
 For how to claim, record evidence on and complete work tracked in Engram, and how to synchronize tasks between hosts, read OPERATOR_CONFIRMED_ENGRAM_CHECKOUT/docs/skills/engram-use/SKILL.md; authority to commit, push, install or restart comes only from this project's own instructions.
+```
+
+A project that uses task sync can adopt [when to sync](#when-to-sync) by adding
+this sentence to the rule in its instructions that authorizes pushing its data
+branch:
+
+```text
+Teams run this sync whenever they judge it useful, without asking each time, and every code push is followed by this sync; this grants no code push.
 ```
 
 Keep the consuming project's own authority and host-specific guidance.
