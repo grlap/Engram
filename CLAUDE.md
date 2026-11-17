@@ -59,9 +59,10 @@ and no size limit.
 - Use Git-ignored .logs/ and .evidence/ at the root of each project
   repository. Remove artifacts after the associated task closes, unless agents
   record a concrete need for a different retention policy. A file there is
-  removed once every task it serves has closed. The agent that closes the last
-  such task removes it, or the coordinator's regular sweep does, in either case
-  after the path check below, and records what it removed. To keep it longer,
+  removed once every task it serves has closed. The closer of the last such task
+  or the coordinator's regular sweep is accountable for its removal after the
+  path check below and records what was removed; Codex executes any directory
+  or worktree removal under "Cleanup deletions" below. To keep it longer,
   an agent records on an open task the concrete need and when it ends; the
   file goes when that need ends. Removal touches only `.logs/` and
   `.evidence/`, never a live worktree's run files, which leave only when that
@@ -69,8 +70,9 @@ and no size limit.
   what a decision rests on is quoted there, never left only in a raw file.
 - Finishing work includes cleaning up after it, without waiting for a disk to
   fill. When a worktree, build output or temporary file has served its purpose,
-  its owner removes it, after the path check below, and records it; the Merger
-  does so for a landed candidate. To keep one longer, record on an open item
+  the owner or integration owner is accountable for removing it and recording
+  the result; Codex executes directory and worktree removal under the
+  "Cleanup deletions" rule below. To keep one longer, record on an open item
   the concrete need and when it ends, then remove it then. A periodic sweep
   doesn't replace this.
 - Outside the repository only tools write, as part of their own work: Engram
@@ -760,7 +762,7 @@ This repository tracks its work in Engram (see Work Tracking below).
 
 ## Non-Interactive Shell Commands
 
-**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
+**Use non-interactive forms** with file operations to avoid hanging on confirmation prompts. Cleanup deletions follow the separate cleanup rule below; do not add force flags merely to suppress prompts.
 
 Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
 
@@ -769,10 +771,8 @@ Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interac
 # Force overwrite without prompting
 cp -f source dest           # NOT: cp source dest
 mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
 
 # For recursive operations
-rm -rf directory            # NOT: rm -r directory
 cp -rf source dest          # NOT: cp -r source dest
 ```
 
@@ -781,6 +781,22 @@ cp -rf source dest          # NOT: cp -r source dest
 - `ssh` - use `-o BatchMode=yes` to fail instead of prompting
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
+
+### Cleanup deletions
+
+Finishing work includes cleanup. The owner or integration owner is accountable for removing an unneeded worktree, build output and temporary files and for recording the result; Codex executes directory and worktree removal, not Opus or Claude. Another session hands Codex the exact owned targets.
+
+Before removal, resolve each target to an absolute path and check it is inside the intended repository or worktree, no link escapes it, its retention need has ended, runs are terminal with outcomes recovered, and no live work, frozen input, shared resource or unique unpushed change needs it. Otherwise stop and report the concrete blocker.
+
+Use a non-forced initial form: plain `rm` or `rm -r` without `-f` on POSIX, without an interactive terminal; PowerShell `Remove-Item -LiteralPath` with `-Recurse` for a directory and `-Confirm:$false`, without `-Force`; or `git worktree remove` without `--force`. Never delete through an unchecked variable or a broad `git clean`.
+
+A request for input or an operational failure stops the removal; report it to the coordinator. A policy refusal also stops it: do not retry through another form, tool, interpreter or session. Forced removal requires Greg's recorded authorization for that exact case and a permitted native route.
+
+Keep `.logs/` and `.evidence/` files only for a concrete need recorded on an open task, with its owner and end condition. The last closer or coordinator's sweep is accountable for their removal when that need ends, after the same checks; Codex executes any directory or worktree removal. Preserve evidence still needed by open work in the main checkout's `.evidence/` before removing its worktree and verify the copy.
+
+Deleting outside the repository requires Greg's explicit word. Tool-owned host state and an approved installation keep their existing rules.
+
+This adds no review, evaluation, FULL or approval gate.
 
 ## Work Tracking
 

@@ -202,7 +202,8 @@ its mapping recorded; never invent a commit, and if the archive is
 consolidated under the landed commit later, note the relocation on each
 citing item.
 
-The lander removes a worktree only once its item has closed and each of the
+The lander remains accountable for worktree removal, which Codex executes
+only once its item has closed and each of the
 worktree's runs meets the retention preconditions that
 [run evidence retention](../../../docs/development.md#record-for-the-host)
 states, all of them: the run has a terminal result, its outcome has been
@@ -230,19 +231,23 @@ old path or run id with its archive path, or that nothing was retained,
 stating the scope checked (this item and the items it knows to cite the
 worktree), never a global absence. It then adds an attributed note with the
 archive path to each citing item it knows of. Copying waives none of the
-three preconditions. Later, as the repository rule says, the agent that
-closes the last task an archived file serves removes it, or the
-coordinator's regular sweep does, in either case after the path check and
-recording what was removed; an agent that can safely finish its own cleanup
-does not wait for the sweep. A worktree that predates this rule is removed
+three preconditions. Later, as the repository rule says, the closer of the
+last task an archived file serves or the coordinator's regular sweep is
+accountable for its removal after the path check and for recording what was
+removed; Codex executes any directory or worktree removal under
+[Cleanup deletions](../../../AGENTS.md#cleanup-deletions). An owner who can
+safely arrange its own cleanup does not wait for the sweep. A worktree that
+predates this rule is removed
 only after a full sweep of open items' notes and gate references (`ls` over
 every page, then each item's full notes with gates), and anything ambiguous
 is retained. If the worktree contains a
 junction or symbolic link that resolves outside it, the lander neither
 removes the worktree nor tries to unlink the link, because a recursive
 removal can follow the link into its target; the lander reports it to the
-coordinator, who decides with the owner. Then the lander removes the clean
-worktree without `--force`.
+coordinator, who decides with the owner. After these checks, Codex removes the
+clean worktree using `git worktree remove` without `--force`; the lander records
+the result. Follow [Cleanup deletions](../../../AGENTS.md#cleanup-deletions)
+for executor, non-forced forms and stop conditions.
 
 Before repeating an uncertain mutation, follow the
 [session and intent retry rule](../../../docs/features/local-work-system.md#agent-native-protocol).
