@@ -5,6 +5,11 @@
 //! Windows children start suspended, join a kill-on-close job, then resume. A
 //! hard parent exit before assignment can leave an inert suspended child: this
 //! is not atomic confinement. After assignment, dropping the job kills its tree.
+//! On macOS and Linux, Git leads a new session. An independent controller
+//! verifies its group's cleanup or returns a typed failure on every exit
+//! path of the launch. A descendant that leaves that group, by setsid or
+//! setpgid, is not owned, and nothing ends the group if Engram's own process
+//! dies abruptly.
 
 pub(crate) use attempt::publish_outgoing_remaining;
 pub(crate) use bootstrap::audit_incoming_data_commit_remaining;
@@ -31,11 +36,11 @@ pub use successor::apply_planning_successor;
 #[cfg(all(test, windows))]
 #[path = "tests/windows/diagnostics.rs"]
 mod fixture_diagnostics;
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 mod process;
-/// Confined process control exists only on Windows. Elsewhere every launch is
-/// refused before spawn, behind the same awaited interface.
-#[cfg(not(windows))]
+/// Confined process control exists on Windows and Unix. Elsewhere every launch
+/// is refused before spawn, behind the same awaited interface.
+#[cfg(not(any(windows, unix)))]
 mod process {
     use super::{Cancellation, RunError, RunLimits, RunOutput};
 
@@ -61,7 +66,7 @@ mod process {
 }
 #[cfg(test)]
 mod phase_trace;
-#[cfg(any(windows, test))]
+#[cfg(any(windows, unix, test))]
 mod push;
 mod retained;
 mod target;
@@ -188,14 +193,14 @@ impl std::fmt::Debug for RunOutput {
 /// Refusals deliberately contain no URL, helper output or credential material.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RunError {
-    #[error("task exchange process control is supported only on Windows")]
+    #[error("task exchange process control is supported only on Windows, macOS and Linux")]
     UnsupportedPlatform,
     #[error(
         "task exchange requires one direct HTTPS URL without userinfo, query, fragment or unsafe characters; use an ASCII unreserved path, '/' and percent encoding; SSH and other transports are unsupported"
     )]
     UnsupportedTarget,
     #[error(
-        "task exchange requires manager, manager-core or wincred without helper arguments; remove unsupported helper configuration explicitly"
+        "task exchange requires Git Credential Manager (manager or manager-core) or this platform's own helper (wincred on Windows, osxkeychain on macOS, libsecret on Linux) without helper arguments; remove unsupported helper configuration explicitly"
     )]
     UnsupportedHelper,
     #[error(
@@ -232,12 +237,36 @@ pub enum RunError {
     Spawn,
     #[error("task exchange process or pipe failed; a remote result may be unknown")]
     Process,
+    #[error(
+        "task exchange cleanup was not proved: {detail}; interrupted={interrupted:?}; no success or publication is implied"
+    )]
+    Cleanup {
+        detail: String,
+        interrupted: Option<Box<Self>>,
+    },
     #[error("task exchange Git command failed; no success or publication is implied")]
     Git,
     #[error(
         "task exchange selected branch was refused as non-fast-forward; preserve the commit and reconcile the data tips"
     )]
     NonFastForward,
+}
+
+/// Settle cleanup left by dropped exchange futures after their runtime ends.
+/// A failure means a process-group cleanup could not be proved; it must make
+/// an otherwise successful command fail. This never grants execution credit.
+///
+/// # Errors
+/// Returns a bounded, sanitized cleanup refusal for pending or failed cleanup.
+pub fn drain_process_cleanup() -> Result<(), RunError> {
+    #[cfg(unix)]
+    {
+        process::drain()
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(())
+    }
 }
 
 /// Execute a previously captured target after rechecking its effective configuration.

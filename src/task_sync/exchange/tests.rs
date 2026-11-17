@@ -118,7 +118,7 @@ fn task_exchange_typed_commands_are_exact_non_force_and_do_not_expand_callers() 
     );
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 #[tokio::test]
 async fn task_exchange_unsupported_platform_never_launches_the_command() {
     let mut command = std::process::Command::new("must-not-be-launched");
@@ -166,6 +166,14 @@ fn task_exchange_limits_and_ref_validation_refuse_before_launch() {
     assert!(cancel.clone().is_cancelled());
 }
 
+// The real-Git process tests cover the hosts whose native credential helper
+// and process behaviour they pin: Windows, macOS and Linux.
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod policy_cases;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod service;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod unix;
 #[cfg(windows)]
 pub(super) mod windows;
 

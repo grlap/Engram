@@ -249,5 +249,5 @@ pub(super) async fn git_directory(
     Ok(path)
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, unix)))]
 mod tests;

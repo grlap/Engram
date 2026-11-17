@@ -1289,9 +1289,19 @@ explicit push disables tag following, mirroring, pruning and signing; fetch
 does not prune refs or tags, recurse into submodules, or write `FETCH_HEAD`.
 
 Engram launches Git directly and interpolates no caller text into a shell.
-Git can use its own shell to invoke its normal credential helper. Only the
-configured helper names `manager`, `manager-core`, and `wincred` are admitted,
-without helper arguments or `!` scripts. All ordered unscoped helper entries
+Git can use its own shell to invoke its normal credential helper. Only Git
+Credential Manager (`manager`, `manager-core`) and the platform's own keychain
+helper are admitted: `wincred` on Windows, `osxkeychain` on macOS and
+`libsecret` on Linux. Helper arguments, `!` scripts and another platform's
+keychain refuse. `cache` refuses on every platform because its daemon starts a
+session of its own, outside the runner's ownership, and `store` refuses because
+it keeps plaintext secrets. Git Credential Manager's own credential-store
+setting is Git configuration that Engram does not inspect: a keychain that
+raises a graphical unlock prompt is bounded only by the deadline, and a manager
+configured for a cache starts Git's cache daemon in a session of its own, so
+that daemon is left running after the exchange, as the bare `cache` helper
+would leave it; a manager configured for a plaintext store keeps plaintext
+secrets. All ordered unscoped helper entries
 are observed, including reset entries, and participate in drift detection.
 URL-scoped helper configuration refuses explicitly rather than approximating
 Git's matching rules; the refusal redacts its URL scope, names its bounded
@@ -1318,7 +1328,7 @@ kill-on-close Job Object, and then resumes it. Git's helpers and descendants
 remain in that job. Root exit, cancellation, output overflow, deadline and
 dropping the execution future terminate the owned tree; concurrent bounded
 pipe reads avoid waiting indefinitely for inherited handles. The default
-budget is 30 seconds, 1 MiB stdout and 64 KiB stderr. Callers may select up to
+budget is 60 seconds, 1 MiB stdout and 64 KiB stderr. Callers may select up to
 120 seconds and 1 MiB per stream. These are execution/output limits, not a
 download, object-store or repository-size quota. Native synchronous spawn is
 not preempted by the async deadline.
@@ -1327,7 +1337,48 @@ Confinement is not atomic at process creation: abrupt parent death between
 suspended spawn and job assignment can leave an inert suspended process.
 No child code has run in that interval. There is no claim of resource cleanup
 for that gap. A controller/spawn failure refuses instead of launching an
-unconfined fallback. Other platforms refuse before transport execution.
+unconfined fallback.
+
+On macOS and Linux, Git leads a new session and process group, with no
+controlling terminal and an unblocked signal mask. A cleanup controller thread
+is created before Git starts. It keeps the leader unreaped to reserve the group
+id, observes that ownership before each group signal, and repeats `SIGKILL`
+with complete member observations. Linux reads `/proc`, including each terminal
+leader's threads; macOS reads the exact `KERN_PROC_PGRP` snapshot bytes and checks
+the known leader against the supported record layout. A small macOS-only
+workspace crate isolates the single numeric `sysctl` FFI call site, with bounded
+allocation, returned-length and errno checks. The main crate retains its ban on
+unsafe code; record decoding and cleanup control use safe Rust. A second complete
+observation must contain only identities already observed terminal before the
+controller reaps the leader. Root exit, cancellation, output overflow, pipe
+failure and future drop all request this same cleanup. The controller survives
+destruction of the calling Tokio runtime.
+
+This is a bounded verification mechanism, not a universal proof about a fork
+whose publication the kernel has not exposed, notably on macOS. An incomplete
+enumeration, uncertain ownership, signal failure or unproved cleanup at the
+deadline returns a typed `Cleanup` failure with bounded remaining or unproven
+PIDs; it never reports success. The controller reserves up to one second, at
+most one quarter of the supplied budget, for cleanup inside that same absolute
+deadline. Failed cleanup retains the leader reservation in a registry capped
+at 64 pending or failed controllers; successful controllers retire immediately.
+At CLI exit, after its runtime is gone, pending cleanup is drained against the
+original deadlines, and any failure makes an otherwise successful exit fail.
+Library hosts must call `drain_process_cleanup` at their corresponding exit
+boundary. Enumeration costs repeated current-process snapshots, bounded by the
+deadline and a maximum of 1,048,576 process or thread entries; it reads no
+retained execution history.
+
+The controller must be the exclusive reaper: foreign `waitpid`, ignored
+`SIGCHLD` or automatic child reaping invalidates its ownership assumption.
+Observation failure stops further signals. No numeric PID kill-on-drop fallback
+is used. An external reaper racing between observation and signal is outside
+this process ownership contract. A descendant that
+leaves the group, by starting a session of its own or by moving to another
+group, is not owned: the result is still bounded by the deadline, but that
+process is not ended. Unlike a Windows job, nothing ends the group when
+Engram's own process dies abruptly. Unsupported platforms refuse
+before transport execution.
 Owned local subprocess tests establish controller cleanup, pipe bounds and
 configuration admission. They do not establish real-network authentication,
 cross-machine exchange, SSH support, or recovery of an unknown remote push.
